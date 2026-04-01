@@ -1,0 +1,1079 @@
+
+from __future__ import annotations
+
+"""
+planner_orchestrator.py (FINAL INTEGRATION HARDENED TRUE MAX VERSION)
+
+Purpose
+-------
+Top-level workflow shell for the AI civil / CAD / infrastructure platform.
+
+This file keeps the current orchestrator as the base and hardens the final
+integration behavior across:
+- planner.py as the execution brain
+- planner_intelligence.py as the candidate / scoring / refinement layer
+- project_manager.py / planner metadata as the state/score/conflict source
+- system_runner.py as the runtime / test harness layer
+
+Key hardening upgrades
+----------------------
+- preserve strict single-plan and assisted multi-option flows
+- preserve full-design iterative orchestration
+- add stronger conflict/fix/rerun adjustment logic between iterations
+- add planner/QA/score-aware stop logic
+- add richer option summaries / trace payloads
+- add final consistency packaging for runner/UI readiness
+- keep planner as execution truth and orchestrator as workflow shell
+"""
+
+from dataclasses import dataclass, field
+from copy import deepcopy
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+import importlib
+import importlib.util
+import uuid
+
+
+# =============================================================================
+# OPTION 2 / FIELD-INTENT HELPERS
+# =============================================================================
+
+FIELD_SOURCE_USER = "user"
+FIELD_SOURCE_INFER = "infer"
+FIELD_SOURCE_OMIT = "omit"
+FIELD_SOURCES = {FIELD_SOURCE_USER, FIELD_SOURCE_INFER, FIELD_SOURCE_OMIT}
+
+
+def _is_field_wrapper(value: Any) -> bool:
+    return isinstance(value, dict) and "source" in value and "value" in value
+
+
+def _field_source(value: Any, default: str = FIELD_SOURCE_INFER) -> str:
+    if _is_field_wrapper(value) and value.get("source") in FIELD_SOURCES:
+        return value.get("source")
+    return default
+
+
+def _field_value(value: Any, default: Any = None) -> Any:
+    if _is_field_wrapper(value):
+        if value.get("source") == FIELD_SOURCE_OMIT:
+            return None
+        return deepcopy(value.get("value", default))
+    return deepcopy(value if value is not None else default)
+
+
+def _field_is_omitted(value: Any) -> bool:
+    return _field_source(value) == FIELD_SOURCE_OMIT
+
+
+def _wrap_field(value: Any, source: str = FIELD_SOURCE_INFER, assumption: str | None = None, confidence: float | None = None) -> Dict[str, Any]:
+    return {"value": deepcopy(value), "source": source, "assumption": assumption, "confidence": confidence}
+
+
+def _resolve_value(value: Any, default: Any = None, *, allow_infer: bool = True) -> Any:
+    if not _is_field_wrapper(value):
+        return deepcopy(value if value is not None else default)
+    src = _field_source(value)
+    if src == FIELD_SOURCE_OMIT:
+        return None
+    if src == FIELD_SOURCE_USER:
+        return deepcopy(value.get("value", default))
+    if src == FIELD_SOURCE_INFER:
+        if allow_infer:
+            return deepcopy(value.get("value", default))
+        return None
+    return deepcopy(default)
+
+
+def _deep_merge_field_aware(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    out = deepcopy(base)
+    for key, value in override.items():
+        if key not in out:
+            out[key] = deepcopy(value)
+            continue
+        current = out[key]
+        if _field_is_omitted(current):
+            continue
+        if isinstance(current, dict) and isinstance(value, dict) and not _is_field_wrapper(current) and not _is_field_wrapper(value):
+            out[key] = _deep_merge_field_aware(current, value)
+            continue
+        if _is_field_wrapper(current) and _field_is_omitted(current):
+            continue
+        out[key] = deepcopy(value)
+    return out
+
+
+def _extract_field_states(payload: Any, prefix: str = "") -> Dict[str, Dict[str, Any]]:
+    states: Dict[str, Dict[str, Any]] = {}
+    if prefix == "meta.field_states" or prefix.startswith("meta.field_states."):
+        return states
+    if _is_field_wrapper(payload):
+        states[prefix] = deepcopy(payload)
+        return states
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            path = f"{prefix}.{key}" if prefix else key
+            states.update(_extract_field_states(value, path))
+    elif isinstance(payload, list):
+        for idx, value in enumerate(payload):
+            path = f"{prefix}[{idx}]" if prefix else f"[{idx}]"
+            states.update(_extract_field_states(value, path))
+    return states
+
+
+def _preserve_field_intent(payload: Dict[str, Any]) -> Dict[str, Any]:
+    payload.setdefault("meta", {})
+    field_states = dict(payload["meta"].get("field_states") or {})
+    field_states.update(_extract_field_states(payload))
+    payload["meta"]["field_states"] = field_states
+    payload["meta"]["field_contract_version"] = payload["meta"].get("field_contract_version") or "option2_v1"
+    return payload
+
+
+# =============================================================================
+# OPTIONAL INPUT SOURCES
+# =============================================================================
+
+try:
+    from parsers.ai_parser import command_mode
+except Exception:  # pragma: no cover
+    command_mode = None
+
+try:
+    from parsers.sketch_parser import SketchInput, SketchParser
+except Exception:  # pragma: no cover
+    SketchInput = None
+    SketchParser = None
+
+try:
+    from vision.image_analysis_engine import ImageAnalysisEngine, ImageAnalysisInput
+except Exception:  # pragma: no cover
+    ImageAnalysisEngine = None
+    ImageAnalysisInput = None
+
+
+# =============================================================================
+# IMPORT HELPERS
+# =============================================================================
+
+def _import_module_from_candidates(candidates: Sequence[str], fallback_paths: Sequence[str] = ()) -> Any:
+    for name in candidates:
+        try:
+            return importlib.import_module(name)
+        except Exception:
+            pass
+
+    for raw_path in fallback_paths:
+        path = Path(raw_path)
+        if not path.exists():
+            continue
+        module_name = path.stem.replace(".", "_")
+        spec = importlib.util.spec_from_file_location(module_name, str(path))
+        if spec and spec.loader:
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod
+
+    raise ImportError(f"Unable to import any candidate modules: {candidates} / {fallback_paths}")
+
+
+planner = _import_module_from_candidates(
+    ["planner", "project_root.planner"],
+    fallback_paths=[
+        "/mnt/data/planner.py",
+        "/mnt/data/planner_real_max_integrated_civil_grade.py",
+    ],
+)
+
+planner_intelligence = _import_module_from_candidates(
+    ["planner_intelligence", "planner.intelligence", "project_root.planner_intelligence"],
+    fallback_paths=[
+        "/mnt/data/planner_intelligence.py",
+        "/mnt/data/planner.intelligence.py",
+        "/mnt/data/planner_intelligence_true_max_merged_civil_grade.py",
+    ],
+)
+
+
+# =============================================================================
+# DATA MODELS
+# =============================================================================
+
+@dataclass
+class PlannerIssue:
+    code: str
+    severity: str
+    message: str
+    context: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class PlannerAssumption:
+    field_name: str
+    assumed_value: Any
+    reason: str
+
+
+@dataclass
+class PlannerOptionSummary:
+    option_name: str
+    option_family: str = ""
+    score: float = 0.0
+    pros: List[str] = field(default_factory=list)
+    cons: List[str] = field(default_factory=list)
+    candidate_id: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class DesignLoopIteration:
+    iteration_index: int
+    workflow: str
+    success: bool
+    message: str
+    recommended_option_name: Optional[str] = None
+    recommended_candidate_id: Optional[str] = None
+    recommended_score: float = 0.0
+    warning_count: int = 0
+    error_count: int = 0
+    issue_count: int = 0
+    changes_applied: Dict[str, Any] = field(default_factory=dict)
+    notes: List[str] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class DesignLoopState:
+    best_score: float = float("-inf")
+    best_plan: Dict[str, Any] = field(default_factory=dict)
+    best_parsed_payload: Dict[str, Any] = field(default_factory=dict)
+    best_result_metadata: Dict[str, Any] = field(default_factory=dict)
+    best_option_name: Optional[str] = None
+    best_candidate_id: Optional[str] = None
+    improvement_history: List[float] = field(default_factory=list)
+    iterations: List[DesignLoopIteration] = field(default_factory=list)
+
+    def improved(self, score: float) -> bool:
+        return score > self.best_score
+
+    def record_score(self, score: float) -> None:
+        self.improvement_history.append(score)
+
+
+@dataclass
+class PlannerOrchestratorRequest:
+    input_mode: str = "assisted"
+    strict_mode: bool = False
+
+    # high-level workflow controls
+    full_design_mode: bool = False
+    optimize_goal: Optional[str] = None
+    global_iteration_limit: int = 3
+    stop_when_clean: bool = True
+    stop_when_score_stalls: bool = True
+    score_improvement_epsilon: float = 1.0
+
+    # source inputs
+    prompt_text: Optional[str] = None
+    image_path: Optional[str] = None
+    manual_fields: Dict[str, Any] = field(default_factory=dict)
+
+    image_width_px: Optional[int] = None
+    image_height_px: Optional[int] = None
+    pixels_per_unit: Optional[float] = None
+
+    plan_type_hint: Optional[str] = None
+    units: str = "ft"
+
+    allow_ai_fill_for_blanks: bool = True
+    persist_trace_metadata: bool = True
+
+    max_candidates: int = 10
+    top_k: int = 4
+    evolution_rounds: int = 3
+
+    meta: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class PlannerOrchestratorResult:
+    success: bool
+    message: str
+
+    parsed_payload: Dict[str, Any] = field(default_factory=dict)
+    final_plan: Dict[str, Any] = field(default_factory=dict)
+
+    alternatives: List[Dict[str, Any]] = field(default_factory=list)
+    option_summaries: List[PlannerOptionSummary] = field(default_factory=list)
+
+    warnings: List[str] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
+    issues: List[PlannerIssue] = field(default_factory=list)
+    assumptions: List[PlannerAssumption] = field(default_factory=list)
+
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+# =============================================================================
+# SMALL HELPERS
+# =============================================================================
+
+def _new_id(prefix: str) -> str:
+    return f"{prefix}_{uuid.uuid4().hex[:12]}"
+
+
+def _safe_dict(value: Any) -> Dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _safe_list(value: Any) -> List[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _safe_str(value: Any, default: str = "") -> str:
+    if value is None:
+        return default
+    text = str(value).strip()
+    return text if text else default
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        if value is None:
+            return int(default)
+        return int(round(float(value)))
+    except Exception:
+        return int(default)
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if value is None:
+            return float(default)
+        return float(value)
+    except Exception:
+        return float(default)
+
+
+def _lower(value: Any) -> str:
+    return _safe_str(value).lower()
+
+
+def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    return _deep_merge_field_aware(base, override)
+
+
+def _merge_manual_fields(parsed: Dict[str, Any], manual_fields: Dict[str, Any], allow_fill_for_blanks: bool = True) -> Dict[str, Any]:
+    out = deepcopy(parsed)
+    manual_fields = _safe_dict(manual_fields)
+
+    def _looks_like_field_wrapper(value: Any) -> bool:
+        return isinstance(value, dict) and "source" in value and "value" in value
+
+    for key, value in manual_fields.items():
+        if key not in out:
+            out[key] = deepcopy(value)
+            continue
+
+        if _field_is_omitted(out.get(key)):
+            continue
+
+        if isinstance(out[key], dict) and isinstance(value, dict) and not _is_field_wrapper(out[key]) and not _is_field_wrapper(value):
+            out[key] = _deep_merge(out[key], value)
+            continue
+
+        current = out[key]
+        if allow_fill_for_blanks and current in (None, "", [], {}):
+            out[key] = deepcopy(value)
+            continue
+
+        if _is_field_wrapper(current):
+            src = _field_source(current)
+            if src == FIELD_SOURCE_INFER:
+                out[key] = deepcopy(value)
+
+    return _preserve_field_intent(out)
+
+
+def _unwrap_manual_fields_payload(manual_fields: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    payload = _safe_dict(deepcopy(manual_fields))
+    nested = _safe_dict(payload.get("manual_fields"))
+    if not nested:
+        return payload, {}
+
+    control_keys = {
+        "manual_fields",
+        "strict_mode",
+        "full_design_mode",
+        "optimize_goal",
+        "plan_type_hint",
+        "units",
+        "meta",
+        "input_mode",
+    }
+    wrapper_extras = {key: deepcopy(value) for key, value in payload.items() if key not in control_keys}
+    merged = deepcopy(nested)
+    for key, value in wrapper_extras.items():
+        merged.setdefault(key, value)
+    if isinstance(payload.get("meta"), dict):
+        merged.setdefault("meta", {})
+        merged["meta"] = _deep_merge(_safe_dict(merged.get("meta")), _safe_dict(payload.get("meta")))
+    return merged, payload
+
+
+def _normalize_with_planner(payload: Dict[str, Any]) -> Dict[str, Any]:
+    payload = _preserve_field_intent(deepcopy(payload))
+    if hasattr(planner, "triple_check_parsed_payload"):
+        return planner.triple_check_parsed_payload(payload)
+    return payload
+
+
+def _collect_assumptions(parsed_payload: Dict[str, Any], final_plan: Dict[str, Any]) -> List[PlannerAssumption]:
+    assumptions: List[PlannerAssumption] = []
+
+    for path, field in _safe_dict(_safe_dict(parsed_payload.get("meta")).get("field_states")).items():
+        if isinstance(field, dict) and field.get("source") == FIELD_SOURCE_INFER and field.get("assumption"):
+            assumptions.append(PlannerAssumption(field_name=path, assumed_value=deepcopy(field.get("value")), reason=_safe_str(field.get("assumption"))))
+
+    for note in _safe_list(parsed_payload.get("_planner_review_notes")):
+        assumptions.append(
+            PlannerAssumption(
+                field_name="payload",
+                assumed_value=note,
+                reason="Planner normalization / review note",
+            )
+        )
+
+    for note in _safe_list(final_plan.get("assumptions")):
+        assumptions.append(
+            PlannerAssumption(
+                field_name="plan",
+                assumed_value=note,
+                reason="Planner execution assumption",
+            )
+        )
+
+    return assumptions
+
+
+def _collect_issues(final_plan: Dict[str, Any]) -> List[PlannerIssue]:
+    issues: List[PlannerIssue] = []
+    qa = _safe_dict(_safe_dict(final_plan.get("meta")).get("qa"))
+
+    for issue in _safe_list(qa.get("issues")):
+        issues.append(
+            PlannerIssue(
+                code=_safe_str(_safe_dict(issue).get("code"), "ISSUE"),
+                severity=_safe_str(_safe_dict(issue).get("severity"), "warning"),
+                message=_safe_str(_safe_dict(issue).get("message"), "Issue"),
+                context=deepcopy(_safe_dict(_safe_dict(issue).get("context"))),
+            )
+        )
+
+    return issues
+
+
+def _collect_warnings_errors(final_plan: Dict[str, Any]) -> tuple[List[str], List[str]]:
+    warnings: List[str] = []
+    errors: List[str] = []
+
+    for issue in _collect_issues(final_plan):
+        if _lower(issue.severity) == "error":
+            errors.append(issue.message)
+        elif _lower(issue.severity) == "warning":
+            warnings.append(issue.message)
+
+    meta = _safe_dict(final_plan.get("meta"))
+    for item in _safe_list(meta.get("warnings")):
+        warnings.append(_safe_str(item))
+    for item in _safe_list(meta.get("errors")):
+        errors.append(_safe_str(item))
+
+    return list(dict.fromkeys([w for w in warnings if w])), list(dict.fromkeys([e for e in errors if e]))
+
+
+def _planner_score_from_plan(final_plan: Dict[str, Any]) -> float:
+    meta = _safe_dict(final_plan.get("meta"))
+    score_block = _safe_dict(meta.get("planner_score"))
+    if "total" in score_block:
+        return _safe_float(score_block.get("total"), 0.0)
+    return 0.0
+
+
+def _manual_plan_failed(final_plan: Dict[str, Any]) -> bool:
+    meta = _safe_dict(final_plan.get("meta"))
+    engineering_status = _safe_dict(meta.get("engineering_status"))
+    manual_validation = _safe_dict(meta.get("manual_validation"))
+    if _lower(engineering_status.get("mode")) == "manual" and _lower(engineering_status.get("status")) == "failed":
+        return True
+    return bool(manual_validation.get("failed"))
+
+
+def _candidate_to_alt(option: Any) -> Dict[str, Any]:
+    return {
+        "candidate_id": getattr(option, "candidate_id", None),
+        "option_name": getattr(option, "option_name", ""),
+        "option_family": getattr(option, "option_family", ""),
+        "score": getattr(getattr(option, "score", None), "total", 0.0),
+        "pros": list(getattr(option, "pros", []) or []),
+        "cons": list(getattr(option, "cons", []) or []),
+        "metadata": {
+            "strategy": deepcopy(getattr(option, "strategy", {}) or {}),
+            "lineage": deepcopy(getattr(getattr(option, "lineage", None), "__dict__", {}) or {}),
+            "conflict_count": len(getattr(option, "conflicts", []) or []),
+            "refinement_count": len(getattr(option, "refinements", []) or []),
+        },
+    }
+
+
+def _candidate_to_summary(option: Any) -> PlannerOptionSummary:
+    return PlannerOptionSummary(
+        option_name=getattr(option, "option_name", ""),
+        option_family=getattr(option, "option_family", ""),
+        score=getattr(getattr(option, "score", None), "total", 0.0),
+        pros=list(getattr(option, "pros", []) or []),
+        cons=list(getattr(option, "cons", []) or []),
+        candidate_id=getattr(option, "candidate_id", None),
+        metadata={
+            "strategy": deepcopy(getattr(option, "strategy", {}) or {}),
+            "lineage": deepcopy(getattr(getattr(option, "lineage", None), "__dict__", {}) or {}),
+        },
+    )
+
+
+def _summarize_option_blocks(result: PlannerOrchestratorResult) -> List[PlannerOptionSummary]:
+    return list(result.option_summaries or [])
+
+
+def _severity_counts(result: PlannerOrchestratorResult) -> Dict[str, int]:
+    counts = {"warning": len(result.warnings), "error": len(result.errors), "issue": len(result.issues)}
+    return counts
+
+
+def _intent_summary_from_payload(payload: Dict[str, Any]) -> Dict[str, List[str]]:
+    summary = {"user": [], "infer": [], "omit": []}
+    field_states = _safe_dict(_safe_dict(payload.get("meta")).get("field_states"))
+    for path, field in field_states.items():
+        source = _lower(_safe_dict(field).get("source"))
+        if source in summary:
+            summary[source].append(path)
+    for key in summary:
+        summary[key] = sorted(dict.fromkeys(summary[key]))
+    return summary
+
+
+# =============================================================================
+# PARSE ROUTING
+# =============================================================================
+
+def _parse_from_prompt(req: PlannerOrchestratorRequest) -> Dict[str, Any]:
+    if command_mode is None:
+        payload = deepcopy(req.manual_fields)
+        payload.setdefault("meta", {})
+        payload["meta"]["prompt_parse_unavailable"] = True
+        payload["meta"]["source_input_mode"] = "prompt"
+        return _normalize_with_planner(payload)
+
+    parsed = command_mode(_safe_str(req.prompt_text))
+    parsed.setdefault("meta", {})
+    parsed["meta"]["source_input_mode"] = "prompt"
+    if req.plan_type_hint:
+        parsed["meta"]["plan_type_hint"] = req.plan_type_hint
+    if req.units:
+        parsed["units"] = req.units
+    return _normalize_with_planner(parsed)
+
+
+def _parse_from_manual(req: PlannerOrchestratorRequest) -> Dict[str, Any]:
+    payload, _ = _unwrap_manual_fields_payload(req.manual_fields)
+    payload.setdefault("units", req.units)
+    payload.setdefault("meta", {})
+    payload["meta"]["source_input_mode"] = "manual"
+    if req.plan_type_hint:
+        payload["meta"]["plan_type_hint"] = req.plan_type_hint
+    return _normalize_with_planner(payload)
+
+
+def _parse_from_sketch(req: PlannerOrchestratorRequest) -> Dict[str, Any]:
+    payload = deepcopy(req.manual_fields)
+    payload.setdefault("units", req.units)
+    payload.setdefault("meta", {})
+    payload["meta"]["source_input_mode"] = "sketch"
+
+    if SketchParser is None or SketchInput is None:
+        payload["meta"]["sketch_parser_unavailable"] = True
+        payload["meta"]["sketch_warnings"] = ["Sketch parser is not available in this runtime."]
+        return _normalize_with_planner(payload)
+
+    sketch_payload = _safe_dict(req.manual_fields.get("sketch"))
+    parser = SketchParser()
+    parsed_sketch = parser.parse(SketchInput(**sketch_payload))
+
+    payload["meta"]["sketch_summary"] = {
+        "boundary_zones": len(getattr(parsed_sketch, "boundary_zones", []) or []),
+        "objects": len(getattr(parsed_sketch, "objects", []) or []),
+        "centerlines": len(getattr(parsed_sketch, "centerlines", []) or []),
+        "warnings": list(getattr(parsed_sketch, "warnings", []) or []),
+    }
+    return _normalize_with_planner(payload)
+
+
+def _parse_from_image(req: PlannerOrchestratorRequest) -> Dict[str, Any]:
+    payload = deepcopy(req.manual_fields)
+    payload.setdefault("units", req.units)
+    payload.setdefault("meta", {})
+    payload["meta"]["source_input_mode"] = "image"
+
+    if ImageAnalysisEngine is None or ImageAnalysisInput is None:
+        payload["meta"]["image_analysis_unavailable"] = True
+        payload["meta"]["image_analysis_warnings"] = ["Image analysis engine is not available in this runtime."]
+        return _normalize_with_planner(payload)
+
+    engine = ImageAnalysisEngine()
+    image_payload = _safe_dict(req.manual_fields.get("image_analysis"))
+    result = engine.analyze(ImageAnalysisInput(**image_payload))
+
+    payload["meta"]["image_analysis_counts"] = deepcopy(getattr(result, "counts", {}) or {})
+    payload["meta"]["image_analysis_warnings"] = list(getattr(result, "warnings", []) or [])
+
+    if req.image_width_px is not None:
+        payload["meta"]["image_width_px"] = req.image_width_px
+    if req.image_height_px is not None:
+        payload["meta"]["image_height_px"] = req.image_height_px
+    if req.pixels_per_unit is not None:
+        payload["meta"]["pixels_per_unit"] = req.pixels_per_unit
+    if req.image_path:
+        payload["meta"]["image_path"] = req.image_path
+
+    return _normalize_with_planner(payload)
+
+
+def _route_parse(req: PlannerOrchestratorRequest) -> Dict[str, Any]:
+    mode = _lower(req.input_mode or "assisted")
+
+    if mode in {"assisted", "prompt", "text"} and req.prompt_text:
+        parsed = _parse_from_prompt(req)
+    elif mode == "manual":
+        parsed = _parse_from_manual(req)
+    elif mode == "sketch":
+        parsed = _parse_from_sketch(req)
+    elif mode == "image":
+        parsed = _parse_from_image(req)
+    else:
+        parsed = _parse_from_manual(req) if req.manual_fields else _parse_from_prompt(req)
+
+    merged = _merge_manual_fields(parsed, req.manual_fields, allow_fill_for_blanks=req.allow_ai_fill_for_blanks)
+    merged.setdefault("meta", {})
+    merged["meta"]["orchestrator_input_mode"] = mode
+    merged["meta"]["strict_mode"] = req.strict_mode
+    merged["meta"]["full_design_mode"] = req.full_design_mode
+    merged["meta"]["optimize_goal"] = req.optimize_goal
+    merged["meta"]["global_iteration_limit"] = req.global_iteration_limit
+    merged["meta"]["score_improvement_epsilon"] = req.score_improvement_epsilon
+    merged["meta"]["intent_summary"] = _intent_summary_from_payload(merged)
+    return _normalize_with_planner(merged)
+
+
+# =============================================================================
+# CORE FLOWS
+# =============================================================================
+
+def _single_plan_flow(parsed_payload: Dict[str, Any]) -> PlannerOrchestratorResult:
+    final_plan = planner.build_plan(parsed_payload)
+    warnings, errors = _collect_warnings_errors(final_plan)
+    success = not _manual_plan_failed(final_plan)
+    message = "Generated coordinated plan." if success else "Manual-mode validation failed."
+
+    return PlannerOrchestratorResult(
+        success=success,
+        message=message,
+        parsed_payload=deepcopy(parsed_payload),
+        final_plan=deepcopy(final_plan),
+        alternatives=deepcopy(_safe_dict(_safe_dict(final_plan.get("meta")).get("multi_option")).get("alternatives", [])),
+        option_summaries=[],
+        warnings=warnings,
+        errors=errors,
+        issues=_collect_issues(final_plan),
+        assumptions=_collect_assumptions(parsed_payload, final_plan),
+        metadata={
+            "workflow": "single_plan",
+            "route": deepcopy(_safe_dict(_safe_dict(final_plan.get("meta")).get("routing"))),
+            "recommended_score": _planner_score_from_plan(final_plan),
+        },
+    )
+
+
+def _multi_option_flow(parsed_payload: Dict[str, Any], req: PlannerOrchestratorRequest) -> PlannerOrchestratorResult:
+    intelligence = planner_intelligence.PlannerIntelligence()
+
+    preferences = deepcopy(_safe_dict(req.meta.get("preferences")))
+    if req.optimize_goal:
+        preferences["goal"] = req.optimize_goal
+    if "optimization_goals" in parsed_payload:
+        preferences.update(_safe_dict(parsed_payload.get("optimization_goals")))
+
+    result = intelligence.generate_options(
+        parsed_payload,
+        max_candidates=max(1, int(req.max_candidates)),
+        top_k=max(1, int(req.top_k)),
+        extra_preferences=preferences,
+    )
+
+    if not result.success or result.recommended is None:
+        return PlannerOrchestratorResult(
+            success=False,
+            message="No viable planning options were generated.",
+            parsed_payload=deepcopy(parsed_payload),
+            final_plan={},
+            alternatives=[],
+            option_summaries=[],
+            warnings=["No viable planning options were generated."],
+            errors=[],
+            issues=[],
+            assumptions=[],
+            metadata={
+                "workflow": "multi_option",
+                "result_success": False,
+                "preferences": deepcopy(preferences),
+            },
+        )
+
+    final_plan = deepcopy(result.recommended.plan)
+    warnings, errors = _collect_warnings_errors(final_plan)
+
+    alternatives = [_candidate_to_alt(option) for option in result.top_options[1:]]
+    option_summaries = [_candidate_to_summary(option) for option in result.top_options]
+
+    metadata = {
+        "workflow": "multi_option",
+        "option_groups": deepcopy(result.option_groups),
+        "questions": [deepcopy(q.__dict__) for q in result.questions],
+        "actions": [deepcopy(a.__dict__) for a in result.actions],
+        "rejected_summary": deepcopy(result.rejected_summary),
+        "saved_options": [_candidate_to_alt(opt) for opt in result.saved_options],
+        "recommended_option_name": result.recommended.option_name,
+        "recommended_candidate_id": result.recommended.candidate_id,
+        "recommended_score": result.recommended.score.total,
+        "recommended_family": result.recommended.option_family,
+        "recommended_pros": list(result.recommended.pros),
+        "recommended_cons": list(result.recommended.cons),
+        "candidate_count": _safe_dict(result.metadata).get("candidate_count", len(result.top_options)),
+        "requested_top_k": _safe_dict(result.metadata).get("requested_top_k", req.top_k),
+        "preferences": deepcopy(_safe_dict(result.metadata).get("preferences", preferences)),
+    }
+
+    return PlannerOrchestratorResult(
+        success=True,
+        message=result.message,
+        parsed_payload=deepcopy(parsed_payload),
+        final_plan=final_plan,
+        alternatives=alternatives,
+        option_summaries=option_summaries,
+        warnings=warnings,
+        errors=errors,
+        issues=_collect_issues(final_plan),
+        assumptions=_collect_assumptions(parsed_payload, final_plan),
+        metadata=metadata,
+    )
+
+
+# =============================================================================
+# FULL DESIGN LOOP / HARDENING
+# =============================================================================
+
+def _should_use_multi_option(parsed_payload: Dict[str, Any], req: PlannerOrchestratorRequest) -> bool:
+    if _lower(req.input_mode) == "manual" or _lower(_safe_dict(parsed_payload.get("meta")).get("input_mode")) == "manual":
+        return False
+    if req.strict_mode:
+        return False
+
+    mode = _lower(parsed_payload.get("mode"))
+    if mode in {"site_plan", "subdivision", "road", "drainage", "bridge", "pool"}:
+        return True
+
+    if _safe_dict(parsed_payload.get("optimization_goals")):
+        return True
+
+    explicit_pref = _lower(_safe_dict(req.meta).get("workflow"))
+    if explicit_pref in {"multi", "multi_option", "assisted", "optimize"}:
+        return True
+
+    return not req.strict_mode
+
+
+def _build_iteration_record(
+    iteration_index: int,
+    result: PlannerOrchestratorResult,
+    changes_applied: Dict[str, Any],
+    notes: Optional[List[str]] = None,
+) -> DesignLoopIteration:
+    return DesignLoopIteration(
+        iteration_index=iteration_index,
+        workflow=_safe_str(result.metadata.get("workflow"), "unknown"),
+        success=result.success,
+        message=result.message,
+        recommended_option_name=_safe_str(result.metadata.get("recommended_option_name"), "") or None,
+        recommended_candidate_id=_safe_str(result.metadata.get("recommended_candidate_id"), "") or None,
+        recommended_score=_safe_float(result.metadata.get("recommended_score"), _planner_score_from_plan(result.final_plan)),
+        warning_count=len(result.warnings),
+        error_count=len(result.errors),
+        issue_count=len(result.issues),
+        changes_applied=deepcopy(changes_applied),
+        notes=list(notes or []),
+        metadata=deepcopy(result.metadata),
+    )
+
+
+def _derive_next_pass_adjustments(
+    current_result: PlannerOrchestratorResult,
+    current_payload: Dict[str, Any],
+    req: PlannerOrchestratorRequest,
+    iteration_index: int,
+) -> Dict[str, Any]:
+    adjustments: Dict[str, Any] = {"meta": {}}
+
+    current_meta = _safe_dict(current_payload.get("meta"))
+    current_passes = _safe_int(current_meta.get("planner_passes"), 2)
+
+    issue_codes = {_safe_str(issue.code) for issue in current_result.issues}
+    issue_messages = " ".join(issue.message for issue in current_result.issues).lower()
+
+    # give planner more room when issues remain
+    if current_result.errors or current_result.warnings:
+        adjustments["meta"]["planner_passes"] = max(current_passes + 1, 3)
+
+    # harden drainage-related reruns
+    if any("DRAINAGE" in code for code in issue_codes) or "drainage" in issue_messages:
+        adjustments["layout_strategy"] = "drainage_friendly"
+        adjustments["drainage"] = _deep_merge(_safe_dict(current_payload.get("drainage")), {"outfall_side": "bottom"})
+        adjustments["optimization_goals"] = _deep_merge(_safe_dict(current_payload.get("optimization_goals")), {"goal": "improve_drainage"})
+
+    # harden pipe-related reruns
+    if any("PIPE" in code for code in issue_codes) or "pipe" in issue_messages:
+        adjustments["optimization_goals"] = _deep_merge(_safe_dict(current_payload.get("optimization_goals")), {"goal": "reduce_pipe_length"})
+        adjustments["meta"]["pipe_retry_bias"] = True
+
+    # harden utility-related reruns
+    if any("UTILITY" in code for code in issue_codes) or "utility" in issue_messages:
+        adjustments["layout_strategy"] = "utility_efficient"
+        adjustments["meta"]["utility_retry_bias"] = True
+
+    # harden grading / earthwork-related reruns
+    if "grading" in issue_messages or "earthwork" in issue_messages:
+        adjustments["layout_strategy"] = "grading_friendly"
+        adjustments["optimization_goals"] = _deep_merge(_safe_dict(current_payload.get("optimization_goals")), {"goal": "reduce_grading"})
+
+    # if many warnings and no explicit parking push, rebalance
+    if len(current_result.warnings) >= 5 and _lower(req.optimize_goal) not in {"maximize_parking", "more_parking"}:
+        adjustments["layout_strategy"] = "balanced"
+
+    # keep explicit user goal active
+    if req.optimize_goal:
+        adjustments["optimization_goals"] = _deep_merge(_safe_dict(adjustments.get("optimization_goals")), {"goal": req.optimize_goal})
+
+    adjustments["meta"]["evolution_round"] = iteration_index
+    adjustments["meta"]["orchestrator_hardening_pass"] = True
+    return adjustments
+
+
+def _is_iteration_clean_enough(result: PlannerOrchestratorResult) -> bool:
+    return not result.errors and not result.warnings and not result.issues
+
+
+def _run_full_design_loop(parsed_payload: Dict[str, Any], req: PlannerOrchestratorRequest) -> PlannerOrchestratorResult:
+    state = DesignLoopState()
+    current_payload = deepcopy(parsed_payload)
+
+    max_iters = max(1, _safe_int(req.global_iteration_limit, 3))
+    epsilon = max(0.0, _safe_float(req.score_improvement_epsilon, 1.0))
+
+    for iteration_index in range(1, max_iters + 1):
+        use_multi = _should_use_multi_option(current_payload, req)
+        current_result = _multi_option_flow(current_payload, req) if use_multi else _single_plan_flow(current_payload)
+
+        current_score = _safe_float(current_result.metadata.get("recommended_score"), _planner_score_from_plan(current_result.final_plan))
+        state.record_score(current_score)
+
+        changes_applied: Dict[str, Any] = {}
+        notes: List[str] = []
+
+        if state.improved(current_score):
+            state.best_score = current_score
+            state.best_plan = deepcopy(current_result.final_plan)
+            state.best_parsed_payload = deepcopy(current_payload)
+            state.best_result_metadata = deepcopy(current_result.metadata)
+            state.best_option_name = _safe_str(current_result.metadata.get("recommended_option_name"), "") or None
+            state.best_candidate_id = _safe_str(current_result.metadata.get("recommended_candidate_id"), "") or None
+            notes.append("Best score improved.")
+        else:
+            notes.append("Score did not improve.")
+
+        if _is_iteration_clean_enough(current_result):
+            notes.append("Iteration is clean enough.")
+        elif _lower(req.input_mode) == "manual" and not current_result.success:
+            notes.append("Manual mode returned a failed engineering-validation result.")
+        elif current_result.errors:
+            notes.append("Errors remain; continuing hardening loop.")
+        elif current_result.warnings:
+            notes.append("Warnings remain; continuing hardening loop.")
+
+        state.iterations.append(_build_iteration_record(iteration_index, current_result, changes_applied, notes))
+
+        if _lower(req.input_mode) == "manual" and not current_result.success:
+            break
+
+        if req.stop_when_clean and _is_iteration_clean_enough(current_result):
+            break
+
+        if iteration_index >= max_iters:
+            break
+
+        if req.stop_when_score_stalls and len(state.improvement_history) >= 2:
+            if abs(state.improvement_history[-1] - state.improvement_history[-2]) <= epsilon:
+                state.iterations[-1].notes.append("Stopped because score improvement stalled.")
+                break
+
+        changes_applied = _derive_next_pass_adjustments(current_result, current_payload, req, iteration_index)
+        current_payload = _preserve_field_intent(_deep_merge(current_payload, changes_applied))
+        state.iterations[-1].changes_applied = deepcopy(changes_applied)
+
+    final_plan = deepcopy(state.best_plan) if state.best_plan else {}
+    warnings, errors = _collect_warnings_errors(final_plan)
+
+    result = PlannerOrchestratorResult(
+        success=bool(final_plan) and not _manual_plan_failed(final_plan),
+        message=(
+            "Full design workflow completed."
+            if final_plan and not _manual_plan_failed(final_plan)
+            else "Manual-mode validation failed."
+            if final_plan and _manual_plan_failed(final_plan)
+            else "Full design workflow did not produce a viable final plan."
+        ),
+        parsed_payload=deepcopy(state.best_parsed_payload if state.best_parsed_payload else parsed_payload),
+        final_plan=final_plan,
+        alternatives=deepcopy(_safe_list(state.best_result_metadata.get("alternatives"))),
+        option_summaries=[],
+        warnings=warnings,
+        errors=errors,
+        issues=_collect_issues(final_plan),
+        assumptions=_collect_assumptions(state.best_parsed_payload if state.best_parsed_payload else parsed_payload, final_plan) if final_plan else [],
+        metadata=deepcopy(state.best_result_metadata),
+    )
+
+    result.metadata["workflow"] = "full_design_loop"
+    result.metadata["best_score"] = state.best_score
+    result.metadata["best_option_name"] = state.best_option_name
+    result.metadata["best_candidate_id"] = state.best_candidate_id
+    result.metadata["iterations"] = [deepcopy(it.__dict__) for it in state.iterations]
+    result.metadata["improvement_history"] = deepcopy(state.improvement_history)
+    result.metadata["global_iteration_limit"] = max_iters
+    result.metadata["score_improvement_epsilon"] = epsilon
+    result.metadata["full_design_mode"] = True
+    result.metadata["severity_counts"] = _severity_counts(result)
+
+    return result
+
+
+# =============================================================================
+# PUBLIC ENTRYPOINTS
+# =============================================================================
+
+def orchestrate_plan(req: PlannerOrchestratorRequest) -> PlannerOrchestratorResult:
+    if _lower(req.input_mode) == "manual":
+        req.allow_ai_fill_for_blanks = False
+    parsed_payload = _preserve_field_intent(_route_parse(req))
+    parsed_payload.setdefault("meta", {})
+    parsed_payload["meta"]["strict_mode"] = req.strict_mode
+    parsed_payload["meta"]["persist_trace_metadata"] = req.persist_trace_metadata
+    parsed_payload["meta"]["allow_ai_fill_for_blanks"] = req.allow_ai_fill_for_blanks
+    parsed_payload["meta"]["orchestrator_meta"] = deepcopy(req.meta)
+    parsed_payload["meta"]["input_mode"] = req.input_mode
+    parsed_payload["meta"]["manual_mode"] = _lower(req.input_mode) == "manual"
+    parsed_payload["meta"]["optimize_goal"] = req.optimize_goal
+
+    if req.full_design_mode:
+        result = _run_full_design_loop(parsed_payload, req)
+    else:
+        wants_multi = _should_use_multi_option(parsed_payload, req)
+        result = _multi_option_flow(parsed_payload, req) if wants_multi else _single_plan_flow(parsed_payload)
+
+    result.metadata.setdefault("input_mode", req.input_mode)
+    result.metadata.setdefault("manual_mode", _lower(req.input_mode) == "manual")
+    result.metadata.setdefault("strict_mode", req.strict_mode)
+    result.metadata.setdefault("plan_type_hint", req.plan_type_hint)
+    result.metadata.setdefault("units", req.units)
+    result.metadata.setdefault("max_candidates", req.max_candidates)
+    result.metadata.setdefault("top_k", req.top_k)
+    result.metadata.setdefault("evolution_rounds", req.evolution_rounds)
+    result.metadata.setdefault("full_design_mode", req.full_design_mode)
+    result.metadata.setdefault("optimize_goal", req.optimize_goal)
+    result.metadata.setdefault("severity_counts", _severity_counts(result))
+
+    # keep final option summaries in all modes when available
+    result.option_summaries = _summarize_option_blocks(result)
+
+    if req.persist_trace_metadata:
+        result.metadata["parsed_payload_meta"] = deepcopy(_safe_dict(parsed_payload.get("meta")))
+        result.metadata["final_plan_meta"] = deepcopy(_safe_dict(result.final_plan.get("meta")))
+
+    return result
+
+
+def orchestrate_prompt(
+    prompt_text: str,
+    *,
+    strict_mode: bool = False,
+    full_design_mode: bool = False,
+    optimize_goal: Optional[str] = None,
+    plan_type_hint: Optional[str] = None,
+    units: str = "ft",
+    meta: Optional[Dict[str, Any]] = None,
+) -> PlannerOrchestratorResult:
+    req = PlannerOrchestratorRequest(
+        input_mode="prompt",
+        strict_mode=strict_mode,
+        full_design_mode=full_design_mode,
+        optimize_goal=optimize_goal,
+        prompt_text=prompt_text,
+        plan_type_hint=plan_type_hint,
+        units=units,
+        meta=deepcopy(meta) if isinstance(meta, dict) else {},
+    )
+    return orchestrate_plan(req)
+
+
+def orchestrate_manual(
+    manual_fields: Dict[str, Any],
+    *,
+    strict_mode: bool = False,
+    full_design_mode: bool = False,
+    optimize_goal: Optional[str] = None,
+    plan_type_hint: Optional[str] = None,
+    units: str = "ft",
+    meta: Optional[Dict[str, Any]] = None,
+) -> PlannerOrchestratorResult:
+    normalized_manual_fields, wrapper = _unwrap_manual_fields_payload(manual_fields)
+    strict_mode = bool(wrapper.get("strict_mode", strict_mode))
+    full_design_mode = bool(wrapper.get("full_design_mode", full_design_mode))
+    optimize_goal = wrapper.get("optimize_goal", optimize_goal)
+    plan_type_hint = _safe_str(wrapper.get("plan_type_hint"), plan_type_hint) if wrapper.get("plan_type_hint") is not None else plan_type_hint
+    units = _safe_str(wrapper.get("units"), units) if wrapper.get("units") is not None else units
+    merged_meta = deepcopy(meta) if isinstance(meta, dict) else {}
+    if isinstance(wrapper.get("meta"), dict):
+        merged_meta = _deep_merge(merged_meta, _safe_dict(wrapper.get("meta")))
+    req = PlannerOrchestratorRequest(
+        input_mode="manual",
+        strict_mode=strict_mode,
+        full_design_mode=full_design_mode,
+        optimize_goal=optimize_goal,
+        manual_fields=deepcopy(normalized_manual_fields),
+        plan_type_hint=plan_type_hint,
+        units=units,
+        meta=merged_meta,
+    )
+    return orchestrate_plan(req)
+
+
+def run_planner_orchestrator(req: PlannerOrchestratorRequest) -> PlannerOrchestratorResult:
+    return orchestrate_plan(req)

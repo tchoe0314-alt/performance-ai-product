@@ -1,0 +1,473 @@
+from __future__ import annotations
+
+from copy import deepcopy
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Tuple
+
+from core.config import (
+    DEFAULT_LOT_HEIGHT,
+    DEFAULT_LOT_WIDTH,
+    DEFAULT_LOT_X,
+    DEFAULT_LOT_Y,
+    DEFAULT_SETBACK,
+    PIPE_INTENSITY_IN_HR,
+)
+from core.geometry_core import ProjectModel, ZoneType, rect_zone
+from core.project_manager import ConflictSeverity, DependencyState, ProjectManager
+from engines.hydrology_engine import RationalArea, compute_rational_method
+
+from .common import clamp, dedupe_keep_order, lower_text, polyline_length, rect_area, safe_dict, safe_float, safe_list, safe_str
+from .field_contract import field_path_is_omitted, preserve_field_states, resolve_field, unwrap_fields_for_execution
+
+
+PLANNER_STAGE_ORDER: List[str] = [
+    "layout",
+    "grading",
+    "drainage",
+    "storm_pipes",
+    "sanitary",
+    "utility_network",
+    "coordination_resolution",
+    "earthwork",
+    "sheets",
+    "qa",
+]
+
+PLANNER_STAGE_DEPENDENCIES: Dict[str, List[str]] = {
+    "layout": [],
+    "grading": ["layout"],
+    "drainage": ["grading"],
+    "storm_pipes": ["drainage"],
+    "sanitary": ["layout", "grading", "storm_pipes"],
+    "utility_network": ["storm_pipes", "sanitary", "grading"],
+    "coordination_resolution": ["storm_pipes", "sanitary", "utility_network", "grading"],
+    "earthwork": ["utility_network", "grading", "coordination_resolution"],
+    "sheets": ["grading", "storm_pipes", "sanitary"],
+    "qa": ["layout", "grading", "drainage", "storm_pipes", "sanitary", "utility_network", "earthwork", "coordination_resolution"],
+}
+
+
+@dataclass
+class QualityIssue:
+    code: str
+    severity: str
+    message: str
+    context: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class PlanQualityReport:
+    issues: List[QualityIssue] = field(default_factory=list)
+    stats: Dict[str, Any] = field(default_factory=dict)
+    checks_run: List[str] = field(default_factory=list)
+
+    def add(self, code: str, severity: str, message: str, **context: Any) -> None:
+        self.issues.append(QualityIssue(code=code, severity=severity, message=message, context=dict(context)))
+
+    def warning_count(self) -> int:
+        return sum(1 for issue in self.issues if lower_text(issue.severity) == "warning")
+
+    def error_count(self) -> int:
+        return sum(1 for issue in self.issues if lower_text(issue.severity) == "error")
+
+    def to_meta(self) -> Dict[str, Any]:
+        return {
+            "checks_run": list(self.checks_run),
+            "stats": deepcopy(self.stats),
+            "issues": [
+                {"code": issue.code, "severity": issue.severity, "message": issue.message, "context": deepcopy(issue.context)}
+                for issue in self.issues
+            ],
+            "warning_count": self.warning_count(),
+            "error_count": self.error_count(),
+        }
+
+
+@dataclass
+class RoutingDecision:
+    path: str
+    reasons: List[str]
+
+
+@dataclass
+class PlannerStageResult:
+    stage_name: str
+    success: bool
+    message: str = ""
+    warnings: List[str] = field(default_factory=list)
+    meta: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class PlannerExecutionContext:
+    parsed: Dict[str, Any]
+    manager: ProjectManager
+    route: RoutingDecision
+    stage_results: List[PlannerStageResult] = field(default_factory=list)
+    assumptions: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
+    pass_index: int = 0
+    changed_targets: List[str] = field(default_factory=list)
+    explanation: Dict[str, Any] = field(default_factory=dict)
+    final_plan: Dict[str, Any] = field(default_factory=dict)
+    option_name: str = "Base Option"
+    option_family: str = "base"
+    rerun_history: List[Dict[str, Any]] = field(default_factory=list)
+
+    def add_stage(self, name: str, success: bool, message: str = "", **meta: Any) -> None:
+        self.stage_results.append(PlannerStageResult(stage_name=name, success=success, message=message, meta=dict(meta)))
+
+    def record_warning(self, text: str) -> None:
+        if text and text not in self.warnings:
+            self.warnings.append(text)
+
+    def record_error(self, text: str) -> None:
+        if text and text not in self.errors:
+            self.errors.append(text)
+
+    def record_assumption(self, text: str) -> None:
+        if text and text not in self.assumptions:
+            self.assumptions.append(text)
+
+
+def declared_stage_dependencies(stage_name: str) -> List[str]:
+    return list(PLANNER_STAGE_DEPENDENCIES.get(stage_name, []))
+
+
+def sanitize_action(action: Dict[str, Any]) -> Dict[str, Any]:
+    norm = dict(action)
+    if isinstance(norm.get("origin"), (list, tuple)) and len(norm["origin"]) >= 2:
+        norm["origin"] = [safe_float(norm["origin"][0]), safe_float(norm["origin"][1])]
+    if isinstance(norm.get("center"), (list, tuple)) and len(norm["center"]) >= 2:
+        norm["center"] = [safe_float(norm["center"][0]), safe_float(norm["center"][1])]
+    if isinstance(norm.get("points"), list):
+        pts: List[List[float]] = []
+        for point in norm["points"]:
+            if isinstance(point, (list, tuple)) and len(point) >= 2:
+                pts.append([safe_float(point[0]), safe_float(point[1])])
+        norm["points"] = pts
+    return preserve_field_states(norm)
+
+
+def sanitize_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
+    out = {
+        "project_name": safe_str(plan.get("project_name"), "Generated Plan"),
+        "units": safe_str(plan.get("units"), "ft"),
+        "actions": [],
+        "assumptions": [safe_str(x) for x in safe_list(plan.get("assumptions")) if safe_str(x)],
+        "meta": deepcopy(safe_dict(plan.get("meta"))),
+    }
+    for action in safe_list(plan.get("actions")):
+        if isinstance(action, dict):
+            out["actions"].append(sanitize_action(action))
+    return out
+
+
+def _rect_union_area(rects: List[Tuple[float, float, float, float]]) -> float:
+    if not rects:
+        return 0.0
+    xs = sorted({round(x1, 6) for x1, _, x2, _ in rects} | {round(x2, 6) for _, _, x2, _ in rects})
+    total = 0.0
+    for idx in range(len(xs) - 1):
+        x_left = xs[idx]
+        x_right = xs[idx + 1]
+        if x_right <= x_left:
+            continue
+        spans: List[Tuple[float, float]] = []
+        for rx1, ry1, rx2, ry2 in rects:
+            if rx1 < x_right and rx2 > x_left:
+                spans.append((min(ry1, ry2), max(ry1, ry2)))
+        if not spans:
+            continue
+        spans.sort()
+        merged: List[Tuple[float, float]] = [spans[0]]
+        for y1, y2 in spans[1:]:
+            last_y1, last_y2 = merged[-1]
+            if y1 <= last_y2:
+                merged[-1] = (last_y1, max(last_y2, y2))
+            else:
+                merged.append((y1, y2))
+        covered_y = sum(max(0.0, y2 - y1) for y1, y2 in merged)
+        total += (x_right - x_left) * covered_y
+    return total
+
+
+def collect_plan_stats(plan: Dict[str, Any]) -> Dict[str, Any]:
+    stats = {
+        "action_count": 0,
+        "estimated_building_area_sf": 0.0,
+        "estimated_parking_area_sf": 0.0,
+        "estimated_road_area_sf": 0.0,
+        "estimated_pipe_length_ft": 0.0,
+        "estimated_utility_length_ft": 0.0,
+        "estimated_impervious_area_sf": 0.0,
+    }
+    meta = safe_dict(plan.get("meta"))
+    manager_export = safe_dict(meta.get("manager_export"))
+    manager_metrics = safe_dict(manager_export.get("metrics"))
+    quantity_totals = safe_dict(safe_dict(meta.get("quantities")).get("totals"))
+
+    def metric_value(name: str, default: float = 0.0) -> float:
+        return safe_float(safe_dict(manager_metrics.get(name)).get("value"), default)
+
+    actions = safe_list(plan.get("actions"))
+    stats["action_count"] = len(actions)
+    building_rects: List[Tuple[float, float, float, float]] = []
+    parking_rects: List[Tuple[float, float, float, float]] = []
+    road_rects: List[Tuple[float, float, float, float]] = []
+    for action in actions:
+        task = lower_text(action.get("task"))
+        layer = safe_str(action.get("layer"), "SITE").upper()
+        label = lower_text(action.get("label"))
+        width = safe_float(action.get("width"), 0.0)
+        height = safe_float(action.get("height"), 0.0)
+        area = rect_area(width, height)
+        if task == "rectangle":
+            origin = safe_list(action.get("origin"))
+            rect = None
+            if len(origin) >= 2 and width > 0.0 and height > 0.0:
+                x = safe_float(origin[0], 0.0)
+                y = safe_float(origin[1], 0.0)
+                rect = (x, y, x + width, y + height)
+            if layer in {"BUILDING", "STRUCTURE"} or "building" in label or "bldg" in label or "pad" in label:
+                if rect is not None:
+                    building_rects.append(rect)
+                else:
+                    stats["estimated_building_area_sf"] += area
+            elif layer in {"PARKING", "PAVEMENT"} or "park" in label:
+                if rect is not None:
+                    parking_rects.append(rect)
+                else:
+                    stats["estimated_parking_area_sf"] += area
+            elif layer in {"ROAD"} or "road" in label:
+                if rect is not None:
+                    road_rects.append(rect)
+                else:
+                    stats["estimated_road_area_sf"] += area
+        points = action.get("points")
+        if isinstance(points, list) and len(points) >= 2:
+            length = polyline_length(points)
+            if layer == "PIPE":
+                stats["estimated_pipe_length_ft"] += length
+            elif layer in {"UTILITY", "WATER", "SAN", "STORM", "DRAIN"}:
+                stats["estimated_utility_length_ft"] += length
+    if building_rects:
+        stats["estimated_building_area_sf"] = _rect_union_area(building_rects)
+    if parking_rects:
+        stats["estimated_parking_area_sf"] = _rect_union_area(parking_rects)
+    if road_rects:
+        stats["estimated_road_area_sf"] = _rect_union_area(road_rects)
+    area_total = (
+        safe_float(stats["estimated_building_area_sf"])
+        + safe_float(stats["estimated_parking_area_sf"])
+        + safe_float(stats["estimated_road_area_sf"])
+    )
+    stats["estimated_impervious_area_sf"] = round(max(area_total, safe_float(stats["estimated_impervious_area_sf"])), 3)
+
+    stats["action_count"] = max(
+        int(stats["action_count"]),
+        int(round(safe_float(quantity_totals.get("action_count"), stats["action_count"]))),
+        int(round(metric_value("layout_action_count", stats["action_count"]))),
+    )
+    stats["estimated_building_area_sf"] = max(
+        safe_float(stats["estimated_building_area_sf"]),
+        safe_float(quantity_totals.get("building_area_sf"), 0.0),
+        metric_value("layout_building_area_sf", 0.0),
+    )
+    stats["estimated_parking_area_sf"] = max(
+        safe_float(stats["estimated_parking_area_sf"]),
+        safe_float(quantity_totals.get("parking_area_sf"), 0.0),
+        metric_value("layout_parking_area_sf", 0.0),
+    )
+    stats["estimated_road_area_sf"] = max(
+        safe_float(stats["estimated_road_area_sf"]),
+        safe_float(quantity_totals.get("road_area_sf"), 0.0),
+        metric_value("layout_road_area_sf", 0.0),
+    )
+    stats["estimated_pipe_length_ft"] = max(
+        safe_float(stats["estimated_pipe_length_ft"]),
+        safe_float(quantity_totals.get("pipe_length_ft"), 0.0),
+        metric_value("storm_pipe_length_ft", 0.0),
+    )
+    stats["estimated_utility_length_ft"] = max(
+        safe_float(stats["estimated_utility_length_ft"]),
+        safe_float(quantity_totals.get("utility_length_ft"), 0.0),
+        metric_value("utility_total_length_ft", 0.0),
+    )
+    stats["estimated_impervious_area_sf"] = max(
+        safe_float(stats["estimated_impervious_area_sf"]),
+        safe_float(quantity_totals.get("estimated_impervious_area_sf"), 0.0),
+        metric_value("layout_impervious_area_sf", 0.0),
+    )
+
+    for key in list(stats.keys()):
+        if isinstance(stats[key], float):
+            stats[key] = round(stats[key], 3)
+    return stats
+
+
+def normalize_parsed_payload(parsed: Dict[str, Any]) -> Dict[str, Any]:
+    norm = preserve_field_states(deepcopy(parsed))
+    norm["mode"] = lower_text(resolve_field(norm.get("mode"), "site_plan"))
+    norm["project_type"] = lower_text(resolve_field(norm.get("project_type"), "generic_site"))
+    norm["site_type"] = lower_text(resolve_field(norm.get("site_type"), resolve_field(norm.get("project_type"), "generic_site")))
+    norm["street_edge"] = lower_text(resolve_field(norm.get("street_edge"), "bottom"))
+    lot = safe_dict(unwrap_fields_for_execution(norm.get("lot")))
+    norm["lot"] = {
+        "x": safe_float(lot.get("x"), DEFAULT_LOT_X),
+        "y": safe_float(lot.get("y"), DEFAULT_LOT_Y),
+        "w": max(1.0, safe_float(lot.get("w"), DEFAULT_LOT_WIDTH)),
+        "h": max(1.0, safe_float(lot.get("h"), DEFAULT_LOT_HEIGHT)),
+    }
+    setback_resolved = resolve_field(norm.get("setback"), DEFAULT_SETBACK)
+    norm["setback"] = None if field_path_is_omitted(norm, "setback") else max(0.0, safe_float(setback_resolved, DEFAULT_SETBACK))
+    norm.setdefault("meta", {})
+    return norm
+
+
+def triple_check_parsed_payload(parsed: Dict[str, Any]) -> Dict[str, Any]:
+    checked = normalize_parsed_payload(parsed)
+    review_notes: List[str] = list(checked.get("_planner_review_notes") or [])
+    lot = safe_dict(checked.get("lot"))
+    if lot["w"] <= 0.0 or lot["h"] <= 0.0:
+        checked["lot"]["w"] = max(1.0, safe_float(lot.get("w"), DEFAULT_LOT_WIDTH))
+        checked["lot"]["h"] = max(1.0, safe_float(lot.get("h"), DEFAULT_LOT_HEIGHT))
+        review_notes.append("Corrected non-positive lot dimensions to safe defaults.")
+    if lower_text(checked.get("mode")) == "drainage":
+        drainage = safe_dict(checked.get("drainage"))
+        if safe_float(drainage.get("inlet_count"), 0) > 0 and safe_float(drainage.get("trunk_line_count"), 0) == 0:
+            drainage["trunk_line_count"] = 1
+            review_notes.append("Added default trunk_line_count=1 for drainage layout with inlets.")
+        checked["drainage"] = drainage
+    checked["_planner_review_notes"] = dedupe_keep_order(review_notes)
+    return preserve_field_states(checked)
+
+
+def choose_routing_path(parsed: Dict[str, Any]) -> RoutingDecision:
+    mode = lower_text(parsed.get("mode"))
+    reasons: List[str] = []
+    if mode in {"site_plan", "drainage", "road", "subdivision", "bridge", "pool"}:
+        reasons.append("Mode supports model-first coordinated engineering workflow.")
+        return RoutingDecision(path="model_first", reasons=reasons)
+    reasons.append("Falling back to model-first as default planner route.")
+    return RoutingDecision(path="model_first", reasons=reasons)
+
+
+def _bootstrap_manager(parsed: Dict[str, Any]) -> ProjectManager:
+    lot = safe_dict(parsed.get("lot"))
+    units_raw = safe_str(parsed.get("units"), "ft").lower()
+    units_norm = "ft" if units_raw in {"feet", "foot", "ft"} else units_raw
+    project = ProjectModel(name=safe_str(parsed.get("project_name"), "Generated Plan"), units=units_norm)
+    site_zone = rect_zone(
+        safe_float(lot.get("x"), DEFAULT_LOT_X),
+        safe_float(lot.get("y"), DEFAULT_LOT_Y),
+        max(1.0, safe_float(lot.get("w"), DEFAULT_LOT_WIDTH)),
+        max(1.0, safe_float(lot.get("h"), DEFAULT_LOT_HEIGHT)),
+        zone_type=ZoneType.SITE,
+        name="SITE",
+        meta={"source": "planner_bootstrap"},
+    )
+    project.add_zone(site_zone)
+    return ProjectManager(project)
+
+
+def _register_default_dependencies(manager: ProjectManager) -> None:
+    deps = [
+        ("layout", "grading"),
+        ("grading", "drainage"),
+        ("drainage", "storm_pipes"),
+        ("grading", "sanitary"),
+        ("storm_pipes", "sanitary"),
+        ("layout", "sanitary"),
+        ("sanitary", "utility_network"),
+        ("storm_pipes", "utility_network"),
+        ("grading", "utility_network"),
+        ("storm_pipes", "sheets"),
+        ("sanitary", "sheets"),
+        ("grading", "sheets"),
+        ("coordination_resolution", "earthwork"),
+        ("coordination_resolution", "sheets"),
+        ("coordination_resolution", "qa"),
+        ("utility_network", "earthwork"),
+        ("grading", "earthwork"),
+        ("earthwork", "qa"),
+        ("sanitary", "qa"),
+        ("utility_network", "qa"),
+        ("storm_pipes", "qa"),
+        ("drainage", "qa"),
+        ("grading", "qa"),
+        ("layout", "qa"),
+    ]
+    for src, tgt in deps:
+        manager.add_dependency(src, tgt, DependencyState.STALE, reason="Default planner dependency.")
+
+
+def _mark_dependency_state(manager: ProjectManager, source: str, target: str, state: DependencyState, reason: str = "") -> None:
+    for dep in manager.dependencies:
+        if dep.source == source and dep.target == target:
+            dep.state = state
+            dep.reason = reason
+            return
+    manager.add_dependency(source, target, state, reason=reason)
+
+
+def _lot_area(parsed: Dict[str, Any]) -> float:
+    lot = safe_dict(parsed.get("lot"))
+    return rect_area(lot.get("w"), lot.get("h"))
+
+
+def _compute_hydrology_metrics(parsed: Dict[str, Any], stats: Dict[str, Any]) -> Dict[str, Any]:
+    area_sf = max(_lot_area(parsed), 1.0)
+    impervious_sf = max(0.0, safe_float(stats.get("estimated_impervious_area_sf"), 0.0))
+    impervious_ratio = clamp(impervious_sf / area_sf, 0.0, 1.0)
+    tc = max(5.0, 5.0 + (area_sf / 25000.0) ** 0.5 * 6.0)
+    runoff_c = clamp(0.35 + impervious_ratio * 0.55, 0.35, 0.95)
+    intensity = max(2.0, PIPE_INTENSITY_IN_HR)
+    try:
+        hydrology = compute_rational_method([
+            RationalArea(name="SITE", area_ac=area_sf / 43560.0, runoff_c=runoff_c, intensity_in_hr=intensity)
+        ])
+        peak = safe_float(getattr(hydrology, "total_flow_cfs", 0.0), 0.0)
+    except Exception:
+        peak = 1.008 * (area_sf / 43560.0) * runoff_c * intensity
+    return {
+        "lot_area_sf": area_sf,
+        "impervious_ratio": impervious_ratio,
+        "tc_minutes": round(tc, 3),
+        "runoff_c": round(runoff_c, 4),
+        "intensity_in_hr": round(intensity, 3),
+        "peak_runoff_cfs": round(peak, 3),
+    }
+
+
+def _planner_score_from_manager(manager: ProjectManager) -> Tuple[float, Dict[str, float]]:
+    parking_score = safe_float(getattr(manager.metrics.get("parking_count"), "value", 0.0), 0.0)
+    earthwork_score = -abs(safe_float(getattr(manager.metrics.get("earthwork_net_cf"), "value", 0.0), 0.0)) / 500.0
+    drainage_score = safe_float(getattr(manager.metrics.get("drainage_low_point_count"), "value", 0.0), 0.0)
+    constructability = max(0.0, 20.0 - sum(1 for conflict in manager.conflicts if conflict.severity == ConflictSeverity.ERROR))
+    completeness = min(
+        20.0,
+        20.0 * sum(
+            1
+            for metric_name in ("grading_success", "storm_pipe_count", "utility_route_count", "drainage_low_point_count", "earthwork_success")
+            if manager.metrics.get(metric_name) is not None
+        ),
+    )
+    qa_error_penalty = safe_float(getattr(manager.metrics.get("qa_error_count"), "value", 0.0), 0.0) * 20.0
+    qa_warning_penalty = safe_float(getattr(manager.metrics.get("qa_warning_count"), "value", 0.0), 0.0) * 3.5
+    pipe_ratio = safe_float(getattr(manager.metrics.get("pipe_max_capacity_ratio"), "value", 0.0), 0.0)
+    pipe_penalty = max(0.0, pipe_ratio - 0.95) * 50.0
+    conflict_penalty = sum(10.0 for conflict in manager.conflicts if not conflict.resolved)
+    weighted = {
+        "parking": parking_score * 1.15,
+        "constructability": constructability * 1.05,
+        "earthwork": earthwork_score * 1.05,
+        "drainage": drainage_score * 1.10,
+        "completeness": completeness * 1.0,
+        "qa_warning_penalty": -qa_warning_penalty,
+        "qa_error_penalty": -qa_error_penalty,
+        "pipe_penalty": -pipe_penalty,
+        "conflict_penalty": -conflict_penalty,
+    }
+    return sum(weighted.values()), weighted
