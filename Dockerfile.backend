@@ -1,0 +1,12 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY . /app
+
+RUN python -m pip install --upgrade pip
+RUN python -m pip install -r requirements_backend.txt
+
+ENV PYTHONPATH=/app
+
+CMD ["python", "-m", "uvicorn", "backend.api.app:app", "--host", "0.0.0.0", "--port", "8080"]
