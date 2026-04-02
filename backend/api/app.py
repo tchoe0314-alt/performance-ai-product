@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from base64 import b64encode
 import mimetypes
@@ -448,8 +449,35 @@ def _looks_like_explicit_design_request(text: str) -> bool:
     return False
 
 
+def _is_explicit_plan_tool_request(text: str, tool: str) -> bool:
+    normalized = text.strip().lower()
+    explicit_phrases = {
+        "fix": [
+            "fix this",
+            "fix the design",
+            "fix issues",
+            "fix the issues",
+            "resolve the issues",
+            "resolve conflicts",
+            "run a fix pass",
+        ],
+        "improve": [
+            "improve this",
+            "improve the design",
+            "make this better",
+            "optimize this",
+            "run an improvement pass",
+        ],
+    }
+    phrases = explicit_phrases.get(tool, [])
+    if any(phrase in normalized for phrase in phrases):
+        return True
+    return normalized.startswith(f"{tool} ")
+
+
 def _clarifying_design_reply(context: Dict[str, Any]) -> str:
     project_type = str(context.get("project_type") or "").strip()
+    strategy_mode = str(context.get("strategy_mode") or "hybrid").strip().lower()
     missing: List[str] = []
     if not project_type:
         missing.append("what kind of site you want")
@@ -458,10 +486,225 @@ def _clarifying_design_reply(context: Dict[str, Any]) -> str:
         missing.append("rough lot size")
     missing.append("what systems matter most")
     ask = ", ".join(missing[:3])
+    assist_line = (
+        " If you want, I can help fill in the blanks once you confirm that you want AI assistance."
+        if strategy_mode in {"assisted", "hybrid"}
+        else ""
+    )
     return (
         "I can help with that. Before I generate a design, tell me "
-        f"{ask}. For example: site type, approximate lot dimensions, parking target, and whether roads, grading, drainage, or utilities should be included."
+        f"{ask}. For example: site type, approximate lot dimensions, parking target, and whether roads, grading, drainage, or utilities should be included.{assist_line}"
     )
+
+
+def _safe_positive_number(value: Any) -> Optional[float]:
+    try:
+        parsed = float(value)
+        return parsed if parsed > 0 else None
+    except Exception:
+        return None
+
+
+def _message_has_dimension_signal(message: str) -> bool:
+    lowered = message.lower()
+    patterns = [
+        r"\b\d+(?:\.\d+)?\s*(?:x|by)\s*\d+(?:\.\d+)?\b",
+        r"\b\d+(?:\.\d+)?\s*(?:ft|feet|m|meters|ac|acre|acres)\b",
+        r"\b\d+(?:\.\d+)?\s*%\s*slope\b",
+    ]
+    return any(re.search(pattern, lowered) for pattern in patterns)
+
+
+def _infer_project_type_from_message(message: str) -> str:
+    lowered = message.lower()
+    project_keywords = {
+        "mixed_use": ["mixed-use", "mixed use"],
+        "multifamily": ["multifamily", "multi-family", "apartment", "apartments"],
+        "retail": ["retail", "shopping center"],
+        "office": ["office", "office park"],
+        "industrial": ["industrial", "warehouse", "distribution"],
+        "commercial_pad": ["commercial", "pad site", "commercial pad"],
+    }
+    for project_type, keywords in project_keywords.items():
+        if any(keyword in lowered for keyword in keywords):
+            return project_type
+    return ""
+
+
+def _build_design_readiness_reply(
+    *,
+    context: Dict[str, Any],
+    inferred_project_type: str,
+    missing: List[str],
+) -> str:
+    strategy_mode = str(context.get("strategy_mode") or "hybrid").strip().lower()
+    starter_parts: List[str] = []
+    if inferred_project_type:
+        starter_parts.append(
+            f"I understand that you want a {inferred_project_type.replace('_', ' ')} design."
+        )
+    else:
+        starter_parts.append("I can help with that design.")
+    missing_text = ", ".join(missing[:4])
+    assist_line = (
+        " If you want, I can help fill in the blanks once you tell me which assumptions you want Civora to make."
+        if strategy_mode in {"assisted", "hybrid"}
+        else ""
+    )
+    return (
+        f"{' '.join(starter_parts)} Before I generate a real coordinated plan, I still need {missing_text}. "
+        "Give me the missing details, or upload a sketch/site image if you have one."
+        f"{assist_line}"
+    )
+
+
+def _design_readiness_check(message: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    lowered = message.lower()
+    inferred_project_type = str(context.get("project_type") or "").strip() or _infer_project_type_from_message(
+        message
+    )
+    lot_width = _safe_positive_number(context.get("lot_width"))
+    lot_height = _safe_positive_number(context.get("lot_height"))
+    parking_count = _safe_positive_number(context.get("parking_count"))
+    disciplines = context.get("disciplines") or {}
+    requires_surface_context = (
+        "grading" in lowered
+        or "contour" in lowered
+        or "storm" in lowered
+        or "drainage" in lowered
+        or bool(disciplines.get("grading"))
+        or bool(disciplines.get("drainage"))
+    )
+    topology_signal = any(
+        phrase in lowered
+        for phrase in [
+            "sloped",
+            "slope",
+            "survey",
+            "contour",
+            "existing grade",
+            "topography",
+            "terrain",
+            "northwest to southeast",
+            "nw to se",
+        ]
+    ) or _message_has_dimension_signal(message)
+    building_program_signal = any(
+        phrase in lowered
+        for phrase in [
+            "building",
+            "buildings",
+            "parking",
+            "pad",
+            "roadway",
+            "road",
+            "mixed-use",
+            "mixed use",
+        ]
+    )
+    broad_engineering_scope = sum(
+        1
+        for phrase in [
+            "grading",
+            "storm",
+            "drainage",
+            "sanitary",
+            "water",
+            "utility",
+            "utilities",
+            "detention basin",
+            "fully coordinated",
+            "real-world",
+        ]
+        if phrase in lowered
+    ) >= 4
+
+    missing: List[str] = []
+    if not inferred_project_type:
+        missing.append("the site type or land use")
+    if not (lot_width and lot_height) and not _message_has_dimension_signal(message):
+        missing.append("approximate lot dimensions or site area")
+    if not parking_count and not building_program_signal:
+        missing.append("the rough building or parking program")
+    if requires_surface_context and not topology_signal:
+        missing.append("terrain or slope information")
+
+    if not missing:
+        return None
+
+    if broad_engineering_scope or len(message.split()) >= 25 or requires_surface_context:
+        return {
+            "needs_clarification": True,
+            "assistant_message": _build_design_readiness_reply(
+                context=context,
+                inferred_project_type=inferred_project_type,
+                missing=missing,
+            ),
+            "missing_requirements": missing,
+            "reason": "Minimum engineering design context is incomplete",
+        }
+
+    return None
+
+
+def _is_well_specified_design_request(message: str, context: Dict[str, Any]) -> bool:
+    lowered = message.lower()
+    if not _looks_like_explicit_design_request(message):
+        return False
+
+    inferred_project_type = str(context.get("project_type") or "").strip() or _infer_project_type_from_message(
+        message
+    )
+    lot_width = _safe_positive_number(context.get("lot_width"))
+    lot_height = _safe_positive_number(context.get("lot_height"))
+    has_site_size = bool(lot_width and lot_height) or _message_has_dimension_signal(message) or any(
+        token in lowered for token in ["acre", "acres", "site area", "lot area"]
+    )
+    has_topography = any(
+        phrase in lowered
+        for phrase in [
+            "sloped",
+            "slope",
+            "contour",
+            "spot elevations",
+            "topography",
+            "terrain",
+            "existing grade",
+            "nw→se",
+            "nw->se",
+            "nw to se",
+        ]
+    ) or bool(re.search(r"\b\d+(?:\.\d+)?\s*%\s*slope\b", lowered))
+    has_program = any(
+        phrase in lowered
+        for phrase in [
+            "building",
+            "buildings",
+            "units",
+            "multifamily",
+            "commercial pad",
+            "parking",
+            "stalls",
+            "road",
+            "roads",
+            "cul-de-sac",
+        ]
+    )
+    systems_count = sum(
+        1
+        for phrase in [
+            "grading",
+            "storm",
+            "drainage",
+            "sanitary",
+            "water",
+            "utility",
+            "utilities",
+            "detention basin",
+        ]
+        if phrase in lowered
+    )
+    return bool(inferred_project_type) and has_site_size and has_topography and has_program and systems_count >= 3
 
 
 def _fallback_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -509,7 +752,7 @@ def _fallback_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             "confidence": 0.6,
             "control_overrides": {},
         }
-    if "fix" in lowered:
+    if _is_explicit_plan_tool_request(message, "fix"):
         return {
             "success": True,
             "intent": "fix",
@@ -521,7 +764,7 @@ def _fallback_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             "confidence": 0.6,
             "control_overrides": {},
         }
-    if "improve" in lowered or "better" in lowered or "optimize" in lowered:
+    if _is_explicit_plan_tool_request(message, "improve"):
         return {
             "success": True,
             "intent": "improve",
@@ -531,6 +774,31 @@ def _fallback_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             "needs_clarification": False,
             "reason": "Improve request detected",
             "confidence": 0.6,
+            "control_overrides": {},
+        }
+    readiness_issue = _design_readiness_check(message, context)
+    if readiness_issue:
+        return {
+            "success": True,
+            "intent": "conversation",
+            "assistant_message": readiness_issue["assistant_message"],
+            "run_mode": "none",
+            "design_prompt": "",
+            "needs_clarification": True,
+            "reason": readiness_issue["reason"],
+            "confidence": 0.9,
+            "control_overrides": {},
+        }
+    if _is_well_specified_design_request(message, context):
+        return {
+            "success": True,
+            "intent": "design",
+            "assistant_message": "I have enough engineering context to generate a coordinated design from that brief.",
+            "run_mode": "run",
+            "design_prompt": message,
+            "needs_clarification": False,
+            "reason": "Well-specified engineering design brief detected",
+            "confidence": 0.88,
             "control_overrides": {},
         }
     if strategy_mode == "manual":
@@ -588,6 +856,7 @@ def _run_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         "In manual mode, be conservative and ask for clarification unless the design request is explicit. "
         "If the user is asking for a design but the request is underspecified, do not bluff or invent a full plan. "
         "Set needs_clarification=true and write a short, natural assistant message that asks for the next most important missing details, such as site type, lot size, parking target, building size, road needs, grading needs, drainage needs, utility scope, or image/sketch availability. "
+        "In assisted or hybrid mode, when key details are missing, you may ask whether the user wants Civora to help fill in those blanks instead of guessing outright. "
         "Ask only the smallest useful set of follow-up questions needed to move the design forward. "
         "For casual conversation, answer naturally and briefly like a helpful AI teammate. "
         "Return concise, helpful assistant wording with a calm professional personality. "
@@ -620,6 +889,32 @@ def _run_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         data = json.loads(response.output_text)
         if not isinstance(data, dict):
             raise ValueError("Chat decision response was not an object.")
+        if str(data.get("intent") or "") == "design":
+            readiness_issue = _design_readiness_check(message, context)
+            if readiness_issue:
+                data.update(
+                    {
+                        "intent": "conversation",
+                        "assistant_message": readiness_issue["assistant_message"],
+                        "run_mode": "none",
+                        "design_prompt": "",
+                        "needs_clarification": True,
+                        "reason": readiness_issue["reason"],
+                        "confidence": min(float(data.get("confidence") or 0.0), 0.92),
+                    }
+                )
+        elif _is_well_specified_design_request(message, context):
+            data.update(
+                {
+                    "intent": "design",
+                    "assistant_message": "I have enough engineering context to generate a coordinated design from that brief.",
+                    "run_mode": "run",
+                    "design_prompt": message,
+                    "needs_clarification": False,
+                    "reason": "Well-specified engineering design brief detected",
+                    "confidence": max(float(data.get("confidence") or 0.0), 0.88),
+                }
+            )
         data["success"] = True
         return data
     except HTTPException:
