@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -241,6 +241,36 @@ function createWelcomeMessage(): ChatMessage {
     "assistant",
     "Hi, I’m Civora. I can help you think through a site, answer questions, and turn design requests into a plan when you’re ready. Tell me what you want to change, or just ask me a question first.",
   );
+}
+
+function guessProjectTitle(prompt: string): string {
+  const cleaned = prompt
+    .replace(/\s+/g, " ")
+    .replace(/^[^a-zA-Z0-9]+/, "")
+    .trim();
+  if (!cleaned) return "New Chat";
+
+  const normalized = cleaned
+    .replace(/^(please|can you|could you|help me|i want to|let's|lets)\s+/i, "")
+    .replace(/^(create|design|generate|make|build|update|change|move|add)\s+/i, "")
+    .trim();
+
+  const words = normalized.split(" ").filter(Boolean).slice(0, 6);
+  const title = words
+    .join(" ")
+    .replace(/[.?!,:;]+$/g, "")
+    .trim();
+
+  if (!title) return "New Chat";
+  return title.charAt(0).toUpperCase() + title.slice(1);
+}
+
+function slugifyFileName(value: string): string {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "civora-ai-plan";
 }
 
 function formatChatTimestamp(value: number) {
@@ -560,6 +590,8 @@ export default function PerformanceAIDashboard() {
   const [imageName, setImageName] = useState("");
   const [siteName, setSiteName] = useState("");
   const [fileName, setFileName] = useState("");
+  const [siteNameAuto, setSiteNameAuto] = useState(true);
+  const [fileNameAuto, setFileNameAuto] = useState(true);
   const [lotWidth, setLotWidth] = useState("");
   const [lotHeight, setLotHeight] = useState("");
   const [buildingWidth, setBuildingWidth] = useState("");
@@ -592,6 +624,7 @@ export default function PerformanceAIDashboard() {
   const [activePlanTool, setActivePlanTool] = useState<PlanToolMode>("run");
   const [selectedPlanToolPanel, setSelectedPlanToolPanel] =
     useState<"explain" | "fix" | "improve">("explain");
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
   const disciplineToggles: DisciplineToggle[] = [
     {
@@ -835,6 +868,15 @@ export default function PerformanceAIDashboard() {
     setChatMessages((current) => [...current, createChatMessage(role, content, kind)]);
   };
 
+  useEffect(() => {
+    const node = chatScrollRef.current;
+    if (!node) return;
+    node.scrollTo({
+      top: node.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [chatMessages]);
+
   const applyProjectInput = (projectInput: any) => {
     if (!projectInput || typeof projectInput !== "object") {
       return;
@@ -873,6 +915,8 @@ export default function PerformanceAIDashboard() {
                 : "message",
           }))
       : [];
+    const autoNamed = Boolean(projectInput.meta?.auto_named);
+    const autoFileNamed = Boolean(projectInput.meta?.auto_file_named);
 
     const nextMode = projectInput.input_mode ?? (projectInput.strict_mode ? "manual" : "hybrid");
     if (nextMode === "manual" || nextMode === "assisted" || nextMode === "hybrid") {
@@ -886,6 +930,8 @@ export default function PerformanceAIDashboard() {
     setUploadedImagePreviewUrl("");
     setSiteName(manualFields.project_name ?? "");
     setFileName(manualFields.file_name ?? manualFields.project_name ?? "");
+    setSiteNameAuto(autoNamed || !manualFields.project_name);
+    setFileNameAuto(autoFileNamed || !(manualFields.file_name ?? manualFields.project_name));
     setUnits(manualFields.units ?? "ft");
     setProjectType(manualFields.project_type ?? "");
     setLotWidth(String(lot.w ?? ""));
@@ -1212,6 +1258,8 @@ export default function PerformanceAIDashboard() {
       return;
     }
 
+    await ensureProjectDraft(trimmedPrompt);
+    setPrompt("");
     appendChatMessage("user", trimmedPrompt);
     setBusy(true);
     setActivePlanTool("run");
@@ -1227,8 +1275,23 @@ export default function PerformanceAIDashboard() {
       const overrides = decision.control_overrides ?? {};
       applyControlOverrides(overrides);
       const nextStrategy = overrides.strategyMode ?? strategyMode;
+      const shouldAutoName = siteNameAuto || !siteName.trim();
+      const shouldAutoFileName = fileNameAuto || !fileName.trim();
+      const generatedTitle = shouldAutoName ? guessProjectTitle(trimmedPrompt) : siteName.trim();
+      const generatedFileName = shouldAutoFileName
+        ? slugifyFileName(generatedTitle || trimmedPrompt)
+        : fileName.trim();
+      if (shouldAutoName && generatedTitle) {
+        setSiteName(generatedTitle);
+        setSiteNameAuto(true);
+      }
+      if (shouldAutoFileName) {
+        setFileName(generatedFileName);
+        setFileNameAuto(true);
+      }
 
       if (
+        decision.needs_clarification ||
         decision.intent === "conversation" ||
         decision.intent === "settings" ||
         decision.intent === "explain"
@@ -1240,12 +1303,18 @@ export default function PerformanceAIDashboard() {
             : decision.assistant_message,
           decision.intent === "explain" ? "explanation" : "message",
         );
-        setPrompt("");
         setStatusMessage(
           decision.needs_clarification
             ? "Civora AI is asking for a little more detail before running a design."
             : "Civora AI responded in chat without rerunning the planner.",
         );
+        await saveProject({
+          silent: true,
+          nameOverride: generatedTitle || undefined,
+          fileNameOverride: generatedFileName || undefined,
+          autoNamedOverride: shouldAutoName,
+          autoFileNamedOverride: shouldAutoFileName,
+        });
         setBusy(false);
         setActivePlanTool("run");
         return;
@@ -1277,6 +1346,13 @@ export default function PerformanceAIDashboard() {
           assistantPrefix: decision.assistant_message,
           clearPromptOnSuccess: true,
         });
+        await saveProject({
+          silent: true,
+          nameOverride: generatedTitle || undefined,
+          fileNameOverride: generatedFileName || undefined,
+          autoNamedOverride: shouldAutoName,
+          autoFileNamedOverride: shouldAutoFileName,
+        });
         return;
       }
 
@@ -1285,12 +1361,18 @@ export default function PerformanceAIDashboard() {
           "assistant",
           decision.assistant_message || "Tell me what you want me to design or change.",
         );
-        setPrompt("");
         setStatusMessage(
           nextStrategy === "manual"
             ? "Civora AI needs a more explicit design request before running in Manual mode."
             : "Civora AI needs a little more direction before generating a design.",
         );
+        await saveProject({
+          silent: true,
+          nameOverride: generatedTitle || undefined,
+          fileNameOverride: generatedFileName || undefined,
+          autoNamedOverride: shouldAutoName,
+          autoFileNamedOverride: shouldAutoFileName,
+        });
         setBusy(false);
         setActivePlanTool("run");
         return;
@@ -1308,6 +1390,13 @@ export default function PerformanceAIDashboard() {
         },
         assistantPrefix: decision.assistant_message,
         clearPromptOnSuccess: true,
+      });
+      await saveProject({
+        silent: true,
+        nameOverride: generatedTitle || undefined,
+        fileNameOverride: generatedFileName || undefined,
+        autoNamedOverride: shouldAutoName,
+        autoFileNamedOverride: shouldAutoFileName,
       });
     } catch (error) {
       appendChatMessage(
@@ -1347,30 +1436,86 @@ export default function PerformanceAIDashboard() {
     }
   };
 
-  const saveProject = async () => {
+  const saveProject = async ({
+    silent = false,
+    projectIdOverride,
+    nameOverride,
+    fileNameOverride,
+    projectInputOverride,
+    latestResultOverride,
+    autoNamedOverride,
+    autoFileNamedOverride,
+  }: {
+    silent?: boolean;
+    projectIdOverride?: string | null;
+    nameOverride?: string;
+    fileNameOverride?: string;
+    projectInputOverride?: any;
+    latestResultOverride?: any;
+    autoNamedOverride?: boolean;
+    autoFileNamedOverride?: boolean;
+  } = {}) => {
     if (!token) return;
-    setBusy(true);
+    if (!silent) setBusy(true);
+    const resolvedName = (nameOverride ?? siteName).trim() || "New Chat";
+    const resolvedFileName = (fileNameOverride ?? fileName).trim();
+    const projectInputToSave = projectInputOverride
+      ? {
+          ...projectInputOverride,
+          manual_fields: {
+            ...(projectInputOverride.manual_fields ?? {}),
+            project_name: resolvedName,
+            file_name: resolvedFileName,
+          },
+          meta: {
+            ...(projectInputOverride.meta ?? {}),
+            auto_named: autoNamedOverride ?? siteNameAuto,
+            auto_file_named: autoFileNamedOverride ?? fileNameAuto,
+          },
+        }
+      : {
+          ...payloadPreview,
+          manual_fields: {
+            ...(payloadPreview.manual_fields ?? {}),
+            project_name: resolvedName,
+            file_name: resolvedFileName,
+          },
+          meta: {
+            ...(payloadPreview.meta ?? {}),
+            auto_named: autoNamedOverride ?? siteNameAuto,
+            auto_file_named: autoFileNamedOverride ?? fileNameAuto,
+          },
+        };
     try {
       const data = await postJson<{ project: ProjectRecord }>(
         "/api/projects",
         {
-          project_id: projectId || null,
-          name: siteName,
-          project_input: payloadPreview,
-          latest_result: backendResult ?? {},
+          project_id:
+            projectIdOverride !== undefined ? projectIdOverride : projectId || null,
+          name: resolvedName,
+          project_input: projectInputToSave,
+          latest_result: latestResultOverride ?? backendResult ?? {},
+          metadata: {
+            auto_named: autoNamedOverride ?? siteNameAuto,
+            auto_file_named: autoFileNamedOverride ?? fileNameAuto,
+          },
         },
         { token },
       );
       setProjectId(data.project.project_id);
       setCurrentProject(data.project);
       await refreshProjects();
-      setStatusMessage(`Saved project "${data.project.name}".`);
+      if (!silent) {
+        setStatusMessage(`Saved project "${data.project.name}".`);
+      }
     } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : "Project save failed.",
-      );
+      if (!silent) {
+        setStatusMessage(
+          error instanceof Error ? error.message : "Project save failed.",
+        );
+      }
     } finally {
-      setBusy(false);
+      if (!silent) setBusy(false);
     }
   };
 
@@ -1407,6 +1552,30 @@ export default function PerformanceAIDashboard() {
         error instanceof Error ? error.message : "Project load failed.",
       );
     }
+  };
+
+  const ensureProjectDraft = async (initialPrompt?: string) => {
+    if (!token || projectId) return;
+    const generatedName =
+      siteName.trim() || (initialPrompt ? guessProjectTitle(initialPrompt) : "New Chat");
+    const generatedFileName =
+      fileName.trim() || (initialPrompt ? slugifyFileName(generatedName) : "");
+    if (!siteName.trim()) {
+      setSiteName(generatedName);
+      setSiteNameAuto(true);
+    }
+    if (!fileName.trim()) {
+      setFileName(generatedFileName);
+      setFileNameAuto(true);
+    }
+    await saveProject({
+      silent: true,
+      projectIdOverride: null,
+      nameOverride: generatedName,
+      fileNameOverride: generatedFileName,
+      autoNamedOverride: !siteName.trim(),
+      autoFileNamedOverride: !fileName.trim(),
+    });
   };
 
   const deleteProject = async (id: string) => {
@@ -1563,7 +1732,7 @@ export default function PerformanceAIDashboard() {
     setStatusMessage("Added the latest plan explanation to the conversation.");
   };
 
-  const handleNewChat = () => {
+  const handleNewChat = async () => {
     setProjectId("");
     setCurrentProject(null);
     setProjectToOpen(projects[0]?.project_id ?? "");
@@ -1580,14 +1749,16 @@ export default function PerformanceAIDashboard() {
     setIssues(defaultIssues);
     setSiteName("");
     setFileName("");
+    setSiteNameAuto(true);
+    setFileNameAuto(true);
     setProjectType("");
     setUnits("ft");
-    setLotWidth("220");
-    setLotHeight("180");
-    setBuildingWidth("100");
-    setBuildingDepth("80");
-    setSetback("10");
-    setParkingCount("36");
+    setLotWidth("");
+    setLotHeight("");
+    setBuildingWidth("");
+    setBuildingDepth("");
+    setSetback("");
+    setParkingCount("");
     setRoads(true);
     setGrading(true);
     setDrainage(true);
@@ -1595,6 +1766,42 @@ export default function PerformanceAIDashboard() {
     setStrategyMode("hybrid");
     setChatMessages([createWelcomeMessage()]);
     setStatusMessage("Started a new Civora AI workspace.");
+    if (token) {
+      await saveProject({
+        silent: true,
+        projectIdOverride: null,
+        nameOverride: "New Chat",
+        fileNameOverride: "",
+        projectInputOverride: {
+          input_mode: "hybrid",
+          strict_mode: false,
+          prompt_text: null,
+          image_path: null,
+          meta: {
+            chat_thread: [createWelcomeMessage()],
+            auto_named: true,
+            auto_file_named: true,
+          },
+          manual_fields: {
+            project_name: "New Chat",
+            file_name: "",
+            units: "ft",
+            project_type: "",
+            lot: { x: 0, y: 0, w: 0, h: 0 },
+            setback: 0,
+            building_width: 0,
+            building_depth: 0,
+            site_plan: { parking_count: 0 },
+            disciplines: ["corridor", "grading", "drainage", "utility"],
+          },
+          allow_ai_fill_for_blanks: true,
+        },
+        latestResultOverride: {},
+        autoNamedOverride: true,
+        autoFileNamedOverride: true,
+      });
+      await refreshProjects();
+    }
   };
 
   const downloadBlob = (blob: Blob, filename: string) => {
@@ -2072,13 +2279,19 @@ export default function PerformanceAIDashboard() {
 
               <TextInput
                 value={siteName}
-                onChange={(e) => setSiteName(e.target.value)}
+                onChange={(e) => {
+                  setSiteName(e.target.value);
+                  setSiteNameAuto(false);
+                }}
                 placeholder="Project name"
               />
 
               <TextInput
                 value={fileName}
-                onChange={(e) => setFileName(e.target.value)}
+                onChange={(e) => {
+                  setFileName(e.target.value);
+                  setFileNameAuto(false);
+                }}
                 placeholder="File name"
               />
               </div>
@@ -2102,7 +2315,10 @@ export default function PerformanceAIDashboard() {
             </div>
 
             <div className="rounded-[28px] border border-slate-200 bg-white">
-              <div className="max-h-[420px] space-y-4 overflow-y-auto p-4 md:p-6">
+              <div
+                ref={chatScrollRef}
+                className="max-h-[420px] space-y-4 overflow-y-auto p-4 md:p-6"
+              >
                 {chatMessages.map((message) => (
                   <div
                     key={message.id}
@@ -2142,6 +2358,14 @@ export default function PerformanceAIDashboard() {
                   <TextArea
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        if (!busy && (prompt.trim() || imageName)) {
+                          void runOrchestrator("run");
+                        }
+                      }
+                    }}
                     placeholder="Message Civora AI with what you want to create or change..."
                     className="h-[150px] min-h-[150px] max-h-[240px] border-0 bg-transparent px-1 py-1 shadow-none focus:ring-0"
                   />
@@ -2190,7 +2414,7 @@ export default function PerformanceAIDashboard() {
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={saveProject}
+                        onClick={() => void saveProject()}
                         disabled={busy}
                         className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
