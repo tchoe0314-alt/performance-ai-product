@@ -205,6 +205,9 @@ CAD_BLOCKS = {
     "CIVIL_OUTFALL",
     "CIVIL_JUNCTION",
 }
+SUPPRESSED_AUTO_LABEL_LAYERS = {"PIPE", "SAN", "EG_CONTOUR", "FG_CONTOUR", "DRAIN_FLOW", "BASIN_BOUNDARY", "STRUCTURE", "UTILITY"}
+SUPPRESSED_TEXT_LAYERS = {"EG_CONTOUR", "FG_CONTOUR", "DRAIN_FLOW", "LOW_POINTS"}
+MODELSPACE_DEBUG_LAYERS = {"GRID", "AXIS", "VIEWPORT", "SHEET", "MATCHLINE", "HATCH"}
 
 
 def get_layer(action: Dict[str, Any], fallback: str) -> str:
@@ -314,6 +317,93 @@ def _polyline_center(points: Iterable[Tuple[float, float]]) -> Tuple[float, floa
     return cx, cy
 
 
+def _polyline_angle(points: Sequence[Tuple[float, float]]) -> float:
+    cleaned = _dedupe_consecutive_points(list(points))
+    if len(cleaned) < 2:
+        return 0.0
+    best_start = cleaned[0]
+    best_end = cleaned[1]
+    best_length = -1.0
+    for idx in range(1, len(cleaned)):
+        start = cleaned[idx - 1]
+        end = cleaned[idx]
+        length = math.hypot(end[0] - start[0], end[1] - start[1])
+        if length > best_length:
+            best_length = length
+            best_start = start
+            best_end = end
+    angle = math.degrees(math.atan2(best_end[1] - best_start[1], best_end[0] - best_start[0]))
+    if angle > 90.0:
+        angle -= 180.0
+    elif angle < -90.0:
+        angle += 180.0
+    return angle
+
+
+def _polyline_midpoint_and_normal(points: Sequence[Tuple[float, float]]) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+    cleaned = _dedupe_consecutive_points(list(points))
+    if len(cleaned) < 2:
+        return (0.0, 0.0), (0.0, 1.0)
+    segment_lengths: List[float] = []
+    total = 0.0
+    for idx in range(1, len(cleaned)):
+        start = cleaned[idx - 1]
+        end = cleaned[idx]
+        length = math.hypot(end[0] - start[0], end[1] - start[1])
+        segment_lengths.append(length)
+        total += length
+    if total <= 1e-9:
+        start, end = cleaned[0], cleaned[-1]
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        norm = math.hypot(dx, dy) or 1.0
+        return ((start[0] + end[0]) / 2.0, (start[1] + end[1]) / 2.0), (-dy / norm, dx / norm)
+    target = total / 2.0
+    running = 0.0
+    for idx, length in enumerate(segment_lengths, start=1):
+        if running + length >= target:
+            start = cleaned[idx - 1]
+            end = cleaned[idx]
+            ratio = (target - running) / max(length, 1e-9)
+            mid_x = start[0] + (end[0] - start[0]) * ratio
+            mid_y = start[1] + (end[1] - start[1]) * ratio
+            dx = end[0] - start[0]
+            dy = end[1] - start[1]
+            norm = math.hypot(dx, dy) or 1.0
+            return (mid_x, mid_y), (-dy / norm, dx / norm)
+        running += length
+    start, end = cleaned[-2], cleaned[-1]
+    dx = end[0] - start[0]
+    dy = end[1] - start[1]
+    norm = math.hypot(dx, dy) or 1.0
+    return ((start[0] + end[0]) / 2.0, (start[1] + end[1]) / 2.0), (-dy / norm, dx / norm)
+
+
+def _text_box(x: float, y: float, text: str, height: float, rotation: float = 0.0) -> Tuple[float, float, float, float]:
+    text = safe_text(text, "")
+    width = max(height * 0.72 * max(len(text), 1), height * 2.0)
+    box_h = max(height * 1.6, 2.2)
+    angle = math.radians(rotation)
+    cos_a = abs(math.cos(angle))
+    sin_a = abs(math.sin(angle))
+    rot_w = width * cos_a + box_h * sin_a
+    rot_h = width * sin_a + box_h * cos_a
+    return (x - 0.8, y - 0.8, x + rot_w + 0.8, y + rot_h + 0.8)
+
+
+def _boxes_overlap(a: Tuple[float, float, float, float], b: Tuple[float, float, float, float], padding: float = 0.0) -> bool:
+    return not (
+        a[2] + padding < b[0]
+        or b[2] + padding < a[0]
+        or a[3] + padding < b[1]
+        or b[3] + padding < a[1]
+    )
+
+
+def _point_in_box(point: Tuple[float, float], box: Tuple[float, float, float, float], padding: float = 0.0) -> bool:
+    return (box[0] - padding) <= point[0] <= (box[2] + padding) and (box[1] - padding) <= point[1] <= (box[3] + padding)
+
+
 def _normalize_points(points: Iterable[Tuple[float, float]]) -> List[Tuple[float, float]]:
     out: List[Tuple[float, float]] = []
     for p in points:
@@ -397,7 +487,7 @@ def _draw_rectangle(msp, action: Dict[str, Any], layer: str) -> None:
         return
     pts = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
     msp.add_lwpolyline(pts, close=True, dxfattribs={"layer": layer})
-    if label:
+    if label and layer not in SUPPRESSED_AUTO_LABEL_LAYERS:
         add_text(msp, label, x + w / 2.0, y + h / 2.0, 1.4, "ANNO")
 
 
@@ -408,7 +498,7 @@ def _draw_polyline(msp, action: Dict[str, Any], layer: str) -> None:
     if len(pts) < 2:
         return
     msp.add_lwpolyline(pts, close=closed, dxfattribs={"layer": layer})
-    if label:
+    if label and layer not in SUPPRESSED_AUTO_LABEL_LAYERS:
         cx, cy = _polyline_center(pts)
         add_text(msp, label, cx, cy, 1.0, "ANNO")
 
@@ -419,7 +509,7 @@ def _draw_polygon(msp, action: Dict[str, Any], layer: str) -> None:
     if len(pts) < 3:
         return
     msp.add_lwpolyline(pts, close=True, dxfattribs={"layer": layer})
-    if label:
+    if label and layer not in SUPPRESSED_AUTO_LABEL_LAYERS:
         cx, cy = _polyline_center(pts)
         add_text(msp, label, cx, cy, 1.0, "ANNO")
 
@@ -431,7 +521,7 @@ def _draw_circle(msp, action: Dict[str, Any], layer: str) -> None:
     if r <= 0:
         return
     msp.add_circle((cx, cy), r, dxfattribs={"layer": layer})
-    if label:
+    if label and layer not in SUPPRESSED_AUTO_LABEL_LAYERS:
         add_text(msp, label, cx, cy, 1.0, "ANNO")
 
 
@@ -444,13 +534,17 @@ def _draw_arc(msp, action: Dict[str, Any], layer: str) -> None:
     if r <= 0:
         return
     msp.add_arc(center=(cx, cy), radius=r, start_angle=a1, end_angle=a2, dxfattribs={"layer": layer})
-    if label:
+    if label and layer not in SUPPRESSED_AUTO_LABEL_LAYERS:
         add_text(msp, label, cx, cy, 1.0, "ANNO")
 
 
 def _draw_text_note(msp, action: Dict[str, Any], layer: str) -> None:
+    if layer in SUPPRESSED_TEXT_LAYERS:
+        return
     x, y = safe_origin(action)
     txt = safe_text(action.get("text"), "")
+    if not txt:
+        return
     h = max(safe_num(action.get("text_height"), 1.0), 0.35)
     add_text(msp, txt, x, y, h, layer)
 
@@ -471,6 +565,314 @@ def _draw_point_marker(msp, action: Dict[str, Any], layer: str) -> None:
     msp.add_line((x, y - size), (x, y + size), dxfattribs={"layer": layer})
     if label:
         add_text(msp, label, x + size + 0.2, y + size + 0.2, 0.9, "ANNO")
+
+
+def _is_debug_action(action: Dict[str, Any]) -> bool:
+    layer = get_layer(action, "SITE")
+    if layer in MODELSPACE_DEBUG_LAYERS or layer.startswith("SKETCH_"):
+        return True
+    text = safe_text(action.get("text"), "")
+    label = safe_text(action.get("label"), "")
+    if layer in {"EG_CONTOUR", "FG_CONTOUR"} and safe_text(action.get("task"), "").lower() == "text_note":
+        return True
+    if layer == "DRAIN_FLOW" and ("FLOW-" in text.upper() or "FLOW-" in label.upper()):
+        return True
+    return False
+
+
+def _surface_contour_polylines(surface: Dict[str, Any], max_levels: int = 6) -> List[List[Tuple[float, float]]]:
+    rec = safe_dict(surface)
+    values = [safe_list(row) for row in safe_list(rec.get("values"))]
+    if len(values) < 2 or len(values[0]) < 2:
+        return []
+    cell = max(1.0, safe_num(rec.get("cell_size"), 1.0))
+    x_min = safe_num(rec.get("x_min"), 0.0)
+    y_min = safe_num(rec.get("y_min"), 0.0)
+    flat = [safe_num(item) for row in values for item in row]
+    if not flat:
+        return []
+    z_min = min(flat)
+    z_max = max(flat)
+    span = z_max - z_min
+    if span <= 1e-6:
+        return []
+    interval = max(_nice_interval(span, max_levels), 0.25)
+    levels: List[float] = []
+    level = _nice_floor(z_min + interval, interval)
+    while level < z_max - 1e-6 and len(levels) < max_levels + 2:
+        levels.append(round(level, 4))
+        level += interval
+
+    case_table = {
+        1: [(3, 0)],
+        2: [(0, 1)],
+        3: [(3, 1)],
+        4: [(1, 2)],
+        5: [(3, 2), (0, 1)],
+        6: [(0, 2)],
+        7: [(3, 2)],
+        8: [(2, 3)],
+        9: [(0, 2)],
+        10: [(0, 3), (1, 2)],
+        11: [(1, 2)],
+        12: [(3, 1)],
+        13: [(0, 1)],
+        14: [(3, 0)],
+    }
+
+    def interpolate(p1: Tuple[float, float], p2: Tuple[float, float], v1: float, v2: float, level_value: float) -> Tuple[float, float]:
+        if abs(v2 - v1) <= 1e-9:
+            return ((p1[0] + p2[0]) / 2.0, (p1[1] + p2[1]) / 2.0)
+        t = (level_value - v1) / (v2 - v1)
+        t = max(0.0, min(1.0, t))
+        return (p1[0] + (p2[0] - p1[0]) * t, p1[1] + (p2[1] - p1[1]) * t)
+
+    def stitch(segments: List[Tuple[Tuple[float, float], Tuple[float, float]]]) -> List[List[Tuple[float, float]]]:
+        remaining = [list(seg) for seg in segments]
+        polylines: List[List[Tuple[float, float]]] = []
+        while remaining:
+            line = [tuple(remaining[0][0]), tuple(remaining[0][1])]
+            remaining.pop(0)
+            changed = True
+            while changed:
+                changed = False
+                for idx, seg in enumerate(remaining):
+                    a = tuple(seg[0])
+                    b = tuple(seg[1])
+                    if math.hypot(line[-1][0] - a[0], line[-1][1] - a[1]) <= 1e-3:
+                        line.append(b)
+                    elif math.hypot(line[-1][0] - b[0], line[-1][1] - b[1]) <= 1e-3:
+                        line.append(a)
+                    elif math.hypot(line[0][0] - b[0], line[0][1] - b[1]) <= 1e-3:
+                        line.insert(0, a)
+                    elif math.hypot(line[0][0] - a[0], line[0][1] - a[1]) <= 1e-3:
+                        line.insert(0, b)
+                    else:
+                        continue
+                    remaining.pop(idx)
+                    changed = True
+                    break
+            if len(line) >= 2:
+                polylines.append(line)
+        return polylines
+
+    contours: List[List[Tuple[float, float]]] = []
+    nrows = len(values)
+    ncols = len(values[0])
+    for level_value in levels:
+        segments: List[Tuple[Tuple[float, float], Tuple[float, float]]] = []
+        for row in range(nrows - 1):
+            for col in range(ncols - 1):
+                bl = safe_num(values[row][col])
+                br = safe_num(values[row][col + 1])
+                tr = safe_num(values[row + 1][col + 1])
+                tl = safe_num(values[row + 1][col])
+                case = 0
+                if bl >= level_value:
+                    case |= 1
+                if br >= level_value:
+                    case |= 2
+                if tr >= level_value:
+                    case |= 4
+                if tl >= level_value:
+                    case |= 8
+                if case in {0, 15}:
+                    continue
+                x0 = x_min + col * cell
+                y0 = y_min + row * cell
+                corners = [
+                    (x0, y0),
+                    (x0 + cell, y0),
+                    (x0 + cell, y0 + cell),
+                    (x0, y0 + cell),
+                ]
+                edge_points = {
+                    0: interpolate(corners[0], corners[1], bl, br, level_value),
+                    1: interpolate(corners[1], corners[2], br, tr, level_value),
+                    2: interpolate(corners[2], corners[3], tr, tl, level_value),
+                    3: interpolate(corners[3], corners[0], tl, bl, level_value),
+                }
+                for edge_a, edge_b in case_table.get(case, []):
+                    segments.append((edge_points[edge_a], edge_points[edge_b]))
+        contours.extend(stitch(segments))
+    return [poly for poly in contours if _polyline_length(poly) >= max(cell * 1.25, 2.0)]
+
+
+def _surface_contour_actions(plan: Dict[str, Any]) -> List[Dict[str, Any]]:
+    grading = safe_dict(safe_dict(plan.get("meta")).get("grading"))
+    actions: List[Dict[str, Any]] = []
+    for surface_key, layer, source_type in (
+        ("existing_surface", "EG_CONTOUR", "grading_existing_surface"),
+        ("proposed_surface", "FG_CONTOUR", "grading_proposed_surface"),
+    ):
+        polylines = _surface_contour_polylines(safe_dict(grading.get(surface_key)))
+        for idx, poly in enumerate(polylines, start=1):
+            actions.append(
+                {
+                    "task": "polyline",
+                    "origin": None,
+                    "points": [[x, y] for x, y in poly],
+                    "closed": False,
+                    "width": None,
+                    "height": None,
+                    "label": None,
+                    "layer": layer,
+                    "text": None,
+                    "text_height": None,
+                    "center": None,
+                    "radius": None,
+                    "start_angle": None,
+                    "end_angle": None,
+                    "canonical_source_type": source_type,
+                    "canonical_source_id": f"{surface_key}-{idx}",
+                    "canonical_source_name": f"{surface_key}-{idx}",
+                    "canonical_source_stage": "grading",
+                }
+            )
+    return actions
+
+
+def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    prepared: List[Dict[str, Any]] = []
+    use_surface_contours = bool(safe_dict(safe_dict(safe_dict(plan.get("meta")).get("grading")).get("proposed_surface")))
+    for action in actions:
+        rec = safe_dict(action)
+        if _is_debug_action(rec):
+            continue
+        layer = get_layer(rec, "SITE")
+        if use_surface_contours and layer in {"EG_CONTOUR", "FG_CONTOUR"}:
+            continue
+        if rec.get("canonical_source_type") in {"storm_pipe_segment", "sanitary_segment", "drainage_structure", "drainage_basin"} and safe_text(rec.get("task"), "").lower() == "text_note":
+            continue
+        prepared.append(rec)
+    if use_surface_contours:
+        prepared.extend(_surface_contour_actions(plan))
+    seen: set[str] = set()
+    deduped: List[Dict[str, Any]] = []
+    for rec in prepared:
+        key = repr(rec)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(rec)
+    return sorted(
+        deduped,
+        key=lambda item: (
+            get_layer(safe_dict(item), "SITE"),
+            safe_text(safe_dict(item).get("task"), ""),
+            safe_text(safe_dict(item).get("canonical_source_id"), ""),
+            safe_text(safe_dict(item).get("text"), ""),
+        ),
+    )
+
+
+def _place_plan_label(points: Sequence[Tuple[float, float]], text: str, occupied: List[Tuple[float, float, float, float]], node_points: Sequence[Tuple[float, float]], height: float = 1.8) -> Tuple[float, float, float]:
+    midpoint, normal = _polyline_midpoint_and_normal(points)
+    angle = _polyline_angle(points)
+    for sign in (1.0, -1.0):
+        for offset in (4.0, 6.5, 9.0, 12.0):
+            x = midpoint[0] + normal[0] * offset * sign
+            y = midpoint[1] + normal[1] * offset * sign
+            box = _text_box(x, y, text, height, angle)
+            if any(_boxes_overlap(box, existing, padding=1.2) for existing in occupied):
+                continue
+            if any(_point_in_box(point, box, padding=1.5) for point in node_points):
+                continue
+            occupied.append(box)
+            return x, y, angle
+    x = midpoint[0] + normal[0] * 10.0
+    y = midpoint[1] + normal[1] * 10.0
+    occupied.append(_text_box(x, y, text, height, angle))
+    return x, y, angle
+
+
+def _pipe_plan_label(rec: Dict[str, Any], prefix: str) -> str:
+    name = safe_text(rec.get("pipe") or rec.get("name"), "")
+    if not name:
+        name = prefix
+    diameter = safe_num(rec.get("diameter_in"), 0.0)
+    start_invert = rec.get("start_invert")
+    end_invert = rec.get("end_invert")
+    if start_invert is None:
+        start_invert = rec.get("start_invert_ft")
+    if end_invert is None:
+        end_invert = rec.get("end_invert_ft")
+    parts = [name]
+    if diameter > 0:
+        parts.append(f'{diameter:.0f}"')
+    if start_invert is not None and end_invert is not None:
+        parts.append(f"INV {safe_num(start_invert):.2f} -> {safe_num(end_invert):.2f}")
+    return " ".join(parts)
+
+
+def _draw_plan_pipe_annotations(msp, plan: Dict[str, Any]) -> None:
+    meta = safe_dict(plan.get("meta"))
+    drainage = safe_dict(meta.get("drainage"))
+    storm = safe_dict(meta.get("storm_pipes"))
+    sanitary = safe_dict(meta.get("sanitary"))
+    node_points: List[Tuple[float, float]] = []
+    for structure in safe_list(drainage.get("structures")):
+        rec = safe_dict(structure)
+        node_points.append((safe_num(rec.get("x")), safe_num(rec.get("y"))))
+    for manhole in safe_list(sanitary.get("manholes")):
+        rec = safe_dict(manhole)
+        node_points.append((safe_num(rec.get("x")), safe_num(rec.get("y"))))
+    occupied: List[Tuple[float, float, float, float]] = []
+    for system_segments, layer, prefix in (
+        (safe_list(storm.get("segments")), "PIPE", "PIPE"),
+        (safe_list(sanitary.get("segments")), "SAN", "SAN"),
+    ):
+        for idx, segment in enumerate(system_segments, start=1):
+            rec = safe_dict(segment)
+            points = _dedupe_consecutive_points(
+                _normalize_points(
+                    [
+                        (safe_num(pt[0]), safe_num(pt[1]))
+                        for pt in safe_list(rec.get("path") or rec.get("route_points"))
+                        if isinstance(pt, (list, tuple)) and len(pt) >= 2
+                    ]
+                )
+            )
+            if len(points) < 2:
+                continue
+            label = _pipe_plan_label(rec, f"{prefix}-{idx}")
+            x, y, rotation = _place_plan_label(points, label, occupied, node_points, height=1.7)
+            add_text(msp, label, x, y, 1.7, "ANNO", rotation=rotation, style="CIVIL-NARROW")
+
+
+def _draw_basin_annotations(msp, plan: Dict[str, Any]) -> None:
+    drainage = safe_dict(safe_dict(plan.get("meta")).get("drainage"))
+    structures = [safe_dict(item) for item in safe_list(drainage.get("structures")) if safe_dict(item)]
+    for basin in safe_list(drainage.get("basins")):
+        rec = safe_dict(basin)
+        centroid = safe_list(rec.get("centroid_xy"))
+        if len(centroid) < 2:
+            continue
+        x = safe_num(centroid[0])
+        y = safe_num(centroid[1])
+        label = "DETENTION BASIN"
+        add_text(msp, label, x - 8.0, y - 2.0, 1.9, "ANNO", style="CIVIL-BOLD")
+        nearest = None
+        nearest_distance = float("inf")
+        for structure in structures:
+            sx = safe_num(structure.get("x"))
+            sy = safe_num(structure.get("y"))
+            distance = math.hypot(sx - x, sy - y)
+            if distance < nearest_distance:
+                nearest = structure
+                nearest_distance = distance
+        if nearest and nearest_distance > 2.0:
+            sx = safe_num(nearest.get("x"))
+            sy = safe_num(nearest.get("y"))
+            dx = sx - x
+            dy = sy - y
+            norm = math.hypot(dx, dy) or 1.0
+            start = (x + dx / norm * 6.0, y + dy / norm * 6.0)
+            end = (sx - dx / norm * 2.0, sy - dy / norm * 2.0)
+            msp.add_line(start, end, dxfattribs={"layer": "DRAIN_FLOW"})
+            msp.add_line((end[0], end[1]), (end[0] - dy / norm * 1.2 - dx / norm * 1.8, end[1] + dx / norm * 1.2 - dy / norm * 1.8), dxfattribs={"layer": "DRAIN_FLOW"})
+            msp.add_line((end[0], end[1]), (end[0] + dy / norm * 1.2 - dx / norm * 1.8, end[1] - dx / norm * 1.2 - dy / norm * 1.8), dxfattribs={"layer": "DRAIN_FLOW"})
+            add_text(msp, "TO OUTLET", start[0] + 1.5, start[1] + 1.5, 1.3, "ANNO", style="CIVIL-NARROW")
 
 
 def _write_summary_block(msp, plan: Dict[str, Any], actions: List[Dict[str, Any]]) -> None:
@@ -1119,9 +1521,6 @@ def _place_label(clearances: List[Tuple[float, float]], x: float, y: float, min_
 
 
 def _draw_grid(space, x0: float, y0: float, x1: float, y1: float, x_values: Sequence[float], y_values: Sequence[float], map_x, map_y) -> None:
-    for value in x_values:
-        x = map_x(value)
-        space.add_line((x, y0), (x, y1), dxfattribs={"layer": "GRID"})
     for value in y_values:
         y = map_y(value)
         space.add_line((x0, y), (x1, y), dxfattribs={"layer": "GRID"})
@@ -1388,8 +1787,6 @@ def _draw_pipe_profile_bands(space, plan: Dict[str, Any], profile: Dict[str, Any
         band_mid = (band_left + band_right) / 2.0
         for x in (band_left, band_right):
             space.add_line((x, band_bottom), (x, band_bottom + total_h), dxfattribs={"layer": "SHEET"})
-        if band_right - band_left > 24.0:
-            space.add_line((band_mid, band_bottom), (band_mid, header_y), dxfattribs={"layer": "GRID"})
         left_cell = (band_left, band_mid)
         right_cell = (band_mid, band_right)
         row_values = [
@@ -2353,10 +2750,12 @@ def save_dxf(plan: Dict[str, Any], filename: str | None = None) -> str:
     ensure_text_styles(doc)
     ensure_blocks(doc)
 
+    modelspace_actions = _prepare_modelspace_actions(plan, actions)
     msp = doc.modelspace()
-    for action in actions:
+    for action in modelspace_actions:
         _draw_action_to_modelspace(msp, safe_dict(action))
-    _write_summary_block(msp, plan, actions)
+    _draw_plan_pipe_annotations(msp, plan)
+    _draw_basin_annotations(msp, plan)
 
     profiles = _export_profiles(plan)
     sections = _export_cross_sections(plan)
@@ -2370,7 +2769,7 @@ def save_dxf(plan: Dict[str, Any], filename: str | None = None) -> str:
     _add_profile_layouts(doc, plan, profiles, sheet_registry)
     _add_cross_section_layouts(doc, plan, section_groups, sheet_registry)
     _prune_default_layouts(doc)
-    plan["meta"]["export_audit"] = _build_export_audit(doc, plan, actions, profiles, section_groups, sheet_registry)
+    plan["meta"]["export_audit"] = _build_export_audit(doc, plan, modelspace_actions, profiles, section_groups, sheet_registry)
 
     doc.saveas(filename)
     return filename
