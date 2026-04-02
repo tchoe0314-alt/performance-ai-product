@@ -158,6 +158,13 @@ type UploadImageResponse = {
 
 type PlanToolMode = "run" | "fix" | "improve";
 type StrategyMode = "manual" | "assisted" | "hybrid";
+type ChatMessage = {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  createdAt: number;
+  kind?: "message" | "status" | "explanation" | "action";
+};
 
 const defaultAssumptions: Assumption[] = [
   {
@@ -179,6 +186,86 @@ const defaultIssues: Issue[] = [
     message: "No confirmed scale reference is set for the uploaded image.",
   },
 ];
+
+function createChatMessage(
+  role: ChatMessage["role"],
+  content: string,
+  kind: ChatMessage["kind"] = "message",
+): ChatMessage {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    role,
+    content,
+    createdAt: Date.now(),
+    kind,
+  };
+}
+
+function createWelcomeMessage(): ChatMessage {
+  return createChatMessage(
+    "assistant",
+    "I’m ready to help you shape this design. Tell me what you want to create, what should change, or what you want me to explain before we finalize.",
+  );
+}
+
+function formatChatTimestamp(value: number) {
+  try {
+    return new Date(value).toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  } catch {
+    return "";
+  }
+}
+
+function summarizePlanResponse(
+  data: any,
+  mode: PlanToolMode,
+): string {
+  const plan = data?.final_plan ?? {};
+  const meta = plan?.meta ?? {};
+  const explanation = meta?.explanation;
+  const truth = meta?.truth_audit?.success;
+  const unresolved =
+    meta?.coordination?.unresolved_conflicts?.length ??
+    meta?.coordination?.unresolved_conflicts ??
+    0;
+  const producedDeliverables = Array.isArray(meta?.deliverables?.produced)
+    ? meta.deliverables.produced
+    : Array.isArray(meta?.produced_deliverables)
+      ? meta.produced_deliverables
+      : [];
+  const headline =
+    typeof explanation?.summary === "string"
+      ? explanation.summary
+      : typeof explanation?.overview === "string"
+        ? explanation.overview
+        : typeof data?.message === "string"
+          ? data.message
+          : mode === "fix"
+            ? "I ran a focused fix pass and updated the active design."
+            : mode === "improve"
+              ? "I ran an improvement pass and updated the active design."
+              : "I updated the active design workspace.";
+  const why =
+    typeof explanation?.why === "string"
+      ? explanation.why
+      : typeof explanation?.reasoning === "string"
+        ? explanation.reasoning
+        : null;
+
+  const notes = [
+    truth === true ? "Truth checks passed." : "Truth checks need review.",
+    `Unresolved conflicts: ${unresolved}.`,
+    producedDeliverables.length
+      ? `Produced: ${producedDeliverables.slice(0, 4).join(", ")}.`
+      : null,
+    why,
+  ].filter(Boolean);
+
+  return [headline, ...notes].join(" ");
+}
 
 function Card({
   children,
@@ -432,6 +519,9 @@ export default function PerformanceAIDashboard() {
   const [projectType, setProjectType] = useState("commercial_pad");
   const [units, setUnits] = useState("ft");
   const [prompt, setPrompt] = useState("");
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => [
+    createWelcomeMessage(),
+  ]);
   const [imageName, setImageName] = useState("");
   const [siteName, setSiteName] = useState("Civora AI Project");
   const [fileName, setFileName] = useState("civora-ai-plan");
@@ -501,6 +591,9 @@ export default function PerformanceAIDashboard() {
       strict_mode: strategyMode === "manual",
       prompt_text: prompt || null,
       image_path: imageName || null,
+      meta: {
+        chat_thread: chatMessages,
+      },
       manual_fields: {
         project_name: siteName,
         file_name: fileName,
@@ -545,6 +638,7 @@ export default function PerformanceAIDashboard() {
       grading,
       drainage,
       utilities,
+      chatMessages,
     ],
   );
 
@@ -698,6 +792,14 @@ export default function PerformanceAIDashboard() {
     }
   };
 
+  const appendChatMessage = (
+    role: ChatMessage["role"],
+    content: string,
+    kind: ChatMessage["kind"] = "message",
+  ) => {
+    setChatMessages((current) => [...current, createChatMessage(role, content, kind)]);
+  };
+
   const applyProjectInput = (projectInput: any) => {
     if (!projectInput || typeof projectInput !== "object") {
       return;
@@ -708,6 +810,33 @@ export default function PerformanceAIDashboard() {
     const sitePlan = manualFields.site_plan ?? {};
     const disciplines = Array.isArray(manualFields.disciplines)
       ? manualFields.disciplines
+      : [];
+    const restoredThread = Array.isArray(projectInput.meta?.chat_thread)
+      ? projectInput.meta.chat_thread
+          .filter((message: any) => message && typeof message.content === "string")
+          .map((message: any) => ({
+            id:
+              typeof message.id === "string"
+                ? message.id
+                : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            role:
+              message.role === "user" ||
+              message.role === "assistant" ||
+              message.role === "system"
+                ? message.role
+                : "assistant",
+            content: message.content,
+            createdAt:
+              typeof message.createdAt === "number"
+                ? message.createdAt
+                : Date.now(),
+            kind:
+              message.kind === "status" ||
+              message.kind === "explanation" ||
+              message.kind === "action"
+                ? message.kind
+                : "message",
+          }))
       : [];
 
     const nextMode = projectInput.input_mode ?? (projectInput.strict_mode ? "manual" : "hybrid");
@@ -734,6 +863,7 @@ export default function PerformanceAIDashboard() {
     setGrading(disciplines.includes("grading"));
     setDrainage(disciplines.includes("drainage"));
     setUtilities(disciplines.includes("utility"));
+    setChatMessages(restoredThread.length ? restoredThread : [createWelcomeMessage()]);
   };
 
   const loadMe = async (authToken: string) => {
@@ -839,9 +969,29 @@ export default function PerformanceAIDashboard() {
 
   const runOrchestrator = async (mode: PlanToolMode = "run") => {
     if (!token) return;
+    const trimmedPrompt = prompt.trim();
+    if (mode === "run" && !trimmedPrompt && !imageName) {
+      setStatusMessage("Add a request or image so Civora AI has something to work from.");
+      return;
+    }
     setBusy(true);
     setActivePlanTool(mode);
     try {
+      if (mode === "run" && trimmedPrompt) {
+        appendChatMessage("user", trimmedPrompt);
+      } else if (mode === "fix") {
+        appendChatMessage(
+          "system",
+          "Fix the active design and focus on the most important engineering blockers.",
+          "action",
+        );
+      } else if (mode === "improve") {
+        appendChatMessage(
+          "system",
+          "Improve the active design while preserving the current project intent.",
+          "action",
+        );
+      }
       const requestPayload =
         mode === "run"
           ? payloadPreview
@@ -861,6 +1011,7 @@ export default function PerformanceAIDashboard() {
         token,
       });
       applyBackendResult(data);
+      appendChatMessage("assistant", summarizePlanResponse(data, mode));
       await requestPreview(
         {
           result: data,
@@ -876,6 +1027,17 @@ export default function PerformanceAIDashboard() {
             : "Plan run completed.",
       );
     } catch (error) {
+      appendChatMessage(
+        "assistant",
+        error instanceof Error
+          ? error.message
+          : mode === "fix"
+            ? "I couldn’t complete the fix pass."
+            : mode === "improve"
+              ? "I couldn’t complete the improvement pass."
+              : "I couldn’t update the design.",
+        "status",
+      );
       setStatusMessage(
         error instanceof Error
           ? error.message
@@ -1080,6 +1242,35 @@ export default function PerformanceAIDashboard() {
     }
   };
 
+  const handleExplainPlan = () => {
+    const explanationText =
+      typeof currentExplanation?.summary === "string"
+        ? currentExplanation.summary
+        : typeof currentExplanation?.overview === "string"
+          ? currentExplanation.overview
+          : typeof selectedRun?.message === "string"
+            ? selectedRun.message
+            : "";
+
+    if (!explanationText) {
+      setStatusMessage("Run Civora AI first so there is a plan to explain.");
+      return;
+    }
+
+    appendChatMessage(
+      "assistant",
+      [
+        explanationText,
+        typeof currentExplanation?.why === "string" ? currentExplanation.why : null,
+      ]
+        .filter(Boolean)
+        .join(" "),
+      "explanation",
+    );
+    setSelectedPlanToolPanel("explain");
+    setStatusMessage("Added the latest plan explanation to the conversation.");
+  };
+
   const handleNewChat = () => {
     setProjectId("");
     setCurrentProject(null);
@@ -1110,6 +1301,7 @@ export default function PerformanceAIDashboard() {
     setDrainage(true);
     setUtilities(true);
     setStrategyMode("hybrid");
+    setChatMessages([createWelcomeMessage()]);
     setStatusMessage("Started a new Civora AI workspace.");
   };
 
@@ -1757,139 +1949,188 @@ export default function PerformanceAIDashboard() {
                 <div className="space-y-4 rounded-3xl border border-black/10 bg-white p-4">
                   <div className="space-y-2">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Project Brief
+                      Design Conversation
                     </p>
                     <p className="text-sm text-slate-500">
-                      Describe the civil site request once. Civora AI will use the selected strategy and design scope automatically.
+                      Work with Civora AI like a design partner: describe what you want, keep refining it, and finalize when the plan feels ready.
                     </p>
                   </div>
-                  <TextArea
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    placeholder="Describe the site, access, grading goals, drainage intent, utilities, constraints, and any required outcomes..."
-                    className="h-[260px] min-h-[260px] max-h-[320px] whitespace-pre-wrap break-words"
-                  />
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <Field label="Lot width">
-                      <TextInput
-                        value={lotWidth}
-                        onChange={(e) => setLotWidth(e.target.value)}
-                      />
-                    </Field>
-                    <Field label="Lot height">
-                      <TextInput
-                        value={lotHeight}
-                        onChange={(e) => setLotHeight(e.target.value)}
-                      />
-                    </Field>
-                    <Field label="Building width">
-                      <TextInput
-                        value={buildingWidth}
-                        onChange={(e) => setBuildingWidth(e.target.value)}
-                      />
-                    </Field>
-                    <Field label="Building depth">
-                      <TextInput
-                        value={buildingDepth}
-                        onChange={(e) => setBuildingDepth(e.target.value)}
-                      />
-                    </Field>
-                    <Field label="Setback">
-                      <TextInput
-                        value={setback}
-                        onChange={(e) => setSetback(e.target.value)}
-                      />
-                    </Field>
-                    <Field label="Parking count">
-                      <TextInput
-                        value={parkingCount}
-                        onChange={(e) => setParkingCount(e.target.value)}
-                      />
-                    </Field>
-                  </div>
-                  <div className="flex flex-wrap gap-3">
-                    <SmallButton
-                      onClick={() => void runOrchestrator("run")}
-                      disabled={busy}
-                    >
-                      <Sparkles
-                        className={`mr-2 h-4 w-4 ${busy ? "animate-spin" : ""}`}
-                      />
-                      {busy && activePlanTool === "run" ? "Generating..." : "Generate Plan"}
-                    </SmallButton>
-                    <SmallButton
-                      variant="secondary"
-                      onClick={() => {
-                        setSelectedPlanToolPanel("fix");
-                        void runOrchestrator("fix");
-                      }}
-                      disabled={busy}
-                    >
-                      <AlertTriangle className="mr-2 h-4 w-4" />
-                      {busy && activePlanTool === "fix" ? "Fixing..." : "Fix Issues"}
-                    </SmallButton>
-                    <SmallButton
-                      variant="secondary"
-                      onClick={() => {
-                        setSelectedPlanToolPanel("improve");
-                        void runOrchestrator("improve");
-                      }}
-                      disabled={busy}
-                    >
-                      <Sparkles className="mr-2 h-4 w-4" />
-                      {busy && activePlanTool === "improve" ? "Improving..." : "Improve Plan"}
-                    </SmallButton>
-                    <SmallButton
-                      variant="secondary"
-                      onClick={() => setSelectedPlanToolPanel("explain")}
-                      disabled={!backendResult && !selectedRun}
-                    >
-                      <Eye className="mr-2 h-4 w-4" />
-                      Explain Plan
-                    </SmallButton>
-                    <SmallButton
-                      variant="secondary"
-                      onClick={saveProject}
-                      disabled={busy}
-                    >
-                      <Save className="mr-2 h-4 w-4" />
-                      Save Project
-                    </SmallButton>
-                    <SmallButton
-                      variant="secondary"
-                      onClick={queueJob}
-                      disabled={busy}
-                    >
-                      <Clock3 className="mr-2 h-4 w-4" />
-                      Queue Job
-                    </SmallButton>
-                  </div>
-                  {(statusMessage || busy) ? (
-                    <div
-                      className={`rounded-2xl border px-4 py-3 ${
-                        busy
-                          ? "border-slate-300 bg-slate-100"
-                          : "border-slate-200 bg-slate-50"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        {busy ? (
-                          <RefreshCw className="h-4 w-4 animate-spin text-slate-700" />
-                        ) : (
-                          <CheckCircle2 className="h-4 w-4 text-slate-700" />
-                        )}
-                        <p className="text-sm font-medium text-slate-800">
-                          {busy
-                            ? activePlanTool === "fix"
-                              ? "Civora AI is running a focused fix pass..."
-                              : activePlanTool === "improve"
-                                ? "Civora AI is improving the current plan..."
-                                : "Civora AI is generating your plan..."
-                            : statusMessage}
-                        </p>
-                      </div>
+
+                  <div className="rounded-[28px] border border-black/10 bg-slate-50/70 p-3">
+                    <div className="max-h-[360px] space-y-3 overflow-y-auto pr-1">
+                      {chatMessages.map((message) => (
+                        <div
+                          key={message.id}
+                          className={`flex ${
+                            message.role === "user" ? "justify-end" : "justify-start"
+                          }`}
+                        >
+                          <div
+                            className={`max-w-[92%] rounded-[24px] px-4 py-3 shadow-sm ${
+                              message.role === "user"
+                                ? "bg-slate-950 text-white"
+                                : message.role === "system"
+                                  ? "border border-amber-200 bg-amber-50 text-amber-900"
+                                  : "border border-black/10 bg-white text-slate-900"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-70">
+                                {message.role === "user"
+                                  ? "You"
+                                  : message.role === "system"
+                                    ? "Action"
+                                    : "Civora AI"}
+                              </p>
+                              <span className="text-[11px] opacity-60">
+                                {formatChatTimestamp(message.createdAt)}
+                              </span>
+                            </div>
+                            <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
+                              {message.content}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ) : null}
+                  </div>
+
+                  <div className="rounded-[28px] border border-black/10 bg-slate-50/80 p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Pill>Strategy {strategyMode}</Pill>
+                      <Pill>{projectType.replaceAll("_", " ")}</Pill>
+                      <Pill>{roads || grading || drainage || utilities ? "Disciplines active" : "No disciplines selected"}</Pill>
+                    </div>
+                    <div className="mt-4">
+                      <TextArea
+                        value={prompt}
+                        onChange={(e) => setPrompt(e.target.value)}
+                        placeholder="Tell Civora AI what to create or change. Example: Move the building north, reduce grading near the entrance, add a detention basin on the south edge, and keep 36 spaces."
+                        className="h-[190px] min-h-[190px] max-h-[260px] whitespace-pre-wrap break-words bg-white"
+                      />
+                    </div>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      <Field label="Lot width">
+                        <TextInput
+                          value={lotWidth}
+                          onChange={(e) => setLotWidth(e.target.value)}
+                        />
+                      </Field>
+                      <Field label="Lot height">
+                        <TextInput
+                          value={lotHeight}
+                          onChange={(e) => setLotHeight(e.target.value)}
+                        />
+                      </Field>
+                      <Field label="Building width">
+                        <TextInput
+                          value={buildingWidth}
+                          onChange={(e) => setBuildingWidth(e.target.value)}
+                        />
+                      </Field>
+                      <Field label="Building depth">
+                        <TextInput
+                          value={buildingDepth}
+                          onChange={(e) => setBuildingDepth(e.target.value)}
+                        />
+                      </Field>
+                      <Field label="Setback">
+                        <TextInput
+                          value={setback}
+                          onChange={(e) => setSetback(e.target.value)}
+                        />
+                      </Field>
+                      <Field label="Parking count">
+                        <TextInput
+                          value={parkingCount}
+                          onChange={(e) => setParkingCount(e.target.value)}
+                        />
+                      </Field>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <SmallButton
+                        onClick={() => void runOrchestrator("run")}
+                        disabled={busy}
+                      >
+                        <Sparkles
+                          className={`mr-2 h-4 w-4 ${busy ? "animate-spin" : ""}`}
+                        />
+                        {busy && activePlanTool === "run" ? "Sending..." : "Send to Civora"}
+                      </SmallButton>
+                      <SmallButton
+                        variant="secondary"
+                        onClick={() => {
+                          setSelectedPlanToolPanel("fix");
+                          void runOrchestrator("fix");
+                        }}
+                        disabled={busy}
+                      >
+                        <AlertTriangle className="mr-2 h-4 w-4" />
+                        {busy && activePlanTool === "fix" ? "Fixing..." : "Fix Issues"}
+                      </SmallButton>
+                      <SmallButton
+                        variant="secondary"
+                        onClick={() => {
+                          setSelectedPlanToolPanel("improve");
+                          void runOrchestrator("improve");
+                        }}
+                        disabled={busy}
+                      >
+                        <Sparkles className="mr-2 h-4 w-4" />
+                        {busy && activePlanTool === "improve" ? "Improving..." : "Improve Plan"}
+                      </SmallButton>
+                      <SmallButton
+                        variant="secondary"
+                        onClick={handleExplainPlan}
+                        disabled={!backendResult && !selectedRun}
+                      >
+                        <Eye className="mr-2 h-4 w-4" />
+                        Explain Plan
+                      </SmallButton>
+                      <SmallButton
+                        variant="secondary"
+                        onClick={saveProject}
+                        disabled={busy}
+                      >
+                        <Save className="mr-2 h-4 w-4" />
+                        Save Project
+                      </SmallButton>
+                      <SmallButton
+                        variant="secondary"
+                        onClick={queueJob}
+                        disabled={busy}
+                      >
+                        <Clock3 className="mr-2 h-4 w-4" />
+                        Queue Job
+                      </SmallButton>
+                    </div>
+                    {(statusMessage || busy) ? (
+                      <div
+                        className={`mt-4 rounded-2xl border px-4 py-3 ${
+                          busy
+                            ? "border-slate-300 bg-slate-100"
+                            : "border-slate-200 bg-white"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          {busy ? (
+                            <RefreshCw className="h-4 w-4 animate-spin text-slate-700" />
+                          ) : (
+                            <CheckCircle2 className="h-4 w-4 text-slate-700" />
+                          )}
+                          <p className="text-sm font-medium text-slate-800">
+                            {busy
+                              ? activePlanTool === "fix"
+                                ? "Civora AI is running a focused fix pass..."
+                                : activePlanTool === "improve"
+                                  ? "Civora AI is improving the current plan..."
+                                  : "Civora AI is updating the design workspace..."
+                              : statusMessage}
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             </CardContent>
