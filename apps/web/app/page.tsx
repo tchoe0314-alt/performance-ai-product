@@ -158,6 +158,7 @@ type UploadImageResponse = {
 
 type PlanToolMode = "run" | "fix" | "improve";
 type StrategyMode = "manual" | "assisted" | "hybrid";
+type ChatIntent = "design" | "conversation";
 type ChatMessage = {
   id: string;
   role: "user" | "assistant" | "system";
@@ -265,6 +266,129 @@ function summarizePlanResponse(
   ].filter(Boolean);
 
   return [headline, ...notes].join(" ");
+}
+
+function classifyChatIntent(prompt: string): ChatIntent {
+  const text = prompt.trim().toLowerCase();
+  if (!text) return "conversation";
+
+  const designSignals = [
+    "design",
+    "create",
+    "generate",
+    "make",
+    "add",
+    "move",
+    "change",
+    "update",
+    "shift",
+    "reroute",
+    "grade",
+    "grading",
+    "drainage",
+    "utility",
+    "utilities",
+    "storm",
+    "sanitary",
+    "road",
+    "roads",
+    "parking",
+    "building",
+    "basin",
+    "detention",
+    "site plan",
+    "layout",
+    "slope",
+    "contour",
+  ];
+
+  const conversationSignals = [
+    "what",
+    "why",
+    "how",
+    "can you explain",
+    "are you",
+    "should we",
+    "do you think",
+    "what happened",
+    "what does",
+    "can you help me understand",
+  ];
+
+  const hasDesignSignal = designSignals.some((signal) => text.includes(signal));
+  const hasConversationSignal = conversationSignals.some((signal) =>
+    text.includes(signal),
+  );
+
+  if (hasConversationSignal && !hasDesignSignal) return "conversation";
+  if (text.endsWith("?") && !hasDesignSignal) return "conversation";
+  return "design";
+}
+
+function buildConversationReply({
+  prompt,
+  siteName,
+  projectType,
+  currentExplanation,
+  currentTruthAudit,
+  currentManualFailures,
+  issues,
+  currentProject,
+}: {
+  prompt: string;
+  siteName: string;
+  projectType: string;
+  currentExplanation: any;
+  currentTruthAudit: any;
+  currentManualFailures: any[];
+  issues: Issue[];
+  currentProject: ProjectRecord | null;
+}) {
+  const lower = prompt.toLowerCase();
+  const explanationText =
+    typeof currentExplanation?.summary === "string"
+      ? currentExplanation.summary
+      : typeof currentExplanation?.overview === "string"
+        ? currentExplanation.overview
+        : "";
+
+  if (lower.includes("what did") || lower.includes("explain") || lower.includes("why")) {
+    if (explanationText) {
+      return explanationText;
+    }
+    return `We’re currently working on ${siteName || "this project"} as a ${projectType.replaceAll("_", " ")} concept. Ask me to generate or change something and I’ll explain the result as we go.`;
+  }
+
+  if (lower.includes("warning") || lower.includes("issue") || lower.includes("problem")) {
+    if (currentManualFailures.length) {
+      return `The main blockers right now are ${currentManualFailures
+        .slice(0, 3)
+        .map((failure: any) => failure.code || failure.message || "manual validation issue")
+        .join(", ")}.`;
+    }
+    if (issues.length) {
+      return `The current review items are ${issues
+        .slice(0, 3)
+        .map((issue) => issue.message)
+        .join("; ")}.`;
+    }
+    return "I’m not seeing any major review warnings in the current workspace right now.";
+  }
+
+  if (lower.includes("trust") || lower.includes("valid") || lower.includes("truth")) {
+    const truthPassed = currentTruthAudit?.success;
+    return truthPassed
+      ? "The current design state is passing the truth audit checks that are exposed in the workspace."
+      : "The current design still needs review on one or more truth checks before I’d call it ready.";
+  }
+
+  if (lower.includes("project") || lower.includes("working on")) {
+    return currentProject
+      ? `We’re working inside the saved project "${currentProject.name}" right now.`
+      : `We’re in an unsaved working session for ${siteName || "this project"}.`;
+  }
+
+  return "I can answer questions about the current design, explain what changed, or make a new design update when you’re ready.";
 }
 
 function Card({
@@ -974,6 +1098,28 @@ export default function PerformanceAIDashboard() {
       setStatusMessage("Add a request or image so Civora AI has something to work from.");
       return;
     }
+    if (mode === "run" && trimmedPrompt) {
+      const intent = classifyChatIntent(trimmedPrompt);
+      if (intent === "conversation") {
+        appendChatMessage("user", trimmedPrompt);
+        appendChatMessage(
+          "assistant",
+          buildConversationReply({
+            prompt: trimmedPrompt,
+            siteName,
+            projectType,
+            currentExplanation,
+            currentTruthAudit,
+            currentManualFailures,
+            issues,
+            currentProject,
+          }),
+        );
+        setPrompt("");
+        setStatusMessage("Civora AI answered your question without rerunning the design.");
+        return;
+      }
+    }
     setBusy(true);
     setActivePlanTool(mode);
     try {
@@ -1026,6 +1172,9 @@ export default function PerformanceAIDashboard() {
             ? "Civora AI generated an improved plan."
             : "Plan run completed.",
       );
+      if (mode === "run") {
+        setPrompt("");
+      }
     } catch (error) {
       appendChatMessage(
         "assistant",
@@ -1738,7 +1887,8 @@ export default function PerformanceAIDashboard() {
           </div>
 
           <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-6 md:px-6">
-            <div className="grid gap-3 md:grid-cols-[repeat(3,minmax(0,1fr))] xl:grid-cols-[repeat(6,minmax(0,1fr))]">
+            <div className="space-y-3">
+              <div className="grid gap-3 md:grid-cols-[repeat(3,minmax(0,1fr))] xl:grid-cols-[repeat(6,minmax(0,1fr))]">
               {[
                 {
                   value: "manual",
@@ -1801,6 +1951,24 @@ export default function PerformanceAIDashboard() {
                 onChange={(e) => setFileName(e.target.value)}
                 placeholder="File name"
               />
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {disciplineToggles.map(({ label, checked, setter }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setter(!checked)}
+                    className={`rounded-full border px-3 py-2 text-xs font-medium transition ${
+                      checked
+                        ? "border-slate-900 bg-slate-950 text-white"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="rounded-[28px] border border-slate-200 bg-white">
@@ -1840,23 +2008,6 @@ export default function PerformanceAIDashboard() {
               </div>
 
               <div className="border-t border-slate-200 p-4 md:p-6">
-                <div className="mb-4 flex flex-wrap gap-2">
-                  {disciplineToggles.map(({ label, checked, setter }) => (
-                    <button
-                      key={label}
-                      type="button"
-                      onClick={() => setter(!checked)}
-                      className={`rounded-full border px-3 py-2 text-xs font-medium transition ${
-                        checked
-                          ? "border-slate-900 bg-slate-950 text-white"
-                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-
                 <div className="mb-4 grid gap-3 md:grid-cols-3">
                   <TextInput
                     value={lotWidth}
