@@ -159,6 +159,23 @@ type UploadImageResponse = {
 type PlanToolMode = "run" | "fix" | "improve";
 type StrategyMode = "manual" | "assisted" | "hybrid";
 type ChatIntent = "design" | "conversation";
+type ControlOverrides = Partial<{
+  strategyMode: StrategyMode;
+  projectType: string;
+  units: string;
+  roads: boolean;
+  grading: boolean;
+  drainage: boolean;
+  utilities: boolean;
+  siteName: string;
+  fileName: string;
+  lotWidth: string;
+  lotHeight: string;
+  buildingWidth: string;
+  buildingDepth: string;
+  setback: string;
+  parkingCount: string;
+}>;
 type ChatMessage = {
   id: string;
   role: "user" | "assistant" | "system";
@@ -389,6 +406,144 @@ function buildConversationReply({
   }
 
   return "I can answer questions about the current design, explain what changed, or make a new design update when you’re ready.";
+}
+
+function parseChatControls(prompt: string): {
+  overrides: ControlOverrides;
+  confirmations: string[];
+} {
+  const lower = prompt.toLowerCase();
+  const overrides: ControlOverrides = {};
+  const confirmations: string[] = [];
+
+  const setFlag = (
+    key: "roads" | "grading" | "drainage" | "utilities",
+    label: string,
+    value: boolean,
+  ) => {
+    overrides[key] = value;
+    confirmations.push(`${label} ${value ? "enabled" : "disabled"}`);
+  };
+
+  if (
+    /\b(use|switch to|set)\s+manual\b/.test(lower) ||
+    /\bmanual mode\b/.test(lower)
+  ) {
+    overrides.strategyMode = "manual";
+    confirmations.push("strategy set to Manual");
+  } else if (
+    /\b(use|switch to|set)\s+assisted\b/.test(lower) ||
+    /\bassisted mode\b/.test(lower)
+  ) {
+    overrides.strategyMode = "assisted";
+    confirmations.push("strategy set to Assisted");
+  } else if (
+    /\b(use|switch to|set)\s+hybrid\b/.test(lower) ||
+    /\bhybrid mode\b/.test(lower)
+  ) {
+    overrides.strategyMode = "hybrid";
+    confirmations.push("strategy set to Hybrid");
+  }
+
+  if (lower.includes("commercial")) {
+    overrides.projectType = "commercial_pad";
+    confirmations.push("project type set to Commercial pad");
+  } else if (lower.includes("office")) {
+    overrides.projectType = "office_site";
+    confirmations.push("project type set to Office site");
+  } else if (lower.includes("multifamily")) {
+    overrides.projectType = "multifamily_site";
+    confirmations.push("project type set to Multifamily site");
+  } else if (lower.includes("industrial")) {
+    overrides.projectType = "industrial_site";
+    confirmations.push("project type set to Industrial site");
+  } else if (lower.includes("corridor") || lower.includes("roadway")) {
+    overrides.projectType = "corridor_roadway";
+    confirmations.push("project type set to Corridor roadway");
+  } else if (lower.includes("drainage network")) {
+    overrides.projectType = "drainage_network";
+    confirmations.push("project type set to Drainage network");
+  }
+
+  if (/\b(feet|foot|ft)\b/.test(lower)) {
+    overrides.units = "ft";
+    confirmations.push("units set to feet");
+  } else if (/\bmeters?\b/.test(lower)) {
+    overrides.units = "m";
+    confirmations.push("units set to meters");
+  } else if (/\bmillimeters?\b|\bmm\b/.test(lower)) {
+    overrides.units = "mm";
+    confirmations.push("units set to millimeters");
+  }
+
+  if (/(turn off|disable|remove|without|no)\s+roads?/.test(lower)) {
+    setFlag("roads", "roads", false);
+  } else if (/(turn on|enable|include|add)\s+roads?/.test(lower)) {
+    setFlag("roads", "roads", true);
+  }
+  if (/(turn off|disable|remove|without|no)\s+grading/.test(lower)) {
+    setFlag("grading", "grading", false);
+  } else if (/(turn on|enable|include|add)\s+grading/.test(lower)) {
+    setFlag("grading", "grading", true);
+  }
+  if (/(turn off|disable|remove|without|no)\s+drainage/.test(lower)) {
+    setFlag("drainage", "drainage", false);
+  } else if (/(turn on|enable|include|add)\s+drainage/.test(lower)) {
+    setFlag("drainage", "drainage", true);
+  }
+  if (/(turn off|disable|remove|without|no)\s+utilities?/.test(lower)) {
+    setFlag("utilities", "utilities", false);
+  } else if (/(turn on|enable|include|add)\s+utilities?/.test(lower)) {
+    setFlag("utilities", "utilities", true);
+  }
+
+  const projectNameMatch = prompt.match(/project name\s*(?:to|=)?\s*["“]?([^"\n”]+)["”]?/i);
+  if (projectNameMatch?.[1]) {
+    overrides.siteName = projectNameMatch[1].trim();
+    confirmations.push(`project name set to ${overrides.siteName}`);
+  }
+  const fileNameMatch = prompt.match(/file name\s*(?:to|=)?\s*["“]?([^"\n”]+)["”]?/i);
+  if (fileNameMatch?.[1]) {
+    overrides.fileName = fileNameMatch[1].trim();
+    confirmations.push(`file name set to ${overrides.fileName}`);
+  }
+
+  const numericPatterns: Array<[
+    RegExp,
+    keyof Pick<
+      ControlOverrides,
+      | "lotWidth"
+      | "lotHeight"
+      | "buildingWidth"
+      | "buildingDepth"
+      | "setback"
+      | "parkingCount"
+    >,
+    string
+  ]> = [
+    [/lot width\s*(?:to|=)?\s*(\d+)/i, "lotWidth", "lot width"],
+    [/lot height\s*(?:to|=)?\s*(\d+)/i, "lotHeight", "lot height"],
+    [/building width\s*(?:to|=)?\s*(\d+)/i, "buildingWidth", "building width"],
+    [/building depth\s*(?:to|=)?\s*(\d+)/i, "buildingDepth", "building depth"],
+    [/setback\s*(?:to|=)?\s*(\d+)/i, "setback", "setback"],
+    [/(?:parking(?: count)?|spaces?)\s*(?:to|=)?\s*(\d+)/i, "parkingCount", "parking count"],
+  ];
+
+  for (const [pattern, key, label] of numericPatterns) {
+    const match = prompt.match(pattern);
+    if (match?.[1]) {
+      overrides[key] = match[1];
+      confirmations.push(`${label} set to ${match[1]}`);
+    }
+  }
+
+  const parkingPhrase = prompt.match(/(\d+)\s+parking spaces?/i);
+  if (parkingPhrase?.[1]) {
+    overrides.parkingCount = parkingPhrase[1];
+    confirmations.push(`parking count set to ${parkingPhrase[1]}`);
+  }
+
+  return { overrides, confirmations };
 }
 
 function Card({
@@ -990,6 +1145,74 @@ export default function PerformanceAIDashboard() {
     setChatMessages(restoredThread.length ? restoredThread : [createWelcomeMessage()]);
   };
 
+  const applyControlOverrides = (overrides: ControlOverrides) => {
+    if (overrides.strategyMode) setStrategyMode(overrides.strategyMode);
+    if (overrides.projectType) setProjectType(overrides.projectType);
+    if (overrides.units) setUnits(overrides.units);
+    if (typeof overrides.roads === "boolean") setRoads(overrides.roads);
+    if (typeof overrides.grading === "boolean") setGrading(overrides.grading);
+    if (typeof overrides.drainage === "boolean") setDrainage(overrides.drainage);
+    if (typeof overrides.utilities === "boolean") setUtilities(overrides.utilities);
+    if (typeof overrides.siteName === "string") setSiteName(overrides.siteName);
+    if (typeof overrides.fileName === "string") setFileName(overrides.fileName);
+    if (typeof overrides.lotWidth === "string") setLotWidth(overrides.lotWidth);
+    if (typeof overrides.lotHeight === "string") setLotHeight(overrides.lotHeight);
+    if (typeof overrides.buildingWidth === "string") setBuildingWidth(overrides.buildingWidth);
+    if (typeof overrides.buildingDepth === "string") setBuildingDepth(overrides.buildingDepth);
+    if (typeof overrides.setback === "string") setSetback(overrides.setback);
+    if (typeof overrides.parkingCount === "string") setParkingCount(overrides.parkingCount);
+  };
+
+  const buildPayloadFromOverrides = (
+    overrides: ControlOverrides = {},
+    promptOverride?: string,
+  ) => {
+    const nextStrategy = overrides.strategyMode ?? strategyMode;
+    const nextSiteName = overrides.siteName ?? siteName;
+    const nextFileName = overrides.fileName ?? fileName;
+    const nextUnits = overrides.units ?? units;
+    const nextProjectType = overrides.projectType ?? projectType;
+    const nextRoads = overrides.roads ?? roads;
+    const nextGrading = overrides.grading ?? grading;
+    const nextDrainage = overrides.drainage ?? drainage;
+    const nextUtilities = overrides.utilities ?? utilities;
+
+    return {
+      input_mode: nextStrategy,
+      strict_mode: nextStrategy === "manual",
+      prompt_text: (promptOverride ?? prompt) || null,
+      image_path: imageName || null,
+      meta: {
+        chat_thread: chatMessages,
+      },
+      manual_fields: {
+        project_name: nextSiteName,
+        file_name: nextFileName,
+        units: nextUnits,
+        project_type: nextProjectType,
+        lot: {
+          x: 0,
+          y: 0,
+          w: Number((overrides.lotWidth ?? lotWidth) || 0),
+          h: Number((overrides.lotHeight ?? lotHeight) || 0),
+        },
+        setback: Number((overrides.setback ?? setback) || 0),
+        building_width: Number((overrides.buildingWidth ?? buildingWidth) || 0),
+        building_depth: Number((overrides.buildingDepth ?? buildingDepth) || 0),
+        site_plan: {
+          parking_count: Number((overrides.parkingCount ?? parkingCount) || 0),
+        },
+        disciplines: [
+          nextRoads ? "corridor" : null,
+          nextGrading ? "grading" : null,
+          nextDrainage ? "drainage" : null,
+          nextUtilities ? "utility" : null,
+        ].filter(Boolean),
+      },
+      allow_ai_fill_for_blanks: nextStrategy !== "manual",
+    };
+  };
+
   const loadMe = async (authToken: string) => {
     const data = await getJson<{ user: UserRecord }>("/api/auth/me", {
       token: authToken,
@@ -1094,26 +1317,37 @@ export default function PerformanceAIDashboard() {
   const runOrchestrator = async (mode: PlanToolMode = "run") => {
     if (!token) return;
     const trimmedPrompt = prompt.trim();
+    const { overrides, confirmations } = parseChatControls(trimmedPrompt);
     if (mode === "run" && !trimmedPrompt && !imageName) {
       setStatusMessage("Add a request or image so Civora AI has something to work from.");
       return;
     }
     if (mode === "run" && trimmedPrompt) {
+      if (confirmations.length) {
+        applyControlOverrides(overrides);
+      }
       const intent = classifyChatIntent(trimmedPrompt);
       if (intent === "conversation") {
         appendChatMessage("user", trimmedPrompt);
         appendChatMessage(
           "assistant",
-          buildConversationReply({
-            prompt: trimmedPrompt,
-            siteName,
-            projectType,
-            currentExplanation,
-            currentTruthAudit,
-            currentManualFailures,
-            issues,
-            currentProject,
-          }),
+          [
+            confirmations.length
+              ? `Updated settings: ${confirmations.join(", ")}.`
+              : null,
+            buildConversationReply({
+              prompt: trimmedPrompt,
+              siteName: overrides.siteName ?? siteName,
+              projectType: overrides.projectType ?? projectType,
+              currentExplanation,
+              currentTruthAudit,
+              currentManualFailures,
+              issues,
+              currentProject,
+            }),
+          ]
+            .filter(Boolean)
+            .join(" "),
         );
         setPrompt("");
         setStatusMessage("Civora AI answered your question without rerunning the design.");
@@ -1140,16 +1374,16 @@ export default function PerformanceAIDashboard() {
       }
       const requestPayload =
         mode === "run"
-          ? payloadPreview
+          ? buildPayloadFromOverrides(overrides, trimmedPrompt)
           : {
-              ...payloadPreview,
+              ...buildPayloadFromOverrides(),
               full_design_mode: true,
               optimize_goal:
                 mode === "fix"
                   ? suggestedImproveGoal ?? "reduce_pipe_length"
                   : suggestedImproveGoal,
               meta: {
-                ...((payloadPreview as any).meta ?? {}),
+                ...(buildPayloadFromOverrides() as any).meta,
                 requested_plan_tool: mode,
               },
             };
@@ -1157,7 +1391,15 @@ export default function PerformanceAIDashboard() {
         token,
       });
       applyBackendResult(data);
-      appendChatMessage("assistant", summarizePlanResponse(data, mode));
+      appendChatMessage(
+        "assistant",
+        [
+          confirmations.length ? `Updated settings: ${confirmations.join(", ")}.` : null,
+          summarizePlanResponse(data, mode),
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
       await requestPreview(
         {
           result: data,
