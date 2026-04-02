@@ -1595,964 +1595,435 @@ export default function PerformanceAIDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-4 md:p-6">
-      <div className="mx-auto mb-6 flex max-w-[1600px] flex-wrap items-start justify-between gap-4">
-        <div className="space-y-2">
-          <p className="text-sm text-slate-500">Signed in as {user.email}</p>
-          <h1 className="text-3xl font-semibold tracking-tight text-slate-950">
-            Civora AI — AI-Powered Civil Engineering Design Platform
-          </h1>
-          <p className="max-w-3xl text-sm leading-6 text-slate-600">
-            Enter a request, generate a coordinated civil concept, and review the
-            plan with a stable preview-first workspace.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <SmallButton variant="secondary" onClick={handleNewChat}>
-            <MessageSquarePlus className="mr-2 h-4 w-4" />
-            New Chat
-          </SmallButton>
-          <SmallButton variant="secondary" onClick={() => void refreshProjects()}>
-            <History className="mr-2 h-4 w-4" />
-            Refresh History
-          </SmallButton>
-          <SmallButton variant="secondary" onClick={handleLogout}>
-            <LogOut className="mr-2 h-4 w-4" />
-            Sign Out
-          </SmallButton>
-        </div>
-      </div>
+    <div className="min-h-screen bg-[#f7f7f8] text-slate-950">
+      <div className="flex min-h-screen">
+        <aside className="hidden w-[290px] shrink-0 border-r border-slate-200 bg-[#ececec] lg:flex lg:flex-col">
+          <div className="border-b border-slate-200 p-4">
+            <button
+              type="button"
+              onClick={handleNewChat}
+              className="flex w-full items-center justify-center rounded-2xl bg-slate-950 px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-800"
+            >
+              <MessageSquarePlus className="mr-2 h-4 w-4" />
+              New Chat
+            </button>
+          </div>
 
-      <div className="mx-auto grid max-w-[1600px] items-start gap-6 xl:grid-cols-[280px_minmax(0,1.2fr)_360px]">
-        <motion.aside
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-6 xl:sticky xl:top-6 xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto xl:pr-1"
-        >
-          <Card>
-            <CardHeader>
-              <SectionTitle
-                icon={FolderOpen}
-                title="Project Access"
-                desc="Open saved work, start fresh, and keep files organized."
-              />
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <Field label="Open project">
-                <div className="space-y-2">
-                  <select
-                    value={projectToOpen}
-                    onChange={(event) => setProjectToOpen(event.target.value)}
-                    className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-                  >
-                    <option value="">Select project</option>
-                    {projects.map((project) => (
-                      <option key={project.project_id} value={project.project_id}>
-                        {project.name}
-                      </option>
-                    ))}
-                  </select>
-                  <SmallButton
-                    variant="secondary"
-                    onClick={() => {
-                      if (projectToOpen) {
-                        void loadProject(projectToOpen);
-                      }
-                    }}
-                    disabled={!projectToOpen}
-                  >
-                    <FolderOpen className="mr-2 h-4 w-4" />
-                    Open Project
-                  </SmallButton>
-                </div>
-              </Field>
+          <div className="space-y-6 overflow-y-auto p-4">
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                Open Project
+              </p>
+              <select
+                value={projectToOpen}
+                onChange={(event) => setProjectToOpen(event.target.value)}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70"
+              >
+                <option value="">Select project</option>
+                {projects.map((project) => (
+                  <option key={project.project_id} value={project.project_id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => {
+                  if (projectToOpen) {
+                    void loadProject(projectToOpen);
+                  }
+                }}
+                disabled={!projectToOpen}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Open Project
+              </button>
+            </div>
 
-              <div className="space-y-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Saved Projects
-                </p>
-                <div className="max-h-[260px] space-y-2 overflow-y-auto pr-1">
-                  {projects.length === 0 ? (
-                    <p className="text-sm text-slate-500">No saved projects yet.</p>
-                  ) : (
-                    projects.map((project) => (
-                      <button
-                        key={project.project_id}
-                        type="button"
-                        onClick={() => void loadProject(project.project_id)}
-                        className={`block w-full rounded-2xl border px-4 py-3 text-left transition ${
-                          project.project_id === projectId
-                            ? "border-slate-900 bg-slate-50 shadow-sm"
-                            : "border-black/10 bg-white hover:bg-slate-50"
-                        }`}
-                      >
-                        <p className="truncate text-sm font-medium text-slate-900">
-                          {project.name}
-                        </p>
-                        <p className="mt-1 truncate text-xs text-slate-500">
-                          {project.has_result ? "Saved result available" : "Draft only"}
-                        </p>
-                      </button>
-                    ))
-                  )}
-                </div>
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                Projects
+              </p>
+              <div className="space-y-2">
+                {projects.length === 0 ? (
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+                    No saved projects yet.
+                  </div>
+                ) : (
+                  projects.map((project) => (
+                    <button
+                      key={project.project_id}
+                      type="button"
+                      onClick={() => void loadProject(project.project_id)}
+                      className={`block w-full rounded-2xl px-4 py-3 text-left text-sm transition ${
+                        project.project_id === projectId
+                          ? "bg-white text-slate-950 shadow-sm ring-1 ring-slate-300"
+                          : "bg-transparent text-slate-700 hover:bg-white hover:shadow-sm"
+                      }`}
+                    >
+                      <p className="truncate font-medium">{project.name}</p>
+                      <p className="mt-1 truncate text-xs text-slate-500">
+                        {project.has_result ? "Saved result" : "Draft"}
+                      </p>
+                    </button>
+                  ))
+                )}
               </div>
-            </CardContent>
-          </Card>
+            </div>
 
-          <Card>
-            <CardHeader>
-              <SectionTitle
-                icon={MessageSquarePlus}
-                title="Session"
-                desc="Keep the current workspace context clear and easy to reset."
-              />
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="rounded-2xl border border-black/10 bg-slate-50 px-4 py-3">
-                <p className="text-sm font-medium text-slate-900">
-                  {currentProject?.name || siteName}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  {projectId ? "Active saved project" : "Unsaved working session"}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Pill>Mode {strategyMode}</Pill>
-                <Pill>{projectType.replaceAll("_", " ")}</Pill>
-                <Pill>{units}</Pill>
-              </div>
-              <SmallButton variant="secondary" onClick={handleNewChat}>
-                <MessageSquarePlus className="mr-2 h-4 w-4" />
-                New Chat
-              </SmallButton>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <SectionTitle
-                icon={History}
-                title="History"
-                desc="Recent runs for the active project."
-              />
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {!projectId ? (
-                <p className="text-sm text-slate-500">
-                  Open a project to browse its saved run history.
-                </p>
-              ) : workflowRuns.length === 0 ? (
-                <p className="text-sm text-slate-500">No runs saved yet for this project.</p>
-              ) : (
-                <div className="max-h-[420px] space-y-3 overflow-y-auto pr-1">
-                  {workflowRuns.map((run) => (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                Recent Runs
+              </p>
+              <div className="space-y-2">
+                {workflowRuns.length === 0 ? (
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+                    No saved runs yet.
+                  </div>
+                ) : (
+                  workflowRuns.slice(0, 8).map((run) => (
                     <button
                       key={run.run_id}
                       type="button"
                       onClick={() => setSelectedRunId(run.run_id)}
-                      className={`block w-full rounded-2xl border px-4 py-3 text-left transition ${
+                      className={`block w-full rounded-2xl px-4 py-3 text-left transition ${
                         selectedRun?.run_id === run.run_id
-                          ? "border-slate-900 bg-slate-50 shadow-sm"
-                          : "border-black/10 bg-white hover:bg-slate-50"
+                          ? "bg-white shadow-sm ring-1 ring-slate-300"
+                          : "hover:bg-white"
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-medium text-slate-900">
+                        <span className="text-sm font-medium text-slate-900">
                           {run.success ? "Completed run" : "Failed run"}
-                        </p>
-                        <Pill>{run.success ? "Pass" : "Fail"}</Pill>
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          {run.success ? "Pass" : "Fail"}
+                        </span>
                       </div>
-                      <p className="mt-2 text-xs text-slate-500">
+                      <p className="mt-1 text-xs text-slate-500">
                         {formatTimestamp(run.created_at)}
                       </p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Pill>
-                          Trust {run.engineering_status?.trust_score ?? 0}
-                        </Pill>
-                        <Pill>
-                          Unresolved {run.coordination_summary?.unresolved_conflicts ?? 0}
-                        </Pill>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <main className="flex min-w-0 flex-1 flex-col">
+          <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 md:px-6">
+            <div className="min-w-0">
+              <p className="truncate text-sm text-slate-500">Signed in as {user.email}</p>
+              <h1 className="truncate text-lg font-semibold text-slate-950">
+                Civora AI
+              </h1>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void refreshProjects()}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              >
+                Refresh
+              </button>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+
+          <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-6 md:px-6">
+            <div className="grid gap-3 md:grid-cols-[repeat(3,minmax(0,1fr))] xl:grid-cols-[repeat(6,minmax(0,1fr))]">
+              {[
+                {
+                  value: "manual",
+                  label: "Manual",
+                  desc: "Strict and explicit",
+                },
+                {
+                  value: "assisted",
+                  label: "Assisted",
+                  desc: "AI fills gaps",
+                },
+                {
+                  value: "hybrid",
+                  label: "Hybrid",
+                  desc: "Balanced workflow",
+                },
+              ].map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setStrategyMode(option.value as StrategyMode)}
+                  className={`rounded-2xl border px-4 py-3 text-left transition ${
+                    strategyMode === option.value
+                      ? "border-slate-900 bg-slate-950 text-white"
+                      : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
+                  }`}
+                >
+                  <p className="text-sm font-medium">{option.label}</p>
+                  <p
+                    className={`mt-1 text-xs ${
+                      strategyMode === option.value ? "text-slate-300" : "text-slate-500"
+                    }`}
+                  >
+                    {option.desc}
+                  </p>
+                </button>
+              ))}
+
+              <select
+                value={projectType}
+                onChange={(e) => setProjectType(e.target.value)}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70"
+              >
+                <option value="commercial_pad">Commercial pad</option>
+                <option value="office_site">Office site</option>
+                <option value="multifamily_site">Multifamily site</option>
+                <option value="industrial_site">Industrial site</option>
+                <option value="corridor_roadway">Corridor roadway</option>
+                <option value="drainage_network">Drainage network</option>
+              </select>
+
+              <TextInput
+                value={siteName}
+                onChange={(e) => setSiteName(e.target.value)}
+                placeholder="Project name"
+              />
+
+              <TextInput
+                value={fileName}
+                onChange={(e) => setFileName(e.target.value)}
+                placeholder="File name"
+              />
+            </div>
+
+            <div className="rounded-[28px] border border-slate-200 bg-white">
+              <div className="max-h-[420px] space-y-4 overflow-y-auto p-4 md:p-6">
+                {chatMessages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                  >
+                    <div
+                      className={`max-w-[85%] rounded-[28px] px-4 py-3 ${
+                        message.role === "user"
+                          ? "bg-slate-950 text-white"
+                          : message.role === "system"
+                            ? "border border-amber-200 bg-amber-50 text-amber-900"
+                            : "border border-slate-200 bg-white text-slate-900"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-70">
+                          {message.role === "user"
+                            ? "You"
+                            : message.role === "system"
+                              ? "Action"
+                              : "Civora AI"}
+                        </span>
+                        <span className="text-[11px] opacity-60">
+                          {formatChatTimestamp(message.createdAt)}
+                        </span>
                       </div>
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
+                        {message.content}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="border-t border-slate-200 p-4 md:p-6">
+                <div className="mb-4 flex flex-wrap gap-2">
+                  {disciplineToggles.map(({ label, checked, setter }) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => setter(!checked)}
+                      className={`rounded-full border px-3 py-2 text-xs font-medium transition ${
+                        checked
+                          ? "border-slate-900 bg-slate-950 text-white"
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      {label}
                     </button>
                   ))}
                 </div>
-              )}
-            </CardContent>
-          </Card>
-        </motion.aside>
 
-        <motion.main
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="min-w-0 space-y-6"
-        >
-          <Card>
-            <CardHeader>
-              <SectionTitle
-                icon={Sparkles}
-                title="Design Workspace"
-                desc="One clear workflow: choose a strategy, describe the design, generate, then review the preview."
-              />
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
-                <div className="space-y-4 rounded-3xl border border-black/10 bg-slate-50/80 p-4">
-                  <div className="space-y-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Workflow Strategy
-                    </p>
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      {[
-                        {
-                          value: "manual",
-                          label: "Manual",
-                          desc: "Strict, explicit engineering input.",
-                        },
-                        {
-                          value: "assisted",
-                          label: "Assisted",
-                          desc: "AI fills gaps and keeps momentum.",
-                        },
-                        {
-                          value: "hybrid",
-                          label: "Hybrid",
-                          desc: "Balanced workflow for most projects.",
-                        },
-                      ].map((option) => (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => setStrategyMode(option.value as StrategyMode)}
-                          className={`rounded-2xl border px-4 py-4 text-left transition ${
-                            strategyMode === option.value
-                              ? "border-slate-900 bg-white shadow-sm"
-                              : "border-black/10 bg-white/80 hover:bg-white"
-                          }`}
-                        >
-                          <p className="text-sm font-medium text-slate-900">
-                            {option.label}
-                          </p>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {option.desc}
-                          </p>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <Field label="Project name">
-                      <TextInput
-                        value={siteName}
-                        onChange={(e) => setSiteName(e.target.value)}
-                      />
-                    </Field>
-                    <Field label="File name">
-                      <TextInput
-                        value={fileName}
-                        onChange={(e) => setFileName(e.target.value)}
-                        placeholder="civora-ai-plan"
-                      />
-                    </Field>
-                    <Field label="Project type">
-                      <SelectField
-                        value={projectType}
-                        onChange={setProjectType}
-                        options={[
-                          { value: "commercial_pad", label: "Commercial pad" },
-                          { value: "office_site", label: "Office site" },
-                          { value: "multifamily_site", label: "Multifamily site" },
-                          { value: "industrial_site", label: "Industrial site" },
-                          { value: "corridor_roadway", label: "Corridor roadway" },
-                          { value: "drainage_network", label: "Drainage network" },
-                        ]}
-                      />
-                    </Field>
-                    <Field label="Units">
-                      <SelectField
-                        value={units}
-                        onChange={setUnits}
-                        options={[
-                          { value: "ft", label: "Feet" },
-                          { value: "m", label: "Meters" },
-                          { value: "mm", label: "Millimeters" },
-                        ]}
-                      />
-                    </Field>
-                  </div>
-
-                  <div className="space-y-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Include in design
-                    </p>
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                      {disciplineToggles.map(({ label, checked, setter, desc }) => (
-                        <div
-                          key={label}
-                          className="flex items-center justify-between rounded-2xl border border-black/10 bg-white px-4 py-3"
-                        >
-                          <div>
-                            <p className="text-sm font-medium text-slate-900">
-                              {label}
-                            </p>
-                            <p className="text-xs text-slate-500">{desc}</p>
-                          </div>
-                          <Toggle checked={checked} onChange={setter} />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-dashed border-black/15 bg-white p-4">
-                    <div className="flex items-start gap-3">
-                      <FileImage className="mt-0.5 h-5 w-5 text-slate-700" />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-slate-900">
-                          Upload reference image
-                        </p>
-                        <p className="mt-1 text-sm text-slate-500">
-                          Add a sketch, markup, or screenshot to guide the design.
-                        </p>
-                      </div>
-                    </div>
-                    <div className="mt-4 space-y-3">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            await uploadImage(file);
-                          }
-                        }}
-                        className="block w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-slate-700 file:mr-4 file:rounded-xl file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white"
-                      />
-                      <TextInput
-                        value={imageName}
-                        onChange={(e) => setImageName(e.target.value)}
-                        placeholder="Reference image path or filename"
-                      />
-                      {uploadedImagePreviewUrl || uploadedImageApiUrl ? (
-                        <div className="overflow-hidden rounded-2xl border border-black/10 bg-slate-50">
-                          <img
-                            src={uploadedImagePreviewUrl || uploadedImageApiUrl}
-                            alt="Uploaded planning reference"
-                            className="h-44 w-full object-cover"
-                          />
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
+                <div className="mb-4 grid gap-3 md:grid-cols-3">
+                  <TextInput
+                    value={lotWidth}
+                    onChange={(e) => setLotWidth(e.target.value)}
+                    placeholder="Lot width"
+                  />
+                  <TextInput
+                    value={lotHeight}
+                    onChange={(e) => setLotHeight(e.target.value)}
+                    placeholder="Lot height"
+                  />
+                  <TextInput
+                    value={parkingCount}
+                    onChange={(e) => setParkingCount(e.target.value)}
+                    placeholder="Parking count"
+                  />
                 </div>
 
-                <div className="space-y-4 rounded-3xl border border-black/10 bg-white p-4">
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Design Conversation
-                    </p>
-                    <p className="text-sm text-slate-500">
-                      Work with Civora AI like a design partner: describe what you want, keep refining it, and finalize when the plan feels ready.
-                    </p>
-                  </div>
-
-                  <div className="rounded-[28px] border border-black/10 bg-slate-50/70 p-3">
-                    <div className="max-h-[360px] space-y-3 overflow-y-auto pr-1">
-                      {chatMessages.map((message) => (
-                        <div
-                          key={message.id}
-                          className={`flex ${
-                            message.role === "user" ? "justify-end" : "justify-start"
-                          }`}
-                        >
-                          <div
-                            className={`max-w-[92%] rounded-[24px] px-4 py-3 shadow-sm ${
-                              message.role === "user"
-                                ? "bg-slate-950 text-white"
-                                : message.role === "system"
-                                  ? "border border-amber-200 bg-amber-50 text-amber-900"
-                                  : "border border-black/10 bg-white text-slate-900"
-                            }`}
-                          >
-                            <div className="flex items-center gap-2">
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-70">
-                                {message.role === "user"
-                                  ? "You"
-                                  : message.role === "system"
-                                    ? "Action"
-                                    : "Civora AI"}
-                              </p>
-                              <span className="text-[11px] opacity-60">
-                                {formatChatTimestamp(message.createdAt)}
-                              </span>
-                            </div>
-                            <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
-                              {message.content}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="rounded-[28px] border border-black/10 bg-slate-50/80 p-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Pill>Strategy {strategyMode}</Pill>
-                      <Pill>{projectType.replaceAll("_", " ")}</Pill>
-                      <Pill>{roads || grading || drainage || utilities ? "Disciplines active" : "No disciplines selected"}</Pill>
-                    </div>
-                    <div className="mt-4">
-                      <TextArea
-                        value={prompt}
-                        onChange={(e) => setPrompt(e.target.value)}
-                        placeholder="Tell Civora AI what to create or change. Example: Move the building north, reduce grading near the entrance, add a detention basin on the south edge, and keep 36 spaces."
-                        className="h-[190px] min-h-[190px] max-h-[260px] whitespace-pre-wrap break-words bg-white"
-                      />
-                    </div>
-                    <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      <Field label="Lot width">
-                        <TextInput
-                          value={lotWidth}
-                          onChange={(e) => setLotWidth(e.target.value)}
+                <div className="mb-4 rounded-3xl border border-slate-200 bg-slate-50 p-3">
+                  <TextArea
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    placeholder="Message Civora AI with what you want to create or change..."
+                    className="h-[150px] min-h-[150px] max-h-[240px] border-0 bg-transparent px-1 py-1 shadow-none focus:ring-0"
+                  />
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap gap-2">
+                      <label className="inline-flex cursor-pointer items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+                        <FileImage className="mr-2 h-4 w-4" />
+                        Upload
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              await uploadImage(file);
+                            }
+                          }}
                         />
-                      </Field>
-                      <Field label="Lot height">
-                        <TextInput
-                          value={lotHeight}
-                          onChange={(e) => setLotHeight(e.target.value)}
-                        />
-                      </Field>
-                      <Field label="Building width">
-                        <TextInput
-                          value={buildingWidth}
-                          onChange={(e) => setBuildingWidth(e.target.value)}
-                        />
-                      </Field>
-                      <Field label="Building depth">
-                        <TextInput
-                          value={buildingDepth}
-                          onChange={(e) => setBuildingDepth(e.target.value)}
-                        />
-                      </Field>
-                      <Field label="Setback">
-                        <TextInput
-                          value={setback}
-                          onChange={(e) => setSetback(e.target.value)}
-                        />
-                      </Field>
-                      <Field label="Parking count">
-                        <TextInput
-                          value={parkingCount}
-                          onChange={(e) => setParkingCount(e.target.value)}
-                        />
-                      </Field>
-                    </div>
-                    <div className="mt-4 flex flex-wrap gap-3">
-                      <SmallButton
-                        onClick={() => void runOrchestrator("run")}
-                        disabled={busy}
-                      >
-                        <Sparkles
-                          className={`mr-2 h-4 w-4 ${busy ? "animate-spin" : ""}`}
-                        />
-                        {busy && activePlanTool === "run" ? "Sending..." : "Send to Civora"}
-                      </SmallButton>
-                      <SmallButton
-                        variant="secondary"
-                        onClick={() => {
-                          setSelectedPlanToolPanel("fix");
-                          void runOrchestrator("fix");
-                        }}
-                        disabled={busy}
-                      >
-                        <AlertTriangle className="mr-2 h-4 w-4" />
-                        {busy && activePlanTool === "fix" ? "Fixing..." : "Fix Issues"}
-                      </SmallButton>
-                      <SmallButton
-                        variant="secondary"
-                        onClick={() => {
-                          setSelectedPlanToolPanel("improve");
-                          void runOrchestrator("improve");
-                        }}
-                        disabled={busy}
-                      >
-                        <Sparkles className="mr-2 h-4 w-4" />
-                        {busy && activePlanTool === "improve" ? "Improving..." : "Improve Plan"}
-                      </SmallButton>
-                      <SmallButton
-                        variant="secondary"
+                      </label>
+                      <button
+                        type="button"
                         onClick={handleExplainPlan}
                         disabled={!backendResult && !selectedRun}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        <Eye className="mr-2 h-4 w-4" />
-                        Explain Plan
-                      </SmallButton>
-                      <SmallButton
-                        variant="secondary"
+                        Explain
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void runOrchestrator("fix")}
+                        disabled={busy}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Fix
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void runOrchestrator("improve")}
+                        disabled={busy}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Improve
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
                         onClick={saveProject}
                         disabled={busy}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        <Save className="mr-2 h-4 w-4" />
-                        Save Project
-                      </SmallButton>
-                      <SmallButton
-                        variant="secondary"
-                        onClick={queueJob}
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void runOrchestrator("run")}
                         disabled={busy}
+                        className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        <Clock3 className="mr-2 h-4 w-4" />
-                        Queue Job
-                      </SmallButton>
+                        {busy && activePlanTool === "run" ? "Working..." : "Send"}
+                      </button>
                     </div>
-                    {(statusMessage || busy) ? (
-                      <div
-                        className={`mt-4 rounded-2xl border px-4 py-3 ${
-                          busy
-                            ? "border-slate-300 bg-slate-100"
-                            : "border-slate-200 bg-white"
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          {busy ? (
-                            <RefreshCw className="h-4 w-4 animate-spin text-slate-700" />
-                          ) : (
-                            <CheckCircle2 className="h-4 w-4 text-slate-700" />
-                          )}
-                          <p className="text-sm font-medium text-slate-800">
-                            {busy
-                              ? activePlanTool === "fix"
-                                ? "Civora AI is running a focused fix pass..."
-                                : activePlanTool === "improve"
-                                  ? "Civora AI is improving the current plan..."
-                                  : "Civora AI is updating the design workspace..."
-                              : statusMessage}
-                          </p>
-                        </div>
-                      </div>
-                    ) : null}
                   </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
 
-          <Card>
-            <CardHeader>
-              <SectionTitle
-                icon={Map}
-                title="Plan Preview"
-                desc="Preview stays centered, readable, and dominant while you review results."
-              />
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {planPreviewUrl ? (
-                <>
-                  <div className="flex min-h-[620px] items-center justify-center overflow-hidden rounded-3xl border border-black/10 bg-[radial-gradient(circle_at_top,#f8fafc_0%,#eef2f7_100%)] p-4">
-                    <img
-                      src={planPreviewUrl}
-                      alt="Generated plan preview"
-                      className="max-h-[580px] w-full object-contain"
-                    />
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Pill>{planPreviewSummary?.project_name || siteName}</Pill>
-                    <Pill>{planPreviewSummary?.action_count ?? 0} actions</Pill>
-                    <Pill>{planPreviewSummary?.units || units}</Pill>
-                    <Pill>
-                      Truth {(backendResult?.final_plan?.meta?.truth_audit?.success ?? selectedRun?.truth_success) ? "passed" : "review needed"}
-                    </Pill>
-                  </div>
-                </>
-              ) : (
-                <div className="flex min-h-[420px] items-center justify-center rounded-3xl border border-dashed border-black/10 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                  Generate a plan and Civora AI will place the preview here automatically.
-                </div>
-              )}
-
-              <div className="flex flex-wrap gap-3">
-                <SmallButton variant="secondary" onClick={handlePreviewPlan} disabled={busy}>
-                  <Eye className="mr-2 h-4 w-4" />
-                  Refresh Preview
-                </SmallButton>
-                <SmallButton variant="secondary" onClick={handleExportDxf} disabled={busy}>
-                  <Download className="mr-2 h-4 w-4" />
-                  Export DXF
-                </SmallButton>
-                <SmallButton variant="secondary" onClick={handleExportReport} disabled={busy}>
-                  <Download className="mr-2 h-4 w-4" />
-                  Export Report
-                </SmallButton>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.main>
-
-        <motion.aside
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="min-w-0 space-y-6 xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto xl:pr-2"
-        >
-          <Card>
-            <CardHeader>
-              <SectionTitle
-                icon={FileText}
-                title="Plan Tools"
-                desc="Explain the result, focus on fixes, or ask for a stronger iteration."
-              />
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                {[
-                  { key: "explain", label: "Explain" },
-                  { key: "fix", label: "Fix" },
-                  { key: "improve", label: "Improve" },
-                ].map((tab) => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() =>
-                      setSelectedPlanToolPanel(
-                        tab.key as "explain" | "fix" | "improve",
-                      )
-                    }
-                    className={`rounded-full px-3 py-2 text-xs font-medium transition ${
-                      selectedPlanToolPanel === tab.key
-                        ? "bg-slate-900 text-white"
-                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="rounded-2xl border border-black/10 bg-slate-50/80 p-4">
-                {selectedPlanToolPanel === "explain" ? (
-                  <div className="space-y-3">
-                    <p className="text-sm font-medium text-slate-900">
-                      What Civora AI did
-                    </p>
-                    <p className="text-sm leading-6 text-slate-700">
-                      {currentExplanation?.summary ||
-                        selectedRun?.message ||
-                        "Generate a plan to see the explanation here."}
-                    </p>
-                    {Array.isArray(currentExplanation?.bullets) &&
-                    currentExplanation.bullets.length ? (
-                      <div className="space-y-2">
-                        {currentExplanation.bullets.slice(0, 6).map((bullet: string, index: number) => (
-                          <div
-                            key={`${bullet}-${index}`}
-                            className="flex gap-2 text-sm text-slate-700"
-                          >
-                            <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-slate-400" />
-                            <span>{bullet}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : selectedPlanToolPanel === "fix" ? (
-                  <div className="space-y-3">
-                    <p className="text-sm font-medium text-slate-900">
-                      Focused fix pass
-                    </p>
-                    <p className="text-sm leading-6 text-slate-700">
-                      Civora AI reruns the current project with an issue-aware optimization goal to reduce the most obvious blockers before you review again.
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      <Pill>Goal {suggestedImproveGoal ?? "reduce_pipe_length"}</Pill>
-                      <Pill>
-                        Failures {currentManualFailures.length || selectedRun?.manual_failures?.length || 0}
-                      </Pill>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <p className="text-sm font-medium text-slate-900">
-                      Improvement loop
-                    </p>
-                    <p className="text-sm leading-6 text-slate-700">
-                      Improve Plan uses the orchestrator’s iterative workflow to search for a cleaner coordinated outcome while preserving the same project intent.
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      <Pill>Goal {suggestedImproveGoal ?? "balanced"}</Pill>
-                      <Pill>
-                        Strategy {currentCoordination?.selected_group_strategy || selectedRun?.coordination_summary?.selected_strategy || "none"}
-                      </Pill>
-                    </div>
+                {(statusMessage || busy) && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    {busy
+                      ? activePlanTool === "fix"
+                        ? "Civora AI is running a focused fix pass..."
+                        : activePlanTool === "improve"
+                          ? "Civora AI is improving the current plan..."
+                          : "Civora AI is updating the design..."
+                      : statusMessage}
                   </div>
                 )}
               </div>
-            </CardContent>
-          </Card>
+            </div>
 
-          <Card>
-            <CardHeader>
-              <SectionTitle
-                icon={AlertTriangle}
-                title="AI Review"
-                desc="Warnings, assumptions, and manual failures in one place."
-              />
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                <Pill>
-                  Unresolved {Array.isArray(currentCoordination?.unresolved_conflicts) ? currentCoordination.unresolved_conflicts.length : currentCoordination?.unresolved_conflicts || selectedRun?.coordination_summary?.unresolved_conflicts || 0}
-                </Pill>
-                <Pill>
-                  Truth {(backendResult?.final_plan?.meta?.truth_audit?.success ?? selectedRun?.truth_success) ? "passed" : "review needed"}
-                </Pill>
-              </div>
-
-              <div className="space-y-3">
-                {(currentManualFailures.length ? currentManualFailures : selectedRun?.manual_failures || []).slice(0, 4).map((failure: any, idx: number) => (
-                  <div
-                    key={`${failure.code || "failure"}-${idx}`}
-                    className="rounded-2xl border border-red-200 bg-red-50 p-4"
+            <div className="rounded-[28px] border border-slate-200 bg-white p-4 md:p-6">
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-slate-950">Live Preview</p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Preview stays centered and updates alongside the conversation.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handlePreviewPlan}
+                    disabled={busy}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <p className="text-sm font-medium text-red-800">
-                      {failure.code || failure.message || "Manual failure"}
-                    </p>
-                    <p className="mt-2 text-xs text-red-700">
-                      {[failure.system, failure.rule, failure.location]
-                        .filter(Boolean)
-                        .join(" | ") || "No location metadata"}
-                    </p>
-                    {failure.reason || failure.message ? (
-                      <p className="mt-2 text-xs text-red-700">
-                        {failure.reason || failure.message}
-                      </p>
-                    ) : null}
-                  </div>
-                ))}
-
-                {issues.slice(0, 4).map((issue, idx) => (
-                  <div
-                    key={`${issue.message}-${idx}`}
-                    className="rounded-2xl border border-black/10 bg-white p-4"
+                    Refresh Preview
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportDxf}
+                    disabled={busy}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle
-                        className={`h-4 w-4 ${
-                          issue.severity === "error"
-                            ? "text-red-600"
-                            : "text-amber-500"
-                        }`}
-                      />
-                      <p className="text-sm font-medium capitalize text-slate-900">
-                        {issue.severity}
-                      </p>
-                    </div>
-                    <p className="mt-2 text-sm text-slate-600">{issue.message}</p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="space-y-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  AI-filled inputs
-                </p>
-                {assumptions.slice(0, 4).map((item, idx) => (
-                  <div key={idx} className="rounded-2xl border border-black/10 bg-white p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-medium text-slate-900">
-                        {item.field}
-                      </p>
-                      <Pill>AI filled</Pill>
-                    </div>
-                    <p className="mt-1 text-sm text-slate-800">{item.value}</p>
-                    <p className="mt-2 text-xs text-slate-500">{item.reason}</p>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <SectionTitle
-                icon={Sparkles}
-                title="Engineering Insights"
-                desc="A compact view into solver quality, truth checks, and iteration depth."
-              />
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-black/10 bg-slate-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Trust
-                  </p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-950">
-                    {backendResult?.final_plan?.meta?.engineering_status?.trust_score ??
-                      selectedRun?.engineering_status?.trust_score ??
-                      0}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Engineering trust score
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-black/10 bg-slate-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Iterations
-                  </p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-950">
-                    {currentIterations.length}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Improvement loop passes recorded
-                  </p>
+                    Export DXF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportReport}
+                    disabled={busy}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Export Report
+                  </button>
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-black/10 bg-white p-4">
-                <p className="text-sm font-medium text-slate-900">Truth audit</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Pill>
-                    Canonical {currentTruthAudit?.summary?.canonical_validity ? "valid" : "review"}
-                  </Pill>
-                  <Pill>
-                    Hydraulics {currentTruthAudit?.summary?.hydraulic_completeness ? "complete" : "review"}
-                  </Pill>
-                  <Pill>
-                    Graphs {currentTruthAudit?.summary?.graph_validity ? "valid" : "review"}
-                  </Pill>
-                  <Pill>
-                    Quantities {currentTruthAudit?.summary?.quantity_alignment ? "aligned" : "review"}
-                  </Pill>
-                  <Pill>
-                    Conflicts {currentTruthAudit?.summary?.conflict_integrity ? "clean" : "review"}
-                  </Pill>
+              {planPreviewUrl ? (
+                <div className="flex min-h-[560px] items-center justify-center overflow-hidden rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top,#f8fafc_0%,#eef2f7_100%)] p-4">
+                  <img
+                    src={planPreviewUrl}
+                    alt="Generated plan preview"
+                    className="max-h-[520px] w-full object-contain"
+                  />
                 </div>
-              </div>
-
-              {currentIterations.length ? (
-                <div className="rounded-2xl border border-black/10 bg-white p-4">
-                  <p className="text-sm font-medium text-slate-900">
-                    Latest improvement notes
-                  </p>
-                  <div className="mt-3 space-y-2">
-                    {currentIterations
-                      .slice(-2)
-                      .reverse()
-                      .map((iteration: any, index: number) => (
-                        <div key={`${iteration.iteration_index || index}`} className="rounded-2xl bg-slate-50 px-3 py-2">
-                          <p className="text-xs font-medium text-slate-700">
-                            Iteration {iteration.iteration_index ?? index + 1}
-                          </p>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {Array.isArray(iteration.notes) && iteration.notes.length
-                              ? iteration.notes.join(" ")
-                              : iteration.message || "No extra notes recorded."}
-                          </p>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <SectionTitle
-                icon={History}
-                title="Run Comparison"
-                desc="Compare the newest result against the previous saved run."
-              />
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {!latestRunComparison ? (
-                <p className="text-sm text-slate-500">
-                  Save at least two runs to compare changes here.
-                </p>
               ) : (
-                <>
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-2xl border border-black/10 bg-slate-50 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Trust Delta
-                      </p>
-                      <p className="mt-2 text-lg font-semibold text-slate-950">
-                        {latestRunComparison.trustDelta >= 0 ? "+" : ""}
-                        {latestRunComparison.trustDelta}
-                      </p>
-                    </div>
-                    <div className="rounded-2xl border border-black/10 bg-slate-50 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Unresolved Delta
-                      </p>
-                      <p className="mt-2 text-lg font-semibold text-slate-950">
-                        {latestRunComparison.unresolvedDelta >= 0 ? "+" : ""}
-                        {latestRunComparison.unresolvedDelta}
-                      </p>
-                    </div>
-                    <div className="rounded-2xl border border-black/10 bg-slate-50 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Deliverables Delta
-                      </p>
-                      <p className="mt-2 text-lg font-semibold text-slate-950">
-                        {latestRunComparison.producedDelta >= 0 ? "+" : ""}
-                        {latestRunComparison.producedDelta}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="rounded-2xl border border-black/10 bg-white p-4 text-sm text-slate-600">
-                    Current run from {formatTimestamp(latestRunComparison.current.created_at)} compared to the previous saved run from {formatTimestamp(latestRunComparison.previous.created_at)}.
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <SectionTitle
-                icon={Download}
-                title="Artifacts"
-                desc="Saved exports for the active project."
-              />
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {!projectId ? (
-                <p className="text-sm text-slate-500">
-                  Open or save a project to keep downloadable artifacts here.
-                </p>
-              ) : workflowArtifacts.length === 0 ? (
-                <p className="text-sm text-slate-500">
-                  No saved artifacts yet. Export a DXF or report while a project is loaded.
-                </p>
-              ) : (
-                <div className="max-h-[260px] space-y-3 overflow-y-auto pr-1">
-                  {workflowArtifacts.map((artifact) => (
-                    <div
-                      key={artifact.artifact_id}
-                      className="rounded-2xl border border-black/10 bg-white p-4"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-slate-900">
-                            {artifact.filename || artifact.kind || "artifact"}
-                          </p>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {artifact.kind || "artifact"} •{" "}
-                            {formatTimestamp(artifact.created_at)}
-                          </p>
-                        </div>
-                        <SmallButton
-                          variant="secondary"
-                          onClick={() => void downloadSavedArtifact(artifact)}
-                        >
-                          Download
-                        </SmallButton>
-                      </div>
-                    </div>
-                  ))}
+                <div className="flex min-h-[360px] items-center justify-center rounded-[28px] border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                  Send a message and Civora AI will generate a plan preview here.
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </motion.aside>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Pill>{currentProject?.name || siteName}</Pill>
+                <Pill>{planPreviewSummary?.units || units}</Pill>
+                <Pill>{planPreviewSummary?.action_count ?? 0} actions</Pill>
+                <Pill>
+                  Truth{" "}
+                  {(backendResult?.final_plan?.meta?.truth_audit?.success ??
+                    selectedRun?.truth_success)
+                    ? "passed"
+                    : "review needed"}
+                </Pill>
+              </div>
+            </div>
+          </div>
+        </main>
       </div>
     </div>
   );
