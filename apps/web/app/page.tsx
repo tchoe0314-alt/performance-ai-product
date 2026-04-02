@@ -292,6 +292,8 @@ function summarizePlanResponse(
   const meta = plan?.meta ?? {};
   const explanation = meta?.explanation;
   const truth = meta?.truth_audit?.success;
+  const engineeringStatus = meta?.engineering_status ?? {};
+  const engineeringState = String(engineeringStatus?.status || "").trim();
   const unresolved =
     meta?.coordination?.unresolved_conflicts?.length ??
     meta?.coordination?.unresolved_conflicts ??
@@ -301,12 +303,20 @@ function summarizePlanResponse(
     : Array.isArray(meta?.produced_deliverables)
       ? meta.produced_deliverables
       : [];
+  const failedDeliverables = Array.isArray(meta?.deliverables?.failed)
+    ? meta.deliverables.failed
+    : [];
+  const drainageExport = meta?.drainage?.export_validation ?? {};
+  const stormHydraulics = meta?.storm_pipes?.hydraulic_summary ?? {};
+  const drainageBlockedReasons = Array.isArray(drainageExport?.reasons)
+    ? drainageExport.reasons
+    : [];
   const assumptions = Array.isArray(data?.assumptions) ? data.assumptions : [];
   const issues = Array.isArray(data?.issues) ? data.issues : [];
   const aiAssistanceSummary = assumptions.length
     ? (() => {
+        const seen = new Set<string>();
         const formatted = assumptions
-          .slice(0, 3)
           .map((assumption: any) => {
             const field = String(
               assumption?.field_name || assumption?.field || "an input",
@@ -314,16 +324,45 @@ function summarizePlanResponse(
               .replace(/_/g, " ")
               .trim();
             const reason = String(assumption?.reason || "").trim();
+            if (
+              field.toLowerCase() === "plan" &&
+              reason.toLowerCase().includes("planner execution assumption")
+            ) {
+              return null;
+            }
+            const normalized = `${field}::${reason}`.toLowerCase();
+            if (seen.has(normalized)) {
+              return null;
+            }
+            seen.add(normalized);
             return reason ? `${field} (${reason})` : field;
           })
           .filter(Boolean);
         return formatted.length
-          ? `AI assisted with: ${formatted.join("; ")}.`
+          ? `AI assisted with: ${formatted.slice(0, 3).join("; ")}.`
           : null;
       })()
     : null;
+  const stableDrainage =
+    drainageExport?.ready === true &&
+    stormHydraulics?.valid !== false;
+  const hasStormLikeOutput = producedDeliverables.some((item: string) =>
+    ["storm_pipe_plan", "drainage_plan"].includes(String(item)),
+  );
+  const hasOnlySiteLikeOutput =
+    producedDeliverables.length > 0 &&
+    producedDeliverables.every((item: string) =>
+      ["site_plan", "grading_plan", "contours", "spot_grades"].includes(
+        String(item),
+      ),
+    );
+  const partialEngineeringHeadline =
+    hasOnlySiteLikeOutput && !stableDrainage
+      ? "I generated a partial site and grading concept, but the drainage and storm design are not stable enough to treat this as a coordinated civil plan yet."
+      : null;
   const headline =
-    typeof explanation?.summary === "string"
+    partialEngineeringHeadline ||
+    (typeof explanation?.summary === "string"
       ? explanation.summary
       : typeof explanation?.overview === "string"
         ? explanation.overview
@@ -333,7 +372,7 @@ function summarizePlanResponse(
             ? "I ran a focused fix pass and updated the active design."
             : mode === "improve"
               ? "I ran an improvement pass and updated the active design."
-              : "I updated the active design workspace.";
+              : "I updated the active design workspace.");
   const why =
     typeof explanation?.why === "string"
       ? explanation.why
@@ -343,9 +382,20 @@ function summarizePlanResponse(
 
   const notes = [
     truth === true ? "Truth checks passed." : "Truth checks need review.",
+    engineeringState === "partial"
+      ? "Engineering status is partial."
+      : engineeringState === "failed"
+        ? "Engineering validation failed."
+        : null,
     `Unresolved conflicts: ${unresolved}.`,
     producedDeliverables.length
       ? `Produced: ${producedDeliverables.slice(0, 4).join(", ")}.`
+      : null,
+    failedDeliverables.length
+      ? `Still missing: ${failedDeliverables.slice(0, 3).join(", ")}.`
+      : null,
+    !stableDrainage && (drainageBlockedReasons.length || hasStormLikeOutput)
+      ? `Storm/drainage export is not stable yet${drainageBlockedReasons.length ? `: ${drainageBlockedReasons.slice(0, 3).join(", ")}` : ""}.`
       : null,
     issues.length
       ? `Open warnings: ${issues
@@ -1026,7 +1076,12 @@ export default function PerformanceAIDashboard() {
         : null,
       current_explanation: currentExplanation,
       current_truth_audit: currentTruthAudit,
+      engineering_status: currentPlanMeta?.engineering_status ?? {},
       manual_failures: currentManualFailures,
+      assumptions,
+      produced_deliverables: Array.isArray(currentPlanMeta?.deliverables?.produced)
+        ? currentPlanMeta.deliverables.produced
+        : [],
       issues,
       chat_thread: [
         ...chatMessages,

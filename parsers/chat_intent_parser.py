@@ -82,8 +82,11 @@ def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
     current_project = context.get("current_project") or {}
     current_truth = context.get("current_truth_audit") or {}
     current_explanation = context.get("current_explanation") or {}
+    engineering_status = context.get("engineering_status") or {}
     issues = context.get("issues") or []
     manual_failures = context.get("manual_failures") or []
+    assumptions = context.get("assumptions") or []
+    produced_deliverables = context.get("produced_deliverables") or []
     return {
         "strategy_mode": context.get("strategy_mode") or "assisted",
         "site_name": context.get("site_name") or "",
@@ -104,8 +107,19 @@ def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
         "current_project_name": current_project.get("name"),
         "truth_success": current_truth.get("success"),
         "engineering_trust_score": current_truth.get("engineering_trust_score"),
+        "engineering_status": engineering_status.get("status"),
         "explanation_summary": current_explanation.get("summary")
         or current_explanation.get("overview"),
+        "produced_deliverables": [str(item) for item in produced_deliverables[:8]],
+        "assumptions": [
+            {
+                "field_name": item.get("field_name") or item.get("field"),
+                "assumed_value": item.get("assumed_value") or item.get("value"),
+                "reason": item.get("reason"),
+            }
+            for item in assumptions[:8]
+            if isinstance(item, dict)
+        ],
         "issues": [
             {
                 "severity": item.get("severity"),
@@ -193,6 +207,303 @@ def _is_casual_chat_message(text: str) -> bool:
     )
 
 
+def _extract_control_overrides(message: str, context: Dict[str, Any]) -> Dict[str, Any]:
+    lowered = message.lower()
+    overrides: Dict[str, Any] = {}
+
+    if re.search(r"\bmanual mode\b|\buse manual\b|\bswitch to manual\b", lowered):
+        overrides["strategyMode"] = "manual"
+    elif re.search(r"\bassisted mode\b|\buse assisted\b|\bswitch to assisted\b", lowered):
+        overrides["strategyMode"] = "assisted"
+
+    for field, patterns in {
+        "roads": [r"\bturn on roads\b", r"\benable roads\b", r"\binclude roads\b", r"\bwith roads\b"],
+        "grading": [r"\bturn on grading\b", r"\benable grading\b", r"\binclude grading\b", r"\bwith grading\b"],
+        "drainage": [r"\bturn on drainage\b", r"\benable drainage\b", r"\binclude drainage\b", r"\bwith drainage\b", r"\binclude storm\b"],
+        "utilities": [r"\bturn on utilit(?:y|ies)\b", r"\benable utilit(?:y|ies)\b", r"\binclude utilit(?:y|ies)\b", r"\bwith utilit(?:y|ies)\b", r"\binclude water\b", r"\binclude sanitary\b"],
+    }.items():
+        if any(re.search(pattern, lowered) for pattern in patterns):
+            overrides[field] = True
+    for field, patterns in {
+        "roads": [r"\bturn off roads\b", r"\bdisable roads\b", r"\bwithout roads\b", r"\bremove roads\b"],
+        "grading": [r"\bturn off grading\b", r"\bdisable grading\b", r"\bwithout grading\b", r"\bremove grading\b"],
+        "drainage": [r"\bturn off drainage\b", r"\bdisable drainage\b", r"\bwithout drainage\b", r"\bremove drainage\b", r"\bwithout storm\b"],
+        "utilities": [r"\bturn off utilit(?:y|ies)\b", r"\bdisable utilit(?:y|ies)\b", r"\bwithout utilit(?:y|ies)\b", r"\bremove utilit(?:y|ies)\b", r"\bwithout water\b", r"\bwithout sanitary\b"],
+    }.items():
+        if any(re.search(pattern, lowered) for pattern in patterns):
+            overrides[field] = False
+
+    name_match = re.search(r"(?:call|name)\s+(?:this|the project)?\s*[\"']?([^\"'\n]+)[\"']?$", message, re.IGNORECASE)
+    if name_match:
+        overrides["siteName"] = name_match.group(1).strip()
+
+    file_match = re.search(r"(?:file name|filename|call the file)\s+(?:to|as)?\s*[\"']?([^\"'\n]+)[\"']?$", message, re.IGNORECASE)
+    if file_match:
+        overrides["fileName"] = file_match.group(1).strip()
+
+    lot_by_dims = re.search(
+        r"(?:lot|site)(?:\s+size|\s+dimensions?)?\s*(?:to|as|is)?\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|m|meters)?\s*(?:x|by)\s*(\d+(?:\.\d+)?)",
+        lowered,
+    )
+    if lot_by_dims:
+        overrides["lotWidth"] = lot_by_dims.group(1)
+        overrides["lotHeight"] = lot_by_dims.group(2)
+
+    for field, pattern in {
+        "lotWidth": r"(?:lot width|site width)\s*(?:to|is|=)?\s*(\d+(?:\.\d+)?)",
+        "lotHeight": r"(?:lot height|site height|site depth|lot depth)\s*(?:to|is|=)?\s*(\d+(?:\.\d+)?)",
+        "buildingWidth": r"(?:building width)\s*(?:to|is|=)?\s*(\d+(?:\.\d+)?)",
+        "buildingDepth": r"(?:building depth|building length)\s*(?:to|is|=)?\s*(\d+(?:\.\d+)?)",
+        "setback": r"(?:setback)\s*(?:to|is|=)?\s*(\d+(?:\.\d+)?)",
+        "parkingCount": r"(?:parking count|parking|stalls?)\s*(?:to|is|=)?\s*(\d+(?:\.\d+)?)",
+    }.items():
+        match = re.search(pattern, lowered)
+        if match:
+            overrides[field] = match.group(1)
+
+    units_match = re.search(r"\buse\s+(feet|foot|ft|meters|meter|m)\b", lowered)
+    if units_match:
+        unit = units_match.group(1)
+        overrides["units"] = "m" if unit.startswith("m") else "ft"
+
+    inferred_project_type = _infer_project_type_from_message(message)
+    if inferred_project_type:
+        overrides["projectType"] = inferred_project_type
+
+    return overrides
+
+
+def _is_settings_only_message(message: str, overrides: Dict[str, Any]) -> bool:
+    if not overrides:
+        return False
+    lowered = message.lower()
+    design_verbs = [
+        "design",
+        "create",
+        "generate",
+        "make",
+        "move",
+        "add",
+        "remove",
+        "change the design",
+        "update the design",
+        "reroute",
+        "grade",
+        "layout",
+    ]
+    return not any(phrase in lowered for phrase in design_verbs)
+
+
+def _has_edit_intent(message: str) -> bool:
+    lowered = message.lower()
+    edit_phrases = [
+        "move",
+        "shift",
+        "relocate",
+        "reroute",
+        "add",
+        "remove",
+        "change",
+        "update",
+        "adjust",
+        "resize",
+        "reduce",
+        "increase",
+        "widen",
+        "narrow",
+        "rotate",
+        "keep the",
+        "make the",
+    ]
+    design_targets = [
+        "building",
+        "road",
+        "parking",
+        "grading",
+        "drainage",
+        "storm",
+        "basin",
+        "utility",
+        "utilities",
+        "sanitary",
+        "water",
+        "layout",
+        "site",
+        "plan",
+    ]
+    return any(phrase in lowered for phrase in edit_phrases) and any(
+        target in lowered for target in design_targets
+    )
+
+
+def _looks_like_follow_up_design_edit(message: str, context: Dict[str, Any]) -> bool:
+    if not bool(context.get("has_plan")):
+        return False
+    lowered = message.lower()
+    if _has_edit_intent(message):
+        return True
+    if any(
+        phrase in lowered
+        for phrase in [
+            "make it",
+            "keep the",
+            "use the same",
+            "change that",
+            "move that",
+            "add more",
+            "less parking",
+            "more parking",
+            "lower the",
+            "raise the",
+        ]
+    ):
+        return True
+    return False
+
+
+def _is_question(message: str) -> bool:
+    lowered = message.strip().lower()
+    return lowered.endswith("?") or any(
+        lowered.startswith(prefix)
+        for prefix in [
+            "why ",
+            "what ",
+            "how ",
+            "can ",
+            "could ",
+            "should ",
+            "is ",
+            "are ",
+            "do ",
+            "does ",
+            "did ",
+        ]
+    )
+
+
+def _conversation_reply(message: str, context: Dict[str, Any]) -> str:
+    lowered = message.strip().lower()
+    if any(phrase in lowered for phrase in ["how are you", "how r u", "how are u"]):
+        return "I’m doing well and I’m ready to help with the design. You can ask me about the current plan or tell me what you want to change."
+    if lowered in {"hello", "hi", "hey", "yo"}:
+        return "Hi, I’m Civora. Tell me what you want to design, or ask me about the current plan."
+    if "thank" in lowered:
+        return "You’re welcome. Tell me what you want to adjust next, or ask me about the current design."
+    if "help" in lowered and not bool(context.get("has_plan")):
+        return "I can help design a civil site plan, explain tradeoffs, or guide you through the inputs I need. Start by telling me the site type and what you want to build."
+    return "I’m here with you. Ask me about the current design, change a setting, or tell me what you want me to create or modify."
+
+
+def _settings_reply(overrides: Dict[str, Any]) -> str:
+    parts: List[str] = []
+    if "strategyMode" in overrides:
+        parts.append(f"switched to {overrides['strategyMode']} mode")
+    for key, label in [
+        ("roads", "roads"),
+        ("grading", "grading"),
+        ("drainage", "drainage"),
+        ("utilities", "utilities"),
+    ]:
+        if key in overrides:
+            parts.append(f"{'enabled' if overrides[key] else 'disabled'} {label}")
+    if overrides.get("siteName"):
+        parts.append(f"project name set to {overrides['siteName']}")
+    if overrides.get("fileName"):
+        parts.append(f"file name set to {overrides['fileName']}")
+    if overrides.get("projectType"):
+        parts.append(f"project type set to {str(overrides['projectType']).replace('_', ' ')}")
+    if overrides.get("lotWidth") or overrides.get("lotHeight"):
+        width = overrides.get("lotWidth") or "?"
+        height = overrides.get("lotHeight") or "?"
+        parts.append(f"site size updated to {width} by {height}")
+    if overrides.get("parkingCount"):
+        parts.append(f"parking target set to {overrides['parkingCount']}")
+    if not parts:
+        return "I updated the project settings."
+    return "I updated the workspace: " + "; ".join(parts) + "."
+
+
+def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optional[str]:
+    lowered = message.lower()
+    issues = context.get("issues") or []
+    manual_failures = context.get("manual_failures") or []
+    assumptions = context.get("assumptions") or []
+    deliverables = context.get("produced_deliverables") or []
+
+    if "what mode" in lowered or "which mode" in lowered:
+        return f"You’re currently in {str(context.get('strategy_mode') or 'assisted').strip().lower()} mode."
+    if "project name" in lowered or "what is this project called" in lowered:
+        name = str(context.get("site_name") or context.get("current_project_name") or "").strip()
+        return f"The current project is named {name}." if name else "The current project does not have a name yet."
+    if "file name" in lowered:
+        file_name = str(context.get("file_name") or "").strip()
+        return f"The current file name is {file_name}." if file_name else "The current file name is still blank."
+    if "what assumptions" in lowered or "where did ai help" in lowered or "what did ai use" in lowered:
+        if assumptions:
+            formatted = []
+            for item in assumptions[:3]:
+                field = str(item.get("field_name") or "an input").replace("_", " ")
+                reason = str(item.get("reason") or "").strip()
+                formatted.append(f"{field} ({reason})" if reason else field)
+            return "AI helped fill in: " + "; ".join(formatted) + "."
+        return "There are no explicit AI-filled assumptions recorded on the current design."
+    if "what warnings" in lowered or "what issues" in lowered or "what's wrong" in lowered or "whats wrong" in lowered:
+        messages = [str(item.get("message") or "").strip() for item in manual_failures[:2] if isinstance(item, dict)]
+        messages += [str(item.get("message") or "").strip() for item in issues[:2] if isinstance(item, dict)]
+        messages = [item for item in messages if item]
+        if messages:
+            return "The main issues right now are: " + "; ".join(messages) + "."
+        return "I don’t see any active blockers or warnings on the current design."
+    if "what did you produce" in lowered or "what was produced" in lowered or "what deliverables" in lowered:
+        if deliverables:
+            return "The current design produced: " + ", ".join(str(item) for item in deliverables[:6]) + "."
+        return "There are no finished deliverables in the current workspace yet."
+    if "trust" in lowered or "truth" in lowered:
+        truth_success = context.get("truth_success")
+        trust_score = context.get("engineering_trust_score")
+        engineering_status = str(context.get("engineering_status") or "").strip()
+        parts: List[str] = []
+        if trust_score is not None:
+            parts.append(f"trust score {float(trust_score):.1f}")
+        if truth_success is True:
+            parts.append("truth checks are currently passing")
+        elif truth_success is False:
+            parts.append("truth checks still need review")
+        if engineering_status:
+            parts.append(f"engineering status is {engineering_status}")
+        if parts:
+            return "Right now, " + ", and ".join(parts) + "."
+    if ("why" in lowered or "explain" in lowered) and (
+        context.get("explanation_summary")
+        or issues
+        or manual_failures
+        or context.get("has_plan")
+    ):
+        base = str(context.get("explanation_summary") or "").strip()
+        extras = []
+        if manual_failures:
+            extras.append(
+                "Current blockers: "
+                + "; ".join(
+                    str(item.get("message") or item.get("code") or "").strip()
+                    for item in manual_failures[:2]
+                    if isinstance(item, dict)
+                )
+            )
+        elif issues:
+            extras.append(
+                "Current warnings: "
+                + "; ".join(
+                    str(item.get("message") or "").strip()
+                    for item in issues[:2]
+                    if isinstance(item, dict)
+                )
+            )
+        if base or extras:
+            return " ".join(part for part in [base, *extras] if part).strip()
+    return None
+
+
 def _looks_like_explicit_design_request(text: str) -> bool:
     normalized = text.strip().lower()
     strong_design_phrases = [
@@ -253,8 +564,6 @@ def _is_explicit_plan_tool_request(text: str, tool: str) -> bool:
 def _clarifying_design_reply(context: Dict[str, Any]) -> str:
     project_type = str(context.get("project_type") or "").strip()
     strategy_mode = str(context.get("strategy_mode") or "assisted").strip().lower()
-    if strategy_mode == "hybrid":
-        strategy_mode = "assisted"
     missing: List[str] = []
     if not project_type:
         missing.append("what kind of site you want")
@@ -315,8 +624,6 @@ def _build_design_readiness_reply(
     missing: List[str],
 ) -> str:
     strategy_mode = str(context.get("strategy_mode") or "assisted").strip().lower()
-    if strategy_mode == "hybrid":
-        strategy_mode = "assisted"
     starter_parts: List[str] = []
     if inferred_project_type:
         starter_parts.append(
@@ -432,6 +739,8 @@ def assess_design_readiness(message: str, context: Optional[Dict[str, Any]] = No
 
 def _is_well_specified_design_request(message: str, context: Dict[str, Any]) -> bool:
     lowered = message.lower()
+    if _looks_like_follow_up_design_edit(message, context):
+        return True
     if not _looks_like_explicit_design_request(message):
         return False
 
@@ -490,144 +799,175 @@ def _is_well_specified_design_request(message: str, context: Dict[str, Any]) -> 
     return bool(inferred_project_type) and has_site_size and has_topography and has_program and systems_count >= 3
 
 
-def _fallback_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
-    message = str(payload_data.get("message") or "").strip()
-    lowered = message.lower()
-    context = _chat_context_summary(dict(payload_data.get("context") or {}))
-    strategy_mode = str(context.get("strategy_mode") or "assisted")
-    if strategy_mode == "hybrid":
-        strategy_mode = "assisted"
-    if not message:
-        return {
-            "success": True,
-            "intent": "conversation",
-            "assistant_message": "Tell me what you want to change, or ask me a question about the current design.",
-            "run_mode": "none",
-            "design_prompt": "",
-            "needs_clarification": True,
-            "reason": "Empty message",
-            "confidence": 0.2,
-            "control_overrides": {},
-        }
-    if _is_casual_chat_message(message):
-        return {
-            "success": True,
-            "intent": "conversation",
-            "assistant_message": (
-                "I’m doing well and I’m ready to help. You can ask me about the current plan, change settings, or tell me what you want to design."
-                if "how" in lowered
-                else "Hi, I’m Civora. Tell me what you want to design, or ask me about the current plan."
-            ),
-            "run_mode": "none",
-            "design_prompt": "",
-            "needs_clarification": False,
-            "reason": "Casual conversation detected",
-            "confidence": 0.82,
-            "control_overrides": {},
-        }
-    if "explain" in lowered or "why" in lowered:
-        return {
-            "success": True,
-            "intent": "explain",
-            "assistant_message": "I’ll explain what the current design is doing and what needs attention.",
-            "run_mode": "none",
-            "design_prompt": "",
-            "needs_clarification": False,
-            "reason": "Explanation request detected",
-            "confidence": 0.6,
-            "control_overrides": {},
-        }
-    if _is_explicit_plan_tool_request(message, "fix"):
-        return {
-            "success": True,
-            "intent": "fix",
-            "assistant_message": "I’ll run a focused fix pass on the current design.",
-            "run_mode": "fix",
-            "design_prompt": "",
-            "needs_clarification": False,
-            "reason": "Fix request detected",
-            "confidence": 0.6,
-            "control_overrides": {},
-        }
-    if _is_explicit_plan_tool_request(message, "improve"):
-        return {
-            "success": True,
-            "intent": "improve",
-            "assistant_message": "I’ll improve the current design while keeping your project intent intact.",
-            "run_mode": "improve",
-            "design_prompt": "",
-            "needs_clarification": False,
-            "reason": "Improve request detected",
-            "confidence": 0.6,
-            "control_overrides": {},
-        }
-    readiness_issue = _design_readiness_check(message, context)
-    if readiness_issue:
-        return {
-            "success": True,
-            "intent": "conversation",
-            "assistant_message": readiness_issue["assistant_message"],
-            "run_mode": "none",
-            "design_prompt": "",
-            "needs_clarification": True,
-            "reason": readiness_issue["reason"],
-            "confidence": 0.9,
-            "control_overrides": {},
-        }
-    if _is_well_specified_design_request(message, context):
-        return {
-            "success": True,
-            "intent": "design",
-            "assistant_message": "I have enough engineering context to generate a coordinated design from that brief.",
-            "run_mode": "run",
-            "design_prompt": message,
-            "needs_clarification": False,
-            "reason": "Well-specified engineering design brief detected",
-            "confidence": 0.88,
-            "control_overrides": {},
-        }
-    if strategy_mode == "manual":
-        return {
-            "success": True,
-            "intent": "conversation",
-            "assistant_message": "I’m treating that as conversation for now. In Manual mode, tell me exactly what you want me to design or change, and include the key parameters you already know.",
-            "run_mode": "none",
-            "design_prompt": "",
-            "needs_clarification": True,
-            "reason": "Manual mode fallback",
-            "confidence": 0.45,
-            "control_overrides": {},
-        }
-    if not _looks_like_explicit_design_request(message):
-        return {
-            "success": True,
-            "intent": "conversation",
-            "assistant_message": _clarifying_design_reply(context),
-            "run_mode": "none",
-            "design_prompt": "",
-            "needs_clarification": True,
-            "reason": "Fallback clarification for underspecified request",
-            "confidence": 0.62,
-            "control_overrides": {},
-        }
+def _base_decision(
+    *,
+    intent: str,
+    assistant_message: str,
+    run_mode: str = "none",
+    design_prompt: str = "",
+    needs_clarification: bool = False,
+    reason: str,
+    confidence: float,
+    control_overrides: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     return {
         "success": True,
-        "intent": "design",
-        "assistant_message": "I’m treating that as a design request and updating the active plan.",
-        "run_mode": "run",
-        "design_prompt": message,
-        "needs_clarification": False,
-        "reason": "Fallback design classification",
-        "confidence": 0.45,
-        "control_overrides": {},
+        "intent": intent,
+        "assistant_message": assistant_message,
+        "run_mode": run_mode,
+        "design_prompt": design_prompt,
+        "needs_clarification": needs_clarification,
+        "reason": reason,
+        "confidence": confidence,
+        "control_overrides": dict(control_overrides or {}),
     }
 
 
-def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
+def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
+    message = str(payload_data.get("message") or "").strip()
+    lowered = message.lower()
     context = _chat_context_summary(dict(payload_data.get("context") or {}))
+    strategy_mode = str(context.get("strategy_mode") or "assisted").strip().lower()
+    overrides = _extract_control_overrides(message, context)
+    if not message:
+        return _base_decision(
+            intent="conversation",
+            assistant_message="Tell me what you want to change, or ask me a question about the current design.",
+            needs_clarification=True,
+            reason="Empty message",
+            confidence=0.2,
+        )
+
+    if _is_settings_only_message(message, overrides):
+        return _base_decision(
+            intent="settings",
+            assistant_message=_settings_reply(overrides),
+            reason="Settings-only update detected",
+            confidence=0.95,
+            control_overrides=overrides,
+        )
+
+    if _is_casual_chat_message(message):
+        return _base_decision(
+            intent="conversation",
+            assistant_message=_conversation_reply(message, context),
+            reason="Casual conversation detected",
+            confidence=0.95,
+            control_overrides=overrides,
+        )
+
+    contextual_reply = _contextual_question_reply(message, context)
+    if contextual_reply:
+        intent = "explain" if ("why" in lowered or "explain" in lowered) else "conversation"
+        return _base_decision(
+            intent=intent,
+            assistant_message=contextual_reply,
+            reason="Answered from current workspace context",
+            confidence=0.9,
+            control_overrides=overrides,
+        )
+
+    if "explain" in lowered or ("why" in lowered and bool(context.get("has_plan"))):
+        return _base_decision(
+            intent="explain",
+            assistant_message="I’ll explain what the current design is doing and what still needs attention.",
+            reason="Explanation request detected",
+            confidence=0.82,
+            control_overrides=overrides,
+        )
+    if _is_explicit_plan_tool_request(message, "fix"):
+        return _base_decision(
+            intent="fix",
+            assistant_message="I’ll run a focused fix pass on the current design.",
+            run_mode="fix",
+            reason="Fix request detected",
+            confidence=0.88,
+            control_overrides=overrides,
+        )
+    if _is_explicit_plan_tool_request(message, "improve"):
+        return _base_decision(
+            intent="improve",
+            assistant_message="I’ll improve the current design while keeping your project intent intact.",
+            run_mode="improve",
+            reason="Improve request detected",
+            confidence=0.88,
+            control_overrides=overrides,
+        )
+
+    follow_up_edit = _looks_like_follow_up_design_edit(message, context)
+    design_like = (
+        _is_well_specified_design_request(message, context)
+        or _looks_like_explicit_design_request(message)
+        or follow_up_edit
+        or _has_edit_intent(message)
+    )
+
+    readiness_issue = _design_readiness_check(message, context)
+    if design_like and readiness_issue and not follow_up_edit:
+        return _base_decision(
+            intent="conversation",
+            assistant_message=readiness_issue["assistant_message"],
+            needs_clarification=True,
+            reason=readiness_issue["reason"],
+            confidence=0.93,
+            control_overrides=overrides,
+        )
+
+    if design_like:
+        reply = (
+            "I’m updating the current design with that change."
+            if bool(context.get("has_plan"))
+            else "I have enough context to start the design."
+        )
+        return _base_decision(
+            intent="design",
+            assistant_message=reply,
+            run_mode="run",
+            design_prompt=message,
+            reason="Explicit or follow-up design request detected",
+            confidence=0.9,
+            control_overrides=overrides,
+        )
+
+    if strategy_mode == "manual":
+        return _base_decision(
+            intent="conversation",
+            assistant_message="I’m treating that as conversation for now. In Manual mode, tell me exactly what you want me to design or change, and include the key parameters you already know.",
+            needs_clarification=True,
+            reason="Manual mode conservative fallback",
+            confidence=0.72,
+            control_overrides=overrides,
+        )
+
+    if _is_question(message):
+        return _base_decision(
+            intent="conversation",
+            assistant_message="I can help with that. If you want a design change, tell me exactly what to change. If you want me to start a new design, give me the site type, rough size, and the main systems you want included.",
+            needs_clarification=True,
+            reason="General question without enough specific context",
+            confidence=0.68,
+            control_overrides=overrides,
+        )
+
+    return _base_decision(
+        intent="conversation",
+        assistant_message=_clarifying_design_reply(context),
+        needs_clarification=True,
+        reason="Fallback clarification for ambiguous request",
+        confidence=0.62,
+        control_overrides=overrides,
+    )
+
+
+def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
     message = str(payload_data.get("message") or "").strip()
     if not message:
         raise ValueError("Chat message is required.")
+    context = _chat_context_summary(dict(payload_data.get("context") or {}))
+
+    local = _local_chat_decision(payload_data)
+    if local["intent"] != "conversation" or local["needs_clarification"] or local["confidence"] >= 0.9:
+        return local
 
     system_prompt = (
         "You are Civora AI, an AI-powered civil engineering design assistant. "
@@ -674,6 +1014,10 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         data = json.loads(response.output_text)
         if not isinstance(data, dict):
             raise ValueError("Chat decision response was not an object.")
+        if overrides := local.get("control_overrides"):
+            merged = dict(data.get("control_overrides") or {})
+            merged.update(overrides)
+            data["control_overrides"] = merged
         if str(data.get("intent") or "") == "design":
             readiness_issue = _design_readiness_check(message, context)
             if readiness_issue:
@@ -688,19 +1032,23 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
                         "confidence": min(float(data.get("confidence") or 0.0), 0.92),
                     }
                 )
-        elif _is_well_specified_design_request(message, context):
+        elif _is_well_specified_design_request(message, context) or _looks_like_follow_up_design_edit(message, context):
             data.update(
                 {
                     "intent": "design",
-                    "assistant_message": "I have enough engineering context to generate a coordinated design from that brief.",
+                    "assistant_message": (
+                        "I’m updating the current design with that change."
+                        if bool(context.get("has_plan"))
+                        else "I have enough context to start the design."
+                    ),
                     "run_mode": "run",
                     "design_prompt": message,
                     "needs_clarification": False,
-                    "reason": "Well-specified engineering design brief detected",
+                    "reason": "Well-specified or follow-up engineering design request detected",
                     "confidence": max(float(data.get("confidence") or 0.0), 0.88),
                 }
             )
         data["success"] = True
         return data
     except Exception:
-        return _fallback_chat_decision(payload_data)
+        return local
