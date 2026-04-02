@@ -285,7 +285,7 @@ def _load_chat_client() -> Any:
     return _get_client()
 
 
-def _trim_chat_history(value: Any, limit: int = 10) -> List[Dict[str, str]]:
+def _trim_chat_history(value: Any, limit: int = 6) -> List[Dict[str, str]]:
     if not isinstance(value, list):
         return []
     trimmed: List[Dict[str, str]] = []
@@ -310,10 +310,13 @@ def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
     manual_failures = context.get("manual_failures") or []
     return {
         "strategy_mode": context.get("strategy_mode") or "hybrid",
-        "site_name": context.get("site_name") or "Civora AI Project",
-        "file_name": context.get("file_name") or "civora-ai-plan",
-        "project_type": context.get("project_type") or "commercial_pad",
+        "site_name": context.get("site_name") or "",
+        "file_name": context.get("file_name") or "",
+        "project_type": context.get("project_type") or "",
         "units": context.get("units") or "ft",
+        "lot_width": context.get("lot_width"),
+        "lot_height": context.get("lot_height"),
+        "parking_count": context.get("parking_count"),
         "disciplines": {
             "roads": bool(context.get("roads", True)),
             "grading": bool(context.get("grading", True)),
@@ -349,6 +352,118 @@ def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _is_casual_chat_message(text: str) -> bool:
+    normalized = text.strip().lower()
+    if not normalized:
+        return True
+    casual_exact = {
+        "hello",
+        "hi",
+        "hey",
+        "yo",
+        "sup",
+        "what's up",
+        "whats up",
+        "how are you",
+        "how r u",
+        "how are u",
+        "how you doing",
+        "how's it going",
+        "hows it going",
+        "good morning",
+        "good afternoon",
+        "good evening",
+        "thanks",
+        "thank you",
+        "cool",
+        "nice",
+        "okay",
+        "ok",
+    }
+    if normalized in casual_exact:
+        return True
+    casual_fragments = [
+        "how are you",
+        "how r u",
+        "how are u",
+        "how's it going",
+        "hows it going",
+        "can you help",
+        "what do you think",
+        "tell me about",
+    ]
+    if any(fragment in normalized for fragment in casual_fragments):
+        return True
+    return normalized.endswith("?") and not any(
+        keyword in normalized
+        for keyword in [
+            "design",
+            "create",
+            "generate",
+            "make",
+            "move",
+            "add",
+            "change",
+            "update",
+            "reroute",
+            "grade",
+            "drainage",
+            "utility",
+            "road",
+            "parking",
+            "building",
+            "basin",
+        ]
+    )
+
+
+def _looks_like_explicit_design_request(text: str) -> bool:
+    normalized = text.strip().lower()
+    strong_design_phrases = [
+        "create a",
+        "create an",
+        "design a",
+        "design an",
+        "generate a",
+        "generate an",
+        "make a",
+        "make an",
+        "build a",
+        "build an",
+        "update the design",
+        "revise the design",
+        "move the building",
+        "add parking",
+        "add drainage",
+        "add utilities",
+        "reroute",
+    ]
+    if any(phrase in normalized for phrase in strong_design_phrases):
+        return True
+    if any(
+        keyword in normalized
+        for keyword in ["site plan", "grading plan", "drainage plan", "utility plan"]
+    ):
+        return True
+    return False
+
+
+def _clarifying_design_reply(context: Dict[str, Any]) -> str:
+    project_type = str(context.get("project_type") or "").strip()
+    missing: List[str] = []
+    if not project_type:
+        missing.append("what kind of site you want")
+    lot_known = bool(context.get("lot_width")) and bool(context.get("lot_height"))
+    if not lot_known:
+        missing.append("rough lot size")
+    missing.append("what systems matter most")
+    ask = ", ".join(missing[:3])
+    return (
+        "I can help with that. Before I generate a design, tell me "
+        f"{ask}. For example: site type, approximate lot dimensions, parking target, and whether roads, grading, drainage, or utilities should be included."
+    )
+
+
 def _fallback_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
     message = str(payload_data.get("message") or "").strip()
     lowered = message.lower()
@@ -366,16 +481,20 @@ def _fallback_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             "confidence": 0.2,
             "control_overrides": {},
         }
-    if lowered in {"hello", "hi", "hey", "yo"}:
+    if _is_casual_chat_message(message):
         return {
             "success": True,
             "intent": "conversation",
-            "assistant_message": "Hi, I’m Civora. Tell me what you want to design, or ask me about the current plan.",
+            "assistant_message": (
+                "I’m doing well and I’m ready to help. You can ask me about the current plan, change settings, or tell me what you want to design."
+                if "how" in lowered
+                else "Hi, I’m Civora. Tell me what you want to design, or ask me about the current plan."
+            ),
             "run_mode": "none",
             "design_prompt": "",
             "needs_clarification": False,
-            "reason": "Greeting detected",
-            "confidence": 0.7,
+            "reason": "Casual conversation detected",
+            "confidence": 0.82,
             "control_overrides": {},
         }
     if "explain" in lowered or "why" in lowered:
@@ -418,12 +537,24 @@ def _fallback_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "success": True,
             "intent": "conversation",
-            "assistant_message": "I’m treating that as conversation only. In Manual mode, tell me explicitly what you want me to design or change.",
+            "assistant_message": "I’m treating that as conversation for now. In Manual mode, tell me exactly what you want me to design or change, and include the key parameters you already know.",
             "run_mode": "none",
             "design_prompt": "",
             "needs_clarification": True,
             "reason": "Manual mode fallback",
             "confidence": 0.45,
+            "control_overrides": {},
+        }
+    if not _looks_like_explicit_design_request(message):
+        return {
+            "success": True,
+            "intent": "conversation",
+            "assistant_message": _clarifying_design_reply(context),
+            "run_mode": "none",
+            "design_prompt": "",
+            "needs_clarification": True,
+            "reason": "Fallback clarification for underspecified request",
+            "confidence": 0.62,
             "control_overrides": {},
         }
     return {
@@ -455,6 +586,10 @@ def _run_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         "Choose explain when the user wants an explanation of the current plan. "
         "Choose fix or improve only when the user is explicitly asking for that action. "
         "In manual mode, be conservative and ask for clarification unless the design request is explicit. "
+        "If the user is asking for a design but the request is underspecified, do not bluff or invent a full plan. "
+        "Set needs_clarification=true and write a short, natural assistant message that asks for the next most important missing details, such as site type, lot size, parking target, building size, road needs, grading needs, drainage needs, utility scope, or image/sketch availability. "
+        "Ask only the smallest useful set of follow-up questions needed to move the design forward. "
+        "For casual conversation, answer naturally and briefly like a helpful AI teammate. "
         "Return concise, helpful assistant wording with a calm professional personality. "
         "If the user message includes settings changes plus a design request, keep intent as design and include the setting overrides too. "
         "Do not invent unsupported fields. "

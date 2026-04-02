@@ -158,7 +158,6 @@ type UploadImageResponse = {
 
 type PlanToolMode = "run" | "fix" | "improve";
 type StrategyMode = "manual" | "assisted" | "hybrid";
-type ChatIntent = "design" | "conversation";
 type ControlOverrides = Partial<{
   strategyMode: StrategyMode;
   projectType: string;
@@ -301,343 +300,6 @@ function summarizePlanResponse(
   ].filter(Boolean);
 
   return [headline, ...notes].join(" ");
-}
-
-function classifyChatIntent(
-  prompt: string,
-  strategyMode: StrategyMode,
-): ChatIntent {
-  const text = prompt.trim().toLowerCase();
-  if (!text) return "conversation";
-
-  const greetingSignals = [
-    "hello",
-    "hi",
-    "hey",
-    "yo",
-    "what's up",
-    "whats up",
-    "good morning",
-    "good afternoon",
-    "good evening",
-  ];
-
-  if (greetingSignals.includes(text)) {
-    return "conversation";
-  }
-
-  const designSignals = [
-    "design",
-    "create",
-    "generate",
-    "make",
-    "build",
-    "draft",
-    "plan",
-    "add",
-    "move",
-    "change",
-    "update",
-    "shift",
-    "reroute",
-    "grade",
-    "grading",
-    "drainage",
-    "utility",
-    "utilities",
-    "storm",
-    "sanitary",
-    "road",
-    "roads",
-    "parking",
-    "building",
-    "basin",
-    "detention",
-    "site plan",
-    "layout",
-    "slope",
-    "contour",
-  ];
-
-  const conversationSignals = [
-    "what",
-    "why",
-    "how",
-    "can you explain",
-    "are you",
-    "should we",
-    "do you think",
-    "what happened",
-    "what does",
-    "can you help me understand",
-    "can you help",
-    "tell me",
-    "hello",
-    "hi",
-    "hey",
-  ];
-
-  const hasDesignSignal = designSignals.some((signal) => text.includes(signal));
-  const hasConversationSignal = conversationSignals.some((signal) =>
-    text.includes(signal),
-  );
-
-  const strongDesignIntent =
-    /(create|generate|design|make|add|move|change|update|shift|reroute)\b/.test(
-      text,
-    ) &&
-    /(site|plan|layout|parking|building|grading|drainage|utility|utilities|road|roads|basin|detention|storm|sanitary)/.test(
-      text,
-    );
-
-  const designContextWithoutVerb =
-    /(commercial|office|multifamily|industrial|corridor|roadway|drainage network)/.test(
-      text,
-    ) &&
-    /(site|plan|layout|parking|building|grading|drainage|utility|utilities|road|roads|basin|detention|storm|sanitary)/.test(
-      text,
-    );
-
-  const settingsOnlyRequest =
-    /\b(set|use|switch to|turn on|turn off|enable|disable)\b/.test(text) &&
-    !/(create|generate|design|make|build|plan|move|reroute|shift|layout)\b/.test(
-      text,
-    );
-
-  if (hasConversationSignal && !hasDesignSignal) return "conversation";
-  if (settingsOnlyRequest) return "conversation";
-  if (text.endsWith("?") && !hasDesignSignal) return "conversation";
-  if (strategyMode === "manual") {
-    return strongDesignIntent || designContextWithoutVerb ? "design" : "conversation";
-  }
-  return hasDesignSignal || strongDesignIntent || designContextWithoutVerb
-    ? "design"
-    : "conversation";
-}
-
-function buildConversationReply({
-  prompt,
-  siteName,
-  projectType,
-  currentExplanation,
-  currentTruthAudit,
-  currentManualFailures,
-  issues,
-  currentProject,
-}: {
-  prompt: string;
-  siteName: string;
-  projectType: string;
-  currentExplanation: any;
-  currentTruthAudit: any;
-  currentManualFailures: any[];
-  issues: Issue[];
-  currentProject: ProjectRecord | null;
-}) {
-  const lower = prompt.toLowerCase();
-  const explanationText =
-    typeof currentExplanation?.summary === "string"
-      ? currentExplanation.summary
-      : typeof currentExplanation?.overview === "string"
-        ? currentExplanation.overview
-        : "";
-  const truthPassed = currentTruthAudit?.success;
-
-  if (
-    lower.includes("what did") ||
-    lower.includes("explain") ||
-    lower.includes("why")
-  ) {
-    if (explanationText) {
-      return `Here’s the plain-English version: ${explanationText}`;
-    }
-    const blockerText = currentManualFailures.length
-      ? `The biggest blockers right now are ${currentManualFailures
-          .slice(0, 3)
-          .map((failure: any) => failure.code || failure.message || "manual validation issue")
-          .join(", ")}.`
-      : issues.length
-        ? `The current review items are ${issues
-            .slice(0, 3)
-            .map((issue) => issue.message)
-            .join("; ")}.`
-        : truthPassed
-          ? "The current design state is passing the visible truth checks."
-          : "The current design still needs review on one or more truth checks.";
-    return `We’re currently working on ${siteName || "this project"} as a ${projectType.replaceAll(
-      "_",
-      " ",
-    )} concept. ${blockerText}`;
-  }
-
-  if (lower.includes("warning") || lower.includes("issue") || lower.includes("problem")) {
-    if (currentManualFailures.length) {
-      return `The biggest blockers I’m seeing right now are ${currentManualFailures
-        .slice(0, 3)
-        .map((failure: any) => failure.code || failure.message || "manual validation issue")
-        .join(", ")}.`;
-    }
-    if (issues.length) {
-      return `The main review items right now are ${issues
-        .slice(0, 3)
-        .map((issue) => issue.message)
-        .join("; ")}.`;
-    }
-    return "I’m not seeing any major review warnings in the current workspace right now.";
-  }
-
-  if (lower.includes("trust") || lower.includes("valid") || lower.includes("truth")) {
-    const truthPassed = currentTruthAudit?.success;
-    return truthPassed
-      ? "The current design state is passing the truth checks I expose in the workspace."
-      : "The current design still needs review on one or more truth checks before I’d call it ready.";
-  }
-
-  if (lower.includes("project") || lower.includes("working on")) {
-    return currentProject
-      ? `We’re working inside the saved project "${currentProject.name}" right now.`
-      : `We’re in an unsaved working session for ${siteName || "this project"}.`;
-  }
-
-  return "I can answer questions about the current design, explain tradeoffs, or make a new design update when you want me to.";
-}
-
-function parseChatControls(prompt: string): {
-  overrides: ControlOverrides;
-  confirmations: string[];
-} {
-  const lower = prompt.toLowerCase();
-  const overrides: ControlOverrides = {};
-  const confirmations: string[] = [];
-
-  const setFlag = (
-    key: "roads" | "grading" | "drainage" | "utilities",
-    label: string,
-    value: boolean,
-  ) => {
-    overrides[key] = value;
-    confirmations.push(`${label} ${value ? "enabled" : "disabled"}`);
-  };
-
-  if (
-    /\b(use|switch to|set)\s+manual\b/.test(lower) ||
-    /\bmanual mode\b/.test(lower)
-  ) {
-    overrides.strategyMode = "manual";
-    confirmations.push("strategy set to Manual");
-  } else if (
-    /\b(use|switch to|set)\s+assisted\b/.test(lower) ||
-    /\bassisted mode\b/.test(lower)
-  ) {
-    overrides.strategyMode = "assisted";
-    confirmations.push("strategy set to Assisted");
-  } else if (
-    /\b(use|switch to|set)\s+hybrid\b/.test(lower) ||
-    /\bhybrid mode\b/.test(lower)
-  ) {
-    overrides.strategyMode = "hybrid";
-    confirmations.push("strategy set to Hybrid");
-  }
-
-  if (lower.includes("commercial")) {
-    overrides.projectType = "commercial_pad";
-    confirmations.push("project type set to Commercial pad");
-  } else if (lower.includes("office")) {
-    overrides.projectType = "office_site";
-    confirmations.push("project type set to Office site");
-  } else if (lower.includes("multifamily")) {
-    overrides.projectType = "multifamily_site";
-    confirmations.push("project type set to Multifamily site");
-  } else if (lower.includes("industrial")) {
-    overrides.projectType = "industrial_site";
-    confirmations.push("project type set to Industrial site");
-  } else if (lower.includes("corridor") || lower.includes("roadway")) {
-    overrides.projectType = "corridor_roadway";
-    confirmations.push("project type set to Corridor roadway");
-  } else if (lower.includes("drainage network")) {
-    overrides.projectType = "drainage_network";
-    confirmations.push("project type set to Drainage network");
-  }
-
-  if (/\b(feet|foot|ft)\b/.test(lower)) {
-    overrides.units = "ft";
-    confirmations.push("units set to feet");
-  } else if (/\bmeters?\b/.test(lower)) {
-    overrides.units = "m";
-    confirmations.push("units set to meters");
-  } else if (/\bmillimeters?\b|\bmm\b/.test(lower)) {
-    overrides.units = "mm";
-    confirmations.push("units set to millimeters");
-  }
-
-  if (/(turn off|disable|remove|without|no)\s+roads?/.test(lower)) {
-    setFlag("roads", "roads", false);
-  } else if (/(turn on|enable|include|add)\s+roads?/.test(lower)) {
-    setFlag("roads", "roads", true);
-  }
-  if (/(turn off|disable|remove|without|no)\s+grading/.test(lower)) {
-    setFlag("grading", "grading", false);
-  } else if (/(turn on|enable|include|add)\s+grading/.test(lower)) {
-    setFlag("grading", "grading", true);
-  }
-  if (/(turn off|disable|remove|without|no)\s+drainage/.test(lower)) {
-    setFlag("drainage", "drainage", false);
-  } else if (/(turn on|enable|include|add)\s+drainage/.test(lower)) {
-    setFlag("drainage", "drainage", true);
-  }
-  if (/(turn off|disable|remove|without|no)\s+utilities?/.test(lower)) {
-    setFlag("utilities", "utilities", false);
-  } else if (/(turn on|enable|include|add)\s+utilities?/.test(lower)) {
-    setFlag("utilities", "utilities", true);
-  }
-
-  const projectNameMatch = prompt.match(/project name\s*(?:to|=)?\s*["“]?([^"\n”]+)["”]?/i);
-  if (projectNameMatch?.[1]) {
-    overrides.siteName = projectNameMatch[1].trim();
-    confirmations.push(`project name set to ${overrides.siteName}`);
-  }
-  const fileNameMatch = prompt.match(/file name\s*(?:to|=)?\s*["“]?([^"\n”]+)["”]?/i);
-  if (fileNameMatch?.[1]) {
-    overrides.fileName = fileNameMatch[1].trim();
-    confirmations.push(`file name set to ${overrides.fileName}`);
-  }
-
-  const numericPatterns: Array<[
-    RegExp,
-    keyof Pick<
-      ControlOverrides,
-      | "lotWidth"
-      | "lotHeight"
-      | "buildingWidth"
-      | "buildingDepth"
-      | "setback"
-      | "parkingCount"
-    >,
-    string
-  ]> = [
-    [/lot width\s*(?:to|=)?\s*(\d+)/i, "lotWidth", "lot width"],
-    [/lot height\s*(?:to|=)?\s*(\d+)/i, "lotHeight", "lot height"],
-    [/building width\s*(?:to|=)?\s*(\d+)/i, "buildingWidth", "building width"],
-    [/building depth\s*(?:to|=)?\s*(\d+)/i, "buildingDepth", "building depth"],
-    [/setback\s*(?:to|=)?\s*(\d+)/i, "setback", "setback"],
-    [/(?:parking(?: count)?|spaces?)\s*(?:to|=)?\s*(\d+)/i, "parkingCount", "parking count"],
-  ];
-
-  for (const [pattern, key, label] of numericPatterns) {
-    const match = prompt.match(pattern);
-    if (match?.[1]) {
-      overrides[key] = match[1];
-      confirmations.push(`${label} set to ${match[1]}`);
-    }
-  }
-
-  const parkingPhrase = prompt.match(/(\d+)\s+parking spaces?/i);
-  if (parkingPhrase?.[1]) {
-    overrides.parkingCount = parkingPhrase[1];
-    confirmations.push(`parking count set to ${parkingPhrase[1]}`);
-  }
-
-  return { overrides, confirmations };
 }
 
 function Card({
@@ -889,21 +551,21 @@ export default function PerformanceAIDashboard() {
   const [authStatusError, setAuthStatusError] = useState("");
 
   const [strategyMode, setStrategyMode] = useState<StrategyMode>("hybrid");
-  const [projectType, setProjectType] = useState("commercial_pad");
+  const [projectType, setProjectType] = useState("");
   const [units, setUnits] = useState("ft");
   const [prompt, setPrompt] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => [
     createWelcomeMessage(),
   ]);
   const [imageName, setImageName] = useState("");
-  const [siteName, setSiteName] = useState("Civora AI Project");
-  const [fileName, setFileName] = useState("civora-ai-plan");
-  const [lotWidth, setLotWidth] = useState("220");
-  const [lotHeight, setLotHeight] = useState("180");
-  const [buildingWidth, setBuildingWidth] = useState("100");
-  const [buildingDepth, setBuildingDepth] = useState("80");
-  const [setback, setSetback] = useState("10");
-  const [parkingCount, setParkingCount] = useState("36");
+  const [siteName, setSiteName] = useState("");
+  const [fileName, setFileName] = useState("");
+  const [lotWidth, setLotWidth] = useState("");
+  const [lotHeight, setLotHeight] = useState("");
+  const [buildingWidth, setBuildingWidth] = useState("");
+  const [buildingDepth, setBuildingDepth] = useState("");
+  const [setback, setSetback] = useState("");
+  const [parkingCount, setParkingCount] = useState("");
   const [roads, setRoads] = useState(true);
   const [grading, setGrading] = useState(true);
   const [drainage, setDrainage] = useState(true);
@@ -1222,10 +884,10 @@ export default function PerformanceAIDashboard() {
       projectInput.image_path ? uploadedImageSrc(projectInput.image_path, token) : "",
     );
     setUploadedImagePreviewUrl("");
-    setSiteName(manualFields.project_name ?? "Civora AI Project");
-    setFileName(manualFields.file_name ?? manualFields.project_name ?? "civora-ai-plan");
+    setSiteName(manualFields.project_name ?? "");
+    setFileName(manualFields.file_name ?? manualFields.project_name ?? "");
     setUnits(manualFields.units ?? "ft");
-    setProjectType(manualFields.project_type ?? "commercial_pad");
+    setProjectType(manualFields.project_type ?? "");
     setLotWidth(String(lot.w ?? ""));
     setLotHeight(String(lot.h ?? ""));
     setSetback(String(manualFields.setback ?? ""));
@@ -1268,6 +930,9 @@ export default function PerformanceAIDashboard() {
       file_name: overrides.fileName ?? fileName,
       project_type: overrides.projectType ?? projectType,
       units: overrides.units ?? units,
+      lot_width: overrides.lotWidth ?? lotWidth,
+      lot_height: overrides.lotHeight ?? lotHeight,
+      parking_count: overrides.parkingCount ?? parkingCount,
       roads: overrides.roads ?? roads,
       grading: overrides.grading ?? grading,
       drainage: overrides.drainage ?? drainage,
@@ -1366,7 +1031,7 @@ export default function PerformanceAIDashboard() {
       await requestPreview(
         {
           result: data,
-          filename_stem: fileName || siteName,
+          filename_stem: fileName || siteName || "civora-ai-plan",
         },
         { silent: true },
       );
@@ -1720,14 +1385,14 @@ export default function PerformanceAIDashboard() {
       setCurrentProject(project);
       setProjectId(project.project_id);
       setProjectToOpen(project.project_id);
-      setSiteName(project.name ?? "Civora AI Project");
+      setSiteName(project.name ?? "");
       applyProjectInput(project.project_input ?? {});
       if (project.latest_result && Object.keys(project.latest_result).length) {
         applyBackendResult(project.latest_result);
         await requestPreview(
           {
             result: project.latest_result,
-            filename_stem: fileName || project.name,
+            filename_stem: fileName || project.name || "civora-ai-plan",
           },
           { silent: true },
         );
@@ -1913,9 +1578,9 @@ export default function PerformanceAIDashboard() {
     setPlanPreviewSummary(null);
     setAssumptions(defaultAssumptions);
     setIssues(defaultIssues);
-    setSiteName("Civora AI Project");
-    setFileName("civora-ai-plan");
-    setProjectType("commercial_pad");
+    setSiteName("");
+    setFileName("");
+    setProjectType("");
     setUnits("ft");
     setLotWidth("220");
     setLotHeight("180");
@@ -2404,19 +2069,6 @@ export default function PerformanceAIDashboard() {
                   </p>
                 </button>
               ))}
-
-              <select
-                value={projectType}
-                onChange={(e) => setProjectType(e.target.value)}
-                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70"
-              >
-                <option value="commercial_pad">Commercial pad</option>
-                <option value="office_site">Office site</option>
-                <option value="multifamily_site">Multifamily site</option>
-                <option value="industrial_site">Industrial site</option>
-                <option value="corridor_roadway">Corridor roadway</option>
-                <option value="drainage_network">Drainage network</option>
-              </select>
 
               <TextInput
                 value={siteName}
