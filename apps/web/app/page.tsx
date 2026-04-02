@@ -176,6 +176,24 @@ type ControlOverrides = Partial<{
   setback: string;
   parkingCount: string;
 }>;
+type ChatDecisionIntent =
+  | "conversation"
+  | "settings"
+  | "design"
+  | "explain"
+  | "fix"
+  | "improve";
+type ChatDecisionResponse = {
+  success: boolean;
+  intent: ChatDecisionIntent;
+  assistant_message: string;
+  run_mode: "none" | "run" | "fix" | "improve";
+  design_prompt: string;
+  needs_clarification: boolean;
+  reason: string;
+  confidence: number;
+  control_overrides: ControlOverrides;
+};
 type ChatMessage = {
   id: string;
   role: "user" | "assistant" | "system";
@@ -222,7 +240,7 @@ function createChatMessage(
 function createWelcomeMessage(): ChatMessage {
   return createChatMessage(
     "assistant",
-    "I’m ready to help you shape this design. Tell me what you want to create, what should change, or what you want me to explain before we finalize.",
+    "Hi, I’m Civora. I can help you think through a site, answer questions, and turn design requests into a plan when you’re ready. Tell me what you want to change, or just ask me a question first.",
   );
 }
 
@@ -285,15 +303,37 @@ function summarizePlanResponse(
   return [headline, ...notes].join(" ");
 }
 
-function classifyChatIntent(prompt: string): ChatIntent {
+function classifyChatIntent(
+  prompt: string,
+  strategyMode: StrategyMode,
+): ChatIntent {
   const text = prompt.trim().toLowerCase();
   if (!text) return "conversation";
+
+  const greetingSignals = [
+    "hello",
+    "hi",
+    "hey",
+    "yo",
+    "what's up",
+    "whats up",
+    "good morning",
+    "good afternoon",
+    "good evening",
+  ];
+
+  if (greetingSignals.includes(text)) {
+    return "conversation";
+  }
 
   const designSignals = [
     "design",
     "create",
     "generate",
     "make",
+    "build",
+    "draft",
+    "plan",
     "add",
     "move",
     "change",
@@ -330,6 +370,11 @@ function classifyChatIntent(prompt: string): ChatIntent {
     "what happened",
     "what does",
     "can you help me understand",
+    "can you help",
+    "tell me",
+    "hello",
+    "hi",
+    "hey",
   ];
 
   const hasDesignSignal = designSignals.some((signal) => text.includes(signal));
@@ -337,9 +382,37 @@ function classifyChatIntent(prompt: string): ChatIntent {
     text.includes(signal),
   );
 
+  const strongDesignIntent =
+    /(create|generate|design|make|add|move|change|update|shift|reroute)\b/.test(
+      text,
+    ) &&
+    /(site|plan|layout|parking|building|grading|drainage|utility|utilities|road|roads|basin|detention|storm|sanitary)/.test(
+      text,
+    );
+
+  const designContextWithoutVerb =
+    /(commercial|office|multifamily|industrial|corridor|roadway|drainage network)/.test(
+      text,
+    ) &&
+    /(site|plan|layout|parking|building|grading|drainage|utility|utilities|road|roads|basin|detention|storm|sanitary)/.test(
+      text,
+    );
+
+  const settingsOnlyRequest =
+    /\b(set|use|switch to|turn on|turn off|enable|disable)\b/.test(text) &&
+    !/(create|generate|design|make|build|plan|move|reroute|shift|layout)\b/.test(
+      text,
+    );
+
   if (hasConversationSignal && !hasDesignSignal) return "conversation";
+  if (settingsOnlyRequest) return "conversation";
   if (text.endsWith("?") && !hasDesignSignal) return "conversation";
-  return "design";
+  if (strategyMode === "manual") {
+    return strongDesignIntent || designContextWithoutVerb ? "design" : "conversation";
+  }
+  return hasDesignSignal || strongDesignIntent || designContextWithoutVerb
+    ? "design"
+    : "conversation";
 }
 
 function buildConversationReply({
@@ -368,23 +441,44 @@ function buildConversationReply({
       : typeof currentExplanation?.overview === "string"
         ? currentExplanation.overview
         : "";
+  const truthPassed = currentTruthAudit?.success;
 
-  if (lower.includes("what did") || lower.includes("explain") || lower.includes("why")) {
+  if (
+    lower.includes("what did") ||
+    lower.includes("explain") ||
+    lower.includes("why")
+  ) {
     if (explanationText) {
-      return explanationText;
+      return `Here’s the plain-English version: ${explanationText}`;
     }
-    return `We’re currently working on ${siteName || "this project"} as a ${projectType.replaceAll("_", " ")} concept. Ask me to generate or change something and I’ll explain the result as we go.`;
+    const blockerText = currentManualFailures.length
+      ? `The biggest blockers right now are ${currentManualFailures
+          .slice(0, 3)
+          .map((failure: any) => failure.code || failure.message || "manual validation issue")
+          .join(", ")}.`
+      : issues.length
+        ? `The current review items are ${issues
+            .slice(0, 3)
+            .map((issue) => issue.message)
+            .join("; ")}.`
+        : truthPassed
+          ? "The current design state is passing the visible truth checks."
+          : "The current design still needs review on one or more truth checks.";
+    return `We’re currently working on ${siteName || "this project"} as a ${projectType.replaceAll(
+      "_",
+      " ",
+    )} concept. ${blockerText}`;
   }
 
   if (lower.includes("warning") || lower.includes("issue") || lower.includes("problem")) {
     if (currentManualFailures.length) {
-      return `The main blockers right now are ${currentManualFailures
+      return `The biggest blockers I’m seeing right now are ${currentManualFailures
         .slice(0, 3)
         .map((failure: any) => failure.code || failure.message || "manual validation issue")
         .join(", ")}.`;
     }
     if (issues.length) {
-      return `The current review items are ${issues
+      return `The main review items right now are ${issues
         .slice(0, 3)
         .map((issue) => issue.message)
         .join("; ")}.`;
@@ -395,7 +489,7 @@ function buildConversationReply({
   if (lower.includes("trust") || lower.includes("valid") || lower.includes("truth")) {
     const truthPassed = currentTruthAudit?.success;
     return truthPassed
-      ? "The current design state is passing the truth audit checks that are exposed in the workspace."
+      ? "The current design state is passing the truth checks I expose in the workspace."
       : "The current design still needs review on one or more truth checks before I’d call it ready.";
   }
 
@@ -405,7 +499,7 @@ function buildConversationReply({
       : `We’re in an unsaved working session for ${siteName || "this project"}.`;
   }
 
-  return "I can answer questions about the current design, explain what changed, or make a new design update when you’re ready.";
+  return "I can answer questions about the current design, explain tradeoffs, or make a new design update when you want me to.";
 }
 
 function parseChatControls(prompt: string): {
@@ -1163,6 +1257,40 @@ export default function PerformanceAIDashboard() {
     if (typeof overrides.parkingCount === "string") setParkingCount(overrides.parkingCount);
   };
 
+  const buildChatDecisionContext = (
+    overrides: ControlOverrides = {},
+    message: string,
+  ) => {
+    const nextStrategy = overrides.strategyMode ?? strategyMode;
+    return {
+      strategy_mode: nextStrategy,
+      site_name: overrides.siteName ?? siteName,
+      file_name: overrides.fileName ?? fileName,
+      project_type: overrides.projectType ?? projectType,
+      units: overrides.units ?? units,
+      roads: overrides.roads ?? roads,
+      grading: overrides.grading ?? grading,
+      drainage: overrides.drainage ?? drainage,
+      utilities: overrides.utilities ?? utilities,
+      has_plan: Boolean(backendResult?.final_plan),
+      has_preview: Boolean(planPreviewUrl),
+      current_project: currentProject
+        ? {
+            project_id: currentProject.project_id,
+            name: currentProject.name,
+          }
+        : null,
+      current_explanation: currentExplanation,
+      current_truth_audit: currentTruthAudit,
+      manual_failures: currentManualFailures,
+      issues,
+      chat_thread: [
+        ...chatMessages,
+        createChatMessage("user", message),
+      ].map(({ role, content, kind }) => ({ role, content, kind })),
+    };
+  };
+
   const buildPayloadFromOverrides = (
     overrides: ControlOverrides = {},
     promptOverride?: string,
@@ -1211,6 +1339,72 @@ export default function PerformanceAIDashboard() {
       },
       allow_ai_fill_for_blanks: nextStrategy !== "manual",
     };
+  };
+
+  const executePlanAction = async ({
+    mode,
+    requestPayload,
+    assistantPrefix,
+    clearPromptOnSuccess = false,
+  }: {
+    mode: PlanToolMode;
+    requestPayload: any;
+    assistantPrefix?: string | null;
+    clearPromptOnSuccess?: boolean;
+  }) => {
+    setBusy(true);
+    setActivePlanTool(mode);
+    try {
+      const data = await postJson<any>("/api/orchestrate", requestPayload, {
+        token,
+      });
+      applyBackendResult(data);
+      appendChatMessage(
+        "assistant",
+        [assistantPrefix, summarizePlanResponse(data, mode)].filter(Boolean).join(" "),
+      );
+      await requestPreview(
+        {
+          result: data,
+          filename_stem: fileName || siteName,
+        },
+        { silent: true },
+      );
+      setStatusMessage(
+        mode === "fix"
+          ? "Civora AI ran a focused fix pass."
+          : mode === "improve"
+            ? "Civora AI generated an improved plan."
+            : "Plan run completed.",
+      );
+      if (clearPromptOnSuccess) {
+        setPrompt("");
+      }
+    } catch (error) {
+      appendChatMessage(
+        "assistant",
+        error instanceof Error
+          ? error.message
+          : mode === "fix"
+            ? "I couldn’t complete the fix pass."
+            : mode === "improve"
+              ? "I couldn’t complete the improvement pass."
+              : "I couldn’t update the design.",
+        "status",
+      );
+      setStatusMessage(
+        error instanceof Error
+          ? error.message
+          : mode === "fix"
+            ? "Fix pass failed."
+            : mode === "improve"
+              ? "Improve pass failed."
+              : "Planner run failed.",
+      );
+    } finally {
+      setBusy(false);
+      setActivePlanTool("run");
+    }
   };
 
   const loadMe = async (authToken: string) => {
@@ -1317,49 +1511,12 @@ export default function PerformanceAIDashboard() {
   const runOrchestrator = async (mode: PlanToolMode = "run") => {
     if (!token) return;
     const trimmedPrompt = prompt.trim();
-    const { overrides, confirmations } = parseChatControls(trimmedPrompt);
     if (mode === "run" && !trimmedPrompt && !imageName) {
       setStatusMessage("Add a request or image so Civora AI has something to work from.");
       return;
     }
-    if (mode === "run" && trimmedPrompt) {
-      if (confirmations.length) {
-        applyControlOverrides(overrides);
-      }
-      const intent = classifyChatIntent(trimmedPrompt);
-      if (intent === "conversation") {
-        appendChatMessage("user", trimmedPrompt);
-        appendChatMessage(
-          "assistant",
-          [
-            confirmations.length
-              ? `Updated settings: ${confirmations.join(", ")}.`
-              : null,
-            buildConversationReply({
-              prompt: trimmedPrompt,
-              siteName: overrides.siteName ?? siteName,
-              projectType: overrides.projectType ?? projectType,
-              currentExplanation,
-              currentTruthAudit,
-              currentManualFailures,
-              issues,
-              currentProject,
-            }),
-          ]
-            .filter(Boolean)
-            .join(" "),
-        );
-        setPrompt("");
-        setStatusMessage("Civora AI answered your question without rerunning the design.");
-        return;
-      }
-    }
-    setBusy(true);
-    setActivePlanTool(mode);
-    try {
-      if (mode === "run" && trimmedPrompt) {
-        appendChatMessage("user", trimmedPrompt);
-      } else if (mode === "fix") {
+    if (mode !== "run") {
+      if (mode === "fix") {
         appendChatMessage(
           "system",
           "Fix the active design and focus on the most important engineering blockers.",
@@ -1372,73 +1529,130 @@ export default function PerformanceAIDashboard() {
           "action",
         );
       }
-      const requestPayload =
-        mode === "run"
-          ? buildPayloadFromOverrides(overrides, trimmedPrompt)
-          : {
-              ...buildPayloadFromOverrides(),
-              full_design_mode: true,
-              optimize_goal:
-                mode === "fix"
-                  ? suggestedImproveGoal ?? "reduce_pipe_length"
-                  : suggestedImproveGoal,
-              meta: {
-                ...(buildPayloadFromOverrides() as any).meta,
-                requested_plan_tool: mode,
-              },
-            };
-      const data = await postJson<any>("/api/orchestrate", requestPayload, {
-        token,
-      });
-      applyBackendResult(data);
-      appendChatMessage(
-        "assistant",
-        [
-          confirmations.length ? `Updated settings: ${confirmations.join(", ")}.` : null,
-          summarizePlanResponse(data, mode),
-        ]
-          .filter(Boolean)
-          .join(" "),
-      );
-      await requestPreview(
-        {
-          result: data,
-          filename_stem: fileName || siteName,
+      await executePlanAction({
+        mode,
+        requestPayload: {
+          ...buildPayloadFromOverrides(),
+          full_design_mode: true,
+          optimize_goal:
+            mode === "fix"
+              ? suggestedImproveGoal ?? "reduce_pipe_length"
+              : suggestedImproveGoal,
+          meta: {
+            ...(buildPayloadFromOverrides() as any).meta,
+            requested_plan_tool: mode,
+          },
         },
-        { silent: true },
+      });
+      return;
+    }
+
+    appendChatMessage("user", trimmedPrompt);
+    setBusy(true);
+    setActivePlanTool("run");
+    try {
+      const decision = await postJson<ChatDecisionResponse>(
+        "/api/chat/decide",
+        {
+          message: trimmedPrompt,
+          context: buildChatDecisionContext({}, trimmedPrompt),
+        },
+        { token },
       );
-      setStatusMessage(
-        mode === "fix"
-          ? "Civora AI ran a focused fix pass."
-          : mode === "improve"
-            ? "Civora AI generated an improved plan."
-            : "Plan run completed.",
-      );
-      if (mode === "run") {
+      const overrides = decision.control_overrides ?? {};
+      applyControlOverrides(overrides);
+      const nextStrategy = overrides.strategyMode ?? strategyMode;
+
+      if (
+        decision.intent === "conversation" ||
+        decision.intent === "settings" ||
+        decision.intent === "explain"
+      ) {
+        appendChatMessage(
+          "assistant",
+          decision.intent === "explain" && !decision.assistant_message
+            ? "I can explain the current design once there’s a plan in the workspace."
+            : decision.assistant_message,
+          decision.intent === "explain" ? "explanation" : "message",
+        );
         setPrompt("");
+        setStatusMessage(
+          decision.needs_clarification
+            ? "Civora AI is asking for a little more detail before running a design."
+            : "Civora AI responded in chat without rerunning the planner.",
+        );
+        setBusy(false);
+        setActivePlanTool("run");
+        return;
       }
+
+      const resolvedMode: PlanToolMode =
+        decision.run_mode === "fix"
+          ? "fix"
+          : decision.run_mode === "improve"
+            ? "improve"
+            : "run";
+
+      if (resolvedMode !== "run") {
+        await executePlanAction({
+          mode: resolvedMode,
+          requestPayload: {
+            ...buildPayloadFromOverrides(overrides),
+            full_design_mode: true,
+            optimize_goal:
+              resolvedMode === "fix"
+                ? suggestedImproveGoal ?? "reduce_pipe_length"
+                : suggestedImproveGoal,
+            meta: {
+              ...(buildPayloadFromOverrides(overrides) as any).meta,
+              requested_plan_tool: resolvedMode,
+              chat_decision_reason: decision.reason,
+            },
+          },
+          assistantPrefix: decision.assistant_message,
+          clearPromptOnSuccess: true,
+        });
+        return;
+      }
+
+      if (!decision.design_prompt && !imageName) {
+        appendChatMessage(
+          "assistant",
+          decision.assistant_message || "Tell me what you want me to design or change.",
+        );
+        setPrompt("");
+        setStatusMessage(
+          nextStrategy === "manual"
+            ? "Civora AI needs a more explicit design request before running in Manual mode."
+            : "Civora AI needs a little more direction before generating a design.",
+        );
+        setBusy(false);
+        setActivePlanTool("run");
+        return;
+      }
+
+      await executePlanAction({
+        mode: "run",
+        requestPayload: {
+          ...buildPayloadFromOverrides(overrides, decision.design_prompt || trimmedPrompt),
+          meta: {
+            ...(buildPayloadFromOverrides(overrides, decision.design_prompt || trimmedPrompt) as any).meta,
+            chat_decision_reason: decision.reason,
+            chat_decision_confidence: decision.confidence,
+          },
+        },
+        assistantPrefix: decision.assistant_message,
+        clearPromptOnSuccess: true,
+      });
     } catch (error) {
       appendChatMessage(
         "assistant",
-        error instanceof Error
-          ? error.message
-          : mode === "fix"
-            ? "I couldn’t complete the fix pass."
-            : mode === "improve"
-              ? "I couldn’t complete the improvement pass."
-              : "I couldn’t update the design.",
+        error instanceof Error ? error.message : "I couldn’t process that message.",
         "status",
       );
       setStatusMessage(
-        error instanceof Error
-          ? error.message
-          : mode === "fix"
-            ? "Fix pass failed."
-            : mode === "improve"
-              ? "Improve pass failed."
-              : "Planner run failed.",
+        error instanceof Error ? error.message : "Civora AI could not process that message.",
       );
-    } finally {
       setBusy(false);
       setActivePlanTool("run");
     }
@@ -1642,8 +1856,29 @@ export default function PerformanceAIDashboard() {
           : typeof selectedRun?.message === "string"
             ? selectedRun.message
             : "";
+    const fallbackDetails = [
+      currentManualFailures.length
+        ? `Current blockers: ${currentManualFailures
+            .slice(0, 3)
+            .map((failure: any) => failure.code || failure.message || "manual validation issue")
+            .join(", ")}.`
+        : null,
+      issues.length
+        ? `Current warnings: ${issues
+            .slice(0, 3)
+            .map((issue) => issue.message)
+            .join("; ")}.`
+        : null,
+      currentTruthAudit?.success === true
+        ? "Truth checks are currently passing."
+        : currentTruthAudit?.success === false
+          ? "Truth checks still need review."
+          : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
 
-    if (!explanationText) {
+    if (!explanationText && !fallbackDetails) {
       setStatusMessage("Run Civora AI first so there is a plan to explain.");
       return;
     }
@@ -1651,8 +1886,9 @@ export default function PerformanceAIDashboard() {
     appendChatMessage(
       "assistant",
       [
-        explanationText,
+        explanationText || "Here’s where the current design stands.",
         typeof currentExplanation?.why === "string" ? currentExplanation.why : null,
+        fallbackDetails || null,
       ]
         .filter(Boolean)
         .join(" "),
@@ -2250,24 +2486,6 @@ export default function PerformanceAIDashboard() {
               </div>
 
               <div className="border-t border-slate-200 p-4 md:p-6">
-                <div className="mb-4 grid gap-3 md:grid-cols-3">
-                  <TextInput
-                    value={lotWidth}
-                    onChange={(e) => setLotWidth(e.target.value)}
-                    placeholder="Lot width"
-                  />
-                  <TextInput
-                    value={lotHeight}
-                    onChange={(e) => setLotHeight(e.target.value)}
-                    placeholder="Lot height"
-                  />
-                  <TextInput
-                    value={parkingCount}
-                    onChange={(e) => setParkingCount(e.target.value)}
-                    placeholder="Parking count"
-                  />
-                </div>
-
                 <div className="mb-4 rounded-3xl border border-slate-200 bg-slate-50 p-3">
                   <TextArea
                     value={prompt}

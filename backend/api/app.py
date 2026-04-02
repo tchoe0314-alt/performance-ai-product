@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from base64 import b64encode
@@ -115,6 +116,61 @@ class ArtifactPayload(BaseModel):
     filename_stem: Optional[str] = None
 
 
+class ChatDecisionPayload(BaseModel):
+    message: str
+    context: Dict[str, Any] = Field(default_factory=dict)
+
+
+CHAT_DECISION_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "intent": {
+            "type": "string",
+            "enum": ["conversation", "settings", "design", "explain", "fix", "improve"],
+        },
+        "assistant_message": {"type": "string"},
+        "run_mode": {"type": "string", "enum": ["none", "run", "fix", "improve"]},
+        "design_prompt": {"type": "string"},
+        "needs_clarification": {"type": "boolean"},
+        "reason": {"type": "string"},
+        "confidence": {"type": "number"},
+        "control_overrides": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "strategyMode": {"type": "string", "enum": ["manual", "assisted", "hybrid"]},
+                "projectType": {"type": "string"},
+                "units": {"type": "string"},
+                "roads": {"type": "boolean"},
+                "grading": {"type": "boolean"},
+                "drainage": {"type": "boolean"},
+                "utilities": {"type": "boolean"},
+                "siteName": {"type": "string"},
+                "fileName": {"type": "string"},
+                "lotWidth": {"type": "string"},
+                "lotHeight": {"type": "string"},
+                "buildingWidth": {"type": "string"},
+                "buildingDepth": {"type": "string"},
+                "setback": {"type": "string"},
+                "parkingCount": {"type": "string"},
+            },
+            "required": [],
+        },
+    },
+    "required": [
+        "intent",
+        "assistant_message",
+        "run_mode",
+        "design_prompt",
+        "needs_clarification",
+        "reason",
+        "confidence",
+        "control_overrides",
+    ],
+}
+
+
 app = FastAPI(
     title="Civora AI Backend",
     version=APP_VERSION,
@@ -219,6 +275,222 @@ def _run_orchestration(payload_data: Dict[str, Any]) -> Dict[str, Any]:
     result_payload["metadata"].setdefault("_workflow_run_id", _new_workflow_id("run"))
     result_payload["metadata"].setdefault("input_mode", payload_data.get("input_mode", "assisted"))
     return result_payload
+
+
+def _load_chat_client() -> Any:
+    try:
+        from parsers.ai_parser import _get_client  # type: ignore
+    except ImportError:
+        from parsers.ai_parser import _get_client  # type: ignore
+    return _get_client()
+
+
+def _trim_chat_history(value: Any, limit: int = 10) -> List[Dict[str, str]]:
+    if not isinstance(value, list):
+        return []
+    trimmed: List[Dict[str, str]] = []
+    for item in value[-limit:]:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "assistant").strip().lower()
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        if role not in {"user", "assistant", "system"}:
+            role = "assistant"
+        trimmed.append({"role": role, "content": content})
+    return trimmed
+
+
+def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
+    current_project = context.get("current_project") or {}
+    current_truth = context.get("current_truth_audit") or {}
+    current_explanation = context.get("current_explanation") or {}
+    issues = context.get("issues") or []
+    manual_failures = context.get("manual_failures") or []
+    return {
+        "strategy_mode": context.get("strategy_mode") or "hybrid",
+        "site_name": context.get("site_name") or "Civora AI Project",
+        "file_name": context.get("file_name") or "civora-ai-plan",
+        "project_type": context.get("project_type") or "commercial_pad",
+        "units": context.get("units") or "ft",
+        "disciplines": {
+            "roads": bool(context.get("roads", True)),
+            "grading": bool(context.get("grading", True)),
+            "drainage": bool(context.get("drainage", True)),
+            "utilities": bool(context.get("utilities", True)),
+        },
+        "has_plan": bool(context.get("has_plan")),
+        "has_preview": bool(context.get("has_preview")),
+        "current_project_name": current_project.get("name"),
+        "truth_success": current_truth.get("success"),
+        "engineering_trust_score": current_truth.get("engineering_trust_score"),
+        "explanation_summary": current_explanation.get("summary")
+        or current_explanation.get("overview"),
+        "issues": [
+            {
+                "severity": item.get("severity"),
+                "message": item.get("message"),
+            }
+            for item in issues[:6]
+            if isinstance(item, dict)
+        ],
+        "manual_failures": [
+            {
+                "code": item.get("code"),
+                "message": item.get("message"),
+                "system": item.get("system"),
+                "rule": item.get("rule"),
+            }
+            for item in manual_failures[:6]
+            if isinstance(item, dict)
+        ],
+        "chat_history": _trim_chat_history(context.get("chat_thread")),
+    }
+
+
+def _fallback_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
+    message = str(payload_data.get("message") or "").strip()
+    lowered = message.lower()
+    context = _chat_context_summary(dict(payload_data.get("context") or {}))
+    strategy_mode = str(context.get("strategy_mode") or "hybrid")
+    if not message:
+        return {
+            "success": True,
+            "intent": "conversation",
+            "assistant_message": "Tell me what you want to change, or ask me a question about the current design.",
+            "run_mode": "none",
+            "design_prompt": "",
+            "needs_clarification": True,
+            "reason": "Empty message",
+            "confidence": 0.2,
+            "control_overrides": {},
+        }
+    if lowered in {"hello", "hi", "hey", "yo"}:
+        return {
+            "success": True,
+            "intent": "conversation",
+            "assistant_message": "Hi, I’m Civora. Tell me what you want to design, or ask me about the current plan.",
+            "run_mode": "none",
+            "design_prompt": "",
+            "needs_clarification": False,
+            "reason": "Greeting detected",
+            "confidence": 0.7,
+            "control_overrides": {},
+        }
+    if "explain" in lowered or "why" in lowered:
+        return {
+            "success": True,
+            "intent": "explain",
+            "assistant_message": "I’ll explain what the current design is doing and what needs attention.",
+            "run_mode": "none",
+            "design_prompt": "",
+            "needs_clarification": False,
+            "reason": "Explanation request detected",
+            "confidence": 0.6,
+            "control_overrides": {},
+        }
+    if "fix" in lowered:
+        return {
+            "success": True,
+            "intent": "fix",
+            "assistant_message": "I’ll run a focused fix pass on the current design.",
+            "run_mode": "fix",
+            "design_prompt": "",
+            "needs_clarification": False,
+            "reason": "Fix request detected",
+            "confidence": 0.6,
+            "control_overrides": {},
+        }
+    if "improve" in lowered or "better" in lowered or "optimize" in lowered:
+        return {
+            "success": True,
+            "intent": "improve",
+            "assistant_message": "I’ll improve the current design while keeping your project intent intact.",
+            "run_mode": "improve",
+            "design_prompt": "",
+            "needs_clarification": False,
+            "reason": "Improve request detected",
+            "confidence": 0.6,
+            "control_overrides": {},
+        }
+    if strategy_mode == "manual":
+        return {
+            "success": True,
+            "intent": "conversation",
+            "assistant_message": "I’m treating that as conversation only. In Manual mode, tell me explicitly what you want me to design or change.",
+            "run_mode": "none",
+            "design_prompt": "",
+            "needs_clarification": True,
+            "reason": "Manual mode fallback",
+            "confidence": 0.45,
+            "control_overrides": {},
+        }
+    return {
+        "success": True,
+        "intent": "design",
+        "assistant_message": "I’m treating that as a design request and updating the active plan.",
+        "run_mode": "run",
+        "design_prompt": message,
+        "needs_clarification": False,
+        "reason": "Fallback design classification",
+        "confidence": 0.45,
+        "control_overrides": {},
+    }
+
+
+def _run_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
+    context = _chat_context_summary(dict(payload_data.get("context") or {}))
+    message = str(payload_data.get("message") or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Chat message is required.")
+
+    system_prompt = (
+        "You are Civora AI, an AI-powered civil engineering design assistant. "
+        "You are deciding how to handle the user's latest chat message inside a live design workspace. "
+        "You must choose one intent: conversation, settings, design, explain, fix, or improve. "
+        "Only choose design when the user is clearly asking to create or modify the plan. "
+        "Choose settings when the user is changing workflow controls like manual/assisted/hybrid, disciplines, names, dimensions, or counts without asking for a run. "
+        "Choose conversation for greetings, casual chat, or general questions that should not trigger a plan run. "
+        "Choose explain when the user wants an explanation of the current plan. "
+        "Choose fix or improve only when the user is explicitly asking for that action. "
+        "In manual mode, be conservative and ask for clarification unless the design request is explicit. "
+        "Return concise, helpful assistant wording with a calm professional personality. "
+        "If the user message includes settings changes plus a design request, keep intent as design and include the setting overrides too. "
+        "Do not invent unsupported fields. "
+        "Always return valid JSON matching the schema."
+    )
+    user_payload = {
+        "message": message,
+        "context": context,
+    }
+
+    try:
+        client = _load_chat_client()
+        response = client.responses.create(
+            model="gpt-5",
+            input=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": json.dumps(user_payload)},
+            ],
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "civora_chat_decision",
+                    "schema": CHAT_DECISION_SCHEMA,
+                    "strict": True,
+                }
+            },
+        )
+        data = json.loads(response.output_text)
+        if not isinstance(data, dict):
+            raise ValueError("Chat decision response was not an object.")
+        data["success"] = True
+        return data
+    except HTTPException:
+        raise
+    except Exception:
+        return _fallback_chat_decision(payload_data)
 
 
 def _result_from_payload(current_user: Dict[str, Any], payload: ArtifactPayload) -> Dict[str, Any]:
@@ -655,6 +927,15 @@ def get_uploaded_image(
 
     media_type, _ = mimetypes.guess_type(str(target))
     return FileResponse(target, media_type=media_type or "application/octet-stream")
+
+
+@app.post("/api/chat/decide")
+def chat_decide(
+    payload: ChatDecisionPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    _ = current_user
+    return _run_chat_decision(_model_to_dict(payload))
 
 
 @app.post("/api/orchestrate")
