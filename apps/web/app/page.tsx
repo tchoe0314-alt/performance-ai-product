@@ -157,9 +157,9 @@ type UploadImageResponse = {
 };
 
 type PlanToolMode = "run" | "fix" | "improve";
-type StrategyMode = "manual" | "assisted" | "hybrid";
+type StrategyMode = "manual" | "assisted";
 type ControlOverrides = Partial<{
-  strategyMode: StrategyMode;
+  strategyMode: StrategyMode | "hybrid";
   projectType: string;
   units: string;
   roads: boolean;
@@ -248,7 +248,7 @@ function guessProjectTitle(prompt: string): string {
     .replace(/\s+/g, " ")
     .replace(/^[^a-zA-Z0-9]+/, "")
     .trim();
-  if (!cleaned) return "New Chat";
+  if (!cleaned) return "New Project";
 
   const normalized = cleaned
     .replace(/^(please|can you|could you|help me|i want to|let's|lets)\s+/i, "")
@@ -261,7 +261,7 @@ function guessProjectTitle(prompt: string): string {
     .replace(/[.?!,:;]+$/g, "")
     .trim();
 
-  if (!title) return "New Chat";
+  if (!title) return "New Project";
   return title.charAt(0).toUpperCase() + title.slice(1);
 }
 
@@ -580,7 +580,7 @@ export default function PerformanceAIDashboard() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authStatusError, setAuthStatusError] = useState("");
 
-  const [strategyMode, setStrategyMode] = useState<StrategyMode>("hybrid");
+  const [strategyMode, setStrategyMode] = useState<StrategyMode>("assisted");
   const [projectType, setProjectType] = useState("");
   const [units, setUnits] = useState("ft");
   const [prompt, setPrompt] = useState("");
@@ -918,9 +918,11 @@ export default function PerformanceAIDashboard() {
     const autoNamed = Boolean(projectInput.meta?.auto_named);
     const autoFileNamed = Boolean(projectInput.meta?.auto_file_named);
 
-    const nextMode = projectInput.input_mode ?? (projectInput.strict_mode ? "manual" : "hybrid");
-    if (nextMode === "manual" || nextMode === "assisted" || nextMode === "hybrid") {
+    const nextMode = projectInput.input_mode ?? (projectInput.strict_mode ? "manual" : "assisted");
+    if (nextMode === "manual" || nextMode === "assisted") {
       setStrategyMode(nextMode);
+    } else if (nextMode === "hybrid") {
+      setStrategyMode("assisted");
     }
     setPrompt(projectInput.prompt_text ?? "");
     setImageName(projectInput.image_path ?? "");
@@ -948,7 +950,9 @@ export default function PerformanceAIDashboard() {
   };
 
   const applyControlOverrides = (overrides: ControlOverrides) => {
-    if (overrides.strategyMode) setStrategyMode(overrides.strategyMode);
+    if (overrides.strategyMode) {
+      setStrategyMode(overrides.strategyMode === "hybrid" ? "assisted" : overrides.strategyMode);
+    }
     if (overrides.projectType) setProjectType(overrides.projectType);
     if (overrides.units) setUnits(overrides.units);
     if (typeof overrides.roads === "boolean") setRoads(overrides.roads);
@@ -1274,7 +1278,10 @@ export default function PerformanceAIDashboard() {
       );
       const overrides = decision.control_overrides ?? {};
       applyControlOverrides(overrides);
-      const nextStrategy = overrides.strategyMode ?? strategyMode;
+      const nextStrategy =
+        overrides.strategyMode === "hybrid"
+          ? "assisted"
+          : (overrides.strategyMode ?? strategyMode);
       const shouldAutoName = siteNameAuto || !siteName.trim();
       const shouldAutoFileName = fileNameAuto || !fileName.trim();
       const generatedTitle = shouldAutoName ? guessProjectTitle(trimmedPrompt) : siteName.trim();
@@ -1457,7 +1464,7 @@ export default function PerformanceAIDashboard() {
   } = {}) => {
     if (!token) return;
     if (!silent) setBusy(true);
-    const resolvedName = (nameOverride ?? siteName).trim() || "New Chat";
+    const resolvedName = (nameOverride ?? siteName).trim() || "New Project";
     const resolvedFileName = (fileNameOverride ?? fileName).trim();
     const projectInputToSave = projectInputOverride
       ? {
@@ -1557,7 +1564,7 @@ export default function PerformanceAIDashboard() {
   const ensureProjectDraft = async (initialPrompt?: string) => {
     if (!token || projectId) return;
     const generatedName =
-      siteName.trim() || (initialPrompt ? guessProjectTitle(initialPrompt) : "New Chat");
+      siteName.trim() || (initialPrompt ? guessProjectTitle(initialPrompt) : "New Project");
     const generatedFileName =
       fileName.trim() || (initialPrompt ? slugifyFileName(generatedName) : "");
     if (!siteName.trim()) {
@@ -1732,7 +1739,7 @@ export default function PerformanceAIDashboard() {
     setStatusMessage("Added the latest plan explanation to the conversation.");
   };
 
-  const handleNewChat = async () => {
+  const handleNewProject = async () => {
     setProjectId("");
     setCurrentProject(null);
     setProjectToOpen(projects[0]?.project_id ?? "");
@@ -1763,17 +1770,17 @@ export default function PerformanceAIDashboard() {
     setGrading(true);
     setDrainage(true);
     setUtilities(true);
-    setStrategyMode("hybrid");
+    setStrategyMode("assisted");
     setChatMessages([createWelcomeMessage()]);
-    setStatusMessage("Started a new Civora AI workspace.");
+    setStatusMessage("Started a new project.");
     if (token) {
       await saveProject({
         silent: true,
         projectIdOverride: null,
-        nameOverride: "New Chat",
+        nameOverride: "New Project",
         fileNameOverride: "",
         projectInputOverride: {
-          input_mode: "hybrid",
+          input_mode: "assisted",
           strict_mode: false,
           prompt_text: null,
           image_path: null,
@@ -1783,7 +1790,7 @@ export default function PerformanceAIDashboard() {
             auto_file_named: true,
           },
           manual_fields: {
-            project_name: "New Chat",
+            project_name: "New Project",
             file_name: "",
             units: "ft",
             project_type: "",
@@ -2100,11 +2107,11 @@ export default function PerformanceAIDashboard() {
           <div className="border-b border-slate-200 p-4">
             <button
               type="button"
-              onClick={handleNewChat}
+              onClick={handleNewProject}
               className="flex w-full items-center justify-center rounded-2xl bg-slate-950 px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-800"
             >
               <MessageSquarePlus className="mr-2 h-4 w-4" />
-              New Chat
+              New Project
             </button>
           </div>
 
@@ -2249,11 +2256,6 @@ export default function PerformanceAIDashboard() {
                   value: "assisted",
                   label: "Assisted",
                   desc: "AI fills gaps",
-                },
-                {
-                  value: "hybrid",
-                  label: "Hybrid",
-                  desc: "Balanced workflow",
                 },
               ].map((option) => (
                 <button
