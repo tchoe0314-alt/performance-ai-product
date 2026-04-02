@@ -23,7 +23,7 @@ CHAT_DECISION_SCHEMA: Dict[str, Any] = {
             "type": "object",
             "additionalProperties": False,
             "properties": {
-                "strategyMode": {"type": "string", "enum": ["manual", "assisted", "hybrid"]},
+                "strategyMode": {"type": "string", "enum": ["manual", "assisted"]},
                 "projectType": {"type": "string"},
                 "units": {"type": "string"},
                 "roads": {"type": "boolean"},
@@ -85,7 +85,7 @@ def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
     issues = context.get("issues") or []
     manual_failures = context.get("manual_failures") or []
     return {
-        "strategy_mode": context.get("strategy_mode") or "hybrid",
+        "strategy_mode": context.get("strategy_mode") or "assisted",
         "site_name": context.get("site_name") or "",
         "file_name": context.get("file_name") or "",
         "project_type": context.get("project_type") or "",
@@ -252,7 +252,9 @@ def _is_explicit_plan_tool_request(text: str, tool: str) -> bool:
 
 def _clarifying_design_reply(context: Dict[str, Any]) -> str:
     project_type = str(context.get("project_type") or "").strip()
-    strategy_mode = str(context.get("strategy_mode") or "hybrid").strip().lower()
+    strategy_mode = str(context.get("strategy_mode") or "assisted").strip().lower()
+    if strategy_mode == "hybrid":
+        strategy_mode = "assisted"
     missing: List[str] = []
     if not project_type:
         missing.append("what kind of site you want")
@@ -263,7 +265,7 @@ def _clarifying_design_reply(context: Dict[str, Any]) -> str:
     ask = ", ".join(missing[:3])
     assist_line = (
         " If you want, I can help fill in the blanks once you confirm that you want AI assistance."
-        if strategy_mode in {"assisted", "hybrid"}
+        if strategy_mode == "assisted"
         else ""
     )
     return (
@@ -312,7 +314,9 @@ def _build_design_readiness_reply(
     inferred_project_type: str,
     missing: List[str],
 ) -> str:
-    strategy_mode = str(context.get("strategy_mode") or "hybrid").strip().lower()
+    strategy_mode = str(context.get("strategy_mode") or "assisted").strip().lower()
+    if strategy_mode == "hybrid":
+        strategy_mode = "assisted"
     starter_parts: List[str] = []
     if inferred_project_type:
         starter_parts.append(
@@ -323,7 +327,7 @@ def _build_design_readiness_reply(
     missing_text = ", ".join(missing[:4])
     assist_line = (
         " If you want, I can help fill in the blanks once you tell me which assumptions you want Civora to make."
-        if strategy_mode in {"assisted", "hybrid"}
+        if strategy_mode == "assisted"
         else ""
     )
     return (
@@ -422,6 +426,10 @@ def _design_readiness_check(message: str, context: Dict[str, Any]) -> Optional[D
     return None
 
 
+def assess_design_readiness(message: str, context: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    return _design_readiness_check(message, _chat_context_summary(dict(context or {})))
+
+
 def _is_well_specified_design_request(message: str, context: Dict[str, Any]) -> bool:
     lowered = message.lower()
     if not _looks_like_explicit_design_request(message):
@@ -486,7 +494,9 @@ def _fallback_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
     message = str(payload_data.get("message") or "").strip()
     lowered = message.lower()
     context = _chat_context_summary(dict(payload_data.get("context") or {}))
-    strategy_mode = str(context.get("strategy_mode") or "hybrid")
+    strategy_mode = str(context.get("strategy_mode") or "assisted")
+    if strategy_mode == "hybrid":
+        strategy_mode = "assisted"
     if not message:
         return {
             "success": True,
@@ -624,14 +634,14 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         "You are deciding how to handle the user's latest chat message inside a live design workspace. "
         "You must choose one intent: conversation, settings, design, explain, fix, or improve. "
         "Only choose design when the user is clearly asking to create or modify the plan. "
-        "Choose settings when the user is changing workflow controls like manual/assisted/hybrid, disciplines, names, dimensions, or counts without asking for a run. "
+        "Choose settings when the user is changing workflow controls like manual/assisted mode, disciplines, names, dimensions, or counts without asking for a run. "
         "Choose conversation for greetings, casual chat, or general questions that should not trigger a plan run. "
         "Choose explain when the user wants an explanation of the current plan. "
         "Choose fix or improve only when the user is explicitly asking for that action. "
         "In manual mode, be conservative and ask for clarification unless the design request is explicit. "
         "If the user is asking for a design but the request is underspecified, do not bluff or invent a full plan. "
         "Set needs_clarification=true and write a short, natural assistant message that asks for the next most important missing details, such as site type, lot size, parking target, building size, road needs, grading needs, drainage needs, utility scope, or image/sketch availability. "
-        "In assisted or hybrid mode, when key details are missing, you may ask whether the user wants Civora to help fill in those blanks instead of guessing outright. "
+        "In assisted mode, when key details are missing, you may ask whether the user wants Civora to help fill in those blanks instead of guessing outright. "
         "Ask only the smallest useful set of follow-up questions needed to move the design forward. "
         "For casual conversation, answer naturally and briefly like a helpful AI teammate. "
         "Return concise, helpful assistant wording with a calm professional personality. "
@@ -694,4 +704,3 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         return data
     except Exception:
         return _fallback_chat_decision(payload_data)
-

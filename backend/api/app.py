@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from parsers.chat_intent_parser import decide_chat_message
+from parsers.chat_intent_parser import assess_design_readiness, decide_chat_message
 from backend.services.artifact_service import ArtifactService
 from backend.services.auth_store import AuthStore
 from backend.services.database import Database
@@ -194,6 +194,42 @@ def _run_orchestration(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         persist_trace_metadata=bool(payload_data.get("persist_trace_metadata", True)),
         meta=dict(payload_data.get("meta") or {}),
     )
+
+    if str(req.input_mode or "assisted").strip().lower() == "manual" and str(req.prompt_text or "").strip():
+        readiness_issue = assess_design_readiness(
+            str(req.prompt_text),
+            {
+                "strategy_mode": "manual",
+                "project_type": (req.manual_fields or {}).get("project_type") or (req.meta or {}).get("project_type"),
+                "lot_width": ((req.manual_fields or {}).get("lot") or {}).get("w"),
+                "lot_height": ((req.manual_fields or {}).get("lot") or {}).get("h"),
+                "parking_count": ((req.manual_fields or {}).get("site_plan") or {}).get("parking_count"),
+                "disciplines": {
+                    "roads": bool((req.manual_fields or {}).get("roads")) or bool((req.meta or {}).get("include_roads")),
+                    "grading": bool((req.manual_fields or {}).get("grading")) or bool((req.meta or {}).get("include_grading")),
+                    "drainage": bool((req.manual_fields or {}).get("drainage")) or bool((req.meta or {}).get("include_drainage")),
+                    "utilities": bool((req.manual_fields or {}).get("utility_network")) or bool((req.meta or {}).get("include_utilities")),
+                },
+            },
+        )
+        if readiness_issue:
+            return {
+                "success": False,
+                "message": str(readiness_issue.get("assistant_message") or "Manual mode needs more information before design can start."),
+                "parsed_payload": dict(payload_data),
+                "final_plan": {},
+                "warnings": [],
+                "errors": [str(readiness_issue.get("reason") or "Minimum engineering design context is incomplete")],
+                "issues": [],
+                "assumptions": [],
+                "metadata": {
+                    "_workflow_run_id": _new_workflow_id("run"),
+                    "input_mode": payload_data.get("input_mode", "manual"),
+                    "needs_clarification": True,
+                    "clarification_reason": readiness_issue.get("reason"),
+                    "missing_requirements": list(readiness_issue.get("missing_requirements") or []),
+                },
+            }
 
     result = orchestrate_plan(req)
     result_payload = {
@@ -506,18 +542,47 @@ def _final_plan_from_result(result_data: Dict[str, Any]) -> Dict[str, Any]:
     final_plan = dict(result_data.get("final_plan") or result_data)
     actions = final_plan.get("actions")
     if isinstance(actions, list) and actions:
+        meta = dict(final_plan.get("meta") or {})
+        drainage = dict(meta.get("drainage") or {})
+        storm = dict(meta.get("storm_pipes") or {})
+        deliverables = dict(meta.get("deliverables") or {})
+        produced = {str(item).lower() for item in list(deliverables.get("produced") or [])}
+        requested = {str(item).lower() for item in list(deliverables.get("requested") or [])}
+        engineering_layers = {
+            str(dict(action).get("layer") or "").upper()
+            for action in actions
+            if isinstance(action, dict)
+        }
+        needs_storm_truth = bool(
+            engineering_layers.intersection({"PIPE", "DRAIN", "BASIN_BOUNDARY", "STRUCTURE"})
+            or any(any(token in item for token in ("storm", "drain", "basin", "inlet")) for item in produced | requested)
+        )
+        drainage_export = dict(drainage.get("export_validation") or {})
+        storm_ready = bool(dict(storm.get("graph_validation") or {}).get("valid", False)) and bool(
+            dict(storm.get("hydraulic_validation") or {}).get("valid", False)
+        ) and not list(storm.get("missing_data_segments") or [])
+        if needs_storm_truth and (not bool(drainage_export.get("ready")) or not storm_ready):
+            reasons = list(drainage_export.get("reasons") or [])
+            if not bool(dict(storm.get("graph_validation") or {}).get("valid", False)):
+                reasons.append("storm_graph_invalid")
+            if not bool(dict(storm.get("hydraulic_validation") or {}).get("valid", False)):
+                reasons.append("storm_hydraulics_invalid")
+            if list(storm.get("missing_data_segments") or []):
+                reasons.append("storm_segments_incomplete")
+            reasons = list(dict.fromkeys([str(item) for item in reasons if str(item)]))
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Export is blocked because the engineering design has not reached a stable drainage/storm state yet: "
+                    + ", ".join(reasons)
+                ),
+            )
         return final_plan
 
-    fallback_plan = _build_drawable_fallback_plan(result_data)
-    fallback_actions = fallback_plan.get("actions")
-    if isinstance(fallback_actions, list) and fallback_actions:
-        return fallback_plan
-
     raise HTTPException(
-        status_code=400,
-        detail="No drawable plan actions are available yet. Run the planner first.",
+        status_code=409,
+        detail="No stable engineered plan actions are available yet. Complete the engineering run before preview or export.",
     )
-    return final_plan
 
 
 @app.on_event("startup")

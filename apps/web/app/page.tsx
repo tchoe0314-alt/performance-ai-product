@@ -301,6 +301,27 @@ function summarizePlanResponse(
     : Array.isArray(meta?.produced_deliverables)
       ? meta.produced_deliverables
       : [];
+  const assumptions = Array.isArray(data?.assumptions) ? data.assumptions : [];
+  const issues = Array.isArray(data?.issues) ? data.issues : [];
+  const aiAssistanceSummary = assumptions.length
+    ? (() => {
+        const formatted = assumptions
+          .slice(0, 3)
+          .map((assumption: any) => {
+            const field = String(
+              assumption?.field_name || assumption?.field || "an input",
+            )
+              .replace(/_/g, " ")
+              .trim();
+            const reason = String(assumption?.reason || "").trim();
+            return reason ? `${field} (${reason})` : field;
+          })
+          .filter(Boolean);
+        return formatted.length
+          ? `AI assisted with: ${formatted.join("; ")}.`
+          : null;
+      })()
+    : null;
   const headline =
     typeof explanation?.summary === "string"
       ? explanation.summary
@@ -326,6 +347,14 @@ function summarizePlanResponse(
     producedDeliverables.length
       ? `Produced: ${producedDeliverables.slice(0, 4).join(", ")}.`
       : null,
+    issues.length
+      ? `Open warnings: ${issues
+          .slice(0, 2)
+          .map((issue: any) => issue?.message)
+          .filter(Boolean)
+          .join("; ")}.`
+      : null,
+    aiAssistanceSummary,
     why,
   ].filter(Boolean);
 

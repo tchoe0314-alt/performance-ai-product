@@ -87,6 +87,7 @@ from core.project_manager import (
 )
 
 from engines.autofix_engine import autofix_site_layout
+from engines.detention_engine import concept_detention_size
 from engines.drainage_engine import DrainageEngine, HydraulicInputs
 from engines.error_check_engine import run_checks, run_plan_checks
 from engines.explain_engine import explain_plan
@@ -2258,10 +2259,13 @@ def _canonical_drainage_payload(
     for index, record in enumerate(basin_records or [], start=1):
         if hasattr(record, "sink_name"):
             basins.append({
+                "id": safe_str(getattr(record, "sink_name", ""), f"BASIN-{index}"),
                 "name": safe_str(getattr(record, "sink_name", ""), f"BASIN-{index}"),
                 "object_type": "basin",
                 "canonical_type": "detention_basin",
                 "layer": "BASIN_BOUNDARY",
+                "sink": list(getattr(record, "sink", ())),
+                "sink_name": safe_str(getattr(record, "sink_name", ""), f"BASIN-{index}"),
                 "centroid_xy": list(getattr(record, "centroid_xy", (0.0, 0.0))),
                 "area_sf": safe_float(getattr(record, "area_sf", 0.0), 0.0),
                 "contributing_cells": safe_int(getattr(record, "contributing_cells", 0), 0),
@@ -2272,10 +2276,13 @@ def _canonical_drainage_payload(
 
         rec = safe_dict(record)
         basins.append({
+            "id": safe_str(rec.get("id") or rec.get("sink_name") or rec.get("name") or rec.get("label"), f"BASIN-{index}"),
             "name": safe_str(rec.get("sink_name") or rec.get("name") or rec.get("label"), f"BASIN-{index}"),
             "object_type": "basin",
             "canonical_type": safe_str(rec.get("canonical_type"), "detention_basin"),
             "layer": safe_str(rec.get("layer"), "BASIN_BOUNDARY").upper(),
+            "sink": safe_list(rec.get("sink")),
+            "sink_name": safe_str(rec.get("sink_name") or rec.get("name") or rec.get("label"), f"BASIN-{index}"),
             "centroid_xy": safe_list(rec.get("centroid_xy")),
             "area_sf": safe_float(rec.get("area_sf"), 0.0),
             "contributing_cells": safe_int(rec.get("contributing_cells"), 0),
@@ -2339,6 +2346,252 @@ def _canonical_drainage_payload(
             "has_flow_paths": has_flow_paths,
         },
     }
+
+
+def _enrich_drainage_basins_with_engineering(
+    canonical_drainage: Dict[str, Any],
+    *,
+    engine: Optional[DrainageEngine],
+    hydrology: Dict[str, Any],
+    coordination: Dict[str, Any],
+) -> Dict[str, Any]:
+    if engine is None:
+        return canonical_drainage
+    enriched = deepcopy(safe_dict(canonical_drainage))
+    basins = [safe_dict(item) for item in safe_list(enriched.get("basins")) if safe_dict(item)]
+    if not basins:
+        return enriched
+
+    basin_cells = engine.drainage_basins(sample_step=2, min_slope=max(MIN_SLOPE, 0.001), max_steps=500)
+    basin_by_name = {safe_str(item.get("name")): item for item in basins if safe_str(item.get("name"))}
+    preferred_outfall = safe_dict(coordination.get("preferred_outfall"))
+    outfall_xy = [
+        safe_float(preferred_outfall.get("x"), 0.0),
+        safe_float(preferred_outfall.get("y"), 0.0),
+    ]
+    runoff_c = safe_float(hydrology.get("runoff_c"), PIPE_RUNOFF_C)
+    intensity = safe_float(hydrology.get("intensity_in_hr"), PIPE_INTENSITY_IN_HR)
+
+    structure_flow_by_target: Dict[str, float] = {}
+    for structure in safe_list(enriched.get("structures")):
+        rec = safe_dict(structure)
+        key = safe_str(rec.get("target_name")) or safe_str(rec.get("name"))
+        if not key:
+            continue
+        structure_flow_by_target[key] = structure_flow_by_target.get(key, 0.0) + safe_float(
+            rec.get("estimated_flow_cfs"),
+            runoff_c * intensity * (safe_float(rec.get("contributing_area_sf"), 0.0) / 43560.0),
+        )
+
+    updated_basins: List[Dict[str, Any]] = []
+    min_export_area_sf = max(4.0 * (safe_float(getattr(engine.surface, "cell_size", CELL_SIZE), CELL_SIZE) ** 2), 400.0)
+    for basin in basins:
+        name = safe_str(basin.get("name"))
+        sink_name = safe_str(basin.get("sink_name"), name)
+        sink = safe_list(basin.get("sink"))
+        sink_key: Optional[Tuple[int, int]] = None
+        if len(sink) >= 2:
+            sink_key = (safe_int(sink[0], 0), safe_int(sink[1], 0))
+        if sink_key is None:
+            match = next(
+                (
+                    key
+                    for key in basin_cells.keys()
+                    if f"SINK_{safe_int(key[0], 0)}_{safe_int(key[1], 0)}" == name
+                    or f"SINK_{safe_int(key[0], 0)}_{safe_int(key[1], 0)}" == sink_name
+                ),
+                None,
+            )
+            sink_key = match
+
+        boundary_points: List[List[float]] = []
+        if sink_key is not None and sink_key in basin_cells:
+            hull = engine._convex_hull([engine._point_xy(r, c) for r, c in basin_cells[sink_key]])  # type: ignore[attr-defined]
+            boundary_points = [[round(pt[0], 3), round(pt[1], 3)] for pt in hull]
+        top_area_sf = _polygon_area(boundary_points) or safe_float(basin.get("area_sf"), 0.0)
+        inflow_cfs = max(
+            safe_float(structure_flow_by_target.get(safe_str(basin.get("target_name"))), 0.0),
+            runoff_c * intensity * (safe_float(basin.get("area_sf"), 0.0) / 43560.0),
+        )
+        release_cfs = max(0.1, inflow_cfs * 0.35)
+        detention = concept_detention_size(inflow_cfs, release_cfs)
+        geometry = getattr(detention, "recommended_geometry", None)
+        bottom_area_sf = safe_float(getattr(geometry, "bottom_area_sf", 0.0), 0.0) if geometry is not None else 0.0
+        scale = 0.55
+        if top_area_sf > 1e-6 and bottom_area_sf > 1e-6:
+            scale = max(0.25, min(0.92, math.sqrt(bottom_area_sf / top_area_sf)))
+        bottom_points = _scale_polygon(boundary_points, scale) if boundary_points else []
+        centroid_xy = safe_list(basin.get("centroid_xy"))
+        bottom_elev = round(
+            safe_float(basin.get("average_z"), 0.0) - max(2.0, safe_float(getattr(geometry, "depth_ft", 0.0), 0.0)),
+            3,
+        )
+        top_of_bank_elev = round(
+            bottom_elev
+            + safe_float(getattr(geometry, "depth_ft", 0.0), 0.0)
+            + safe_float(getattr(geometry, "freeboard_ft", 0.0), 0.0),
+            3,
+        )
+        outlet_xy = _nearest_polygon_vertex(boundary_points or [centroid_xy], outfall_xy or centroid_xy)
+        basin["boundary_points"] = boundary_points
+        basin["bottom_points"] = bottom_points
+        basin["top_of_bank_area_sf"] = round(top_area_sf, 3)
+        basin["bottom_area_sf"] = round(bottom_area_sf, 3)
+        basin["bottom_elev_ft"] = bottom_elev
+        basin["top_of_bank_elev_ft"] = top_of_bank_elev
+        basin["daylight_tie_in"] = bool(boundary_points)
+        basin["outlet_structure"] = {
+            "name": f"{name}-OUTLET" if name else "BASIN-OUTLET",
+            "x": round(safe_float(outlet_xy[0], 0.0), 3),
+            "y": round(safe_float(outlet_xy[1], 0.0), 3),
+            "invert_ft": round(bottom_elev + 1.0, 3),
+            "flow_direction": "to_outfall",
+        }
+        basin["detention_design"] = {
+            "required_storage_cf": round(safe_float(getattr(detention, "required_storage_cf", 0.0), 0.0), 3),
+            "provided_storage_cf": round(safe_float(getattr(detention, "provided_geometry_storage_cf", 0.0), 0.0), 3),
+            "drawdown_hours": round(safe_float(getattr(detention, "drawdown_hours", 0.0), 0.0), 3),
+            "inflow_cfs": round(inflow_cfs, 3),
+            "release_cfs": round(release_cfs, 3),
+            "side_slope_h_to_1v": round(safe_float(getattr(geometry, "side_slope_h_to_1v", 4.0), 4.0), 3) if geometry is not None else 4.0,
+            "depth_ft": round(safe_float(getattr(geometry, "depth_ft", 0.0), 0.0), 3) if geometry is not None else 0.0,
+            "freeboard_ft": round(safe_float(getattr(geometry, "freeboard_ft", 0.0), 0.0), 3) if geometry is not None else 0.0,
+            "assumptions": [
+                "Storage sized from Rational Method inflow estimate using planner runoff assumptions.",
+                "Outlet release assumed as 35% of basin inflow for concept detention sizing.",
+            ],
+        }
+        updated_basins.append(basin)
+
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    for basin in updated_basins:
+        group_key = safe_str(basin.get("target_name")) or "__default__"
+        grouped.setdefault(group_key, []).append(basin)
+    for items in grouped.values():
+        items.sort(key=lambda item: (-safe_float(item.get("area_sf"), 0.0), safe_str(item.get("name"))))
+        for idx, basin in enumerate(items):
+            exportable = (
+                idx == 0
+                and safe_float(basin.get("area_sf"), 0.0) >= min_export_area_sf
+                and len(safe_list(basin.get("boundary_points"))) >= 3
+            )
+            basin["engineering_role"] = "primary_detention" if exportable else "minor_surface_sink"
+            basin["exportable"] = exportable
+
+    enriched["basins"] = updated_basins
+    stats = safe_dict(enriched.get("stats"))
+    stats["engineered_basin_geometry_count"] = sum(1 for item in updated_basins if safe_list(item.get("boundary_points")))
+    stats["exportable_basin_count"] = sum(1 for item in updated_basins if bool(item.get("exportable")))
+    stats["primary_detention_count"] = sum(
+        1
+        for item in updated_basins
+        if safe_str(item.get("engineering_role")) == "primary_detention" and bool(item.get("exportable"))
+    )
+    enriched["stats"] = stats
+    return enriched
+
+
+def _primary_engineered_basins(drainage: Dict[str, Any]) -> List[Dict[str, Any]]:
+    primary: List[Dict[str, Any]] = []
+    for item in safe_list(safe_dict(drainage).get("basins")):
+        rec = safe_dict(item)
+        if not rec:
+            continue
+        if safe_str(rec.get("engineering_role")) != "primary_detention":
+            continue
+        if not bool(rec.get("exportable")):
+            continue
+        if len(safe_list(rec.get("boundary_points"))) < 3:
+            continue
+        primary.append(rec)
+    return primary
+
+
+def _drainage_export_validation(
+    project: ProjectModel,
+    *,
+    drainage_override: Optional[Dict[str, Any]] = None,
+    storm_override: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    drainage = safe_dict(drainage_override if drainage_override is not None else project.meta.get("drainage_canonical"))
+    storm = safe_dict(storm_override if storm_override is not None else project.meta.get("storm_pipe_summary"))
+    primary_basins = _primary_engineered_basins(drainage)
+    reasons: List[str] = []
+    if not bool(drainage.get("success", False)):
+        reasons.append("drainage_stage_invalid")
+    if not primary_basins:
+        reasons.append("primary_detention_missing")
+    if not safe_list(drainage.get("structures")):
+        reasons.append("drainage_structures_missing")
+
+    storm_segments = safe_list(storm.get("segments"))
+    if primary_basins:
+        if not storm_segments:
+            reasons.append("storm_network_missing")
+        if not bool(safe_dict(storm.get("graph_validation")).get("valid", False)):
+            reasons.append("storm_graph_invalid")
+        if not bool(safe_dict(storm.get("hydraulic_validation")).get("valid", False)):
+            reasons.append("storm_hydraulics_invalid")
+        if safe_list(storm.get("missing_data_segments")):
+            reasons.append("storm_segments_incomplete")
+
+    return {
+        "ready": not reasons,
+        "reasons": reasons,
+        "primary_basin_count": len(primary_basins),
+        "primary_basin_ids": [
+            safe_str(item.get("id"), safe_str(item.get("name"), "BASIN"))
+            for item in primary_basins
+        ],
+        "storm_pipe_count": len(storm_segments),
+    }
+
+
+def _storm_export_validation(
+    project: ProjectModel,
+    *,
+    storm_override: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    storm = safe_dict(storm_override if storm_override is not None else project.meta.get("storm_pipe_summary"))
+    reasons: List[str] = []
+    segments = safe_list(storm.get("segments"))
+    if not segments:
+        reasons.append("storm_network_missing")
+    if not bool(safe_dict(storm.get("graph_validation")).get("valid", False)):
+        reasons.append("storm_graph_invalid")
+    if not bool(safe_dict(storm.get("hydraulic_validation")).get("valid", False)):
+        reasons.append("storm_hydraulics_invalid")
+    if safe_list(storm.get("missing_data_segments")):
+        reasons.append("storm_segments_incomplete")
+    return {
+        "ready": not reasons,
+        "reasons": reasons,
+        "segment_count": len(segments),
+    }
+
+
+def _filter_placeholder_engineering_actions(project: ProjectModel, actions: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    drainage = safe_dict(project.meta.get("drainage_canonical"))
+    storm = safe_dict(project.meta.get("storm_pipe_summary"))
+    drainage_export_ready = bool(_drainage_export_validation(project).get("ready"))
+    storm_export_ready = bool(_storm_export_validation(project).get("ready"))
+    filtered: List[Dict[str, Any]] = []
+    for action in safe_list(actions):
+        rec = safe_dict(action)
+        if not rec:
+            continue
+        layer = safe_str(rec.get("layer")).upper()
+        has_canonical_tag = bool(safe_str(rec.get("canonical_source_type")))
+        if layer == "PIPE" and storm_export_ready and not has_canonical_tag:
+            continue
+        if layer == "DRAIN" and drainage_export_ready and not has_canonical_tag:
+            continue
+        if layer == "BASIN_BOUNDARY" and drainage_export_ready and not has_canonical_tag:
+            continue
+        if layer == "STRUCTURE" and drainage_export_ready and not has_canonical_tag:
+            continue
+        filtered.append(rec)
+    return filtered
 
 
 def _install_minimum_grading_actions(project: ProjectModel, parsed: Dict[str, Any]) -> int:
@@ -2492,6 +2745,75 @@ def _merge_plan_actions(base_actions: Sequence[Dict[str, Any]], extra_actions: S
     return sorted(merged, key=_action_sort_key)
 
 
+def _polygon_area(points: Sequence[Sequence[float]]) -> float:
+    pts = [
+        (safe_float(pt[0], 0.0), safe_float(pt[1], 0.0))
+        for pt in safe_list(points)
+        if isinstance(pt, (list, tuple)) and len(pt) >= 2
+    ]
+    if len(pts) < 3:
+        return 0.0
+    area = 0.0
+    for idx, (x1, y1) in enumerate(pts):
+        x2, y2 = pts[(idx + 1) % len(pts)]
+        area += x1 * y2 - x2 * y1
+    return abs(area) * 0.5
+
+
+def _polygon_centroid(points: Sequence[Sequence[float]]) -> Tuple[float, float]:
+    pts = [
+        (safe_float(pt[0], 0.0), safe_float(pt[1], 0.0))
+        for pt in safe_list(points)
+        if isinstance(pt, (list, tuple)) and len(pt) >= 2
+    ]
+    if not pts:
+        return 0.0, 0.0
+    area_twice = 0.0
+    cx = 0.0
+    cy = 0.0
+    for idx, (x1, y1) in enumerate(pts):
+        x2, y2 = pts[(idx + 1) % len(pts)]
+        cross = x1 * y2 - x2 * y1
+        area_twice += cross
+        cx += (x1 + x2) * cross
+        cy += (y1 + y2) * cross
+    if abs(area_twice) < 1e-9:
+        return (
+            sum(pt[0] for pt in pts) / len(pts),
+            sum(pt[1] for pt in pts) / len(pts),
+        )
+    factor = 1.0 / (3.0 * area_twice)
+    return cx * factor, cy * factor
+
+
+def _scale_polygon(points: Sequence[Sequence[float]], scale: float) -> List[List[float]]:
+    cx, cy = _polygon_centroid(points)
+    scaled: List[List[float]] = []
+    for pt in safe_list(points):
+        if not isinstance(pt, (list, tuple)) or len(pt) < 2:
+            continue
+        px = safe_float(pt[0], 0.0)
+        py = safe_float(pt[1], 0.0)
+        scaled.append([
+            round(cx + (px - cx) * scale, 3),
+            round(cy + (py - cy) * scale, 3),
+        ])
+    return scaled
+
+
+def _nearest_polygon_vertex(points: Sequence[Sequence[float]], target_xy: Sequence[float]) -> List[float]:
+    pts = [
+        [safe_float(pt[0], 0.0), safe_float(pt[1], 0.0)]
+        for pt in safe_list(points)
+        if isinstance(pt, (list, tuple)) and len(pt) >= 2
+    ]
+    tx = safe_float(safe_list(target_xy)[0] if len(safe_list(target_xy)) >= 1 else 0.0, 0.0)
+    ty = safe_float(safe_list(target_xy)[1] if len(safe_list(target_xy)) >= 2 else 0.0, 0.0)
+    if not pts:
+        return [tx, ty]
+    return min(pts, key=lambda pt: (pt[0] - tx) ** 2 + (pt[1] - ty) ** 2)
+
+
 def _canonical_action(action: Dict[str, Any], *, source_type: str, source_id: str, source_name: str = "", source_stage: str = "") -> Dict[str, Any]:
     out = dict(action)
     out["canonical_source_type"] = safe_str(source_type)
@@ -2506,6 +2828,8 @@ def _canonical_action(action: Dict[str, Any], *, source_type: str, source_id: st
 def _canonical_structure_actions(project: ProjectModel) -> List[Dict[str, Any]]:
     actions: List[Dict[str, Any]] = []
     drainage = safe_dict(project.meta.get("drainage_canonical"))
+    if not bool(_drainage_export_validation(project, drainage_override=drainage).get("ready")):
+        return actions
     for structure in safe_list(drainage.get("structures")):
         rec = safe_dict(structure)
         x = safe_float(rec.get("x"), 0.0)
@@ -2560,49 +2884,138 @@ def _canonical_structure_actions(project: ProjectModel) -> List[Dict[str, Any]]:
 def _canonical_basin_actions(project: ProjectModel) -> List[Dict[str, Any]]:
     actions: List[Dict[str, Any]] = []
     drainage = safe_dict(project.meta.get("drainage_canonical"))
-    for basin in safe_list(drainage.get("basins")):
+    export_validation = _drainage_export_validation(project, drainage_override=drainage)
+    if not bool(export_validation.get("ready")):
+        return actions
+    primary_ids = set(safe_list(export_validation.get("primary_basin_ids")))
+    for basin in _primary_engineered_basins(drainage):
         rec = safe_dict(basin)
+        source_id = safe_str(rec.get("id"), safe_str(rec.get("name"), "BASIN"))
+        if primary_ids and source_id not in primary_ids:
+            continue
         centroid = safe_list(rec.get("centroid_xy"))
         if len(centroid) < 2:
             continue
         x = safe_float(centroid[0], 0.0)
         y = safe_float(centroid[1], 0.0)
         area = max(0.0, safe_float(rec.get("area_sf"), 0.0))
-        radius = max(6.0, min(24.0, (area / 3.141592653589793) ** 0.5 if area > 0.0 else 8.0))
         name = safe_str(rec.get("name"), "BASIN")
-        source_id = safe_str(rec.get("id"), name)
-        actions.append(_canonical_action({
-            "task": "circle",
-            "origin": None,
-            "points": None,
-            "closed": None,
-            "width": None,
-            "height": None,
-            "label": name,
-            "layer": "BASIN_BOUNDARY",
-            "text": None,
-            "text_height": None,
-            "center": [x, y],
-            "radius": radius,
-            "start_angle": None,
-            "end_angle": None,
-        }, source_type="drainage_basin", source_id=source_id, source_name=name, source_stage="drainage"))
+        boundary_points = [
+            [safe_float(pt[0], 0.0), safe_float(pt[1], 0.0)]
+            for pt in safe_list(rec.get("boundary_points"))
+            if isinstance(pt, (list, tuple)) and len(pt) >= 2
+        ]
+        if len(boundary_points) >= 3:
+            actions.append(_canonical_action({
+                "task": "polyline",
+                "origin": None,
+                "points": boundary_points,
+                "closed": True,
+                "width": None,
+                "height": None,
+                "label": name,
+                "layer": "BASIN_BOUNDARY",
+                "text": None,
+                "text_height": None,
+                "center": None,
+                "radius": None,
+                "start_angle": None,
+                "end_angle": None,
+            }, source_type="drainage_basin", source_id=source_id, source_name=name, source_stage="drainage"))
+        else:
+            continue
+        bottom_points = [
+            [safe_float(pt[0], 0.0), safe_float(pt[1], 0.0)]
+            for pt in safe_list(rec.get("bottom_points"))
+            if isinstance(pt, (list, tuple)) and len(pt) >= 2
+        ]
+        if len(bottom_points) >= 3:
+            actions.append(_canonical_action({
+                "task": "polyline",
+                "origin": None,
+                "points": bottom_points,
+                "closed": True,
+                "width": None,
+                "height": None,
+                "label": f"{name} BOTTOM",
+                "layer": "FG_CONTOUR",
+                "text": None,
+                "text_height": None,
+                "center": None,
+                "radius": None,
+                "start_angle": None,
+                "end_angle": None,
+            }, source_type="drainage_basin", source_id=f"{source_id}:bottom", source_name=name, source_stage="drainage"))
         actions.append(_canonical_action({
             "task": "text_note",
-            "origin": [x, y - radius - 1.5],
+            "origin": [x, y - 4.0],
             "points": None,
             "closed": None,
             "width": None,
             "height": None,
             "label": None,
             "layer": "ANNO",
-            "text": f"{name} {area:.0f} SF",
+            "text": f"DETENTION BASIN {name}",
             "text_height": 0.8,
             "center": None,
             "radius": None,
             "start_angle": None,
             "end_angle": None,
         }, source_type="drainage_basin", source_id=source_id, source_name=name, source_stage="drainage"))
+        detention = safe_dict(rec.get("detention_design"))
+        if detention:
+            actions.append(_canonical_action({
+                "task": "text_note",
+                "origin": [x, y - 6.0],
+                "points": None,
+                "closed": None,
+                "width": None,
+                "height": None,
+                "label": None,
+                "layer": "ANNO",
+                "text": f"VOL {safe_float(detention.get('required_storage_cf'), 0.0):.0f} CF | BOT {safe_float(rec.get('bottom_elev_ft'), 0.0):.2f}",
+                "text_height": 0.7,
+                "center": None,
+                "radius": None,
+                "start_angle": None,
+                "end_angle": None,
+            }, source_type="drainage_basin", source_id=f"{source_id}:storage", source_name=name, source_stage="drainage"))
+        outlet = safe_dict(rec.get("outlet_structure"))
+        if outlet:
+            ox = safe_float(outlet.get("x"), x)
+            oy = safe_float(outlet.get("y"), y)
+            actions.append(_canonical_action({
+                "task": "circle",
+                "origin": None,
+                "points": None,
+                "closed": None,
+                "width": None,
+                "height": None,
+                "label": safe_str(outlet.get("name"), f"{name}-OUTLET"),
+                "layer": "STRUCTURE",
+                "text": None,
+                "text_height": None,
+                "center": [ox, oy],
+                "radius": 1.25,
+                "start_angle": None,
+                "end_angle": None,
+            }, source_type="drainage_basin", source_id=f"{source_id}:outlet", source_name=name, source_stage="drainage"))
+            actions.append(_canonical_action({
+                "task": "polyline",
+                "origin": None,
+                "points": [[x, y], [ox, oy]],
+                "closed": False,
+                "width": None,
+                "height": None,
+                "label": f"{name} OUTLET",
+                "layer": "DRAIN_FLOW",
+                "text": None,
+                "text_height": None,
+                "center": None,
+                "radius": None,
+                "start_angle": None,
+                "end_angle": None,
+            }, source_type="drainage_basin", source_id=f"{source_id}:flow", source_name=name, source_stage="drainage"))
     return actions
 
 
@@ -2611,6 +3024,8 @@ def _canonical_storm_pipe_actions(project: ProjectModel) -> List[Dict[str, Any]]
     segments = safe_list(project.meta.get("storm_pipe_segments"))
     if not segments:
         segments = safe_list(safe_dict(project.meta.get("storm_pipe_summary")).get("segments"))
+    if not bool(_storm_export_validation(project).get("ready")):
+        return actions
     for index, segment in enumerate(segments, start=1):
         path = safe_list(getattr(segment, "path", None))
         if not path:
@@ -2976,7 +3391,10 @@ def project_model_to_plan(project: ProjectModel, project_name: str) -> Dict[str,
         out["units"] = project_units_text
         out.setdefault("meta", {})
         out["meta"]["source"] = "project_model+expanded"
-        out["actions"] = _merge_plan_actions(out.get("actions", []), _canonical_export_actions(project))
+        out["actions"] = _merge_plan_actions(
+            _filter_placeholder_engineering_actions(project, out.get("actions", [])),
+            _canonical_export_actions(project),
+        )
         return out
 
     actions: List[Dict[str, Any]] = []
@@ -3831,24 +4249,7 @@ def _run_drainage_stage(ctx: PlannerExecutionContext, hydrology: Dict[str, Any])
         basin_records = safe_list(getattr(summary, "basin_records", []))
         pipe_runs = safe_list(getattr(summary, "pipe_runs", []))
 
-        drainage_seed = deepcopy(execution_payload)
-        drainage_seed.setdefault("drainage", {})
-        drainage_seed["drainage"] = {
-            **safe_dict(drainage_seed.get("drainage")),
-            "inlet_count": max(4, safe_int(safe_dict(drainage_seed.get("drainage")).get("inlet_count"), max(1, len(inlet_records)) or 4)),
-            "pipe_count": max(3, safe_int(safe_dict(drainage_seed.get("drainage")).get("pipe_count"), max(1, len(pipe_runs)) or 3)),
-            "pond_count": max(1, safe_int(safe_dict(drainage_seed.get("drainage")).get("pond_count"), max(1, len(basin_records)) or 1)),
-            "outfall_side": safe_str(safe_dict(drainage_seed.get("drainage")).get("outfall_side"), safe_str(parsed.get("street_edge"), "bottom")),
-        }
-        expanded = _legacy_expand_payload(drainage_seed)
-        drain_actions = [
-            a for a in safe_list(expanded.get("actions"))
-            if isinstance(a, dict) and safe_str(a.get("layer")).upper() in {"DRAIN", "PIPE", "BASIN_BOUNDARY", "DRAIN_FLOW"}
-        ]
-        _merge_actions_into_expanded_plan(project, drain_actions, drainage_export_packaging=True)
-
         manager.set_metric("drainage_low_point_count", len(inlet_records), category="drainage")
-        manager.set_metric("drainage_basin_count", len(basin_records), category="drainage")
         manager.set_metric("drainage_pipe_count", len(pipe_runs), category="drainage")
 
         warning_count_fn = getattr(summary, "warning_count", None)
@@ -3878,7 +4279,19 @@ def _run_drainage_stage(ctx: PlannerExecutionContext, hydrology: Dict[str, Any])
                 if lower_text(getattr(issue, "severity", "")) == "warning" and safe_str(getattr(issue, "message", ""))
             ],
         )
+        canonical_drainage = _enrich_drainage_basins_with_engineering(
+            canonical_drainage,
+            engine=engine,
+            hydrology=hydrology,
+            coordination=coordination,
+        )
         canonical_drainage["coordination"] = deepcopy(coordination)
+        primary_basin_count = len(_primary_engineered_basins(canonical_drainage))
+        canonical_drainage["export_validation"] = _drainage_export_validation(
+            project,
+            drainage_override=canonical_drainage,
+        )
+        manager.set_metric("drainage_basin_count", primary_basin_count, category="drainage")
         project.meta["drainage_canonical"] = canonical_drainage
         manager.latest_outputs["drainage"] = deepcopy(canonical_drainage)
         project.meta["drainage_summary"] = summary
@@ -3886,10 +4299,10 @@ def _run_drainage_stage(ctx: PlannerExecutionContext, hydrology: Dict[str, Any])
             "drainage",
             bool(getattr(summary, "success", True)),
             safe_str(getattr(summary, "message", "Drainage stage completed.")),
-            basin_count=len(basin_records),
+            basin_count=primary_basin_count,
             inlet_count=len(inlet_records),
             pipe_run_count=len(pipe_runs),
-            added_actions=len(drain_actions),
+            added_actions=0,
         )
     except Exception as exc:
         message = f"Drainage stage failed: {exc}"
@@ -5821,6 +6234,15 @@ def _recompute_storm_summary(project: ProjectModel, manager: ProjectManager) -> 
     storm["success"] = bool(storm["graph_validation"].get("valid")) and bool(storm["hydraulic_validation"].get("valid"))
     manager.latest_outputs["storm_pipe_summary"] = deepcopy(storm)
     project.meta["storm_pipe_summary"] = deepcopy(storm)
+    drainage = safe_dict(project.meta.get("drainage_canonical"))
+    if drainage:
+        drainage["export_validation"] = _drainage_export_validation(
+            project,
+            drainage_override=drainage,
+            storm_override=storm,
+        )
+        project.meta["drainage_canonical"] = drainage
+        manager.latest_outputs["drainage"] = deepcopy(drainage)
     manager.set_metric("storm_pipe_count", len(segments), category="pipes")
     manager.set_metric("storm_pipe_length_ft", total_length, units="ft", category="pipes")
     manager.set_metric("pipe_capacity_total_cfs", total_capacity, units="cfs", category="pipes")
