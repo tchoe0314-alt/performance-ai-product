@@ -8,16 +8,17 @@ import {
   Clock3,
   Download,
   Eye,
+  EyeOff,
   FileImage,
+  FileText,
   FolderOpen,
-  Layers3,
+  History,
   LogOut,
   Map,
+  MessageSquarePlus,
   RefreshCw,
   Save,
-  Settings2,
   Sparkles,
-  Upload,
 } from "lucide-react";
 
 import {
@@ -28,13 +29,6 @@ import {
   postJson,
   toApiUrl,
 } from "../lib/api";
-
-type InputMode =
-  | "manual"
-  | "assisted"
-  | "image_assisted"
-  | "prompt_assisted"
-  | "hybrid";
 
 type UserRecord = {
   user_id: string;
@@ -138,12 +132,6 @@ type AuthStatus = {
   user_count: number;
 };
 
-type FeatureCard = {
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  desc: string;
-};
-
 type DisciplineToggle = {
   label: string;
   checked: boolean;
@@ -168,6 +156,9 @@ type UploadImageResponse = {
   filename?: string;
 };
 
+type PlanToolMode = "run" | "fix" | "improve";
+type StrategyMode = "manual" | "assisted" | "hybrid";
+
 const defaultAssumptions: Assumption[] = [
   {
     field: "project_type",
@@ -189,24 +180,6 @@ const defaultIssues: Issue[] = [
   },
 ];
 
-const authFeatureCards: FeatureCard[] = [
-  {
-    icon: FolderOpen,
-    title: "Projects",
-    desc: "Save concept setups and reopen them like a real product.",
-  },
-  {
-    icon: Clock3,
-    title: "Jobs",
-    desc: "Queue planner runs in the background and track status.",
-  },
-  {
-    icon: Layers3,
-    title: "Planner Stack",
-    desc: "Orchestrator, planner, core, and engines wired together.",
-  },
-];
-
 function Card({
   children,
   className = "",
@@ -216,7 +189,7 @@ function Card({
 }) {
   return (
     <div
-      className={`rounded-3xl border border-black/10 bg-white shadow-sm ${className}`}
+      className={`rounded-[28px] border border-slate-200/80 bg-white/92 shadow-[0_20px_60px_-28px_rgba(15,23,42,0.28)] backdrop-blur ${className}`}
     >
       {children}
     </div>
@@ -248,14 +221,14 @@ function SectionTitle({
 }) {
   return (
     <div className="flex items-start gap-3">
-      <div className="rounded-2xl border border-black/10 bg-white p-2 shadow-sm">
-        <Icon className="h-5 w-5" />
+      <div className="rounded-2xl border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-2.5 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.45)]">
+        <Icon className="h-5 w-5 text-slate-800" />
       </div>
       <div>
-        <h3 className="text-base font-semibold tracking-tight text-slate-900">
+        <h3 className="text-[15px] font-semibold tracking-tight text-slate-950">
           {title}
         </h3>
-        <p className="text-sm text-slate-500">{desc}</p>
+        <p className="mt-1 text-sm leading-6 text-slate-500">{desc}</p>
       </div>
     </div>
   );
@@ -263,7 +236,7 @@ function SectionTitle({
 
 function Pill({ children }: { children: React.ReactNode }) {
   return (
-    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
       {children}
     </span>
   );
@@ -282,16 +255,16 @@ function SmallButton({
 }) {
   const styles =
     variant === "primary"
-      ? "bg-slate-900 text-white hover:bg-slate-800"
-      : "border border-black/10 bg-white text-slate-900 hover:bg-slate-50";
+      ? "border border-slate-900 bg-slate-950 text-white hover:bg-slate-800"
+      : "border border-slate-200 bg-white text-slate-900 hover:border-slate-300 hover:bg-slate-50";
 
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex items-center rounded-2xl px-4 py-2 text-sm font-medium shadow-sm transition ${styles} ${
-        disabled ? "cursor-not-allowed opacity-60" : ""
+      className={`inline-flex items-center rounded-2xl px-4 py-2.5 text-sm font-medium shadow-[0_12px_30px_-22px_rgba(15,23,42,0.55)] transition duration-200 ${styles} ${
+        disabled ? "cursor-not-allowed opacity-60" : "hover:-translate-y-0.5"
       }`}
     >
       {children}
@@ -308,7 +281,9 @@ function Field({
 }) {
   return (
     <div className="space-y-2">
-      <label className="text-sm font-medium text-slate-800">{label}</label>
+      <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+        {label}
+      </label>
       {children}
     </div>
   );
@@ -318,7 +293,7 @@ function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
-      className={`w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-slate-950 placeholder:text-slate-400 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 ${
+      className={`w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] placeholder:text-slate-400 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70 ${
         props.className ?? ""
       }`}
     />
@@ -329,7 +304,7 @@ function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
       {...props}
-      className={`min-h-[168px] max-h-[280px] w-full resize-none overflow-y-auto rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm leading-6 text-slate-950 placeholder:text-slate-400 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 ${
+      className={`min-h-[168px] max-h-[280px] w-full resize-none overflow-y-auto rounded-[24px] border border-slate-200 bg-white px-4 py-3.5 text-sm leading-6 text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] placeholder:text-slate-400 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70 ${
         props.className ?? ""
       }`}
     />
@@ -349,7 +324,7 @@ function SelectField({
     <select
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70"
     >
       {options.map((option) => (
         <option key={option.value} value={option.value}>
@@ -372,44 +347,14 @@ function Toggle({
       type="button"
       onClick={() => onChange(!checked)}
       className={`relative h-7 w-12 rounded-full transition ${
-        checked ? "bg-slate-900" : "bg-slate-300"
+        checked ? "bg-slate-900" : "bg-slate-300/90"
       }`}
     >
       <span
-        className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${
+        className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-[0_4px_12px_rgba(15,23,42,0.22)] transition ${
           checked ? "left-6" : "left-1"
         }`}
       />
-    </button>
-  );
-}
-
-function ModeCard({
-  active,
-  label,
-  desc,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  desc: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-2xl border p-4 text-left transition ${
-        active
-          ? "border-slate-900 bg-slate-50 shadow-sm"
-          : "border-black/10 hover:bg-slate-50"
-      }`}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <p className="font-medium text-slate-900">{label}</p>
-        {active ? <CheckCircle2 className="h-4 w-4 text-slate-900" /> : null}
-      </div>
-      <p className="mt-1 text-sm text-slate-500">{desc}</p>
     </button>
   );
 }
@@ -478,17 +423,18 @@ export default function PerformanceAIDashboard() {
   const [authName, setAuthName] = useState("");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [authStatusError, setAuthStatusError] = useState("");
 
-  const [inputMode, setInputMode] = useState<InputMode>("assisted");
+  const [strategyMode, setStrategyMode] = useState<StrategyMode>("hybrid");
   const [projectType, setProjectType] = useState("commercial_pad");
   const [units, setUnits] = useState("ft");
-  const [strictMode, setStrictMode] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [imageName, setImageName] = useState("");
   const [siteName, setSiteName] = useState("Civora AI Project");
+  const [fileName, setFileName] = useState("civora-ai-plan");
   const [lotWidth, setLotWidth] = useState("220");
   const [lotHeight, setLotHeight] = useState("180");
   const [buildingWidth, setBuildingWidth] = useState("100");
@@ -509,16 +455,18 @@ export default function PerformanceAIDashboard() {
   const [planPreviewUrl, setPlanPreviewUrl] = useState("");
   const [planPreviewSummary, setPlanPreviewSummary] =
     useState<PreviewResponse["summary"] | null>(null);
-  const [activeTab, setActiveTab] = useState<"prompt" | "image">("prompt");
   const [projectId, setProjectId] = useState("");
-  const [projectDescription, setProjectDescription] = useState("");
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [jobs, setJobs] = useState<JobSummary[]>([]);
   const [currentProject, setCurrentProject] = useState<ProjectRecord | null>(null);
+  const [projectToOpen, setProjectToOpen] = useState("");
   const [selectedRunId, setSelectedRunId] = useState("");
   const [activeJobId, setActiveJobId] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [activePlanTool, setActivePlanTool] = useState<PlanToolMode>("run");
+  const [selectedPlanToolPanel, setSelectedPlanToolPanel] =
+    useState<"explain" | "fix" | "improve">("explain");
 
   const disciplineToggles: DisciplineToggle[] = [
     {
@@ -547,32 +495,15 @@ export default function PerformanceAIDashboard() {
     },
   ];
 
-  const enablePromptInput = () => {
-    setActiveTab("prompt");
-    setInputMode((mode) => {
-      if (mode === "manual") return "assisted";
-      if (mode === "image_assisted") return "hybrid";
-      return mode;
-    });
-  };
-
-  const enableImageInput = () => {
-    setActiveTab("image");
-    setInputMode((mode) => {
-      if (mode === "manual") return "image_assisted";
-      if (mode === "assisted" || mode === "prompt_assisted") return "hybrid";
-      return mode;
-    });
-  };
-
   const payloadPreview = useMemo(
     () => ({
-      input_mode: inputMode,
-      strict_mode: strictMode,
+      input_mode: strategyMode,
+      strict_mode: strategyMode === "manual",
       prompt_text: prompt || null,
       image_path: imageName || null,
       manual_fields: {
         project_name: siteName,
+        file_name: fileName,
         units,
         project_type: projectType,
         lot: {
@@ -594,14 +525,14 @@ export default function PerformanceAIDashboard() {
           utilities ? "utility" : null,
         ].filter(Boolean),
       },
-      allow_ai_fill_for_blanks: !strictMode,
+      allow_ai_fill_for_blanks: strategyMode !== "manual",
     }),
     [
-      inputMode,
-      strictMode,
+      strategyMode,
       prompt,
       imageName,
       siteName,
+      fileName,
       units,
       projectType,
       lotWidth,
@@ -625,15 +556,15 @@ export default function PerformanceAIDashboard() {
     ) {
       return {
         result: backendResult,
-        filename_stem: siteName,
+        filename_stem: fileName || siteName,
       };
     }
 
     return {
       project_id: projectId || null,
-      filename_stem: siteName,
+      filename_stem: fileName || siteName,
     };
-  }, [backendResult, projectId, siteName]);
+  }, [backendResult, fileName, projectId, siteName]);
 
   const workflowRuns = useMemo<WorkflowRunSummary[]>(
     () =>
@@ -657,7 +588,6 @@ export default function PerformanceAIDashboard() {
       workflowRuns.find((run) => run.run_id === selectedRunId) ?? workflowRuns[0]
     );
   }, [workflowRuns, selectedRunId]);
-
   const latestRunComparison = useMemo(() => {
     if (workflowRuns.length < 2) return null;
     const current = workflowRuns[0];
@@ -678,16 +608,8 @@ export default function PerformanceAIDashboard() {
   }, [workflowRuns]);
 
   const currentPlanMeta = useMemo(() => backendResult?.final_plan?.meta ?? {}, [backendResult]);
-  const currentStageStatuses = useMemo(
-    () =>
-      currentPlanMeta?.stage_completeness?.statuses &&
-      typeof currentPlanMeta.stage_completeness.statuses === "object"
-        ? currentPlanMeta.stage_completeness.statuses
-        : {},
-    [currentPlanMeta],
-  );
-  const currentDeliverables = useMemo(
-    () => currentPlanMeta?.deliverables ?? {},
+  const currentTruthAudit = useMemo(
+    () => currentPlanMeta?.truth_audit ?? {},
     [currentPlanMeta],
   );
   const currentManualFailures = useMemo(
@@ -701,6 +623,49 @@ export default function PerformanceAIDashboard() {
     () => currentPlanMeta?.coordination ?? {},
     [currentPlanMeta],
   );
+  const currentExplanation = useMemo(
+    () => currentPlanMeta?.explanation ?? {},
+    [currentPlanMeta],
+  );
+  const currentIterations = useMemo(
+    () =>
+      Array.isArray(backendResult?.metadata?.iterations)
+        ? backendResult.metadata.iterations
+        : Array.isArray(currentPlanMeta?.iterations)
+          ? currentPlanMeta.iterations
+          : [],
+    [backendResult, currentPlanMeta],
+  );
+  const suggestedImproveGoal = useMemo(() => {
+    const failureBlob = [
+      ...currentManualFailures.map((failure: any) =>
+        [failure.code, failure.message, failure.system, failure.rule]
+          .filter(Boolean)
+          .join(" "),
+      ),
+      ...issues.map((issue) => issue.message),
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    if (failureBlob.includes("drain") || failureBlob.includes("inlet")) {
+      return "improve_drainage";
+    }
+    if (failureBlob.includes("pipe")) {
+      return "reduce_pipe_length";
+    }
+    if (
+      failureBlob.includes("grade") ||
+      failureBlob.includes("earthwork") ||
+      failureBlob.includes("slope")
+    ) {
+      return "reduce_grading";
+    }
+    if (failureBlob.includes("parking")) {
+      return "maximize_parking";
+    }
+    return undefined;
+  }, [currentManualFailures, issues]);
 
   const applyBackendResult = (data: any) => {
     setBackendResult(data);
@@ -745,8 +710,10 @@ export default function PerformanceAIDashboard() {
       ? manualFields.disciplines
       : [];
 
-    setInputMode((projectInput.input_mode as InputMode) ?? "assisted");
-    setStrictMode(Boolean(projectInput.strict_mode));
+    const nextMode = projectInput.input_mode ?? (projectInput.strict_mode ? "manual" : "hybrid");
+    if (nextMode === "manual" || nextMode === "assisted" || nextMode === "hybrid") {
+      setStrategyMode(nextMode);
+    }
     setPrompt(projectInput.prompt_text ?? "");
     setImageName(projectInput.image_path ?? "");
     setUploadedImageApiUrl(
@@ -754,6 +721,7 @@ export default function PerformanceAIDashboard() {
     );
     setUploadedImagePreviewUrl("");
     setSiteName(manualFields.project_name ?? "Civora AI Project");
+    setFileName(manualFields.file_name ?? manualFields.project_name ?? "civora-ai-plan");
     setUnits(manualFields.units ?? "ft");
     setProjectType(manualFields.project_type ?? "commercial_pad");
     setLotWidth(String(lot.w ?? ""));
@@ -798,7 +766,13 @@ export default function PerformanceAIDashboard() {
     const data = await getJson<{ projects: ProjectSummary[] }>("/api/projects", {
       token: authToken,
     });
-    setProjects(Array.isArray(data.projects) ? data.projects : []);
+    const nextProjects = Array.isArray(data.projects) ? data.projects : [];
+    setProjects(nextProjects);
+    setProjectToOpen((current) =>
+      current && nextProjects.some((project) => project.project_id === current)
+        ? current
+        : nextProjects[0]?.project_id ?? "",
+    );
   };
 
   const refreshJobs = async (authToken = token) => {
@@ -863,21 +837,57 @@ export default function PerformanceAIDashboard() {
     setStatusMessage("Signed out.");
   };
 
-  const runOrchestrator = async () => {
+  const runOrchestrator = async (mode: PlanToolMode = "run") => {
     if (!token) return;
     setBusy(true);
+    setActivePlanTool(mode);
     try {
-      const data = await postJson<any>("/api/orchestrate", payloadPreview, {
+      const requestPayload =
+        mode === "run"
+          ? payloadPreview
+          : {
+              ...payloadPreview,
+              full_design_mode: true,
+              optimize_goal:
+                mode === "fix"
+                  ? suggestedImproveGoal ?? "reduce_pipe_length"
+                  : suggestedImproveGoal,
+              meta: {
+                ...((payloadPreview as any).meta ?? {}),
+                requested_plan_tool: mode,
+              },
+            };
+      const data = await postJson<any>("/api/orchestrate", requestPayload, {
         token,
       });
       applyBackendResult(data);
-      setStatusMessage("Direct orchestrator run completed.");
+      await requestPreview(
+        {
+          result: data,
+          filename_stem: fileName || siteName,
+        },
+        { silent: true },
+      );
+      setStatusMessage(
+        mode === "fix"
+          ? "Civora AI ran a focused fix pass."
+          : mode === "improve"
+            ? "Civora AI generated an improved plan."
+            : "Plan run completed.",
+      );
     } catch (error) {
       setStatusMessage(
-        error instanceof Error ? error.message : "Orchestrator failed.",
+        error instanceof Error
+          ? error.message
+          : mode === "fix"
+            ? "Fix pass failed."
+            : mode === "improve"
+              ? "Improve pass failed."
+              : "Planner run failed.",
       );
     } finally {
       setBusy(false);
+      setActivePlanTool("run");
     }
   };
 
@@ -914,7 +924,6 @@ export default function PerformanceAIDashboard() {
         {
           project_id: projectId || null,
           name: siteName,
-          description: projectDescription,
           project_input: payloadPreview,
           latest_result: backendResult ?? {},
         },
@@ -943,16 +952,23 @@ export default function PerformanceAIDashboard() {
       const project = data.project;
       setCurrentProject(project);
       setProjectId(project.project_id);
+      setProjectToOpen(project.project_id);
       setSiteName(project.name ?? "Civora AI Project");
-      setProjectDescription(project.description ?? "");
       applyProjectInput(project.project_input ?? {});
       if (project.latest_result && Object.keys(project.latest_result).length) {
         applyBackendResult(project.latest_result);
+        await requestPreview(
+          {
+            result: project.latest_result,
+            filename_stem: fileName || project.name,
+          },
+          { silent: true },
+        );
       } else {
         setBackendResult(null);
+        setPlanPreviewUrl("");
+        setPlanPreviewSummary(null);
       }
-      setPlanPreviewUrl("");
-      setPlanPreviewSummary(null);
       setStatusMessage(`Loaded project "${project.name}".`);
     } catch (error) {
       setStatusMessage(
@@ -986,6 +1002,13 @@ export default function PerformanceAIDashboard() {
       setActiveJobId(job.job_id);
       if (job.status === "completed" && job.result) {
         applyBackendResult(job.result);
+        await requestPreview(
+          {
+            result: job.result,
+            filename_stem: fileName || siteName,
+          },
+          { silent: true },
+        );
         setStatusMessage(`Job ${job.job_id} completed.`);
         await refreshProjects();
         if (job.project_id) {
@@ -1024,6 +1047,21 @@ export default function PerformanceAIDashboard() {
     }
   };
 
+  const requestPreview = async (
+    payload: any,
+    options?: { silent?: boolean },
+  ) => {
+    if (!token) return;
+    const data = await postJson<PreviewResponse>("/api/preview", payload, {
+      token,
+    });
+    setPlanPreviewUrl(data.preview_image_data_url);
+    setPlanPreviewSummary(data.summary ?? null);
+    if (!options?.silent) {
+      setStatusMessage("Plan preview generated.");
+    }
+  };
+
   const handlePreviewPlan = async () => {
     if (!token) return;
     if (!backendResult && !projectId) {
@@ -1032,12 +1070,7 @@ export default function PerformanceAIDashboard() {
     }
     setBusy(true);
     try {
-      const data = await postJson<PreviewResponse>("/api/preview", artifactPayload, {
-        token,
-      });
-      setPlanPreviewUrl(data.preview_image_data_url);
-      setPlanPreviewSummary(data.summary ?? null);
-      setStatusMessage("Plan preview generated.");
+      await requestPreview(artifactPayload);
     } catch (error) {
       setStatusMessage(
         error instanceof Error ? error.message : "Preview generation failed.",
@@ -1045,6 +1078,39 @@ export default function PerformanceAIDashboard() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleNewChat = () => {
+    setProjectId("");
+    setCurrentProject(null);
+    setProjectToOpen(projects[0]?.project_id ?? "");
+    setSelectedRunId("");
+    setActiveJobId("");
+    setPrompt("");
+    setImageName("");
+    setUploadedImageApiUrl("");
+    setUploadedImagePreviewUrl("");
+    setBackendResult(null);
+    setPlanPreviewUrl("");
+    setPlanPreviewSummary(null);
+    setAssumptions(defaultAssumptions);
+    setIssues(defaultIssues);
+    setSiteName("Civora AI Project");
+    setFileName("civora-ai-plan");
+    setProjectType("commercial_pad");
+    setUnits("ft");
+    setLotWidth("220");
+    setLotHeight("180");
+    setBuildingWidth("100");
+    setBuildingDepth("80");
+    setSetback("10");
+    setParkingCount("36");
+    setRoads(true);
+    setGrading(true);
+    setDrainage(true);
+    setUtilities(true);
+    setStrategyMode("hybrid");
+    setStatusMessage("Started a new Civora AI workspace.");
   };
 
   const downloadBlob = (blob: Blob, filename: string) => {
@@ -1171,7 +1237,7 @@ export default function PerformanceAIDashboard() {
   if (!user) {
     return (
       <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)] p-6">
-        <div className="mx-auto grid min-h-[90vh] max-w-6xl items-center gap-8 lg:grid-cols-[1.15fr_0.85fr]">
+        <div className="mx-auto grid min-h-[90vh] max-w-6xl items-center gap-8 lg:grid-cols-[1.1fr_0.9fr]">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1183,24 +1249,32 @@ export default function PerformanceAIDashboard() {
                 Civora AI — AI-Powered Civil Engineering Design Platform
               </h1>
               <p className="max-w-2xl text-lg leading-8 text-slate-600">
-                Sign in to manage projects, queue planning runs, review AI
-                assumptions, and turn rough site intent into structured output.
+                Sign in to run civil site concepts, review clear engineering
+                outcomes, and export readable plans from one clean workflow.
               </p>
             </div>
             <div className="grid gap-4 sm:grid-cols-3">
-              {authFeatureCards.map(({ icon: Comp, title, desc }) => {
-                return (
-                  <Card key={String(title)} className="rounded-2xl">
-                    <CardContent className="p-5">
-                      <Comp className="h-5 w-5 text-slate-900" />
-                      <p className="mt-3 text-sm font-medium text-slate-900">
-                        {title}
-                      </p>
-                      <p className="mt-1 text-sm text-slate-500">{desc}</p>
-                    </CardContent>
-                  </Card>
-                );
-              })}
+              <Card className="rounded-2xl">
+                <CardContent className="p-5">
+                  <FolderOpen className="h-5 w-5 text-slate-900" />
+                  <p className="mt-3 text-sm font-medium text-slate-900">Projects</p>
+                  <p className="mt-1 text-sm text-slate-500">Open, rerun, and review real project history.</p>
+                </CardContent>
+              </Card>
+              <Card className="rounded-2xl">
+                <CardContent className="p-5">
+                  <Clock3 className="h-5 w-5 text-slate-900" />
+                  <p className="mt-3 text-sm font-medium text-slate-900">Runs</p>
+                  <p className="mt-1 text-sm text-slate-500">See what passed, what failed, and why it matters.</p>
+                </CardContent>
+              </Card>
+              <Card className="rounded-2xl">
+                <CardContent className="p-5">
+                  <Map className="h-5 w-5 text-slate-900" />
+                  <p className="mt-3 text-sm font-medium text-slate-900">Deliverables</p>
+                  <p className="mt-1 text-sm text-slate-500">Preview, download, and share readable civil outputs.</p>
+                </CardContent>
+              </Card>
             </div>
           </motion.div>
 
@@ -1273,15 +1347,26 @@ export default function PerformanceAIDashboard() {
                   />
                 </Field>
                 <Field label="Password">
-                  <TextInput
-                    type="password"
-                    value={authPassword}
-                    onChange={(e) => setAuthPassword(e.target.value)}
-                    placeholder="At least 8 characters"
-                    autoComplete={
-                      authMode === "register" ? "new-password" : "current-password"
-                    }
-                  />
+                  <div className="relative">
+                    <TextInput
+                      type={showPassword ? "text" : "password"}
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      placeholder="At least 8 characters"
+                      autoComplete={
+                        authMode === "register" ? "new-password" : "current-password"
+                      }
+                      className="pr-12"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((value) => !value)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </Field>
                 {authError ? (
                   <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
@@ -1318,17 +1403,27 @@ export default function PerformanceAIDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 p-4 md:p-8">
-      <div className="mx-auto mb-6 flex max-w-7xl flex-wrap items-center justify-between gap-4">
-        <div>
+    <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-4 md:p-6">
+      <div className="mx-auto mb-6 flex max-w-[1600px] flex-wrap items-start justify-between gap-4">
+        <div className="space-y-2">
           <p className="text-sm text-slate-500">Signed in as {user.email}</p>
           <h1 className="text-3xl font-semibold tracking-tight text-slate-950">
             Civora AI — AI-Powered Civil Engineering Design Platform
           </h1>
+          <p className="max-w-3xl text-sm leading-6 text-slate-600">
+            Enter a request, generate a coordinated civil concept, and review the
+            plan with a stable preview-first workspace.
+          </p>
         </div>
         <div className="flex flex-wrap gap-3">
-          <Pill>Private Beta</Pill>
-          <Pill>User Scoped</Pill>
+          <SmallButton variant="secondary" onClick={handleNewChat}>
+            <MessageSquarePlus className="mr-2 h-4 w-4" />
+            New Chat
+          </SmallButton>
+          <SmallButton variant="secondary" onClick={() => void refreshProjects()}>
+            <History className="mr-2 h-4 w-4" />
+            Refresh History
+          </SmallButton>
           <SmallButton variant="secondary" onClick={handleLogout}>
             <LogOut className="mr-2 h-4 w-4" />
             Sign Out
@@ -1336,79 +1431,238 @@ export default function PerformanceAIDashboard() {
         </div>
       </div>
 
-      <div className="mx-auto mb-6 max-w-7xl">
-        <div className="rounded-3xl border border-black/10 bg-white/90 p-4 shadow-sm">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-sm font-medium text-slate-900">Latest Outcome</p>
-              <p className="mt-1 text-sm text-slate-500">
-                {currentProject
-                  ? `Active project: ${currentProject.name}`
-                  : "Load or save a project to keep runs, artifacts, and workflow history together."}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Pill>Truth {(backendResult?.final_plan?.meta?.truth_audit?.success ?? selectedRun?.truth_success) ? "passed" : "pending"}</Pill>
-              <Pill>Unresolved {Array.isArray(currentCoordination?.unresolved_conflicts) ? currentCoordination.unresolved_conflicts.length : currentCoordination?.unresolved_conflicts || 0}</Pill>
-              <Pill>Produced {(currentDeliverables?.produced || []).length}</Pill>
-              <Pill>{Object.keys(currentStageStatuses).length} stages tracked</Pill>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="mx-auto grid max-w-7xl gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+      <div className="mx-auto grid max-w-[1600px] items-start gap-6 xl:grid-cols-[280px_minmax(0,1.2fr)_360px]">
+        <motion.aside
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-6 xl:sticky xl:top-6 xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto xl:pr-1"
+        >
           <Card>
             <CardHeader>
               <SectionTitle
                 icon={FolderOpen}
-                title="Project Workspace"
-                desc="Build requests, save projects, and launch direct or queued engineering runs."
+                title="Project Access"
+                desc="Open saved work, start fresh, and keep files organized."
               />
             </CardHeader>
-            <CardContent className="grid gap-6">
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Project name">
-                  <TextInput value={siteName} onChange={(e) => setSiteName(e.target.value)} />
-                </Field>
-                <Field label="Project description">
-                  <TextInput
-                    value={projectDescription}
-                    onChange={(e) => setProjectDescription(e.target.value)}
-                    placeholder="Retail pad, multifamily concept, drainage study..."
-                  />
-                </Field>
+            <CardContent className="space-y-4">
+              <Field label="Open project">
+                <div className="space-y-2">
+                  <select
+                    value={projectToOpen}
+                    onChange={(event) => setProjectToOpen(event.target.value)}
+                    className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                  >
+                    <option value="">Select project</option>
+                    {projects.map((project) => (
+                      <option key={project.project_id} value={project.project_id}>
+                        {project.name}
+                      </option>
+                    ))}
+                  </select>
+                  <SmallButton
+                    variant="secondary"
+                    onClick={() => {
+                      if (projectToOpen) {
+                        void loadProject(projectToOpen);
+                      }
+                    }}
+                    disabled={!projectToOpen}
+                  >
+                    <FolderOpen className="mr-2 h-4 w-4" />
+                    Open Project
+                  </SmallButton>
+                </div>
+              </Field>
+
+              <div className="space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Saved Projects
+                </p>
+                <div className="max-h-[260px] space-y-2 overflow-y-auto pr-1">
+                  {projects.length === 0 ? (
+                    <p className="text-sm text-slate-500">No saved projects yet.</p>
+                  ) : (
+                    projects.map((project) => (
+                      <button
+                        key={project.project_id}
+                        type="button"
+                        onClick={() => void loadProject(project.project_id)}
+                        className={`block w-full rounded-2xl border px-4 py-3 text-left transition ${
+                          project.project_id === projectId
+                            ? "border-slate-900 bg-slate-50 shadow-sm"
+                            : "border-black/10 bg-white hover:bg-slate-50"
+                        }`}
+                      >
+                        <p className="truncate text-sm font-medium text-slate-900">
+                          {project.name}
+                        </p>
+                        <p className="mt-1 truncate text-xs text-slate-500">
+                          {project.has_result ? "Saved result available" : "Draft only"}
+                        </p>
+                      </button>
+                    ))
+                  )}
+                </div>
               </div>
+            </CardContent>
+          </Card>
 
-              <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
-                <Card>
-                  <CardHeader>
-                    <SectionTitle icon={Sparkles} title="Input Mode" desc="Choose how this run should behave." />
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <ModeCard active={inputMode === "manual"} label="Manual" desc="No AI fill for missing fields" onClick={() => setInputMode("manual")} />
-                      <ModeCard active={inputMode === "assisted"} label="Assisted" desc="AI fills only blank fields" onClick={() => setInputMode("assisted")} />
-                      <ModeCard active={inputMode === "image_assisted"} label="Image + Assisted" desc="Upload image, then AI helps with blanks" onClick={() => setInputMode("image_assisted")} />
-                      <ModeCard active={inputMode === "prompt_assisted"} label="Prompt + Assisted" desc="Prompt-first structured planning" onClick={() => setInputMode("prompt_assisted")} />
-                      <ModeCard active={inputMode === "hybrid"} label="Hybrid" desc="Image + prompt + form together" onClick={() => setInputMode("hybrid")} />
-                    </div>
-                    <div className="flex items-center justify-between rounded-2xl border border-black/10 p-4">
-                      <div>
-                        <p className="text-sm font-medium text-slate-900">Strict validation</p>
-                        <p className="text-xs text-slate-500">Blank required fields become blocking errors.</p>
+          <Card>
+            <CardHeader>
+              <SectionTitle
+                icon={MessageSquarePlus}
+                title="Session"
+                desc="Keep the current workspace context clear and easy to reset."
+              />
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="rounded-2xl border border-black/10 bg-slate-50 px-4 py-3">
+                <p className="text-sm font-medium text-slate-900">
+                  {currentProject?.name || siteName}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {projectId ? "Active saved project" : "Unsaved working session"}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Pill>Mode {strategyMode}</Pill>
+                <Pill>{projectType.replaceAll("_", " ")}</Pill>
+                <Pill>{units}</Pill>
+              </div>
+              <SmallButton variant="secondary" onClick={handleNewChat}>
+                <MessageSquarePlus className="mr-2 h-4 w-4" />
+                New Chat
+              </SmallButton>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <SectionTitle
+                icon={History}
+                title="History"
+                desc="Recent runs for the active project."
+              />
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {!projectId ? (
+                <p className="text-sm text-slate-500">
+                  Open a project to browse its saved run history.
+                </p>
+              ) : workflowRuns.length === 0 ? (
+                <p className="text-sm text-slate-500">No runs saved yet for this project.</p>
+              ) : (
+                <div className="max-h-[420px] space-y-3 overflow-y-auto pr-1">
+                  {workflowRuns.map((run) => (
+                    <button
+                      key={run.run_id}
+                      type="button"
+                      onClick={() => setSelectedRunId(run.run_id)}
+                      className={`block w-full rounded-2xl border px-4 py-3 text-left transition ${
+                        selectedRun?.run_id === run.run_id
+                          ? "border-slate-900 bg-slate-50 shadow-sm"
+                          : "border-black/10 bg-white hover:bg-slate-50"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-medium text-slate-900">
+                          {run.success ? "Completed run" : "Failed run"}
+                        </p>
+                        <Pill>{run.success ? "Pass" : "Fail"}</Pill>
                       </div>
-                      <Toggle checked={strictMode} onChange={setStrictMode} />
-                    </div>
-                  </CardContent>
-                </Card>
+                      <p className="mt-2 text-xs text-slate-500">
+                        {formatTimestamp(run.created_at)}
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Pill>
+                          Trust {run.engineering_status?.trust_score ?? 0}
+                        </Pill>
+                        <Pill>
+                          Unresolved {run.coordination_summary?.unresolved_conflicts ?? 0}
+                        </Pill>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </motion.aside>
 
-                <Card>
-                  <CardHeader>
-                    <SectionTitle icon={Layers3} title="Project Setup" desc="Structured inputs that feed the planner stack." />
-                  </CardHeader>
-                  <CardContent className="grid gap-4 md:grid-cols-2">
+        <motion.main
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="min-w-0 space-y-6"
+        >
+          <Card>
+            <CardHeader>
+              <SectionTitle
+                icon={Sparkles}
+                title="Design Workspace"
+                desc="One clear workflow: choose a strategy, describe the design, generate, then review the preview."
+              />
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
+                <div className="space-y-4 rounded-3xl border border-black/10 bg-slate-50/80 p-4">
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Workflow Strategy
+                    </p>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      {[
+                        {
+                          value: "manual",
+                          label: "Manual",
+                          desc: "Strict, explicit engineering input.",
+                        },
+                        {
+                          value: "assisted",
+                          label: "Assisted",
+                          desc: "AI fills gaps and keeps momentum.",
+                        },
+                        {
+                          value: "hybrid",
+                          label: "Hybrid",
+                          desc: "Balanced workflow for most projects.",
+                        },
+                      ].map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setStrategyMode(option.value as StrategyMode)}
+                          className={`rounded-2xl border px-4 py-4 text-left transition ${
+                            strategyMode === option.value
+                              ? "border-slate-900 bg-white shadow-sm"
+                              : "border-black/10 bg-white/80 hover:bg-white"
+                          }`}
+                        >
+                          <p className="text-sm font-medium text-slate-900">
+                            {option.label}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {option.desc}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Field label="Project name">
+                      <TextInput
+                        value={siteName}
+                        onChange={(e) => setSiteName(e.target.value)}
+                      />
+                    </Field>
+                    <Field label="File name">
+                      <TextInput
+                        value={fileName}
+                        onChange={(e) => setFileName(e.target.value)}
+                        placeholder="civora-ai-plan"
+                      />
+                    </Field>
                     <Field label="Project type">
                       <SelectField
                         value={projectType}
@@ -1434,596 +1688,436 @@ export default function PerformanceAIDashboard() {
                         ]}
                       />
                     </Field>
-                    <Field label="Setback">
-                      <TextInput value={setback} onChange={(e) => setSetback(e.target.value)} />
-                    </Field>
-                    <Field label="Parking count">
-                      <TextInput value={parkingCount} onChange={(e) => setParkingCount(e.target.value)} />
-                    </Field>
+                  </div>
+
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Include in design
+                    </p>
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      {disciplineToggles.map(({ label, checked, setter, desc }) => (
+                        <div
+                          key={label}
+                          className="flex items-center justify-between rounded-2xl border border-black/10 bg-white px-4 py-3"
+                        >
+                          <div>
+                            <p className="text-sm font-medium text-slate-900">
+                              {label}
+                            </p>
+                            <p className="text-xs text-slate-500">{desc}</p>
+                          </div>
+                          <Toggle checked={checked} onChange={setter} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-dashed border-black/15 bg-white p-4">
+                    <div className="flex items-start gap-3">
+                      <FileImage className="mt-0.5 h-5 w-5 text-slate-700" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-slate-900">
+                          Upload reference image
+                        </p>
+                        <p className="mt-1 text-sm text-slate-500">
+                          Add a sketch, markup, or screenshot to guide the design.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-4 space-y-3">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            await uploadImage(file);
+                          }
+                        }}
+                        className="block w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-slate-700 file:mr-4 file:rounded-xl file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white"
+                      />
+                      <TextInput
+                        value={imageName}
+                        onChange={(e) => setImageName(e.target.value)}
+                        placeholder="Reference image path or filename"
+                      />
+                      {uploadedImagePreviewUrl || uploadedImageApiUrl ? (
+                        <div className="overflow-hidden rounded-2xl border border-black/10 bg-slate-50">
+                          <img
+                            src={uploadedImagePreviewUrl || uploadedImageApiUrl}
+                            alt="Uploaded planning reference"
+                            className="h-44 w-full object-cover"
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4 rounded-3xl border border-black/10 bg-white p-4">
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Project Brief
+                    </p>
+                    <p className="text-sm text-slate-500">
+                      Describe the civil site request once. Civora AI will use the selected strategy and design scope automatically.
+                    </p>
+                  </div>
+                  <TextArea
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    placeholder="Describe the site, access, grading goals, drainage intent, utilities, constraints, and any required outcomes..."
+                    className="h-[260px] min-h-[260px] max-h-[320px] whitespace-pre-wrap break-words"
+                  />
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                     <Field label="Lot width">
-                      <TextInput value={lotWidth} onChange={(e) => setLotWidth(e.target.value)} />
+                      <TextInput
+                        value={lotWidth}
+                        onChange={(e) => setLotWidth(e.target.value)}
+                      />
                     </Field>
                     <Field label="Lot height">
-                      <TextInput value={lotHeight} onChange={(e) => setLotHeight(e.target.value)} />
+                      <TextInput
+                        value={lotHeight}
+                        onChange={(e) => setLotHeight(e.target.value)}
+                      />
                     </Field>
                     <Field label="Building width">
-                      <TextInput value={buildingWidth} onChange={(e) => setBuildingWidth(e.target.value)} />
+                      <TextInput
+                        value={buildingWidth}
+                        onChange={(e) => setBuildingWidth(e.target.value)}
+                      />
                     </Field>
                     <Field label="Building depth">
-                      <TextInput value={buildingDepth} onChange={(e) => setBuildingDepth(e.target.value)} />
-                    </Field>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <Card>
-                <CardHeader>
-                  <SectionTitle icon={Upload} title="Prompt or Image Inputs" desc="Use prompt, image, or both." />
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="inline-flex rounded-2xl border border-black/10 bg-slate-100 p-1">
-                    <button
-                      type="button"
-                      onClick={enablePromptInput}
-                      className={`rounded-2xl px-4 py-2 text-sm font-medium transition ${
-                        activeTab === "prompt" ? "bg-white shadow-sm" : "text-slate-600"
-                      }`}
-                    >
-                      Prompt
-                    </button>
-                    <button
-                      type="button"
-                      onClick={enableImageInput}
-                      className={`rounded-2xl px-4 py-2 text-sm font-medium transition ${
-                        activeTab === "image" ? "bg-white shadow-sm" : "text-slate-600"
-                      }`}
-                    >
-                      Image Upload
-                    </button>
-                  </div>
-
-                  {activeTab === "prompt" ? (
-                    <Field label="Prompt">
-                      <TextArea
-                        value={prompt}
-                        onFocus={enablePromptInput}
-                        onChange={(e) => {
-                          enablePromptInput();
-                          setPrompt(e.target.value);
-                        }}
-                        placeholder="Describe the site, roadway, grading, utility, or drainage concept..."
-                        className="whitespace-pre-wrap break-words"
+                      <TextInput
+                        value={buildingDepth}
+                        onChange={(e) => setBuildingDepth(e.target.value)}
                       />
-                      <p className="text-xs text-slate-500">
-                        Typing here automatically keeps the run in a prompt-capable mode.
-                      </p>
                     </Field>
-                  ) : (
-                    <Field label="Image file">
-                      <div className="rounded-2xl border border-dashed border-black/15 p-6">
-                        <div className="flex flex-col items-center justify-center gap-3 text-center">
-                          <FileImage className="h-8 w-8 text-slate-700" />
-                          <div>
-                            <p className="font-medium text-slate-900">Upload sketch, screenshot, or marked-up plan</p>
-                            <p className="text-sm text-slate-500">The backend stores the image, and the dashboard keeps a visible photo preview while you work.</p>
-                          </div>
-                          <div className="flex w-full max-w-md flex-col gap-3">
-                            <TextInput
-                              value={imageName}
-                              onFocus={enableImageInput}
-                              onChange={(e) => {
-                                enableImageInput();
-                                setImageName(e.target.value);
-                              }}
-                              placeholder="example: retail_site_sketch.png"
-                            />
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onClick={enableImageInput}
-                              onChange={async (e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  enableImageInput();
-                                  await uploadImage(file);
-                                }
-                              }}
-                              className="block w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-slate-700 file:mr-4 file:rounded-xl file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white"
-                            />
-                            {uploadedImagePreviewUrl ? (
-                              <div className="overflow-hidden rounded-2xl border border-black/10 bg-slate-50">
-                                <img
-                                  src={uploadedImagePreviewUrl}
-                                  alt="Uploaded planning reference"
-                                  className="h-48 w-full object-cover"
-                                />
-                              </div>
-                            ) : null}
-                            {!uploadedImagePreviewUrl && uploadedImageApiUrl ? (
-                              <div className="overflow-hidden rounded-2xl border border-black/10 bg-slate-50">
-                                <img
-                                  src={uploadedImageApiUrl}
-                                  alt="Uploaded planning reference"
-                                  className="h-48 w-full object-cover"
-                                />
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-                      </div>
+                    <Field label="Setback">
+                      <TextInput
+                        value={setback}
+                        onChange={(e) => setSetback(e.target.value)}
+                      />
                     </Field>
-                  )}
-
-                  <div className="grid gap-4 md:grid-cols-4">
-                    {disciplineToggles.map(({ label, checked, setter, desc }) => (
-                      <div key={String(label)} className="flex items-center justify-between rounded-2xl border border-black/10 p-4">
-                        <div>
-                          <p className="text-sm font-medium text-slate-900">{label}</p>
-                          <p className="text-xs text-slate-500">{desc}</p>
-                        </div>
-                        <Toggle checked={checked} onChange={setter} />
-                      </div>
-                    ))}
+                    <Field label="Parking count">
+                      <TextInput
+                        value={parkingCount}
+                        onChange={(e) => setParkingCount(e.target.value)}
+                      />
+                    </Field>
                   </div>
-
                   <div className="flex flex-wrap gap-3">
-                    <SmallButton onClick={runOrchestrator} disabled={busy}>
+                    <SmallButton
+                      onClick={() => void runOrchestrator("run")}
+                      disabled={busy}
+                    >
+                      <Sparkles
+                        className={`mr-2 h-4 w-4 ${busy ? "animate-spin" : ""}`}
+                      />
+                      {busy && activePlanTool === "run" ? "Generating..." : "Generate Plan"}
+                    </SmallButton>
+                    <SmallButton
+                      variant="secondary"
+                      onClick={() => {
+                        setSelectedPlanToolPanel("fix");
+                        void runOrchestrator("fix");
+                      }}
+                      disabled={busy}
+                    >
+                      <AlertTriangle className="mr-2 h-4 w-4" />
+                      {busy && activePlanTool === "fix" ? "Fixing..." : "Fix Issues"}
+                    </SmallButton>
+                    <SmallButton
+                      variant="secondary"
+                      onClick={() => {
+                        setSelectedPlanToolPanel("improve");
+                        void runOrchestrator("improve");
+                      }}
+                      disabled={busy}
+                    >
                       <Sparkles className="mr-2 h-4 w-4" />
-                      Direct Run
+                      {busy && activePlanTool === "improve" ? "Improving..." : "Improve Plan"}
                     </SmallButton>
-                    <SmallButton onClick={queueJob} variant="secondary" disabled={busy}>
-                      <Clock3 className="mr-2 h-4 w-4" />
-                      Queue Job
+                    <SmallButton
+                      variant="secondary"
+                      onClick={() => setSelectedPlanToolPanel("explain")}
+                      disabled={!backendResult && !selectedRun}
+                    >
+                      <Eye className="mr-2 h-4 w-4" />
+                      Explain Plan
                     </SmallButton>
-                    <SmallButton onClick={saveProject} variant="secondary" disabled={busy}>
+                    <SmallButton
+                      variant="secondary"
+                      onClick={saveProject}
+                      disabled={busy}
+                    >
                       <Save className="mr-2 h-4 w-4" />
                       Save Project
                     </SmallButton>
-                    <SmallButton variant="secondary" onClick={handlePreviewPlan} disabled={busy}>
-                      <Eye className="mr-2 h-4 w-4" />
-                      Preview Plan
-                    </SmallButton>
-                    <SmallButton variant="secondary" onClick={handleExportDxf} disabled={busy}>
-                      <Download className="mr-2 h-4 w-4" />
-                      Export DXF
-                    </SmallButton>
-                    <SmallButton variant="secondary" onClick={handleExportReport} disabled={busy}>
-                      <Download className="mr-2 h-4 w-4" />
-                      Export Report
+                    <SmallButton
+                      variant="secondary"
+                      onClick={queueJob}
+                      disabled={busy}
+                    >
+                      <Clock3 className="mr-2 h-4 w-4" />
+                      Queue Job
                     </SmallButton>
                   </div>
-                  {statusMessage ? (
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                      <p className="text-sm font-medium text-slate-800">{statusMessage}</p>
-                    </div>
-                  ) : null}
-                </CardContent>
-              </Card>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-          <Card>
-            <CardHeader>
-              <SectionTitle icon={FolderOpen} title="Saved Projects" desc="User-scoped saved work for this beta account." />
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {currentProject ? (
-                <div className="rounded-2xl border border-slate-900 bg-slate-50 p-4 sm:p-5">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-slate-900">Active Project</p>
-                      <p className="mt-1 text-base font-semibold text-slate-950">{currentProject.name}</p>
-                      <p className="mt-1 text-xs text-slate-500">{currentProject.project_id}</p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Pill>{workflowRuns.length} runs</Pill>
-                      <Pill>{workflowArtifacts.length} artifacts</Pill>
-                    </div>
-                  </div>
-                  {workflowArtifacts.length ? (
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {workflowArtifacts.slice(0, 3).map((artifact) => (
-                        <SmallButton
-                          key={artifact.artifact_id}
-                          variant="secondary"
-                          onClick={() => void downloadSavedArtifact(artifact)}
-                        >
-                          {artifact.kind || "artifact"}: {artifact.filename || "download"}
-                        </SmallButton>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-              <div className="flex flex-wrap gap-3">
-                <SmallButton variant="secondary" onClick={() => void refreshProjects()}>
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                  Refresh
-                </SmallButton>
-              </div>
-              <div className="max-h-[260px] space-y-3 overflow-auto pr-1">
-                {projects.length === 0 ? (
-                  <p className="text-sm text-slate-500">No saved projects yet.</p>
-                ) : (
-                  projects.map((project) => (
-                    <div key={project.project_id} className={`rounded-2xl border p-4 ${project.project_id === projectId ? "border-slate-900 bg-slate-50" : "border-black/10"}`}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-medium text-slate-900">{project.name}</p>
-                          <p className="mt-1 text-xs text-slate-500">{project.project_id}</p>
-                        </div>
-                        {project.has_result ? <Pill>Result</Pill> : <Pill>Draft</Pill>}
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <SmallButton variant="secondary" onClick={() => void loadProject(project.project_id)}>
-                          Load
-                        </SmallButton>
-                        <SmallButton variant="secondary" onClick={() => void deleteProject(project.project_id)}>
-                          Delete
-                        </SmallButton>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <SectionTitle icon={Clock3} title="Queued Jobs" desc="Background planner runs stored in the beta backend." />
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex flex-wrap gap-3">
-                <SmallButton variant="secondary" onClick={() => void refreshJobs()}>
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                  Refresh
-                </SmallButton>
-              </div>
-              <div className="max-h-[260px] space-y-3 overflow-auto pr-1">
-                {jobs.length === 0 ? (
-                  <p className="text-sm text-slate-500">No jobs yet.</p>
-                ) : (
-                  jobs.map((job) => (
-                    <button
-                      key={job.job_id}
-                      type="button"
-                      onClick={() => void loadJob(job.job_id)}
-                      className={`block w-full rounded-2xl border p-4 text-left transition ${
-                        job.job_id === activeJobId
-                          ? "border-slate-900 bg-slate-50"
-                          : "border-black/10 hover:bg-slate-50"
+                  {(statusMessage || busy) ? (
+                    <div
+                      className={`rounded-2xl border px-4 py-3 ${
+                        busy
+                          ? "border-slate-300 bg-slate-100"
+                          : "border-slate-200 bg-slate-50"
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-medium text-slate-900">Job {job.job_id}</p>
-                        <Pill>{job.status}</Pill>
-                      </div>
-                      <p className="mt-1 text-xs text-slate-500">{job.project_id || "No project linked"}</p>
-                      {job.error ? <p className="mt-2 text-xs text-red-600">{job.error}</p> : null}
-                    </button>
-                  ))
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <SectionTitle icon={Clock3} title="Project Run History" desc="Recent saved runs for the active project." />
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {!projectId ? (
-                <p className="text-sm text-slate-500">Load or save a project to start building workflow history.</p>
-              ) : workflowRuns.length === 0 ? (
-                <p className="text-sm text-slate-500">No saved run history yet for this project.</p>
-              ) : (
-                <div className="max-h-[260px] space-y-3 overflow-auto pr-1">
-                  {workflowRuns.map((run) => (
-                    <button
-                      key={run.run_id}
-                      type="button"
-                      onClick={() => setSelectedRunId(run.run_id)}
-                      className={`block w-full rounded-2xl border p-4 text-left transition ${
-                        selectedRun?.run_id === run.run_id
-                          ? "border-slate-900 bg-slate-50 shadow-sm ring-1 ring-slate-900/10"
-                          : "border-black/10 hover:bg-slate-50"
-                      }`}
-                    >
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-slate-900">{run.source || "run"}</p>
-                          <p className="mt-1 text-xs text-slate-500">{formatTimestamp(run.created_at)}</p>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <Pill>{run.success ? "Pass" : "Fail"}</Pill>
-                          <Pill>{run.input_mode || "unknown"}</Pill>
-                          <Pill>{run.coordination_summary?.selected_strategy || "none"}</Pill>
-                        </div>
-                      </div>
-                      <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
-                        <p>Trust {run.engineering_status?.trust_score ?? 0}</p>
-                        <p>Required complete {run.all_required_complete ? "yes" : "no"}</p>
-                        <p>Produced {(run.produced_deliverables || []).length}</p>
-                        <p>Unresolved {run.coordination_summary?.unresolved_conflicts ?? 0}</p>
-                      </div>
-                      {run.manual_failures?.length ? (
-                        <p className="mt-3 text-xs text-red-600">
-                          {run.manual_failures.slice(0, 2).map((item) => item.code || item.message).join(" | ")}
+                      <div className="flex items-center gap-3">
+                        {busy ? (
+                          <RefreshCw className="h-4 w-4 animate-spin text-slate-700" />
+                        ) : (
+                          <CheckCircle2 className="h-4 w-4 text-slate-700" />
+                        )}
+                        <p className="text-sm font-medium text-slate-800">
+                          {busy
+                            ? activePlanTool === "fix"
+                              ? "Civora AI is running a focused fix pass..."
+                              : activePlanTool === "improve"
+                                ? "Civora AI is improving the current plan..."
+                                : "Civora AI is generating your plan..."
+                            : statusMessage}
                         </p>
-                      ) : null}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <SectionTitle icon={Settings2} title="Run Detail" desc="Selected saved run detail from project history." />
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {!selectedRun ? (
-                <p className="text-sm text-slate-500">Select a saved run to inspect its detail.</p>
-              ) : (
-                <>
-                  <div className="flex flex-wrap gap-2">
-                    <Pill>{selectedRun.success ? "Pass" : "Fail"}</Pill>
-                    <Pill>{selectedRun.input_mode || "unknown"}</Pill>
-                    <Pill>{selectedRun.strict_mode ? "strict" : "non-strict"}</Pill>
-                    <Pill>{selectedRun.coordination_summary?.selected_strategy || "none"}</Pill>
-                  </div>
-                  <div className="grid gap-3 text-sm text-slate-700 xl:grid-cols-2">
-                    <div className="rounded-2xl border border-black/10 bg-slate-50/70 p-4">
-                      <p className="font-medium text-slate-900">Run summary</p>
-                      <p className="mt-2 text-xs text-slate-500">{formatTimestamp(selectedRun.created_at)}</p>
-                      <p className="mt-2">Trust {selectedRun.engineering_status?.trust_score ?? 0}</p>
-                      <p>Truth {selectedRun.truth_success ? "passed" : "failed"}</p>
-                      <p>Required complete {selectedRun.all_required_complete ? "yes" : "no"}</p>
-                      <p>Unresolved {selectedRun.coordination_summary?.unresolved_conflicts ?? 0}</p>
-                    </div>
-                    <div className="rounded-2xl border border-black/10 bg-slate-50/70 p-4">
-                      <p className="font-medium text-slate-900">Deliverables</p>
-                      <p className="mt-2 text-xs text-slate-500">
-                        Requested {(selectedRun.requested_deliverables || []).length} • Produced {(selectedRun.produced_deliverables || []).length} • Failed {(selectedRun.failed_deliverables || []).length}
-                      </p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {(selectedRun.produced_deliverables || []).slice(0, 6).map((item) => (
-                          <Pill key={item}>{item}</Pill>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="rounded-2xl border border-black/10 p-4">
-                    <p className="text-sm font-medium text-slate-900">Stage status</p>
-                    <div className="mt-3 grid gap-2 lg:grid-cols-2">
-                      {Object.entries(selectedRun.stage_summary?.statuses || {}).map(([name, status]) => (
-                        <div key={name} className="rounded-xl border border-black/10 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                          <span className="font-medium text-slate-900">{name.replaceAll("_", " ")}</span>: {String(status)}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  {selectedRun.manual_failures?.length ? (
-                    <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
-                      <p className="text-sm font-medium text-red-800">Manual failures</p>
-                      <div className="mt-3 space-y-2">
-                        {selectedRun.manual_failures.slice(0, 4).map((failure, idx) => (
-                          <div key={`${failure.code || "detail"}-${idx}`} className="text-xs text-red-700">
-                            <span className="font-medium">{failure.code || failure.message || "failure"}</span>
-                            {failure.system || failure.rule || failure.location
-                              ? ` • ${[failure.system, failure.rule, failure.location].filter(Boolean).join(" | ")}`
-                              : ""}
-                          </div>
-                        ))}
                       </div>
                     </div>
                   ) : null}
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <SectionTitle icon={RefreshCw} title="Latest Run Comparison" desc="Quick comparison between the two latest saved runs." />
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {!latestRunComparison ? (
-                <p className="text-sm text-slate-500">Two saved runs are needed before comparison appears here.</p>
-              ) : (
-                <>
-                  <div className="grid gap-3 xl:grid-cols-2">
-                    <div className="rounded-2xl border border-black/10 bg-slate-50/70 p-4">
-                      <p className="text-sm font-medium text-slate-900">Latest</p>
-                      <p className="mt-1 text-xs text-slate-500">{formatTimestamp(latestRunComparison.current.created_at)}</p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Pill>{latestRunComparison.current.success ? "Pass" : "Fail"}</Pill>
-                        <Pill>{latestRunComparison.current.engineering_status?.trust_score ?? 0} trust</Pill>
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-black/10 bg-slate-50/70 p-4">
-                      <p className="text-sm font-medium text-slate-900">Previous</p>
-                      <p className="mt-1 text-xs text-slate-500">{formatTimestamp(latestRunComparison.previous.created_at)}</p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Pill>{latestRunComparison.previous.success ? "Pass" : "Fail"}</Pill>
-                        <Pill>{latestRunComparison.previous.engineering_status?.trust_score ?? 0} trust</Pill>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="grid gap-3 text-sm text-slate-700 sm:grid-cols-3">
-                    <div className="rounded-2xl border border-black/10 bg-slate-50/70 p-4">
-                      <p className="font-medium text-slate-900">Trust delta</p>
-                      <p className="mt-2">{latestRunComparison.trustDelta >= 0 ? "+" : ""}{latestRunComparison.trustDelta.toFixed(1)}</p>
-                    </div>
-                    <div className="rounded-2xl border border-black/10 bg-slate-50/70 p-4">
-                      <p className="font-medium text-slate-900">Unresolved delta</p>
-                      <p className="mt-2">{latestRunComparison.unresolvedDelta >= 0 ? "+" : ""}{latestRunComparison.unresolvedDelta}</p>
-                    </div>
-                    <div className="rounded-2xl border border-black/10 bg-slate-50/70 p-4">
-                      <p className="font-medium text-slate-900">Produced delta</p>
-                      <p className="mt-2">{latestRunComparison.producedDelta >= 0 ? "+" : ""}{latestRunComparison.producedDelta}</p>
-                    </div>
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <SectionTitle icon={Layers3} title="Stage Status" desc="Current run completeness from canonical stage metadata." />
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {Object.keys(currentStageStatuses).length === 0 ? (
-                <p className="text-sm text-slate-500">Run or load a planner result to inspect stage-level status.</p>
-              ) : (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {Object.entries(currentStageStatuses).map(([stageName, stageStatus]) => (
-                    <div key={stageName} className="rounded-2xl border border-black/10 p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-medium text-slate-900">{stageName.replaceAll("_", " ")}</p>
-                        <Pill>{String(stageStatus)}</Pill>
-                      </div>
-                    </div>
-                  ))}
                 </div>
-              )}
+              </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <SectionTitle icon={Download} title="Deliverable Manager" desc="Requested, produced, and failed deliverables from the current result." />
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-3">
-              {[
-                { label: "Requested", items: currentDeliverables?.requested || [] },
-                { label: "Produced", items: currentDeliverables?.produced || [] },
-                { label: "Failed", items: currentDeliverables?.failed || [] },
-              ].map((group) => (
-                <div key={group.label} className="rounded-2xl border border-black/10 p-4">
-                  <p className="text-sm font-medium text-slate-900">{group.label}</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {group.items.length ? group.items.map((item: string) => <Pill key={item}>{item}</Pill>) : <span className="text-xs text-slate-500">None</span>}
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <SectionTitle icon={AlertTriangle} title="Conflict + Failure Review" desc="Manual-mode failures and coordination state tied to canonical metadata." />
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {currentManualFailures.length === 0 && !currentCoordination ? (
-                <p className="text-sm text-slate-500">Run or load a planner result to inspect failures and conflicts.</p>
-              ) : (
-                <>
-                  <div className="rounded-2xl border border-black/10 p-4 text-sm text-slate-700">
-                    <div className="flex flex-wrap gap-2">
-                      <Pill>Strategy {currentCoordination?.selected_group_strategy || "none"}</Pill>
-                      <Pill>Unresolved {Array.isArray(currentCoordination?.unresolved_conflicts) ? currentCoordination.unresolved_conflicts.length : currentCoordination?.unresolved_conflicts || 0}</Pill>
-                    </div>
-                  </div>
-                  <div className="max-h-[260px] space-y-3 overflow-auto pr-1">
-                    {currentManualFailures.length === 0 ? (
-                      <p className="text-sm text-slate-500">No manual failures in the current result.</p>
-                    ) : (
-                      currentManualFailures.map((failure: any, idx: number) => (
-                        <div key={`${failure.code || "failure"}-${idx}`} className="rounded-2xl border border-red-200 bg-red-50 p-4">
-                          <p className="text-sm font-medium text-red-800">{failure.code || failure.message || "Manual failure"}</p>
-                          <p className="mt-2 text-xs text-red-700">
-                            {[failure.system, failure.rule, failure.location].filter(Boolean).join(" | ") || "No location metadata"}
-                          </p>
-                          {failure.reason || failure.message ? (
-                            <p className="mt-2 text-xs text-red-700">{failure.reason || failure.message}</p>
-                          ) : null}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <SectionTitle icon={Download} title="Saved Deliverables" desc="Artifacts saved for the active project run history." />
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {!projectId ? (
-                <p className="text-sm text-slate-500">Load or save a project to keep downloadable artifacts here.</p>
-              ) : workflowArtifacts.length === 0 ? (
-                <p className="text-sm text-slate-500">No saved artifacts yet. Export a DXF or report while a project is loaded.</p>
-              ) : (
-                <div className="max-h-[240px] space-y-3 overflow-auto pr-1">
-                  {workflowArtifacts.map((artifact) => (
-                    <div key={artifact.artifact_id} className="rounded-2xl border border-black/10 p-4">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-slate-900">{artifact.filename || artifact.kind || "artifact"}</p>
-                          <p className="mt-1 text-xs text-slate-500">{artifact.kind || "artifact"} • {formatTimestamp(artifact.created_at)}</p>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <Pill>{artifact.kind || "artifact"}</Pill>
-                          <SmallButton variant="secondary" onClick={() => void downloadSavedArtifact(artifact)}>
-                            Download
-                          </SmallButton>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <SectionTitle icon={Eye} title="Plan Preview" desc="Rendered preview generated from the current planner actions." />
+              <SectionTitle
+                icon={Map}
+                title="Plan Preview"
+                desc="Preview stays centered, readable, and dominant while you review results."
+              />
             </CardHeader>
             <CardContent className="space-y-4">
               {planPreviewUrl ? (
                 <>
-                  <div className="flex max-h-[420px] min-h-[220px] items-center justify-center overflow-hidden rounded-2xl border border-black/10 bg-slate-50 p-4 sm:min-h-[280px]">
+                  <div className="flex min-h-[620px] items-center justify-center overflow-hidden rounded-3xl border border-black/10 bg-[radial-gradient(circle_at_top,#f8fafc_0%,#eef2f7_100%)] p-4">
                     <img
                       src={planPreviewUrl}
                       alt="Generated plan preview"
-                      className="h-full max-h-[380px] w-full object-contain"
+                      className="max-h-[580px] w-full object-contain"
                     />
                   </div>
-                  {planPreviewSummary ? (
-                    <div className="flex flex-wrap gap-2">
-                      <Pill>{planPreviewSummary.project_name || siteName}</Pill>
-                      <Pill>{planPreviewSummary.action_count ?? 0} actions</Pill>
-                      <Pill>{planPreviewSummary.units || units}</Pill>
-                    </div>
-                  ) : null}
+                  <div className="flex flex-wrap gap-2">
+                    <Pill>{planPreviewSummary?.project_name || siteName}</Pill>
+                    <Pill>{planPreviewSummary?.action_count ?? 0} actions</Pill>
+                    <Pill>{planPreviewSummary?.units || units}</Pill>
+                    <Pill>
+                      Truth {(backendResult?.final_plan?.meta?.truth_audit?.success ?? selectedRun?.truth_success) ? "passed" : "review needed"}
+                    </Pill>
+                  </div>
                 </>
               ) : (
-                <p className="text-sm text-slate-500">
-                  Run the planner, then click <strong>Preview Plan</strong> to see a rendered view here.
-                </p>
+                <div className="flex min-h-[420px] items-center justify-center rounded-3xl border border-dashed border-black/10 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                  Generate a plan and Civora AI will place the preview here automatically.
+                </div>
               )}
+
+              <div className="flex flex-wrap gap-3">
+                <SmallButton variant="secondary" onClick={handlePreviewPlan} disabled={busy}>
+                  <Eye className="mr-2 h-4 w-4" />
+                  Refresh Preview
+                </SmallButton>
+                <SmallButton variant="secondary" onClick={handleExportDxf} disabled={busy}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Export DXF
+                </SmallButton>
+                <SmallButton variant="secondary" onClick={handleExportReport} disabled={busy}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Export Report
+                </SmallButton>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.main>
+
+        <motion.aside
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="min-w-0 space-y-6 xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto xl:pr-2"
+        >
+          <Card>
+            <CardHeader>
+              <SectionTitle
+                icon={FileText}
+                title="Plan Tools"
+                desc="Explain the result, focus on fixes, or ask for a stronger iteration."
+              />
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { key: "explain", label: "Explain" },
+                  { key: "fix", label: "Fix" },
+                  { key: "improve", label: "Improve" },
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() =>
+                      setSelectedPlanToolPanel(
+                        tab.key as "explain" | "fix" | "improve",
+                      )
+                    }
+                    className={`rounded-full px-3 py-2 text-xs font-medium transition ${
+                      selectedPlanToolPanel === tab.key
+                        ? "bg-slate-900 text-white"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="rounded-2xl border border-black/10 bg-slate-50/80 p-4">
+                {selectedPlanToolPanel === "explain" ? (
+                  <div className="space-y-3">
+                    <p className="text-sm font-medium text-slate-900">
+                      What Civora AI did
+                    </p>
+                    <p className="text-sm leading-6 text-slate-700">
+                      {currentExplanation?.summary ||
+                        selectedRun?.message ||
+                        "Generate a plan to see the explanation here."}
+                    </p>
+                    {Array.isArray(currentExplanation?.bullets) &&
+                    currentExplanation.bullets.length ? (
+                      <div className="space-y-2">
+                        {currentExplanation.bullets.slice(0, 6).map((bullet: string, index: number) => (
+                          <div
+                            key={`${bullet}-${index}`}
+                            className="flex gap-2 text-sm text-slate-700"
+                          >
+                            <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-slate-400" />
+                            <span>{bullet}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : selectedPlanToolPanel === "fix" ? (
+                  <div className="space-y-3">
+                    <p className="text-sm font-medium text-slate-900">
+                      Focused fix pass
+                    </p>
+                    <p className="text-sm leading-6 text-slate-700">
+                      Civora AI reruns the current project with an issue-aware optimization goal to reduce the most obvious blockers before you review again.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Pill>Goal {suggestedImproveGoal ?? "reduce_pipe_length"}</Pill>
+                      <Pill>
+                        Failures {currentManualFailures.length || selectedRun?.manual_failures?.length || 0}
+                      </Pill>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-sm font-medium text-slate-900">
+                      Improvement loop
+                    </p>
+                    <p className="text-sm leading-6 text-slate-700">
+                      Improve Plan uses the orchestrator’s iterative workflow to search for a cleaner coordinated outcome while preserving the same project intent.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Pill>Goal {suggestedImproveGoal ?? "balanced"}</Pill>
+                      <Pill>
+                        Strategy {currentCoordination?.selected_group_strategy || selectedRun?.coordination_summary?.selected_strategy || "none"}
+                      </Pill>
+                    </div>
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <SectionTitle icon={CheckCircle2} title="AI Assumptions" desc="Anything AI fills should stay visible and reviewable." />
+              <SectionTitle
+                icon={AlertTriangle}
+                title="AI Review"
+                desc="Warnings, assumptions, and manual failures in one place."
+              />
             </CardHeader>
-            <CardContent>
-              <div className="max-h-[220px] space-y-3 overflow-auto pr-1">
-                {assumptions.map((item, idx) => (
-                  <div key={idx} className="rounded-2xl border border-black/10 p-4">
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap gap-2">
+                <Pill>
+                  Unresolved {Array.isArray(currentCoordination?.unresolved_conflicts) ? currentCoordination.unresolved_conflicts.length : currentCoordination?.unresolved_conflicts || selectedRun?.coordination_summary?.unresolved_conflicts || 0}
+                </Pill>
+                <Pill>
+                  Truth {(backendResult?.final_plan?.meta?.truth_audit?.success ?? selectedRun?.truth_success) ? "passed" : "review needed"}
+                </Pill>
+              </div>
+
+              <div className="space-y-3">
+                {(currentManualFailures.length ? currentManualFailures : selectedRun?.manual_failures || []).slice(0, 4).map((failure: any, idx: number) => (
+                  <div
+                    key={`${failure.code || "failure"}-${idx}`}
+                    className="rounded-2xl border border-red-200 bg-red-50 p-4"
+                  >
+                    <p className="text-sm font-medium text-red-800">
+                      {failure.code || failure.message || "Manual failure"}
+                    </p>
+                    <p className="mt-2 text-xs text-red-700">
+                      {[failure.system, failure.rule, failure.location]
+                        .filter(Boolean)
+                        .join(" | ") || "No location metadata"}
+                    </p>
+                    {failure.reason || failure.message ? (
+                      <p className="mt-2 text-xs text-red-700">
+                        {failure.reason || failure.message}
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+
+                {issues.slice(0, 4).map((issue, idx) => (
+                  <div
+                    key={`${issue.message}-${idx}`}
+                    className="rounded-2xl border border-black/10 bg-white p-4"
+                  >
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle
+                        className={`h-4 w-4 ${
+                          issue.severity === "error"
+                            ? "text-red-600"
+                            : "text-amber-500"
+                        }`}
+                      />
+                      <p className="text-sm font-medium capitalize text-slate-900">
+                        {issue.severity}
+                      </p>
+                    </div>
+                    <p className="mt-2 text-sm text-slate-600">{issue.message}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  AI-filled inputs
+                </p>
+                {assumptions.slice(0, 4).map((item, idx) => (
+                  <div key={idx} className="rounded-2xl border border-black/10 bg-white p-4">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-medium text-slate-900">{item.field}</p>
+                      <p className="text-sm font-medium text-slate-900">
+                        {item.field}
+                      </p>
                       <Pill>AI filled</Pill>
                     </div>
                     <p className="mt-1 text-sm text-slate-800">{item.value}</p>
@@ -2036,45 +2130,188 @@ export default function PerformanceAIDashboard() {
 
           <Card>
             <CardHeader>
-              <SectionTitle icon={AlertTriangle} title="Validation + Review" desc="Warnings and errors from the planner stack." />
+              <SectionTitle
+                icon={Sparkles}
+                title="Engineering Insights"
+                desc="A compact view into solver quality, truth checks, and iteration depth."
+              />
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-black/10 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Trust
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-950">
+                    {backendResult?.final_plan?.meta?.engineering_status?.trust_score ??
+                      selectedRun?.engineering_status?.trust_score ??
+                      0}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Engineering trust score
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-black/10 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Iterations
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-950">
+                    {currentIterations.length}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Improvement loop passes recorded
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-black/10 bg-white p-4">
+                <p className="text-sm font-medium text-slate-900">Truth audit</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Pill>
+                    Canonical {currentTruthAudit?.summary?.canonical_validity ? "valid" : "review"}
+                  </Pill>
+                  <Pill>
+                    Hydraulics {currentTruthAudit?.summary?.hydraulic_completeness ? "complete" : "review"}
+                  </Pill>
+                  <Pill>
+                    Graphs {currentTruthAudit?.summary?.graph_validity ? "valid" : "review"}
+                  </Pill>
+                  <Pill>
+                    Quantities {currentTruthAudit?.summary?.quantity_alignment ? "aligned" : "review"}
+                  </Pill>
+                  <Pill>
+                    Conflicts {currentTruthAudit?.summary?.conflict_integrity ? "clean" : "review"}
+                  </Pill>
+                </div>
+              </div>
+
+              {currentIterations.length ? (
+                <div className="rounded-2xl border border-black/10 bg-white p-4">
+                  <p className="text-sm font-medium text-slate-900">
+                    Latest improvement notes
+                  </p>
+                  <div className="mt-3 space-y-2">
+                    {currentIterations
+                      .slice(-2)
+                      .reverse()
+                      .map((iteration: any, index: number) => (
+                        <div key={`${iteration.iteration_index || index}`} className="rounded-2xl bg-slate-50 px-3 py-2">
+                          <p className="text-xs font-medium text-slate-700">
+                            Iteration {iteration.iteration_index ?? index + 1}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {Array.isArray(iteration.notes) && iteration.notes.length
+                              ? iteration.notes.join(" ")
+                              : iteration.message || "No extra notes recorded."}
+                          </p>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <SectionTitle
+                icon={History}
+                title="Run Comparison"
+                desc="Compare the newest result against the previous saved run."
+              />
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {!latestRunComparison ? (
+                <p className="text-sm text-slate-500">
+                  Save at least two runs to compare changes here.
+                </p>
+              ) : (
+                <>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-2xl border border-black/10 bg-slate-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Trust Delta
+                      </p>
+                      <p className="mt-2 text-lg font-semibold text-slate-950">
+                        {latestRunComparison.trustDelta >= 0 ? "+" : ""}
+                        {latestRunComparison.trustDelta}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-black/10 bg-slate-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Unresolved Delta
+                      </p>
+                      <p className="mt-2 text-lg font-semibold text-slate-950">
+                        {latestRunComparison.unresolvedDelta >= 0 ? "+" : ""}
+                        {latestRunComparison.unresolvedDelta}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-black/10 bg-slate-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Deliverables Delta
+                      </p>
+                      <p className="mt-2 text-lg font-semibold text-slate-950">
+                        {latestRunComparison.producedDelta >= 0 ? "+" : ""}
+                        {latestRunComparison.producedDelta}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-black/10 bg-white p-4 text-sm text-slate-600">
+                    Current run from {formatTimestamp(latestRunComparison.current.created_at)} compared to the previous saved run from {formatTimestamp(latestRunComparison.previous.created_at)}.
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <SectionTitle
+                icon={Download}
+                title="Artifacts"
+                desc="Saved exports for the active project."
+              />
             </CardHeader>
             <CardContent className="space-y-3">
-              {issues.map((issue, idx) => (
-                <div key={idx} className="rounded-2xl border border-black/10 p-4">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className={`h-4 w-4 ${issue.severity === "error" ? "text-red-600" : "text-amber-500"}`} />
-                    <p className="text-sm font-medium capitalize text-slate-900">{issue.severity}</p>
-                  </div>
-                  <p className="mt-2 text-sm text-slate-500">{issue.message}</p>
+              {!projectId ? (
+                <p className="text-sm text-slate-500">
+                  Open or save a project to keep downloadable artifacts here.
+                </p>
+              ) : workflowArtifacts.length === 0 ? (
+                <p className="text-sm text-slate-500">
+                  No saved artifacts yet. Export a DXF or report while a project is loaded.
+                </p>
+              ) : (
+                <div className="max-h-[260px] space-y-3 overflow-y-auto pr-1">
+                  {workflowArtifacts.map((artifact) => (
+                    <div
+                      key={artifact.artifact_id}
+                      className="rounded-2xl border border-black/10 bg-white p-4"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-slate-900">
+                            {artifact.filename || artifact.kind || "artifact"}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {artifact.kind || "artifact"} •{" "}
+                            {formatTimestamp(artifact.created_at)}
+                          </p>
+                        </div>
+                        <SmallButton
+                          variant="secondary"
+                          onClick={() => void downloadSavedArtifact(artifact)}
+                        >
+                          Download
+                        </SmallButton>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </CardContent>
           </Card>
-
-          <Card>
-            <CardHeader>
-              <SectionTitle icon={Map} title="Request Payload" desc="The normalized request sent to the backend." />
-            </CardHeader>
-            <CardContent>
-              <pre className="max-h-[260px] overflow-auto rounded-2xl border border-black/10 bg-white p-4 text-xs leading-6 text-slate-950 shadow-sm">
-                {JSON.stringify(payloadPreview, null, 2)}
-              </pre>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <SectionTitle icon={Settings2} title="Backend Result" desc="Live result from direct or queued planner execution." />
-            </CardHeader>
-            <CardContent>
-              <pre className="max-h-[320px] overflow-auto rounded-2xl border border-black/10 bg-white p-4 text-xs leading-6 text-slate-950 shadow-sm">
-                {backendResult
-                  ? JSON.stringify(backendResult, null, 2)
-                  : "Run the planner to see backend output here."}
-              </pre>
-            </CardContent>
-          </Card>
-        </motion.div>
+        </motion.aside>
       </div>
     </div>
   );
