@@ -16,10 +16,10 @@ dist/
 build/
 
 uploads/
-output/
 data/performance_ai.db
 data/performance_ai.db-shm
 data/performance_ai.db-wal
+data/artifacts/
 *.dxf
 stdout.txt
 stderr.txt

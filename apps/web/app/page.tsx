@@ -318,7 +318,7 @@ function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
-      className={`w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 ${
+      className={`w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-slate-950 placeholder:text-slate-400 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 ${
         props.className ?? ""
       }`}
     />
@@ -329,7 +329,7 @@ function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
       {...props}
-      className={`w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 ${
+      className={`min-h-[168px] max-h-[280px] w-full resize-none overflow-y-auto rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm leading-6 text-slate-950 placeholder:text-slate-400 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 ${
         props.className ?? ""
       }`}
     />
@@ -414,13 +414,18 @@ function ModeCard({
   );
 }
 
-const TOKEN_KEY = "performance-ai-token";
+const TOKEN_KEY = "civora-ai-token";
+const LEGACY_TOKEN_KEY = "performance-ai-token";
 
 function getStoredToken() {
   if (typeof window === "undefined") {
     return "";
   }
-  return window.localStorage.getItem(TOKEN_KEY) ?? "";
+  return (
+    window.localStorage.getItem(TOKEN_KEY) ??
+    window.localStorage.getItem(LEGACY_TOKEN_KEY) ??
+    ""
+  );
 }
 
 function setStoredToken(token: string) {
@@ -435,6 +440,7 @@ function clearStoredToken() {
     return;
   }
   window.localStorage.removeItem(TOKEN_KEY);
+  window.localStorage.removeItem(LEGACY_TOKEN_KEY);
 }
 
 function uploadedImageSrc(pathOrUrl: string, token: string): string {
@@ -474,6 +480,7 @@ export default function PerformanceAIDashboard() {
   const [authPassword, setAuthPassword] = useState("");
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
+  const [authStatusError, setAuthStatusError] = useState("");
 
   const [inputMode, setInputMode] = useState<InputMode>("assisted");
   const [projectType, setProjectType] = useState("commercial_pad");
@@ -481,7 +488,7 @@ export default function PerformanceAIDashboard() {
   const [strictMode, setStrictMode] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [imageName, setImageName] = useState("");
-  const [siteName, setSiteName] = useState("Performance AI Project");
+  const [siteName, setSiteName] = useState("Civora AI Project");
   const [lotWidth, setLotWidth] = useState("220");
   const [lotHeight, setLotHeight] = useState("180");
   const [buildingWidth, setBuildingWidth] = useState("100");
@@ -746,7 +753,7 @@ export default function PerformanceAIDashboard() {
       projectInput.image_path ? uploadedImageSrc(projectInput.image_path, token) : "",
     );
     setUploadedImagePreviewUrl("");
-    setSiteName(manualFields.project_name ?? "Performance AI Project");
+    setSiteName(manualFields.project_name ?? "Civora AI Project");
     setUnits(manualFields.units ?? "ft");
     setProjectType(manualFields.project_type ?? "commercial_pad");
     setLotWidth(String(lot.w ?? ""));
@@ -772,11 +779,17 @@ export default function PerformanceAIDashboard() {
     try {
       const data = await getJson<AuthStatus>("/api/auth/status");
       setAuthStatus(data);
+      setAuthStatusError("");
       if ((data.user_count ?? 0) > 0) {
         setAuthMode("login");
       }
-    } catch {
+    } catch (error) {
       setAuthStatus(null);
+      setAuthStatusError(
+        error instanceof Error
+          ? error.message
+          : "Civora AI could not load backend status.",
+      );
     }
   };
 
@@ -822,7 +835,7 @@ export default function PerformanceAIDashboard() {
       setUser(data.user);
       await refreshProjects(data.token);
       await refreshJobs(data.token);
-      setStatusMessage(`Signed in as ${data.user.name}.`);
+      setStatusMessage(`Signed in to Civora AI as ${data.user.name}.`);
     } catch (error) {
       setAuthError(
         error instanceof Error ? error.message : "Authentication failed.",
@@ -930,7 +943,7 @@ export default function PerformanceAIDashboard() {
       const project = data.project;
       setCurrentProject(project);
       setProjectId(project.project_id);
-      setSiteName(project.name ?? "Performance AI Project");
+      setSiteName(project.name ?? "Civora AI Project");
       setProjectDescription(project.description ?? "");
       applyProjectInput(project.project_input ?? {});
       if (project.latest_result && Object.keys(project.latest_result).length) {
@@ -1080,7 +1093,7 @@ export default function PerformanceAIDashboard() {
         artifactPayload,
         { token },
       );
-      downloadBlob(blob, filename ?? "performance-ai-plan.dxf");
+      downloadBlob(blob, filename ?? "civora-ai-plan.dxf");
       if (projectId) {
         await loadProject(projectId);
       }
@@ -1107,7 +1120,7 @@ export default function PerformanceAIDashboard() {
         artifactPayload,
         { token },
       );
-      downloadBlob(blob, filename ?? "performance-ai-report.json");
+      downloadBlob(blob, filename ?? "civora-ai-report.json");
       if (projectId) {
         await loadProject(projectId);
       }
@@ -1167,7 +1180,7 @@ export default function PerformanceAIDashboard() {
             <div className="space-y-4">
               <Pill>Beta Control Room</Pill>
               <h1 className="max-w-2xl text-5xl font-semibold tracking-tight text-slate-950">
-                Performance AI for civil concept planning.
+                Civora AI — AI-Powered Civil Engineering Design Platform
               </h1>
               <p className="max-w-2xl text-lg leading-8 text-slate-600">
                 Sign in to manage projects, queue planning runs, review AI
@@ -1225,18 +1238,23 @@ export default function PerformanceAIDashboard() {
                   {authStatus ? (
                     authStatus.user_count > 0 ? (
                       <span>
-                        {authStatus.user_count} local beta account
-                        {authStatus.user_count === 1 ? "" : "s"} already exist on this
-                        machine. Use <strong>Sign In</strong> if you made one before,
+                        {authStatus.user_count} Civora AI beta account
+                        {authStatus.user_count === 1 ? "" : "s"} already exist in this
+                        workspace. Use <strong>Sign In</strong> if you made one before,
                         or create another account.
                       </span>
                     ) : (
-                      <span>No local beta accounts exist yet. Create the first one here.</span>
+                      <span>No Civora AI beta accounts exist yet. Create the first one here.</span>
                     )
                   ) : (
-                    <span>Account status will appear here once the backend responds.</span>
+                    <span>Account status will appear here once the Civora AI backend responds.</span>
                   )}
                 </div>
+                {authStatusError ? (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                    {authStatusError}
+                  </div>
+                ) : null}
                 {authMode === "register" ? (
                   <Field label="Name">
                     <TextInput
@@ -1305,16 +1323,37 @@ export default function PerformanceAIDashboard() {
         <div>
           <p className="text-sm text-slate-500">Signed in as {user.email}</p>
           <h1 className="text-3xl font-semibold tracking-tight text-slate-950">
-            Performance AI Dashboard
+            Civora AI — AI-Powered Civil Engineering Design Platform
           </h1>
         </div>
         <div className="flex flex-wrap gap-3">
-          <Pill>SQLite Beta Backend</Pill>
+          <Pill>Private Beta</Pill>
           <Pill>User Scoped</Pill>
           <SmallButton variant="secondary" onClick={handleLogout}>
             <LogOut className="mr-2 h-4 w-4" />
             Sign Out
           </SmallButton>
+        </div>
+      </div>
+
+      <div className="mx-auto mb-6 max-w-7xl">
+        <div className="rounded-3xl border border-black/10 bg-white/90 p-4 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-sm font-medium text-slate-900">Latest Outcome</p>
+              <p className="mt-1 text-sm text-slate-500">
+                {currentProject
+                  ? `Active project: ${currentProject.name}`
+                  : "Load or save a project to keep runs, artifacts, and workflow history together."}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Pill>Truth {(backendResult?.final_plan?.meta?.truth_audit?.success ?? selectedRun?.truth_success) ? "passed" : "pending"}</Pill>
+              <Pill>Unresolved {Array.isArray(currentCoordination?.unresolved_conflicts) ? currentCoordination.unresolved_conflicts.length : currentCoordination?.unresolved_conflicts || 0}</Pill>
+              <Pill>Produced {(currentDeliverables?.produced || []).length}</Pill>
+              <Pill>{Object.keys(currentStageStatuses).length} stages tracked</Pill>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1325,7 +1364,7 @@ export default function PerformanceAIDashboard() {
               <SectionTitle
                 icon={FolderOpen}
                 title="Project Workspace"
-                desc="Build requests, save projects, and launch direct or queued planner runs."
+                desc="Build requests, save projects, and launch direct or queued engineering runs."
               />
             </CardHeader>
             <CardContent className="grid gap-6">
@@ -1453,7 +1492,7 @@ export default function PerformanceAIDashboard() {
                           setPrompt(e.target.value);
                         }}
                         placeholder="Describe the site, roadway, grading, utility, or drainage concept..."
-                        className="min-h-[140px]"
+                        className="whitespace-pre-wrap break-words"
                       />
                       <p className="text-xs text-slate-500">
                         Typing here automatically keeps the run in a prompt-capable mode.
@@ -1553,7 +1592,11 @@ export default function PerformanceAIDashboard() {
                       Export Report
                     </SmallButton>
                   </div>
-                  {statusMessage ? <p className="text-sm text-slate-500">{statusMessage}</p> : null}
+                  {statusMessage ? (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                      <p className="text-sm font-medium text-slate-800">{statusMessage}</p>
+                    </div>
+                  ) : null}
                 </CardContent>
               </Card>
             </CardContent>
@@ -1567,8 +1610,8 @@ export default function PerformanceAIDashboard() {
             </CardHeader>
             <CardContent className="space-y-3">
               {currentProject ? (
-                <div className="rounded-2xl border border-slate-900 bg-slate-50 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="rounded-2xl border border-slate-900 bg-slate-50 p-4 sm:p-5">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                       <p className="text-sm font-medium text-slate-900">Active Project</p>
                       <p className="mt-1 text-base font-semibold text-slate-950">{currentProject.name}</p>
@@ -1587,7 +1630,7 @@ export default function PerformanceAIDashboard() {
                           variant="secondary"
                           onClick={() => void downloadSavedArtifact(artifact)}
                         >
-                          {artifact.kind || "artifact"}
+                          {artifact.kind || "artifact"}: {artifact.filename || "download"}
                         </SmallButton>
                       ))}
                     </div>
@@ -1655,7 +1698,7 @@ export default function PerformanceAIDashboard() {
                       }`}
                     >
                       <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-medium text-slate-900">{job.job_id}</p>
+                        <p className="text-sm font-medium text-slate-900">Job {job.job_id}</p>
                         <Pill>{job.status}</Pill>
                       </div>
                       <p className="mt-1 text-xs text-slate-500">{job.project_id || "No project linked"}</p>
@@ -1685,11 +1728,11 @@ export default function PerformanceAIDashboard() {
                       onClick={() => setSelectedRunId(run.run_id)}
                       className={`block w-full rounded-2xl border p-4 text-left transition ${
                         selectedRun?.run_id === run.run_id
-                          ? "border-slate-900 bg-slate-50"
+                          ? "border-slate-900 bg-slate-50 shadow-sm ring-1 ring-slate-900/10"
                           : "border-black/10 hover:bg-slate-50"
                       }`}
                     >
-                      <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <p className="text-sm font-medium text-slate-900">{run.source || "run"}</p>
                           <p className="mt-1 text-xs text-slate-500">{formatTimestamp(run.created_at)}</p>
@@ -1700,7 +1743,7 @@ export default function PerformanceAIDashboard() {
                           <Pill>{run.coordination_summary?.selected_strategy || "none"}</Pill>
                         </div>
                       </div>
-                      <div className="mt-3 grid gap-2 text-xs text-slate-600 md:grid-cols-2">
+                      <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
                         <p>Trust {run.engineering_status?.trust_score ?? 0}</p>
                         <p>Required complete {run.all_required_complete ? "yes" : "no"}</p>
                         <p>Produced {(run.produced_deliverables || []).length}</p>
@@ -1733,8 +1776,8 @@ export default function PerformanceAIDashboard() {
                     <Pill>{selectedRun.strict_mode ? "strict" : "non-strict"}</Pill>
                     <Pill>{selectedRun.coordination_summary?.selected_strategy || "none"}</Pill>
                   </div>
-                  <div className="grid gap-3 text-sm text-slate-700 md:grid-cols-2">
-                    <div className="rounded-2xl border border-black/10 p-4">
+                  <div className="grid gap-3 text-sm text-slate-700 xl:grid-cols-2">
+                    <div className="rounded-2xl border border-black/10 bg-slate-50/70 p-4">
                       <p className="font-medium text-slate-900">Run summary</p>
                       <p className="mt-2 text-xs text-slate-500">{formatTimestamp(selectedRun.created_at)}</p>
                       <p className="mt-2">Trust {selectedRun.engineering_status?.trust_score ?? 0}</p>
@@ -1742,7 +1785,7 @@ export default function PerformanceAIDashboard() {
                       <p>Required complete {selectedRun.all_required_complete ? "yes" : "no"}</p>
                       <p>Unresolved {selectedRun.coordination_summary?.unresolved_conflicts ?? 0}</p>
                     </div>
-                    <div className="rounded-2xl border border-black/10 p-4">
+                    <div className="rounded-2xl border border-black/10 bg-slate-50/70 p-4">
                       <p className="font-medium text-slate-900">Deliverables</p>
                       <p className="mt-2 text-xs text-slate-500">
                         Requested {(selectedRun.requested_deliverables || []).length} • Produced {(selectedRun.produced_deliverables || []).length} • Failed {(selectedRun.failed_deliverables || []).length}
@@ -1756,9 +1799,9 @@ export default function PerformanceAIDashboard() {
                   </div>
                   <div className="rounded-2xl border border-black/10 p-4">
                     <p className="text-sm font-medium text-slate-900">Stage status</p>
-                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <div className="mt-3 grid gap-2 lg:grid-cols-2">
                       {Object.entries(selectedRun.stage_summary?.statuses || {}).map(([name, status]) => (
-                        <div key={name} className="rounded-xl border border-black/10 px-3 py-2 text-xs text-slate-700">
+                        <div key={name} className="rounded-xl border border-black/10 bg-slate-50 px-3 py-2 text-xs text-slate-700">
                           <span className="font-medium text-slate-900">{name.replaceAll("_", " ")}</span>: {String(status)}
                         </div>
                       ))}
@@ -1793,8 +1836,8 @@ export default function PerformanceAIDashboard() {
                 <p className="text-sm text-slate-500">Two saved runs are needed before comparison appears here.</p>
               ) : (
                 <>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="rounded-2xl border border-black/10 p-4">
+                  <div className="grid gap-3 xl:grid-cols-2">
+                    <div className="rounded-2xl border border-black/10 bg-slate-50/70 p-4">
                       <p className="text-sm font-medium text-slate-900">Latest</p>
                       <p className="mt-1 text-xs text-slate-500">{formatTimestamp(latestRunComparison.current.created_at)}</p>
                       <div className="mt-3 flex flex-wrap gap-2">
@@ -1802,7 +1845,7 @@ export default function PerformanceAIDashboard() {
                         <Pill>{latestRunComparison.current.engineering_status?.trust_score ?? 0} trust</Pill>
                       </div>
                     </div>
-                    <div className="rounded-2xl border border-black/10 p-4">
+                    <div className="rounded-2xl border border-black/10 bg-slate-50/70 p-4">
                       <p className="text-sm font-medium text-slate-900">Previous</p>
                       <p className="mt-1 text-xs text-slate-500">{formatTimestamp(latestRunComparison.previous.created_at)}</p>
                       <div className="mt-3 flex flex-wrap gap-2">
@@ -1811,16 +1854,16 @@ export default function PerformanceAIDashboard() {
                       </div>
                     </div>
                   </div>
-                  <div className="grid gap-3 text-sm text-slate-700 md:grid-cols-3">
-                    <div className="rounded-2xl border border-black/10 p-4">
+                  <div className="grid gap-3 text-sm text-slate-700 sm:grid-cols-3">
+                    <div className="rounded-2xl border border-black/10 bg-slate-50/70 p-4">
                       <p className="font-medium text-slate-900">Trust delta</p>
                       <p className="mt-2">{latestRunComparison.trustDelta >= 0 ? "+" : ""}{latestRunComparison.trustDelta.toFixed(1)}</p>
                     </div>
-                    <div className="rounded-2xl border border-black/10 p-4">
+                    <div className="rounded-2xl border border-black/10 bg-slate-50/70 p-4">
                       <p className="font-medium text-slate-900">Unresolved delta</p>
                       <p className="mt-2">{latestRunComparison.unresolvedDelta >= 0 ? "+" : ""}{latestRunComparison.unresolvedDelta}</p>
                     </div>
-                    <div className="rounded-2xl border border-black/10 p-4">
+                    <div className="rounded-2xl border border-black/10 bg-slate-50/70 p-4">
                       <p className="font-medium text-slate-900">Produced delta</p>
                       <p className="mt-2">{latestRunComparison.producedDelta >= 0 ? "+" : ""}{latestRunComparison.producedDelta}</p>
                     </div>
@@ -1919,16 +1962,21 @@ export default function PerformanceAIDashboard() {
               ) : workflowArtifacts.length === 0 ? (
                 <p className="text-sm text-slate-500">No saved artifacts yet. Export a DXF or report while a project is loaded.</p>
               ) : (
-                <div className="max-h-[220px] space-y-3 overflow-auto pr-1">
+                <div className="max-h-[240px] space-y-3 overflow-auto pr-1">
                   {workflowArtifacts.map((artifact) => (
-                    <div key={artifact.artifact_id} className="flex items-center justify-between gap-3 rounded-2xl border border-black/10 p-4">
-                      <div>
-                        <p className="text-sm font-medium text-slate-900">{artifact.filename || artifact.kind || "artifact"}</p>
-                        <p className="mt-1 text-xs text-slate-500">{artifact.kind || "artifact"} • {formatTimestamp(artifact.created_at)}</p>
+                    <div key={artifact.artifact_id} className="rounded-2xl border border-black/10 p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-slate-900">{artifact.filename || artifact.kind || "artifact"}</p>
+                          <p className="mt-1 text-xs text-slate-500">{artifact.kind || "artifact"} • {formatTimestamp(artifact.created_at)}</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Pill>{artifact.kind || "artifact"}</Pill>
+                          <SmallButton variant="secondary" onClick={() => void downloadSavedArtifact(artifact)}>
+                            Download
+                          </SmallButton>
+                        </div>
                       </div>
-                      <SmallButton variant="secondary" onClick={() => void downloadSavedArtifact(artifact)}>
-                        Download
-                      </SmallButton>
                     </div>
                   ))}
                 </div>
@@ -1943,11 +1991,11 @@ export default function PerformanceAIDashboard() {
             <CardContent className="space-y-4">
               {planPreviewUrl ? (
                 <>
-                  <div className="overflow-hidden rounded-2xl border border-black/10 bg-white">
+                  <div className="flex max-h-[420px] min-h-[220px] items-center justify-center overflow-hidden rounded-2xl border border-black/10 bg-slate-50 p-4 sm:min-h-[280px]">
                     <img
                       src={planPreviewUrl}
                       alt="Generated plan preview"
-                      className="w-full object-contain"
+                      className="h-full max-h-[380px] w-full object-contain"
                     />
                   </div>
                   {planPreviewSummary ? (
@@ -2008,7 +2056,7 @@ export default function PerformanceAIDashboard() {
               <SectionTitle icon={Map} title="Request Payload" desc="The normalized request sent to the backend." />
             </CardHeader>
             <CardContent>
-              <pre className="max-h-[260px] overflow-auto rounded-2xl bg-slate-100 p-4 text-xs leading-6 text-slate-800">
+              <pre className="max-h-[260px] overflow-auto rounded-2xl border border-black/10 bg-white p-4 text-xs leading-6 text-slate-950 shadow-sm">
                 {JSON.stringify(payloadPreview, null, 2)}
               </pre>
             </CardContent>
@@ -2019,7 +2067,7 @@ export default function PerformanceAIDashboard() {
               <SectionTitle icon={Settings2} title="Backend Result" desc="Live result from direct or queued planner execution." />
             </CardHeader>
             <CardContent>
-              <pre className="max-h-[320px] overflow-auto rounded-2xl bg-slate-100 p-4 text-xs leading-6 text-slate-800">
+              <pre className="max-h-[320px] overflow-auto rounded-2xl border border-black/10 bg-white p-4 text-xs leading-6 text-slate-950 shadow-sm">
                 {backendResult
                   ? JSON.stringify(backendResult, null, 2)
                   : "Run the planner to see backend output here."}

@@ -1,1 +1,1 @@
-"""Product backend package for Performance AI."""
+"""Product backend package for Civora AI."""

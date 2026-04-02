@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from base64 import b64encode
 import mimetypes
@@ -22,17 +23,35 @@ from backend.services.project_store import ProjectStore
 try:
     from core.config import APP_NAME, APP_VERSION, PRODUCT_MODE
 except Exception:
-    APP_NAME = "Performance AI"
+    APP_NAME = "Civora AI"
     APP_VERSION = "0.1.0"
     PRODUCT_MODE = "development"
 
 
 BASE_DIR = Path(__file__).resolve().parents[2]
-UPLOAD_DIR = BASE_DIR / "uploads"
-DATA_DIR = BASE_DIR / "data"
+STORAGE_DIR = Path(
+    os.getenv("PERFORMANCE_AI_STORAGE_DIR")
+    or os.getenv("PERFORMANCE_AI_DATA_DIR")
+    or (BASE_DIR / "data")
+).resolve()
+UPLOAD_DIR = STORAGE_DIR / "uploads"
+DATA_DIR = STORAGE_DIR
 DB_PATH = DATA_DIR / "performance_ai.db"
 ARTIFACT_DIR = DATA_DIR / "artifacts"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _cors_allow_origins() -> list[str]:
+    raw = str(os.getenv("CORS_ALLOW_ORIGINS") or "*").strip()
+    if not raw or raw == "*":
+        return ["*"]
+    cleaned: list[str] = []
+    for item in raw.split(","):
+        value = item.strip().rstrip("/")
+        if value and value not in cleaned:
+            cleaned.append(value)
+    return cleaned
 
 DB = Database(DB_PATH)
 AUTH_STORE = AuthStore(DB)
@@ -97,15 +116,16 @@ class ArtifactPayload(BaseModel):
 
 
 app = FastAPI(
-    title="Performance AI Backend",
+    title="Civora AI Backend",
     version=APP_VERSION,
-    description="FastAPI backend for Performance AI orchestration.",
+    description="FastAPI backend for Civora AI orchestration.",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors_allow_origins(),
+    # Bearer tokens are sent in headers, so cookies/credentialed CORS are not required.
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -536,7 +556,7 @@ def health() -> Dict[str, Any]:
         connection.close()
     return {
         "success": True,
-        "message": "Performance AI backend is running.",
+        "message": "Civora AI backend is running.",
         "app_name": APP_NAME,
         "version": APP_VERSION,
         "product_mode": PRODUCT_MODE,
@@ -755,7 +775,7 @@ def export_dxf(
 ) -> FileResponse:
     result_data = _result_from_payload(current_user, payload)
     final_plan = _final_plan_from_result(result_data)
-    filename_stem = payload.filename_stem or str(final_plan.get("project_name") or "performance-ai-plan")
+    filename_stem = payload.filename_stem or str(final_plan.get("project_name") or "civora-ai-plan")
     path = ARTIFACTS.export_dxf(
         user_id=current_user["user_id"],
         final_plan=final_plan,
@@ -786,7 +806,7 @@ def export_report(
 ) -> FileResponse:
     result_data = _result_from_payload(current_user, payload)
     final_plan = _final_plan_from_result(result_data)
-    filename_stem = payload.filename_stem or str(final_plan.get("project_name") or "performance-ai-report")
+    filename_stem = payload.filename_stem or str(final_plan.get("project_name") or "civora-ai-report")
     path = ARTIFACTS.export_report_json(
         user_id=current_user["user_id"],
         result_data=result_data,

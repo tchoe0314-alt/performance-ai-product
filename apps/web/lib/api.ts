@@ -1,5 +1,27 @@
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8002";
+const ENV_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ?? "";
+
+function normalizeApiBaseUrl(value: string): string {
+  return value.replace(/\/+$/, "");
+}
+
+function resolveApiBaseUrl(): string {
+  if (ENV_API_BASE_URL) {
+    return normalizeApiBaseUrl(ENV_API_BASE_URL);
+  }
+
+  if (typeof window === "undefined") {
+    return "http://127.0.0.1:8002";
+  }
+
+  const { hostname } = window.location;
+  if (hostname === "localhost" || hostname === "127.0.0.1") {
+    return "http://127.0.0.1:8002";
+  }
+
+  return "";
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
 
 type RequestOptions = {
   token?: string | null;
@@ -30,7 +52,29 @@ function contentDispositionFilename(value: string | null): string | null {
 }
 
 export function toApiUrl(path: string): string {
-  return path.startsWith("http") ? path : `${API_BASE_URL}${path}`;
+  if (path.startsWith("http")) return path;
+  if (!API_BASE_URL) {
+    throw new Error(
+      "Civora AI cannot reach the backend right now. Set NEXT_PUBLIC_API_BASE_URL to your live backend URL.",
+    );
+  }
+  return `${API_BASE_URL}${path}`;
+}
+
+function formatNetworkError(error: unknown): Error {
+  if (error instanceof Error) {
+    if (error.message.includes("NEXT_PUBLIC_API_BASE_URL")) {
+      return error;
+    }
+    if (error.name === "TypeError" || /fetch/i.test(error.message)) {
+      return new Error(
+        "Civora AI could not reach the backend. Check the live backend URL, CORS settings, and deployment health.",
+      );
+    }
+    return error;
+  }
+
+  return new Error("Civora AI could not reach the backend.");
 }
 
 export async function readJsonResponse<T>(response: Response): Promise<T> {
@@ -53,11 +97,16 @@ export async function getJson<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: "GET",
-    cache: "no-store",
-    headers: buildHeaders(options.token, false),
-  });
+  let response: Response;
+  try {
+    response = await fetch(toApiUrl(path), {
+      method: "GET",
+      cache: "no-store",
+      headers: buildHeaders(options.token, false),
+    });
+  } catch (error) {
+    throw formatNetworkError(error);
+  }
   return readJsonResponse<T>(response);
 }
 
@@ -66,11 +115,16 @@ export async function postJson<T>(
   body: unknown,
   options: RequestOptions = {},
 ): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: "POST",
-    headers: buildHeaders(options.token, true),
-    body: JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(toApiUrl(path), {
+      method: "POST",
+      headers: buildHeaders(options.token, true),
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    throw formatNetworkError(error);
+  }
   return readJsonResponse<T>(response);
 }
 
@@ -79,11 +133,16 @@ export async function postForm<T>(
   formData: FormData,
   options: RequestOptions = {},
 ): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: "POST",
-    headers: options.token ? buildHeaders(options.token, false) : undefined,
-    body: formData,
-  });
+  let response: Response;
+  try {
+    response = await fetch(toApiUrl(path), {
+      method: "POST",
+      headers: options.token ? buildHeaders(options.token, false) : undefined,
+      body: formData,
+    });
+  } catch (error) {
+    throw formatNetworkError(error);
+  }
   return readJsonResponse<T>(response);
 }
 
@@ -91,10 +150,15 @@ export async function deleteJson<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: "DELETE",
-    headers: buildHeaders(options.token, false),
-  });
+  let response: Response;
+  try {
+    response = await fetch(toApiUrl(path), {
+      method: "DELETE",
+      headers: buildHeaders(options.token, false),
+    });
+  } catch (error) {
+    throw formatNetworkError(error);
+  }
   return readJsonResponse<T>(response);
 }
 
@@ -103,11 +167,16 @@ export async function postBinary(
   body: unknown,
   options: RequestOptions = {},
 ): Promise<{ blob: Blob; filename: string | null }> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: "POST",
-    headers: buildHeaders(options.token, true),
-    body: JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(toApiUrl(path), {
+      method: "POST",
+      headers: buildHeaders(options.token, true),
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    throw formatNetworkError(error);
+  }
 
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));

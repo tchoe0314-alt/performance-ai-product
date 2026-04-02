@@ -28,7 +28,7 @@ class ArtifactService:
         return target
 
     def _artifact_name(self, stem: Optional[str], ext: str) -> str:
-        prefix = _slugify(stem or "performance-ai")
+        prefix = _slugify(stem or "civora-ai")
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         suffix = uuid.uuid4().hex[:8]
         return f"{prefix}-{timestamp}-{suffix}.{ext}"

@@ -124,7 +124,7 @@ start_frontend() {
 }
 
 main() {
-  echo "Booting Performance AI from $ROOT_DIR"
+  echo "Booting Civora AI from $ROOT_DIR"
 
   ensure_backend_env
   start_backend
@@ -142,7 +142,7 @@ main() {
   fi
 
   echo
-  echo "Performance AI is starting."
+  echo "Civora AI is starting."
   echo "Backend:  http://127.0.0.1:8002/api/health"
   if [[ -n "${FRONTEND_PID}" ]]; then
     echo "Frontend: http://localhost:3000"

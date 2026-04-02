@@ -1,6 +1,6 @@
-# Performance AI
+# Civora AI
 
-Performance AI is an AI-assisted civil site planning product. The codebase combines:
+Civora AI is an AI-assisted civil site planning product. The codebase combines:
 
 - a Next.js frontend for prompt, image, and structured project intake
 - a FastAPI backend for orchestration and uploads
@@ -9,7 +9,7 @@ Performance AI is an AI-assisted civil site planning product. The codebase combi
 ## Current structure
 
 ```text
-performance-ai-product/
+civora-ai/
   apps/
     web/                  # Main Next.js product UI
       lib/                # Frontend API helpers
@@ -40,7 +40,7 @@ performance-ai-product/
 ### One command
 
 ```bash
-cd /Users/tommychoe/Documents/Playground/performance-ai-product
+cd "/Users/tommychoe/Documents/Playground/Civora AI"
 ./start.sh
 ```
 
@@ -57,7 +57,7 @@ If `node` or `npm` is missing, it will still start the backend and skip the fron
 ### Frontend
 
 ```bash
-cd /Users/tommychoe/Documents/Playground/performance-ai-product/apps/web
+cd "/Users/tommychoe/Documents/Playground/Civora AI/apps/web"
 npm install
 npm run dev
 ```
@@ -65,7 +65,7 @@ npm run dev
 ### Backend
 
 ```bash
-cd /Users/tommychoe/Documents/Playground/performance-ai-product
+cd "/Users/tommychoe/Documents/Playground/Civora AI"
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements_backend.txt
@@ -97,6 +97,17 @@ uvicorn backend.api.app:app --reload --port 8002
 - Storage is SQLite and the job worker runs in-process, which is fine for a private beta but not a multi-instance deployment.
 - Prompt-based orchestration still requires a valid `OPENAI_API_KEY` in your backend environment.
 - Frontend build verification still depends on having `node` and `npm` installed on the machine running the app.
+
+## Deploy online
+
+The easiest current deployment path is:
+
+1. frontend on Vercel
+2. backend on Railway
+
+That setup matches this repo well because the frontend is a standalone Next.js app and the backend needs persistent storage for SQLite, uploads, and saved artifacts.
+
+Deployment notes live in [docs/deploy.md](/Users/tommychoe/Documents/Playground/Civora%20AI/docs/deploy.md).
 
 ## Product direction
 

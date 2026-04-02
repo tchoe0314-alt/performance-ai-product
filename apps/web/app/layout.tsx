@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Performance AI",
-  description: "AI-assisted civil site planning for concept layouts, grading, drainage, and utilities.",
+  title: "Civora AI — AI-Powered Civil Engineering Design Platform",
+  description:
+    "Engineering-grade civil site planning with coordinated layouts, grading, drainage, utilities, profiles, and deliverables.",
 };
 
 export default function RootLayout({

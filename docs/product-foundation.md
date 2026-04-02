@@ -2,7 +2,7 @@
 
 ## What this product is
 
-Performance AI helps civil engineers and site designers go from rough intent to a structured concept plan faster. The product combines prompt input, sketch or image input, and editable fields so users can guide the system instead of surrendering control to it.
+Civora AI helps civil engineers and site designers go from rough intent to a structured concept plan faster. The product combines prompt input, sketch or image input, and editable fields so users can guide the system instead of surrendering control to it.
 
 ## Ideal first customer
 
