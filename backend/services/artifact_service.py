@@ -57,6 +57,7 @@ class ArtifactService:
             errors=list(result_data.get("errors") or []),
             request_metadata={
                 "parsed_payload": dict(result_data.get("parsed_payload") or {}),
+                **dict(result_data.get("request_metadata") or {}),
             },
         )
 

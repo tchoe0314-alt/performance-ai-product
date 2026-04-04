@@ -203,9 +203,13 @@ def export_report_artifact(
 ) -> Path:
     final_plan = dict(result_data.get("final_plan") or {})
     stem = filename_stem or str(final_plan.get("project_name") or "civora-ai-report")
+    enriched_result_data = dict(result_data)
+    request_metadata = dict(enriched_result_data.get("request_metadata") or {})
+    request_metadata["release_review"] = _preview_review_summary(result_data, final_plan)
+    enriched_result_data["request_metadata"] = request_metadata
     path = artifact_service.export_report_json(
         user_id=user_id,
-        result_data=result_data,
+        result_data=enriched_result_data,
         stem=stem,
     )
     if project_id:
@@ -217,7 +221,7 @@ def export_report_artifact(
                 path=path,
                 artifact_kind="report",
                 project_id=project_id,
-                result_data=result_data,
+                result_data=enriched_result_data,
             ),
         )
     return path

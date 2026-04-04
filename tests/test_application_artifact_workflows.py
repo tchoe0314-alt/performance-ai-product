@@ -183,9 +183,33 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         service = FakeArtifactService()
         store = FakeProjectStore()
         result_data = {
+            "success": True,
+            "message": "ok",
+            "warnings": [],
+            "errors": [],
             "final_plan": {
                 "project_name": "Report Demo",
                 "actions": [{"task": "polyline", "layer": "LOT", "points": [[0, 0], [1, 0], [1, 1], [0, 1]]}],
+                "meta": {
+                    "engineering_status": {"engineering_trust_score": 88.0},
+                    "convergence_summary": {
+                        "converged": True,
+                        "passes_run": 1,
+                        "unresolved_conflict_count": 0,
+                        "assumption_summary": {"count": 1, "categories": ["general"], "examples": ["Defaulted outlet concept."]},
+                        "fix_summary": {"autofix_actions": []},
+                        "dominant_issue_categories": [],
+                        "unresolved_issue_categories": [],
+                        "blocked_exports": [],
+                        "blocked_reasons": [],
+                        "rerun_summary": {"total_reruns": 0, "stage_counts": {}, "reason_counts": {}},
+                    },
+                    "deliverables": {
+                        "requested": ["site_plan", "report"],
+                        "produced": ["site_plan", "report"],
+                        "failed": [],
+                    },
+                },
             }
         }
         path = export_report_artifact(
@@ -198,6 +222,9 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         )
         self.assertEqual(path.name, "unit-report.json")
         self.assertEqual(service.report_export["stem"], "demo-report")
+        release_review = service.report_export["result_data"]["request_metadata"]["release_review"]
+        self.assertEqual(release_review["release_status"], "ready")
+        self.assertEqual(release_review["requested_deliverables"], ["site_plan", "report"])
         self.assertEqual(
             store.saved_payload["metadata"]["workflow"]["artifacts"][0]["kind"],
             "report",
