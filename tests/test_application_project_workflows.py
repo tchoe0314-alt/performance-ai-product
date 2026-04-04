@@ -107,13 +107,29 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         }
         merged = merge_project_metadata(
             metadata,
-            run_summary={"run_id": "run_new"},
+            run_summary={
+                "run_id": "run_new",
+                "created_at": 123.0,
+                "source": "unit_test",
+                "convergence_summary": {"converged": True},
+                "reliability_summary": {
+                    "operational_state": "ready",
+                    "primary_attention": "",
+                    "blocked_export_count": 0,
+                    "unresolved_conflict_count": 0,
+                    "failed_deliverable_count": 0,
+                    "release_ready": True,
+                },
+            },
             artifact_summary={"artifact_id": "artifact_new"},
         )
         self.assertEqual(merged["workflow"]["runs"][0]["run_id"], "run_new")
         self.assertEqual(len(merged["workflow"]["runs"]), 20)
         self.assertEqual(merged["workflow"]["artifacts"][0]["artifact_id"], "artifact_new")
         self.assertEqual(len(merged["workflow"]["artifacts"]), 40)
+        self.assertEqual(merged["workflow"]["summary"]["latest_run_id"], "run_new")
+        self.assertEqual(merged["workflow"]["summary"]["latest_operational_state"], "ready")
+        self.assertEqual(merged["workflow"]["summary"]["latest_artifact_id"], "artifact_new")
 
     def test_save_project_workflow_update_persists_metadata(self):
         store = FakeProjectStore(
@@ -134,7 +150,20 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
             project_store=store,
             user_id="u1",
             project_id="p1",
-            run_summary={"run_id": "run_1"},
+            run_summary={
+                "run_id": "run_1",
+                "created_at": 10.0,
+                "source": "unit_test",
+                "convergence_summary": {"converged": False},
+                "reliability_summary": {
+                    "operational_state": "retryable",
+                    "primary_attention": "storm_hydraulics_invalid",
+                    "blocked_export_count": 1,
+                    "unresolved_conflict_count": 2,
+                    "failed_deliverable_count": 0,
+                    "release_ready": False,
+                },
+            },
             artifact_summary={"artifact_id": "artifact_1"},
         )
         self.assertIsNotNone(updated)
@@ -142,6 +171,10 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertEqual(
             store.saved_payload["metadata"]["workflow"]["artifacts"][0]["artifact_id"],
             "artifact_1",
+        )
+        self.assertEqual(
+            store.saved_payload["metadata"]["workflow"]["summary"]["latest_primary_attention"],
+            "storm_hydraulics_invalid",
         )
 
     def test_save_project_record_exports_session_and_run_summary(self):
@@ -179,6 +212,7 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertTrue(response["success"])
         self.assertEqual(store.saved_payload["session_state"]["session_id"], "s1")
         self.assertEqual(store.saved_payload["metadata"]["workflow"]["runs"][0]["run_id"], "run_1")
+        self.assertEqual(store.saved_payload["metadata"]["workflow"]["summary"]["latest_run_id"], "run_1")
 
     def test_delete_project_record_reports_not_found(self):
         store = FakeProjectStore()

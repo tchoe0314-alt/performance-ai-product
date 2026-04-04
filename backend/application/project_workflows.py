@@ -61,6 +61,34 @@ def result_from_payload(
     raise HTTPException(status_code=400, detail="No plan or result payload was provided.")
 
 
+def _build_workflow_summary(
+    *,
+    runs: list[Dict[str, Any]],
+    artifacts: list[Dict[str, Any]],
+) -> Dict[str, Any]:
+    latest_run = dict(runs[0]) if runs else {}
+    latest_reliability = dict(latest_run.get("reliability_summary") or {})
+    latest_convergence = dict(latest_run.get("convergence_summary") or {})
+    latest_artifact = dict(artifacts[0]) if artifacts else {}
+    return {
+        "run_count": len(runs),
+        "artifact_count": len(artifacts),
+        "latest_run_id": str(latest_run.get("run_id") or ""),
+        "latest_run_created_at": latest_run.get("created_at"),
+        "latest_run_source": str(latest_run.get("source") or ""),
+        "latest_operational_state": str(latest_reliability.get("operational_state") or ""),
+        "latest_primary_attention": str(latest_reliability.get("primary_attention") or ""),
+        "latest_blocked_export_count": int(latest_reliability.get("blocked_export_count") or 0),
+        "latest_unresolved_conflict_count": int(latest_reliability.get("unresolved_conflict_count") or 0),
+        "latest_failed_deliverable_count": int(latest_reliability.get("failed_deliverable_count") or 0),
+        "latest_converged": bool(latest_convergence.get("converged")),
+        "latest_release_ready": bool(latest_reliability.get("release_ready")),
+        "latest_artifact_id": str(latest_artifact.get("artifact_id") or ""),
+        "latest_artifact_kind": str(latest_artifact.get("kind") or ""),
+        "latest_artifact_created_at": latest_artifact.get("created_at"),
+    }
+
+
 def merge_project_metadata(
     existing_metadata: Optional[Dict[str, Any]],
     *,
@@ -86,6 +114,7 @@ def merge_project_metadata(
 
     workflow["runs"] = runs
     workflow["artifacts"] = artifacts
+    workflow["summary"] = _build_workflow_summary(runs=runs, artifacts=artifacts)
     metadata["workflow"] = workflow
     return metadata
 
