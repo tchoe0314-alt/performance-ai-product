@@ -896,6 +896,17 @@ def _format_missing_requirements(missing: List[str]) -> str:
     return f"{', '.join(cleaned[:-1])}, and {cleaned[-1]}"
 
 
+def _remembered_instruction_fragment(context: Dict[str, Any]) -> str:
+    memory_summary = context.get("memory_summary") or {}
+    examples = list(memory_summary.get("examples") or [])
+    if not examples:
+        return ""
+    remembered = str(examples[-1]).strip()
+    if not remembered:
+        return ""
+    return f" I’ll keep your earlier instruction in mind: {remembered}."
+
+
 def _structured_clarification_reply(
     *,
     context: Dict[str, Any],
@@ -933,7 +944,7 @@ def _structured_clarification_reply(
             "If you want, I can help fill in the missing details once you tell me which assumptions you want Civora to make."
         )
 
-    return " ".join(prompt_parts)
+    return " ".join(prompt_parts) + _remembered_instruction_fragment(context)
 
 
 def _clarifying_ambiguous_reply(context: Dict[str, Any]) -> str:
@@ -941,11 +952,11 @@ def _clarifying_ambiguous_reply(context: Dict[str, Any]) -> str:
         return (
             "I’m not fully sure what you want me to change yet. Tell me what part of the current design you want to update, "
             "what outcome you want, or ask me a specific question about assumptions, fixes, review items, or blockers."
-        )
+        ) + _remembered_instruction_fragment(context)
     return (
         "I’m not fully sure what you want me to do yet. Tell me whether you want a new design, a settings change, or an explanation. "
         "If you want a design, give me the site type, rough size, and the main systems you want included."
-    )
+    ) + _remembered_instruction_fragment(context)
 
 
 def _safe_positive_number(value: Any) -> Optional[float]:
@@ -1258,7 +1269,8 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
     if _is_explicit_plan_tool_request(message, "fix"):
         return _base_decision(
             intent="fix",
-            assistant_message="I’ll run a focused fix pass on the current design.",
+            assistant_message="I’ll run a focused fix pass on the current design."
+            + _remembered_instruction_fragment(context),
             run_mode="fix",
             reason="Fix request detected",
             confidence=0.88,
@@ -1267,7 +1279,8 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
     if _is_explicit_plan_tool_request(message, "improve"):
         return _base_decision(
             intent="improve",
-            assistant_message="I’ll improve the current design while keeping your project intent intact.",
+            assistant_message="I’ll improve the current design while keeping your project intent intact."
+            + _remembered_instruction_fragment(context),
             run_mode="improve",
             reason="Improve request detected",
             confidence=0.88,
@@ -1298,7 +1311,7 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             "I’m updating the current design with that change."
             if bool(context.get("has_plan"))
             else "I have enough context to start the design."
-        )
+        ) + _remembered_instruction_fragment(context)
         return _base_decision(
             intent="design",
             assistant_message=reply,

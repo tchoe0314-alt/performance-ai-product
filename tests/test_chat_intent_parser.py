@@ -184,6 +184,34 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertTrue(result["needs_clarification"])
         self.assertIn("help fill in the missing details", result["assistant_message"])
 
+    def test_follow_up_design_reply_mentions_remembered_constraint(self):
+        result = _decide(
+            "add more parking",
+            {
+                "has_plan": True,
+                "project_type": "commercial_pad",
+                "chat_thread": [
+                    {"role": "user", "content": "Make sure you never guess if details are missing."},
+                ],
+            },
+        )
+        self.assertEqual(result["intent"], "design")
+        self.assertIn("earlier instruction", result["assistant_message"])
+        self.assertIn("never guess", result["assistant_message"])
+
+    def test_clarification_reply_mentions_remembered_instruction(self):
+        result = _decide(
+            "do it",
+            {
+                "chat_thread": [
+                    {"role": "user", "content": "Remember to keep drainage and grading in scope."},
+                ],
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertTrue(result["needs_clarification"])
+        self.assertIn("earlier instruction", result["assistant_message"])
+
 
 if __name__ == "__main__":
     unittest.main()
