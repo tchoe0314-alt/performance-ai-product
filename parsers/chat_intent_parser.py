@@ -571,7 +571,7 @@ def _is_question(message: str) -> bool:
 
 
 def _is_ambiguous_request(message: str, context: Dict[str, Any]) -> bool:
-    lowered = message.strip().lower()
+    lowered = _normalized_chat_text(message)
     if not lowered:
         return True
 
@@ -591,6 +591,9 @@ def _is_ambiguous_request(message: str, context: Dict[str, Any]) -> bool:
         "less",
         "something like that",
         "you decide",
+        "do whatever you think is best",
+        "whatever you think is best",
+        "whatever you think",
         "whatever",
         "idk",
         "i dont know",
@@ -661,9 +664,27 @@ def _conversation_reply(message: str, context: Dict[str, Any]) -> str:
         return "Hi, I’m Civora. Tell me what you want to design, or ask me about the current plan."
     if "thank" in lowered:
         return "You’re welcome. Tell me what you want to adjust next, or ask me about the current design."
+    if "help me think" in lowered or "think through" in lowered:
+        return (
+            "Absolutely. I can help you think through the design, talk through tradeoffs, or help you decide what to change next."
+            + _current_project_fragment(context)
+        )
+    if "what do you need" in lowered or "what info do you need" in lowered or "what information do you need" in lowered:
+        return (
+            "For a solid design start, the most useful inputs are the site type, rough lot size, building or parking program, terrain or slope information, and which systems you want included."
+            + _remembered_instruction_fragment(context)
+        )
+    if "can you help" in lowered and bool(context.get("has_plan")):
+        return (
+            "Yes. I can explain the current design, help you choose the next revision, or make a targeted change once you tell me what you want adjusted."
+            + _current_project_fragment(context)
+        )
     if "help" in lowered and not bool(context.get("has_plan")):
         return "I can help design a civil site plan, explain tradeoffs, or guide you through the inputs I need. Start by telling me the site type and what you want to build."
-    return "I’m here with you. Ask me about the current design, change a setting, or tell me what you want me to create or modify."
+    return (
+        "I’m here with you. Ask me about the current design, change a setting, or tell me what you want me to create or modify."
+        + _current_project_fragment(context)
+    )
 
 
 def _settings_reply(overrides: Dict[str, Any]) -> str:
@@ -727,6 +748,27 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         if remembered_examples:
             return "I’m keeping these instructions in mind: " + "; ".join(remembered_examples[:3]) + "."
         return "I don’t have any persistent user rules or preferences recorded from this chat yet."
+    if (
+        "what do you need from me" in lowered
+        or "what do you need" in lowered
+        or "what information do you need" in lowered
+        or "what info do you need" in lowered
+        or "what should i give you" in lowered
+    ):
+        project_type = str(context.get("project_type") or "").strip()
+        lot_width = context.get("lot_width")
+        lot_height = context.get("lot_height")
+        parking_count = context.get("parking_count")
+        asks: List[str] = []
+        if not project_type:
+            asks.append("site type")
+        if not (lot_width and lot_height):
+            asks.append("rough lot size")
+        if not parking_count:
+            asks.append("building or parking program")
+        asks.append("terrain or slope information")
+        asks.append("which systems to include")
+        return "The most useful inputs right now are " + _format_missing_requirements(asks[:4]) + "."
     if (
         "what assumptions" in lowered
         or "where did ai help" in lowered
@@ -865,6 +907,20 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
             if messages:
                 return "I’d probably tighten up " + "; ".join(messages) + "."
         return "I wouldn’t force another change yet unless you want a different design direction or tighter constraints."
+    if (
+        "are you sure" in lowered
+        or "how confident are you" in lowered
+        or "can i trust this" in lowered
+    ):
+        trust_score = context.get("engineering_trust_score")
+        blocked = list(blocked_reasons or blocked_exports)
+        if blocked:
+            return "Not fully yet. I’d be careful because there are still active blockers: " + "; ".join(
+                str(item) for item in blocked[:3]
+            ) + "."
+        if trust_score is not None:
+            return f"The current engineering trust score is {float(trust_score):.1f}. I’d still review the assumptions and any recorded warnings before treating it as final."
+        return "I’d still treat it as something to review, not blindly trust, unless the blockers and review items are clear."
     if "what warnings" in lowered or "what issues" in lowered or "what's wrong" in lowered or "whats wrong" in lowered:
         messages = [str(item.get("message") or "").strip() for item in manual_failures[:2] if isinstance(item, dict)]
         messages += [str(item.get("message") or "").strip() for item in issues[:2] if isinstance(item, dict)]
@@ -1021,6 +1077,13 @@ def _remembered_instruction_fragment(context: Dict[str, Any]) -> str:
     if not remembered:
         return ""
     return f" I’ll keep your earlier instruction in mind: {remembered}."
+
+
+def _current_project_fragment(context: Dict[str, Any]) -> str:
+    project_name = str(context.get("site_name") or context.get("current_project_name") or "").strip()
+    if not project_name:
+        return ""
+    return f" We’re currently working in {project_name}."
 
 
 def _structured_clarification_reply(

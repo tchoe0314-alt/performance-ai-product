@@ -255,6 +255,31 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertEqual(result["intent"], "conversation")
         self.assertIn("review", result["assistant_message"])
 
+    def test_what_do_you_need_from_me_answers_with_inputs(self):
+        result = _decide(
+            "what do you need from me?",
+            {
+                "strategy_mode": "assisted",
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("site type", result["assistant_message"])
+        self.assertIn("rough lot size", result["assistant_message"])
+
+    def test_are_you_sure_uses_blocked_state(self):
+        result = _decide(
+            "are you sure?",
+            {
+                "has_plan": True,
+                "convergence_summary": {
+                    "blocked_exports": ["storm"],
+                    "blocked_reasons": ["storm_graph_invalid"],
+                },
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("active blockers", result["assistant_message"])
+
 
 if __name__ == "__main__":
     unittest.main()
