@@ -481,6 +481,71 @@ def _looks_like_follow_up_design_edit(message: str, context: Dict[str, Any]) -> 
     return False
 
 
+def _looks_like_continuation_edit(message: str, context: Dict[str, Any]) -> bool:
+    if not bool(context.get("has_plan")):
+        return False
+    lowered = _normalized_chat_text(message)
+    chat_history = list(context.get("chat_history") or [])
+    previous_user_messages = [
+        _normalized_chat_text(str(item.get("content") or ""))
+        for item in chat_history
+        if isinstance(item, dict) and str(item.get("role") or "").strip().lower() == "user"
+    ]
+    last_user = previous_user_messages[-1] if previous_user_messages else ""
+
+    continuation_starters = [
+        "actually ",
+        "okay now ",
+        "ok now ",
+        "now ",
+        "also ",
+        "same but ",
+        "do the same but ",
+        "keep the ",
+        "leave the ",
+        "instead ",
+    ]
+    if any(lowered.startswith(prefix) for prefix in continuation_starters):
+        if _has_edit_intent(message):
+            return True
+        if any(
+            token in lowered
+            for token in [
+                "building",
+                "parking",
+                "road",
+                "grading",
+                "drainage",
+                "storm",
+                "basin",
+                "utility",
+                "utilities",
+                "sanitary",
+                "water",
+                "layout",
+            ]
+        ):
+            return True
+        if last_user and any(
+            token in last_user
+            for token in [
+                "design",
+                "create",
+                "generate",
+                "move",
+                "add",
+                "parking",
+                "building",
+                "grading",
+                "drainage",
+                "storm",
+                "utility",
+            ]
+        ):
+            return True
+    return False
+
+
 def _is_question(message: str) -> bool:
     lowered = _normalized_chat_text(message)
     return lowered.endswith("?") or any(
@@ -1287,7 +1352,10 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             control_overrides=overrides,
         )
 
-    follow_up_edit = _looks_like_follow_up_design_edit(message, context)
+    follow_up_edit = _looks_like_follow_up_design_edit(message, context) or _looks_like_continuation_edit(
+        message,
+        context,
+    )
     design_like = (
         _is_well_specified_design_request(message, context)
         or _looks_like_explicit_design_request(message)

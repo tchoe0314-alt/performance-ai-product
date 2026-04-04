@@ -212,6 +212,22 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertTrue(result["needs_clarification"])
         self.assertIn("earlier instruction", result["assistant_message"])
 
+    def test_continuation_edit_runs_from_chat_history(self):
+        result = _decide(
+            "actually keep the building and do the same but less parking",
+            {
+                "has_plan": True,
+                "project_type": "commercial_pad",
+                "chat_thread": [
+                    {"role": "user", "content": "Design a commercial site with parking and drainage."},
+                    {"role": "assistant", "content": "I can do that."},
+                ],
+            },
+        )
+        self.assertEqual(result["intent"], "design")
+        self.assertEqual(result["run_mode"], "run")
+        self.assertFalse(result["needs_clarification"])
+
 
 if __name__ == "__main__":
     unittest.main()
