@@ -393,6 +393,87 @@ def _is_question(message: str) -> bool:
     )
 
 
+def _is_ambiguous_request(message: str, context: Dict[str, Any]) -> bool:
+    lowered = message.strip().lower()
+    if not lowered:
+        return True
+
+    exact_ambiguous = {
+        "do it",
+        "do that",
+        "do this",
+        "fix it",
+        "change it",
+        "change that",
+        "change this",
+        "make it better",
+        "improve it",
+        "try again",
+        "again",
+        "more",
+        "less",
+        "something like that",
+        "you decide",
+        "whatever",
+        "idk",
+        "i dont know",
+        "i don't know",
+    }
+    if lowered in exact_ambiguous:
+        return True
+
+    tokens = re.findall(r"[a-z0-9']+", lowered)
+    if len(tokens) <= 3 and any(
+        token in {"it", "that", "this", "there", "thing", "something"} for token in tokens
+    ):
+        return True
+
+    if any(
+        phrase in lowered
+        for phrase in [
+            "something like",
+            "kind of like",
+            "sort of like",
+            "whatever works",
+            "not sure",
+            "you pick",
+        ]
+    ):
+        return True
+
+    vague_directives = ["do", "make", "change", "update", "fix", "improve", "add", "remove", "move"]
+    design_targets = [
+        "building",
+        "road",
+        "parking",
+        "grading",
+        "drainage",
+        "storm",
+        "basin",
+        "utility",
+        "utilities",
+        "sanitary",
+        "water",
+        "layout",
+        "site",
+        "plan",
+        "pad",
+        "drive",
+        "inlet",
+        "pipe",
+    ]
+    if any(token in vague_directives for token in tokens):
+        has_target = any(target in lowered for target in design_targets)
+        if not has_target:
+            return True
+        if bool(context.get("has_plan")) and any(
+            phrase in lowered for phrase in ["change that", "move that", "fix it", "do it again"]
+        ):
+            return True
+
+    return False
+
+
 def _conversation_reply(message: str, context: Dict[str, Any]) -> str:
     lowered = message.strip().lower()
     if any(phrase in lowered for phrase in ["how are you", "how r u", "how are u"]):
@@ -648,6 +729,18 @@ def _clarifying_design_reply(context: Dict[str, Any]) -> str:
     return (
         "I can help with that. Before I generate a design, tell me "
         f"{ask}. For example: site type, approximate lot dimensions, parking target, and whether roads, grading, drainage, or utilities should be included.{assist_line}"
+    )
+
+
+def _clarifying_ambiguous_reply(context: Dict[str, Any]) -> str:
+    if bool(context.get("has_plan")):
+        return (
+            "I’m not fully sure what you want me to change yet. Tell me what part of the current design you want to update, "
+            "what outcome you want, or ask me a specific question about assumptions, fixes, review items, or blockers."
+        )
+    return (
+        "I’m not fully sure what you want me to do yet. Tell me whether you want a new design, a settings change, or an explanation. "
+        "If you want a design, give me the site type, rough size, and the main systems you want included."
     )
 
 
@@ -922,6 +1015,16 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             intent=intent,
             assistant_message=contextual_reply,
             reason="Answered from current workspace context",
+            confidence=0.9,
+            control_overrides=overrides,
+        )
+
+    if _is_ambiguous_request(message, context):
+        return _base_decision(
+            intent="conversation",
+            assistant_message=_clarifying_ambiguous_reply(context),
+            needs_clarification=True,
+            reason="Ambiguous request needs clarification",
             confidence=0.9,
             control_overrides=overrides,
         )

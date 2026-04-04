@@ -74,6 +74,56 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertEqual(result["run_mode"], "none")
         self.assertIn("AI helped fill in", result["assistant_message"])
 
+    def test_fix_question_answers_from_convergence_summary(self):
+        result = _decide(
+            "what did you fix?",
+            {
+                "has_plan": True,
+                "convergence_summary": {
+                    "fix_summary": {
+                        "autofix_actions": ["storm_validation_retry"],
+                    },
+                    "dominant_issue_categories": ["storm", "drainage"],
+                },
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("I applied", result["assistant_message"])
+
+    def test_blocked_question_answers_from_convergence_summary(self):
+        result = _decide(
+            "what is blocked?",
+            {
+                "has_plan": True,
+                "convergence_summary": {
+                    "blocked_exports": ["storm"],
+                    "blocked_reasons": ["storm_graph_invalid"],
+                },
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("blocked outputs", result["assistant_message"])
+
+    def test_ambiguous_directive_asks_for_clarification(self):
+        result = _decide("do it")
+        self.assertEqual(result["intent"], "conversation")
+        self.assertEqual(result["run_mode"], "none")
+        self.assertTrue(result["needs_clarification"])
+        self.assertIn("not fully sure", result["assistant_message"])
+
+    def test_ambiguous_follow_up_with_existing_plan_asks_what_to_change(self):
+        result = _decide(
+            "change that",
+            {
+                "has_plan": True,
+                "project_type": "commercial_pad",
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertEqual(result["run_mode"], "none")
+        self.assertTrue(result["needs_clarification"])
+        self.assertIn("current design", result["assistant_message"])
+
 
 if __name__ == "__main__":
     unittest.main()
