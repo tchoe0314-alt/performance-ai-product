@@ -66,10 +66,55 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         service = FakeArtifactService()
         response = build_preview_response(
             artifact_service=service,
-            result_data={"final_plan": {"project_name": "Demo", "units": "ft", "actions": [1, 2]}},
+            result_data={
+                "success": True,
+                "message": "ok",
+                "warnings": [],
+                "errors": [],
+                "metadata": {"_workflow_run_id": "run_preview"},
+                "final_plan": {
+                    "project_name": "Demo",
+                    "units": "ft",
+                    "actions": [1, 2],
+                    "meta": {
+                        "grading": {"export_validation": {"ready": True, "reasons": []}},
+                        "drainage": {"export_validation": {"ready": True, "reasons": []}},
+                        "storm_pipes": {
+                            "graph_validation": {"valid": True},
+                            "hydraulic_validation": {"valid": True},
+                            "missing_data_segments": [],
+                        },
+                        "utilities": {"export_validation": {"ready": True, "reasons": []}},
+                        "engineering_status": {"engineering_trust_score": 92.0},
+                        "convergence_summary": {
+                            "converged": True,
+                            "passes_run": 2,
+                            "unresolved_conflict_count": 0,
+                            "assumption_summary": {
+                                "count": 2,
+                                "categories": ["drainage", "grading"],
+                                "examples": ["Assumed outlet release basis."],
+                            },
+                            "fix_summary": {
+                                "autofix_actions": ["storm_validation_retry"],
+                            },
+                            "dominant_issue_categories": ["storm"],
+                            "unresolved_issue_categories": ["utility_review"],
+                            "blocked_exports": ["storm"],
+                            "blocked_reasons": ["storm_graph_invalid"],
+                        },
+                        "deliverables": {"produced": ["site_plan", "grading_plan"]},
+                    },
+                },
+            },
         )
         self.assertTrue(response["preview_image_data_url"].startswith("data:image/png;base64,"))
         self.assertEqual(response["summary"]["project_name"], "Demo")
+        review = response["summary"]["review"]
+        self.assertEqual(review["trust_score"], 92.0)
+        self.assertEqual(review["assumption_count"], 2)
+        self.assertEqual(review["autofix_actions"], ["storm_validation_retry"])
+        self.assertEqual(review["blocked_reasons"], ["storm_graph_invalid"])
         self.assertEqual(service.preview_plan["project_name"], "Demo")
 
     def test_build_preview_response_respects_export_guard(self):

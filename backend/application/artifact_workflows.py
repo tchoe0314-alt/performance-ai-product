@@ -4,7 +4,7 @@ from base64 import b64encode
 from pathlib import Path
 from typing import Any, Dict, Optional, Protocol
 
-from backend.application.design_workflows import final_plan_from_result
+from backend.application.design_workflows import build_run_summary, final_plan_from_result
 from backend.application.project_workflows import artifact_summary, save_project_workflow_update
 
 
@@ -46,6 +46,62 @@ class ProjectStoreProtocol(Protocol):
         ...
 
 
+def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, Any]) -> Dict[str, Any]:
+    run_summary = build_run_summary(result_data, source="preview")
+    convergence = dict(run_summary.get("convergence_summary") or {})
+    engineering = dict(run_summary.get("engineering_status") or {})
+    assumption_summary = dict(convergence.get("assumption_summary") or {})
+    fix_summary = dict(convergence.get("fix_summary") or {})
+    dominant_fix_targets = [
+        str(item)
+        for item in list(convergence.get("dominant_issue_categories") or [])
+        if str(item)
+    ]
+    unresolved_issue_categories = [
+        str(item)
+        for item in list(convergence.get("unresolved_issue_categories") or [])
+        if str(item)
+    ]
+    blocked_exports = [
+        str(item)
+        for item in list(convergence.get("blocked_exports") or [])
+        if str(item)
+    ]
+    blocked_reasons = [
+        str(item)
+        for item in list(convergence.get("blocked_reasons") or [])
+        if str(item)
+    ]
+    return {
+        "trust_score": float(engineering.get("trust_score") or 0.0),
+        "converged": bool(convergence.get("converged")),
+        "passes_run": int(convergence.get("passes_run") or 0),
+        "unresolved_conflict_count": int(convergence.get("unresolved_conflict_count") or 0),
+        "assumption_count": int(assumption_summary.get("count") or 0),
+        "assumption_categories": [
+            str(item)
+            for item in list(assumption_summary.get("categories") or [])
+            if str(item)
+        ],
+        "assumption_examples": [
+            str(item)
+            for item in list(assumption_summary.get("examples") or [])
+            if str(item)
+        ],
+        "autofix_actions": [
+            str(item)
+            for item in list(fix_summary.get("autofix_actions") or [])
+            if str(item)
+        ],
+        "dominant_fix_targets": dominant_fix_targets,
+        "review_categories": unresolved_issue_categories,
+        "blocked_exports": blocked_exports,
+        "blocked_reasons": blocked_reasons,
+        "produced_deliverables": list(run_summary.get("produced_deliverables") or []),
+        "engineering_status": str((final_plan.get("meta") or {}).get("engineering_status") or ""),
+    }
+
+
 def build_preview_response(
     *,
     artifact_service: ArtifactServiceProtocol,
@@ -60,6 +116,7 @@ def build_preview_response(
             "project_name": final_plan.get("project_name", "Generated Plan"),
             "units": final_plan.get("units", "ft"),
             "action_count": len(final_plan.get("actions") or []),
+            "review": _preview_review_summary(result_data, final_plan),
         },
     }
 

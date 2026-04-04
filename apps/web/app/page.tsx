@@ -146,6 +146,21 @@ type PreviewResponse = {
     project_name?: string;
     units?: string;
     action_count?: number;
+    review?: {
+      trust_score?: number;
+      converged?: boolean;
+      passes_run?: number;
+      unresolved_conflict_count?: number;
+      assumption_count?: number;
+      assumption_categories?: string[];
+      assumption_examples?: string[];
+      autofix_actions?: string[];
+      dominant_fix_targets?: string[];
+      review_categories?: string[];
+      blocked_exports?: string[];
+      blocked_reasons?: string[];
+      produced_deliverables?: string[];
+    };
   };
 };
 
@@ -2587,6 +2602,67 @@ export default function PerformanceAIDashboard() {
                     : "review needed"}
                 </Pill>
               </div>
+
+              {planPreviewSummary?.review && (
+                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Assumptions
+                    </p>
+                    <p className="mt-2 text-sm font-medium text-slate-900">
+                      {planPreviewSummary.review.assumption_count ?? 0} recorded
+                    </p>
+                    <p className="mt-1 text-xs text-slate-600">
+                      {(planPreviewSummary.review.assumption_categories ?? [])
+                        .slice(0, 3)
+                        .join(", ") || "No assisted assumptions recorded."}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Fixes Applied
+                    </p>
+                    <p className="mt-2 text-sm font-medium text-slate-900">
+                      {(planPreviewSummary.review.autofix_actions ?? []).length} fix actions
+                    </p>
+                    <p className="mt-1 text-xs text-slate-600">
+                      {(planPreviewSummary.review.autofix_actions ?? [])
+                        .slice(0, 2)
+                        .join(", ") ||
+                        (planPreviewSummary.review.dominant_fix_targets ?? [])
+                          .slice(0, 2)
+                          .join(", ") ||
+                        "No fix actions recorded in the latest pass."}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Needs Review
+                    </p>
+                    <p className="mt-2 text-sm font-medium text-slate-900">
+                      {planPreviewSummary.review.unresolved_conflict_count ?? 0} unresolved
+                    </p>
+                    <p className="mt-1 text-xs text-slate-600">
+                      {(planPreviewSummary.review.review_categories ?? [])
+                        .slice(0, 3)
+                        .join(", ") || "No outstanding review categories recorded."}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Blocked
+                    </p>
+                    <p className="mt-2 text-sm font-medium text-slate-900">
+                      {(planPreviewSummary.review.blocked_exports ?? []).length} blocked outputs
+                    </p>
+                    <p className="mt-1 text-xs text-slate-600">
+                      {(planPreviewSummary.review.blocked_reasons ?? [])
+                        .slice(0, 2)
+                        .join(", ") || "No export blockers recorded."}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </main>
