@@ -52,6 +52,7 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
     engineering = dict(run_summary.get("engineering_status") or {})
     assumption_summary = dict(convergence.get("assumption_summary") or {})
     fix_summary = dict(convergence.get("fix_summary") or {})
+    rerun_summary = dict(convergence.get("rerun_summary") or {})
     dominant_fix_targets = [
         str(item)
         for item in list(convergence.get("dominant_issue_categories") or [])
@@ -71,6 +72,26 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         str(item)
         for item in list(convergence.get("blocked_reasons") or [])
         if str(item)
+    ]
+    rerun_stages = dict(rerun_summary.get("stage_counts") or {})
+    dominant_rerun_stages = [
+        str(name)
+        for name, _count in sorted(
+            ((str(name), int(count or 0)) for name, count in rerun_stages.items()),
+            key=lambda item: (-item[1], item[0]),
+        )
+        if str(name)
+    ]
+    dominant_rerun_reasons = [
+        str(name)
+        for name, _count in sorted(
+            (
+                (str(name), int(count or 0))
+                for name, count in dict(rerun_summary.get("reason_counts") or {}).items()
+            ),
+            key=lambda item: (-item[1], item[0]),
+        )
+        if str(name)
     ]
     requested_deliverables = list(run_summary.get("requested_deliverables") or [])
     produced_deliverables = list(run_summary.get("produced_deliverables") or [])
@@ -112,6 +133,9 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         "requested_deliverables": requested_deliverables,
         "produced_deliverables": produced_deliverables,
         "failed_deliverables": failed_deliverables,
+        "rerun_total": int(rerun_summary.get("total_reruns") or 0),
+        "rerun_stages": dominant_rerun_stages[:3],
+        "rerun_reasons": dominant_rerun_reasons[:3],
         "release_status": release_status,
         "release_note": release_note,
         "engineering_status": str((final_plan.get("meta") or {}).get("engineering_status") or ""),

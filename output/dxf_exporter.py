@@ -1609,6 +1609,27 @@ def _site_plan_drainage_guidance_notes(plan: Dict[str, Any]) -> List[str]:
             deliverable_parts.append("WHY " + "/".join(item.upper() for item in blocked_reasons[:2]))
         if deliverable_parts:
             notes.append(f"23. DELIVERABLE REVIEW: {' / '.join(deliverable_parts)}.")
+        rerun_summary = safe_dict(convergence.get("rerun_summary"))
+        rerun_stage_counts = safe_dict(rerun_summary.get("stage_counts"))
+        rerun_reason_counts = safe_dict(rerun_summary.get("reason_counts"))
+        stage_labels = [
+            f"{safe_text(name).upper()} {int(round(safe_num(count)))}"
+            for name, count in list(rerun_stage_counts.items())[:3]
+            if safe_text(name)
+        ]
+        reason_labels = [
+            f"{safe_text(name).upper()} {int(round(safe_num(count)))}"
+            for name, count in list(rerun_reason_counts.items())[:3]
+            if safe_text(name)
+        ]
+        rerun_parts: List[str] = [
+            f"{int(round(safe_num(rerun_summary.get('total_reruns'))))} TOTAL RERUNS"
+        ]
+        if stage_labels:
+            rerun_parts.append("STAGES " + "/".join(stage_labels))
+        if reason_labels:
+            rerun_parts.append("REASONS " + "/".join(reason_labels))
+        notes.append(f"24. RERUN FOCUS: {' / '.join(rerun_parts)}.")
         if blocked_exports or blocked_reasons or failed:
             release_status = "BLOCKED"
             release_note = "RESOLVE BLOCKED EXPORTS BEFORE RELEASE"
@@ -1618,7 +1639,7 @@ def _site_plan_drainage_guidance_notes(plan: Dict[str, Any]) -> List[str]:
         else:
             release_status = "REVIEW"
             release_note = "ENGINEERING REVIEW REQUIRED BEFORE RELEASE"
-        notes.append(f"24. RELEASE READINESS: {release_status} / {release_note}.")
+        notes.append(f"25. RELEASE READINESS: {release_status} / {release_note}.")
     return notes
 
 

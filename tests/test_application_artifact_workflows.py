@@ -102,6 +102,11 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
                             "unresolved_issue_categories": ["utility_review"],
                             "blocked_exports": ["storm"],
                             "blocked_reasons": ["storm_graph_invalid"],
+                            "rerun_summary": {
+                                "total_reruns": 2,
+                                "stage_counts": {"drainage": 2, "storm": 1},
+                                "reason_counts": {"storm_validation_retry": 1, "utility_validation_retry": 1},
+                            },
                         },
                         "deliverables": {
                             "requested": ["site_plan", "grading_plan", "utility_plan"],
@@ -122,6 +127,9 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertEqual(review["requested_deliverables"], ["site_plan", "grading_plan", "utility_plan"])
         self.assertEqual(review["produced_deliverables"], ["site_plan", "grading_plan"])
         self.assertEqual(review["failed_deliverables"], ["utility_plan"])
+        self.assertEqual(review["rerun_total"], 2)
+        self.assertEqual(review["rerun_stages"], ["drainage", "storm"])
+        self.assertEqual(review["rerun_reasons"], ["storm_validation_retry", "utility_validation_retry"])
         self.assertEqual(review["release_status"], "blocked")
         self.assertIn("Blocked", review["release_note"])
         self.assertEqual(service.preview_plan["project_name"], "Demo")

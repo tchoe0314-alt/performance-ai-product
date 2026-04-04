@@ -162,6 +162,9 @@ type PreviewResponse = {
       requested_deliverables?: string[];
       produced_deliverables?: string[];
       failed_deliverables?: string[];
+      rerun_total?: number;
+      rerun_stages?: string[];
+      rerun_reasons?: string[];
       release_status?: "ready" | "review" | "blocked" | string;
       release_note?: string;
     };
@@ -2632,7 +2635,7 @@ export default function PerformanceAIDashboard() {
               )}
 
               {planPreviewSummary?.review && (
-                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                       Assumptions
@@ -2706,6 +2709,23 @@ export default function PerformanceAIDashboard() {
                         : (planPreviewSummary.review.produced_deliverables ?? [])
                             .slice(0, 2)
                             .join(", ") || "No deliverables recorded yet."}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Stability
+                    </p>
+                    <p className="mt-2 text-sm font-medium text-slate-900">
+                      {planPreviewSummary.review.rerun_total ?? 0} reruns
+                    </p>
+                    <p className="mt-1 text-xs text-slate-600">
+                      {(planPreviewSummary.review.rerun_stages ?? [])
+                        .slice(0, 2)
+                        .join(", ") ||
+                        (planPreviewSummary.review.rerun_reasons ?? [])
+                          .slice(0, 2)
+                          .join(", ") ||
+                        "No repeated reruns recorded."}
                     </p>
                   </div>
                 </div>
