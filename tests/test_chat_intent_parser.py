@@ -422,6 +422,52 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertIn("constraints", result["assistant_message"])
         self.assertIn("optimize too aggressively", result["assistant_message"])
 
+    def test_compare_question_uses_fix_and_block_state(self):
+        result = _decide(
+            "is this better than before?",
+            {
+                "has_plan": True,
+                "convergence_summary": {
+                    "fix_summary": {"autofix_actions": ["storm_validation_retry"]},
+                    "rerun_summary": {"total_reruns": 2},
+                    "blocked_reasons": ["storm_graph_invalid"],
+                },
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("Compared with the earlier state", result["assistant_message"])
+        self.assertIn("storm_validation_retry", result["assistant_message"])
+
+    def test_tradeoffs_question_uses_preferences_and_review_pressure(self):
+        result = _decide(
+            "what are the tradeoffs?",
+            {
+                "chat_thread": [
+                    {"role": "user", "content": "I care more about drainage than parking."},
+                ],
+                "convergence_summary": {
+                    "unresolved_issue_categories": ["storm"],
+                },
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("tradeoffs", result["assistant_message"].lower())
+        self.assertIn("drainage", result["assistant_message"])
+
+    def test_risks_question_uses_blocked_reasons(self):
+        result = _decide(
+            "what are the risks?",
+            {
+                "has_plan": True,
+                "convergence_summary": {
+                    "blocked_reasons": ["storm_graph_invalid"],
+                },
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("risks", result["assistant_message"])
+        self.assertIn("storm_graph_invalid", result["assistant_message"])
+
 
 if __name__ == "__main__":
     unittest.main()

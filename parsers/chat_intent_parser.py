@@ -1010,6 +1010,32 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
                 parts.append("The main fix targets were " + ", ".join(dominant_targets[:3]))
             return ". ".join(parts) + "."
         return "I don’t have any recorded fix actions on the current design."
+    if (
+        "what changed" in lowered
+        or "what's different" in lowered
+        or "whats different" in lowered
+        or "what is different" in lowered
+        or "did this improve" in lowered
+        or "is this better than before" in lowered
+        or "is this better now" in lowered
+        or "compare this to before" in lowered
+    ):
+        parts: List[str] = []
+        autofix_actions = [str(item) for item in list(fix_summary.get("autofix_actions") or []) if str(item)]
+        if autofix_actions:
+            parts.append("changes: " + ", ".join(autofix_actions[:3]))
+        rerun_total = rerun_summary.get("total_reruns")
+        if rerun_total:
+            parts.append(f"reruns: {int(rerun_total)}")
+        if blocked_exports or blocked_reasons:
+            parts.append("still blocked: " + "; ".join(str(item) for item in (blocked_reasons[:2] or blocked_exports[:2])))
+        elif unresolved_categories:
+            parts.append("still needs review: " + ", ".join(str(item) for item in unresolved_categories[:2]))
+        else:
+            parts.append("no explicit blockers are recorded right now")
+        if parts:
+            return "Compared with the earlier state, " + ". ".join(parts) + "."
+        return "I don’t have enough recorded change history to compare this to the earlier state yet."
     if "what needs review" in lowered or "what should i review" in lowered:
         review_items = [str(item) for item in unresolved_categories if str(item)]
         if manual_failures:
@@ -1104,6 +1130,50 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         if deliverables:
             return "The current design looks stable enough to review the deliverables and decide whether you want another revision."
         return "I’d give me the next design change you want, or ask me to explain the current assumptions and fixes."
+    if (
+        "what are the tradeoffs" in lowered
+        or "what tradeoffs" in lowered
+        or "what are the trade-offs" in lowered
+        or "what trade offs" in lowered
+    ):
+        parts: List[str] = []
+        if remembered_preferences:
+            parts.append("I’m currently weighting " + "; ".join(remembered_preferences[:2]))
+        if assumptions:
+            fields = [
+                str(item.get("field_name") or item.get("field") or "an input").replace("_", " ")
+                for item in assumptions[:2]
+                if isinstance(item, dict)
+            ]
+            fields = [item for item in fields if item]
+            if fields:
+                parts.append("some inputs were assumed, especially " + ", ".join(fields))
+        if unresolved_categories:
+            parts.append("the main tradeoff pressure is in " + ", ".join(str(item) for item in unresolved_categories[:2]))
+        if parts:
+            return "The main tradeoffs right now are that " + ". ".join(parts) + "."
+        return "I don’t see a strong tradeoff signal recorded yet beyond the normal balance between layout quality, drainage, and utility coordination."
+    if (
+        "what are the risks" in lowered
+        or "what risks" in lowered
+        or "what is risky" in lowered
+        or "what's risky" in lowered
+        or "whats risky" in lowered
+    ):
+        if blocked_exports or blocked_reasons:
+            return "The biggest risks right now are " + "; ".join(str(item) for item in (blocked_reasons[:3] or blocked_exports[:3])) + "."
+        if unresolved_categories:
+            return "The biggest risks right now are in " + ", ".join(str(item) for item in unresolved_categories[:3]) + "."
+        if assumptions:
+            fields = [
+                str(item.get("field_name") or item.get("field") or "an input").replace("_", " ")
+                for item in assumptions[:2]
+                if isinstance(item, dict)
+            ]
+            fields = [item for item in fields if item]
+            if fields:
+                return "The main risk right now is that parts of the design still depend on assumptions, especially " + ", ".join(fields) + "."
+        return "I don’t see any major recorded risks beyond the normal need to review the current design before treating it as final."
     if "what would you change" in lowered or "what should change" in lowered:
         if blocked_reasons or unresolved_categories:
             focus = ", ".join(str(item) for item in (unresolved_categories[:2] or blocked_reasons[:2]))
