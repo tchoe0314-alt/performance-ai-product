@@ -78,6 +78,25 @@ def _trim_chat_history(value: Any, limit: int = 6) -> List[Dict[str, str]]:
     return trimmed
 
 
+def _normalized_chat_text(text: str) -> str:
+    normalized = text.strip().lower()
+    replacements = {
+        "pls": "please",
+        "pls.": "please",
+        "thx": "thanks",
+        "thanx": "thanks",
+        "ur": "your",
+        "rly": "really",
+        "idk": "i don't know",
+        "w/": "with",
+        "w/o": "without",
+    }
+    for source, target in replacements.items():
+        normalized = re.sub(rf"\b{re.escape(source)}\b", target, normalized)
+    normalized = normalized.replace("¿", "").replace("¡", "")
+    return normalized
+
+
 def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
     current_project = context.get("current_project") or {}
     current_truth = context.get("current_truth_audit") or {}
@@ -155,7 +174,7 @@ def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _is_casual_chat_message(text: str) -> bool:
-    normalized = text.strip().lower()
+    normalized = _normalized_chat_text(text)
     if not normalized:
         return True
     casual_exact = {
@@ -181,6 +200,13 @@ def _is_casual_chat_message(text: str) -> bool:
         "nice",
         "okay",
         "ok",
+        "hola",
+        "gracias",
+        "que tal",
+        "como estas",
+        "cómo estás",
+        "buenos dias",
+        "buenas tardes",
     }
     if normalized in casual_exact:
         return True
@@ -193,6 +219,10 @@ def _is_casual_chat_message(text: str) -> bool:
         "can you help",
         "what do you think",
         "tell me about",
+        "can you explain",
+        "can you tell me",
+        "que tal",
+        "como estas",
     ]
     if any(fragment in normalized for fragment in casual_fragments):
         return True
@@ -220,7 +250,7 @@ def _is_casual_chat_message(text: str) -> bool:
 
 
 def _extract_control_overrides(message: str, context: Dict[str, Any]) -> Dict[str, Any]:
-    lowered = message.lower()
+    lowered = _normalized_chat_text(message)
     overrides: Dict[str, Any] = {}
 
     if re.search(r"\bmanual mode\b|\buse manual\b|\bswitch to manual\b", lowered):
@@ -288,7 +318,7 @@ def _extract_control_overrides(message: str, context: Dict[str, Any]) -> Dict[st
 def _is_settings_only_message(message: str, overrides: Dict[str, Any]) -> bool:
     if not overrides:
         return False
-    lowered = message.lower()
+    lowered = _normalized_chat_text(message)
     design_verbs = [
         "design",
         "create",
@@ -307,7 +337,7 @@ def _is_settings_only_message(message: str, overrides: Dict[str, Any]) -> bool:
 
 
 def _has_edit_intent(message: str) -> bool:
-    lowered = message.lower()
+    lowered = _normalized_chat_text(message)
     edit_phrases = [
         "move",
         "shift",
@@ -326,6 +356,11 @@ def _has_edit_intent(message: str) -> bool:
         "rotate",
         "keep the",
         "make the",
+        "more",
+        "less",
+        "bigger",
+        "smaller",
+        "larger",
     ]
     design_targets = [
         "building",
@@ -351,7 +386,7 @@ def _has_edit_intent(message: str) -> bool:
 def _looks_like_follow_up_design_edit(message: str, context: Dict[str, Any]) -> bool:
     if not bool(context.get("has_plan")):
         return False
-    lowered = message.lower()
+    lowered = _normalized_chat_text(message)
     if _has_edit_intent(message):
         return True
     if any(
@@ -374,7 +409,7 @@ def _looks_like_follow_up_design_edit(message: str, context: Dict[str, Any]) -> 
 
 
 def _is_question(message: str) -> bool:
-    lowered = message.strip().lower()
+    lowered = _normalized_chat_text(message)
     return lowered.endswith("?") or any(
         lowered.startswith(prefix)
         for prefix in [
@@ -389,6 +424,10 @@ def _is_question(message: str) -> bool:
             "do ",
             "does ",
             "did ",
+            "por que ",
+            "porque ",
+            "que ",
+            "como ",
         ]
     )
 
@@ -475,9 +514,11 @@ def _is_ambiguous_request(message: str, context: Dict[str, Any]) -> bool:
 
 
 def _conversation_reply(message: str, context: Dict[str, Any]) -> str:
-    lowered = message.strip().lower()
+    lowered = _normalized_chat_text(message)
     if any(phrase in lowered for phrase in ["how are you", "how r u", "how are u"]):
         return "I’m doing well and I’m ready to help with the design. You can ask me about the current plan or tell me what you want to change."
+    if any(phrase in lowered for phrase in ["hola", "que tal", "como estas", "cómo estás"]):
+        return "Hola, I’m Civora. You can ask about the current design, change a setting, or tell me what you want me to create or revise."
     if lowered in {"hello", "hi", "hey", "yo"}:
         return "Hi, I’m Civora. Tell me what you want to design, or ask me about the current plan."
     if "thank" in lowered:
@@ -517,7 +558,7 @@ def _settings_reply(overrides: Dict[str, Any]) -> str:
 
 
 def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optional[str]:
-    lowered = message.lower()
+    lowered = _normalized_chat_text(message)
     issues = context.get("issues") or []
     manual_failures = context.get("manual_failures") or []
     assumptions = context.get("assumptions") or []
@@ -537,7 +578,14 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
     if "file name" in lowered:
         file_name = str(context.get("file_name") or "").strip()
         return f"The current file name is {file_name}." if file_name else "The current file name is still blank."
-    if "what assumptions" in lowered or "where did ai help" in lowered or "what did ai use" in lowered:
+    if (
+        "what assumptions" in lowered
+        or "where did ai help" in lowered
+        or "what did ai use" in lowered
+        or "what assumptions did you use" in lowered
+        or "what assumptions did you make" in lowered
+        or "que asum" in lowered
+    ):
         if assumptions:
             formatted = []
             for item in assumptions[:3]:
@@ -546,7 +594,13 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
                 formatted.append(f"{field} ({reason})" if reason else field)
             return "AI helped fill in: " + "; ".join(formatted) + "."
         return "There are no explicit AI-filled assumptions recorded on the current design."
-    if "what did you fix" in lowered or "what did you change" in lowered or "what got fixed" in lowered:
+    if (
+        "what did you fix" in lowered
+        or "what did you change" in lowered
+        or "what got fixed" in lowered
+        or "what did you do" in lowered
+        or "what did you adjust" in lowered
+    ):
         autofix_actions = [str(item) for item in list(fix_summary.get("autofix_actions") or []) if str(item)]
         dominant_targets = [str(item) for item in list(convergence.get("dominant_issue_categories") or []) if str(item)]
         if autofix_actions or dominant_targets:
@@ -572,7 +626,16 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         if review_items:
             return "The main review categories are: " + ", ".join(review_items[:3]) + "."
         return "I don’t see any explicit review items recorded on the current design."
-    if "what is blocked" in lowered or "what's blocked" in lowered or "whats blocked" in lowered:
+    if (
+        "what is blocked" in lowered
+        or "what's blocked" in lowered
+        or "whats blocked" in lowered
+        or "why is it blocked" in lowered
+        or "why did it block" in lowered
+        or "why is export blocked" in lowered
+        or "why did export fail" in lowered
+        or "por que esta bloqueado" in lowered
+    ):
         if blocked_exports or blocked_reasons:
             parts: List[str] = []
             if blocked_exports:
@@ -581,7 +644,13 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
                 parts.append("reasons: " + "; ".join(str(item) for item in blocked_reasons[:3]))
             return "Right now, " + ". ".join(parts) + "."
         return "Nothing is explicitly blocked right now."
-    if "how many passes" in lowered or "how many reruns" in lowered or "did it converge" in lowered:
+    if (
+        "how many passes" in lowered
+        or "how many reruns" in lowered
+        or "did it converge" in lowered
+        or "did this converge" in lowered
+        or "how long did it take" in lowered
+    ):
         passes_run = convergence.get("passes_run")
         rerun_total = rerun_summary.get("total_reruns")
         converged = convergence.get("converged")
@@ -654,7 +723,7 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
 
 
 def _looks_like_explicit_design_request(text: str) -> bool:
-    normalized = text.strip().lower()
+    normalized = _normalized_chat_text(text)
     strong_design_phrases = [
         "create a",
         "create an",
@@ -685,7 +754,7 @@ def _looks_like_explicit_design_request(text: str) -> bool:
 
 
 def _is_explicit_plan_tool_request(text: str, tool: str) -> bool:
-    normalized = text.strip().lower()
+    normalized = _normalized_chat_text(text)
     explicit_phrases = {
         "fix": [
             "fix this",
@@ -753,7 +822,7 @@ def _safe_positive_number(value: Any) -> Optional[float]:
 
 
 def _message_has_dimension_signal(message: str) -> bool:
-    lowered = message.lower()
+    lowered = _normalized_chat_text(message)
     patterns = [
         r"\b\d+(?:\.\d+)?\s*(?:x|by)\s*\d+(?:\.\d+)?\b",
         r"\b\d+(?:\.\d+)?\s*(?:ft|feet|m|meters|ac|acre|acres)\b",
@@ -763,7 +832,7 @@ def _message_has_dimension_signal(message: str) -> bool:
 
 
 def _infer_project_type_from_message(message: str) -> str:
-    lowered = message.lower()
+    lowered = _normalized_chat_text(message)
     project_keywords = {
         "mixed_use": ["mixed-use", "mixed use"],
         "multifamily": ["multifamily", "multi-family", "apartment", "apartments"],
@@ -806,7 +875,7 @@ def _build_design_readiness_reply(
 
 
 def _design_readiness_check(message: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    lowered = message.lower()
+    lowered = _normalized_chat_text(message)
     inferred_project_type = str(context.get("project_type") or "").strip() or _infer_project_type_from_message(
         message
     )
@@ -899,7 +968,7 @@ def assess_design_readiness(message: str, context: Optional[Dict[str, Any]] = No
 
 
 def _is_well_specified_design_request(message: str, context: Dict[str, Any]) -> bool:
-    lowered = message.lower()
+    lowered = _normalized_chat_text(message)
     if _looks_like_follow_up_design_edit(message, context):
         return True
     if not _looks_like_explicit_design_request(message):
@@ -986,7 +1055,7 @@ def _base_decision(
 
 def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
     message = str(payload_data.get("message") or "").strip()
-    lowered = message.lower()
+    lowered = _normalized_chat_text(message)
     context = _chat_context_summary(dict(payload_data.get("context") or {}))
     strategy_mode = str(context.get("strategy_mode") or "assisted").strip().lower()
     overrides = _extract_control_overrides(message, context)
@@ -1010,7 +1079,25 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
 
     contextual_reply = _contextual_question_reply(message, context)
     if contextual_reply:
-        intent = "explain" if ("why" in lowered or "explain" in lowered) else "conversation"
+        intent = "conversation"
+        if ("why" in lowered or "explain" in lowered) and not any(
+            phrase in lowered
+            for phrase in [
+                "what did you fix",
+                "what did you change",
+                "what got fixed",
+                "what needs review",
+                "what should i review",
+                "what is blocked",
+                "what's blocked",
+                "whats blocked",
+                "why is it blocked",
+                "why did it block",
+                "why is export blocked",
+                "why did export fail",
+            ]
+        ):
+            intent = "explain"
         return _base_decision(
             intent=intent,
             assistant_message=contextual_reply,

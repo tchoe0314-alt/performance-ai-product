@@ -124,6 +124,39 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertTrue(result["needs_clarification"])
         self.assertIn("current design", result["assistant_message"])
 
+    def test_shorthand_follow_up_edit_runs_when_plan_exists(self):
+        result = _decide(
+            "can u add more parking pls",
+            {
+                "has_plan": True,
+                "project_type": "commercial_pad",
+                "parking_count": "32",
+            },
+        )
+        self.assertEqual(result["intent"], "design")
+        self.assertEqual(result["run_mode"], "run")
+        self.assertFalse(result["needs_clarification"])
+
+    def test_spanish_greeting_stays_conversation(self):
+        result = _decide("hola")
+        self.assertEqual(result["intent"], "conversation")
+        self.assertEqual(result["run_mode"], "none")
+        self.assertFalse(result["needs_clarification"])
+
+    def test_blocked_why_question_answers_from_convergence_summary(self):
+        result = _decide(
+            "why is export blocked?",
+            {
+                "has_plan": True,
+                "convergence_summary": {
+                    "blocked_exports": ["storm"],
+                    "blocked_reasons": ["storm_graph_invalid"],
+                },
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("reasons", result["assistant_message"])
+
 
 if __name__ == "__main__":
     unittest.main()
