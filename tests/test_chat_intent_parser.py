@@ -507,6 +507,42 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertEqual(result["intent"], "conversation")
         self.assertIn("fewer unresolved review items", result["assistant_message"])
 
+    def test_uncertainty_question_uses_blockers_and_assumptions(self):
+        result = _decide(
+            "what are you unsure about?",
+            {
+                "has_plan": True,
+                "engineering_trust_score": 72.0,
+                "assumptions": [
+                    {"field_name": "lot_width", "assumed_value": "220", "reason": "No exact width was provided."}
+                ],
+                "convergence_summary": {
+                    "blocked_reasons": ["storm_graph_invalid"],
+                },
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("storm_graph_invalid", result["assistant_message"])
+        self.assertIn("lot width", result["assistant_message"])
+        self.assertIn("72.0", result["assistant_message"])
+
+    def test_more_confident_question_uses_review_and_assumptions(self):
+        result = _decide(
+            "what would make you more confident?",
+            {
+                "has_plan": True,
+                "assumptions": [
+                    {"field_name": "parking_count", "assumed_value": "32", "reason": "Program was not explicit."}
+                ],
+                "convergence_summary": {
+                    "unresolved_issue_categories": ["storm coordination"],
+                },
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("storm coordination", result["assistant_message"])
+        self.assertIn("parking count", result["assistant_message"])
+
 
 if __name__ == "__main__":
     unittest.main()

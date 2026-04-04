@@ -206,9 +206,11 @@ def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
         "has_plan": bool(context.get("has_plan")),
         "has_preview": bool(context.get("has_preview")),
         "current_project_name": current_project.get("name"),
-        "truth_success": current_truth.get("success"),
-        "engineering_trust_score": current_truth.get("engineering_trust_score"),
-        "engineering_status": engineering_status.get("status"),
+        "truth_success": current_truth.get("success", context.get("truth_success")),
+        "engineering_trust_score": current_truth.get(
+            "engineering_trust_score", context.get("engineering_trust_score")
+        ),
+        "engineering_status": engineering_status.get("status", context.get("engineering_status")),
         "convergence_summary": {
             "converged": bool(convergence_summary.get("converged")),
             "passes_run": convergence_summary.get("passes_run"),
@@ -894,6 +896,7 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
     remembered_examples = list(memory_summary.get("examples") or [])
     remembered_preferences = list(memory_summary.get("preferences") or [])
     remembered_constraints = list(memory_summary.get("constraints") or [])
+    trust_score = context.get("engineering_trust_score")
 
     if "what mode" in lowered or "which mode" in lowered:
         return f"You’re currently in {str(context.get('strategy_mode') or 'assisted').strip().lower()} mode."
@@ -959,6 +962,62 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         asks.append("terrain or slope information")
         asks.append("which systems to include")
         return "The most useful inputs right now are " + _format_missing_requirements(asks[:4]) + "."
+    if (
+        "what are you unsure about" in lowered
+        or "what are you uncertain about" in lowered
+        or "where are you uncertain" in lowered
+        or "where are you unsure" in lowered
+        or "what are you least confident about" in lowered
+        or "what feels uncertain" in lowered
+    ):
+        parts: List[str] = []
+        if blocked_reasons or blocked_exports:
+            parts.append(
+                "the main uncertainty is around "
+                + "; ".join(str(item) for item in (blocked_reasons[:2] or blocked_exports[:2]))
+            )
+        elif unresolved_categories:
+            parts.append(
+                "the weakest area is still "
+                + ", ".join(str(item) for item in unresolved_categories[:2])
+            )
+        if assumptions:
+            fields = [
+                str(item.get("field_name") or item.get("field") or "an input").replace("_", " ")
+                for item in assumptions[:2]
+                if isinstance(item, dict)
+            ]
+            fields = [item for item in fields if item]
+            if fields:
+                parts.append("some of the design still depends on assumptions about " + ", ".join(fields))
+        if trust_score is not None and float(trust_score) < 85.0:
+            parts.append(f"the current engineering trust score is {float(trust_score):.1f}")
+        if parts:
+            return "Right now, " + ". ".join(parts) + "."
+        return "I don’t see a strong uncertainty signal in the current run state, but I’d still review the assumptions and final deliverables before treating it as final."
+    if (
+        "what would make you more confident" in lowered
+        or "how can we make this more confident" in lowered
+        or "what would help you be more confident" in lowered
+        or "what would increase your confidence" in lowered
+    ):
+        asks: List[str] = []
+        if blocked_reasons or blocked_exports:
+            asks.append("clear the active blockers")
+        if unresolved_categories:
+            asks.append("tighten the open review areas in " + ", ".join(str(item) for item in unresolved_categories[:2]))
+        if assumptions:
+            fields = [
+                str(item.get("field_name") or item.get("field") or "an input").replace("_", " ")
+                for item in assumptions[:2]
+                if isinstance(item, dict)
+            ]
+            fields = [item for item in fields if item]
+            if fields:
+                asks.append("replace assumptions with explicit inputs for " + ", ".join(fields))
+        if not asks:
+            asks.append("do one more careful review of the current deliverables")
+        return "The best next step would be to " + _format_missing_requirements(asks[:3]) + "."
     if (
         "summarize" in lowered
         or "sum it up" in lowered
@@ -1232,7 +1291,6 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         or "how confident are you" in lowered
         or "can i trust this" in lowered
     ):
-        trust_score = context.get("engineering_trust_score")
         blocked = list(blocked_reasons or blocked_exports)
         if blocked:
             return "Not fully yet. I’d be careful because there are still active blockers: " + "; ".join(
