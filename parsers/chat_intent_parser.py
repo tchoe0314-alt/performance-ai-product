@@ -885,6 +885,57 @@ def _clarifying_design_reply(context: Dict[str, Any]) -> str:
     )
 
 
+def _format_missing_requirements(missing: List[str]) -> str:
+    cleaned = [item.strip() for item in missing if item and item.strip()]
+    if not cleaned:
+        return "a little more design context"
+    if len(cleaned) == 1:
+        return cleaned[0]
+    if len(cleaned) == 2:
+        return f"{cleaned[0]} and {cleaned[1]}"
+    return f"{', '.join(cleaned[:-1])}, and {cleaned[-1]}"
+
+
+def _structured_clarification_reply(
+    *,
+    context: Dict[str, Any],
+    missing: List[str],
+    inferred_project_type: str,
+) -> str:
+    strategy_mode = str(context.get("strategy_mode") or "assisted").strip().lower()
+    primary_missing = missing[:3]
+    ask = _format_missing_requirements(primary_missing)
+    prompt_parts: List[str] = []
+    if inferred_project_type:
+        prompt_parts.append(
+            f"I understand that you want a {inferred_project_type.replace('_', ' ')} design."
+        )
+    else:
+        prompt_parts.append("I can help with that design.")
+    prompt_parts.append(f"Before I move forward, I still need {ask}.")
+
+    examples: List[str] = []
+    if any("site type" in item or "land use" in item for item in primary_missing):
+        examples.append("site type or land use")
+    if any("lot" in item or "site area" in item for item in primary_missing):
+        examples.append("rough lot size or site area")
+    if any("building" in item or "parking" in item or "program" in item for item in primary_missing):
+        examples.append("building or parking program")
+    if any("terrain" in item or "slope" in item for item in primary_missing):
+        examples.append("terrain or slope information")
+    if any("systems" in item for item in primary_missing):
+        examples.append("which systems to include")
+    if examples:
+        prompt_parts.append("Tell me " + _format_missing_requirements(examples[:3]) + ".")
+
+    if strategy_mode == "assisted":
+        prompt_parts.append(
+            "If you want, I can help fill in the missing details once you tell me which assumptions you want Civora to make."
+        )
+
+    return " ".join(prompt_parts)
+
+
 def _clarifying_ambiguous_reply(context: Dict[str, Any]) -> str:
     if bool(context.get("has_plan")):
         return (
@@ -937,25 +988,12 @@ def _build_design_readiness_reply(
     inferred_project_type: str,
     missing: List[str],
 ) -> str:
-    strategy_mode = str(context.get("strategy_mode") or "assisted").strip().lower()
-    starter_parts: List[str] = []
-    if inferred_project_type:
-        starter_parts.append(
-            f"I understand that you want a {inferred_project_type.replace('_', ' ')} design."
-        )
-    else:
-        starter_parts.append("I can help with that design.")
-    missing_text = ", ".join(missing[:4])
-    assist_line = (
-        " If you want, I can help fill in the blanks once you tell me which assumptions you want Civora to make."
-        if strategy_mode == "assisted"
-        else ""
+    base = _structured_clarification_reply(
+        context=context,
+        missing=missing,
+        inferred_project_type=inferred_project_type,
     )
-    return (
-        f"{' '.join(starter_parts)} Before I generate a real coordinated plan, I still need {missing_text}. "
-        "Give me the missing details, or upload a sketch/site image if you have one."
-        f"{assist_line}"
-    )
+    return base + " You can also upload a sketch or site image if that helps."
 
 
 def _design_readiness_check(message: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -1272,9 +1310,22 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     if strategy_mode == "manual":
+        inferred_project_type = str(context.get("project_type") or "").strip() or _infer_project_type_from_message(
+            message
+        )
+        manual_missing: List[str] = []
+        if not inferred_project_type:
+            manual_missing.append("the site type or land use")
+        if not (context.get("lot_width") and context.get("lot_height")) and not _message_has_dimension_signal(message):
+            manual_missing.append("rough lot size")
+        manual_missing.append("which systems to include")
         return _base_decision(
             intent="conversation",
-            assistant_message="I’m treating that as conversation for now. In Manual mode, tell me exactly what you want me to design or change, and include the key parameters you already know.",
+            assistant_message=_structured_clarification_reply(
+                context=context,
+                missing=manual_missing,
+                inferred_project_type=inferred_project_type,
+            ),
             needs_clarification=True,
             reason="Manual mode conservative fallback",
             confidence=0.72,

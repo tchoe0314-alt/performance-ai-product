@@ -36,6 +36,7 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertEqual(result["intent"], "conversation")
         self.assertTrue(result["needs_clarification"])
         self.assertEqual(result["run_mode"], "none")
+        self.assertIn("which systems to include", result["assistant_message"])
 
     def test_follow_up_design_edit_runs_when_plan_exists(self):
         result = _decide(
@@ -171,6 +172,17 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertEqual(result["intent"], "conversation")
         self.assertIn("keeping these instructions in mind", result["assistant_message"])
         self.assertIn("never guess", result["assistant_message"])
+
+    def test_assisted_clarification_offers_ai_help_for_missing_inputs(self):
+        result = _decide(
+            "design a site for me",
+            {
+                "strategy_mode": "assisted",
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertTrue(result["needs_clarification"])
+        self.assertIn("help fill in the missing details", result["assistant_message"])
 
 
 if __name__ == "__main__":
