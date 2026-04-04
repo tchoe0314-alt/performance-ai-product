@@ -157,6 +157,21 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertEqual(result["intent"], "conversation")
         self.assertIn("reasons", result["assistant_message"])
 
+    def test_memory_question_answers_from_chat_history(self):
+        result = _decide(
+            "what do you remember?",
+            {
+                "chat_thread": [
+                    {"role": "user", "content": "Make sure you never guess if details are missing."},
+                    {"role": "assistant", "content": "Understood."},
+                    {"role": "user", "content": "Prefer drainage and grading before utilities."},
+                ],
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("keeping these instructions in mind", result["assistant_message"])
+        self.assertIn("never guess", result["assistant_message"])
+
 
 if __name__ == "__main__":
     unittest.main()

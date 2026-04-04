@@ -97,6 +97,77 @@ def _normalized_chat_text(text: str) -> str:
     return normalized
 
 
+def _extract_chat_memory(value: Any, limit: int = 8) -> Dict[str, Any]:
+    if not isinstance(value, list):
+        return {"preferences": [], "constraints": [], "examples": []}
+
+    preferences: List[str] = []
+    constraints: List[str] = []
+    seen = set()
+
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("role") or "").strip().lower() != "user":
+            continue
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        clauses = re.split(r"[.!?\n;]+", content)
+        for clause in clauses:
+            clean = " ".join(clause.split()).strip()
+            if not clean:
+                continue
+            lowered = _normalized_chat_text(clean)
+            if len(lowered) < 8:
+                continue
+
+            bucket: Optional[List[str]] = None
+            if any(
+                phrase in lowered
+                for phrase in [
+                    "make sure",
+                    "remember to",
+                    "remember that",
+                    "always ",
+                    "prefer ",
+                    "use ",
+                    "keep ",
+                    "stay in ",
+                ]
+            ):
+                bucket = preferences
+            elif any(
+                phrase in lowered
+                for phrase in [
+                    "do not",
+                    "don't",
+                    "dont",
+                    "never ",
+                    "without ",
+                    "no guessing",
+                    "ask for clarification",
+                    "if you are unsure",
+                ]
+            ):
+                bucket = constraints
+
+            if bucket is None:
+                continue
+
+            key = lowered[:160]
+            if key in seen:
+                continue
+            seen.add(key)
+            bucket.append(clean)
+
+    return {
+        "preferences": preferences[-limit:],
+        "constraints": constraints[-limit:],
+        "examples": (preferences + constraints)[-limit:],
+    }
+
+
 def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
     current_project = context.get("current_project") or {}
     current_truth = context.get("current_truth_audit") or {}
@@ -107,6 +178,7 @@ def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
     manual_failures = context.get("manual_failures") or []
     assumptions = context.get("assumptions") or []
     produced_deliverables = context.get("produced_deliverables") or []
+    memory_summary = _extract_chat_memory(context.get("chat_thread"))
     return {
         "strategy_mode": context.get("strategy_mode") or "assisted",
         "site_name": context.get("site_name") or "",
@@ -169,6 +241,7 @@ def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
             for item in manual_failures[:6]
             if isinstance(item, dict)
         ],
+        "memory_summary": memory_summary,
         "chat_history": _trim_chat_history(context.get("chat_thread")),
     }
 
@@ -569,6 +642,8 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
     blocked_reasons = convergence.get("blocked_reasons") or []
     unresolved_categories = convergence.get("unresolved_issue_categories") or []
     rerun_summary = convergence.get("rerun_summary") or {}
+    memory_summary = context.get("memory_summary") or {}
+    remembered_examples = list(memory_summary.get("examples") or [])
 
     if "what mode" in lowered or "which mode" in lowered:
         return f"You’re currently in {str(context.get('strategy_mode') or 'assisted').strip().lower()} mode."
@@ -578,6 +653,15 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
     if "file name" in lowered:
         file_name = str(context.get("file_name") or "").strip()
         return f"The current file name is {file_name}." if file_name else "The current file name is still blank."
+    if (
+        "what do you remember" in lowered
+        or "what are you remembering" in lowered
+        or "what are you keeping in mind" in lowered
+        or "what rules are you following" in lowered
+    ):
+        if remembered_examples:
+            return "I’m keeping these instructions in mind: " + "; ".join(remembered_examples[:3]) + "."
+        return "I don’t have any persistent user rules or preferences recorded from this chat yet."
     if (
         "what assumptions" in lowered
         or "where did ai help" in lowered
@@ -1240,6 +1324,7 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         "If the user is asking for a design but the request is underspecified, do not bluff or invent a full plan. "
         "Set needs_clarification=true and write a short, natural assistant message that asks for the next most important missing details, such as site type, lot size, parking target, building size, road needs, grading needs, drainage needs, utility scope, or image/sketch availability. "
         "In assisted mode, when key details are missing, you may ask whether the user wants Civora to help fill in those blanks instead of guessing outright. "
+        "The context may include a memory_summary of the user's stated preferences and constraints from earlier in the chat. Respect those remembered instructions and do not forget them when deciding how to respond. "
         "Ask only the smallest useful set of follow-up questions needed to move the design forward. "
         "For casual conversation, answer naturally and briefly like a helpful AI teammate. "
         "Return concise, helpful assistant wording with a calm professional personality. "
