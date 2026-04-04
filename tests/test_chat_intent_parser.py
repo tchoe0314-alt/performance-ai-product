@@ -280,6 +280,54 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertEqual(result["intent"], "conversation")
         self.assertIn("active blockers", result["assistant_message"])
 
+    def test_short_version_summarizes_current_run_state(self):
+        result = _decide(
+            "give me the short version",
+            {
+                "has_plan": True,
+                "assumptions": [
+                    {"field_name": "lot_width", "assumed_value": "220", "reason": "No exact width was provided."}
+                ],
+                "convergence_summary": {
+                    "fix_summary": {"autofix_actions": ["storm_validation_retry"]},
+                    "unresolved_issue_categories": ["storm"],
+                    "blocked_reasons": ["storm_graph_invalid"],
+                },
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("Short version", result["assistant_message"])
+        self.assertIn("assumptions", result["assistant_message"])
+        self.assertIn("blocked", result["assistant_message"])
+
+    def test_options_question_returns_next_steps(self):
+        result = _decide(
+            "what are my options?",
+            {
+                "has_plan": True,
+                "convergence_summary": {
+                    "blocked_reasons": ["storm_graph_invalid"],
+                    "unresolved_issue_categories": ["storm"],
+                },
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("clear the blockers first", result["assistant_message"])
+
+    def test_negative_feedback_uses_current_weakness(self):
+        result = _decide(
+            "this looks wrong",
+            {
+                "has_plan": True,
+                "convergence_summary": {
+                    "unresolved_issue_categories": ["storm coordination"],
+                },
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("weakest part", result["assistant_message"])
+        self.assertIn("storm coordination", result["assistant_message"])
+
 
 if __name__ == "__main__":
     unittest.main()

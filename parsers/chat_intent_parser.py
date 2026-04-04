@@ -770,6 +770,33 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         asks.append("which systems to include")
         return "The most useful inputs right now are " + _format_missing_requirements(asks[:4]) + "."
     if (
+        "summarize" in lowered
+        or "sum it up" in lowered
+        or "short version" in lowered
+        or "quick summary" in lowered
+        or "tldr" in lowered
+    ):
+        parts: List[str] = []
+        if assumptions:
+            fields = [
+                str(item.get("field_name") or item.get("field") or "an input").replace("_", " ")
+                for item in assumptions[:2]
+                if isinstance(item, dict)
+            ]
+            fields = [item for item in fields if item]
+            if fields:
+                parts.append("assumptions: " + ", ".join(fields))
+        autofix_actions = [str(item) for item in list(fix_summary.get("autofix_actions") or []) if str(item)]
+        if autofix_actions:
+            parts.append("fixes: " + ", ".join(autofix_actions[:2]))
+        if unresolved_categories:
+            parts.append("review: " + ", ".join(str(item) for item in unresolved_categories[:2]))
+        if blocked_exports or blocked_reasons:
+            parts.append("blocked: " + "; ".join(str(item) for item in (blocked_reasons[:2] or blocked_exports[:2])))
+        if parts:
+            return "Short version: " + ". ".join(parts) + "."
+        return "Short version: I don’t see any major blockers recorded right now, but I’d still review the current design before treating it as final."
+    if (
         "what assumptions" in lowered
         or "where did ai help" in lowered
         or "what did ai use" in lowered
@@ -921,6 +948,45 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         if trust_score is not None:
             return f"The current engineering trust score is {float(trust_score):.1f}. I’d still review the assumptions and any recorded warnings before treating it as final."
         return "I’d still treat it as something to review, not blindly trust, unless the blockers and review items are clear."
+    if (
+        "what are my options" in lowered
+        or "what are the options" in lowered
+        or "what can i do next" in lowered
+        or "give me options" in lowered
+    ):
+        options: List[str] = []
+        if blocked_exports or blocked_reasons:
+            options.append("clear the blockers first")
+        if unresolved_categories or issues or manual_failures:
+            options.append("review the open issues before changing more geometry")
+        if bool(context.get("has_plan")):
+            options.append("tell me one targeted design change to make next")
+            options.append("ask me for a short summary of assumptions and fixes")
+        if not options:
+            options.append("give me the next design direction or site constraint")
+        return "You can " + _format_missing_requirements(options[:4]) + "."
+    if (
+        "this looks wrong" in lowered
+        or "this is wrong" in lowered
+        or "that looks wrong" in lowered
+        or "that is wrong" in lowered
+        or "this doesn't make sense" in lowered
+        or "that doesn't make sense" in lowered
+        or "i don't like this" in lowered
+        or "i dont like this" in lowered
+    ):
+        if blocked_exports or blocked_reasons:
+            return "That’s fair. The strongest reason to distrust it right now is " + "; ".join(
+                str(item) for item in (blocked_reasons[:2] or blocked_exports[:2])
+            ) + ". If you want, tell me what feels off and I’ll focus there."
+        if unresolved_categories or issues or manual_failures:
+            focus = ", ".join(str(item) for item in unresolved_categories[:2])
+            if not focus:
+                messages = [str(item.get("message") or "").strip() for item in (manual_failures[:1] + issues[:1]) if isinstance(item, dict)]
+                focus = "; ".join(item for item in messages if item)
+            if focus:
+                return f"That may be because the weakest part right now is {focus}. Tell me what seems off and I’ll narrow it down."
+        return "Understood. Tell me what seems off to you and I’ll either explain it, review it, or revise that part of the design."
     if "what warnings" in lowered or "what issues" in lowered or "what's wrong" in lowered or "whats wrong" in lowered:
         messages = [str(item.get("message") or "").strip() for item in manual_failures[:2] if isinstance(item, dict)]
         messages += [str(item.get("message") or "").strip() for item in issues[:2] if isinstance(item, dict)]
