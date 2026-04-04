@@ -159,7 +159,9 @@ type PreviewResponse = {
       review_categories?: string[];
       blocked_exports?: string[];
       blocked_reasons?: string[];
+      requested_deliverables?: string[];
       produced_deliverables?: string[];
+      failed_deliverables?: string[];
     };
   };
 };
@@ -2604,7 +2606,7 @@ export default function PerformanceAIDashboard() {
               </div>
 
               {planPreviewSummary?.review && (
-                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                       Assumptions
@@ -2659,6 +2661,25 @@ export default function PerformanceAIDashboard() {
                       {(planPreviewSummary.review.blocked_reasons ?? [])
                         .slice(0, 2)
                         .join(", ") || "No export blockers recorded."}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Deliverables
+                    </p>
+                    <p className="mt-2 text-sm font-medium text-slate-900">
+                      {(planPreviewSummary.review.produced_deliverables ?? []).length}/
+                      {(planPreviewSummary.review.requested_deliverables ?? []).length ||
+                        (planPreviewSummary.review.produced_deliverables ?? []).length} ready
+                    </p>
+                    <p className="mt-1 text-xs text-slate-600">
+                      {(planPreviewSummary.review.failed_deliverables ?? []).length
+                        ? `Failed: ${(planPreviewSummary.review.failed_deliverables ?? [])
+                            .slice(0, 2)
+                            .join(", ")}`
+                        : (planPreviewSummary.review.produced_deliverables ?? [])
+                            .slice(0, 2)
+                            .join(", ") || "No deliverables recorded yet."}
                     </p>
                   </div>
                 </div>

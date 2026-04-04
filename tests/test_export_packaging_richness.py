@@ -149,6 +149,7 @@ class ExportPackagingRichnessTest(unittest.TestCase):
         self.assertTrue(any(row and row[0] == "DRAIN" and "CFS" in str(row[2]) for row in rows))
         self.assertTrue(any(row and row[0] == "BASIN" and "CF" in str(row[1]) for row in rows))
         self.assertTrue(any(row and row[0] == "UTIL" and "Sep" in str(row[1]) for row in rows))
+        self.assertTrue(any(row and row[0] == "DELIV" for row in rows))
         self.assertTrue(any("GRADING CONTROL" in note for note in notes))
         self.assertTrue(any("GRADED CONTROLS" in note for note in notes))
         self.assertTrue(any("SURFACE DRAINAGE GUIDANCE" in note for note in notes))
@@ -165,6 +166,7 @@ class ExportPackagingRichnessTest(unittest.TestCase):
         self.assertTrue(any("UTILITY COORDINATION" in note for note in notes))
         self.assertTrue(any("UTILITY CLEARANCE REVIEW" in note for note in notes))
         self.assertTrue(any("CONVERGENCE REVIEW" in note for note in notes))
+        self.assertTrue(any("DELIVERABLE REVIEW" in note for note in notes))
 
 
 if __name__ == "__main__":

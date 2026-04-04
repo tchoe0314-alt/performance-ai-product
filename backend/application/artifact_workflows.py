@@ -97,7 +97,9 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         "review_categories": unresolved_issue_categories,
         "blocked_exports": blocked_exports,
         "blocked_reasons": blocked_reasons,
+        "requested_deliverables": list(run_summary.get("requested_deliverables") or []),
         "produced_deliverables": list(run_summary.get("produced_deliverables") or []),
+        "failed_deliverables": list(run_summary.get("failed_deliverables") or []),
         "engineering_status": str((final_plan.get("meta") or {}).get("engineering_status") or ""),
     }
 

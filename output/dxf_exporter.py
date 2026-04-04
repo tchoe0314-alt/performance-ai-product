@@ -1322,6 +1322,7 @@ def _add_site_plan_layout(doc, plan: Dict[str, Any], actions: List[Dict[str, Any
 def _site_plan_summary_rows(plan: Dict[str, Any], actions: List[Dict[str, Any]]) -> List[List[str]]:
     meta = safe_dict(plan.get("meta"))
     stats = safe_dict(meta.get("stats"))
+    deliverables = safe_dict(meta.get("deliverables"))
     grading = safe_dict(meta.get("grading"))
     grading_controls = safe_dict(grading.get("surface_controls"))
     control_counts = safe_dict(grading_controls.get("control_counts"))
@@ -1400,11 +1401,21 @@ def _site_plan_summary_rows(plan: Dict[str, Any], actions: List[Dict[str, Any]])
             f"Grade LP {int(round(safe_num(surface_guidance.get('grading_low_point_count'))))}",
             target_name or f"Match {int(round(safe_num(surface_alignment.get('matched_low_points'))))}",
         ])
+    requested_count = len([item for item in safe_list(deliverables.get("requested")) if safe_text(item)])
+    produced_count = len([item for item in safe_list(deliverables.get("produced")) if safe_text(item)])
+    failed_count = len([item for item in safe_list(deliverables.get("failed")) if safe_text(item)])
+    if requested_count or produced_count or failed_count:
+        rows.append([
+            "DELIV",
+            f"{produced_count}/{requested_count or produced_count} ready",
+            f"{failed_count} failed" if failed_count else "release review",
+        ])
     return rows
 
 
 def _site_plan_drainage_guidance_notes(plan: Dict[str, Any]) -> List[str]:
     meta = safe_dict(plan.get("meta"))
+    deliverables = safe_dict(meta.get("deliverables"))
     grading = safe_dict(meta.get("grading"))
     drainage = safe_dict(meta.get("drainage"))
     drainage_stats = safe_dict(drainage.get("stats"))
@@ -1580,6 +1591,24 @@ def _site_plan_drainage_guidance_notes(plan: Dict[str, Any]) -> List[str]:
         if last_fix_actions:
             review_parts.append("LAST FIX " + "/".join(item.upper() for item in last_fix_actions[:2]))
         notes.append(f"22. CONVERGENCE REVIEW: {' / '.join(review_parts)}.")
+        requested = [safe_text(item, "") for item in safe_list(deliverables.get("requested")) if safe_text(item, "")]
+        produced = [safe_text(item, "") for item in safe_list(deliverables.get("produced")) if safe_text(item, "")]
+        failed = [safe_text(item, "") for item in safe_list(deliverables.get("failed")) if safe_text(item, "")]
+        blocked_exports = [safe_text(item, "") for item in safe_list(convergence.get("blocked_exports")) if safe_text(item, "")]
+        blocked_reasons = [safe_text(item, "") for item in safe_list(convergence.get("blocked_reasons")) if safe_text(item, "")]
+        deliverable_parts: List[str] = []
+        if requested:
+            deliverable_parts.append("REQ " + "/".join(item.upper() for item in requested[:4]))
+        if produced:
+            deliverable_parts.append("DONE " + "/".join(item.upper() for item in produced[:4]))
+        if failed:
+            deliverable_parts.append("FAIL " + "/".join(item.upper() for item in failed[:3]))
+        if blocked_exports:
+            deliverable_parts.append("BLOCK " + "/".join(item.upper() for item in blocked_exports[:3]))
+        if blocked_reasons:
+            deliverable_parts.append("WHY " + "/".join(item.upper() for item in blocked_reasons[:2]))
+        if deliverable_parts:
+            notes.append(f"23. DELIVERABLE REVIEW: {' / '.join(deliverable_parts)}.")
     return notes
 
 

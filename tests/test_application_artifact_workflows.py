@@ -103,7 +103,11 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
                             "blocked_exports": ["storm"],
                             "blocked_reasons": ["storm_graph_invalid"],
                         },
-                        "deliverables": {"produced": ["site_plan", "grading_plan"]},
+                        "deliverables": {
+                            "requested": ["site_plan", "grading_plan", "utility_plan"],
+                            "produced": ["site_plan", "grading_plan"],
+                            "failed": ["utility_plan"],
+                        },
                     },
                 },
             },
@@ -115,6 +119,9 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertEqual(review["assumption_count"], 2)
         self.assertEqual(review["autofix_actions"], ["storm_validation_retry"])
         self.assertEqual(review["blocked_reasons"], ["storm_graph_invalid"])
+        self.assertEqual(review["requested_deliverables"], ["site_plan", "grading_plan", "utility_plan"])
+        self.assertEqual(review["produced_deliverables"], ["site_plan", "grading_plan"])
+        self.assertEqual(review["failed_deliverables"], ["utility_plan"])
         self.assertEqual(service.preview_plan["project_name"], "Demo")
 
     def test_build_preview_response_respects_export_guard(self):
