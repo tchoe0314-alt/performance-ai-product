@@ -468,6 +468,45 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertIn("risks", result["assistant_message"])
         self.assertIn("storm_graph_invalid", result["assistant_message"])
 
+    def test_dont_forget_reply_uses_memory(self):
+        result = _decide(
+            "don't forget what I said about drainage",
+            {
+                "chat_thread": [
+                    {"role": "user", "content": "I care more about drainage than parking."},
+                ],
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("keeping these earlier instructions in mind", result["assistant_message"])
+        self.assertIn("drainage", result["assistant_message"])
+
+    def test_which_version_is_better_uses_priorities(self):
+        result = _decide(
+            "which version is better?",
+            {
+                "has_plan": True,
+                "chat_thread": [
+                    {"role": "user", "content": "I care more about drainage than parking."},
+                ],
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("Based on your priorities", result["assistant_message"])
+
+    def test_why_is_that_better_uses_review_pressure(self):
+        result = _decide(
+            "why is that better?",
+            {
+                "has_plan": True,
+                "convergence_summary": {
+                    "unresolved_issue_categories": ["storm coordination"],
+                },
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("fewer unresolved review items", result["assistant_message"])
+
 
 if __name__ == "__main__":
     unittest.main()

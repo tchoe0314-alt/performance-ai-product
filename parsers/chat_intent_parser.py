@@ -930,6 +930,15 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
             return "I’m keeping these constraints in mind: " + "; ".join(remembered_constraints[:3]) + "."
         return "I don’t have any explicit user constraints recorded yet beyond the current engineering blockers."
     if (
+        "don't forget" in lowered
+        or "dont forget" in lowered
+        or "remember what i said" in lowered
+        or "keep my original priorities" in lowered
+    ):
+        if remembered_examples:
+            return "I’ve still got it. I’m keeping these earlier instructions in mind: " + "; ".join(remembered_examples[:3]) + "."
+        return "I don’t see any earlier persistent rules recorded yet, so if something is especially important, tell me again and I’ll treat it as a standing instruction."
+    if (
         "what do you need from me" in lowered
         or "what do you need" in lowered
         or "what information do you need" in lowered
@@ -1036,6 +1045,39 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         if parts:
             return "Compared with the earlier state, " + ". ".join(parts) + "."
         return "I don’t have enough recorded change history to compare this to the earlier state yet."
+    if (
+        "which version is better" in lowered
+        or "which version do you think is better" in lowered
+        or "which one is better" in lowered
+        or "which approach is better" in lowered
+    ):
+        if blocked_exports or blocked_reasons:
+            return "The safer version is the one with fewer blockers. Right now I’d favor the current direction only if we can clear " + "; ".join(
+                str(item) for item in (blocked_reasons[:2] or blocked_exports[:2])
+            ) + "."
+        if unresolved_categories:
+            return "I’d favor the version with fewer open review items. Right now the biggest comparison pressure is in " + ", ".join(
+                str(item) for item in unresolved_categories[:2]
+            ) + "."
+        if remembered_preferences:
+            return "Based on your priorities, I’d favor the version that better respects " + "; ".join(remembered_preferences[:2]) + "."
+        return "I’d usually favor the version with fewer blockers, fewer review items, and fewer design assumptions."
+    if (
+        "why is that better" in lowered
+        or "why is it better" in lowered
+        or "why do you think that is better" in lowered
+    ):
+        if blocked_exports or blocked_reasons:
+            return "Because the stronger option is usually the one with fewer blockers, and right now the blocking pressure is " + "; ".join(
+                str(item) for item in (blocked_reasons[:2] or blocked_exports[:2])
+            ) + "."
+        if unresolved_categories:
+            return "Because I’d rather trust the version with fewer unresolved review items, especially around " + ", ".join(
+                str(item) for item in unresolved_categories[:2]
+            ) + "."
+        if remembered_preferences:
+            return "Because it fits the priorities you gave me better, especially " + "; ".join(remembered_preferences[:2]) + "."
+        return "Because I’d rather keep the version that is simpler, more stable, and less assumption-heavy."
     if "what needs review" in lowered or "what should i review" in lowered:
         review_items = [str(item) for item in unresolved_categories if str(item)]
         if manual_failures:
@@ -1726,6 +1768,9 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
                 "why did it block",
                 "why is export blocked",
                 "why did export fail",
+                "why is that better",
+                "why is it better",
+                "why do you think that is better",
             ]
         ):
             intent = "explain"
