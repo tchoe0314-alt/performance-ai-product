@@ -1213,6 +1213,11 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         or "what next" in lowered
         or "what would you do next" in lowered
         or "what do you recommend next" in lowered
+        or "what would you recommend here" in lowered
+        or "what's the smartest next move" in lowered
+        or "whats the smartest next move" in lowered
+        or "what is the smartest next move" in lowered
+        or "if you were me" in lowered
     ):
         if blocked_exports or blocked_reasons:
             return "I’d address the blockers first: " + "; ".join(
@@ -1231,6 +1236,28 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         if deliverables:
             return "The current design looks stable enough to review the deliverables and decide whether you want another revision."
         return "I’d give me the next design change you want, or ask me to explain the current assumptions and fixes."
+    if (
+        "what should i focus on" in lowered
+        or "what should we focus on" in lowered
+        or "what should i prioritize" in lowered
+        or "what should we prioritize" in lowered
+        or "what is the best option" in lowered
+        or "what's the best option" in lowered
+        or "whats the best option" in lowered
+    ):
+        if blocked_exports or blocked_reasons:
+            return "I’d focus first on clearing " + "; ".join(
+                str(item) for item in (blocked_reasons[:2] or blocked_exports[:2])
+            ) + " because that is what still blocks the strongest release-ready result."
+        if unresolved_categories:
+            return "I’d focus first on " + ", ".join(
+                str(item) for item in unresolved_categories[:2]
+            ) + " because that is where the current design still looks weakest."
+        if remembered_preferences:
+            return "Given your priorities, the best option is the one that keeps emphasizing " + "; ".join(
+                remembered_preferences[:2]
+            ) + "."
+        return "I’d focus on the cleanest next revision you care about most, then review the deliverables again before changing more things."
     if (
         "what are the tradeoffs" in lowered
         or "what tradeoffs" in lowered
@@ -1338,6 +1365,45 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
             if focus:
                 return f"That may be because the weakest part right now is {focus}. Tell me what seems off and I’ll narrow it down."
         return "Understood. Tell me what seems off to you and I’ll either explain it, review it, or revise that part of the design."
+    if (
+        "that doesn't help" in lowered
+        or "that doesnt help" in lowered
+        or "be more specific" in lowered
+        or "be specific" in lowered
+        or "rephrase that" in lowered
+        or "say that again" in lowered
+        or "make that simpler" in lowered
+        or lowered == "simpler"
+    ):
+        if blocked_exports or blocked_reasons:
+            return "In simple terms: the design is still blocked by " + "; ".join(
+                str(item) for item in (blocked_reasons[:2] or blocked_exports[:2])
+            ) + ". If you want, I can walk through one blocker at a time."
+        if unresolved_categories:
+            return "In simple terms: the main thing that still needs work is " + ", ".join(
+                str(item) for item in unresolved_categories[:2]
+            ) + "."
+        if assumptions:
+            fields = [
+                str(item.get("field_name") or item.get("field") or "an input").replace("_", " ")
+                for item in assumptions[:2]
+                if isinstance(item, dict)
+            ]
+            fields = [item for item in fields if item]
+            if fields:
+                return "In simple terms: I had to assume " + ", ".join(fields) + "."
+        return "In simple terms: tell me what you want to change, and I’ll focus just on that."
+    if (
+        "i disagree" in lowered
+        or "you're wrong" in lowered
+        or "you are wrong" in lowered
+    ):
+        if blocked_exports or blocked_reasons or unresolved_categories:
+            focus = "; ".join(str(item) for item in (blocked_reasons[:2] or blocked_exports[:2])) or ", ".join(
+                str(item) for item in unresolved_categories[:2]
+            )
+            return "Fair enough. The weakest part I’d revisit first is " + focus + ". Tell me what you disagree with and I’ll focus there."
+        return "Fair enough. Tell me what you think is wrong, and I’ll either explain it more clearly or revise that part of the design."
     if "what warnings" in lowered or "what issues" in lowered or "what's wrong" in lowered or "whats wrong" in lowered:
         messages = [str(item.get("message") or "").strip() for item in manual_failures[:2] if isinstance(item, dict)]
         messages += [str(item.get("message") or "").strip() for item in issues[:2] if isinstance(item, dict)]

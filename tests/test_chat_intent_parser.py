@@ -543,6 +543,61 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertIn("storm coordination", result["assistant_message"])
         self.assertIn("parking count", result["assistant_message"])
 
+    def test_recommendation_question_uses_blocked_state(self):
+        result = _decide(
+            "what would you recommend here?",
+            {
+                "has_plan": True,
+                "convergence_summary": {
+                    "blocked_reasons": ["storm_graph_invalid"],
+                },
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("address the blockers first", result["assistant_message"])
+
+    def test_focus_question_uses_priorities_when_no_blockers(self):
+        result = _decide(
+            "what should i focus on?",
+            {
+                "has_plan": True,
+                "chat_thread": [
+                    {"role": "user", "content": "I care more about drainage than parking."},
+                ],
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("Given your priorities", result["assistant_message"])
+        self.assertIn("drainage", result["assistant_message"])
+
+    def test_simpler_reply_uses_blocked_state(self):
+        result = _decide(
+            "that doesn't help",
+            {
+                "has_plan": True,
+                "convergence_summary": {
+                    "blocked_reasons": ["storm_graph_invalid"],
+                },
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("In simple terms", result["assistant_message"])
+        self.assertIn("storm_graph_invalid", result["assistant_message"])
+
+    def test_disagreement_reply_points_to_weakest_area(self):
+        result = _decide(
+            "you're wrong",
+            {
+                "has_plan": True,
+                "convergence_summary": {
+                    "unresolved_issue_categories": ["storm coordination"],
+                },
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("weakest part", result["assistant_message"])
+        self.assertIn("storm coordination", result["assistant_message"])
+
 
 if __name__ == "__main__":
     unittest.main()
