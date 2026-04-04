@@ -167,6 +167,7 @@ class ExportPackagingRichnessTest(unittest.TestCase):
         self.assertTrue(any("UTILITY CLEARANCE REVIEW" in note for note in notes))
         self.assertTrue(any("CONVERGENCE REVIEW" in note for note in notes))
         self.assertTrue(any("DELIVERABLE REVIEW" in note for note in notes))
+        self.assertTrue(any("RELEASE READINESS" in note for note in notes))
 
 
 if __name__ == "__main__":

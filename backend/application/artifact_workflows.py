@@ -72,6 +72,18 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         for item in list(convergence.get("blocked_reasons") or [])
         if str(item)
     ]
+    requested_deliverables = list(run_summary.get("requested_deliverables") or [])
+    produced_deliverables = list(run_summary.get("produced_deliverables") or [])
+    failed_deliverables = list(run_summary.get("failed_deliverables") or [])
+    if blocked_exports or blocked_reasons or failed_deliverables:
+        release_status = "blocked"
+        release_note = "Blocked until outstanding export issues are resolved."
+    elif bool(convergence.get("converged")) and int(convergence.get("unresolved_conflict_count") or 0) == 0:
+        release_status = "ready"
+        release_note = "Release-ready engineering state."
+    else:
+        release_status = "review"
+        release_note = "Needs engineering review before release."
     return {
         "trust_score": float(engineering.get("trust_score") or 0.0),
         "converged": bool(convergence.get("converged")),
@@ -97,9 +109,11 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         "review_categories": unresolved_issue_categories,
         "blocked_exports": blocked_exports,
         "blocked_reasons": blocked_reasons,
-        "requested_deliverables": list(run_summary.get("requested_deliverables") or []),
-        "produced_deliverables": list(run_summary.get("produced_deliverables") or []),
-        "failed_deliverables": list(run_summary.get("failed_deliverables") or []),
+        "requested_deliverables": requested_deliverables,
+        "produced_deliverables": produced_deliverables,
+        "failed_deliverables": failed_deliverables,
+        "release_status": release_status,
+        "release_note": release_note,
         "engineering_status": str((final_plan.get("meta") or {}).get("engineering_status") or ""),
     }
 

@@ -122,6 +122,8 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertEqual(review["requested_deliverables"], ["site_plan", "grading_plan", "utility_plan"])
         self.assertEqual(review["produced_deliverables"], ["site_plan", "grading_plan"])
         self.assertEqual(review["failed_deliverables"], ["utility_plan"])
+        self.assertEqual(review["release_status"], "blocked")
+        self.assertIn("Blocked", review["release_note"])
         self.assertEqual(service.preview_plan["project_name"], "Demo")
 
     def test_build_preview_response_respects_export_guard(self):

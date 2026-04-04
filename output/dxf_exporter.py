@@ -1609,6 +1609,16 @@ def _site_plan_drainage_guidance_notes(plan: Dict[str, Any]) -> List[str]:
             deliverable_parts.append("WHY " + "/".join(item.upper() for item in blocked_reasons[:2]))
         if deliverable_parts:
             notes.append(f"23. DELIVERABLE REVIEW: {' / '.join(deliverable_parts)}.")
+        if blocked_exports or blocked_reasons or failed:
+            release_status = "BLOCKED"
+            release_note = "RESOLVE BLOCKED EXPORTS BEFORE RELEASE"
+        elif bool(convergence.get("converged")) and int(round(safe_num(convergence.get("unresolved_conflict_count")))) == 0:
+            release_status = "READY"
+            release_note = "CONVERGED WITH NO OPEN CONFLICTS"
+        else:
+            release_status = "REVIEW"
+            release_note = "ENGINEERING REVIEW REQUIRED BEFORE RELEASE"
+        notes.append(f"24. RELEASE READINESS: {release_status} / {release_note}.")
     return notes
 
 

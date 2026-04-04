@@ -162,6 +162,8 @@ type PreviewResponse = {
       requested_deliverables?: string[];
       produced_deliverables?: string[];
       failed_deliverables?: string[];
+      release_status?: "ready" | "review" | "blocked" | string;
+      release_note?: string;
     };
   };
 };
@@ -2604,6 +2606,30 @@ export default function PerformanceAIDashboard() {
                     : "review needed"}
                 </Pill>
               </div>
+
+              {planPreviewSummary?.review && (
+                <div
+                  className={`mt-4 rounded-2xl border px-4 py-3 text-sm ${
+                    planPreviewSummary.review.release_status === "ready"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                      : planPreviewSummary.review.release_status === "blocked"
+                        ? "border-amber-200 bg-amber-50 text-amber-900"
+                        : "border-slate-200 bg-slate-50 text-slate-700"
+                  }`}
+                >
+                  <p className="font-semibold">
+                    {planPreviewSummary.review.release_status === "ready"
+                      ? "Release Review: Ready"
+                      : planPreviewSummary.review.release_status === "blocked"
+                        ? "Release Review: Blocked"
+                        : "Release Review: Needs Review"}
+                  </p>
+                  <p className="mt-1 text-xs">
+                    {planPreviewSummary.review.release_note ||
+                      "Preview review summary is available for the latest engineering pass."}
+                  </p>
+                </div>
+              )}
 
               {planPreviewSummary?.review && (
                 <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
