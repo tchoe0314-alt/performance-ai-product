@@ -132,6 +132,9 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertEqual(review["rerun_reasons"], ["storm_validation_retry", "utility_validation_retry"])
         self.assertEqual(review["release_status"], "blocked")
         self.assertIn("Blocked", review["release_note"])
+        self.assertEqual(review["reliability"]["operational_state"], "retryable")
+        self.assertEqual(review["reliability"]["primary_attention"], "storm_graph_invalid")
+        self.assertEqual(review["reliability"]["blocked_export_count"], 1)
         self.assertEqual(service.preview_plan["project_name"], "Demo")
 
     def test_build_preview_response_respects_export_guard(self):
@@ -224,6 +227,7 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertEqual(service.report_export["stem"], "demo-report")
         release_review = service.report_export["result_data"]["request_metadata"]["release_review"]
         self.assertEqual(release_review["release_status"], "ready")
+        self.assertEqual(release_review["reliability"]["operational_state"], "ready")
         self.assertEqual(release_review["requested_deliverables"], ["site_plan", "report"])
         self.assertEqual(
             store.saved_payload["metadata"]["workflow"]["artifacts"][0]["kind"],

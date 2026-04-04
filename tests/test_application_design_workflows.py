@@ -128,6 +128,13 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertTrue(summary["convergence_summary"]["pass_history"][0]["fix_attempted"])
         self.assertEqual(summary["convergence_summary"]["dominant_issue_categories"], ["drainage", "pipes"])
         self.assertEqual(summary["convergence_summary"]["last_fix_attempt"]["primary_target"], "drainage")
+        self.assertTrue(summary["reliability_summary"]["retryable"])
+        self.assertFalse(summary["reliability_summary"]["release_ready"])
+        self.assertEqual(summary["reliability_summary"]["operational_state"], "retryable")
+        self.assertEqual(summary["reliability_summary"]["persistence_scope"], "ephemeral")
+        self.assertEqual(summary["reliability_summary"]["primary_attention"], "storm_hydraulics_invalid")
+        self.assertEqual(summary["reliability_summary"]["blocked_export_count"], 1)
+        self.assertEqual(summary["reliability_summary"]["trace"]["run_id"], "run_123")
 
     def test_final_plan_from_result_blocks_unstable_storm_export(self):
         with self.assertRaises(HTTPException) as ctx:

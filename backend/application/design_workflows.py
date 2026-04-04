@@ -133,16 +133,49 @@ def build_run_summary(
     stage_completeness = dict(plan_meta.get("stage_completeness") or {})
     coordination = dict(plan_meta.get("coordination") or {})
     convergence = dict(plan_meta.get("convergence_summary") or {})
+    run_id = metadata.get("_workflow_run_id") or new_workflow_id("run")
+    created_at = now_ts()
+    blocked_exports = list(convergence.get("blocked_exports") or [])
+    blocked_reasons = list(convergence.get("blocked_reasons") or [])
+    unresolved_conflict_count = int(convergence.get("unresolved_conflict_count") or 0)
+    failed_deliverables = list(deliverables.get("failed") or [])
+    success = bool(result_data.get("success"))
+    converged = bool(convergence.get("converged"))
+    warning_count = len(list(result_data.get("warnings") or []))
+    error_count = len(list(result_data.get("errors") or []))
+    manual_failures = [
+        {
+            "code": item.get("code"),
+            "message": item.get("message"),
+            "system": item.get("system"),
+            "rule": item.get("rule"),
+            "location": item.get("location"),
+            "reason": item.get("reason"),
+        }
+        for item in list(manual_validation.get("failures") or [])
+    ]
+    release_ready = success and converged and unresolved_conflict_count == 0 and not blocked_exports and not blocked_reasons and not failed_deliverables
+    retryable = not release_ready and (not success or bool(blocked_exports or blocked_reasons or unresolved_conflict_count or error_count or manual_failures))
+    primary_attention = (
+        (blocked_reasons[:1] or blocked_exports[:1] or list(convergence.get("unresolved_issue_categories") or [])[:1] or failed_deliverables[:1] or [None])[0]
+    )
+    persistence_scope = "ephemeral"
+    if project_id and job_id:
+        persistence_scope = "project_and_job"
+    elif project_id:
+        persistence_scope = "project"
+    elif job_id:
+        persistence_scope = "job"
 
     return {
-        "run_id": metadata.get("_workflow_run_id") or new_workflow_id("run"),
+        "run_id": run_id,
         "project_id": project_id,
         "job_id": job_id,
         "source": source,
-        "created_at": now_ts(),
+        "created_at": created_at,
         "input_mode": metadata.get("input_mode") or dict(result_data.get("parsed_payload") or {}).get("input_mode"),
         "strict_mode": bool(dict(result_data.get("parsed_payload") or {}).get("strict_mode", False)),
-        "success": bool(result_data.get("success")),
+        "success": success,
         "message": str(result_data.get("message") or ""),
         "engineering_status": {
             "success": bool(engineering.get("success")),
@@ -153,18 +186,8 @@ def build_run_summary(
         "all_required_complete": bool(stage_completeness.get("all_required_complete")),
         "requested_deliverables": list(deliverables.get("requested") or []),
         "produced_deliverables": list(deliverables.get("produced") or []),
-        "failed_deliverables": list(deliverables.get("failed") or []),
-        "manual_failures": [
-            {
-                "code": item.get("code"),
-                "message": item.get("message"),
-                "system": item.get("system"),
-                "rule": item.get("rule"),
-                "location": item.get("location"),
-                "reason": item.get("reason"),
-            }
-            for item in list(manual_validation.get("failures") or [])
-        ],
+        "failed_deliverables": failed_deliverables,
+        "manual_failures": manual_failures,
         "stage_summary": {
             "all_required_complete": bool(stage_completeness.get("all_required_complete")),
             "required_stage_count": int(stage_completeness.get("required_stage_count") or 0),
@@ -176,25 +199,45 @@ def build_run_summary(
             "selected_strategy": coordination.get("selected_group_strategy") or "none",
         },
         "convergence_summary": {
-            "converged": bool(convergence.get("converged")),
+            "converged": converged,
             "passes_run": int(convergence.get("passes_run") or 0),
             "max_passes": int(convergence.get("max_passes") or 0),
             "warning_count": int(convergence.get("warning_count") or 0),
             "error_count": int(convergence.get("error_count") or 0),
-            "unresolved_conflict_count": int(convergence.get("unresolved_conflict_count") or 0),
+            "unresolved_conflict_count": unresolved_conflict_count,
             "assumption_summary": dict(convergence.get("assumption_summary") or {}),
             "unresolved_issue_categories": list(convergence.get("unresolved_issue_categories") or []),
             "qa_issue_categories": list(convergence.get("qa_issue_categories") or []),
             "rerun_summary": dict(convergence.get("rerun_summary") or {}),
-            "blocked_exports": list(convergence.get("blocked_exports") or []),
-            "blocked_reasons": list(convergence.get("blocked_reasons") or []),
+            "blocked_exports": blocked_exports,
+            "blocked_reasons": blocked_reasons,
             "pass_history": list(convergence.get("pass_history") or []),
             "fix_summary": dict(convergence.get("fix_summary") or {}),
             "dominant_issue_categories": list(dict(convergence.get("fix_summary") or {}).get("dominant_issue_categories") or []),
             "last_fix_attempt": dict(dict(convergence.get("fix_summary") or {}).get("last_fix_attempt") or {}),
         },
-        "warning_count": len(list(result_data.get("warnings") or [])),
-        "error_count": len(list(result_data.get("errors") or [])),
+        "reliability_summary": {
+            "release_ready": release_ready,
+            "retryable": retryable,
+            "operational_state": "ready" if release_ready else ("retryable" if retryable else "review"),
+            "persistence_scope": persistence_scope,
+            "project_bound": bool(project_id),
+            "job_bound": bool(job_id),
+            "primary_attention": str(primary_attention or ""),
+            "blocked_export_count": len(blocked_exports),
+            "failed_deliverable_count": len(failed_deliverables),
+            "manual_failure_count": len(manual_failures),
+            "unresolved_conflict_count": unresolved_conflict_count,
+            "trace": {
+                "run_id": run_id,
+                "project_id": project_id,
+                "job_id": job_id,
+                "source": source,
+                "created_at": created_at,
+            },
+        },
+        "warning_count": warning_count,
+        "error_count": error_count,
     }
 
 
