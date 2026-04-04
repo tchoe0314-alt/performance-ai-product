@@ -2,9 +2,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from base64 import b64encode
-import mimetypes
-import shutil
 import time
 import uuid
 from typing import Any, Dict, List, Optional
@@ -15,6 +12,46 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from parsers.chat_intent_parser import assess_design_readiness, decide_chat_message
+from backend.application.design_workflows import (
+    build_run_summary as application_build_run_summary,
+    count_unresolved_conflicts as application_count_unresolved_conflicts,
+    final_plan_from_result as application_final_plan_from_result,
+    run_orchestration as application_run_orchestration,
+)
+from backend.application.artifact_workflows import (
+    build_preview_response as application_build_preview_response,
+    export_dxf_artifact as application_export_dxf_artifact,
+    export_report_artifact as application_export_report_artifact,
+)
+from backend.application.auth_workflows import (
+    auth_status as application_auth_status,
+    current_user_response as application_current_user_response,
+    login_user as application_login_user,
+    logout_user as application_logout_user,
+    register_user as application_register_user,
+)
+from backend.application.chat_workflows import decide_chat as application_decide_chat
+from backend.application.file_workflows import (
+    download_artifact_response as application_download_artifact_response,
+    get_uploaded_image_response as application_get_uploaded_image_response,
+    upload_image_file as application_upload_image_file,
+)
+from backend.application.health_workflows import health_response as application_health_response
+from backend.application.job_workflows import (
+    build_orchestrate_job_runner as application_build_orchestrate_job_runner,
+    queue_orchestrate_job as application_queue_orchestrate_job,
+)
+from backend.application.project_workflows import (
+    artifact_summary as application_artifact_summary,
+    delete_project_record as application_delete_project_record,
+    get_project_detail as application_get_project_detail,
+    list_projects as application_list_projects,
+    merge_project_metadata as application_merge_project_metadata,
+    result_from_payload as application_result_from_payload,
+    save_project_record as application_save_project_record,
+    save_project_workflow_update as application_save_project_workflow_update,
+)
+from backend.application.session_workflows import maybe_export_session as application_maybe_export_session
 from backend.services.artifact_service import ArtifactService
 from backend.services.auth_store import AuthStore
 from backend.services.database import Database
@@ -152,13 +189,10 @@ def _model_to_dict(model: Any) -> Dict[str, Any]:
 
 
 def _maybe_export_session(session_id: Optional[str]) -> Dict[str, Any]:
-    if not session_id or session_state_mod is None:
-        return {}
-    try:
-        exported = session_state_mod.export_session_state(session_id)
-        return exported if isinstance(exported, dict) else {}
-    except Exception:
-        return {}
+    return application_maybe_export_session(
+        session_id,
+        export_session_state=(session_state_mod.export_session_state if session_state_mod is not None else None),
+    )
 
 
 def _bearer_token(authorization: Optional[str]) -> str:
@@ -177,114 +211,20 @@ def get_current_user(authorization: Optional[str] = Header(default=None)) -> Dic
 
 
 def _run_orchestration(payload_data: Dict[str, Any]) -> Dict[str, Any]:
-    PlannerOrchestratorRequest, orchestrate_plan = _load_orchestrator()
-
-    req = PlannerOrchestratorRequest(
-        input_mode=payload_data.get("input_mode", "assisted"),
-        strict_mode=bool(payload_data.get("strict_mode", False)),
-        prompt_text=payload_data.get("prompt_text"),
-        image_path=payload_data.get("image_path"),
-        manual_fields=dict(payload_data.get("manual_fields") or {}),
-        image_width_px=payload_data.get("image_width_px"),
-        image_height_px=payload_data.get("image_height_px"),
-        pixels_per_unit=payload_data.get("pixels_per_unit"),
-        plan_type_hint=payload_data.get("plan_type_hint"),
-        units=payload_data.get("units", "ft"),
-        allow_ai_fill_for_blanks=bool(payload_data.get("allow_ai_fill_for_blanks", True)),
-        persist_trace_metadata=bool(payload_data.get("persist_trace_metadata", True)),
-        meta=dict(payload_data.get("meta") or {}),
+    return application_run_orchestration(
+        payload_data,
+        load_orchestrator=_load_orchestrator,
+        assess_design_readiness=assess_design_readiness,
     )
 
-    if str(req.input_mode or "assisted").strip().lower() == "manual" and str(req.prompt_text or "").strip():
-        readiness_issue = assess_design_readiness(
-            str(req.prompt_text),
-            {
-                "strategy_mode": "manual",
-                "project_type": (req.manual_fields or {}).get("project_type") or (req.meta or {}).get("project_type"),
-                "lot_width": ((req.manual_fields or {}).get("lot") or {}).get("w"),
-                "lot_height": ((req.manual_fields or {}).get("lot") or {}).get("h"),
-                "parking_count": ((req.manual_fields or {}).get("site_plan") or {}).get("parking_count"),
-                "disciplines": {
-                    "roads": bool((req.manual_fields or {}).get("roads")) or bool((req.meta or {}).get("include_roads")),
-                    "grading": bool((req.manual_fields or {}).get("grading")) or bool((req.meta or {}).get("include_grading")),
-                    "drainage": bool((req.manual_fields or {}).get("drainage")) or bool((req.meta or {}).get("include_drainage")),
-                    "utilities": bool((req.manual_fields or {}).get("utility_network")) or bool((req.meta or {}).get("include_utilities")),
-                },
-            },
-        )
-        if readiness_issue:
-            return {
-                "success": False,
-                "message": str(readiness_issue.get("assistant_message") or "Manual mode needs more information before design can start."),
-                "parsed_payload": dict(payload_data),
-                "final_plan": {},
-                "warnings": [],
-                "errors": [str(readiness_issue.get("reason") or "Minimum engineering design context is incomplete")],
-                "issues": [],
-                "assumptions": [],
-                "metadata": {
-                    "_workflow_run_id": _new_workflow_id("run"),
-                    "input_mode": payload_data.get("input_mode", "manual"),
-                    "needs_clarification": True,
-                    "clarification_reason": readiness_issue.get("reason"),
-                    "missing_requirements": list(readiness_issue.get("missing_requirements") or []),
-                },
-            }
-
-    result = orchestrate_plan(req)
-    result_payload = {
-        "success": result.success,
-        "message": result.message,
-        "parsed_payload": result.parsed_payload,
-        "final_plan": result.final_plan,
-        "warnings": result.warnings,
-        "errors": result.errors,
-        "issues": [
-            {
-                "code": issue.code,
-                "severity": issue.severity,
-                "message": issue.message,
-                "context": issue.context,
-            }
-            for issue in result.issues
-        ],
-        "assumptions": [
-            {
-                "field_name": assumption.field_name,
-                "assumed_value": assumption.assumed_value,
-                "reason": assumption.reason,
-            }
-            for assumption in result.assumptions
-        ],
-        "metadata": dict(result.metadata or {}),
-    }
-    result_payload["metadata"].setdefault("_workflow_run_id", _new_workflow_id("run"))
-    result_payload["metadata"].setdefault("input_mode", payload_data.get("input_mode", "assisted"))
-    return result_payload
-
-
-
-
 def _result_from_payload(current_user: Dict[str, Any], payload: ArtifactPayload) -> Dict[str, Any]:
-    if payload.project_id:
-        project = PROJECT_STORE.get_project(
-            user_id=current_user["user_id"],
-            project_id=payload.project_id,
-        )
-        if project is None:
-            raise HTTPException(status_code=404, detail="Project not found.")
-        result_data = dict(project.get("latest_result") or {})
-        if not result_data:
-            raise HTTPException(status_code=400, detail="Selected project has no saved planner result.")
-        return result_data
-
-    if payload.result:
-        return dict(payload.result)
-
-    if payload.final_plan:
-        return {"final_plan": dict(payload.final_plan)}
-
-    raise HTTPException(status_code=400, detail="No plan or result payload was provided.")
+    return application_result_from_payload(
+        project_store=PROJECT_STORE,
+        user_id=current_user["user_id"],
+        project_id=payload.project_id,
+        result=dict(payload.result or {}),
+        final_plan=dict(payload.final_plan or {}),
+    )
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -305,12 +245,7 @@ def _new_workflow_id(prefix: str) -> str:
 
 
 def _count_unresolved_conflicts(final_plan: Dict[str, Any]) -> int:
-    meta = dict(final_plan.get("meta") or {})
-    coordination = dict(meta.get("coordination") or {})
-    unresolved = coordination.get("unresolved_conflicts") or []
-    if isinstance(unresolved, int):
-        return int(unresolved)
-    return len(unresolved)
+    return application_count_unresolved_conflicts(final_plan)
 
 
 def _build_run_summary(
@@ -320,60 +255,12 @@ def _build_run_summary(
     project_id: Optional[str] = None,
     job_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    metadata = dict(result_data.get("metadata") or {})
-    final_plan = dict(result_data.get("final_plan") or {})
-    plan_meta = dict(final_plan.get("meta") or {})
-    deliverables = dict(plan_meta.get("deliverables") or {})
-    engineering = dict(plan_meta.get("engineering_status") or {})
-    truth = dict(plan_meta.get("truth_audit") or {})
-    manual_validation = dict(plan_meta.get("manual_validation") or {})
-    stage_completeness = dict(plan_meta.get("stage_completeness") or {})
-    coordination = dict(plan_meta.get("coordination") or {})
-
-    return {
-        "run_id": metadata.get("_workflow_run_id") or _new_workflow_id("run"),
-        "project_id": project_id,
-        "job_id": job_id,
-        "source": source,
-        "created_at": _now_ts(),
-        "input_mode": metadata.get("input_mode") or dict(result_data.get("parsed_payload") or {}).get("input_mode"),
-        "strict_mode": bool(dict(result_data.get("parsed_payload") or {}).get("strict_mode", False)),
-        "success": bool(result_data.get("success")),
-        "message": str(result_data.get("message") or ""),
-        "engineering_status": {
-            "success": bool(engineering.get("success")),
-            "status": str(engineering.get("status") or ""),
-            "trust_score": float(engineering.get("engineering_trust_score") or truth.get("engineering_trust_score") or 0.0),
-        },
-        "truth_success": bool(truth.get("success")),
-        "all_required_complete": bool(stage_completeness.get("all_required_complete")),
-        "requested_deliverables": list(deliverables.get("requested") or []),
-        "produced_deliverables": list(deliverables.get("produced") or []),
-        "failed_deliverables": list(deliverables.get("failed") or []),
-        "manual_failures": [
-            {
-                "code": item.get("code"),
-                "message": item.get("message"),
-                "system": item.get("system"),
-                "rule": item.get("rule"),
-                "location": item.get("location"),
-                "reason": item.get("reason"),
-            }
-            for item in list(manual_validation.get("failures") or [])
-        ],
-        "stage_summary": {
-            "all_required_complete": bool(stage_completeness.get("all_required_complete")),
-            "required_stage_count": int(stage_completeness.get("required_stage_count") or 0),
-            "complete_stage_count": int(stage_completeness.get("complete_stage_count") or 0),
-            "statuses": dict(stage_completeness.get("statuses") or {}),
-        },
-        "coordination_summary": {
-            "unresolved_conflicts": _count_unresolved_conflicts(final_plan),
-            "selected_strategy": coordination.get("selected_group_strategy") or "none",
-        },
-        "warning_count": len(list(result_data.get("warnings") or [])),
-        "error_count": len(list(result_data.get("errors") or [])),
-    }
+    return application_build_run_summary(
+        result_data,
+        source=source,
+        project_id=project_id,
+        job_id=job_id,
+    )
 
 
 def _merge_project_metadata(
@@ -382,27 +269,11 @@ def _merge_project_metadata(
     run_summary: Optional[Dict[str, Any]] = None,
     artifact_summary: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    metadata = dict(existing_metadata or {})
-    workflow = dict(metadata.get("workflow") or {})
-    runs = [dict(item) for item in list(workflow.get("runs") or []) if isinstance(item, dict)]
-    artifacts = [dict(item) for item in list(workflow.get("artifacts") or []) if isinstance(item, dict)]
-
-    if run_summary:
-        run_id = str(run_summary.get("run_id") or "")
-        runs = [item for item in runs if str(item.get("run_id") or "") != run_id]
-        runs.insert(0, dict(run_summary))
-        runs = runs[:20]
-
-    if artifact_summary:
-        artifact_id = str(artifact_summary.get("artifact_id") or "")
-        artifacts = [item for item in artifacts if str(item.get("artifact_id") or "") != artifact_id]
-        artifacts.insert(0, dict(artifact_summary))
-        artifacts = artifacts[:40]
-
-    workflow["runs"] = runs
-    workflow["artifacts"] = artifacts
-    metadata["workflow"] = workflow
-    return metadata
+    return application_merge_project_metadata(
+        existing_metadata,
+        run_summary=run_summary,
+        artifact_summary=artifact_summary,
+    )
 
 
 def _save_project_workflow_update(
@@ -412,25 +283,12 @@ def _save_project_workflow_update(
     run_summary: Optional[Dict[str, Any]] = None,
     artifact_summary: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
-    existing = PROJECT_STORE.get_project(user_id=user_id, project_id=project_id)
-    if existing is None:
-        return None
-    metadata = _merge_project_metadata(
-        dict(existing.get("metadata") or {}),
-        run_summary=run_summary,
-        artifact_summary=artifact_summary,
-    )
-    return PROJECT_STORE.save_project(
+    return application_save_project_workflow_update(
+        project_store=PROJECT_STORE,
         user_id=user_id,
         project_id=project_id,
-        name=existing.get("name", "Untitled Project"),
-        description=existing.get("description", ""),
-        session_id=existing.get("session_id"),
-        tags=existing.get("tags", []),
-        project_input=existing.get("project_input", {}),
-        latest_result=existing.get("latest_result", {}),
-        session_state=existing.get("session_state", {}),
-        metadata=metadata,
+        run_summary=run_summary,
+        artifact_summary=artifact_summary,
     )
 
 
@@ -441,183 +299,29 @@ def _artifact_summary(
     project_id: Optional[str],
     result_data: Dict[str, Any],
 ) -> Dict[str, Any]:
-    final_plan = dict(result_data.get("final_plan") or {})
-    return {
-        "artifact_id": _new_workflow_id("artifact"),
-        "kind": artifact_kind,
-        "project_id": project_id,
-        "filename": path.name,
-        "created_at": _now_ts(),
-        "project_name": str(final_plan.get("project_name") or "Generated Plan"),
-        "download_path": f"/api/artifacts/{path.name}",
-    }
-
-
-def _build_drawable_fallback_plan(result_data: Dict[str, Any]) -> Dict[str, Any]:
-    parsed_payload = dict(result_data.get("parsed_payload") or {})
-    manual_fields = dict(parsed_payload.get("manual_fields") or {})
-    site_plan = dict(manual_fields.get("site_plan") or {})
-    lot = dict(manual_fields.get("lot") or parsed_payload.get("lot") or {})
-
-    lot_x = _safe_float(lot.get("x"), 0.0)
-    lot_y = _safe_float(lot.get("y"), 0.0)
-    lot_w = _safe_float(lot.get("w"), 0.0)
-    lot_h = _safe_float(lot.get("h"), 0.0)
-    setback = max(_safe_float(manual_fields.get("setback"), 10.0), 0.0)
-
-    actions: List[Dict[str, Any]] = []
-
-    if lot_w > 0 and lot_h > 0:
-        actions.append(
-            {
-                "task": "rectangle",
-                "origin": (lot_x, lot_y),
-                "width": lot_w,
-                "height": lot_h,
-                "label": "LOT",
-                "layer": "SITE",
-            }
-        )
-
-        building_w = min(
-            max(_safe_float(manual_fields.get("building_width"), 48.0), 12.0),
-            max(lot_w - setback * 2, 12.0),
-        )
-        building_h = min(
-            max(_safe_float(manual_fields.get("building_depth"), 34.0), 12.0),
-            max(lot_h - setback * 2, 12.0),
-        )
-        building_x = lot_x + max((lot_w - building_w) / 2.0, setback)
-        building_y = lot_y + max((lot_h - building_h) / 2.0, setback)
-        actions.append(
-            {
-                "task": "rectangle",
-                "origin": (building_x, building_y),
-                "width": building_w,
-                "height": building_h,
-                "label": "BLDG",
-                "layer": "BUILDING",
-            }
-        )
-
-        parking_count = max(_safe_float(site_plan.get("parking_count"), 0.0), 0.0)
-        if parking_count > 0:
-            stall_area = parking_count * 162.0
-            parking_w = min(max(lot_w - setback * 2, 18.0), max(building_w * 1.2, 24.0))
-            parking_h = min(max(stall_area / max(parking_w, 1.0), 18.0), max(lot_h * 0.28, 18.0))
-            actions.append(
-                {
-                    "task": "rectangle",
-                    "origin": (lot_x + setback, lot_y + setback),
-                    "width": parking_w,
-                    "height": parking_h,
-                    "label": f"PARK {int(parking_count)}",
-                    "layer": "PAVEMENT",
-                }
-            )
-
-        actions.append(
-            {
-                "task": "text_note",
-                "origin": (lot_x, lot_y + lot_h + max(setback * 0.5, 4.0)),
-                "text": "Fallback preview generated from structured inputs.",
-                "text_height": 1.0,
-                "layer": "ANNO",
-            }
-        )
-
-    return {
-        "project_name": manual_fields.get("project_name")
-        or parsed_payload.get("project_name")
-        or "Generated Plan",
-        "units": manual_fields.get("units") or parsed_payload.get("units") or "ft",
-        "actions": actions,
-        "assumptions": [
-            "Preview/export used fallback geometry because the planner result did not include drawable actions."
-        ],
-    }
+    return application_artifact_summary(
+        path=path,
+        artifact_kind=artifact_kind,
+        project_id=project_id,
+        result_data=result_data,
+    )
 
 
 def _final_plan_from_result(result_data: Dict[str, Any]) -> Dict[str, Any]:
-    final_plan = dict(result_data.get("final_plan") or result_data)
-    actions = final_plan.get("actions")
-    if isinstance(actions, list) and actions:
-        meta = dict(final_plan.get("meta") or {})
-        drainage = dict(meta.get("drainage") or {})
-        storm = dict(meta.get("storm_pipes") or {})
-        deliverables = dict(meta.get("deliverables") or {})
-        produced = {str(item).lower() for item in list(deliverables.get("produced") or [])}
-        requested = {str(item).lower() for item in list(deliverables.get("requested") or [])}
-        engineering_layers = {
-            str(dict(action).get("layer") or "").upper()
-            for action in actions
-            if isinstance(action, dict)
-        }
-        needs_storm_truth = bool(
-            engineering_layers.intersection({"PIPE", "DRAIN", "BASIN_BOUNDARY", "STRUCTURE"})
-            or any(any(token in item for token in ("storm", "drain", "basin", "inlet")) for item in produced | requested)
-        )
-        drainage_export = dict(drainage.get("export_validation") or {})
-        storm_ready = bool(dict(storm.get("graph_validation") or {}).get("valid", False)) and bool(
-            dict(storm.get("hydraulic_validation") or {}).get("valid", False)
-        ) and not list(storm.get("missing_data_segments") or [])
-        if needs_storm_truth and (not bool(drainage_export.get("ready")) or not storm_ready):
-            reasons = list(drainage_export.get("reasons") or [])
-            if not bool(dict(storm.get("graph_validation") or {}).get("valid", False)):
-                reasons.append("storm_graph_invalid")
-            if not bool(dict(storm.get("hydraulic_validation") or {}).get("valid", False)):
-                reasons.append("storm_hydraulics_invalid")
-            if list(storm.get("missing_data_segments") or []):
-                reasons.append("storm_segments_incomplete")
-            reasons = list(dict.fromkeys([str(item) for item in reasons if str(item)]))
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    "Export is blocked because the engineering design has not reached a stable drainage/storm state yet: "
-                    + ", ".join(reasons)
-                ),
-            )
-        return final_plan
-
-    raise HTTPException(
-        status_code=409,
-        detail="No stable engineered plan actions are available yet. Complete the engineering run before preview or export.",
-    )
+    return application_final_plan_from_result(result_data)
 
 
 @app.on_event("startup")
 def _register_job_handlers() -> None:
-    def orchestrate_runner(job: Dict[str, Any]) -> Dict[str, Any]:
-        payload = dict(job.get("payload") or {})
-        result = _run_orchestration(payload)
-        project_id = job.get("project_id")
-        user_id = job.get("user_id")
-        if project_id and user_id:
-            existing = PROJECT_STORE.get_project(user_id=user_id, project_id=project_id)
-            if existing is not None:
-                PROJECT_STORE.save_project(
-                    user_id=user_id,
-                    project_id=project_id,
-                    name=existing.get("name", "Untitled Project"),
-                    description=existing.get("description", ""),
-                    session_id=existing.get("session_id"),
-                    tags=existing.get("tags", []),
-                    project_input=payload,
-                    latest_result=result,
-                    session_state=existing.get("session_state", {}),
-                    metadata=_merge_project_metadata(
-                        dict(existing.get("metadata") or {}),
-                        run_summary=_build_run_summary(
-                            result,
-                            source="queued_job",
-                            project_id=project_id,
-                            job_id=job.get("job_id"),
-                        ),
-                    ),
-                )
-        return result
-
-    JOB_QUEUE.register_handler("orchestrate", orchestrate_runner)
+    JOB_QUEUE.register_handler(
+        "orchestrate",
+        application_build_orchestrate_job_runner(
+            project_store=PROJECT_STORE,
+            run_orchestration=_run_orchestration,
+            build_run_summary=_build_run_summary,
+            merge_project_metadata=_merge_project_metadata,
+        ),
+    )
 
 
 @app.get("/api/health")
@@ -627,16 +331,12 @@ def health() -> Dict[str, Any]:
         user_count = int(connection.execute("SELECT COUNT(*) FROM users").fetchone()[0])
     finally:
         connection.close()
-    return {
-        "success": True,
-        "message": "Civora AI backend is running.",
-        "app_name": APP_NAME,
-        "version": APP_VERSION,
-        "product_mode": PRODUCT_MODE,
-        "auth_enabled": True,
-        "storage": "sqlite",
-        "user_count": user_count,
-    }
+    return application_health_response(
+        app_name=APP_NAME,
+        app_version=APP_VERSION,
+        product_mode=PRODUCT_MODE,
+        user_count=user_count,
+    )
 
 
 @app.get("/api/auth/status")
@@ -646,40 +346,39 @@ def auth_status() -> Dict[str, Any]:
         user_count = int(connection.execute("SELECT COUNT(*) FROM users").fetchone()[0])
     finally:
         connection.close()
-    return {
-        "success": True,
-        "auth_enabled": True,
-        "user_count": user_count,
-    }
+    return application_auth_status(user_count=user_count)
 
 
 @app.post("/api/auth/register")
 def register(payload: RegisterPayload) -> Dict[str, Any]:
-    try:
-        result = AUTH_STORE.register_user(email=payload.email, password=payload.password, name=payload.name)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"success": True, **result}
+    return application_register_user(
+        auth_store=AUTH_STORE,
+        email=payload.email,
+        password=payload.password,
+        name=payload.name,
+    )
 
 
 @app.post("/api/auth/login")
 def login(payload: LoginPayload) -> Dict[str, Any]:
-    try:
-        result = AUTH_STORE.login(email=payload.email, password=payload.password)
-    except ValueError as exc:
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
-    return {"success": True, **result}
+    return application_login_user(
+        auth_store=AUTH_STORE,
+        email=payload.email,
+        password=payload.password,
+    )
 
 
 @app.get("/api/auth/me")
 def me(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
-    return {"success": True, "user": current_user}
+    return application_current_user_response(current_user=current_user)
 
 
 @app.post("/api/auth/logout")
 def logout(authorization: Optional[str] = Header(default=None)) -> Dict[str, Any]:
-    AUTH_STORE.logout(_bearer_token(authorization))
-    return {"success": True}
+    return application_logout_user(
+        auth_store=AUTH_STORE,
+        token=_bearer_token(authorization),
+    )
 
 
 @app.post("/api/upload-image")
@@ -687,23 +386,11 @@ async def upload_image(
     file: UploadFile = File(...),
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    filename = file.filename or "uploaded_image"
-    safe_prefix = str(current_user["user_id"]).replace("/", "_")
-    safe_name = Path(filename).name
-    stored_name = f"{safe_prefix}_{safe_name}"
-    target = UPLOAD_DIR / stored_name
-
-    with target.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    return {
-        "success": True,
-        "message": "Image uploaded.",
-        "image_path": str(target),
-        "filename": safe_name,
-        "stored_filename": stored_name,
-        "image_url": f"/api/uploads/{stored_name}",
-    }
+    return application_upload_image_file(
+        upload_dir=UPLOAD_DIR,
+        file=file,
+        current_user=current_user,
+    )
 
 
 @app.get("/api/uploads/{filename}")
@@ -713,21 +400,12 @@ def get_uploaded_image(
     access_token: Optional[str] = Query(default=None),
 ) -> FileResponse:
     token = str(access_token or "").strip() or _bearer_token(authorization)
-    current_user = AUTH_STORE.authenticate_token(token)
-    if current_user is None:
-        raise HTTPException(status_code=401, detail="Authentication required.")
-
-    safe_name = Path(filename).name
-    expected_prefix = f"{current_user['user_id']}_"
-    if not safe_name.startswith(expected_prefix):
-        raise HTTPException(status_code=403, detail="That image does not belong to this user.")
-
-    target = UPLOAD_DIR / safe_name
-    if not target.exists():
-        raise HTTPException(status_code=404, detail="Uploaded image not found.")
-
-    media_type, _ = mimetypes.guess_type(str(target))
-    return FileResponse(target, media_type=media_type or "application/octet-stream")
+    return application_get_uploaded_image_response(
+        upload_dir=UPLOAD_DIR,
+        auth_store=AUTH_STORE,
+        filename=filename,
+        token=token,
+    )
 
 
 @app.post("/api/chat/decide")
@@ -737,7 +415,10 @@ def chat_decide(
 ) -> Dict[str, Any]:
     _ = current_user
     try:
-        return decide_chat_message(_model_to_dict(payload))
+        return application_decide_chat(
+            _model_to_dict(payload),
+            decide_chat_message=decide_chat_message,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -753,61 +434,39 @@ def orchestrate(
 
 @app.get("/api/projects")
 def list_projects(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
-    return {
-        "success": True,
-        "projects": PROJECT_STORE.list_projects(user_id=current_user["user_id"]),
-    }
+    return application_list_projects(
+        project_store=PROJECT_STORE,
+        user_id=current_user["user_id"],
+    )
 
 
 @app.post("/api/projects")
 def save_project(payload: SaveProjectPayload, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
-    session_export = _maybe_export_session(payload.session_id)
-    existing = None
-    if payload.project_id:
-        existing = PROJECT_STORE.get_project(user_id=current_user["user_id"], project_id=payload.project_id)
-    metadata = dict(existing.get("metadata") or {}) if existing else {}
-    metadata.update(dict(payload.metadata or {}))
-    if payload.latest_result:
-        metadata = _merge_project_metadata(
-            metadata,
-            run_summary=_build_run_summary(
-                dict(payload.latest_result),
-                source="project_save",
-                project_id=payload.project_id,
-            ),
-        )
-    try:
-        record = PROJECT_STORE.save_project(
-            user_id=current_user["user_id"],
-            project_id=payload.project_id,
-            name=payload.name,
-            description=payload.description,
-            session_id=payload.session_id,
-            tags=payload.tags,
-            project_input=payload.project_input,
-            latest_result=payload.latest_result,
-            session_state=session_export,
-            metadata=metadata,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    return {"success": True, "project": record}
+    return application_save_project_record(
+        project_store=PROJECT_STORE,
+        user_id=current_user["user_id"],
+        payload_data=_model_to_dict(payload),
+        export_session_state=_maybe_export_session,
+        build_run_summary=_build_run_summary,
+    )
 
 
 @app.get("/api/projects/{project_id}")
 def get_project(project_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
-    record = PROJECT_STORE.get_project(user_id=current_user["user_id"], project_id=project_id)
-    if record is None:
-        raise HTTPException(status_code=404, detail="Project not found.")
-    return {"success": True, "project": record}
+    return application_get_project_detail(
+        project_store=PROJECT_STORE,
+        user_id=current_user["user_id"],
+        project_id=project_id,
+    )
 
 
 @app.delete("/api/projects/{project_id}")
 def delete_project(project_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
-    deleted = PROJECT_STORE.delete_project(user_id=current_user["user_id"], project_id=project_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Project not found.")
-    return {"success": True, "project_id": project_id}
+    return application_delete_project_record(
+        project_store=PROJECT_STORE,
+        user_id=current_user["user_id"],
+        project_id=project_id,
+    )
 
 
 @app.get("/api/jobs")
@@ -820,18 +479,13 @@ def list_jobs(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[
 
 @app.post("/api/jobs/orchestrate")
 def queue_orchestrate_job(payload: QueueOrchestratePayload, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
-    if payload.project_id:
-        existing = PROJECT_STORE.get_project(user_id=current_user["user_id"], project_id=payload.project_id)
-        if existing is None:
-            raise HTTPException(status_code=404, detail="Project not found.")
-
-    job = JOB_QUEUE.submit_job(
+    return application_queue_orchestrate_job(
+        project_store=PROJECT_STORE,
+        job_queue=JOB_QUEUE,
         user_id=current_user["user_id"],
-        job_type="orchestrate",
-        payload=_model_to_dict(payload.request),
         project_id=payload.project_id,
+        request_payload=_model_to_dict(payload.request),
     )
-    return {"success": True, "job": job}
 
 
 @app.post("/api/preview")
@@ -840,17 +494,10 @@ def build_preview(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
     result_data = _result_from_payload(current_user, payload)
-    final_plan = _final_plan_from_result(result_data)
-    png_bytes = ARTIFACTS.build_preview_png(final_plan)
-    return {
-        "success": True,
-        "preview_image_data_url": f"data:image/png;base64,{b64encode(png_bytes).decode('ascii')}",
-        "summary": {
-            "project_name": final_plan.get("project_name", "Generated Plan"),
-            "units": final_plan.get("units", "ft"),
-            "action_count": len(final_plan.get("actions") or []),
-        },
-    }
+    return application_build_preview_response(
+        artifact_service=ARTIFACTS,
+        result_data=result_data,
+    )
 
 
 @app.post("/api/export/dxf")
@@ -859,24 +506,14 @@ def export_dxf(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> FileResponse:
     result_data = _result_from_payload(current_user, payload)
-    final_plan = _final_plan_from_result(result_data)
-    filename_stem = payload.filename_stem or str(final_plan.get("project_name") or "civora-ai-plan")
-    path = ARTIFACTS.export_dxf(
+    path = application_export_dxf_artifact(
+        artifact_service=ARTIFACTS,
+        project_store=PROJECT_STORE,
         user_id=current_user["user_id"],
-        final_plan=final_plan,
-        stem=filename_stem,
+        project_id=payload.project_id,
+        result_data=result_data,
+        filename_stem=payload.filename_stem,
     )
-    if payload.project_id:
-        _save_project_workflow_update(
-            user_id=current_user["user_id"],
-            project_id=payload.project_id,
-            artifact_summary=_artifact_summary(
-                path=path,
-                artifact_kind="dxf",
-                project_id=payload.project_id,
-                result_data=result_data,
-            ),
-        )
     return FileResponse(
         path,
         media_type="application/dxf",
@@ -890,24 +527,14 @@ def export_report(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> FileResponse:
     result_data = _result_from_payload(current_user, payload)
-    final_plan = _final_plan_from_result(result_data)
-    filename_stem = payload.filename_stem or str(final_plan.get("project_name") or "civora-ai-report")
-    path = ARTIFACTS.export_report_json(
+    path = application_export_report_artifact(
+        artifact_service=ARTIFACTS,
+        project_store=PROJECT_STORE,
         user_id=current_user["user_id"],
+        project_id=payload.project_id,
         result_data=result_data,
-        stem=filename_stem,
+        filename_stem=payload.filename_stem,
     )
-    if payload.project_id:
-        _save_project_workflow_update(
-            user_id=current_user["user_id"],
-            project_id=payload.project_id,
-            artifact_summary=_artifact_summary(
-                path=path,
-                artifact_kind="report",
-                project_id=payload.project_id,
-                result_data=result_data,
-            ),
-        )
     return FileResponse(
         path,
         media_type="application/json",
@@ -928,11 +555,8 @@ def download_artifact(
     filename: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> FileResponse:
-    path = ARTIFACT_DIR / current_user["user_id"] / Path(filename).name
-    if not path.exists() or not path.is_file():
-        raise HTTPException(status_code=404, detail="Artifact not found.")
-    return FileResponse(
-        path,
-        media_type=mimetypes.guess_type(path.name)[0] or "application/octet-stream",
-        filename=path.name,
+    return application_download_artifact_response(
+        artifact_dir=ARTIFACT_DIR,
+        current_user=current_user,
+        filename=filename,
     )

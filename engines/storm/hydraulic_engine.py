@@ -268,6 +268,15 @@ class HydraulicEngine:
         deficient = [p for p in pipes if p.hydraulic.capacity_status == CapacityStatus.DEFICIENT.value]
         marginal = [p for p in pipes if p.hydraulic.capacity_status == CapacityStatus.MARGINAL.value]
         surcharge = [n for n in node_lookup.values() if n.surcharge_risk]
+        system_tributary_area_sf = max((float(dict(p.meta).get("tributary_area_sf") or 0.0) for p in pipes), default=0.0)
+        system_tributary_runoff_cfs = max((float(dict(p.meta).get("tributary_runoff_cfs") or 0.0) for p in pipes), default=0.0)
+        system_tributary_catchment_count = max((int(dict(p.meta).get("tributary_catchment_count") or 0) for p in pipes), default=0)
+        system_tributary_basin_names: List[str] = []
+        for pipe in pipes:
+            for basin_name in list(dict(pipe.meta).get("tributary_basin_names") or []):
+                safe_name = str(basin_name).strip()
+                if safe_name and safe_name not in system_tributary_basin_names:
+                    system_tributary_basin_names.append(safe_name)
 
         return {
             "pipe_count": len(pipes),
@@ -277,6 +286,10 @@ class HydraulicEngine:
             "surcharge_node_count": len(surcharge),
             "total_design_flow_cfs": round(sum(p.hydraulic.design_flow_cfs for p in pipes), 3),
             "total_full_capacity_cfs": round(sum(p.hydraulic.full_capacity_cfs for p in pipes), 3),
+            "system_tributary_area_sf": round(system_tributary_area_sf, 3),
+            "system_tributary_runoff_cfs": round(system_tributary_runoff_cfs, 3),
+            "system_tributary_catchment_count": system_tributary_catchment_count,
+            "system_tributary_basin_names": system_tributary_basin_names,
             "max_velocity_fps": round(max((p.hydraulic.velocity_fps for p in pipes), default=0.0), 3),
             "warning_count": len(warnings),
             "critical_pipes": [
@@ -287,6 +300,10 @@ class HydraulicEngine:
                     "full_capacity_cfs": p.hydraulic.full_capacity_cfs,
                     "velocity_fps": p.hydraulic.velocity_fps,
                     "flow_depth_ratio": p.hydraulic.flow_depth_ratio,
+                    "tributary_area_sf": round(float(dict(p.meta).get("tributary_area_sf") or 0.0), 3),
+                    "tributary_runoff_cfs": round(float(dict(p.meta).get("tributary_runoff_cfs") or 0.0), 3),
+                    "tributary_catchment_count": int(dict(p.meta).get("tributary_catchment_count") or 0),
+                    "tributary_basin_names": list(dict(p.meta).get("tributary_basin_names") or []),
                 }
                 for p in sorted(
                     pipes,

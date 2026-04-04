@@ -106,6 +106,7 @@ class StormRoutingHook:
 class StormNetworkExplain:
     key_logic: List[str] = field(default_factory=list)
     selected_outfall_name: Optional[str] = None
+    implied_target_used: bool = False
     inlet_assignments: List[Dict[str, Any]] = field(default_factory=list)
     pipe_decisions: List[Dict[str, Any]] = field(default_factory=list)
     network_warnings: List[str] = field(default_factory=list)
@@ -114,6 +115,7 @@ class StormNetworkExplain:
         return {
             "key_logic": list(self.key_logic),
             "selected_outfall_name": self.selected_outfall_name,
+            "implied_target_used": self.implied_target_used,
             "inlet_assignments": [dict(x) for x in self.inlet_assignments],
             "pipe_decisions": [dict(x) for x in self.pipe_decisions],
             "network_warnings": list(self.network_warnings),
@@ -164,24 +166,48 @@ class StormNetworkEngine:
         if not outfalls:
             warnings.append("No explicit outfall or basin target provided; last downstream node will act as implied outfall.")
 
+        selected_target = self._pick_primary_downstream_target(network.basins, outfalls, request=request)
+        implied_target_used = False
+        selected_outfalls: List[StormNode] = []
+        selected_basin_nodes: List[StormNode] = []
+        if selected_target is not None:
+            selected_outfalls = [node for node in outfalls if node.name == selected_target.name]
+            if not selected_outfalls:
+                basin_node = next(
+                    (
+                        self._basin_to_connection_node(basin)
+                        for basin in network.basins
+                        if self._basin_to_connection_node(basin) is not None
+                        and self._basin_to_connection_node(basin).name == selected_target.name
+                    ),
+                    None,
+                )
+                if basin_node is not None:
+                    selected_basin_nodes = [basin_node]
+
         all_nodes: List[StormNode] = []
         all_nodes.extend([self._inlet_to_node(i) for i in network.inlets])
-        all_nodes.extend(outfalls)
-        all_nodes.extend([self._basin_to_connection_node(b) for b in network.basins if self._basin_to_connection_node(b) is not None])
+        all_nodes.extend(selected_outfalls)
+        all_nodes.extend(selected_basin_nodes)
 
         # assign catchments to nearest inlets / outfalls
-        self._assign_catchments_to_inlets(network.catchments, network.inlets, outfalls, warnings)
+        self._assign_catchments_to_inlets(network.catchments, network.inlets, selected_outfalls, warnings)
 
         # build topology
         pipes, flow_paths = self._build_topology(
             catchments=network.catchments,
             inlets=network.inlets,
             basins=network.basins,
-            outfalls=outfalls,
+            outfalls=selected_outfalls,
             request=request,
             routing_hook=routing_hook,
             warnings=warnings,
+            selected_target=selected_target,
         )
+        if selected_target is not None and selected_target.node_type == StormNodeType.OUTFALL.value:
+            selected_name = selected_target.name
+            explicit_outfall_names = {node.name for node in outfalls}
+            implied_target_used = bool(selected_name) and selected_name not in explicit_outfall_names
         network.pipes.extend(pipes)
         network.flow_paths.extend(flow_paths)
 
@@ -189,6 +215,7 @@ class StormNetworkEngine:
         node_lookup = {n.name: n for n in all_nodes}
         self._attach_pipe_node_relationships(network.pipes, node_lookup)
         self._assign_node_runoff_from_inlets(network.inlets, node_lookup)
+        self._propagate_pipe_demand_context(network.pipes, node_lookup)
 
         # assign hydraulic placeholders and invert system
         self._size_pipes(network.pipes, request, warnings)
@@ -200,7 +227,7 @@ class StormNetworkEngine:
         network.warnings.extend(warnings)
 
         summary = summarize_storm_network(network)
-        explain = self._build_explain(network, outfalls, warnings)
+        explain = self._build_explain(network, selected_target, warnings, implied_target_used=implied_target_used)
         optimize_hooks = self._build_optimize_hooks(network)
         conflict_hooks = self._build_conflict_hooks(network)
 
@@ -294,12 +321,19 @@ class StormNetworkEngine:
         else:
             name = f"{basin.name}_CONN"
         pt = self._basin_connection_point(basin)
+        outlet_meta = dict(basin.meta).get("outlet_structure", {}) if isinstance(basin.meta, dict) else {}
+        outlet_invert = outlet_meta.get("invert_out_ft")
+        if outlet_invert is None:
+            outlet_invert = outlet_meta.get("invert_ft")
+        rim_elev = outlet_meta.get("rim_elev_ft")
+        if rim_elev is None:
+            rim_elev = basin.overflow_elev_ft
         return StormNode(
             name=name,
             node_type=StormNodeType.BASIN_CONNECTION.value,
             point=pt,
-            rim_elev_ft=basin.overflow_elev_ft,
-            invert_elev_ft=(basin.bottom_elev_ft + DEFAULT_OUTFALL_DEPTH_BUFFER_FT) if basin.bottom_elev_ft is not None else None,
+            rim_elev_ft=rim_elev,
+            invert_elev_ft=(float(outlet_invert) if outlet_invert is not None else ((basin.bottom_elev_ft + DEFAULT_OUTFALL_DEPTH_BUFFER_FT) if basin.bottom_elev_ft is not None else None)),
             structure_diameter_ft=4.0,
             warnings=list(basin.warnings),
             meta={"basin_name": basin.name, **dict(basin.meta)},
@@ -309,13 +343,20 @@ class StormNetworkEngine:
         outfalls: List[StormNode] = []
         for basin in basins:
             pt = self._basin_connection_point(basin)
+            outlet_meta = dict(basin.meta).get("outlet_structure", {}) if isinstance(basin.meta, dict) else {}
+            outlet_invert = outlet_meta.get("invert_out_ft")
+            if outlet_invert is None:
+                outlet_invert = outlet_meta.get("invert_ft")
+            rim_elev = outlet_meta.get("rim_elev_ft")
+            if rim_elev is None:
+                rim_elev = basin.overflow_elev_ft
             outfalls.append(
                 StormNode(
-                    name=f"{basin.name}_OUTFALL",
+                    name=basin.connection_node_name or f"{basin.name}_OUTFALL",
                     node_type=StormNodeType.OUTFALL.value,
                     point=pt,
-                    rim_elev_ft=basin.overflow_elev_ft,
-                    invert_elev_ft=(basin.bottom_elev_ft + DEFAULT_OUTFALL_DEPTH_BUFFER_FT) if basin.bottom_elev_ft is not None else None,
+                    rim_elev_ft=rim_elev,
+                    invert_elev_ft=(float(outlet_invert) if outlet_invert is not None else ((basin.bottom_elev_ft + DEFAULT_OUTFALL_DEPTH_BUFFER_FT) if basin.bottom_elev_ft is not None else None)),
                     structure_diameter_ft=4.0,
                     meta={"generated_from_basin": basin.name},
                 )
@@ -323,6 +364,14 @@ class StormNetworkEngine:
         return outfalls
 
     def _basin_connection_point(self, basin: StormBasin) -> StormPoint:
+        outlet_meta = dict(basin.meta).get("outlet_structure", {}) if isinstance(basin.meta, dict) else {}
+        outlet_x = outlet_meta.get("x")
+        outlet_y = outlet_meta.get("y")
+        outlet_z = outlet_meta.get("invert_out_ft")
+        if outlet_z is None:
+            outlet_z = outlet_meta.get("invert_ft")
+        if outlet_x is not None and outlet_y is not None:
+            return StormPoint(x=float(outlet_x), y=float(outlet_y), z=(float(outlet_z) if outlet_z is not None else basin.bottom_elev_ft), label=basin.name)
         if basin.boundary_points:
             xs = [p[0] for p in basin.boundary_points]
             ys = [p[1] for p in basin.boundary_points]
@@ -352,6 +401,16 @@ class StormNetworkEngine:
                 target_inlet.incoming_catchment_names.append(catch.name)
                 target_inlet.contributing_area_sf += catch.area_sf
                 target_inlet.contributing_runoff_cfs += catch.peak_runoff_cfs
+                inlet_meta = dict(target_inlet.meta)
+                basin_names = list(inlet_meta.get("tributary_basin_names") or [])
+                tributary_basin_name = str(dict(catch.meta).get("tributary_basin_name") or "").strip()
+                if tributary_basin_name and tributary_basin_name not in basin_names:
+                    basin_names.append(tributary_basin_name)
+                inlet_meta["tributary_basin_names"] = basin_names
+                inlet_meta["tributary_catchment_count"] = len(target_inlet.incoming_catchment_names)
+                inlet_meta["tributary_area_sf"] = round(target_inlet.contributing_area_sf, 3)
+                inlet_meta["tributary_runoff_cfs"] = round(target_inlet.contributing_runoff_cfs + target_inlet.bypass_runoff_cfs, 3)
+                target_inlet.meta = inlet_meta
             elif outfalls:
                 catch.outlet_node_name = outfalls[0].name
 
@@ -361,13 +420,41 @@ class StormNetworkEngine:
         ref = catch.centroid
         if ref is None:
             return inlets[0]
-        best = None
-        best_d = float("inf")
+        preferred_target = str(
+            dict(catch.meta).get("preferred_target_name")
+            or dict(catch.meta).get("target_name")
+            or ""
+        ).strip()
+        best: Optional[StormInlet] = None
+        best_score = float("inf")
         for inlet in inlets:
-            d = hypot(inlet.point.x - ref.x, inlet.point.y - ref.y)
-            if d < best_d:
+            inlet_meta = dict(inlet.meta)
+            inlet_target = str(
+                inlet_meta.get("target_name") or inlet_meta.get("surface_target_name") or ""
+            ).strip()
+            distance_ft = hypot(inlet.point.x - ref.x, inlet.point.y - ref.y)
+            existing_area_sf = float(
+                inlet_meta.get("tributary_area_sf") or inlet.contributing_area_sf or 0.0
+            )
+            existing_runoff_cfs = float(
+                inlet_meta.get("tributary_runoff_cfs")
+                or (inlet.contributing_runoff_cfs + inlet.bypass_runoff_cfs)
+                or 0.0
+            )
+            existing_catchments = float(
+                inlet_meta.get("tributary_catchment_count")
+                or len(inlet.incoming_catchment_names)
+                or 0.0
+            )
+            score = distance_ft
+            if preferred_target and inlet_target != preferred_target:
+                score += 500.0
+            score += existing_area_sf / 100.0
+            score += existing_runoff_cfs * 120.0
+            score += existing_catchments * 20.0
+            if best is None or score < best_score:
                 best = inlet
-                best_d = d
+                best_score = score
         return best
 
     # =========================================================================
@@ -383,6 +470,7 @@ class StormNetworkEngine:
         request: StormNetworkRequest,
         routing_hook: StormRoutingHook,
         warnings: List[str],
+        selected_target: Optional[StormNode] = None,
     ) -> Tuple[List[StormPipe], List[StormFlowPath]]:
         pipes: List[StormPipe] = []
         flows: List[StormFlowPath] = []
@@ -390,7 +478,7 @@ class StormNetworkEngine:
         if not inlets:
             return pipes, flows
 
-        target = self._pick_primary_downstream_target(basins, outfalls)
+        target = selected_target or self._pick_primary_downstream_target(basins, outfalls, request=request)
         if target is None:
             target = self._make_implied_outfall_from_inlets(inlets)
 
@@ -409,6 +497,11 @@ class StormNetworkEngine:
             )
             pipe_type = StormPipeType.LATERAL.value if request.use_laterals else StormPipeType.MAIN.value
             design_flow = inlet.contributing_runoff_cfs + inlet.bypass_runoff_cfs
+            lateral_demand = self._pipe_demand_context(
+                catchments=catchments,
+                inlet_names=[inlet.name],
+                catchment_names=list(inlet.incoming_catchment_names),
+            )
             pipes.append(
                 StormPipe(
                     name=f"P-{idx:03d}",
@@ -424,7 +517,10 @@ class StormNetworkEngine:
                     route_points=route_pts,
                     contributing_catchment_names=list(inlet.incoming_catchment_names),
                     assigned_runoff_cfs=round(design_flow, 3),
-                    meta={"route_name": f"{inlet.name}_TO_TRUNK"},
+                    meta={
+                        "route_name": f"{inlet.name}_TO_TRUNK",
+                        **lateral_demand,
+                    },
                 )
             )
             flows.append(
@@ -437,6 +533,10 @@ class StormNetworkEngine:
                     slope=max(request.min_pipe_slope, DEFAULT_MIN_PIPE_SLOPE),
                     contributing_area_sf=inlet.contributing_area_sf,
                     assigned_flow_cfs=round(design_flow, 3),
+                    meta={
+                        "tributary_basin_names": list(lateral_demand.get("tributary_basin_names") or []),
+                        "tributary_catchment_count": int(lateral_demand.get("tributary_catchment_count", 0)),
+                    },
                 )
             )
 
@@ -449,6 +549,11 @@ class StormNetworkEngine:
             name="TRUNK_TO_TARGET",
         )
         total_trunk_runoff = sum(i.contributing_runoff_cfs + i.bypass_runoff_cfs for i in inlets)
+        trunk_demand = self._pipe_demand_context(
+            catchments=catchments,
+            inlet_names=[inlet.name for inlet in inlets],
+            catchment_names=[c.name for c in catchments],
+        )
         pipes.append(
             StormPipe(
                 name=f"P-{len(pipes)+1:03d}",
@@ -464,7 +569,10 @@ class StormNetworkEngine:
                 route_points=trunk_route_pts,
                 contributing_catchment_names=[c.name for c in catchments],
                 assigned_runoff_cfs=round(total_trunk_runoff, 3),
-                meta={"route_name": "TRUNK_TO_TARGET"},
+                meta={
+                    "route_name": "TRUNK_TO_TARGET",
+                    **trunk_demand,
+                },
             )
         )
         flows.append(
@@ -477,23 +585,115 @@ class StormNetworkEngine:
                 slope=max(request.min_pipe_slope, DEFAULT_MIN_PIPE_SLOPE),
                 contributing_area_sf=sum(c.area_sf for c in catchments),
                 assigned_flow_cfs=round(total_trunk_runoff, 3),
+                meta={
+                    "tributary_basin_names": list(trunk_demand.get("tributary_basin_names") or []),
+                    "tributary_catchment_count": int(trunk_demand.get("tributary_catchment_count", 0)),
+                },
             )
         )
 
         return pipes, flows
 
+    def _pipe_demand_context(
+        self,
+        *,
+        catchments: Sequence[StormCatchment],
+        inlet_names: Sequence[str],
+        catchment_names: Sequence[str],
+    ) -> Dict[str, Any]:
+        catchment_name_set = {str(name).strip() for name in catchment_names if str(name).strip()}
+        total_area_sf = 0.0
+        total_runoff_cfs = 0.0
+        tributary_basin_names: List[str] = []
+        for catch in catchments:
+            catch_name = str(catch.name).strip()
+            if catchment_name_set and catch_name not in catchment_name_set:
+                continue
+            total_area_sf += float(catch.area_sf or 0.0)
+            total_runoff_cfs += float(catch.peak_runoff_cfs or 0.0)
+            tributary_basin_name = str(dict(catch.meta).get("tributary_basin_name") or "").strip()
+            if tributary_basin_name and tributary_basin_name not in tributary_basin_names:
+                tributary_basin_names.append(tributary_basin_name)
+        return {
+            "inlet_names": [str(name) for name in inlet_names if str(name).strip()],
+            "tributary_catchment_count": len(catchment_name_set),
+            "tributary_area_sf": round(total_area_sf, 3),
+            "tributary_runoff_cfs": round(total_runoff_cfs, 3),
+            "tributary_basin_names": tributary_basin_names,
+        }
+
     def _pick_primary_downstream_target(
         self,
         basins: Sequence[StormBasin],
         outfalls: Sequence[StormNode],
+        request: Optional[StormNetworkRequest] = None,
     ) -> Optional[StormNode]:
+        preferred_target = ""
+        if request is not None and isinstance(request.meta, dict):
+            preferred_target = str(dict(request.meta).get("preferred_target_name") or "").strip()
+
+        if preferred_target:
+            for node in outfalls:
+                if node.name == preferred_target:
+                    return node
+            for basin in basins:
+                basin_conn = self._basin_to_connection_node(basin)
+                if basin_conn is not None and (
+                    basin_conn.name == preferred_target or basin.name == preferred_target
+                ):
+                    return basin_conn
+
         if basins:
-            basin_conn = self._basin_to_connection_node(basins[0])
+            ranked_basins = sorted(
+                basins,
+                key=lambda basin: self._score_basin_target(basin),
+            )
+            basin_conn = self._basin_to_connection_node(ranked_basins[0])
             if basin_conn is not None:
                 return basin_conn
         if outfalls:
             return outfalls[0]
         return None
+
+    def _score_basin_target(self, basin: StormBasin) -> Tuple[float, float, float, float, str]:
+        basin_meta = dict(basin.meta) if isinstance(basin.meta, dict) else {}
+        outlet_meta = basin_meta.get("outlet_structure", {})
+        detention_meta = basin_meta.get("detention_design", {})
+        overflow_meta = basin_meta.get("overflow_spillway", {})
+        storage_ratio_meta = basin_meta.get("storage_ratio")
+        storage_ratio = float(storage_ratio_meta) if storage_ratio_meta is not None else 0.0
+        if storage_ratio <= 0.0 and basin.required_storage_cf:
+            storage_ratio = float(basin.provided_storage_cf or 0.0) / max(float(basin.required_storage_cf), 1.0)
+        storage_ratio = min(storage_ratio, 2.0)
+        adequacy_status = str(detention_meta.get("adequacy_status") or "").strip().lower()
+        adequacy_rank = 0.0
+        if adequacy_status == "adequate":
+            adequacy_rank = 2.0
+        elif adequacy_status == "surplus":
+            adequacy_rank = 1.5
+        elif adequacy_status == "deficient":
+            adequacy_rank = -1.0
+        outlet_quality = 1.0 if outlet_meta.get("x") is not None and outlet_meta.get("y") is not None else 0.0
+        release_quality = 0.0
+        if basin.release_cfs is not None and basin.release_cfs > 0.0:
+            release_quality = min(float(basin.release_cfs), 5.0)
+        drawdown_quality = 0.0
+        drawdown_hours = detention_meta.get("drawdown_hours")
+        if drawdown_hours is not None:
+            drawdown_hours = float(drawdown_hours)
+            drawdown_quality = max(0.0, 48.0 - min(drawdown_hours, 96.0)) / 48.0
+        spillway_quality = 0.0
+        if overflow_meta:
+            spillway_quality = min(float(overflow_meta.get("assumed_capacity_cfs") or 0.0), 10.0) / 10.0
+        depth_quality = min(float(basin.depth_ft or 0.0), 20.0)
+        return (
+            -adequacy_rank,
+            -(release_quality + drawdown_quality + spillway_quality),
+            -storage_ratio,
+            -outlet_quality,
+            -depth_quality,
+            basin.name,
+        )
 
     def _make_implied_outfall_from_inlets(self, inlets: Sequence[StormInlet]) -> StormNode:
         x = max(i.point.x for i in inlets) + 50.0
@@ -508,12 +708,26 @@ class StormNetworkEngine:
         )
 
     def _compute_trunk_anchor(self, inlets: Sequence[StormInlet], target: StormNode) -> Tuple[float, float]:
-        x = sum(i.point.x for i in inlets) / max(1, len(inlets))
-        y = sum(i.point.y for i in inlets) / max(1, len(inlets))
+        aligned_inlets = self._surface_aligned_inlets(inlets, target)
+        anchor_inlets = aligned_inlets or list(inlets)
+        x = sum(i.point.x for i in anchor_inlets) / max(1, len(anchor_inlets))
+        y = sum(i.point.y for i in anchor_inlets) / max(1, len(anchor_inlets))
         # bias slightly toward downstream target
         x = 0.7 * x + 0.3 * target.point.x
         y = 0.7 * y + 0.3 * target.point.y
         return (x, y)
+
+    def _surface_aligned_inlets(self, inlets: Sequence[StormInlet], target: StormNode) -> List[StormInlet]:
+        target_aliases = {str(target.name).strip()}
+        target_label = str(target.point.label or "").strip()
+        if target_label:
+            target_aliases.add(target_label)
+        aligned: List[StormInlet] = []
+        for inlet in inlets:
+            inlet_target = str(dict(inlet.meta).get("target_name") or dict(inlet.meta).get("surface_target_name") or "").strip()
+            if inlet_target and inlet_target in target_aliases:
+                aligned.append(inlet)
+        return aligned
 
     def _route_or_direct(
         self,
@@ -590,6 +804,64 @@ class StormNetworkEngine:
                 node.contributing_area_sf = inlet.contributing_area_sf
                 node.contributing_runoff_cfs = inlet.contributing_runoff_cfs
                 node.bypass_runoff_cfs = inlet.bypass_runoff_cfs
+                node.meta = {
+                    **dict(node.meta),
+                    "tributary_basin_names": list(dict(inlet.meta).get("tributary_basin_names") or []),
+                    "tributary_catchment_count": int(dict(inlet.meta).get("tributary_catchment_count", 0)),
+                }
+
+    def _propagate_pipe_demand_context(self, pipes: Sequence[StormPipe], node_lookup: Dict[str, StormNode]) -> None:
+        node_upstream_area: Dict[str, float] = {}
+        node_upstream_runoff: Dict[str, float] = {}
+        node_upstream_catchments: Dict[str, int] = {}
+        node_upstream_basins: Dict[str, List[str]] = {}
+
+        for node_name, node in node_lookup.items():
+            node_upstream_area[node_name] = float(getattr(node, "contributing_area_sf", 0.0) or 0.0)
+            node_upstream_runoff[node_name] = float(getattr(node, "contributing_runoff_cfs", 0.0) or 0.0) + float(getattr(node, "bypass_runoff_cfs", 0.0) or 0.0)
+            node_upstream_catchments[node_name] = int(dict(getattr(node, "meta", {})).get("tributary_catchment_count", 0) or 0)
+            node_upstream_basins[node_name] = list(dict(getattr(node, "meta", {})).get("tributary_basin_names") or [])
+
+        ordered = sorted(
+            pipes,
+            key=lambda pipe: (
+                0 if pipe.pipe_type == StormPipeType.LATERAL.value else 1,
+                float(pipe.assigned_runoff_cfs or 0.0),
+            )
+        )
+        for pipe in ordered:
+            up_name = str(pipe.upstream_node_name or "")
+            dn_name = str(pipe.downstream_node_name or "")
+            up_area = float(node_upstream_area.get(up_name, 0.0))
+            up_runoff = float(node_upstream_runoff.get(up_name, 0.0))
+            up_catchments = int(node_upstream_catchments.get(up_name, 0))
+            up_basins = list(node_upstream_basins.get(up_name, []))
+
+            pipe.meta = {
+                **dict(pipe.meta),
+                "upstream_cumulative_area_sf": round(up_area, 3),
+                "upstream_cumulative_runoff_cfs": round(up_runoff, 3),
+                "upstream_cumulative_catchment_count": up_catchments,
+                "upstream_cumulative_basin_names": up_basins,
+            }
+
+            node_upstream_area[dn_name] = float(node_upstream_area.get(dn_name, 0.0)) + up_area
+            node_upstream_runoff[dn_name] = float(node_upstream_runoff.get(dn_name, 0.0)) + up_runoff
+            node_upstream_catchments[dn_name] = int(node_upstream_catchments.get(dn_name, 0)) + up_catchments
+            merged_basins = list(node_upstream_basins.get(dn_name, []))
+            for basin_name in up_basins:
+                if basin_name not in merged_basins:
+                    merged_basins.append(basin_name)
+            node_upstream_basins[dn_name] = merged_basins
+
+        for node_name, node in node_lookup.items():
+            node.meta = {
+                **dict(node.meta),
+                "upstream_cumulative_area_sf": round(float(node_upstream_area.get(node_name, 0.0)), 3),
+                "upstream_cumulative_runoff_cfs": round(float(node_upstream_runoff.get(node_name, 0.0)), 3),
+                "upstream_cumulative_catchment_count": int(node_upstream_catchments.get(node_name, 0)),
+                "upstream_cumulative_basin_names": list(node_upstream_basins.get(node_name, [])),
+            }
 
     # =========================================================================
     # PIPE SIZING / HYDRAULIC PLACEHOLDERS
@@ -609,9 +881,25 @@ class StormNetworkEngine:
 
     def _size_pipes(self, pipes: Sequence[StormPipe], request: StormNetworkRequest, warnings: List[str]) -> None:
         for pipe in pipes:
+            pipe_meta = dict(pipe.meta)
+            tributary_area_sf = float(pipe_meta.get("tributary_area_sf") or 0.0)
+            tributary_catchment_count = int(pipe_meta.get("tributary_catchment_count") or 0)
+            cumulative_area_sf = float(pipe_meta.get("upstream_cumulative_area_sf") or tributary_area_sf)
+            cumulative_catchment_count = int(pipe_meta.get("upstream_cumulative_catchment_count") or tributary_catchment_count)
+            cumulative_runoff_cfs = float(pipe_meta.get("upstream_cumulative_runoff_cfs") or pipe.assigned_runoff_cfs or 0.0)
+            governing_flow_cfs = max(float(pipe.assigned_runoff_cfs or 0.0), cumulative_runoff_cfs)
+            pipe_meta["governing_flow_cfs"] = round(governing_flow_cfs, 3)
+            pipe_meta["governing_area_sf"] = round(max(tributary_area_sf, cumulative_area_sf), 3)
+            pipe_meta["governing_catchment_count"] = max(tributary_catchment_count, cumulative_catchment_count)
+            dynamic_min_diameter = max(request.min_diameter_in, DEFAULT_MIN_DIAMETER_IN)
+            if pipe.pipe_type == StormPipeType.TRUNK.value:
+                if cumulative_area_sf >= 1.5 * 43560.0 or cumulative_catchment_count >= 4:
+                    dynamic_min_diameter = max(dynamic_min_diameter, 18.0)
+                elif cumulative_area_sf >= 0.5 * 43560.0 or cumulative_catchment_count >= 2:
+                    dynamic_min_diameter = max(dynamic_min_diameter, 15.0)
             row = self._pick_pipe_row(
-                design_flow_cfs=max(0.0, pipe.assigned_runoff_cfs),
-                min_diameter_in=max(request.min_diameter_in, DEFAULT_MIN_DIAMETER_IN),
+                design_flow_cfs=max(0.0, governing_flow_cfs),
+                min_diameter_in=dynamic_min_diameter,
                 min_slope=max(request.min_pipe_slope, DEFAULT_MIN_PIPE_SLOPE),
             )
             pipe.diameter_in = row["diameter_in"]
@@ -619,28 +907,35 @@ class StormNetworkEngine:
             pipe.min_slope = max(pipe.min_slope, row["min_slope"], request.min_pipe_slope)
             pipe.mannings_n = request.default_mannings_n or DEFAULT_DEFAULT_MANNINGS_N
             pipe.cover_ft = max(request.min_cover_ft, DEFAULT_MIN_COVER_FT)
-            if pipe.assigned_runoff_cfs > row["max_flow_cfs"]:
+            pipe.meta = pipe_meta
+            if governing_flow_cfs > row["max_flow_cfs"]:
                 pipe.warnings.append("Assigned runoff exceeds simplified concept capacity table.")
                 warnings.append(f"Pipe '{pipe.name}' exceeds concept capacity table.")
 
     def _assign_hydraulic_status(self, pipes: Sequence[StormPipe], request: StormNetworkRequest, warnings: List[str]) -> None:
         for pipe in pipes:
-            row = self._pick_pipe_row(pipe.assigned_runoff_cfs, pipe.diameter_in, pipe.min_slope)
+            governing_flow_cfs = max(
+                float(dict(pipe.meta).get("governing_flow_cfs") or 0.0),
+                float(pipe.assigned_runoff_cfs or 0.0),
+            )
+            row = self._pick_pipe_row(governing_flow_cfs, pipe.diameter_in, pipe.min_slope)
             full_capacity = row["max_flow_cfs"]
             velocity = 0.0
             if pipe.length_ft > 0:
                 velocity = max(0.5, pipe.assigned_runoff_cfs / max(0.1, (pipe.diameter_in / 12.0) ** 2))
             status = CapacityStatus.OK.value
-            if pipe.assigned_runoff_cfs > full_capacity:
+            if pipe.pipe_type == StormPipeType.TRUNK.value and governing_flow_cfs > 0.9 * full_capacity:
+                pipe.warnings.append("Trunk cumulative tributary demand is approaching simplified capacity.")
+            if governing_flow_cfs > full_capacity:
                 status = CapacityStatus.DEFICIENT.value
-            elif pipe.assigned_runoff_cfs > 0.85 * full_capacity:
+            elif governing_flow_cfs > 0.85 * full_capacity:
                 status = CapacityStatus.MARGINAL.value
 
             pipe.hydraulic = HydraulicCheck(
-                design_flow_cfs=round(pipe.assigned_runoff_cfs, 3),
+                design_flow_cfs=round(governing_flow_cfs, 3),
                 full_capacity_cfs=round(full_capacity, 3),
                 velocity_fps=round(velocity, 3),
-                flow_depth_ratio=round(min(1.0, pipe.assigned_runoff_cfs / max(full_capacity, 0.1)), 4),
+                flow_depth_ratio=round(min(1.0, governing_flow_cfs / max(full_capacity, 0.1)), 4),
                 capacity_status=status,
                 warnings=list(pipe.warnings),
             )
@@ -717,23 +1012,36 @@ class StormNetworkEngine:
     def _build_explain(
         self,
         network: StormNetwork,
-        outfalls: Sequence[StormNode],
+        selected_target: Optional[StormNode],
         warnings: Sequence[str],
+        *,
+        implied_target_used: bool = False,
     ) -> StormNetworkExplain:
         exp = StormNetworkExplain()
+        deficient_count = sum(
+            1 for pipe in network.pipes if pipe.hydraulic.capacity_status == CapacityStatus.DEFICIENT.value
+        )
+        marginal_count = sum(
+            1 for pipe in network.pipes if pipe.hydraulic.capacity_status == CapacityStatus.MARGINAL.value
+        )
         exp.key_logic = [
-            "Catchments were assigned to nearest available storm inlets.",
-            "Inlets were connected to a collector/trunk anchor.",
-            "A trunk pipe was routed from the collector to a basin/outfall target.",
-            "Pipes were sized from a simplified concept storm capacity table.",
+            "Catchments were assigned to target-compatible storm inlets using distance and existing tributary load.",
+            "Inlets were connected into lateral and trunk routing aligned with the selected downstream target.",
+            "A trunk pipe was routed from the collector to the selected basin/outfall target.",
+            "Pipes were sized from governing tributary demand using a simplified concept storm capacity table.",
             "Relative invert elevations were assigned to maintain downstream flow.",
         ]
-        exp.selected_outfall_name = outfalls[0].name if outfalls else None
+        exp.selected_outfall_name = selected_target.name if selected_target is not None else None
+        exp.implied_target_used = bool(implied_target_used) or any(
+            "implied outfall" in str(warning).lower() for warning in warnings
+        )
         exp.inlet_assignments = [
             {
                 "inlet_name": i.name,
                 "catchments": list(i.incoming_catchment_names),
                 "runoff_cfs": round(i.contributing_runoff_cfs + i.bypass_runoff_cfs, 3),
+                "tributary_area_sf": round(float(dict(i.meta).get("tributary_area_sf") or 0.0), 3),
+                "tributary_catchment_count": int(round(float(dict(i.meta).get("tributary_catchment_count") or 0.0))),
             }
             for i in network.inlets
         ]
@@ -744,12 +1052,18 @@ class StormNetworkEngine:
                 "diameter_in": p.diameter_in,
                 "slope": p.slope,
                 "assigned_runoff_cfs": p.assigned_runoff_cfs,
+                "governing_flow_cfs": round(float(dict(p.meta).get("governing_flow_cfs") or 0.0), 3),
+                "tributary_area_sf": round(float(dict(p.meta).get("upstream_cumulative_area_sf") or 0.0), 3),
                 "capacity_cfs": p.hydraulic.full_capacity_cfs,
                 "status": p.hydraulic.capacity_status,
             }
             for p in network.pipes
         ]
         exp.network_warnings = list(warnings)
+        if deficient_count or marginal_count:
+            exp.network_warnings.append(
+                f"Hydraulic review found {deficient_count} deficient and {marginal_count} marginal storm pipe segments."
+            )
         return exp
 
     def _build_optimize_hooks(self, network: StormNetwork) -> Dict[str, Any]:

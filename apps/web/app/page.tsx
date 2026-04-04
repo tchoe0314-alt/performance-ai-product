@@ -159,7 +159,7 @@ type UploadImageResponse = {
 type PlanToolMode = "run" | "fix" | "improve";
 type StrategyMode = "manual" | "assisted";
 type ControlOverrides = Partial<{
-  strategyMode: StrategyMode | "hybrid";
+  strategyMode: StrategyMode;
   projectType: string;
   units: string;
   roads: boolean;
@@ -998,11 +998,7 @@ export default function PerformanceAIDashboard() {
     const autoFileNamed = Boolean(projectInput.meta?.auto_file_named);
 
     const nextMode = projectInput.input_mode ?? (projectInput.strict_mode ? "manual" : "assisted");
-    if (nextMode === "manual" || nextMode === "assisted") {
-      setStrategyMode(nextMode);
-    } else if (nextMode === "hybrid") {
-      setStrategyMode("assisted");
-    }
+    setStrategyMode(nextMode === "manual" ? "manual" : "assisted");
     setPrompt(projectInput.prompt_text ?? "");
     setImageName(projectInput.image_path ?? "");
     setUploadedImageApiUrl(
@@ -1030,7 +1026,7 @@ export default function PerformanceAIDashboard() {
 
   const applyControlOverrides = (overrides: ControlOverrides) => {
     if (overrides.strategyMode) {
-      setStrategyMode(overrides.strategyMode === "hybrid" ? "assisted" : overrides.strategyMode);
+      setStrategyMode(overrides.strategyMode);
     }
     if (overrides.projectType) setProjectType(overrides.projectType);
     if (overrides.units) setUnits(overrides.units);
@@ -1362,10 +1358,7 @@ export default function PerformanceAIDashboard() {
       );
       const overrides = decision.control_overrides ?? {};
       applyControlOverrides(overrides);
-      const nextStrategy =
-        overrides.strategyMode === "hybrid"
-          ? "assisted"
-          : (overrides.strategyMode ?? strategyMode);
+      const nextStrategy = overrides.strategyMode ?? strategyMode;
       const shouldAutoName = siteNameAuto || !siteName.trim();
       const shouldAutoFileName = fileNameAuto || !fileName.trim();
       const generatedTitle = shouldAutoName ? guessProjectTitle(trimmedPrompt) : siteName.trim();

@@ -26,6 +26,7 @@ import math
 import re
 from copy import deepcopy
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import parsers.ai_parser
@@ -96,6 +97,18 @@ from engines.hydrology_engine import RationalArea, compute_rational_method
 from engines.pipe_engine import PipeEngine
 from engines.quantity_engine import compute_plan_quantities
 from engines.sanitary_engine import SanitaryEngine, SanitaryFixture, SanitaryPipeSegment, SanitarySizingRequest
+from engines.storm.hydraulic_engine import analyze_storm_hydraulics
+from engines.storm.storm_network_engine import build_storm_network
+from engines.storm.storm_types import (
+    HydraulicAnalysisRequest,
+    StormBasin,
+    StormCatchment,
+    StormInlet,
+    StormNetworkRequest,
+    StormNode,
+    StormNodeType,
+    StormPoint,
+)
 from engines.surface_engine import SurfaceEngine, GridSurface
 from engines.utility_engine import UtilityEngine, UtilityNodeSpec, UtilityRequest
 
@@ -2204,6 +2217,8 @@ def _canonical_drainage_payload(
     inlet_records: Sequence[Any] = (),
     basin_records: Sequence[Any] = (),
     pipe_runs: Sequence[Any] = (),
+    low_point_records: Sequence[Any] = (),
+    flow_paths: Sequence[Any] = (),
     source: str,
     mode: str = "assisted",
     success: bool = True,
@@ -2213,6 +2228,8 @@ def _canonical_drainage_payload(
     structures: List[Dict[str, Any]] = []
     basins: List[Dict[str, Any]] = []
     pipes: List[Dict[str, Any]] = []
+    low_points: List[Dict[str, Any]] = []
+    routed_flow_paths: List[Dict[str, Any]] = []
     total_pipe_length = 0.0
 
     for index, record in enumerate(inlet_records or [], start=1):
@@ -2234,6 +2251,7 @@ def _canonical_drainage_payload(
                 "contributing_area_sf": safe_float(getattr(inlet, "contributing_area_sf", 0.0), 0.0),
                 "estimated_flow_cfs": safe_float(getattr(inlet, "estimated_flow_cfs", 0.0), 0.0),
                 "target_name": safe_str(getattr(inlet, "target_name", ""), "") or None,
+                "tributary_basin_name": safe_str(getattr(inlet, "tributary_basin_name", ""), "") or None,
                 "warnings": warnings_list,
             })
             continue
@@ -2253,6 +2271,7 @@ def _canonical_drainage_payload(
             "contributing_area_sf": safe_float(rec.get("contributing_area_sf"), 0.0),
             "estimated_flow_cfs": safe_float(rec.get("estimated_flow_cfs"), 0.0),
             "target_name": safe_str(rec.get("target_name"), "") or None,
+            "tributary_basin_name": safe_str(rec.get("tributary_basin_name"), "") or None,
             "warnings": [safe_str(w) for w in safe_list(rec.get("warnings")) if safe_str(w)],
         })
 
@@ -2271,6 +2290,9 @@ def _canonical_drainage_payload(
                 "contributing_cells": safe_int(getattr(record, "contributing_cells", 0), 0),
                 "target_name": safe_str(getattr(record, "target_name", ""), "") or None,
                 "average_z": safe_float(getattr(record, "average_z", 0.0), 0.0),
+                "estimated_runoff_cfs": safe_float(getattr(record, "estimated_runoff_cfs", 0.0), 0.0),
+                "runoff_c": safe_float(getattr(record, "runoff_c", 0.0), 0.0),
+                "intensity_in_hr": safe_float(getattr(record, "intensity_in_hr", 0.0), 0.0),
             })
             continue
 
@@ -2288,6 +2310,9 @@ def _canonical_drainage_payload(
             "contributing_cells": safe_int(rec.get("contributing_cells"), 0),
             "target_name": safe_str(rec.get("target_name"), "") or None,
             "average_z": safe_float(rec.get("average_z"), 0.0),
+            "estimated_runoff_cfs": safe_float(rec.get("estimated_runoff_cfs"), 0.0),
+            "runoff_c": safe_float(rec.get("runoff_c"), 0.0),
+            "intensity_in_hr": safe_float(rec.get("intensity_in_hr"), 0.0),
         })
 
     for index, run in enumerate(pipe_runs or [], start=1):
@@ -2326,7 +2351,46 @@ def _canonical_drainage_payload(
             "warnings": [safe_str(w) for w in safe_list(rec.get("warnings")) if safe_str(w)],
         })
 
-    has_flow_paths = bool(pipes) or bool(structures) or bool(basins)
+    for index, record in enumerate(low_point_records or [], start=1):
+        rec = safe_dict(record)
+        if not rec:
+            continue
+        low_points.append({
+            "id": safe_str(rec.get("name"), f"LOW-{index}"),
+            "name": safe_str(rec.get("name"), f"LOW-{index}"),
+            "x": round(safe_float(rec.get("x"), 0.0), 3),
+            "y": round(safe_float(rec.get("y"), 0.0), 3),
+            "z": round(safe_float(rec.get("z"), 0.0), 3),
+            "row": safe_int(rec.get("row"), 0),
+            "col": safe_int(rec.get("col"), 0),
+            "contributing_cells": safe_int(rec.get("contributing_cells"), 0),
+        })
+
+    for index, route in enumerate(flow_paths or [], start=1):
+        path: List[List[float]] = []
+        target_name = None
+        if isinstance(route, dict):
+            rec = safe_dict(route)
+            target_name = safe_str(rec.get("target_name") or rec.get("target"), "") or None
+            raw_path = safe_list(rec.get("path") or rec.get("points"))
+        elif isinstance(route, (list, tuple)):
+            raw_path = safe_list(route[0]) if len(route) >= 1 else []
+            target_name = safe_str(route[1], "") or None if len(route) > 1 else None
+        else:
+            raw_path = []
+        for pt in raw_path:
+            if isinstance(pt, (list, tuple)) and len(pt) >= 2:
+                path.append([round(safe_float(pt[0], 0.0), 3), round(safe_float(pt[1], 0.0), 3)])
+        if len(path) < 2:
+            continue
+        routed_flow_paths.append({
+            "id": f"FLOW-{index}",
+            "path": path,
+            "target_name": target_name,
+            "length_ft": round(polyline_length(path), 3),
+        })
+
+    has_flow_paths = bool(pipes) or bool(structures) or bool(basins) or bool(routed_flow_paths)
     return {
         "schema_version": "v1",
         "source": source,
@@ -2337,14 +2401,80 @@ def _canonical_drainage_payload(
         "structures": structures,
         "basins": basins,
         "pipes": pipes,
+        "low_points": low_points,
+        "flow_paths": routed_flow_paths,
         "stats": {
             "inlet_count": sum(1 for item in structures if item.get("object_type") == "inlet"),
             "structure_count": len(structures),
             "basin_count": len(basins),
             "pipe_count": len(pipes),
+            "low_point_count": len(low_points),
+            "flow_path_count": len(routed_flow_paths),
             "pipe_total_length_ft": round(total_pipe_length, 3),
+            "total_contributing_area_sf": round(
+                sum(max(0.0, safe_float(item.get("contributing_area_sf"), 0.0)) for item in structures if item.get("object_type") == "inlet"),
+                3,
+            ),
+            "total_estimated_inlet_flow_cfs": round(
+                sum(max(0.0, safe_float(item.get("estimated_flow_cfs"), 0.0)) for item in structures if item.get("object_type") == "inlet"),
+                3,
+            ),
+            "total_basin_runoff_cfs": round(
+                sum(max(0.0, safe_float(item.get("estimated_runoff_cfs"), 0.0)) for item in basins),
+                3,
+            ),
             "has_flow_paths": has_flow_paths,
         },
+        "surface_guidance": {},
+    }
+
+
+def _drainage_surface_alignment(
+    grading: Dict[str, Any],
+    drainage: Dict[str, Any],
+) -> Dict[str, Any]:
+    grading_low_points = [
+        safe_dict(item) for item in safe_list(grading.get("low_points")) if safe_dict(item)
+    ]
+    drainage_low_points = [
+        safe_dict(item) for item in safe_list(drainage.get("low_points")) if safe_dict(item)
+    ]
+    grading_stats = safe_dict(grading.get("stats"))
+    threshold_ft = max(
+        20.0,
+        safe_float(safe_dict(grading.get("proposed_surface")).get("cell_size"), 0.0) * 8.0,
+    )
+    min_distance_ft: Optional[float] = None
+    matched_pairs = 0
+
+    if grading_low_points and drainage_low_points:
+        remaining = list(drainage_low_points)
+        for glp in grading_low_points[:4]:
+            gx = safe_float(glp.get("x"), 0.0)
+            gy = safe_float(glp.get("y"), 0.0)
+            best_index = None
+            best_distance = None
+            for idx, dlp in enumerate(remaining):
+                dx = safe_float(dlp.get("x"), 0.0)
+                dy = safe_float(dlp.get("y"), 0.0)
+                dist = math.hypot(dx - gx, dy - gy)
+                if best_distance is None or dist < best_distance:
+                    best_distance = dist
+                    best_index = idx
+            if best_distance is None:
+                continue
+            min_distance_ft = best_distance if min_distance_ft is None else min(min_distance_ft, best_distance)
+            if best_distance <= threshold_ft and best_index is not None:
+                matched_pairs += 1
+                remaining.pop(best_index)
+
+    return {
+        "grading_low_point_count": len(grading_low_points),
+        "drainage_low_point_count": len(drainage_low_points),
+        "grading_flow_sample_count": safe_int(grading_stats.get("flow_sample_count"), 0),
+        "threshold_ft": round(threshold_ft, 3),
+        "matched_low_points": matched_pairs,
+        "min_low_point_distance_ft": round(min_distance_ft, 3) if min_distance_ft is not None else None,
     }
 
 
@@ -2371,6 +2501,7 @@ def _enrich_drainage_basins_with_engineering(
     ]
     runoff_c = safe_float(hydrology.get("runoff_c"), PIPE_RUNOFF_C)
     intensity = safe_float(hydrology.get("intensity_in_hr"), PIPE_INTENSITY_IN_HR)
+    target_drawdown_hours = 48.0
 
     structure_flow_by_target: Dict[str, float] = {}
     for structure in safe_list(enriched.get("structures")):
@@ -2413,52 +2544,156 @@ def _enrich_drainage_basins_with_engineering(
             safe_float(structure_flow_by_target.get(safe_str(basin.get("target_name"))), 0.0),
             runoff_c * intensity * (safe_float(basin.get("area_sf"), 0.0) / 43560.0),
         )
-        release_cfs = max(0.1, inflow_cfs * 0.35)
+        initial_release_cfs = max(0.1, inflow_cfs * 0.35)
+        preliminary_detention = concept_detention_size(inflow_cfs, initial_release_cfs)
+        preliminary_storage_cf = max(
+            safe_float(getattr(preliminary_detention, "provided_geometry_storage_cf", 0.0), 0.0),
+            safe_float(getattr(preliminary_detention, "required_storage_cf", 0.0), 0.0),
+        )
+        release_from_drawdown_cfs = preliminary_storage_cf / max(target_drawdown_hours * 3600.0, 1.0)
+        release_cfs = max(0.1, min(inflow_cfs * 0.75, max(initial_release_cfs * 0.5, release_from_drawdown_cfs)))
         detention = concept_detention_size(inflow_cfs, release_cfs)
         geometry = getattr(detention, "recommended_geometry", None)
-        bottom_area_sf = safe_float(getattr(geometry, "bottom_area_sf", 0.0), 0.0) if geometry is not None else 0.0
+        required_storage_cf = safe_float(getattr(detention, "required_storage_cf", 0.0), 0.0)
+        provided_storage_cf = safe_float(getattr(detention, "provided_geometry_storage_cf", 0.0), 0.0)
+        target_bottom_area_sf = safe_float(getattr(geometry, "bottom_area_sf", 0.0), 0.0) if geometry is not None else 0.0
+        depth_ft = round(safe_float(getattr(geometry, "depth_ft", 0.0), 0.0), 3) if geometry is not None else 0.0
+        freeboard_ft = round(safe_float(getattr(geometry, "freeboard_ft", 0.0), 0.0), 3) if geometry is not None else 0.0
+        side_slope_h_to_1v = round(safe_float(getattr(geometry, "side_slope_h_to_1v", 4.0), 4.0), 3) if geometry is not None else 4.0
+        bottom_to_top_area_ratio = (target_bottom_area_sf / max(top_area_sf, 1.0)) if top_area_sf > 0.0 else 0.0
+        expected_daylight_band_width_ft = max(0.0, side_slope_h_to_1v * max(depth_ft + freeboard_ft, 0.0))
         scale = 0.55
-        if top_area_sf > 1e-6 and bottom_area_sf > 1e-6:
-            scale = max(0.25, min(0.92, math.sqrt(bottom_area_sf / top_area_sf)))
+        if top_area_sf > 1e-6 and target_bottom_area_sf > 1e-6:
+            area_scale = max(0.25, min(0.92, math.sqrt(target_bottom_area_sf / top_area_sf)))
+            scale = area_scale
+            top_equivalent_radius = math.sqrt(max(top_area_sf, 1.0) / math.pi)
+            if top_equivalent_radius > 1e-6 and expected_daylight_band_width_ft > 0.0:
+                target_bottom_radius = max(1.0, top_equivalent_radius - expected_daylight_band_width_ft)
+                depth_scale = max(0.15, min(0.95, target_bottom_radius / top_equivalent_radius))
+                scale = max(0.15, min(0.95, (area_scale * 0.6) + (depth_scale * 0.4)))
         bottom_points = _scale_polygon(boundary_points, scale) if boundary_points else []
+        actual_bottom_area_sf = _polygon_area(bottom_points) or target_bottom_area_sf
+        top_equivalent_radius = math.sqrt(max(top_area_sf, 1.0) / math.pi) if top_area_sf > 0.0 else 0.0
+        bottom_equivalent_radius = math.sqrt(max(actual_bottom_area_sf, 1.0) / math.pi) if actual_bottom_area_sf > 0.0 else 0.0
+        daylight_band_width_ft = max(0.0, top_equivalent_radius - bottom_equivalent_radius)
+        footprint_consistency_ratio = (
+            daylight_band_width_ft / max(expected_daylight_band_width_ft, 1e-9)
+            if expected_daylight_band_width_ft > 0.0
+            else 1.0
+        )
+        top_perimeter_ft = _polygon_perimeter(boundary_points)
+        bottom_perimeter_ft = _polygon_perimeter(bottom_points)
         centroid_xy = safe_list(basin.get("centroid_xy"))
         bottom_elev = round(
-            safe_float(basin.get("average_z"), 0.0) - max(2.0, safe_float(getattr(geometry, "depth_ft", 0.0), 0.0)),
+            safe_float(basin.get("average_z"), 0.0) - max(2.0, depth_ft),
             3,
         )
         top_of_bank_elev = round(
             bottom_elev
-            + safe_float(getattr(geometry, "depth_ft", 0.0), 0.0)
-            + safe_float(getattr(geometry, "freeboard_ft", 0.0), 0.0),
+            + depth_ft
+            + freeboard_ft,
             3,
         )
         outlet_xy = _nearest_polygon_vertex(boundary_points or [centroid_xy], outfall_xy or centroid_xy)
+        storage_ratio = 0.0
+        if required_storage_cf > 0.0:
+            storage_ratio = provided_storage_cf / max(required_storage_cf, 1.0)
+        storage_deficit_cf = max(0.0, required_storage_cf - provided_storage_cf)
+        storage_surplus_cf = max(0.0, provided_storage_cf - required_storage_cf)
+        adequacy_status = "adequate"
+        if required_storage_cf > 0.0 and storage_ratio < 1.0:
+            adequacy_status = "deficient"
+        elif required_storage_cf > 0.0 and storage_ratio >= 1.1:
+            adequacy_status = "surplus"
+        spillway_drop_ft = max(0.3, min(1.0, freeboard_ft * 0.5)) if freeboard_ft > 0.0 else 0.3
+        spillway_crest_elev_ft = round(top_of_bank_elev - spillway_drop_ft, 3)
+        spillway_width_ft = round(max(8.0, min(24.0, math.sqrt(max(top_area_sf, 1.0)) * 0.2)), 3)
+        overflow_depth_ft = round(max(0.5, freeboard_ft), 3)
+        spillway_capacity_cfs = round(spillway_width_ft * overflow_depth_ft * 1.5, 3)
+        geometry_quality = {
+            "has_boundary": bool(boundary_points),
+            "has_bottom": bool(bottom_points),
+            "has_daylight_tie_in": bool(boundary_points),
+            "storage_ratio": round(storage_ratio, 3),
+            "bottom_to_top_area_ratio": round(bottom_to_top_area_ratio, 3),
+            "adequacy_status": adequacy_status,
+            "storage_deficit_cf": round(storage_deficit_cf, 3),
+            "storage_surplus_cf": round(storage_surplus_cf, 3),
+            "top_area_sf": round(top_area_sf, 3),
+            "bottom_area_sf": round(actual_bottom_area_sf, 3),
+            "target_bottom_area_sf": round(target_bottom_area_sf, 3),
+            "top_perimeter_ft": round(top_perimeter_ft, 3),
+            "bottom_perimeter_ft": round(bottom_perimeter_ft, 3),
+            "expected_daylight_band_width_ft": round(expected_daylight_band_width_ft, 3),
+            "daylight_band_width_ft": round(daylight_band_width_ft, 3),
+            "footprint_consistency_ratio": round(footprint_consistency_ratio, 3),
+            "depth_ft": depth_ft,
+            "freeboard_ft": freeboard_ft,
+            "side_slope_h_to_1v": side_slope_h_to_1v,
+            "spillway_crest_elev_ft": spillway_crest_elev_ft,
+            "spillway_width_ft": spillway_width_ft,
+            "spillway_capacity_cfs": spillway_capacity_cfs,
+            "stage_storage_point_count": len(safe_list(getattr(detention, "stage_storage_curve", []))),
+        }
         basin["boundary_points"] = boundary_points
         basin["bottom_points"] = bottom_points
         basin["top_of_bank_area_sf"] = round(top_area_sf, 3)
-        basin["bottom_area_sf"] = round(bottom_area_sf, 3)
+        basin["bottom_area_sf"] = round(actual_bottom_area_sf, 3)
         basin["bottom_elev_ft"] = bottom_elev
         basin["top_of_bank_elev_ft"] = top_of_bank_elev
         basin["daylight_tie_in"] = bool(boundary_points)
+        basin["storage_ratio"] = round(storage_ratio, 3)
+        basin["geometry_quality"] = geometry_quality
+        basin["overflow_spillway"] = {
+            "crest_elev_ft": spillway_crest_elev_ft,
+            "width_ft": spillway_width_ft,
+            "overflow_depth_ft": overflow_depth_ft,
+            "assumed_capacity_cfs": spillway_capacity_cfs,
+            "to_target_name": safe_str(preferred_outfall.get("target_name"), "") or safe_str(basin.get("target_name"), ""),
+            "daylight_tie_in": bool(boundary_points),
+            "assumed": True,
+        }
         basin["outlet_structure"] = {
             "name": f"{name}-OUTLET" if name else "BASIN-OUTLET",
             "x": round(safe_float(outlet_xy[0], 0.0), 3),
             "y": round(safe_float(outlet_xy[1], 0.0), 3),
             "invert_ft": round(bottom_elev + 1.0, 3),
             "flow_direction": "to_outfall",
+            "daylight_tie_in": bool(boundary_points),
         }
         basin["detention_design"] = {
-            "required_storage_cf": round(safe_float(getattr(detention, "required_storage_cf", 0.0), 0.0), 3),
-            "provided_storage_cf": round(safe_float(getattr(detention, "provided_geometry_storage_cf", 0.0), 0.0), 3),
+            "required_storage_cf": round(required_storage_cf, 3),
+            "provided_storage_cf": round(provided_storage_cf, 3),
             "drawdown_hours": round(safe_float(getattr(detention, "drawdown_hours", 0.0), 0.0), 3),
             "inflow_cfs": round(inflow_cfs, 3),
             "release_cfs": round(release_cfs, 3),
-            "side_slope_h_to_1v": round(safe_float(getattr(geometry, "side_slope_h_to_1v", 4.0), 4.0), 3) if geometry is not None else 4.0,
-            "depth_ft": round(safe_float(getattr(geometry, "depth_ft", 0.0), 0.0), 3) if geometry is not None else 0.0,
-            "freeboard_ft": round(safe_float(getattr(geometry, "freeboard_ft", 0.0), 0.0), 3) if geometry is not None else 0.0,
+            "release_basis": "target_drawdown",
+            "target_drawdown_hours": round(target_drawdown_hours, 3),
+            "release_fraction_of_inflow": round(release_cfs / max(inflow_cfs, 1e-9), 4) if inflow_cfs > 0.0 else 0.0,
+            "storage_ratio": round(storage_ratio, 3),
+            "bottom_to_top_area_ratio": round(bottom_to_top_area_ratio, 3),
+            "adequacy_status": adequacy_status,
+            "storage_deficit_cf": round(storage_deficit_cf, 3),
+            "storage_surplus_cf": round(storage_surplus_cf, 3),
+            "top_area_sf": round(top_area_sf, 3),
+            "bottom_area_sf": round(actual_bottom_area_sf, 3),
+            "target_bottom_area_sf": round(target_bottom_area_sf, 3),
+            "top_perimeter_ft": round(top_perimeter_ft, 3),
+            "bottom_perimeter_ft": round(bottom_perimeter_ft, 3),
+            "expected_daylight_band_width_ft": round(expected_daylight_band_width_ft, 3),
+            "daylight_band_width_ft": round(daylight_band_width_ft, 3),
+            "footprint_consistency_ratio": round(footprint_consistency_ratio, 3),
+            "side_slope_h_to_1v": side_slope_h_to_1v,
+            "depth_ft": depth_ft,
+            "freeboard_ft": freeboard_ft,
+            "spillway_crest_elev_ft": spillway_crest_elev_ft,
+            "spillway_width_ft": spillway_width_ft,
+            "spillway_capacity_cfs": spillway_capacity_cfs,
+            "stage_storage_point_count": len(safe_list(getattr(detention, "stage_storage_curve", []))),
             "assumptions": [
                 "Storage sized from Rational Method inflow estimate using planner runoff assumptions.",
-                "Outlet release assumed as 35% of basin inflow for concept detention sizing.",
+                "Outlet release was tuned to concept basin storage and a target 48-hour drawdown window.",
+                "Emergency overflow spillway crest and width were inferred from top-of-bank elevation and basin footprint.",
             ],
         }
         updated_basins.append(basin)
@@ -2515,14 +2750,66 @@ def _drainage_export_validation(
 ) -> Dict[str, Any]:
     drainage = safe_dict(drainage_override if drainage_override is not None else project.meta.get("drainage_canonical"))
     storm = safe_dict(storm_override if storm_override is not None else project.meta.get("storm_pipe_summary"))
+    grading_export = _grading_export_validation(project)
+    grading = safe_dict(project.meta.get("grading_summary"))
+    surface_alignment = _drainage_surface_alignment(grading, drainage)
     primary_basins = _primary_engineered_basins(drainage)
+    storm_stats = safe_dict(storm.get("stats"))
+    selected_basin_name = safe_str(storm_stats.get("selected_basin_name"), "")
+    validation_basins = [
+        item
+        for item in primary_basins
+        if not selected_basin_name or safe_str(item.get("name"), "") == selected_basin_name
+    ]
+    if not validation_basins:
+        validation_basins = primary_basins
+    drainage_stats = safe_dict(drainage.get("stats"))
+    drainage_source = safe_str(drainage.get("source"), "")
     reasons: List[str] = []
     if not bool(drainage.get("success", False)):
         reasons.append("drainage_stage_invalid")
+    if not bool(grading_export.get("ready")):
+        reasons.append("grading_surface_unstable")
     if not primary_basins:
         reasons.append("primary_detention_missing")
+    else:
+        inadequate_basins = [
+            item
+            for item in validation_basins
+            if safe_str(safe_dict(item.get("detention_design")).get("adequacy_status"), "adequate").lower() == "deficient"
+        ]
+        if inadequate_basins:
+            reasons.append("primary_detention_inadequate")
+        weak_spillway = [
+            item
+            for item in validation_basins
+            if safe_float(safe_dict(item.get("overflow_spillway")).get("assumed_capacity_cfs"), 0.0) <= 0.0
+        ]
+        if weak_spillway:
+            reasons.append("primary_detention_overflow_missing")
+        weak_geometry = [
+            item
+            for item in validation_basins
+            if (
+                not bool(safe_dict(item.get("geometry_quality")).get("has_bottom"))
+                or safe_float(safe_dict(item.get("geometry_quality")).get("footprint_consistency_ratio"), 1.0) < 0.4
+            )
+        ]
+        if weak_geometry:
+            reasons.append("primary_detention_geometry_weak")
     if not safe_list(drainage.get("structures")):
         reasons.append("drainage_structures_missing")
+    if drainage_source == "drainage_engine":
+        if safe_int(drainage_stats.get("low_point_count"), 0) <= 0:
+            reasons.append("drainage_low_points_missing")
+        if safe_int(drainage_stats.get("flow_path_count"), 0) <= 0:
+            reasons.append("drainage_flow_paths_missing")
+        if (
+            safe_int(surface_alignment.get("grading_low_point_count"), 0) > 0
+            and safe_int(surface_alignment.get("drainage_low_point_count"), 0) > 0
+            and safe_int(surface_alignment.get("matched_low_points"), 0) <= 0
+        ):
+            reasons.append("drainage_surface_alignment_missing")
 
     storm_segments = safe_list(storm.get("segments"))
     if primary_basins:
@@ -2539,11 +2826,72 @@ def _drainage_export_validation(
         "ready": not reasons,
         "reasons": reasons,
         "primary_basin_count": len(primary_basins),
+        "validation_basin_count": len(validation_basins),
+        "selected_basin_name": selected_basin_name,
         "primary_basin_ids": [
             safe_str(item.get("id"), safe_str(item.get("name"), "BASIN"))
             for item in primary_basins
         ],
+        "inadequate_basin_count": len(
+            [
+                item
+                for item in validation_basins
+                if safe_str(safe_dict(item.get("detention_design")).get("adequacy_status"), "adequate").lower() == "deficient"
+            ]
+        ),
+        "weak_geometry_basin_count": len(
+            [
+                item
+                for item in validation_basins
+                if (
+                    not bool(safe_dict(item.get("geometry_quality")).get("has_bottom"))
+                    or safe_float(safe_dict(item.get("geometry_quality")).get("footprint_consistency_ratio"), 1.0) < 0.4
+                )
+            ]
+        ),
         "storm_pipe_count": len(storm_segments),
+        "grading_export_ready": bool(grading_export.get("ready")),
+        "surface_controls": deepcopy(safe_dict(grading_export.get("surface_controls"))),
+        "low_point_count": safe_int(drainage_stats.get("low_point_count"), 0),
+        "flow_path_count": safe_int(drainage_stats.get("flow_path_count"), 0),
+        "total_contributing_area_sf": round(safe_float(drainage_stats.get("total_contributing_area_sf"), 0.0), 3),
+        "total_estimated_inlet_flow_cfs": round(safe_float(drainage_stats.get("total_estimated_inlet_flow_cfs"), 0.0), 3),
+        "total_basin_runoff_cfs": round(safe_float(drainage_stats.get("total_basin_runoff_cfs"), 0.0), 3),
+        "surface_alignment": surface_alignment,
+    }
+
+
+def _grading_export_validation(
+    project: ProjectModel,
+    *,
+    grading_override: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    grading = safe_dict(grading_override if grading_override is not None else project.meta.get("grading_summary"))
+    reasons: List[str] = []
+    if not bool(grading.get("success", False)):
+        reasons.append("grading_stage_invalid")
+    if bool(grading.get("fallback_used")):
+        reasons.append("grading_fallback_used")
+    existing = safe_dict(grading.get("existing_surface"))
+    proposed = safe_dict(grading.get("proposed_surface"))
+    if not existing or not proposed:
+        reasons.append("grading_surfaces_missing")
+    derived = safe_dict(grading.get("derived_actions") or grading.get("stats"))
+    surface_controls = safe_dict(grading.get("surface_controls"))
+    if safe_int(derived.get("proposed_contour_count"), 0) <= 0:
+        reasons.append("grading_contours_missing")
+    if safe_int(derived.get("spot_grade_count"), 0) <= 0:
+        reasons.append("grading_spot_grades_missing")
+    if safe_int(derived.get("flow_arrow_count"), 0) <= 0:
+        reasons.append("grading_flow_arrows_missing")
+    if not bool(surface_controls.get("has_primary_drainage_direction")):
+        reasons.append("grading_drainage_direction_missing")
+    if not safe_dict(surface_controls.get("primary_low_point")):
+        reasons.append("grading_primary_low_point_missing")
+    return {
+        "ready": not reasons,
+        "reasons": reasons,
+        "surface_controls": surface_controls,
     }
 
 
@@ -2553,6 +2901,7 @@ def _storm_export_validation(
     storm_override: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     storm = safe_dict(storm_override if storm_override is not None else project.meta.get("storm_pipe_summary"))
+    drainage_validation = _drainage_export_validation(project)
     reasons: List[str] = []
     segments = safe_list(storm.get("segments"))
     if not segments:
@@ -2561,8 +2910,13 @@ def _storm_export_validation(
         reasons.append("storm_graph_invalid")
     if not bool(safe_dict(storm.get("hydraulic_validation")).get("valid", False)):
         reasons.append("storm_hydraulics_invalid")
+    if bool(safe_dict(storm.get("explain")).get("implied_target_used")):
+        reasons.append("storm_downstream_target_implied")
     if safe_list(storm.get("missing_data_segments")):
         reasons.append("storm_segments_incomplete")
+    for drainage_reason in ("primary_detention_inadequate", "primary_detention_overflow_missing", "primary_detention_geometry_weak"):
+        if drainage_reason in safe_list(drainage_validation.get("reasons")):
+            reasons.append(drainage_reason)
     return {
         "ready": not reasons,
         "reasons": reasons,
@@ -2570,9 +2924,590 @@ def _storm_export_validation(
     }
 
 
+def _utility_export_validation(
+    project: ProjectModel,
+    *,
+    utilities_override: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    utilities = safe_dict(utilities_override if utilities_override is not None else project.meta.get("utility_summary"))
+    hooks = safe_dict(utilities.get("conflict_hooks"))
+    segments = safe_list(hooks.get("utility_segments"))
+    reasons: List[str] = []
+    if not bool(utilities.get("success", False)):
+        reasons.append("utility_stage_invalid")
+    if bool(utilities.get("fallback_used")):
+        reasons.append("utility_fallback_used")
+    if safe_int(utilities.get("route_count"), 0) <= 0 or not segments:
+        reasons.append("utility_network_missing")
+    if safe_int(utilities.get("shallow_segment_count"), 0) > 0:
+        reasons.append("utility_cover_weak")
+    if safe_int(utilities.get("gravity_slope_issue_count"), 0) > 0:
+        reasons.append("utility_gravity_slope_weak")
+    coordination = safe_dict(utilities.get("coordination"))
+    if safe_int(coordination.get("utility_related_unresolved_conflict_count"), 0) > 0:
+        reasons.append("utility_coordination_unresolved")
+    if coordination and not bool(coordination.get("post_validation_valid", True)):
+        reasons.append("utility_post_validation_failed")
+    return {
+        "ready": not reasons,
+        "reasons": reasons,
+        "route_count": safe_int(utilities.get("route_count"), 0),
+        "shallow_segment_count": safe_int(utilities.get("shallow_segment_count"), 0),
+        "gravity_slope_issue_count": safe_int(utilities.get("gravity_slope_issue_count"), 0),
+        "utility_related_unresolved_conflict_count": safe_int(
+            coordination.get("utility_related_unresolved_conflict_count"),
+            0,
+        ),
+        "post_validation_valid": bool(coordination.get("post_validation_valid", True)),
+    }
+
+
+def _enrich_utility_summary_with_coordination(
+    summary: Dict[str, Any],
+    project: ProjectModel,
+    manager: Optional[ProjectManager] = None,
+) -> Dict[str, Any]:
+    hooks = safe_dict(summary.get("conflict_hooks"))
+    segments = [safe_dict(item) for item in safe_list(hooks.get("utility_segments"))]
+    sanitary = safe_dict(
+        (manager.latest_outputs.get("sanitary") if manager is not None else None)
+        or project.meta.get("sanitary_summary", {})
+    )
+    coordination = safe_dict(
+        (manager.latest_outputs.get("coordination") if manager is not None else None)
+        or project.meta.get("coordination_summary", {})
+    )
+    post_resolution_validations = safe_dict(coordination.get("post_resolution_validations"))
+    post_system_validations = safe_dict(post_resolution_validations.get("systems"))
+    unresolved_conflicts = [safe_dict(item) for item in safe_list(coordination.get("unresolved_conflicts"))]
+    resolved_conflicts = [safe_dict(item) for item in safe_list(coordination.get("resolved_conflicts"))]
+    resolution_history = [safe_dict(item) for item in safe_list(coordination.get("resolution_history"))]
+    utility_system_names = {"utilities", "utility", "water", "sanitary", "storm", "storm_pipes"}
+
+    def _utility_related(conflict: Dict[str, Any]) -> bool:
+        systems = {
+            safe_str(item).lower()
+            for item in safe_list(conflict.get("systems_involved") or conflict.get("systems"))
+            if safe_str(item)
+        }
+        return bool(systems.intersection(utility_system_names))
+
+    utility_unresolved = [item for item in unresolved_conflicts if _utility_related(item)]
+    utility_resolved = [item for item in resolved_conflicts if _utility_related(item)]
+    utility_history = [
+        item
+        for item in resolution_history
+        if {
+            safe_str(system).lower()
+            for system in safe_list(item.get("changed_systems"))
+            if safe_str(system)
+        }.intersection(utility_system_names)
+    ]
+    utility_conflict_type_counts: Dict[str, int] = {}
+    for conflict in utility_unresolved:
+        conflict_type = safe_str(conflict.get("conflict_type"), "utility_conflict")
+        utility_conflict_type_counts[conflict_type] = utility_conflict_type_counts.get(conflict_type, 0) + 1
+    reroute_resolution_count = 0
+    vertical_adjustment_count = 0
+    added_structures_from_coordination = 0
+    grading_adjustment_count = 0
+    selected_candidate_modes: Dict[str, int] = {}
+    selected_group_strategies: Dict[str, int] = {}
+    clearance_total_checks = 0
+    clearance_compliant_checks = 0
+    for history_item in utility_history:
+        strategy_name = safe_str(history_item.get("selected_group_strategy"))
+        if strategy_name:
+            selected_group_strategies[strategy_name] = selected_group_strategies.get(strategy_name, 0) + 1
+        candidate_mode = safe_str(history_item.get("selected_candidate_mode"))
+        if candidate_mode:
+            selected_candidate_modes[candidate_mode] = selected_candidate_modes.get(candidate_mode, 0) + 1
+        engineering_deltas = safe_dict(history_item.get("engineering_deltas"))
+        added_structures_from_coordination += safe_int(engineering_deltas.get("added_structures"), 0)
+        grading_adjustment_count += len(safe_list(engineering_deltas.get("grading_adjustments")))
+        crossing_hierarchy = safe_dict(engineering_deltas.get("crossing_hierarchy"))
+        clearance_total_checks += safe_int(crossing_hierarchy.get("total_checks"), 0)
+        clearance_compliant_checks += safe_int(crossing_hierarchy.get("compliant_checks"), 0)
+        for note in safe_list(history_item.get("notes")):
+            note_text = safe_str(note).lower()
+            if "reroute" in note_text:
+                reroute_resolution_count += 1
+            if "vertical_adjustment" in note_text or "vertical adjustment" in note_text:
+                vertical_adjustment_count += 1
+    utility_conflicts_all = utility_unresolved + utility_resolved
+    actual_horizontal_values = [
+        safe_float(conflict.get("actual_horizontal_clearance_ft"), 0.0)
+        for conflict in utility_conflicts_all
+        if conflict.get("actual_horizontal_clearance_ft") is not None
+    ]
+    actual_vertical_values = [
+        safe_float(conflict.get("actual_vertical_clearance_ft"), 0.0)
+        for conflict in utility_conflicts_all
+        if conflict.get("actual_vertical_clearance_ft") is not None
+    ]
+    horizontal_deficits = [
+        max(safe_float(conflict.get("required_horizontal_clearance_ft"), 0.0) - safe_float(conflict.get("actual_horizontal_clearance_ft"), 0.0), 0.0)
+        for conflict in utility_conflicts_all
+        if conflict.get("actual_horizontal_clearance_ft") is not None
+    ]
+    vertical_deficits = [
+        max(safe_float(conflict.get("required_vertical_clearance_ft"), 0.0) - safe_float(conflict.get("actual_vertical_clearance_ft"), 0.0), 0.0)
+        for conflict in utility_conflicts_all
+        if conflict.get("actual_vertical_clearance_ft") is not None
+    ]
+    summary["trunk_count"] = sum(
+        1 for seg in segments if safe_str(safe_dict(seg).get("segment_role"), "") == "trunk"
+    )
+    summary["service_count"] = sum(
+        1 for seg in segments if safe_str(safe_dict(seg).get("segment_role"), "") != "trunk"
+    )
+    summary["gravity_segment_count"] = sum(
+        1 for seg in segments if safe_str(safe_dict(seg).get("hydraulic_mode"), "") == "gravity"
+    )
+    summary["min_cover_ft"] = round(
+        min(
+            (
+                min(
+                    safe_float(safe_dict(seg).get("cover_start_ft"), 0.0),
+                    safe_float(safe_dict(seg).get("cover_end_ft"), 0.0),
+                )
+                for seg in segments
+            ),
+            default=0.0,
+        ),
+        3,
+    )
+    summary["min_horizontal_separation_ft"] = round(
+        safe_float(hooks.get("minimum_horizontal_separation_ft"), 0.0),
+        3,
+    )
+    summary["min_vertical_separation_ft"] = round(
+        safe_float(hooks.get("minimum_vertical_separation_ft"), 0.0),
+        3,
+    )
+    summary["shallow_segment_count"] = sum(
+        1
+        for seg in segments
+        if min(
+            safe_float(safe_dict(seg).get("cover_start_ft"), 0.0),
+            safe_float(safe_dict(seg).get("cover_end_ft"), 0.0),
+        )
+        < safe_float(safe_dict(seg).get("min_cover_ft"), 3.0)
+    )
+    summary["gravity_slope_issue_count"] = sum(
+        1
+        for seg in segments
+        if safe_str(safe_dict(seg).get("hydraulic_mode"), "") == "gravity"
+        and safe_float(safe_dict(seg).get("slope_ft_ft"), 0.0) > 0.0
+        and safe_float(safe_dict(seg).get("slope_ft_ft"), 0.0) < PIPE_MIN_SLOPE
+    )
+    summary["coordination"] = {
+        "sanitary_storm_conflict_count": safe_int(safe_dict(sanitary.get("stats")).get("storm_conflict_count"), 0),
+        "unresolved_conflict_count": len(safe_list(coordination.get("unresolved_conflicts"))),
+        "resolved_conflict_count": safe_int(coordination.get("resolved_count"), 0),
+        "utility_related_unresolved_conflict_count": len(utility_unresolved),
+        "utility_related_resolved_conflict_count": len(utility_resolved),
+        "utility_related_conflict_types": utility_conflict_type_counts,
+        "selected_group_strategy": safe_str(safe_dict(utility_history[-1] if utility_history else {}).get("selected_group_strategy"), ""),
+        "selected_candidate_mode": safe_str(safe_dict(utility_history[-1] if utility_history else {}).get("selected_candidate_mode"), ""),
+        "selected_group_strategy_counts": selected_group_strategies,
+        "selected_candidate_mode_counts": selected_candidate_modes,
+        "reroute_resolution_count": reroute_resolution_count,
+        "vertical_adjustment_count": vertical_adjustment_count,
+        "added_structures_from_coordination": added_structures_from_coordination,
+        "grading_adjustment_count": grading_adjustment_count,
+        "clearance_total_checks": clearance_total_checks,
+        "clearance_compliant_checks": clearance_compliant_checks,
+        "min_achieved_horizontal_clearance_ft": round(min(actual_horizontal_values, default=0.0), 3),
+        "min_achieved_vertical_clearance_ft": round(min(actual_vertical_values, default=0.0), 3),
+        "max_horizontal_clearance_deficit_ft": round(max(horizontal_deficits, default=0.0), 3),
+        "max_vertical_clearance_deficit_ft": round(max(vertical_deficits, default=0.0), 3),
+        "post_validation_valid": bool(post_resolution_validations.get("valid", True)),
+        "post_validation_systems": {
+            "storm": bool(safe_dict(post_system_validations.get("storm")).get("valid", True)),
+            "storm_hydraulics": bool(safe_dict(post_system_validations.get("storm_hydraulics")).get("valid", True)),
+            "sanitary": bool(safe_dict(post_system_validations.get("sanitary")).get("valid", True)),
+            "utilities": bool(safe_dict(post_system_validations.get("utilities")).get("valid", True)),
+        },
+        "required_horizontal_separation_ft": round(safe_float(hooks.get("minimum_horizontal_separation_ft"), 0.0), 3),
+        "required_vertical_separation_ft": round(safe_float(hooks.get("minimum_vertical_separation_ft"), 0.0), 3),
+    }
+    return summary
+
+
+def _storm_inlets_from_drainage(drainage_meta: Dict[str, Any]) -> List[StormInlet]:
+    surface_guidance = safe_dict(drainage_meta.get("surface_guidance"))
+    preferred_targets = [safe_dict(item) for item in safe_list(surface_guidance.get("preferred_targets")) if safe_dict(item)]
+
+    def infer_surface_target(x: float, y: float) -> Tuple[Optional[str], int]:
+        best_name: Optional[str] = None
+        best_rank = len(preferred_targets) + 1
+        best_distance = float("inf")
+        for rank, target in enumerate(preferred_targets, start=1):
+            tx = target.get("x")
+            ty = target.get("y")
+            if tx is None or ty is None:
+                continue
+            distance_ft = math.hypot(float(tx) - x, float(ty) - y)
+            if distance_ft < best_distance:
+                best_distance = distance_ft
+                best_rank = rank
+                best_name = safe_str(target.get("target_name"), "") or None
+        return best_name, best_rank
+
+    inlets: List[StormInlet] = []
+    for rec in safe_list(drainage_meta.get("structures")):
+        item = safe_dict(rec)
+        if safe_str(item.get("object_type")) != "inlet":
+            continue
+        name = safe_str(item.get("name"), f"INLET-{len(inlets)+1}")
+        x = safe_float(item.get("x"), 0.0)
+        y = safe_float(item.get("y"), 0.0)
+        z = safe_float(item.get("z"), DEFAULT_PAD_ELEV)
+        target_name = safe_str(item.get("target_name"), "") or None
+        inferred_surface_target, target_rank = infer_surface_target(x, y)
+        if not target_name:
+            target_name = inferred_surface_target
+        rank_bonus = max(0.0, float(max(len(preferred_targets) - target_rank + 1, 0)))
+        inlets.append(
+            StormInlet(
+                name=name,
+                node_type=StormNodeType.INLET.value,
+                point=StormPoint(x=x, y=y, z=z, label=name),
+                rim_elev_ft=z,
+                inlet_type="curb" if safe_str(item.get("structure_type")) == "curb_inlet" else "area",
+                local_low_point_score=max(0.0, safe_float(item.get("contributing_cells"), 0.0)) + rank_bonus,
+                placement_reason="surface_low_point_capture",
+                contributing_area_sf=max(0.0, safe_float(item.get("contributing_area_sf"), 0.0)),
+                contributing_runoff_cfs=max(0.0, safe_float(item.get("estimated_flow_cfs"), 0.0)),
+                meta={
+                    "target_name": target_name,
+                    "surface_target_name": inferred_surface_target,
+                    "surface_target_rank": target_rank if inferred_surface_target else None,
+                    "canonical_type": safe_str(item.get("canonical_type"), "inlet"),
+                },
+            )
+        )
+    return inlets
+
+
+def _storm_basins_from_drainage(drainage_meta: Dict[str, Any]) -> List[StormBasin]:
+    primary_basins = [safe_dict(item) for item in _primary_engineered_basins(drainage_meta) if safe_dict(item)]
+    if not primary_basins:
+        return []
+
+    preferred_outfall = safe_dict(safe_dict(drainage_meta.get("coordination")).get("preferred_outfall"))
+    preferred_target = safe_str(preferred_outfall.get("target_name"))
+
+    primary_basins.sort(
+        key=lambda item: (
+            0 if preferred_target and safe_str(item.get("target_name")) == preferred_target else 1,
+            -safe_float(safe_dict(item.get("detention_design")).get("provided_storage_cf"), 0.0),
+            -safe_float(item.get("area_sf"), 0.0),
+            safe_str(item.get("name")),
+        )
+    )
+
+    basins: List[StormBasin] = []
+    for rec in primary_basins:
+        item = safe_dict(rec)
+        name = safe_str(item.get("name"), f"BASIN-{len(basins)+1}")
+        detention = safe_dict(item.get("detention_design"))
+        basins.append(
+            StormBasin(
+                name=name,
+                basin_type="detention",
+                bottom_area_sf=max(0.0, safe_float(item.get("bottom_area_sf"), 0.0)),
+                top_area_sf=max(0.0, safe_float(item.get("top_of_bank_area_sf"), safe_float(item.get("area_sf"), 0.0))),
+                depth_ft=max(0.0, safe_float(detention.get("depth_ft"), 0.0)),
+                side_slope_h_to_1v=max(1.0, safe_float(detention.get("side_slope_h_to_1v"), 4.0)),
+                bottom_elev_ft=(safe_float(item.get("bottom_elev_ft"), 0.0) if item.get("bottom_elev_ft") is not None else None),
+                overflow_elev_ft=(safe_float(item.get("top_of_bank_elev_ft"), 0.0) if item.get("top_of_bank_elev_ft") is not None else None),
+                release_cfs=max(0.0, safe_float(detention.get("release_cfs"), 0.0)),
+                required_storage_cf=max(0.0, safe_float(detention.get("required_storage_cf"), 0.0)),
+                provided_storage_cf=max(0.0, safe_float(detention.get("provided_storage_cf"), 0.0)),
+                drawdown_hours=(safe_float(detention.get("drawdown_hours"), 0.0) if detention.get("drawdown_hours") is not None else None),
+                boundary_points=[
+                    (safe_float(pt[0], 0.0), safe_float(pt[1], 0.0))
+                    for pt in safe_list(item.get("boundary_points") or item.get("boundary"))
+                    if isinstance(pt, (list, tuple)) and len(pt) >= 2
+                ],
+                connection_node_name=safe_str(safe_dict(item.get("outlet_structure")).get("name"), "") or None,
+                meta={
+                    "engineering_role": safe_str(item.get("engineering_role"), ""),
+                    "target_name": safe_str(item.get("target_name"), "") or None,
+                    "storage_ratio": (
+                        round(
+                            max(0.0, safe_float(detention.get("provided_storage_cf"), 0.0))
+                            / max(1.0, safe_float(detention.get("required_storage_cf"), 1.0)),
+                            4,
+                        )
+                        if safe_float(detention.get("required_storage_cf"), 0.0) > 0.0
+                        else None
+                    ),
+                    "detention_design": deepcopy(detention),
+                    "geometry_quality": deepcopy(safe_dict(item.get("geometry_quality"))),
+                    "overflow_spillway": deepcopy(safe_dict(item.get("overflow_spillway"))),
+                    "outlet_structure": deepcopy(safe_dict(item.get("outlet_structure"))),
+                },
+            )
+        )
+    return basins
+
+
+def _storm_catchments_from_drainage(
+    drainage_meta: Dict[str, Any],
+    *,
+    runoff_c: float,
+    intensity_in_hr: float,
+) -> List[StormCatchment]:
+    surface_guidance = safe_dict(drainage_meta.get("surface_guidance"))
+    preferred_targets = [safe_dict(item) for item in safe_list(surface_guidance.get("preferred_targets")) if safe_dict(item)]
+
+    def infer_surface_target(x: float, y: float) -> Optional[str]:
+        best_name: Optional[str] = None
+        best_distance = float("inf")
+        for target in preferred_targets:
+            tx = target.get("x")
+            ty = target.get("y")
+            if tx is None or ty is None:
+                continue
+            distance_ft = math.hypot(float(tx) - x, float(ty) - y)
+            if distance_ft < best_distance:
+                best_distance = distance_ft
+                best_name = safe_str(target.get("target_name"), "") or None
+        return best_name
+
+    catchments: List[StormCatchment] = []
+    for rec in safe_list(drainage_meta.get("structures")):
+        item = safe_dict(rec)
+        if safe_str(item.get("object_type")) != "inlet":
+            continue
+        area_sf = max(0.0, safe_float(item.get("contributing_area_sf"), 0.0))
+        if area_sf <= 0.0:
+            continue
+        name = safe_str(item.get("name"), f"CATCH-{len(catchments)+1}")
+        x = safe_float(item.get("x"), 0.0)
+        y = safe_float(item.get("y"), 0.0)
+        preferred_target_name = safe_str(item.get("target_name"), "") or infer_surface_target(x, y)
+        tributary_basin_name = safe_str(item.get("tributary_basin_name"), "") or None
+        peak_runoff = max(
+            0.0,
+            safe_float(item.get("estimated_flow_cfs"), 0.0),
+            1.008 * runoff_c * intensity_in_hr * (area_sf / 43560.0),
+        )
+        catchments.append(
+            StormCatchment(
+                name=f"{name}-CATCH",
+                area_sf=area_sf,
+                runoff_c=runoff_c,
+                tc_minutes=10.0,
+                intensity_in_hr=intensity_in_hr,
+                peak_runoff_cfs=round(peak_runoff, 3),
+                centroid=StormPoint(x=x, y=y, z=safe_float(item.get("z"), DEFAULT_PAD_ELEV), label=name),
+                meta={
+                    "source_inlet": name,
+                    "target_name": preferred_target_name,
+                    "preferred_target_name": preferred_target_name,
+                    "tributary_basin_name": tributary_basin_name,
+                },
+            )
+        )
+    return catchments
+
+
+def _storm_summary_from_network_result(network_result: Any, hydraulic_result: Any) -> Dict[str, Any]:
+    network = getattr(network_result, "network", None)
+    pipes = safe_list(getattr(hydraulic_result, "pipes", []))
+    hydraulic_summary = safe_dict(getattr(hydraulic_result, "summary", {}))
+    explain = safe_dict(getattr(network_result, "explain", {}))
+    node_lookup = {
+        safe_str(getattr(node, "name", ""), ""): node
+        for node in safe_list(getattr(network, "nodes", []))
+        if safe_str(getattr(node, "name", ""), "")
+    }
+    segments: List[Dict[str, Any]] = []
+    missing_data_segments: List[str] = []
+    total_length = 0.0
+    total_capacity = 0.0
+    total_flow = 0.0
+    max_ratio = 0.0
+    controlling_segment: Optional[str] = None
+    downstream_inflow: Dict[str, float] = {}
+
+    for pipe in pipes:
+        downstream_inflow[pipe.downstream_node_name] = downstream_inflow.get(pipe.downstream_node_name, 0.0) + safe_float(pipe.assigned_runoff_cfs, 0.0)
+
+    for pipe in pipes:
+        route_points = [
+            [safe_float(pt[0], 0.0), safe_float(pt[1], 0.0)]
+            for pt in safe_list(getattr(pipe, "route_points", []))
+            if isinstance(pt, (list, tuple)) and len(pt) >= 2
+        ]
+        length_ft = safe_float(getattr(pipe, "length_ft", 0.0), polyline_length(route_points))
+        design_flow = safe_float(getattr(getattr(pipe, "hydraulic", None), "design_flow_cfs", 0.0), 0.0)
+        full_capacity = safe_float(getattr(getattr(pipe, "hydraulic", None), "full_capacity_cfs", 0.0), 0.0)
+        ratio = safe_float(getattr(getattr(pipe, "hydraulic", None), "flow_depth_ratio", 0.0), 0.0)
+        if design_flow > 0.0 and full_capacity > 0.0:
+            ratio = max(ratio, design_flow / max(full_capacity, 1e-9))
+        total_length += length_ft
+        total_capacity += full_capacity
+        total_flow += design_flow
+        if ratio >= max_ratio:
+            max_ratio = ratio
+            controlling_segment = safe_str(getattr(pipe, "name", ""), controlling_segment or "")
+        if design_flow <= 0.0 or full_capacity <= 0.0 or safe_float(getattr(pipe, "slope", 0.0), 0.0) <= 0.0 or length_ft <= 0.0:
+            missing_data_segments.append(safe_str(getattr(pipe, "name", ""), "PIPE"))
+
+        upstream_node = node_lookup.get(safe_str(getattr(pipe, "upstream_node_name", ""), ""))
+        local_flow_cfs = max(0.0, safe_float(getattr(upstream_node, "contributing_runoff_cfs", 0.0), 0.0))
+        contributing_area_ac = max(0.0, safe_float(getattr(upstream_node, "contributing_area_sf", 0.0), 0.0) / 43560.0)
+        if contributing_area_ac <= 0.0 and design_flow > 0.0:
+            contributing_area_ac = max(
+                design_flow / max(1.008 * PIPE_RUNOFF_C * PIPE_INTENSITY_IN_HR, 1e-9),
+                0.0001,
+            )
+        segments.append(
+            {
+                "pipe": safe_str(getattr(pipe, "name", ""), "PIPE"),
+                "id": safe_str(getattr(pipe, "name", ""), "PIPE"),
+                "from": safe_str(getattr(pipe, "upstream_node_name", ""), ""),
+                "to": safe_str(getattr(pipe, "downstream_node_name", ""), ""),
+                "start_name": safe_str(getattr(pipe, "upstream_node_name", ""), ""),
+                "end_name": safe_str(getattr(pipe, "downstream_node_name", ""), ""),
+                "node_ids": [safe_str(getattr(pipe, "upstream_node_name", ""), ""), safe_str(getattr(pipe, "downstream_node_name", ""), "")],
+                "segment_role": safe_str(getattr(pipe, "pipe_type", "main"), "main"),
+                "length_ft": round(length_ft, 3),
+                "path": route_points,
+                "route_points": route_points,
+                "diameter_in": round(safe_float(getattr(pipe, "diameter_in", 0.0), 0.0), 3),
+                "flow_cfs": round(design_flow, 3),
+                "local_flow_cfs": round(local_flow_cfs, 3),
+                "upstream_flow_cfs": round(max(0.0, design_flow - local_flow_cfs), 3),
+                "capacity_cfs": round(full_capacity, 3),
+                "capacity_ratio": round(ratio, 4),
+                "velocity_fps": round(safe_float(getattr(getattr(pipe, "hydraulic", None), "velocity_fps", 0.0), 0.0), 3),
+                "slope_ft_ft": round(safe_float(getattr(pipe, "slope", 0.0), 0.0), 5),
+                "slope_pct": round(safe_float(getattr(pipe, "slope", 0.0), 0.0) * 100.0, 3),
+                "start_invert": round(safe_float(getattr(pipe, "upstream_invert_ft", 0.0), 0.0), 3),
+                "end_invert": round(safe_float(getattr(pipe, "downstream_invert_ft", 0.0), 0.0), 3),
+                "start_invert_ft": round(safe_float(getattr(pipe, "upstream_invert_ft", 0.0), 0.0), 3),
+                "end_invert_ft": round(safe_float(getattr(pipe, "downstream_invert_ft", 0.0), 0.0), 3),
+                "cover_start_ft": round(safe_float(getattr(pipe, "cover_ft", 0.0), 0.0), 3),
+                "cover_end_ft": round(safe_float(getattr(pipe, "cover_ft", 0.0), 0.0), 3),
+                "contributing_area_ac": round(contributing_area_ac, 4),
+                "tributary_area_ac": round(contributing_area_ac, 4),
+                "tributary_area_sf": round(safe_float(safe_dict(getattr(pipe, "meta", {})).get("tributary_area_sf"), 0.0), 3),
+                "tributary_runoff_cfs": round(safe_float(safe_dict(getattr(pipe, "meta", {})).get("tributary_runoff_cfs"), design_flow), 3),
+                "tributary_catchment_count": int(safe_float(safe_dict(getattr(pipe, "meta", {})).get("tributary_catchment_count"), 0.0)),
+                "tributary_basin_names": list(safe_list(safe_dict(getattr(pipe, "meta", {})).get("tributary_basin_names"))),
+                "upstream_cumulative_area_sf": round(safe_float(safe_dict(getattr(pipe, "meta", {})).get("upstream_cumulative_area_sf"), 0.0), 3),
+                "upstream_cumulative_runoff_cfs": round(safe_float(safe_dict(getattr(pipe, "meta", {})).get("upstream_cumulative_runoff_cfs"), design_flow), 3),
+                "upstream_cumulative_catchment_count": int(safe_float(safe_dict(getattr(pipe, "meta", {})).get("upstream_cumulative_catchment_count"), 0.0)),
+                "upstream_cumulative_basin_names": list(safe_list(safe_dict(getattr(pipe, "meta", {})).get("upstream_cumulative_basin_names"))),
+                "governing_flow_cfs": round(safe_float(safe_dict(getattr(pipe, "meta", {})).get("governing_flow_cfs"), design_flow), 3),
+                "governing_area_sf": round(safe_float(safe_dict(getattr(pipe, "meta", {})).get("governing_area_sf"), 0.0), 3),
+                "governing_catchment_count": int(safe_float(safe_dict(getattr(pipe, "meta", {})).get("governing_catchment_count"), 0.0)),
+                "status": safe_str(getattr(getattr(pipe, "hydraulic", None), "capacity_status", ""), ""),
+                "hgl_start": round(safe_float(getattr(getattr(pipe, "hydraulic", None), "hgl_upstream_ft", 0.0), 0.0), 3),
+                "hgl_end": round(safe_float(getattr(getattr(pipe, "hydraulic", None), "hgl_downstream_ft", 0.0), 0.0), 3),
+                "egl_start": round(safe_float(getattr(getattr(pipe, "hydraulic", None), "egl_upstream_ft", 0.0), 0.0), 3),
+                "egl_end": round(safe_float(getattr(getattr(pipe, "hydraulic", None), "egl_downstream_ft", 0.0), 0.0), 3),
+                "warnings": list(getattr(pipe, "warnings", []) or []),
+            }
+        )
+
+    nodes: List[Dict[str, Any]] = []
+    for node in safe_list(getattr(network, "nodes", [])):
+        name = safe_str(getattr(node, "name", ""), "")
+        nodes.append(
+            {
+                "id": name,
+                "name": name,
+                "node_type": safe_str(getattr(node, "node_type", ""), ""),
+                "x": round(safe_float(getattr(getattr(node, "point", None), "x", 0.0), 0.0), 3),
+                "y": round(safe_float(getattr(getattr(node, "point", None), "y", 0.0), 0.0), 3),
+                "rim_elev_ft": round(safe_float(getattr(node, "rim_elev_ft", 0.0), 0.0), 3),
+                "invert_elev_ft": round(safe_float(getattr(node, "invert_elev_ft", 0.0), 0.0), 3),
+                "contributing_area_sf": round(safe_float(getattr(node, "contributing_area_sf", 0.0), 0.0), 3),
+                "contributing_runoff_cfs": round(safe_float(getattr(node, "contributing_runoff_cfs", 0.0), 0.0), 3),
+                "incoming_flow_cfs": round(downstream_inflow.get(name, 0.0), 3),
+                "tributary_basin_names": list(safe_list(safe_dict(getattr(node, "meta", {})).get("tributary_basin_names"))),
+                "tributary_catchment_count": int(safe_float(safe_dict(getattr(node, "meta", {})).get("tributary_catchment_count"), 0.0)),
+                "upstream_cumulative_area_sf": round(safe_float(safe_dict(getattr(node, "meta", {})).get("upstream_cumulative_area_sf"), 0.0), 3),
+                "upstream_cumulative_runoff_cfs": round(safe_float(safe_dict(getattr(node, "meta", {})).get("upstream_cumulative_runoff_cfs"), 0.0), 3),
+                "upstream_cumulative_catchment_count": int(safe_float(safe_dict(getattr(node, "meta", {})).get("upstream_cumulative_catchment_count"), 0.0)),
+                "upstream_cumulative_basin_names": list(safe_list(safe_dict(getattr(node, "meta", {})).get("upstream_cumulative_basin_names"))),
+                "max_hgl_ft": round(safe_float(getattr(node, "max_hgl_ft", 0.0), 0.0), 3),
+                "surcharge_risk": bool(getattr(node, "surcharge_risk", False)),
+                "warnings": list(getattr(node, "warnings", []) or []),
+            }
+        )
+
+    selected_outfall_name = safe_str(explain.get("selected_outfall_name"), "")
+    selected_basin: Optional[Any] = None
+    for basin in safe_list(getattr(network, "basins", [])):
+        basin_name = safe_str(getattr(basin, "name", ""), "")
+        connection_node_name = safe_str(getattr(basin, "connection_node_name", ""), f"{basin_name}_CONN")
+        if connection_node_name == selected_outfall_name:
+            selected_basin = basin
+            break
+    selected_basin_meta = safe_dict(getattr(selected_basin, "meta", {})) if selected_basin is not None else {}
+    selected_detention = safe_dict(selected_basin_meta.get("detention_design"))
+    selected_overflow = safe_dict(selected_basin_meta.get("overflow_spillway"))
+
+    summary = {
+        "success": bool(getattr(network_result, "success", False)),
+        "pipe_count": len(segments),
+        "total_length_ft": round(total_length, 3),
+        "total_system_flow_cfs": round(total_flow, 3),
+        "total_system_capacity_cfs": round(total_capacity, 3),
+        "controlling_segment": controlling_segment,
+        "max_capacity_ratio": round(max_ratio, 3),
+        "missing_data_segments": sorted(set(missing_data_segments)),
+        "pipe_slope_invert_consistency": all(
+            safe_float(seg.get("start_invert_ft"), 0.0) > safe_float(seg.get("end_invert_ft"), 0.0)
+            and safe_float(seg.get("slope_ft_ft"), 0.0) > 0.0
+            and safe_float(seg.get("length_ft"), 0.0) > 0.0
+            for seg in segments
+        ),
+        "segments": segments,
+        "nodes": nodes,
+        "warnings": sorted(set(list(getattr(network_result, "warnings", []) or []) + list(getattr(hydraulic_result, "warnings", []) or []))),
+        "errors": [],
+        "explain": explain,
+        "hydraulic_summary": hydraulic_summary,
+        "stats": {
+            "trunk_count": sum(1 for seg in segments if safe_str(seg.get("segment_role"), "main") in {"main", "trunk"}),
+            "lateral_count": sum(1 for seg in segments if safe_str(seg.get("segment_role"), "") == "lateral"),
+            "selected_outfall_name": selected_outfall_name,
+            "selected_basin_name": safe_str(getattr(selected_basin, "name", ""), ""),
+            "selected_basin_adequacy_status": safe_str(selected_detention.get("adequacy_status"), ""),
+            "selected_basin_release_basis": safe_str(selected_detention.get("release_basis"), ""),
+            "selected_basin_target_drawdown_hours": round(
+                safe_float(
+                    selected_detention.get("target_drawdown_hours"),
+                    safe_float(selected_detention.get("drawdown_hours"), 0.0),
+                ),
+                3,
+            ),
+            "selected_basin_spillway_capacity_cfs": round(safe_float(selected_overflow.get("assumed_capacity_cfs"), 0.0), 3),
+            "max_governing_flow_cfs": round(max((safe_float(seg.get("governing_flow_cfs"), 0.0) for seg in segments), default=0.0), 3),
+            "max_governing_area_sf": round(max((safe_float(seg.get("governing_area_sf"), 0.0) for seg in segments), default=0.0), 3),
+            "deficient_count": sum(1 for seg in segments if safe_str(seg.get("status"), "") == "deficient"),
+            "marginal_count": sum(1 for seg in segments if safe_str(seg.get("status"), "") == "marginal"),
+        },
+    }
+    summary["graph_validation"] = _validate_network_graph(summary, "storm")
+    summary["hydraulic_validation"] = _validate_storm_hydraulics(summary)
+    return summary
+
+
 def _filter_placeholder_engineering_actions(project: ProjectModel, actions: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     drainage = safe_dict(project.meta.get("drainage_canonical"))
     storm = safe_dict(project.meta.get("storm_pipe_summary"))
+    grading = safe_dict(project.meta.get("grading_summary"))
+    grading_export_ready = bool(_grading_export_validation(project, grading_override=grading).get("ready"))
     drainage_export_ready = bool(_drainage_export_validation(project).get("ready"))
     storm_export_ready = bool(_storm_export_validation(project).get("ready"))
     filtered: List[Dict[str, Any]] = []
@@ -2582,6 +3517,8 @@ def _filter_placeholder_engineering_actions(project: ProjectModel, actions: Sequ
             continue
         layer = safe_str(rec.get("layer")).upper()
         has_canonical_tag = bool(safe_str(rec.get("canonical_source_type")))
+        if layer in {"FG_CONTOUR", "SPOT_FG"} and not grading_export_ready and not has_canonical_tag:
+            continue
         if layer == "PIPE" and storm_export_ready and not has_canonical_tag:
             continue
         if layer == "DRAIN" and drainage_export_ready and not has_canonical_tag:
@@ -2786,6 +3723,21 @@ def _polygon_centroid(points: Sequence[Sequence[float]]) -> Tuple[float, float]:
     return cx * factor, cy * factor
 
 
+def _polygon_perimeter(points: Sequence[Sequence[float]]) -> float:
+    pts = [
+        (safe_float(pt[0], 0.0), safe_float(pt[1], 0.0))
+        for pt in safe_list(points)
+        if isinstance(pt, (list, tuple)) and len(pt) >= 2
+    ]
+    if len(pts) < 2:
+        return 0.0
+    perimeter = 0.0
+    for idx, (x1, y1) in enumerate(pts):
+        x2, y2 = pts[(idx + 1) % len(pts)]
+        perimeter += math.hypot(x2 - x1, y2 - y1)
+    return perimeter
+
+
 def _scale_polygon(points: Sequence[Sequence[float]], scale: float) -> List[List[float]]:
     cx, cy = _polygon_centroid(points)
     scaled: List[List[float]] = []
@@ -2984,6 +3936,7 @@ def _canonical_basin_actions(project: ProjectModel) -> List[Dict[str, Any]]:
         if outlet:
             ox = safe_float(outlet.get("x"), x)
             oy = safe_float(outlet.get("y"), y)
+            outlet_name = safe_str(outlet.get("name"), f"{name}-OUTLET")
             actions.append(_canonical_action({
                 "task": "circle",
                 "origin": None,
@@ -2991,7 +3944,7 @@ def _canonical_basin_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                 "closed": None,
                 "width": None,
                 "height": None,
-                "label": safe_str(outlet.get("name"), f"{name}-OUTLET"),
+                "label": outlet_name,
                 "layer": "STRUCTURE",
                 "text": None,
                 "text_height": None,
@@ -3000,6 +3953,25 @@ def _canonical_basin_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                 "start_angle": None,
                 "end_angle": None,
             }, source_type="drainage_basin", source_id=f"{source_id}:outlet", source_name=name, source_stage="drainage"))
+            outlet_note = outlet_name
+            if outlet.get("invert_ft") is not None or outlet.get("invert_out_ft") is not None:
+                outlet_note += f" INV {safe_float(outlet.get('invert_out_ft', outlet.get('invert_ft')), 0.0):.2f}"
+            actions.append(_canonical_action({
+                "task": "text_note",
+                "origin": [ox + 1.75, oy + 1.75],
+                "points": None,
+                "closed": None,
+                "width": None,
+                "height": None,
+                "label": None,
+                "layer": "ANNO",
+                "text": outlet_note,
+                "text_height": 0.7,
+                "center": None,
+                "radius": None,
+                "start_angle": None,
+                "end_angle": None,
+            }, source_type="drainage_basin", source_id=f"{source_id}:outlet_note", source_name=name, source_stage="drainage"))
             actions.append(_canonical_action({
                 "task": "polyline",
                 "origin": None,
@@ -3016,6 +3988,83 @@ def _canonical_basin_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                 "start_angle": None,
                 "end_angle": None,
             }, source_type="drainage_basin", source_id=f"{source_id}:flow", source_name=name, source_stage="drainage"))
+    return actions
+
+
+def _canonical_drainage_surface_actions(project: ProjectModel) -> List[Dict[str, Any]]:
+    actions: List[Dict[str, Any]] = []
+    drainage = safe_dict(project.meta.get("drainage_canonical"))
+    if not bool(_drainage_export_validation(project, drainage_override=drainage).get("ready")):
+        return actions
+
+    low_points = sorted(
+        [safe_dict(item) for item in safe_list(drainage.get("low_points")) if safe_dict(item)],
+        key=lambda item: (-safe_int(item.get("contributing_cells"), 0), safe_float(item.get("z"), 0.0)),
+    )
+    for index, rec in enumerate(low_points[:6], start=1):
+        x = safe_float(rec.get("x"), 0.0)
+        y = safe_float(rec.get("y"), 0.0)
+        if x == 0.0 and y == 0.0 and not rec.get("name"):
+            continue
+        source_id = safe_str(rec.get("id"), safe_str(rec.get("name"), f"LOW-{index}"))
+        label = f"LP-{index} {safe_float(rec.get('z'), 0.0):.2f}"
+        actions.append(_canonical_action({
+            "task": "point",
+            "origin": [x, y],
+            "points": None,
+            "closed": None,
+            "width": None,
+            "height": None,
+            "label": label,
+            "layer": "LOW_POINTS",
+            "text": None,
+            "text_height": None,
+            "center": None,
+            "radius": 0.9,
+            "start_angle": None,
+            "end_angle": None,
+        }, source_type="drainage_low_point", source_id=source_id, source_name=safe_str(rec.get("name"), label), source_stage="drainage"))
+
+    flow_paths = sorted(
+        [safe_dict(item) for item in safe_list(drainage.get("flow_paths")) if safe_dict(item)],
+        key=lambda item: -safe_float(item.get("length_ft"), 0.0),
+    )
+    seen_targets: set[str] = set()
+    emitted = 0
+    for rec in flow_paths:
+        path = [
+            [safe_float(pt[0], 0.0), safe_float(pt[1], 0.0)]
+            for pt in safe_list(rec.get("path"))
+            if isinstance(pt, (list, tuple)) and len(pt) >= 2
+        ]
+        if len(path) < 2:
+            continue
+        target_name = safe_str(rec.get("target_name"), "")
+        target_key = target_name or safe_str(rec.get("id"), "")
+        if target_key and target_key in seen_targets and emitted >= 4:
+            continue
+        if target_key:
+            seen_targets.add(target_key)
+        source_id = safe_str(rec.get("id"), f"FLOW-{emitted+1}")
+        actions.append(_canonical_action({
+            "task": "polyline",
+            "origin": None,
+            "points": path,
+            "closed": False,
+            "width": None,
+            "height": None,
+            "label": target_name or source_id,
+            "layer": "DRAIN_FLOW",
+            "text": None,
+            "text_height": None,
+            "center": None,
+            "radius": None,
+            "start_angle": None,
+            "end_angle": None,
+        }, source_type="drainage_flow_path", source_id=source_id, source_name=target_name or source_id, source_stage="drainage"))
+        emitted += 1
+        if emitted >= 8:
+            break
     return actions
 
 
@@ -3262,6 +4311,8 @@ def _utility_layer_for_system(system_type: str) -> str:
 def _canonical_utility_actions(project: ProjectModel) -> List[Dict[str, Any]]:
     actions: List[Dict[str, Any]] = []
     utilities = safe_dict(project.meta.get("utility_summary"))
+    if not bool(_utility_export_validation(project, utilities_override=utilities).get("ready")):
+        return actions
     hooks = safe_dict(utilities.get("conflict_hooks"))
     segments = safe_list(hooks.get("utility_segments"))
     system_type = safe_str(hooks.get("utility_system_type") or utilities.get("system_type"), "generic_utility")
@@ -3369,6 +4420,7 @@ def _canonical_export_actions(project: ProjectModel) -> List[Dict[str, Any]]:
     actions: List[Dict[str, Any]] = []
     actions.extend(_canonical_structure_actions(project))
     actions.extend(_canonical_basin_actions(project))
+    actions.extend(_canonical_drainage_surface_actions(project))
     actions.extend(_canonical_storm_pipe_actions(project))
     actions.extend(_canonical_sanitary_actions(project))
     actions.extend(_canonical_sheet_actions(project))
@@ -3736,6 +4788,7 @@ def _canonical_grading_payload(
     existing_surface: Optional[GridSurface],
     result: Any,
     derived_action_stats: Dict[str, int],
+    grade_elements: Optional[List[GradeElement]] = None,
 ) -> Dict[str, Any]:
     proposed_surface = getattr(result, "proposed_surface", None)
     checks = safe_list(getattr(result, "checks", []))
@@ -3744,6 +4797,32 @@ def _canonical_grading_payload(
     existing_min, existing_max = _surface_range(existing_surface)
     proposed_min, proposed_max = _surface_range(proposed_surface)
     inferred_profile = getattr(existing_surface, "_inferred_profile", {}) if existing_surface is not None else {}
+    if flow_samples:
+        ranked_samples = sorted(
+            flow_samples,
+            key=lambda sample: safe_float(getattr(sample, "magnitude", 0.0), 0.0),
+            reverse=True,
+        )[:12]
+        avg_dx = sum(safe_float(getattr(sample, "downhill_dx", 0.0), 0.0) for sample in ranked_samples) / max(len(ranked_samples), 1)
+        avg_dy = sum(safe_float(getattr(sample, "downhill_dy", 0.0), 0.0) for sample in ranked_samples) / max(len(ranked_samples), 1)
+    else:
+        avg_dx = safe_float(safe_dict(inferred_profile).get("downhill_dx"), 0.0)
+        avg_dy = safe_float(safe_dict(inferred_profile).get("downhill_dy"), 0.0)
+    downhill_dx, downhill_dy = _normalize_vector(avg_dx, avg_dy)
+    ranked_low_points = sorted(
+        low_points,
+        key=lambda point: (
+            safe_float(getattr(point, "z", 0.0), 0.0),
+            -safe_float(getattr(point, "local_basin_score", 0.0), 0.0),
+        ),
+    )
+    primary_low_point = ranked_low_points[0] if ranked_low_points else None
+    controls = list(grade_elements or [])
+    kind_counts: Dict[str, int] = {}
+    for elem in controls:
+        kind = safe_str(getattr(elem, "kind", ""), "")
+        if kind:
+            kind_counts[kind] = kind_counts.get(kind, 0) + 1
     return {
         "schema_version": "v1",
         "source": "grading_engine",
@@ -3808,6 +4887,43 @@ def _canonical_grading_payload(
             }
             for sample in flow_samples[:50]
         ],
+        "surface_controls": {
+            "has_primary_drainage_direction": bool(abs(downhill_dx) > 1e-9 or abs(downhill_dy) > 1e-9),
+            "downhill_vector": {
+                "dx": round(downhill_dx, 6),
+                "dy": round(downhill_dy, 6),
+            },
+            "primary_low_point": (
+                {
+                    "x": round(safe_float(getattr(primary_low_point, "x", 0.0), 0.0), 3),
+                    "y": round(safe_float(getattr(primary_low_point, "y", 0.0), 0.0), 3),
+                    "z": round(safe_float(getattr(primary_low_point, "z", 0.0), 0.0), 3),
+                    "local_basin_score": round(safe_float(getattr(primary_low_point, "local_basin_score", 0.0), 0.0), 3),
+                }
+                if primary_low_point is not None
+                else {}
+            ),
+            "grade_range_ft": round(proposed_max - proposed_min, 3),
+            "control_counts": {
+                "pad": kind_counts.get("pad", 0),
+                "road": kind_counts.get("road", 0),
+                "parking": kind_counts.get("parking", 0),
+                "pond": kind_counts.get("pond", 0),
+            },
+            "control_summary": [
+                {
+                    "kind": safe_str(getattr(elem, "kind", ""), ""),
+                    "name": safe_str(getattr(elem, "name", ""), ""),
+                    "base_elev": round(safe_float(getattr(elem, "base_elev", 0.0), 0.0), 3) if getattr(elem, "base_elev", None) is not None else None,
+                    "slope_x": round(safe_float(getattr(elem, "slope_x", 0.0), 0.0), 6) if getattr(elem, "slope_x", None) is not None else None,
+                    "slope_y": round(safe_float(getattr(elem, "slope_y", 0.0), 0.0), 6) if getattr(elem, "slope_y", None) is not None else None,
+                    "transition_zone": round(safe_float(getattr(elem, "transition_zone", 0.0), 0.0), 3) if getattr(elem, "transition_zone", None) is not None else None,
+                    "width": round(safe_float(getattr(elem, "width", 0.0), 0.0), 3),
+                    "depth": round(safe_float(getattr(elem, "depth", 0.0), 0.0), 3),
+                }
+                for elem in controls[:16]
+            ],
+        },
         "drainage_hints": deepcopy(safe_dict(getattr(result, "drainage_hints", {}))),
         "explain": deepcopy(safe_dict(getattr(result, "explain", {}))),
         "optimize_hooks": deepcopy(safe_dict(getattr(result, "optimize_hooks", {}))),
@@ -3855,13 +4971,18 @@ def _point_on_lot_edge(lot: Dict[str, Any], direction: Tuple[float, float], inse
 def _grading_drainage_coordination(parsed: Dict[str, Any], project: ProjectModel) -> Dict[str, Any]:
     grading = safe_dict(project.meta.get("grading_summary"))
     existing = safe_dict(grading.get("existing_surface"))
+    surface_controls = safe_dict(grading.get("surface_controls"))
     terrain_profile = safe_dict(existing.get("terrain_profile"))
     lot = safe_dict(parsed.get("lot"))
 
     low_points = [item for item in safe_list(grading.get("low_points")) if isinstance(item, dict)]
     flow_samples = [item for item in safe_list(grading.get("flow_samples")) if isinstance(item, dict)]
 
-    if flow_samples:
+    downhill_vector = safe_dict(surface_controls.get("downhill_vector"))
+    if safe_float(downhill_vector.get("dx"), 0.0) or safe_float(downhill_vector.get("dy"), 0.0):
+        avg_dx = safe_float(downhill_vector.get("dx"), 0.0)
+        avg_dy = safe_float(downhill_vector.get("dy"), 0.0)
+    elif flow_samples:
         ranked = sorted(flow_samples, key=lambda item: safe_float(item.get("magnitude"), 0.0), reverse=True)[:12]
         avg_dx = sum(safe_float(item.get("downhill_dx"), 0.0) for item in ranked) / max(len(ranked), 1)
         avg_dy = sum(safe_float(item.get("downhill_dy"), 0.0) for item in ranked) / max(len(ranked), 1)
@@ -3898,6 +5019,8 @@ def _grading_drainage_coordination(parsed: Dict[str, Any], project: ProjectModel
         "preferred_outfall": deepcopy(preferred_targets[-1]),
         "grading_low_point_count": len(low_points),
         "grading_flow_sample_count": len(flow_samples),
+        "surface_controls": deepcopy(surface_controls),
+        "grading_control_counts": deepcopy(safe_dict(surface_controls.get("control_counts"))),
     }
 
 
@@ -4089,6 +5212,7 @@ def _run_grading_stage(ctx: PlannerExecutionContext, hydrology: Dict[str, Any]) 
             existing_surface=existing_surface,
             result=result,
             derived_action_stats=grading_action_stats,
+            grade_elements=grade_elements,
         )
         project.meta["grading_summary"] = grading_payload
         manager.latest_outputs["grading"] = deepcopy(grading_payload)
@@ -4248,6 +5372,8 @@ def _run_drainage_stage(ctx: PlannerExecutionContext, hydrology: Dict[str, Any])
         inlet_records = safe_list(getattr(summary, "inlet_records", []))
         basin_records = safe_list(getattr(summary, "basin_records", []))
         pipe_runs = safe_list(getattr(summary, "pipe_runs", []))
+        low_point_records = engine.get_low_point_records() if engine is not None and hasattr(engine, "get_low_point_records") else []
+        flow_paths = engine.routed_paths(sample_step=4, min_slope=max(MIN_SLOPE, 0.001), max_steps=500, dedupe=True) if engine is not None and hasattr(engine, "routed_paths") else []
 
         manager.set_metric("drainage_low_point_count", len(inlet_records), category="drainage")
         manager.set_metric("drainage_pipe_count", len(pipe_runs), category="drainage")
@@ -4269,6 +5395,8 @@ def _run_drainage_stage(ctx: PlannerExecutionContext, hydrology: Dict[str, Any])
             inlet_records=inlet_records,
             basin_records=basin_records,
             pipe_runs=pipe_runs,
+            low_point_records=low_point_records,
+            flow_paths=flow_paths,
             source="drainage_engine",
             mode=safe_str(getattr(summary, "mode", "assisted"), "assisted"),
             success=bool(getattr(summary, "success", True)),
@@ -4286,6 +5414,12 @@ def _run_drainage_stage(ctx: PlannerExecutionContext, hydrology: Dict[str, Any])
             coordination=coordination,
         )
         canonical_drainage["coordination"] = deepcopy(coordination)
+        canonical_drainage["surface_guidance"] = {
+            "downhill_vector": deepcopy(safe_dict(coordination.get("downhill_vector"))),
+            "preferred_targets": deepcopy(safe_list(coordination.get("preferred_targets"))),
+            "grading_low_point_count": safe_int(coordination.get("grading_low_point_count"), 0),
+            "grading_flow_sample_count": safe_int(coordination.get("grading_flow_sample_count"), 0),
+        }
         primary_basin_count = len(_primary_engineered_basins(canonical_drainage))
         canonical_drainage["export_validation"] = _drainage_export_validation(
             project,
@@ -4339,111 +5473,130 @@ def _run_storm_pipe_stage(ctx: PlannerExecutionContext, hydrology: Dict[str, Any
             ctx.add_stage("storm_pipes", True, "Storm pipe stage skipped because drainage summary was unavailable.")
             return
 
-        inlet_records = getattr(summary, "inlet_records", []) or []
-        if not inlet_records:
+        drainage_meta = safe_dict(manager.latest_outputs.get("drainage", project.meta.get("drainage_canonical", {})))
+        coordination = safe_dict(drainage_meta.get("coordination"))
+        storm_inlets = _storm_inlets_from_drainage(drainage_meta)
+        if not storm_inlets:
             manager.mark_system_skipped("storm_pipes", "No inlet records were available.")
             ctx.add_stage("storm_pipes", True, "Storm pipe stage skipped because no inlet records were available.")
             return
 
-        drainage_meta = safe_dict(manager.latest_outputs.get("drainage", project.meta.get("drainage_canonical", {})))
-        coordination = safe_dict(drainage_meta.get("coordination"))
-
-        engine = PipeEngine(
+        storm_basins = _storm_basins_from_drainage(drainage_meta)
+        storm_catchments = _storm_catchments_from_drainage(
+            drainage_meta,
             runoff_c=safe_float(hydrology.get("runoff_c"), PIPE_RUNOFF_C),
             intensity_in_hr=safe_float(hydrology.get("intensity_in_hr"), PIPE_INTENSITY_IN_HR),
-            min_pipe_slope=PIPE_MIN_SLOPE,
-            mannings_n=PIPE_MANNINGS_N,
-            min_cover_ft=PIPE_MIN_COVER_FT,
         )
-
-        inlets = []
-        basin_area_map_sf: Dict[str, float] = {}
-        for rec in inlet_records:
-            inlet = getattr(rec, "inlet", rec)
-            node = engine.make_inlet_node(inlet.name, inlet.x, inlet.y, inlet.z)
-            inlets.append(node)
-            basin_area_map_sf[inlet.name] = safe_float(getattr(inlet, "contributing_area_sf", 0.0), 0.0)
-
         preferred_outfall = safe_dict(coordination.get("preferred_outfall"))
-        outfall_x = safe_float(preferred_outfall.get("x"), inlets[0].x + 40.0)
-        outfall_y = safe_float(preferred_outfall.get("y"), inlets[0].y - 20.0)
-        outfall_z = safe_float(preferred_outfall.get("z"), inlets[0].rim_elev - 1.0)
-        outfall = engine.make_outlet_node("OUTFALL", outfall_x, outfall_y, outfall_z)
-        segments = engine.design_network_to_outlets(
-            inlets,
-            [outfall],
-            basin_area_map_sf=basin_area_map_sf,
-            system_type="storm",
+        outfall_x = safe_float(preferred_outfall.get("x"), storm_inlets[0].point.x + 40.0)
+        outfall_y = safe_float(preferred_outfall.get("y"), storm_inlets[0].point.y - 20.0)
+        outfall_z = safe_float(preferred_outfall.get("z"), safe_float(storm_inlets[0].rim_elev_ft, DEFAULT_PAD_ELEV) - 1.0)
+        outfalls: List[StormNode] = []
+        if not storm_basins:
+            outfalls = [
+                StormNode(
+                    name="OUTFALL",
+                    node_type=StormNodeType.OUTFALL.value,
+                    point=StormPoint(x=outfall_x, y=outfall_y, z=outfall_z, label="OUTFALL"),
+                    rim_elev_ft=outfall_z + 1.0,
+                    invert_elev_ft=outfall_z,
+                )
+            ]
+
+        network_result = build_storm_network(
+            StormNetworkRequest(
+                network_name=safe_str(project.name, "Storm Network"),
+                catchments=storm_catchments,
+                inlets=storm_inlets,
+                basins=storm_basins,
+                outfalls=outfalls,
+                default_pipe_material="RCP",
+                default_mannings_n=PIPE_MANNINGS_N,
+                min_pipe_slope=PIPE_MIN_SLOPE,
+                min_cover_ft=PIPE_MIN_COVER_FT,
+                min_diameter_in=12.0,
+                auto_route=True,
+                route_system_type="storm",
+                use_trunks=True,
+                use_laterals=True,
+                connect_to_basin=True,
+                meta={
+                    "surface_driven": True,
+                    "preferred_target_name": safe_str(preferred_outfall.get("target_name"), "") or None,
+                    "surface_guidance": deepcopy(safe_dict(drainage_meta.get("surface_guidance"))),
+                },
+            )
         )
-        validation = engine.validate_segments(segments)
-        pipe_summary = engine.system_summary(segments)
-        segment_rows = engine.summary_rows(segments)
+        hydraulic_result = analyze_storm_hydraulics(
+            HydraulicAnalysisRequest(
+                pipes=safe_list(getattr(getattr(network_result, "network", None), "pipes", [])),
+                nodes=safe_list(getattr(getattr(network_result, "network", None), "nodes", [])),
+                conservative=True,
+                compute_hgl=True,
+                compute_egl=True,
+                allow_partial_flow=True,
+                meta={"surface_driven": True},
+            )
+        )
 
-        total_capacity = 0.0
-        total_length = 0.0
-        for seg in segments:
-            total_length += safe_float(getattr(seg, "length_ft", 0.0), 0.0)
-            total_capacity += safe_float(getattr(seg, "full_capacity_cfs", 0.0), 0.0)
-
-        manager.latest_outputs["storm_pipes"] = segments
-        storm_pipe_summary = {
-            "pipe_count": safe_int(getattr(pipe_summary, "pipe_count", len(segments)), len(segments)),
-            "total_length_ft": round(safe_float(getattr(pipe_summary, "total_length_ft", total_length), total_length), 3),
-            "total_system_flow_cfs": round(sum(safe_float(getattr(seg, "flow_cfs", 0.0), 0.0) for seg in segments), 3),
-            "total_system_capacity_cfs": round(safe_float(getattr(pipe_summary, "total_capacity_cfs", total_capacity), total_capacity), 3),
-            "controlling_segment": safe_str(getattr(pipe_summary, "worst_segment_name", ""), "") or None,
-            "max_capacity_ratio": round(safe_float(getattr(pipe_summary, "max_capacity_ratio", 0.0), 0.0), 3),
-            "missing_data_segments": [
-                safe_str(getattr(seg, "name", "PIPE"))
-                for seg in segments
-                if safe_float(getattr(seg, "flow_cfs", 0.0), 0.0) <= 0.0
-                or safe_float(getattr(seg, "full_capacity_cfs", 0.0), 0.0) <= 0.0
-                or safe_float(getattr(seg, "slope_ft_ft", 0.0), 0.0) <= 0.0
-            ],
-            "pipe_slope_invert_consistency": all(
-                safe_float(getattr(seg, "start_invert", 0.0), 0.0) >= safe_float(getattr(seg, "end_invert", 0.0), 0.0)
-                and safe_float(getattr(seg, "slope_ft_ft", 0.0), 0.0) > 0.0
-                for seg in segments
+        analyzed_pipes = safe_list(getattr(hydraulic_result, "pipes", []))
+        manager.latest_outputs["storm_pipes"] = analyzed_pipes
+        storm_pipe_summary = _storm_summary_from_network_result(network_result, hydraulic_result)
+        selected_outfall_name = safe_str(safe_dict(storm_pipe_summary.get("explain")).get("selected_outfall_name"), "")
+        selected_outfall = next(
+            (
+                safe_dict(node)
+                for node in safe_list(storm_pipe_summary.get("nodes"))
+                if safe_str(safe_dict(node).get("name")) == selected_outfall_name
             ),
-            "segments": deepcopy(segment_rows),
-            "warnings": list(getattr(validation, "warnings", []) or []),
-            "errors": list(getattr(validation, "errors", []) or []),
-        }
-        storm_pipe_summary["graph_validation"] = _validate_network_graph({"segments": storm_pipe_summary["segments"]}, "storm")
+            {},
+        )
+        outfall_x = safe_float(selected_outfall.get("x"), outfall_x)
+        outfall_y = safe_float(selected_outfall.get("y"), outfall_y)
         manager.latest_outputs["storm_pipe_summary"] = deepcopy(storm_pipe_summary)
-        manager.engine_state["storm_pipes"]["validation"] = validation
-        for metric_name, metric_value in engine.export_manager_metrics(segments).items():
-            manager.set_metric(metric_name, metric_value, category="pipes")
+        manager.engine_state["storm_pipes"]["validation"] = {
+            "network_warnings": list(getattr(network_result, "warnings", []) or []),
+            "hydraulic_warnings": list(getattr(hydraulic_result, "warnings", []) or []),
+        }
 
-        manager.set_metric("storm_pipe_count", len(segments), category="pipes")
-        manager.set_metric("storm_pipe_length_ft", total_length, units="ft", category="pipes")
-        manager.set_metric("pipe_capacity_total_cfs", total_capacity, units="cfs", category="pipes")
+        manager.set_metric("storm_pipe_count", safe_int(storm_pipe_summary.get("pipe_count"), 0), category="pipes")
+        manager.set_metric("storm_pipe_length_ft", safe_float(storm_pipe_summary.get("total_length_ft"), 0.0), units="ft", category="pipes")
+        manager.set_metric("pipe_capacity_total_cfs", safe_float(storm_pipe_summary.get("total_system_capacity_cfs"), 0.0), units="cfs", category="pipes")
 
-        for message in validation.warnings:
+        for message in safe_list(storm_pipe_summary.get("warnings")):
             manager.add_conflict(ConflictRecord(code="PIPE_WARNING", message=message, severity=ConflictSeverity.WARNING, category="pipes"))
-        for message in validation.errors:
+        for message in safe_list(storm_pipe_summary.get("errors")):
             manager.add_conflict(ConflictRecord(code="PIPE_ERROR", message=message, severity=ConflictSeverity.ERROR, category="pipes"))
 
         _mark_dependency_state(manager, "drainage", "storm_pipes", DependencyState.FRESH, reason="Storm pipe network updated from drainage.")
         _mark_dependency_state(manager, "storm_pipes", "utility_network", DependencyState.STALE, reason="Utility coordination depends on storm pipe network.")
-        manager.mark_system_complete("storm_pipes", "Storm pipe stage completed.", validation.warnings)
+        manager.mark_system_complete("storm_pipes", "Storm pipe stage completed.", safe_list(storm_pipe_summary.get("warnings")))
         manager.invalidate_from("storm_pipes")
 
-        project.meta["storm_pipe_segments"] = segments
+        project.meta["storm_pipe_segments"] = deepcopy(storm_pipe_summary.get("segments", []))
+        project.meta["storm_network"] = {
+            "summary": safe_dict(getattr(hydraulic_result, "summary", {})),
+            "explain": deepcopy(safe_dict(getattr(network_result, "explain", {}))),
+            "warnings": sorted(set(list(getattr(network_result, "warnings", []) or []) + list(getattr(hydraulic_result, "warnings", []) or []))),
+        }
         project.meta["storm_pipe_summary"] = deepcopy(storm_pipe_summary)
-        project.meta["storm_pipe_validation"] = {"warnings": validation.warnings, "errors": validation.errors}
+        project.meta["storm_pipe_validation"] = {
+            "warnings": list(storm_pipe_summary.get("warnings", []) or []),
+            "errors": list(storm_pipe_summary.get("errors", []) or []),
+        }
         ctx.add_stage(
             "storm_pipes",
-            len(validation.errors) == 0,
+            not safe_list(storm_pipe_summary.get("errors")),
             "Storm pipe stage completed.",
-            pipe_count=len(segments),
-            total_length_ft=round(total_length, 2),
+            pipe_count=safe_int(storm_pipe_summary.get("pipe_count"), 0),
+            total_length_ft=round(safe_float(storm_pipe_summary.get("total_length_ft"), 0.0), 2),
             total_system_capacity_cfs=storm_pipe_summary["total_system_capacity_cfs"],
             max_capacity_ratio=storm_pipe_summary["max_capacity_ratio"],
-            warning_count=len(validation.warnings),
-            error_count=len(validation.errors),
+            warning_count=len(safe_list(storm_pipe_summary.get("warnings"))),
+            error_count=len(safe_list(storm_pipe_summary.get("errors"))),
             outfall_x=round(outfall_x, 3),
             outfall_y=round(outfall_y, 3),
+            node_count=len(safe_list(storm_pipe_summary.get("nodes"))),
         )
     except Exception as exc:
         ctx.record_warning(f"Storm pipe stage failed: {exc}")
@@ -4894,6 +6047,75 @@ def _crossing_rule_for(systems: Sequence[str]) -> Dict[str, Any]:
     return deepcopy(COORDINATION_CROSSING_RULES.get(pair, {}))
 
 
+def _clearance_resolution_steps(
+    interaction_type: str,
+    strategy_name: str,
+    ordered_targets: Sequence[Tuple[str, str]],
+    preferred_lower: str = "",
+) -> List[Tuple[str, str]]:
+    preferred_lower = safe_str(preferred_lower)
+    upper_targets = [item for item in ordered_targets if safe_str(item[0]) != preferred_lower] or list(ordered_targets)
+    lower_targets = [item for item in ordered_targets if safe_str(item[0]) == preferred_lower] or list(ordered_targets)
+    utility_gravity_systems = {"sanitary", "storm", "storm_pipes"}
+    utility_pressurized_systems = {"water", "utilities"}
+
+    def _utility_vertical_first(rows: Sequence[Tuple[str, str]]) -> List[Tuple[str, str]]:
+        vertical_first: List[Tuple[str, str]] = []
+        reroute_after: List[Tuple[str, str]] = []
+        for system_name, _role in rows:
+            system_key = safe_str(system_name).lower()
+            if system_key in utility_gravity_systems or system_name == preferred_lower:
+                vertical_first.append(("vertical", system_name))
+                reroute_after.append(("reroute", system_name))
+            else:
+                reroute_after.append(("reroute", system_name))
+                reroute_after.append(("vertical", system_name))
+        return vertical_first + reroute_after
+
+    def _utility_reroute_first(rows: Sequence[Tuple[str, str]]) -> List[Tuple[str, str]]:
+        reroute_first: List[Tuple[str, str]] = []
+        vertical_after: List[Tuple[str, str]] = []
+        for system_name, _role in rows:
+            system_key = safe_str(system_name).lower()
+            if system_key in utility_pressurized_systems or system_name != preferred_lower:
+                reroute_first.append(("reroute", system_name))
+                vertical_after.append(("vertical", system_name))
+            else:
+                vertical_after.append(("vertical", system_name))
+                vertical_after.append(("reroute", system_name))
+        return reroute_first + vertical_after
+
+    utility_style = any(
+        safe_str(system_name).lower() in utility_gravity_systems.union(utility_pressurized_systems)
+        for system_name, _role in ordered_targets
+    )
+    if utility_style:
+        if interaction_type == "parallel":
+            if strategy_name == "parallel_shift_first":
+                return [("reroute", system_name) for system_name, _role in upper_targets + lower_targets]
+            return _utility_vertical_first(lower_targets) + _utility_reroute_first(upper_targets)
+        if strategy_name == "upper_reroute_first":
+            return _utility_reroute_first(upper_targets) + _utility_vertical_first(lower_targets)
+        return _utility_vertical_first(lower_targets) + _utility_reroute_first(upper_targets)
+
+    resolution_steps: List[Tuple[str, str]] = []
+    if interaction_type == "parallel":
+        if strategy_name == "parallel_shift_first":
+            resolution_steps.extend([("reroute", system_name) for system_name, _ in upper_targets])
+            resolution_steps.extend([("reroute", system_name) for system_name, _ in lower_targets if system_name not in {item[1] for item in resolution_steps}])
+        else:
+            resolution_steps.extend([("reroute", system_name) for system_name, _ in upper_targets])
+            resolution_steps.extend([("vertical", system_name) for system_name, _ in lower_targets])
+    elif strategy_name == "upper_reroute_first":
+        resolution_steps.extend([("reroute", system_name) for system_name, _ in upper_targets])
+        resolution_steps.extend([("vertical", system_name) for system_name, _ in lower_targets])
+    else:
+        resolution_steps.extend([("vertical", system_name) for system_name, _ in lower_targets])
+        resolution_steps.extend([("reroute", system_name) for system_name, _ in upper_targets])
+        resolution_steps.extend([("vertical", system_name) for system_name, _ in upper_targets if system_name != preferred_lower])
+    return resolution_steps
+
+
 def _preferred_corridors(parsed: Dict[str, Any], project: ProjectModel) -> Dict[str, Dict[str, Any]]:
     lot = safe_dict(unwrap_fields_for_execution(parsed.get("lot")))
     x = safe_float(lot.get("x"), DEFAULT_LOT_X)
@@ -5340,31 +6562,200 @@ def _group_crossing_strategy_options(group: Dict[str, Any]) -> List[Dict[str, An
     return options[:3]
 
 
-def _apply_structure_insertion_rules(project: ProjectModel, manager: ProjectManager, system_name: str, segment_name: str, path: Sequence[Sequence[float]]) -> Dict[str, Any]:
-    added = 0
+def _new_coordination_metrics() -> Dict[str, Any]:
+    return {
+        "candidate_counts": {
+            "cluster_orders_total": 0,
+            "cluster_orders_kept": 0,
+            "group_plans_total": 0,
+            "group_plans_kept": 0,
+            "geometry_candidates_generated": 0,
+            "geometry_candidates_evaluated": 0,
+            "geometry_candidates_pruned": 0,
+        },
+        "prune_reasons": {},
+        "structure_insertion": {
+            "analysis_cache_hits": 0,
+            "analysis_cache_misses": 0,
+            "rule_calls": 0,
+            "attempt_points": 0,
+            "successful_insertions": 0,
+        },
+        "rollbacks": 0,
+        "timings_ms": {
+            "apply_conflict_resolution": 0.0,
+            "solve_conflict_cluster": 0.0,
+            "solve_conflict_cluster_group": 0.0,
+            "conflict_resolution_stage": 0.0,
+        },
+    }
+
+
+def _coordination_metric_inc(metrics: Optional[Dict[str, Any]], path: Sequence[str], amount: float = 1.0) -> None:
+    if not isinstance(metrics, dict):
+        return
+    target: Any = metrics
+    for key in path[:-1]:
+        rec = safe_dict(target.get(key))
+        target[key] = rec
+        target = rec
+    leaf = safe_str(path[-1])
+    current = target.get(leaf, 0.0)
+    target[leaf] = amount if not isinstance(current, (int, float)) else current + amount
+
+
+def _coordination_record_prune(metrics: Optional[Dict[str, Any]], reason: str, amount: int = 1) -> None:
+    if not isinstance(metrics, dict):
+        return
+    _coordination_metric_inc(metrics, ["candidate_counts", "geometry_candidates_pruned"], amount)
+    prune_reasons = safe_dict(metrics.get("prune_reasons"))
+    prune_reasons[reason] = safe_int(prune_reasons.get(reason), 0) + amount
+    metrics["prune_reasons"] = prune_reasons
+
+
+def _path_signature(path: Sequence[Sequence[float]], *, coarse_ft: float = 0.5) -> Tuple[Tuple[float, float], ...]:
+    scale = max(coarse_ft, 0.1)
+    return tuple((round(safe_float(pt[0], 0.0) / scale), round(safe_float(pt[1], 0.0) / scale)) for pt in safe_list(path))
+
+
+def _analyze_structure_insertion_needs(path: Sequence[Sequence[float]], spacing_limit: float) -> Dict[str, Any]:
     inserted_points: List[List[float]] = []
+    bend_points: List[List[float]] = []
+    spacing_points: List[List[float]] = []
     points = _dedupe_path_points(path)
     if len(points) < 2:
-        return {"added_count": 0, "points": inserted_points}
-    spacing_limit = _support_structure_spacing_ft(system_name)
+        return {"points": inserted_points, "bend_points": bend_points, "spacing_points": spacing_points}
     for idx in range(1, len(points) - 1):
         ax = points[idx][0] - points[idx - 1][0]
         ay = points[idx][1] - points[idx - 1][1]
         bx = points[idx + 1][0] - points[idx][0]
         by = points[idx + 1][1] - points[idx][1]
         if abs(ax * by - ay * bx) > 1e-6:
-            added += _insert_support_structure(project, manager, system_name, segment_name, points[idx], reason="bend_split")
-            inserted_points.append([round(points[idx][0], 3), round(points[idx][1], 3)])
+            bend_point = [round(points[idx][0], 3), round(points[idx][1], 3)]
+            bend_points.append(bend_point)
+            inserted_points.append(bend_point)
     cumulative = 0.0
     for idx in range(1, len(points)):
         seg_length = ((points[idx][0] - points[idx - 1][0]) ** 2 + (points[idx][1] - points[idx - 1][1]) ** 2) ** 0.5
         cumulative += seg_length
         if cumulative > spacing_limit:
             midpoint = _segment_midpoint([points[idx - 1], points[idx]])
-            added += _insert_support_structure(project, manager, system_name, segment_name, midpoint, reason="spacing_split")
+            spacing_points.append(midpoint)
             inserted_points.append(midpoint)
             cumulative = seg_length / 2.0
-    return {"added_count": added, "points": inserted_points}
+    return {"points": inserted_points, "bend_points": bend_points, "spacing_points": spacing_points}
+
+
+def _apply_structure_insertion_rules(
+    project: ProjectModel,
+    manager: ProjectManager,
+    system_name: str,
+    segment_name: str,
+    path: Sequence[Sequence[float]],
+    *,
+    metrics: Optional[Dict[str, Any]] = None,
+    analysis_cache: Optional[Dict[Tuple[str, str, Tuple[Tuple[float, float], ...]], Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    added = 0
+    inserted_points: List[List[float]] = []
+    _coordination_metric_inc(metrics, ["structure_insertion", "rule_calls"])
+    points = _dedupe_path_points(path)
+    if len(points) < 2:
+        return {"added_count": 0, "points": inserted_points, "cache_hit": False}
+    spacing_limit = _support_structure_spacing_ft(system_name)
+    cache_key = (safe_str(system_name), safe_str(segment_name), _path_signature(points, coarse_ft=0.25))
+    analysis: Dict[str, Any]
+    cache_hit = False
+    if isinstance(analysis_cache, dict) and cache_key in analysis_cache:
+        analysis = deepcopy(safe_dict(analysis_cache.get(cache_key)))
+        cache_hit = True
+        _coordination_metric_inc(metrics, ["structure_insertion", "analysis_cache_hits"])
+    else:
+        analysis = _analyze_structure_insertion_needs(points, spacing_limit)
+        if isinstance(analysis_cache, dict):
+            analysis_cache[cache_key] = deepcopy(analysis)
+        _coordination_metric_inc(metrics, ["structure_insertion", "analysis_cache_misses"])
+    planned_points = [safe_list(item) for item in safe_list(analysis.get("points")) if len(safe_list(item)) >= 2]
+    if not planned_points:
+        return {"added_count": 0, "points": inserted_points, "cache_hit": cache_hit}
+    _coordination_metric_inc(metrics, ["structure_insertion", "attempt_points"], len(planned_points))
+    for point in safe_list(analysis.get("bend_points")):
+        added += _insert_support_structure(project, manager, system_name, segment_name, point, reason="bend_split")
+        inserted_points.append([round(safe_float(point[0], 0.0), 3), round(safe_float(point[1], 0.0), 3)])
+    for point in safe_list(analysis.get("spacing_points")):
+        midpoint = [safe_float(point[0], 0.0), safe_float(point[1], 0.0)]
+        added += _insert_support_structure(project, manager, system_name, segment_name, midpoint, reason="spacing_split")
+        inserted_points.append(midpoint)
+    _coordination_metric_inc(metrics, ["structure_insertion", "successful_insertions"], added)
+    return {"added_count": added, "points": inserted_points, "cache_hit": cache_hit}
+
+
+def _prune_geometry_candidate_rows(
+    candidate_rows: Sequence[Dict[str, Any]],
+    base_path: Sequence[Sequence[float]],
+    *,
+    metrics: Optional[Dict[str, Any]] = None,
+    breadth_cap: int = 4,
+) -> List[Dict[str, Any]]:
+    rows = [safe_dict(item) for item in candidate_rows if safe_dict(item)]
+    _coordination_metric_inc(metrics, ["candidate_counts", "geometry_candidates_generated"], len(rows))
+    if not rows:
+        return []
+    base_length = max(polyline_length(base_path), 1e-9)
+    base_bends = _path_turn_count(base_path)
+    kept: List[Dict[str, Any]] = []
+    seen: set[Tuple[Tuple[float, float], ...]] = set()
+    for row in rows:
+        path = safe_list(row.get("path"))
+        if len(path) < 2:
+            _coordination_record_prune(metrics, "degenerate_path")
+            continue
+        signature = _path_signature(path, coarse_ft=4.0)
+        if signature in seen:
+            _coordination_record_prune(metrics, "near_equivalent_duplicate")
+            continue
+        seen.add(signature)
+        added_length = safe_float(row.get("added_length_ft"), max(polyline_length(path) - base_length, 0.0))
+        bend_count = safe_int(row.get("bend_count"), _path_turn_count(path))
+        hard_hits = [
+            safe_dict(hit)
+            for hit in safe_list(row.get("protected_hits"))
+            if bool(safe_dict(hit).get("avoid")) and safe_str(safe_dict(hit).get("kind")) in {"ada_path", "fire_lane", "access_aisle", "retaining_sensitive"}
+        ]
+        if hard_hits:
+            _coordination_record_prune(metrics, "protected_hard_avoid")
+            continue
+        if polyline_length(path) <= base_length + 0.5 and bend_count <= base_bends and safe_str(row.get("strategy")) != "terminal_shift":
+            _coordination_record_prune(metrics, "no_material_change")
+            continue
+        if added_length > max(35.0, base_length * 1.6):
+            _coordination_record_prune(metrics, "excess_added_length")
+            continue
+        if bend_count > max(base_bends + 4, 6):
+            _coordination_record_prune(metrics, "excess_bend_complexity")
+            continue
+        row["_quick_score"] = round(
+            safe_float(row.get("protected_penalty"), 0.0) * 4.0
+            + safe_float(row.get("corridor_penalty"), 0.0) * 2.0
+            + added_length
+            + bend_count * 8.0,
+            3,
+        )
+        kept.append(row)
+    kept.sort(
+        key=lambda row: (
+            safe_float(row.get("_quick_score"), 0.0),
+            safe_float(row.get("protected_penalty"), 0.0),
+            safe_float(row.get("corridor_penalty"), 0.0),
+            safe_float(row.get("added_length_ft"), 0.0),
+            safe_int(row.get("bend_count"), 0),
+        )
+    )
+    if len(kept) > breadth_cap:
+        _coordination_record_prune(metrics, "breadth_cap", len(kept) - breadth_cap)
+    final_rows = kept[:breadth_cap]
+    _coordination_metric_inc(metrics, ["candidate_counts", "geometry_candidates_evaluated"], len(final_rows))
+    return final_rows
 
 
 def _resolution_engineering_deltas(before_snapshot: Dict[str, Any], project: ProjectModel, manager: ProjectManager, changed_systems: Sequence[str], *, pre_conflicts: Sequence[Dict[str, Any]], post_conflicts: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
@@ -5852,12 +7243,24 @@ def _find_summary_segment(project: ProjectModel, manager: ProjectManager, name: 
 
 
 def _snapshot_coordination_state(project: ProjectModel, manager: ProjectManager) -> Dict[str, Any]:
+    drainage = safe_dict(manager.latest_outputs.get("drainage", project.meta.get("drainage_canonical", {})))
+    grading = safe_dict(project.meta.get("grading_summary", manager.latest_outputs.get("grading", {})))
     return {
         "storm": deepcopy(safe_dict(manager.latest_outputs.get("storm_pipe_summary", project.meta.get("storm_pipe_summary", {})))),
         "sanitary": deepcopy(safe_dict(manager.latest_outputs.get("sanitary", project.meta.get("sanitary_summary", {})))),
         "utilities": deepcopy(safe_dict(manager.latest_outputs.get("utilities", project.meta.get("utility_summary", {})))),
-        "drainage": deepcopy(safe_dict(manager.latest_outputs.get("drainage", project.meta.get("drainage_canonical", {})))),
-        "grading": deepcopy(safe_dict(project.meta.get("grading_summary", manager.latest_outputs.get("grading", {})))),
+        # Coordination only mutates drainage structures/stats/export validation, so
+        # snapshot those fields instead of copying the full basin/topology payload.
+        "drainage_mutable": {
+            "structures": deepcopy(safe_list(drainage.get("structures"))),
+            "stats": deepcopy(safe_dict(drainage.get("stats"))),
+            "export_validation": deepcopy(safe_dict(drainage.get("export_validation"))),
+        },
+        # Coordination grading repairs only append local adjustment notes; keep the
+        # full engineered surface out of repeated deep-copy cycles.
+        "grading_mutable": {
+            "local_adjustments": deepcopy(safe_list(grading.get("local_adjustments"))),
+        },
     }
 
 
@@ -5865,13 +7268,48 @@ def _restore_coordination_state(project: ProjectModel, manager: ProjectManager, 
     manager.latest_outputs["storm_pipe_summary"] = deepcopy(safe_dict(snapshot.get("storm")))
     manager.latest_outputs["sanitary"] = deepcopy(safe_dict(snapshot.get("sanitary")))
     manager.latest_outputs["utilities"] = deepcopy(safe_dict(snapshot.get("utilities")))
-    manager.latest_outputs["drainage"] = deepcopy(safe_dict(snapshot.get("drainage")))
-    manager.latest_outputs["grading"] = deepcopy(safe_dict(snapshot.get("grading")))
     project.meta["storm_pipe_summary"] = deepcopy(safe_dict(snapshot.get("storm")))
     project.meta["sanitary_summary"] = deepcopy(safe_dict(snapshot.get("sanitary")))
     project.meta["utility_summary"] = deepcopy(safe_dict(snapshot.get("utilities")))
-    project.meta["drainage_canonical"] = deepcopy(safe_dict(snapshot.get("drainage")))
-    project.meta["grading_summary"] = deepcopy(safe_dict(snapshot.get("grading")))
+    drainage = safe_dict(manager.latest_outputs.get("drainage", project.meta.get("drainage_canonical", {})))
+    drainage_mutable = safe_dict(snapshot.get("drainage_mutable"))
+    drainage["structures"] = deepcopy(safe_list(drainage_mutable.get("structures")))
+    drainage["stats"] = deepcopy(safe_dict(drainage_mutable.get("stats")))
+    drainage["export_validation"] = deepcopy(safe_dict(drainage_mutable.get("export_validation")))
+    manager.latest_outputs["drainage"] = drainage
+    project.meta["drainage_canonical"] = drainage
+    grading = safe_dict(project.meta.get("grading_summary", manager.latest_outputs.get("grading", {})))
+    grading_mutable = safe_dict(snapshot.get("grading_mutable"))
+    grading["local_adjustments"] = deepcopy(safe_list(grading_mutable.get("local_adjustments")))
+    manager.latest_outputs["grading"] = grading
+    project.meta["grading_summary"] = grading
+
+
+def _sync_drainage_mutable_state(
+    project: ProjectModel,
+    manager: ProjectManager,
+    *,
+    structures: Optional[Sequence[Dict[str, Any]]] = None,
+    stats: Optional[Dict[str, Any]] = None,
+    export_validation: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    base = safe_dict(manager.latest_outputs.get("drainage", project.meta.get("drainage_canonical", {})))
+    project_drainage = safe_dict(project.meta.get("drainage_canonical", {}))
+    if structures is not None:
+        structures_payload = [safe_dict(item) for item in structures]
+        base["structures"] = structures_payload
+        project_drainage["structures"] = list(structures_payload)
+    if stats is not None:
+        stats_payload = safe_dict(stats)
+        base["stats"] = stats_payload
+        project_drainage["stats"] = dict(stats_payload)
+    if export_validation is not None:
+        validation_payload = safe_dict(export_validation)
+        base["export_validation"] = validation_payload
+        project_drainage["export_validation"] = dict(validation_payload)
+    manager.latest_outputs["drainage"] = base
+    project.meta["drainage_canonical"] = project_drainage
+    return base
 
 
 def _reroute_around_rect(path: List[List[float]], rect: Dict[str, Any]) -> List[List[float]]:
@@ -6208,7 +7646,13 @@ def _recompute_storm_summary(project: ProjectModel, manager: ProjectManager) -> 
     storm["pipe_slope_invert_consistency"] = all(safe_float(rec.get("slope_pct"), 0.0) > 0.0 for rec in segments)
     storm["resized_segments"] = resized_segments
     storm["graph_validation"] = _merge_validation_payload(
-        _validate_network_graph({"segments": segments}, "storm"),
+        _validate_network_graph(
+            {
+                "segments": segments,
+                "nodes": safe_list(storm.get("nodes")),
+            },
+            "storm",
+        ),
         prior_graph_validation,
         [
             "disconnected_runs",
@@ -6236,13 +7680,12 @@ def _recompute_storm_summary(project: ProjectModel, manager: ProjectManager) -> 
     project.meta["storm_pipe_summary"] = deepcopy(storm)
     drainage = safe_dict(project.meta.get("drainage_canonical"))
     if drainage:
-        drainage["export_validation"] = _drainage_export_validation(
+        export_validation = _drainage_export_validation(
             project,
             drainage_override=drainage,
             storm_override=storm,
         )
-        project.meta["drainage_canonical"] = drainage
-        manager.latest_outputs["drainage"] = deepcopy(drainage)
+        _sync_drainage_mutable_state(project, manager, export_validation=export_validation)
     manager.set_metric("storm_pipe_count", len(segments), category="pipes")
     manager.set_metric("storm_pipe_length_ft", total_length, units="ft", category="pipes")
     manager.set_metric("pipe_capacity_total_cfs", total_capacity, units="cfs", category="pipes")
@@ -6351,6 +7794,8 @@ def _recompute_utility_summary(project: ProjectModel, manager: ProjectManager) -
     summary["total_length_ft"] = round(total_length, 3)
     hooks["utility_segments"] = segments
     summary["conflict_hooks"] = hooks
+    summary = _enrich_utility_summary_with_coordination(summary, project, manager)
+    summary["export_validation"] = _utility_export_validation(project, utilities_override=summary)
     manager.latest_outputs["utilities"] = deepcopy(summary)
     project.meta["utility_summary"] = deepcopy(summary)
     manager.set_metric("utility_route_count", len(segments), category="utilities")
@@ -6377,12 +7822,9 @@ def _insert_support_structure(project: ProjectModel, manager: ProjectManager, sy
         if any(abs(safe_float(item.get("x"), 0.0) - x) <= 0.25 and abs(safe_float(item.get("y"), 0.0) - y) <= 0.25 for item in structures):
             return 0
         structures.append({"name": f"JB-{len(structures)+1}", "object_type": "structure", "structure_type": "junction_box", "canonical_type": "junction_box", "layer": "DRAIN", "x": x, "y": y, "z": DEFAULT_PAD_ELEV, "reason": reason})
-        drainage["structures"] = structures
         drainage_stats = safe_dict(drainage.get("stats"))
         drainage_stats["structure_count"] = len(structures)
-        drainage["stats"] = drainage_stats
-        manager.latest_outputs["drainage"] = deepcopy(drainage)
-        project.meta["drainage_canonical"] = deepcopy(drainage)
+        _sync_drainage_mutable_state(project, manager, structures=structures, stats=drainage_stats)
         return 1
     if system_name in {"water", "utilities"}:
         utilities = safe_dict(manager.latest_outputs.get("utilities", project.meta.get("utility_summary", {})))
@@ -6460,6 +7902,7 @@ def _validate_network_graph(summary: Dict[str, Any], system_name: str) -> Dict[s
     unreasonable_degree_nodes: List[Dict[str, Any]] = []
     orphan_nodes: List[str] = []
     explicit_nodes: set[str] = set()
+    explicit_node_types: Dict[str, str] = {}
     seen_segment_ids: set[str] = set()
     seen_edges: set[Tuple[str, str, str]] = set()
     for node in safe_list(summary.get("nodes")):
@@ -6467,16 +7910,19 @@ def _validate_network_graph(summary: Dict[str, Any], system_name: str) -> Dict[s
         node_id = safe_str(rec.get("node_id") or rec.get("id"), safe_str(rec.get("name")))
         if node_id:
             explicit_nodes.add(node_id)
+            explicit_node_types[node_id] = safe_str(rec.get("node_type"))
     for node in safe_list(summary.get("manholes")):
         rec = safe_dict(node)
         node_id = safe_str(rec.get("node_id") or rec.get("id"), safe_str(rec.get("name")))
         if node_id:
             explicit_nodes.add(node_id)
+            explicit_node_types[node_id] = safe_str(rec.get("node_type"), "sanitary_manhole")
     for node in safe_list(summary.get("structures")):
         rec = safe_dict(node)
         node_id = safe_str(rec.get("node_id") or rec.get("id"), safe_str(rec.get("name")))
         if node_id:
             explicit_nodes.add(node_id)
+            explicit_node_types[node_id] = safe_str(rec.get("node_type"), safe_str(rec.get("structure_type")))
     for seg in segments:
         seg_id = _summary_segment_id(seg, system_name)
         if seg_id in seen_segment_ids:
@@ -6550,10 +7996,14 @@ def _validate_network_graph(summary: Dict[str, Any], system_name: str) -> Dict[s
     for node in sorted(set(graph.keys()) | explicit_nodes):
         indeg = in_degree.get(node, 0)
         outdeg = out_degree.get(node, 0)
+        node_type = safe_str(explicit_node_types.get(node))
         if outdeg > branch_limit:
             illegal_branch_nodes.append({"node_id": node, "out_degree": outdeg, "allowed_out_degree": branch_limit})
-        if indeg + outdeg > max_total_degree:
-            unreasonable_degree_nodes.append({"node_id": node, "total_degree": indeg + outdeg, "allowed_total_degree": max_total_degree})
+        allowed_total_degree = max_total_degree
+        if system_name == "storm" and node_type in {"junction", "basin_connection", "outfall"}:
+            allowed_total_degree = 12
+        if indeg + outdeg > allowed_total_degree:
+            unreasonable_degree_nodes.append({"node_id": node, "total_degree": indeg + outdeg, "allowed_total_degree": allowed_total_degree})
     orphan_nodes = sorted(node for node in explicit_nodes if node not in referenced_nodes)
     return {
         "system": system_name,
@@ -6634,7 +8084,10 @@ def _apply_conflict_resolution(
     candidate_mode: str = "balanced",
     cluster_context: Optional[Dict[str, Any]] = None,
     crossing_strategy: str = "",
+    metrics: Optional[Dict[str, Any]] = None,
+    structure_analysis_cache: Optional[Dict[Tuple[str, str, Tuple[Tuple[float, float], ...]], Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
+    started = perf_counter()
     resolution = {
         "success": False,
         "assumed": False,
@@ -6677,7 +8130,7 @@ def _apply_conflict_resolution(
         ignored_zone_names: Sequence[str] = (),
         source_mode: str = "",
     ) -> Dict[str, Any]:
-        _refresh_conflict_resolved_state(project, manager)
+        _refresh_conflict_resolved_state(project, manager, changed_systems)
         post_all = _detect_coordination_conflicts(project, manager)
         post_related = _matching_conflicts(post_all, conflict)
         validations = _post_reroute_validations(project, manager, changed_systems)
@@ -6802,24 +8255,8 @@ def _apply_conflict_resolution(
             role = _segment_ownership_class({"system": target_system, "segment_role": safe_str(rec.get("segment_role"))})
             candidate_targets.append((safe_str(target_system), role))
         ordered_targets = sorted(candidate_targets, key=lambda item: (SYSTEM_OWNERSHIP_PRIORITY.get(item[1], 99), item[0]))
-        upper_targets = [item for item in ordered_targets if safe_str(item[0]) != preferred_lower] or ordered_targets
-        lower_targets = [item for item in ordered_targets if safe_str(item[0]) == preferred_lower] or ordered_targets
-        resolution_steps: List[Tuple[str, str]] = []
         strategy_name = safe_str(crossing_strategy, "default_crossing")
-        if interaction_type == "parallel":
-            if strategy_name == "parallel_shift_first":
-                resolution_steps.extend([("reroute", system_name) for system_name, _ in upper_targets])
-                resolution_steps.extend([("reroute", system_name) for system_name, _ in lower_targets if system_name not in {item[1] for item in resolution_steps}])
-            else:
-                resolution_steps.extend([("reroute", system_name) for system_name, _ in upper_targets])
-                resolution_steps.extend([("vertical", system_name) for system_name, _ in lower_targets])
-        elif strategy_name == "upper_reroute_first":
-            resolution_steps.extend([("reroute", system_name) for system_name, _ in upper_targets])
-            resolution_steps.extend([("vertical", system_name) for system_name, _ in lower_targets])
-        else:
-            resolution_steps.extend([("vertical", system_name) for system_name, _ in lower_targets])
-            resolution_steps.extend([("reroute", system_name) for system_name, _ in upper_targets])
-            resolution_steps.extend([("vertical", system_name) for system_name, _ in upper_targets if system_name != preferred_lower])
+        resolution_steps = _clearance_resolution_steps(interaction_type, strategy_name, ordered_targets, preferred_lower)
 
         seen_steps: set[Tuple[str, str]] = set()
         for action_kind, target_system in resolution_steps:
@@ -6931,7 +8368,9 @@ def _apply_conflict_resolution(
                     cluster_context=effective_cluster_context,
                     protected_zones=protected_zones,
                 )
-                for candidate_row in candidate_paths[:5]:
+                candidate_paths = _prune_geometry_candidate_rows(candidate_paths, route_path, metrics=metrics, breadth_cap=4)
+                for candidate_row in candidate_paths:
+                    _coordination_metric_inc(metrics, ["rollbacks"])
                     _restore_coordination_state(project, manager, base_snapshot)
                     refreshed = _find_summary_segment(project, manager, names[0] if safe_str(target_system) == safe_str(primary[0] if primary else "") else names[1])
                     if refreshed is None:
@@ -6951,7 +8390,15 @@ def _apply_conflict_resolution(
                             refreshed_rec["end_invert_ft"] = round(start_invert - drop, 3)
                         elif "end_invert" in refreshed_rec:
                             refreshed_rec["end_invert"] = round(start_invert - drop, 3)
-                    structure_info = _apply_structure_insertion_rules(project, manager, safe_str(refreshed_system), safe_str(refreshed_rec.get("name"), target_name), reroute_path)
+                    structure_info = _apply_structure_insertion_rules(
+                        project,
+                        manager,
+                        safe_str(refreshed_system),
+                        safe_str(refreshed_rec.get("name"), target_name),
+                        reroute_path,
+                        metrics=metrics,
+                        analysis_cache=structure_analysis_cache,
+                    )
                     grading_note = _apply_local_grading_repair(project, safe_str(refreshed_rec.get("name"), target_name), delta_depth_ft=max(length_ft - polyline_length(route_path), 0.0) * 0.025, point=_segment_midpoint(reroute_path))
                     candidate = _finalize_candidate(
                         strategy="clearance_reroute",
@@ -7004,8 +8451,10 @@ def _apply_conflict_resolution(
                     cluster_context=cluster_context,
                     protected_zones=protected_zones,
                 )
+                candidate_paths = _prune_geometry_candidate_rows(candidate_paths, path, metrics=metrics, breadth_cap=4)
                 for candidate_row in candidate_paths:
                     candidate_path = deepcopy(safe_list(candidate_row.get("path")))
+                    _coordination_metric_inc(metrics, ["rollbacks"])
                     _restore_coordination_state(project, manager, base_snapshot)
                     refreshed = _find_summary_segment(project, manager, names[0])
                     if refreshed is None:
@@ -7024,7 +8473,15 @@ def _apply_conflict_resolution(
                             rec["end_invert_ft"] = round(start_invert - drop, 3)
                         elif "end_invert" in rec:
                             rec["end_invert"] = round(start_invert - drop, 3)
-                    structure_info = _apply_structure_insertion_rules(project, manager, safe_str(target_system), safe_str(rec.get("name"), names[0]), candidate_path)
+                    structure_info = _apply_structure_insertion_rules(
+                        project,
+                        manager,
+                        safe_str(target_system),
+                        safe_str(rec.get("name"), names[0]),
+                        candidate_path,
+                        metrics=metrics,
+                        analysis_cache=structure_analysis_cache,
+                    )
                     grading_note = _apply_local_grading_repair(project, safe_str(rec.get("name"), names[0]), delta_depth_ft=max(length_ft - polyline_length(path), 0.0) * 0.02, point=_segment_midpoint(candidate_path))
                     strategy = safe_str(candidate_row.get("strategy"), "reroute_around_obstacle")
                     candidate = _finalize_candidate(
@@ -7124,6 +8581,7 @@ def _apply_conflict_resolution(
                 else:
                     best_near_valid = candidate
 
+    _coordination_metric_inc(metrics, ["timings_ms", "apply_conflict_resolution"], round((perf_counter() - started) * 1000.0, 3))
     if best_snapshot is not None and best_choice is not None:
         _restore_coordination_state(project, manager, best_snapshot)
         resolution.update(
@@ -7150,10 +8608,20 @@ def _apply_conflict_resolution(
     return resolution
 
 
-def _refresh_conflict_resolved_state(project: ProjectModel, manager: ProjectManager) -> Dict[str, Any]:
-    _recompute_storm_summary(project, manager)
-    _recompute_sanitary_summary(project, manager)
-    _recompute_utility_summary(project, manager)
+def _refresh_conflict_resolved_state(
+    project: ProjectModel,
+    manager: ProjectManager,
+    changed_systems: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
+    changed = {safe_str(item) for item in safe_list(changed_systems) if safe_str(item)}
+    if not changed:
+        changed = {"storm", "storm_pipes", "sanitary", "utilities", "water"}
+    if changed.intersection({"storm", "storm_pipes"}):
+        _recompute_storm_summary(project, manager)
+    if "sanitary" in changed:
+        _recompute_sanitary_summary(project, manager)
+    if changed.intersection({"utilities", "water"}):
+        _recompute_utility_summary(project, manager)
     return {
         "storm": deepcopy(safe_dict(manager.latest_outputs.get("storm_pipe_summary", project.meta.get("storm_pipe_summary", {})))),
         "sanitary": deepcopy(safe_dict(manager.latest_outputs.get("sanitary", project.meta.get("sanitary_summary", {})))),
@@ -7793,16 +9261,37 @@ def _solve_conflict_cluster(
     assisted_mode: bool,
     allowed_candidate_modes: Optional[Sequence[str]] = None,
     crossing_strategy: str = "",
+    metrics: Optional[Dict[str, Any]] = None,
+    structure_analysis_cache: Optional[Dict[Tuple[str, str, Tuple[Tuple[float, float], ...]], Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
+    started = perf_counter()
     base_snapshot = _snapshot_coordination_state(project, manager)
     initial_conflicts = _detect_coordination_conflicts(project, manager)
     initial_related = _cluster_remaining_conflicts(initial_conflicts, cluster)
     candidate_orders = _cluster_candidate_orders(cluster)
+    _coordination_metric_inc(metrics, ["candidate_counts", "cluster_orders_total"], len(candidate_orders))
     allowed_modes = {safe_str(item) for item in safe_list(allowed_candidate_modes) if safe_str(item)}
     if allowed_modes:
         filtered_orders = [deepcopy(row) for row in candidate_orders if safe_str(safe_dict(row).get("candidate_mode")) in allowed_modes]
         if filtered_orders:
             candidate_orders = filtered_orders
+    order_priority = {"balanced": 0, "trench_cluster": 1, "corridor_bias": 2, "protected_zone_bias": 3}
+    candidate_orders = sorted(
+        candidate_orders,
+        key=lambda row: (
+            order_priority.get(safe_str(safe_dict(row).get("candidate_mode")), 99),
+            0 if safe_str(safe_dict(row).get("order_name")) == "priority" else 1,
+            safe_str(safe_dict(row).get("name")),
+        ),
+    )[:4]
+    total_cluster_orders = safe_int(safe_dict(metrics or {}).get("candidate_counts", {}).get("cluster_orders_total"), 0)
+    if total_cluster_orders > len(candidate_orders):
+        prune_count = total_cluster_orders - len(candidate_orders)
+        prune_reasons = safe_dict(metrics.get("prune_reasons")) if isinstance(metrics, dict) else {}
+        if isinstance(metrics, dict):
+            metrics["prune_reasons"] = prune_reasons
+        prune_reasons["cluster_order_cap"] = safe_int(prune_reasons.get("cluster_order_cap"), 0) + prune_count
+    _coordination_metric_inc(metrics, ["candidate_counts", "cluster_orders_kept"], len(candidate_orders))
     best_valid: Optional[Dict[str, Any]] = None
     best_valid_snapshot: Optional[Dict[str, Any]] = None
     best_near_valid: Optional[Dict[str, Any]] = None
@@ -7841,6 +9330,8 @@ def _solve_conflict_cluster(
                 candidate_mode=safe_str(order.get("candidate_mode"), "balanced"),
                 cluster_context=cluster,
                 crossing_strategy=crossing_strategy,
+                metrics=metrics,
+                structure_analysis_cache=structure_analysis_cache,
             )
             if resolution.get("success"):
                 candidate_changed_systems.update(safe_str(item) for item in safe_list(resolution.get("changed_systems")) if safe_str(item))
@@ -7867,7 +9358,7 @@ def _solve_conflict_cluster(
                 if not assisted_mode:
                     break
 
-        _refresh_conflict_resolved_state(project, manager)
+        _refresh_conflict_resolved_state(project, manager, sorted(candidate_changed_systems))
         post_conflicts = _detect_coordination_conflicts(project, manager)
         remaining_related = _cluster_remaining_conflicts(post_conflicts, cluster)
         validations = _post_reroute_validations(project, manager, sorted(candidate_changed_systems))
@@ -7942,6 +9433,7 @@ def _solve_conflict_cluster(
             best_near_valid = candidate
 
     if best_valid is not None and best_valid_snapshot is not None:
+        _coordination_metric_inc(metrics, ["timings_ms", "solve_conflict_cluster"], round((perf_counter() - started) * 1000.0, 3))
         _restore_coordination_state(project, manager, best_valid_snapshot)
         return {
             "success": True,
@@ -7969,6 +9461,7 @@ def _solve_conflict_cluster(
         }
 
     _restore_coordination_state(project, manager, base_snapshot)
+    _coordination_metric_inc(metrics, ["timings_ms", "solve_conflict_cluster"], round((perf_counter() - started) * 1000.0, 3))
     return {
         "success": False,
         "cluster_id": safe_str(cluster.get("cluster_id")),
@@ -7988,9 +9481,15 @@ def _solve_conflict_cluster(
         "failure_tags": _coordination_failure_tags(candidate_summaries, safe_dict(best_near_valid or {})),
         "crossing_strategy": safe_str(crossing_strategy),
     }
-
-
-def _solve_conflict_cluster_group(project: ProjectModel, manager: ProjectManager, group: Dict[str, Any], assisted_mode: bool) -> Dict[str, Any]:
+def _solve_conflict_cluster_group(
+    project: ProjectModel,
+    manager: ProjectManager,
+    group: Dict[str, Any],
+    assisted_mode: bool,
+    metrics: Optional[Dict[str, Any]] = None,
+    structure_analysis_cache: Optional[Dict[Tuple[str, str, Tuple[Tuple[float, float], ...]], Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    started = perf_counter()
     clusters = [safe_dict(item) for item in safe_list(safe_dict(group).get("clusters")) if safe_dict(item)]
     if not clusters:
         return {"success": True, "cluster_group_id": safe_str(safe_dict(group).get("cluster_group_id")), "candidate_summaries": []}
@@ -8002,6 +9501,8 @@ def _solve_conflict_cluster_group(project: ProjectModel, manager: ProjectManager
             clusters[0],
             assisted_mode=assisted_mode,
             crossing_strategy=default_crossing_strategy,
+            metrics=metrics,
+            structure_analysis_cache=structure_analysis_cache,
         )
         result["cluster_group_id"] = safe_str(safe_dict(group).get("cluster_group_id"))
         result["group_plan"] = "single_cluster"
@@ -8022,6 +9523,24 @@ def _solve_conflict_cluster_group(project: ProjectModel, manager: ProjectManager
     initial_conflicts = _detect_coordination_conflicts(project, manager)
     initial_related = _cluster_group_remaining_conflicts(initial_conflicts, group)
     group_plans = _cluster_group_candidate_plans(project, manager, group)
+    _coordination_metric_inc(metrics, ["candidate_counts", "group_plans_total"], len(group_plans))
+    group_plans = sorted(
+        group_plans,
+        key=lambda plan: (
+            0 if bool(safe_dict(plan).get("group_prefit")) else 1,
+            0 if safe_str(safe_dict(plan).get("crossing_strategy")) == "hierarchy_first" else 1,
+            0 if safe_str(safe_dict(plan).get("geometry_strategy")) == "balanced_group" else 1,
+            safe_str(safe_dict(plan).get("name")),
+        ),
+    )[:6]
+    total_group_plans = safe_int(safe_dict(metrics or {}).get("candidate_counts", {}).get("group_plans_total"), 0)
+    if total_group_plans > len(group_plans):
+        prune_count = total_group_plans - len(group_plans)
+        prune_reasons = safe_dict(metrics.get("prune_reasons")) if isinstance(metrics, dict) else {}
+        if isinstance(metrics, dict):
+            metrics["prune_reasons"] = prune_reasons
+        prune_reasons["group_plan_cap"] = safe_int(prune_reasons.get("group_plan_cap"), 0) + prune_count
+    _coordination_metric_inc(metrics, ["candidate_counts", "group_plans_kept"], len(group_plans))
     best_valid: Optional[Dict[str, Any]] = None
     best_valid_snapshot: Optional[Dict[str, Any]] = None
     best_near_valid: Optional[Dict[str, Any]] = None
@@ -8055,6 +9574,8 @@ def _solve_conflict_cluster_group(project: ProjectModel, manager: ProjectManager
                 assisted_mode=assisted_mode,
                 allowed_candidate_modes=safe_list(plan.get("allowed_candidate_modes")),
                 crossing_strategy=safe_str(plan.get("crossing_strategy")),
+                metrics=metrics,
+                structure_analysis_cache=structure_analysis_cache,
             )
             cluster_results.append(deepcopy(result))
             if not bool(result.get("success")):
@@ -8067,7 +9588,7 @@ def _solve_conflict_cluster_group(project: ProjectModel, manager: ProjectManager
                 changed_systems.update(safe_str(item) for item in safe_list(result.get("changed_systems")) if safe_str(item))
                 cluster_rows.extend(deepcopy(safe_list(result.get("resolution_rows"))))
 
-        _refresh_conflict_resolved_state(project, manager)
+        _refresh_conflict_resolved_state(project, manager, sorted(changed_systems))
         post_conflicts = _detect_coordination_conflicts(project, manager)
         remaining_related = _cluster_group_remaining_conflicts(post_conflicts, group)
         validations = _post_reroute_validations(project, manager, sorted(changed_systems))
@@ -8200,6 +9721,7 @@ def _solve_conflict_cluster_group(project: ProjectModel, manager: ProjectManager
             best_near_valid = candidate
 
     if best_valid is not None and best_valid_snapshot is not None:
+        _coordination_metric_inc(metrics, ["timings_ms", "solve_conflict_cluster_group"], round((perf_counter() - started) * 1000.0, 3))
         _restore_coordination_state(project, manager, best_valid_snapshot)
         return {
             "success": True,
@@ -8232,6 +9754,7 @@ def _solve_conflict_cluster_group(project: ProjectModel, manager: ProjectManager
         }
 
     _restore_coordination_state(project, manager, base_snapshot)
+    _coordination_metric_inc(metrics, ["timings_ms", "solve_conflict_cluster_group"], round((perf_counter() - started) * 1000.0, 3))
     return {
         "success": False,
         "cluster_group_id": safe_str(group.get("cluster_group_id")),
@@ -8257,10 +9780,13 @@ def _solve_conflict_cluster_group(project: ProjectModel, manager: ProjectManager
 
 
 def _run_conflict_resolution_stage(ctx: PlannerExecutionContext, hydrology: Dict[str, Any]) -> None:
+    stage_started = perf_counter()
     manager = ctx.manager
     project = manager.project
     assisted_mode = not _manual_mode_enabled(ctx.parsed)
     max_iterations = 3
+    coordination_metrics = _new_coordination_metrics()
+    structure_analysis_cache: Dict[Tuple[str, str, Tuple[Tuple[float, float], ...]], Dict[str, Any]] = {}
     previous_ids = safe_list(safe_dict(manager.latest_outputs.get("coordination", {})).get("manager_conflict_ids"))
     for conflict_id in previous_ids:
         manager.resolve_conflict(safe_str(conflict_id), resolution_note="Superseded by new coordination pass.")
@@ -8293,9 +9819,16 @@ def _run_conflict_resolution_stage(ctx: PlannerExecutionContext, hydrology: Dict
             snapshot = _snapshot_coordination_state(project, manager)
             pre_all = _detect_coordination_conflicts(project, manager)
             pre_related = _cluster_group_remaining_conflicts(pre_all, cluster_group)
-            resolution = _solve_conflict_cluster_group(project, manager, cluster_group, assisted_mode=assisted_mode)
+            resolution = _solve_conflict_cluster_group(
+                project,
+                manager,
+                cluster_group,
+                assisted_mode=assisted_mode,
+                metrics=coordination_metrics,
+                structure_analysis_cache=structure_analysis_cache,
+            )
             if resolution.get("success"):
-                _refresh_conflict_resolved_state(project, manager)
+                _refresh_conflict_resolved_state(project, manager, safe_list(resolution.get("changed_systems")))
                 post_all = _detect_coordination_conflicts(project, manager)
                 post_related = _cluster_group_remaining_conflicts(post_all, cluster_group)
                 improved = len(post_related) < len(pre_related) or len(post_all) < len(pre_all)
@@ -8336,6 +9869,7 @@ def _run_conflict_resolution_stage(ctx: PlannerExecutionContext, hydrology: Dict
                         }
                     )
                 else:
+                    _coordination_metric_inc(coordination_metrics, ["rollbacks"])
                     _restore_coordination_state(project, manager, snapshot)
                     if assisted_mode:
                         resolution["assumed"] = True
@@ -8416,7 +9950,7 @@ def _run_conflict_resolution_stage(ctx: PlannerExecutionContext, hydrology: Dict
                 for conflict in safe_list(cluster_group.get("conflicts")):
                     unresolved_report_map[_conflict_cluster_id(safe_dict(conflict))] = deepcopy(unresolved_report_map[safe_str(cluster_group.get("cluster_group_id"))])
         if changed:
-            _refresh_conflict_resolved_state(project, manager)
+            _refresh_conflict_resolved_state(project, manager, sorted(changed_systems))
             next_conflicts = sorted(_detect_coordination_conflicts(project, manager), key=_conflict_priority_key)
             if len(next_conflicts) < best_unresolved:
                 best_state = _snapshot_coordination_state(project, manager)
@@ -8430,7 +9964,7 @@ def _run_conflict_resolution_stage(ctx: PlannerExecutionContext, hydrology: Dict
 
     if unresolved and best_state:
         _restore_coordination_state(project, manager, best_state)
-        _refresh_conflict_resolved_state(project, manager)
+        _refresh_conflict_resolved_state(project, manager, None)
         unresolved = sorted(_detect_coordination_conflicts(project, manager), key=_conflict_priority_key)
 
     for conflict in unresolved:
@@ -8473,6 +10007,14 @@ def _run_conflict_resolution_stage(ctx: PlannerExecutionContext, hydrology: Dict
         )
     changed_systems_list = sorted(changed_systems)
     final_validations = _post_reroute_validations(project, manager, changed_systems_list)
+    _coordination_metric_inc(coordination_metrics, ["timings_ms", "conflict_resolution_stage"], round((perf_counter() - stage_started) * 1000.0, 3))
+    structure_metrics = safe_dict(coordination_metrics.get("structure_insertion"))
+    cache_ops = safe_float(structure_metrics.get("analysis_cache_hits"), 0.0) + safe_float(structure_metrics.get("analysis_cache_misses"), 0.0)
+    structure_metrics["analysis_cache_hit_rate"] = round(
+        safe_float(structure_metrics.get("analysis_cache_hits"), 0.0) / cache_ops,
+        3,
+    ) if cache_ops > 0 else 0.0
+    coordination_metrics["structure_insertion"] = structure_metrics
     coordination_summary = {
         "success": len(unresolved) == 0,
         "detected_conflicts": detected,
@@ -8496,6 +10038,7 @@ def _run_conflict_resolution_stage(ctx: PlannerExecutionContext, hydrology: Dict
         "candidate_isolation": "snapshot_copy",
         "preferred_corridors": deepcopy(project.meta.get("preferred_corridors", {})),
         "post_resolution_validations": final_validations,
+        "performance": coordination_metrics,
         "hydrology_reference": {
             "runoff_c": safe_float(hydrology.get("runoff_c"), PIPE_RUNOFF_C),
             "intensity_in_hr": safe_float(hydrology.get("intensity_in_hr"), PIPE_INTENSITY_IN_HR),
@@ -9088,6 +10631,7 @@ def _run_utility_stage(ctx: PlannerExecutionContext) -> None:
                 "conflict_hooks": deepcopy(getattr(result, "conflict_hooks", {})),
                 "preferred_corridor": deepcopy(utility_preference),
             }
+            utility_summary = _enrich_utility_summary_with_coordination(utility_summary, project, manager)
         except Exception as inner_exc:
             if strict_mode:
                 manager.set_metric("utility_route_count", 0, category="utilities")
@@ -9169,9 +10713,11 @@ def _run_utility_stage(ctx: PlannerExecutionContext) -> None:
                 "conflict_hooks": {"utility_system_type": "water", "utility_segments": fallback_segments},
                 "preferred_corridor": deepcopy(utility_preference),
             }
+            utility_summary = _enrich_utility_summary_with_coordination(utility_summary, project, manager)
 
         manager.set_metric("utility_route_count", route_count, category="utilities")
         manager.set_metric("utility_total_length_ft", total_length, units="ft", category="utilities")
+        utility_summary["export_validation"] = _utility_export_validation(project, utilities_override=utility_summary)
         manager.latest_outputs["utilities"] = deepcopy(utility_summary)
         project.meta["utility_summary"] = deepcopy(utility_summary)
 
@@ -10014,9 +11560,35 @@ def _apply_fix_pass(ctx: PlannerExecutionContext, report: PlanQualityReport) -> 
     utility_related = [c for c in manager.unresolved_conflicts_by_category("utilities")]
     grading_related = [c for c in manager.unresolved_conflicts_by_category("grading")]
     qa_errors = [i for i in report.issues if lower_text(i.severity) == "error"]
+    fix_summary = {
+        "layout_issue_count": len(layout_related),
+        "drainage_issue_count": len(drainage_related),
+        "pipe_conflict_count": len(pipe_related),
+        "utility_conflict_count": len(utility_related),
+        "grading_conflict_count": len(grading_related),
+        "qa_error_count": len(qa_errors),
+        "dominant_issue_categories": [],
+        "changed_targets": [],
+        "autofix_actions": [],
+        "effective_change": False,
+    }
+    issue_category_counts = {
+        "layout": len(layout_related),
+        "drainage": len(drainage_related),
+        "pipes": len(pipe_related),
+        "utilities": len(utility_related),
+        "grading": len(grading_related),
+        "qa": len(qa_errors),
+    }
+    fix_summary["dominant_issue_categories"] = [
+        name
+        for name, count in sorted(issue_category_counts.items(), key=lambda item: (-item[1], item[0]))
+        if count > 0
+    ]
 
     if not layout_related and not drainage_related and not pipe_related and not utility_related and not grading_related and not qa_errors:
-        ctx.add_stage("fix", True, "No deterministic fix pass changes were required.")
+        manager.project.meta["fix_summary"] = deepcopy(fix_summary)
+        ctx.add_stage("fix", True, "No deterministic fix pass changes were required.", fix_summary=deepcopy(fix_summary))
         return
 
     changed_targets: List[str] = []
@@ -10036,6 +11608,7 @@ def _apply_fix_pass(ctx: PlannerExecutionContext, report: PlanQualityReport) -> 
                     list(parsed.get("_planner_review_notes") or []) + ["Applied deterministic planner fix pass using autofix_site_layout."]
                 )
                 changed_targets.extend(["layout", "grading", "drainage", "storm_pipes", "utility_network", "earthwork"])
+                fix_summary["autofix_actions"].append("layout_autofix")
         except Exception as exc:
             ctx.record_warning(f"Fix pass failed in layout autofix: {exc}")
 
@@ -10046,6 +11619,7 @@ def _apply_fix_pass(ctx: PlannerExecutionContext, report: PlanQualityReport) -> 
         parsed["drainage"] = drainage
         parsed["layout_strategy"] = "drainage_friendly"
         changed_targets.extend(["drainage", "storm_pipes", "utility_network"])
+        fix_summary["autofix_actions"].append("drainage_retry_bias")
 
     if pipe_related:
         parsed.setdefault("meta", {})
@@ -10055,12 +11629,14 @@ def _apply_fix_pass(ctx: PlannerExecutionContext, report: PlanQualityReport) -> 
         goals["goal"] = "reduce_pipe_length"
         parsed["optimization_goals"] = goals
         changed_targets.extend(["storm_pipes", "utility_network"])
+        fix_summary["autofix_actions"].append("pipe_retry_bias")
 
     if utility_related:
         parsed["layout_strategy"] = "utility_efficient"
         parsed.setdefault("meta", {})
         parsed["meta"]["utility_retry_bias"] = True
         changed_targets.extend(["utility_network", "earthwork"])
+        fix_summary["autofix_actions"].append("utility_retry_bias")
 
     if grading_related:
         parsed["layout_strategy"] = "grading_friendly"
@@ -10069,20 +11645,49 @@ def _apply_fix_pass(ctx: PlannerExecutionContext, report: PlanQualityReport) -> 
         goals["goal"] = "reduce_grading"
         parsed["optimization_goals"] = goals
         changed_targets.extend(["grading", "drainage", "storm_pipes", "utility_network", "earthwork"])
+        fix_summary["autofix_actions"].append("grading_retry_bias")
 
     if qa_errors:
+        qa_error_codes = {lower_text(safe_str(issue.code)) for issue in qa_errors}
         parsed.setdefault("meta", {})
         parsed["meta"]["planner_passes"] = max(3, safe_int(safe_dict(parsed["meta"]).get("planner_passes"), 2) + 1)
+        if any("storm" in code or "pipe" in code for code in qa_error_codes):
+            changed_targets.extend(["drainage", "storm_pipes"])
+            fix_summary["autofix_actions"].append("storm_validation_retry")
+        if any("sanitary" in code or "sewer" in code for code in qa_error_codes):
+            changed_targets.extend(["sanitary", "utility_network"])
+            fix_summary["autofix_actions"].append("sanitary_validation_retry")
+        if any("utility" in code or "water" in code for code in qa_error_codes):
+            changed_targets.extend(["utility_network"])
+            fix_summary["autofix_actions"].append("utility_validation_retry")
+        if any("grade" in code or "contour" in code or "slope" in code for code in qa_error_codes):
+            changed_targets.extend(["grading", "drainage", "earthwork"])
+            fix_summary["autofix_actions"].append("grading_validation_retry")
+        if any("drain" in code or "basin" in code or "detention" in code for code in qa_error_codes):
+            changed_targets.extend(["drainage", "storm_pipes", "earthwork"])
+            fix_summary["autofix_actions"].append("drainage_validation_retry")
+        if any("layout" in code or "constraint" in code or "site" in code for code in qa_error_codes):
+            changed_targets.extend(["layout", "grading", "drainage"])
+            fix_summary["autofix_actions"].append("layout_validation_retry")
         changed_targets.extend(["grading", "drainage", "storm_pipes", "utility_network", "earthwork", "qa"])
+        fix_summary["autofix_actions"].append("planner_pass_extension")
 
     changed_targets = dedupe_keep_order(changed_targets)
     ctx.changed_targets.extend(changed_targets)
+    fix_summary["changed_targets"] = deepcopy(changed_targets)
+    fix_summary["effective_change"] = bool(changed_targets)
+    fix_summary["last_fix_attempt"] = {
+        "target_count": len(changed_targets),
+        "primary_target": safe_str(changed_targets[0]) if changed_targets else "",
+        "autofix_actions": deepcopy(fix_summary["autofix_actions"]),
+    }
+    manager.project.meta["fix_summary"] = deepcopy(fix_summary)
     if changed_targets:
         for target in changed_targets:
             manager.invalidate_from(target, include_source=True)
-        ctx.add_stage("fix", True, "Applied deterministic planner fix pass.", changed_targets=deepcopy(changed_targets))
+        ctx.add_stage("fix", True, "Applied deterministic planner fix pass.", changed_targets=deepcopy(changed_targets), fix_summary=deepcopy(fix_summary))
     else:
-        ctx.add_stage("fix", False, "Fix pass attempted no effective change.")
+        ctx.add_stage("fix", False, "Fix pass attempted no effective change.", fix_summary=deepcopy(fix_summary))
 
 
 # =============================================================================
@@ -10305,6 +11910,168 @@ def _run_model_first_workflow(parsed: Dict[str, Any], route: RoutingDecision, op
 
     plan["meta"]["qa"] = final_report.to_meta()
     plan["meta"]["truth_audit"] = _canonical_truth_audit(parsed, plan, manager)
+    coordination_meta = safe_dict(plan["meta"].get("coordination"))
+    fix_summary = deepcopy(safe_dict(manager.project.meta.get("fix_summary")))
+    unresolved_conflicts = safe_list(coordination_meta.get("unresolved_conflicts"))
+    unresolved_category_counts: Dict[str, int] = {}
+    for conflict in unresolved_conflicts:
+        category = lower_text(safe_str(safe_dict(conflict).get("category") or "uncategorized"))
+        unresolved_category_counts[category] = unresolved_category_counts.get(category, 0) + 1
+    unresolved_issue_categories = [
+        name
+        for name, count in sorted(unresolved_category_counts.items(), key=lambda item: (-item[1], item[0]))
+        if count > 0
+    ]
+    qa_issue_category_counts: Dict[str, int] = {}
+    for issue in final_report.issues:
+        code = lower_text(safe_str(issue.code))
+        category = "qa"
+        if "drain" in code:
+            category = "drainage"
+        elif "pipe" in code or "storm" in code:
+            category = "pipes"
+        elif "utility" in code or "water" in code or "sanitary" in code:
+            category = "utilities"
+        elif "grade" in code or "contour" in code or "slope" in code:
+            category = "grading"
+        elif "layout" in code or "constraint" in code or "site" in code:
+            category = "layout"
+        qa_issue_category_counts[category] = qa_issue_category_counts.get(category, 0) + 1
+    qa_issue_categories = [
+        name
+        for name, count in sorted(qa_issue_category_counts.items(), key=lambda item: (-item[1], item[0]))
+        if count > 0
+    ]
+    assumption_items = dedupe_keep_order(
+        [safe_str(item) for item in list(ctx.assumptions) + list(parsed.get("_planner_review_notes") or []) if safe_str(item)]
+    )
+    quantity_assumptions = [safe_str(item) for item in safe_list(safe_dict(plan["meta"].get("quantities")).get("assumptions")) if safe_str(item)]
+    assumption_items = dedupe_keep_order(assumption_items + quantity_assumptions)
+    assumption_category_counts: Dict[str, int] = {}
+    for item in assumption_items:
+        lowered = lower_text(item)
+        category = "general"
+        if "drain" in lowered or "runoff" in lowered or "inlet" in lowered or "basin" in lowered:
+            category = "drainage"
+        elif "storm" in lowered or "pipe" in lowered or "hydraulic" in lowered:
+            category = "storm"
+        elif "utility" in lowered or "water" in lowered or "sanitary" in lowered or "sewer" in lowered:
+            category = "utilities"
+        elif "grade" in lowered or "surface" in lowered or "contour" in lowered or "slope" in lowered:
+            category = "grading"
+        elif "layout" in lowered or "site" in lowered or "parking" in lowered or "building" in lowered:
+            category = "layout"
+        assumption_category_counts[category] = assumption_category_counts.get(category, 0) + 1
+    assumption_categories = [
+        name
+        for name, count in sorted(assumption_category_counts.items(), key=lambda item: (-item[1], item[0]))
+        if count > 0
+    ]
+    rerun_stage_counts: Dict[str, int] = {}
+    rerun_reason_counts: Dict[str, Dict[str, int]] = {}
+    total_reruns = 0
+    for entry in safe_list(ctx.rerun_history):
+        record = safe_dict(entry)
+        if safe_str(record.get("action")) != "run":
+            continue
+        pass_number = safe_int(record.get("pass_index"), 0)
+        stage_name = safe_str(record.get("stage_name"))
+        if pass_number <= 1 or not stage_name:
+            continue
+        total_reruns += 1
+        rerun_stage_counts[stage_name] = rerun_stage_counts.get(stage_name, 0) + 1
+        reason_bucket = rerun_reason_counts.setdefault(stage_name, {})
+        for reason in safe_list(record.get("dirty_reasons")):
+            reason_text = safe_str(reason)
+            if reason_text:
+                reason_bucket[reason_text] = reason_bucket.get(reason_text, 0) + 1
+    stage_rerun_counts = {
+        stage_name: rerun_stage_counts[stage_name]
+        for stage_name in sorted(rerun_stage_counts.keys(), key=lambda name: (-rerun_stage_counts[name], name))
+    }
+    dominant_rerun_reasons = {
+        stage_name: [
+            reason
+            for reason, _count in sorted(reason_counts.items(), key=lambda item: (-item[1], item[0]))[:3]
+        ]
+        for stage_name, reason_counts in rerun_reason_counts.items()
+        if stage_name in stage_rerun_counts
+    }
+    pass_history: List[Dict[str, Any]] = []
+    for pass_number in range(1, ctx.pass_index + 1):
+        pass_results = [
+            stage
+            for stage in ctx.stage_results
+            if safe_int(safe_dict(stage.meta).get("pass_index"), 0) == pass_number
+        ]
+        if not pass_results:
+            continue
+        qa_stage = next((stage for stage in reversed(pass_results) if safe_str(stage.stage_name) == "qa"), None)
+        coordination_stage = next((stage for stage in reversed(pass_results) if safe_str(stage.stage_name) == "coordination"), None)
+        fix_stage = next((stage for stage in reversed(pass_results) if safe_str(stage.stage_name) == "fix"), None)
+        fix_stage_meta = safe_dict(getattr(fix_stage, "meta", {}))
+        fix_stage_summary = safe_dict(fix_stage_meta.get("fix_summary"))
+        qa_stage_meta = safe_dict(getattr(qa_stage, "meta", {}))
+        pass_history.append(
+            {
+                "pass_index": pass_number,
+                "qa_warning_count": safe_int(qa_stage_meta.get("warning_count"), 0),
+                "qa_error_count": safe_int(qa_stage_meta.get("error_count"), 0),
+                "coordination_message": safe_str(getattr(coordination_stage, "message", "")),
+                "coordination_success": bool(getattr(coordination_stage, "success", False)),
+                "fix_attempted": bool(fix_stage),
+                "fix_effective_change": bool(fix_stage_summary.get("effective_change", False)),
+                "changed_targets": deepcopy(safe_list(fix_stage_summary.get("changed_targets"))),
+                "autofix_actions": deepcopy(safe_list(fix_stage_summary.get("autofix_actions"))),
+                "dominant_issue_categories": deepcopy(safe_list(fix_stage_summary.get("dominant_issue_categories"))),
+                "last_fix_attempt": deepcopy(safe_dict(fix_stage_summary.get("last_fix_attempt"))),
+            }
+        )
+    blocked_exports: List[str] = []
+    blocked_reasons: List[str] = []
+    grading_export = safe_dict(safe_dict(plan["meta"].get("grading")).get("export_validation"))
+    if grading_export and not bool(grading_export.get("ready")):
+        blocked_exports.append("grading")
+        blocked_reasons.extend(safe_str(item) for item in safe_list(grading_export.get("reasons")) if safe_str(item))
+    drainage_export = safe_dict(safe_dict(plan["meta"].get("drainage")).get("export_validation"))
+    if drainage_export and not bool(drainage_export.get("ready")):
+        blocked_exports.append("drainage")
+        blocked_reasons.extend(safe_str(item) for item in safe_list(drainage_export.get("reasons")) if safe_str(item))
+    utility_export = safe_dict(safe_dict(plan["meta"].get("utilities")).get("export_validation"))
+    if utility_export and not bool(utility_export.get("ready")):
+        blocked_exports.append("utilities")
+        blocked_reasons.extend(safe_str(item) for item in safe_list(utility_export.get("reasons")) if safe_str(item))
+    storm_export = _storm_export_validation(manager.project)
+    if safe_dict(storm_export) and not bool(safe_dict(storm_export).get("ready")):
+        blocked_exports.append("storm")
+        blocked_reasons.extend(safe_str(item) for item in safe_list(safe_dict(storm_export).get("reasons")) if safe_str(item))
+    blocked_exports = dedupe_keep_order(blocked_exports)
+    blocked_reasons = dedupe_keep_order([item for item in blocked_reasons if item])
+    plan["meta"]["convergence_summary"] = {
+        "passes_run": ctx.pass_index,
+        "max_passes": max_passes,
+        "converged": bool(final_report.error_count() == 0 and final_report.warning_count() < 5 and not unresolved_conflicts),
+        "warning_count": final_report.warning_count(),
+        "error_count": final_report.error_count(),
+        "unresolved_conflict_count": len(unresolved_conflicts),
+        "assumption_summary": {
+            "count": len(assumption_items),
+            "categories": assumption_categories,
+            "examples": assumption_items[:5],
+        },
+        "unresolved_issue_categories": unresolved_issue_categories,
+        "qa_issue_categories": qa_issue_categories,
+        "rerun_summary": {
+            "total_reruns": total_reruns,
+            "stage_rerun_counts": stage_rerun_counts,
+            "dominant_rerun_reasons": dominant_rerun_reasons,
+            "stages_touched": list(stage_rerun_counts.keys()),
+        },
+        "blocked_exports": blocked_exports,
+        "blocked_reasons": blocked_reasons,
+        "pass_history": pass_history,
+        "fix_summary": fix_summary,
+    }
     plan["assumptions"] = dedupe_keep_order(
         list(plan.get("assumptions") or []) + ctx.assumptions + list(parsed.get("_planner_review_notes") or [])
     )

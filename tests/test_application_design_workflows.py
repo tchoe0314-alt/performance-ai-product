@@ -1,0 +1,187 @@
+import unittest
+
+from fastapi import HTTPException
+
+from backend.application.design_workflows import build_run_summary, final_plan_from_result
+
+
+class ApplicationDesignWorkflowsTest(unittest.TestCase):
+    def test_build_run_summary_reads_engineering_meta(self):
+        summary = build_run_summary(
+            {
+                "success": True,
+                "message": "ok",
+                "metadata": {"_workflow_run_id": "run_123", "input_mode": "assisted"},
+                "parsed_payload": {"strict_mode": False},
+                "warnings": [],
+                "errors": [],
+                "final_plan": {
+                    "meta": {
+                        "engineering_status": {
+                            "success": True,
+                            "status": "complete",
+                            "engineering_trust_score": 88.0,
+                        },
+                        "truth_audit": {"success": True},
+                        "deliverables": {
+                            "requested": ["site_plan"],
+                            "produced": ["site_plan"],
+                            "failed": [],
+                        },
+                        "stage_completeness": {
+                            "all_required_complete": True,
+                            "required_stage_count": 2,
+                            "complete_stage_count": 2,
+                            "statuses": {"layout": "complete"},
+                        },
+                        "coordination": {"selected_group_strategy": "balanced_group"},
+                        "convergence_summary": {
+                            "converged": True,
+                            "passes_run": 2,
+                            "max_passes": 3,
+                            "warning_count": 1,
+                            "error_count": 0,
+                            "unresolved_conflict_count": 0,
+                            "assumption_summary": {
+                                "count": 2,
+                                "categories": ["drainage", "layout"],
+                                "examples": [
+                                    "Storage sized from Rational Method inflow estimate using planner runoff assumptions.",
+                                    "Parking layout inferred from prompt constraints.",
+                                ],
+                            },
+                            "unresolved_issue_categories": [],
+                            "qa_issue_categories": ["drainage", "pipes"],
+                            "rerun_summary": {
+                                "total_reruns": 2,
+                                "stage_rerun_counts": {"drainage": 1, "storm_pipes": 1},
+                                "dominant_rerun_reasons": {
+                                    "drainage": ["Dependency 'grading' is dirty."],
+                                    "storm_pipes": ["Dependency 'drainage' is dirty."],
+                                },
+                                "stages_touched": ["drainage", "storm_pipes"],
+                            },
+                            "blocked_exports": ["storm"],
+                            "blocked_reasons": ["storm_hydraulics_invalid"],
+                            "pass_history": [
+                                {
+                                    "pass_index": 1,
+                                    "qa_warning_count": 3,
+                                    "qa_error_count": 1,
+                                    "coordination_message": "Fix pass required.",
+                                    "coordination_success": False,
+                                    "fix_attempted": True,
+                                    "fix_effective_change": True,
+                                    "changed_targets": ["drainage", "storm_pipes"],
+                                    "autofix_actions": ["drainage_retry_bias"],
+                                    "dominant_issue_categories": ["drainage", "pipes"],
+                                    "last_fix_attempt": {
+                                        "target_count": 2,
+                                        "primary_target": "drainage",
+                                        "autofix_actions": ["drainage_retry_bias"],
+                                    },
+                                },
+                                {
+                                    "pass_index": 2,
+                                    "qa_warning_count": 1,
+                                    "qa_error_count": 0,
+                                    "coordination_message": "Planner reached acceptable convergence.",
+                                    "coordination_success": True,
+                                    "fix_attempted": False,
+                                    "fix_effective_change": False,
+                                    "changed_targets": [],
+                                    "autofix_actions": [],
+                                    "dominant_issue_categories": [],
+                                    "last_fix_attempt": {},
+                                },
+                            ],
+                            "fix_summary": {
+                                "effective_change": True,
+                                "changed_targets": ["drainage", "storm_pipes"],
+                                "autofix_actions": ["drainage_retry_bias"],
+                                "dominant_issue_categories": ["drainage", "pipes"],
+                                "last_fix_attempt": {
+                                    "target_count": 2,
+                                    "primary_target": "drainage",
+                                    "autofix_actions": ["drainage_retry_bias"],
+                                },
+                            },
+                        },
+                    }
+                },
+            },
+            source="unit_test",
+        )
+        self.assertEqual(summary["run_id"], "run_123")
+        self.assertEqual(summary["engineering_status"]["status"], "complete")
+        self.assertEqual(summary["coordination_summary"]["selected_strategy"], "balanced_group")
+        self.assertTrue(summary["convergence_summary"]["converged"])
+        self.assertEqual(summary["convergence_summary"]["fix_summary"]["autofix_actions"], ["drainage_retry_bias"])
+        self.assertEqual(summary["convergence_summary"]["assumption_summary"]["categories"], ["drainage", "layout"])
+        self.assertEqual(summary["convergence_summary"]["qa_issue_categories"], ["drainage", "pipes"])
+        self.assertEqual(summary["convergence_summary"]["rerun_summary"]["total_reruns"], 2)
+        self.assertEqual(summary["convergence_summary"]["rerun_summary"]["stage_rerun_counts"]["drainage"], 1)
+        self.assertEqual(summary["convergence_summary"]["blocked_exports"], ["storm"])
+        self.assertEqual(summary["convergence_summary"]["blocked_reasons"], ["storm_hydraulics_invalid"])
+        self.assertEqual(len(summary["convergence_summary"]["pass_history"]), 2)
+        self.assertEqual(summary["convergence_summary"]["pass_history"][0]["last_fix_attempt"]["primary_target"], "drainage")
+        self.assertTrue(summary["convergence_summary"]["pass_history"][0]["fix_attempted"])
+        self.assertEqual(summary["convergence_summary"]["dominant_issue_categories"], ["drainage", "pipes"])
+        self.assertEqual(summary["convergence_summary"]["last_fix_attempt"]["primary_target"], "drainage")
+
+    def test_final_plan_from_result_blocks_unstable_storm_export(self):
+        with self.assertRaises(HTTPException) as ctx:
+            final_plan_from_result(
+                {
+                    "final_plan": {
+                        "actions": [{"task": "polyline", "layer": "PIPE"}],
+                        "meta": {
+                            "deliverables": {"requested": ["storm_pipe_plan"], "produced": ["storm_pipe_plan"]},
+                            "drainage": {"export_validation": {"ready": False, "reasons": ["primary_detention_missing"]}},
+                            "storm_pipes": {
+                                "graph_validation": {"valid": False},
+                                "hydraulic_validation": {"valid": False},
+                                "missing_data_segments": [],
+                            },
+                        },
+                    }
+                }
+            )
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn("primary_detention_missing", str(ctx.exception.detail))
+
+    def test_final_plan_from_result_blocks_grading_fallback_export(self):
+        with self.assertRaises(HTTPException) as ctx:
+            final_plan_from_result(
+                {
+                    "final_plan": {
+                        "actions": [{"task": "polyline", "layer": "FG_CONTOUR"}],
+                        "meta": {
+                            "deliverables": {"requested": ["grading_plan"], "produced": ["grading_plan"]},
+                            "grading": {"export_validation": {"ready": False, "reasons": ["grading_fallback_used"]}},
+                        },
+                    }
+                }
+            )
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn("grading_fallback_used", str(ctx.exception.detail))
+
+    def test_final_plan_from_result_blocks_utility_fallback_export(self):
+        with self.assertRaises(HTTPException) as ctx:
+            final_plan_from_result(
+                {
+                    "final_plan": {
+                        "actions": [{"task": "polyline", "layer": "UTILITY"}],
+                        "meta": {
+                            "deliverables": {"requested": ["utility_plan"], "produced": ["utility_plan"]},
+                            "utilities": {"export_validation": {"ready": False, "reasons": ["utility_fallback_used"]}},
+                        },
+                    }
+                }
+            )
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn("utility_fallback_used", str(ctx.exception.detail))
+
+
+if __name__ == "__main__":
+    unittest.main()

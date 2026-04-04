@@ -129,6 +129,8 @@ class BasinConnectionEngine:
             release_cfs=outlet_concept.release_cfs,
         )
         basin.drawdown_hours = drawdown_hours
+        detention_meta = dict(basin.meta).get("detention_design", {}) if isinstance(basin.meta, dict) else {}
+        overflow_meta = dict(basin.meta).get("overflow_spillway", {}) if isinstance(basin.meta, dict) else {}
 
         if basin.required_storage_cf > 0.0 and basin.provided_storage_cf > 0.0 and basin.provided_storage_cf < basin.required_storage_cf:
             warnings.append("Provided basin storage is below required storage.")
@@ -162,10 +164,18 @@ class BasinConnectionEngine:
             "connection_node_name": connection_node.name,
             "total_inflow_cfs": round(total_inflow_cfs, 3),
             "release_cfs": round(outlet_concept.release_cfs, 3),
+            "release_basis": str(detention_meta.get("release_basis") or "outlet_concept"),
+            "target_drawdown_hours": (
+                round(float(detention_meta.get("target_drawdown_hours")), 3)
+                if detention_meta.get("target_drawdown_hours") is not None
+                else None
+            ),
             "required_storage_cf": round(basin.required_storage_cf, 3),
             "provided_storage_cf": round(basin.provided_storage_cf, 3),
+            "adequacy_status": str(detention_meta.get("adequacy_status") or "unknown"),
             "drawdown_hours": None if drawdown_hours is None else round(drawdown_hours, 3),
             "overflow_path_generated": overflow_path is not None,
+            "spillway_capacity_cfs": round(float(overflow_meta.get("assumed_capacity_cfs") or 0.0), 3),
         }
 
         explain = self._build_explain(
@@ -385,7 +395,7 @@ class BasinConnectionEngine:
         explain = BasinConnectionExplain()
         explain.key_logic = [
             "A basin connection node was selected at the boundary/centroid nearest probable inflow approach.",
-            "A concept outlet release was assigned from basin release data or an inflow-based default ratio.",
+            "A concept outlet release was assigned from basin release data or a drawdown-driven concept basis.",
             "Drawdown duration was estimated from available storage and release rate.",
             "An emergency overflow path was generated when allowed.",
         ]
@@ -397,6 +407,12 @@ class BasinConnectionEngine:
             "invert_elev_ft": connection_node.invert_elev_ft,
         }
         explain.outlet_summary = outlet_concept.to_dict()
+        if isinstance(basin.meta, dict):
+            detention_meta = dict(basin.meta).get("detention_design", {}) or {}
+            if detention_meta:
+                explain.outlet_summary["release_basis"] = detention_meta.get("release_basis")
+                explain.outlet_summary["target_drawdown_hours"] = detention_meta.get("target_drawdown_hours")
+                explain.outlet_summary["adequacy_status"] = detention_meta.get("adequacy_status")
         explain.overflow_summary = {
             "generated": overflow_path is not None,
             "name": overflow_path.name if overflow_path else None,
@@ -404,6 +420,11 @@ class BasinConnectionEngine:
             "slope": overflow_path.slope if overflow_path else None,
             "length_ft": round(self._polyline_length(overflow_path.path_points), 3) if overflow_path else None,
         }
+        if isinstance(basin.meta, dict):
+            overflow_meta = dict(basin.meta).get("overflow_spillway", {}) or {}
+            if overflow_meta:
+                explain.overflow_summary["spillway_capacity_cfs"] = overflow_meta.get("assumed_capacity_cfs")
+                explain.overflow_summary["spillway_crest_elev_ft"] = overflow_meta.get("crest_elev_ft")
         explain.warnings = list(warnings)
         return explain
 

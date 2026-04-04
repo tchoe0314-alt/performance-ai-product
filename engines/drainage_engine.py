@@ -77,6 +77,7 @@ class Inlet:
     estimated_flow_cfs: Optional[float] = None
     basin_sink: Optional[Tuple[int, int]] = None
     target_name: Optional[str] = None
+    tributary_basin_name: Optional[str] = None
 
 
 @dataclass
@@ -122,6 +123,9 @@ class BasinRecord:
     centroid_xy: Tuple[float, float]
     target_name: Optional[str] = None
     average_z: Optional[float] = None
+    estimated_runoff_cfs: Optional[float] = None
+    runoff_c: Optional[float] = None
+    intensity_in_hr: Optional[float] = None
 
 
 @dataclass
@@ -623,6 +627,8 @@ class DrainageEngine:
 
     def place_inlets(
         self,
+        basin_records: Optional[Sequence[BasinRecord]] = None,
+        hydraulic: Optional[HydraulicInputs] = None,
         min_spacing: float = 20.0,
         max_inlets: int = 12,
         min_edge_offset: float = 0.0,
@@ -631,7 +637,18 @@ class DrainageEngine:
         min_slope: float = 0.001,
     ) -> List[Inlet]:
         lows = self.find_low_points(include_accumulation=use_flow_accumulation, min_slope=min_slope)
-        lows = sorted(lows, key=lambda lp: (-(lp.contributing_cells), lp.z, lp.row, lp.col))
+        basin_by_sink = {tuple(record.sink): record for record in (basin_records or []) if getattr(record, "sink", None)}
+
+        def inlet_priority(lp: LowPoint) -> Tuple[float, float, float, int, int]:
+            basin = basin_by_sink.get((lp.row, lp.col))
+            basin_runoff = float(getattr(basin, "estimated_runoff_cfs", 0.0) or 0.0)
+            basin_area = float(getattr(basin, "area_sf", 0.0) or 0.0)
+            target_bonus = 1.0 if getattr(basin, "target_name", None) else 0.0
+            if hydraulic is not None and basin is not None and basin_runoff <= 0.0:
+                basin_runoff = self._estimate_basin_runoff_cfs(basin, hydraulic)
+            return (-basin_runoff, -basin_area, -target_bonus, -int(lp.contributing_cells), lp.row * 10000 + lp.col)
+
+        lows = sorted(lows, key=inlet_priority)
         inlets: List[Inlet] = []
 
         for lp in lows:
@@ -660,6 +677,7 @@ class DrainageEngine:
                 continue
 
             area_sf = lp.contributing_cells * (self.surface.cell_size ** 2)
+            basin = basin_by_sink.get((lp.row, lp.col))
             inlets.append(
                 Inlet(
                     name=f"INLET-{len(inlets)+1}",
@@ -667,8 +685,15 @@ class DrainageEngine:
                     y=lp.y,
                     z=lp.z,
                     contributing_cells=lp.contributing_cells,
-                    contributing_area_sf=area_sf,
+                    contributing_area_sf=max(area_sf, float(getattr(basin, "area_sf", 0.0) or 0.0)),
                     basin_sink=(lp.row, lp.col),
+                    target_name=getattr(basin, "target_name", None),
+                    tributary_basin_name=getattr(basin, "sink_name", None),
+                    estimated_flow_cfs=(
+                        self._estimate_basin_runoff_cfs(basin, hydraulic)
+                        if basin is not None and hydraulic is not None
+                        else None
+                    ),
                 )
             )
 
@@ -751,6 +776,35 @@ class DrainageEngine:
         area_ac = max(inlet.contributing_area_sf / 43560.0, 0.01)
         return 1.008 * area_ac * hydraulic.runoff_c * hydraulic.intensity_in_hr
 
+    def _estimate_basin_runoff_cfs(self, basin: BasinRecord, hydraulic: HydraulicInputs) -> float:
+        area_ac = max(basin.area_sf / 43560.0, 0.01)
+        return 1.008 * area_ac * hydraulic.runoff_c * hydraulic.intensity_in_hr
+
+    def _apply_basin_context_to_inlets(
+        self,
+        inlets: Sequence[Inlet],
+        basin_records: Sequence[BasinRecord],
+        hydraulic: HydraulicInputs,
+    ) -> None:
+        basin_by_sink = {tuple(record.sink): record for record in basin_records if record.sink}
+        for inlet in inlets:
+            sink_key = tuple(inlet.basin_sink or ())
+            basin = basin_by_sink.get(sink_key)
+            if basin is None and basin_records:
+                basin = min(
+                    basin_records,
+                    key=lambda record: math.hypot(
+                        float(record.centroid_xy[0]) - inlet.x,
+                        float(record.centroid_xy[1]) - inlet.y,
+                    ),
+                )
+            if basin is None:
+                continue
+            inlet.tributary_basin_name = basin.sink_name
+            inlet.target_name = inlet.target_name or basin.target_name
+            inlet.contributing_area_sf = max(inlet.contributing_area_sf, basin.area_sf)
+            inlet.estimated_flow_cfs = self._estimate_inlet_flow_cfs(inlet, hydraulic)
+
     def _choose_concept_diameter(self, flow_cfs: float, hydraulic: HydraulicInputs) -> int:
         table = [
             (12, 3.5),
@@ -773,6 +827,7 @@ class DrainageEngine:
     def pipe_runs(
         self,
         inlets: List[Inlet],
+        basin_records: Optional[Sequence[BasinRecord]] = None,
         follow_surface: bool = True,
         min_slope: float = 0.001,
         max_steps: int = 500,
@@ -800,12 +855,18 @@ class DrainageEngine:
         if hydraulic_resolved is None:
             return runs, summary
 
+        self._apply_basin_context_to_inlets(
+            inlets=inlets,
+            basin_records=list(basin_records or []),
+            hydraulic=hydraulic_resolved,
+        )
+
         for inlet in inlets:
             nearest_pond = min(self.ponds, key=lambda p: math.hypot(inlet.x - p.x, inlet.y - p.y))
-            inlet.target_name = nearest_pond.name
+            inlet.target_name = inlet.target_name or nearest_pond.name
 
             inlet_warnings: List[str] = []
-            inlet.estimated_flow_cfs = self._estimate_inlet_flow_cfs(inlet, hydraulic_resolved)
+            inlet.estimated_flow_cfs = inlet.estimated_flow_cfs or self._estimate_inlet_flow_cfs(inlet, hydraulic_resolved)
             inlet_record = InletRecord(inlet=inlet, warnings=inlet_warnings)
             summary.inlet_records.append(inlet_record)
 
@@ -897,8 +958,21 @@ class DrainageEngine:
             return summary
 
         summary.basin_records = self.basin_records(sample_step=sample_step, min_slope=min_slope)
+        hydraulic_resolved = self._resolve_hydraulic_inputs(mode, hydraulic, summary)
+        if hydraulic_resolved is None:
+            summary.explain = self._build_explain(summary)
+            summary.optimize_hooks = self._build_optimize_hooks(summary)
+            summary.conflict_hooks = self._build_conflict_hooks(summary)
+            return summary
+
+        for basin in summary.basin_records:
+            basin.runoff_c = hydraulic_resolved.runoff_c
+            basin.intensity_in_hr = hydraulic_resolved.intensity_in_hr
+            basin.estimated_runoff_cfs = self._estimate_basin_runoff_cfs(basin, hydraulic_resolved)
 
         inlets = self.place_inlets(
+            basin_records=summary.basin_records,
+            hydraulic=hydraulic_resolved,
             min_spacing=inlet_min_spacing,
             max_inlets=max_inlets,
             min_edge_offset=min_edge_offset,
@@ -922,11 +996,12 @@ class DrainageEngine:
 
         runs, run_summary = self.pipe_runs(
             inlets=inlets,
+            basin_records=summary.basin_records,
             follow_surface=True,
             min_slope=min_slope,
             max_steps=500,
             mode=mode,
-            hydraulic=hydraulic,
+            hydraulic=hydraulic_resolved,
         )
 
         summary.provided_inputs = run_summary.provided_inputs
@@ -975,6 +1050,7 @@ class DrainageEngine:
                 "contributing_area_sf": inlet.contributing_area_sf,
                 "estimated_flow_cfs": inlet.estimated_flow_cfs,
                 "target_name": inlet.target_name,
+                "tributary_basin_name": inlet.tributary_basin_name,
             }
             for inlet in inlets
         ]
@@ -1115,6 +1191,7 @@ class DrainageEngine:
                     "centroid_xy": rec.centroid_xy,
                     "area_sf": rec.area_sf,
                     "target_name": rec.target_name,
+                    "estimated_runoff_cfs": rec.estimated_runoff_cfs,
                 }
                 for rec in summary.basin_records
             ],

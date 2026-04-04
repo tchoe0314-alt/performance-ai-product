@@ -1322,18 +1322,265 @@ def _add_site_plan_layout(doc, plan: Dict[str, Any], actions: List[Dict[str, Any
 def _site_plan_summary_rows(plan: Dict[str, Any], actions: List[Dict[str, Any]]) -> List[List[str]]:
     meta = safe_dict(plan.get("meta"))
     stats = safe_dict(meta.get("stats"))
+    grading = safe_dict(meta.get("grading"))
+    grading_controls = safe_dict(grading.get("surface_controls"))
+    control_counts = safe_dict(grading_controls.get("control_counts"))
     storm = safe_dict(meta.get("storm_pipes"))
+    storm_stats = safe_dict(storm.get("stats"))
     sanitary = safe_dict(meta.get("sanitary"))
     utilities = safe_dict(meta.get("utilities"))
+    utility_coordination = safe_dict(utilities.get("coordination"))
     drainage = safe_dict(meta.get("drainage"))
+    drainage_stats = safe_dict(drainage.get("stats"))
+    primary_basins = [safe_dict(item) for item in safe_list(drainage.get("basins")) if safe_dict(item) and safe_text(safe_dict(item).get("engineering_role")) == "primary_detention"]
+    primary_basin = primary_basins[0] if primary_basins else {}
+    primary_detention = safe_dict(primary_basin.get("detention_design"))
+    surface_guidance = safe_dict(drainage.get("surface_guidance"))
+    export_validation = safe_dict(drainage.get("export_validation"))
+    surface_alignment = safe_dict(export_validation.get("surface_alignment"))
     rows = [["DISCIPLINE", "KEY VALUE", "CHECK / STATUS"]]
     rows.append(["SITE", f"Imperv {safe_num(stats.get('impervious_area_sf')):.0f} SF", safe_text(meta.get("engineering_status"), "concept").upper()])
-    rows.append(["GRADING", f"Contours {safe_num(stats.get('contour_count')):.0f}", f"Spot grades {safe_num(stats.get('spot_grade_count')):.0f}"])
-    rows.append(["STORM", f"Pipe {safe_num(storm.get('total_length_ft')):.1f} LF", f"Cap ratio {safe_num(storm.get('max_capacity_ratio')):.2f}"])
+    rows.append([
+        "GRADING",
+        f"Contours {safe_num(stats.get('contour_count')):.0f} | Range {safe_num(grading_controls.get('grade_range_ft')):.1f} FT",
+        (
+            f"Pad {int(round(safe_num(control_counts.get('pad'))))} | "
+            f"Park {int(round(safe_num(control_counts.get('parking'))))}"
+        ),
+    ])
+    storm_target = safe_text(storm_stats.get("selected_outfall_name"), "")
+    rows.append([
+        "STORM",
+        f"T {int(round(safe_num(storm_stats.get('trunk_count'))))} | L {int(round(safe_num(storm_stats.get('lateral_count'))))}",
+        storm_target or f"Cap ratio {safe_num(storm.get('max_capacity_ratio')):.2f}",
+    ])
     rows.append(["SAN", f"Pipe {safe_num(sanitary.get('total_length_ft')):.1f} LF", f"MH {int(round(safe_num(sanitary.get('manhole_count'))))} | Svc {int(round(safe_num(sanitary.get('service_count'))))}"])
-    rows.append(["UTIL", f"Routes {int(round(safe_num(utilities.get('route_count'))))}", f"Coord {safe_text(utilities.get('source'), 'canonical')}"])
-    rows.append(["DRAIN", f"Structures {int(round(safe_num(drainage.get('structure_count'))))}", f"Basins {int(round(safe_num(drainage.get('pond_count'))))}"])
+    utility_strategy = safe_text(utility_coordination.get("selected_group_strategy"), "")
+    utility_mode = safe_text(utility_coordination.get("selected_candidate_mode"), "")
+    utility_validation_ok = bool(utility_coordination.get("post_validation_valid", True))
+    rows.append([
+        "UTIL",
+        (
+            f"Routes {int(round(safe_num(utilities.get('route_count'))))} | "
+            f"Sep {safe_num(utilities.get('min_horizontal_separation_ft')):.1f}/{safe_num(utilities.get('min_vertical_separation_ft')):.1f} FT"
+        ),
+        (
+            f"{utility_strategy.upper()} / {utility_mode.upper()} / {'OK' if utility_validation_ok else 'CHECK'}"
+            if utility_strategy or utility_mode
+            else (
+                f"Clr {safe_num(utility_coordination.get('min_achieved_horizontal_clearance_ft')):.1f}/"
+                f"{safe_num(utility_coordination.get('min_achieved_vertical_clearance_ft')):.1f} FT"
+                if utility_coordination
+                else f"Cover {safe_num(utilities.get('min_cover_ft')):.1f} FT"
+            )
+        ),
+    ])
+    rows.append([
+        "DRAIN",
+        (
+            f"LP {int(round(safe_num(drainage_stats.get('low_point_count'))))} | "
+            f"Flow {int(round(safe_num(drainage_stats.get('flow_path_count'))))}"
+        ),
+        (
+            f"Q {safe_num(drainage_stats.get('total_estimated_inlet_flow_cfs')):.2f} CFS | "
+            f"A {safe_num(drainage_stats.get('total_contributing_area_sf')):.0f} SF"
+        ),
+    ])
+    if primary_detention:
+        rows.append([
+            "BASIN",
+            f"Stor {safe_num(primary_detention.get('provided_storage_cf')):.0f}/{safe_num(primary_detention.get('required_storage_cf')):.0f} CF",
+            f"{safe_text(primary_detention.get('adequacy_status'), 'adequate').upper()} | DD {safe_num(primary_detention.get('drawdown_hours')):.1f} H",
+        ])
+    if surface_guidance:
+        preferred_targets = [safe_dict(item) for item in safe_list(surface_guidance.get("preferred_targets")) if safe_dict(item)]
+        target_name = safe_text(safe_dict(preferred_targets[0]).get("name"), "") if preferred_targets else ""
+        rows.append([
+            "SURFACE",
+            f"Grade LP {int(round(safe_num(surface_guidance.get('grading_low_point_count'))))}",
+            target_name or f"Match {int(round(safe_num(surface_alignment.get('matched_low_points'))))}",
+        ])
     return rows
+
+
+def _site_plan_drainage_guidance_notes(plan: Dict[str, Any]) -> List[str]:
+    meta = safe_dict(plan.get("meta"))
+    grading = safe_dict(meta.get("grading"))
+    drainage = safe_dict(meta.get("drainage"))
+    drainage_stats = safe_dict(drainage.get("stats"))
+    storm = safe_dict(meta.get("storm_pipes"))
+    storm_stats = safe_dict(storm.get("stats"))
+    utilities = safe_dict(meta.get("utilities"))
+    utility_coordination = safe_dict(utilities.get("coordination"))
+    convergence = safe_dict(meta.get("convergence_summary"))
+    export_validation = safe_dict(drainage.get("export_validation"))
+    surface_alignment = safe_dict(export_validation.get("surface_alignment"))
+    surface_guidance = safe_dict(drainage.get("surface_guidance"))
+    grading_controls = safe_dict(grading.get("surface_controls"))
+    primary_basins = [safe_dict(item) for item in safe_list(drainage.get("basins")) if safe_dict(item) and safe_text(safe_dict(item).get("engineering_role")) == "primary_detention"]
+    primary_basin = primary_basins[0] if primary_basins else {}
+    primary_detention = safe_dict(primary_basin.get("detention_design"))
+    primary_basin_quality = safe_dict(primary_basin.get("geometry_quality"))
+    primary_spillway = safe_dict(primary_basin.get("overflow_spillway"))
+    control_counts = safe_dict(grading_controls.get("control_counts"))
+    downhill = safe_dict(surface_guidance.get("downhill_vector"))
+    preferred_targets = [safe_dict(item) for item in safe_list(surface_guidance.get("preferred_targets")) if safe_dict(item)]
+    notes: List[str] = []
+
+    primary_low_point = safe_dict(grading_controls.get("primary_low_point"))
+    if primary_low_point:
+        notes.append(
+            "4. GRADING CONTROL: "
+            f"PRIMARY LOW POINT AT ({safe_num(primary_low_point.get('x')):.1f}, "
+            f"{safe_num(primary_low_point.get('y')):.1f}) EL {safe_num(primary_low_point.get('z')):.2f}."
+        )
+    if control_counts:
+        notes.append(
+            "5. GRADED CONTROLS: "
+            f"PADS {int(round(safe_num(control_counts.get('pad'))))}, "
+            f"ROADS {int(round(safe_num(control_counts.get('road'))))}, "
+            f"PARKING {int(round(safe_num(control_counts.get('parking'))))}, "
+            f"PONDS {int(round(safe_num(control_counts.get('pond'))))}."
+        )
+    if downhill:
+        notes.append(
+            "6. SURFACE DRAINAGE GUIDANCE: "
+            f"DOWNHILL VECTOR DX {safe_num(downhill.get('dx')):.2f}, DY {safe_num(downhill.get('dy')):.2f}."
+        )
+    if preferred_targets:
+        labels = [safe_text(item.get("name"), "") for item in preferred_targets[:2] if safe_text(item.get("name"), "")]
+        if labels:
+            notes.append("7. PRIMARY SURFACE COLLECTION TARGETS: " + ", ".join(labels) + ".")
+    if surface_alignment:
+        notes.append(
+            "8. SURFACE / DRAINAGE ALIGNMENT: "
+            f"{int(round(safe_num(surface_alignment.get('matched_low_points'))))} MATCHED LOW-POINT TIES "
+            f"WITHIN {safe_num(surface_alignment.get('threshold_ft')):.0f} FT."
+        )
+    if drainage_stats:
+        notes.append(
+            "9. TRIBUTARY SUMMARY: "
+            f"{safe_num(drainage_stats.get('total_contributing_area_sf')):.0f} SF TO INLETS / "
+            f"{safe_num(drainage_stats.get('total_estimated_inlet_flow_cfs')):.2f} CFS PEAK / "
+            f"{safe_num(drainage_stats.get('total_basin_runoff_cfs')):.2f} CFS BASIN RUNOFF."
+        )
+    selected_outfall = safe_text(storm_stats.get("selected_outfall_name"), "")
+    if selected_outfall:
+        notes.append(
+            "10. STORM ROUTING: "
+            f"{int(round(safe_num(storm_stats.get('trunk_count'))))} TRUNK / "
+            f"{int(round(safe_num(storm_stats.get('lateral_count'))))} LATERAL SEGMENTS "
+            f"DISCHARGE TO {selected_outfall}."
+        )
+    if storm_stats:
+        notes.append(
+            "11. STORM DEMAND: "
+            f"{safe_num(storm_stats.get('max_governing_flow_cfs')):.2f} CFS GOVERNING FLOW / "
+            f"{safe_num(storm_stats.get('max_governing_area_sf')):.0f} SF MAX TRIBUTARY AREA."
+        )
+        selected_basin_name = safe_text(storm_stats.get("selected_basin_name"), "")
+        if selected_basin_name:
+            notes.append(
+                "12. SELECTED BASIN DESIGN: "
+                f"{selected_basin_name} / "
+                f"{safe_text(storm_stats.get('selected_basin_adequacy_status'), 'UNKNOWN').upper()} / "
+                f"{safe_text(storm_stats.get('selected_basin_release_basis'), 'OUTLET_CONCEPT').upper()} / "
+                f"{safe_num(storm_stats.get('selected_basin_target_drawdown_hours')):.1f} H TARGET / "
+                f"{safe_num(storm_stats.get('selected_basin_spillway_capacity_cfs')):.2f} CFS SPILLWAY CAP."
+            )
+        deficient_segments = int(round(safe_num(storm_stats.get("deficient_count"))))
+        marginal_segments = int(round(safe_num(storm_stats.get("marginal_count"))))
+        if deficient_segments or marginal_segments:
+            notes.append(
+                "13. STORM CAPACITY REVIEW: "
+                f"{deficient_segments} DEFICIENT / {marginal_segments} MARGINAL SEGMENTS UNDER GOVERNING DEMAND."
+            )
+    if primary_detention:
+        notes.append(
+            "14. DETENTION STORAGE: "
+            f"{safe_num(primary_detention.get('provided_storage_cf')):.0f} CF PROVIDED / "
+            f"{safe_num(primary_detention.get('required_storage_cf')):.0f} CF REQUIRED / "
+            f"RATIO {safe_num(primary_detention.get('storage_ratio')):.2f} / "
+            f"DRAWDOWN {safe_num(primary_detention.get('drawdown_hours')):.1f} H / "
+            f"REL {safe_num(primary_detention.get('release_cfs')):.2f} CFS."
+        )
+        notes.append(
+            "15. STORAGE ADEQUACY: "
+            f"{safe_text(primary_detention.get('adequacy_status'), 'adequate').upper()} / "
+            f"DEFICIT {safe_num(primary_detention.get('storage_deficit_cf')):.0f} CF / "
+            f"SURPLUS {safe_num(primary_detention.get('storage_surplus_cf')):.0f} CF."
+        )
+    if primary_basin_quality:
+        notes.append(
+            "16. BASIN GEOMETRY: "
+            f"DEPTH {safe_num(primary_basin_quality.get('depth_ft')):.1f} FT / "
+            f"FREEBOARD {safe_num(primary_basin_quality.get('freeboard_ft')):.1f} FT / "
+            f"SIDE SLOPE {safe_num(primary_basin_quality.get('side_slope_h_to_1v')):.1f}H:1V."
+        )
+        notes.append(
+            "17. BASIN FOOTPRINT: "
+            f"TOP {safe_num(primary_basin_quality.get('top_area_sf')):.0f} SF / "
+            f"BOTTOM {safe_num(primary_basin_quality.get('bottom_area_sf')):.0f} SF / "
+            f"RATIO {safe_num(primary_basin_quality.get('bottom_to_top_area_ratio')):.2f} / "
+            f"DAYLIGHT BAND {safe_num(primary_basin_quality.get('daylight_band_width_ft')):.1f} FT "
+            f"(TARGET {safe_num(primary_basin_quality.get('expected_daylight_band_width_ft')):.1f} FT)."
+        )
+    if primary_spillway:
+        notes.append(
+            "18. BASIN OVERFLOW: "
+            f"SPILLWAY CREST {safe_num(primary_spillway.get('crest_elev_ft')):.2f} / "
+            f"WIDTH {safe_num(primary_spillway.get('width_ft')):.1f} FT / "
+            f"CAP {safe_num(primary_spillway.get('assumed_capacity_cfs')):.2f} CFS / "
+            f"DAYLIGHT {safe_text(primary_spillway.get('to_target_name'), 'DOWNSTREAM TARGET')}."
+        )
+    if utilities:
+        notes.append(
+            "19. UTILITY CORRIDOR: "
+            f"MIN COVER {safe_num(utilities.get('min_cover_ft')):.1f} FT / "
+            f"MIN SEP {safe_num(utilities.get('min_horizontal_separation_ft')):.1f} H, "
+            f"{safe_num(utilities.get('min_vertical_separation_ft')):.1f} V / "
+            f"{int(round(safe_num(utilities.get('trunk_count'))))} TRUNK / "
+            f"{int(round(safe_num(utilities.get('service_count'))))} SERVICE."
+        )
+    if utility_coordination:
+        notes.append(
+            "20. UTILITY COORDINATION: "
+            f"{int(round(safe_num(utility_coordination.get('reroute_resolution_count'))))} REROUTE / "
+            f"{int(round(safe_num(utility_coordination.get('vertical_adjustment_count'))))} VERTICAL ADJUST / "
+            f"{int(round(safe_num(utility_coordination.get('added_structures_from_coordination'))))} STRUCTURES / "
+            f"STRATEGY {safe_text(utility_coordination.get('selected_group_strategy'), 'NONE').upper()} / "
+            f"MODE {safe_text(utility_coordination.get('selected_candidate_mode'), 'NONE').upper()} / "
+            f"{'POST-VALIDATED' if bool(utility_coordination.get('post_validation_valid', True)) else 'POST-VALIDATION CHECK REQUIRED'}."
+        )
+        notes.append(
+            "21. UTILITY CLEARANCE REVIEW: "
+            f"{int(round(safe_num(utility_coordination.get('clearance_compliant_checks'))))}/"
+            f"{int(round(safe_num(utility_coordination.get('clearance_total_checks'))))} CHECKS COMPLIANT / "
+            f"MIN ACHIEVED {safe_num(utility_coordination.get('min_achieved_horizontal_clearance_ft')):.1f} H, "
+            f"{safe_num(utility_coordination.get('min_achieved_vertical_clearance_ft')):.1f} V / "
+            f"MAX DEFICIT {safe_num(utility_coordination.get('max_horizontal_clearance_deficit_ft')):.1f} H, "
+            f"{safe_num(utility_coordination.get('max_vertical_clearance_deficit_ft')):.1f} V."
+        )
+    if convergence:
+        last_fix_attempt = safe_dict(convergence.get("last_fix_attempt"))
+        dominant_categories = [safe_text(item, "") for item in safe_list(convergence.get("dominant_issue_categories")) if safe_text(item, "")]
+        unresolved_categories = [safe_text(item, "") for item in safe_list(convergence.get("unresolved_issue_categories")) if safe_text(item, "")]
+        last_fix_actions = [safe_text(item, "") for item in safe_list(last_fix_attempt.get("autofix_actions")) if safe_text(item, "")]
+        review_parts = [
+            f"{int(round(safe_num(convergence.get('passes_run'))))}/{int(round(safe_num(convergence.get('max_passes'))))} PASSES",
+            "CONVERGED" if bool(convergence.get("converged")) else "NOT FULLY CONVERGED",
+            f"{int(round(safe_num(convergence.get('warning_count'))))} WARN",
+            f"{int(round(safe_num(convergence.get('error_count'))))} ERR",
+            f"{int(round(safe_num(convergence.get('unresolved_conflict_count'))))} UNRESOLVED",
+        ]
+        if dominant_categories:
+            review_parts.append("FIX TARGETS " + "/".join(item.upper() for item in dominant_categories[:3]))
+        if unresolved_categories:
+            review_parts.append("OPEN " + "/".join(item.upper() for item in unresolved_categories[:3]))
+        if last_fix_actions:
+            review_parts.append("LAST FIX " + "/".join(item.upper() for item in last_fix_actions[:2]))
+        notes.append(f"22. CONVERGENCE REVIEW: {' / '.join(review_parts)}.")
+    return notes
 
 
 def _legend_items(plan: Dict[str, Any], actions: List[Dict[str, Any]]) -> List[Tuple[str, str, str]]:
@@ -1491,6 +1738,7 @@ def _draw_site_plan_detailing(space, plan: Dict[str, Any], actions: List[Dict[st
         "2. PROFILE AND SECTION SHEETS CONTROL PIPE INVERT AND SURFACE GRADE INTENT.",
         "3. GENERATED SHEETS REPRESENT CANONICAL PROJECT STATE AT EXPORT TIME.",
     ]
+    notes.extend(_site_plan_drainage_guidance_notes(plan))
     add_text(space, "GENERAL NOTES", 24.0, 28.0, 2.3, "TITLE", style="CIVIL-BOLD")
     note_y = 23.0
     for note in notes:
