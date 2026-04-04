@@ -814,6 +814,57 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
             parts.append("and it did not fully converge")
         if parts:
             return "The latest run " + " ".join(parts) + "."
+    if "is this good" in lowered or "does this look good" in lowered or "is it good" in lowered:
+        if blocked_exports or blocked_reasons:
+            return "It’s not fully ready yet. The biggest blockers right now are " + "; ".join(
+                str(item) for item in (blocked_reasons[:2] or blocked_exports[:2])
+            ) + "."
+        if unresolved_categories or issues or manual_failures:
+            review_text = (
+                ", ".join(str(item) for item in unresolved_categories[:2])
+                or "; ".join(
+                    str(item.get("message") or "").strip()
+                    for item in (manual_failures[:1] + issues[:1])
+                    if isinstance(item, dict)
+                )
+            )
+            if review_text:
+                return f"It’s moving in the right direction, but I’d still review {review_text} before treating it as final."
+        return "Yes, it looks reasonably strong from the current run state. I don’t see any explicit blockers recorded right now."
+    if (
+        "what should i do next" in lowered
+        or "what next" in lowered
+        or "what would you do next" in lowered
+        or "what do you recommend next" in lowered
+    ):
+        if blocked_exports or blocked_reasons:
+            return "I’d address the blockers first: " + "; ".join(
+                str(item) for item in (blocked_reasons[:3] or blocked_exports[:3])
+            ) + "."
+        if manual_failures:
+            messages = [str(item.get("message") or "").strip() for item in manual_failures[:2] if isinstance(item, dict)]
+            messages = [item for item in messages if item]
+            if messages:
+                return "I’d review these items next: " + "; ".join(messages) + "."
+        if issues:
+            messages = [str(item.get("message") or "").strip() for item in issues[:2] if isinstance(item, dict)]
+            messages = [item for item in messages if item]
+            if messages:
+                return "I’d review these warnings next: " + "; ".join(messages) + "."
+        if deliverables:
+            return "The current design looks stable enough to review the deliverables and decide whether you want another revision."
+        return "I’d give me the next design change you want, or ask me to explain the current assumptions and fixes."
+    if "what would you change" in lowered or "what should change" in lowered:
+        if blocked_reasons or unresolved_categories:
+            focus = ", ".join(str(item) for item in (unresolved_categories[:2] or blocked_reasons[:2]))
+            if focus:
+                return "I’d focus first on " + focus + " because that’s where the current design still looks weakest."
+        if issues:
+            messages = [str(item.get("message") or "").strip() for item in issues[:2] if isinstance(item, dict)]
+            messages = [item for item in messages if item]
+            if messages:
+                return "I’d probably tighten up " + "; ".join(messages) + "."
+        return "I wouldn’t force another change yet unless you want a different design direction or tighter constraints."
     if "what warnings" in lowered or "what issues" in lowered or "what's wrong" in lowered or "whats wrong" in lowered:
         messages = [str(item.get("message") or "").strip() for item in manual_failures[:2] if isinstance(item, dict)]
         messages += [str(item.get("message") or "").strip() for item in issues[:2] if isinstance(item, dict)]

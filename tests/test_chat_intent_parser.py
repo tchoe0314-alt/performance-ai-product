@@ -228,6 +228,33 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertEqual(result["run_mode"], "run")
         self.assertFalse(result["needs_clarification"])
 
+    def test_is_this_good_uses_blocked_state(self):
+        result = _decide(
+            "is this good?",
+            {
+                "has_plan": True,
+                "convergence_summary": {
+                    "blocked_exports": ["storm"],
+                    "blocked_reasons": ["storm_graph_invalid"],
+                },
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("not fully ready", result["assistant_message"])
+
+    def test_what_next_uses_review_items(self):
+        result = _decide(
+            "what should i do next?",
+            {
+                "has_plan": True,
+                "issues": [
+                    {"message": "Storm pipe review is still needed."},
+                ],
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("review", result["assistant_message"])
+
 
 if __name__ == "__main__":
     unittest.main()
