@@ -37,6 +37,9 @@ class ApplicationAuthHealthWorkflowsTest(unittest.TestCase):
         )
         self.assertTrue(data["success"])
         self.assertEqual(data["user_count"], 3)
+        self.assertEqual(data["operational_summary"]["status"], "healthy")
+        self.assertEqual(data["operational_summary"]["mode"], "development")
+        self.assertTrue(data["operational_summary"]["ready_for_ui"])
 
     def test_auth_status(self):
         data = auth_status(user_count=5)

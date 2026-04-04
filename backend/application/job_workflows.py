@@ -60,7 +60,19 @@ def queue_orchestrate_job(
         payload=dict(request_payload),
         project_id=project_id,
     )
-    return {"success": True, "job": job}
+    return {
+        "success": True,
+        "job": job,
+        "operational_summary": {
+            "status": str(job.get("status") or "queued"),
+            "job_type": str(job.get("job_type") or "orchestrate"),
+            "job_bound": bool(job.get("job_id")),
+            "project_bound": bool(project_id),
+            "project_id": project_id,
+            "job_id": job.get("job_id"),
+            "retryable": True,
+        },
+    }
 
 
 def build_orchestrate_job_runner(
@@ -98,6 +110,16 @@ def build_orchestrate_job_runner(
                         ),
                     ),
                 )
-        return result
+        enriched = dict(result)
+        metadata = dict(enriched.get("metadata") or {})
+        metadata["job_context"] = {
+            "job_id": job.get("job_id"),
+            "job_type": job.get("job_type"),
+            "project_id": project_id,
+            "user_id": user_id,
+            "source": "job_queue",
+        }
+        enriched["metadata"] = metadata
+        return enriched
 
     return orchestrate_runner

@@ -47,7 +47,7 @@ class FakeJobQueue:
             "payload": dict(payload),
             "project_id": project_id,
         }
-        return {"job_id": "job_1", "status": "queued", "project_id": project_id}
+        return {"job_id": "job_1", "status": "queued", "project_id": project_id, "job_type": job_type}
 
     def register_handler(self, job_type, runner):
         self.registered[job_type] = runner
@@ -77,6 +77,9 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         )
         self.assertTrue(response["success"])
         self.assertEqual(queue.submitted["job_type"], "orchestrate")
+        self.assertEqual(response["operational_summary"]["status"], "queued")
+        self.assertTrue(response["operational_summary"]["project_bound"])
+        self.assertEqual(response["operational_summary"]["job_id"], "job_1")
 
     def test_build_orchestrate_job_runner_updates_project(self):
         store = FakeProjectStore(
@@ -102,12 +105,15 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         result = runner(
             {
                 "job_id": "job_1",
+                "job_type": "orchestrate",
                 "user_id": "u1",
                 "project_id": "p1",
                 "payload": {"prompt_text": "run"},
             }
         )
         self.assertTrue(result["success"])
+        self.assertEqual(result["metadata"]["job_context"]["job_id"], "job_1")
+        self.assertEqual(result["metadata"]["job_context"]["source"], "job_queue")
         self.assertEqual(store.saved_payload["metadata"]["workflow"]["runs"][0]["job_id"], "job_1")
 
 
