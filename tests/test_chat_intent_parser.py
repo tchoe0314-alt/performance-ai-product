@@ -385,6 +385,43 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertEqual(result["intent"], "fix")
         self.assertIn("earlier version", result["assistant_message"])
 
+    def test_memory_extracts_priority_style_preferences(self):
+        result = _decide(
+            "what are my priorities?",
+            {
+                "chat_thread": [
+                    {"role": "user", "content": "I care more about drainage than parking."},
+                    {"role": "user", "content": "Don't optimize too aggressively."},
+                ],
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("drainage", result["assistant_message"])
+
+    def test_design_acknowledges_priority_style_follow_up(self):
+        result = _decide(
+            "i care more about drainage than parking so add more parking only if it doesn't hurt drainage",
+            {
+                "has_plan": True,
+                "project_type": "commercial_pad",
+            },
+        )
+        self.assertEqual(result["intent"], "design")
+        self.assertIn("extra attention on drainage", result["assistant_message"])
+
+    def test_constraints_question_uses_memory_constraints(self):
+        result = _decide(
+            "what constraints are you following?",
+            {
+                "chat_thread": [
+                    {"role": "user", "content": "Don't optimize too aggressively."},
+                ],
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("constraints", result["assistant_message"])
+        self.assertIn("optimize too aggressively", result["assistant_message"])
+
 
 if __name__ == "__main__":
     unittest.main()

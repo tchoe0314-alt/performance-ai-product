@@ -131,6 +131,9 @@ def _extract_chat_memory(value: Any, limit: int = 8) -> Dict[str, Any]:
                     "remember that",
                     "always ",
                     "prefer ",
+                    "care more about",
+                    "prioritize",
+                    "prioritise",
                     "use ",
                     "keep ",
                     "stay in ",
@@ -148,6 +151,12 @@ def _extract_chat_memory(value: Any, limit: int = 8) -> Dict[str, Any]:
                     "no guessing",
                     "ask for clarification",
                     "if you are unsure",
+                    "do not optimize too aggressively",
+                    "don't optimize too aggressively",
+                    "dont optimize too aggressively",
+                    "do not optimize aggressively",
+                    "don't optimize aggressively",
+                    "dont optimize aggressively",
                 ]
             ):
                 bucket = constraints
@@ -625,8 +634,11 @@ def _extract_revision_constraints(message: str) -> Dict[str, List[str]]:
                 f"prioritize {target}",
                 f"focus more on {target}",
                 f"prioritise {target}",
+                f"care more about {target}",
             ]
         ):
+            focus.append(target)
+        if re.search(rf"\b{re.escape(target)}\b.*\bmore than\b", lowered):
             focus.append(target)
 
     return {
@@ -880,6 +892,8 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
     rerun_summary = convergence.get("rerun_summary") or {}
     memory_summary = context.get("memory_summary") or {}
     remembered_examples = list(memory_summary.get("examples") or [])
+    remembered_preferences = list(memory_summary.get("preferences") or [])
+    remembered_constraints = list(memory_summary.get("constraints") or [])
 
     if "what mode" in lowered or "which mode" in lowered:
         return f"You’re currently in {str(context.get('strategy_mode') or 'assisted').strip().lower()} mode."
@@ -898,6 +912,23 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         if remembered_examples:
             return "I’m keeping these instructions in mind: " + "; ".join(remembered_examples[:3]) + "."
         return "I don’t have any persistent user rules or preferences recorded from this chat yet."
+    if (
+        "what are my priorities" in lowered
+        or "what priorities are you using" in lowered
+        or "what are you prioritizing" in lowered
+        or "what are you prioritising" in lowered
+    ):
+        if remembered_preferences:
+            return "Right now I’m prioritizing these user preferences: " + "; ".join(remembered_preferences[:3]) + "."
+        return "I don’t have any explicit user priorities recorded yet beyond the current design state."
+    if (
+        "what constraints are you following" in lowered
+        or "what rules are you following" in lowered
+        or "what constraints do you remember" in lowered
+    ):
+        if remembered_constraints:
+            return "I’m keeping these constraints in mind: " + "; ".join(remembered_constraints[:3]) + "."
+        return "I don’t have any explicit user constraints recorded yet beyond the current engineering blockers."
     if (
         "what do you need from me" in lowered
         or "what do you need" in lowered
