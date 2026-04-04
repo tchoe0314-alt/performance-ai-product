@@ -306,6 +306,30 @@ function formatChatTimestamp(value: number) {
   }
 }
 
+function toReadableLabel(value: string): string {
+  return value
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function joinNatural(items: string[], limit = 3): string {
+  const filtered = items
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, limit);
+  if (!filtered.length) {
+    return "";
+  }
+  if (filtered.length === 1) {
+    return filtered[0];
+  }
+  if (filtered.length === 2) {
+    return `${filtered[0]} and ${filtered[1]}`;
+  }
+  return `${filtered.slice(0, -1).join(", ")}, and ${filtered[filtered.length - 1]}`;
+}
+
 function summarizePlanResponse(
   data: any,
   mode: PlanToolMode,
@@ -388,36 +412,61 @@ function summarizePlanResponse(
         ? explanation.reasoning
         : null;
 
+  const readableAutofixActions = autofixActions
+    .map((item: any) => toReadableLabel(String(item || "")))
+    .filter(Boolean);
+  const readableFixTargets = dominantFixTargets
+    .map((item: any) => toReadableLabel(String(item || "")))
+    .filter(Boolean);
+  const readableReviewCategories = reviewCategories
+    .map((item: any) => toReadableLabel(String(item || "")))
+    .filter(Boolean);
+  const readableBlockedReasons = blockedReasons
+    .map((item: any) => toReadableLabel(String(item || "")))
+    .filter(Boolean);
+  const readableBlockedExports = blockedExports
+    .map((item: any) => toReadableLabel(String(item || "")))
+    .filter(Boolean);
+  const readableProduced = producedDeliverables
+    .map((item: any) => toReadableLabel(String(item || "")))
+    .filter(Boolean);
+  const readableFailed = failedDeliverables
+    .map((item: any) => toReadableLabel(String(item || "")))
+    .filter(Boolean);
+  const issueMessages = issues
+    .slice(0, 2)
+    .map((issue: any) => String(issue?.message || "").trim())
+    .filter(Boolean);
+
   const notes = [
     assumptionExamples.length
-      ? `Assumptions made: ${assumptionExamples.join("; ")}.`
-      : "Assumptions made: none explicitly recorded.",
-    autofixActions.length || dominantFixTargets.length
-      ? `Fixes applied: ${
-          autofixActions.slice(0, 3).join(", ") ||
-          dominantFixTargets.slice(0, 3).join(", ")
-        }.`
-      : "Fixes applied: no recorded corrective actions were needed.",
-    reviewCategories.length || issues.length || unresolved > 0
-      ? `Needs review: ${
-          reviewCategories.slice(0, 3).join(", ") ||
-          issues
-            .slice(0, 2)
-            .map((issue: any) => issue?.message)
-            .filter(Boolean)
-            .join("; ") ||
-          `${unresolved} unresolved conflicts`
-        }.`
-      : "Needs review: no active review items are recorded.",
-    blockedReasons.length || blockedExports.length || failedDeliverables.length
-      ? `Blocked: ${
-          blockedReasons.slice(0, 3).join("; ") ||
-          blockedExports.slice(0, 3).join(", ") ||
-          failedDeliverables.slice(0, 3).join(", ")
-        }.`
-      : "Blocked: nothing is explicitly blocking release right now.",
+      ? `I used assisted assumptions for ${joinNatural(assumptionExamples)}.`
+      : "I did not need to record any explicit assisted assumptions on this run.",
+    readableAutofixActions.length || readableFixTargets.length
+      ? `I applied fixes around ${joinNatural(
+          readableAutofixActions.length ? readableAutofixActions : readableFixTargets,
+        )}.`
+      : "I did not need to record any corrective fix actions on this run.",
+    readableReviewCategories.length || issueMessages.length || unresolved > 0
+      ? `You should still review ${joinNatural(
+          readableReviewCategories.length
+            ? readableReviewCategories
+            : issueMessages.length
+              ? issueMessages
+              : [`${unresolved} unresolved conflicts`],
+        )}.`
+      : "I don’t see any active review items recorded right now.",
+    readableBlockedReasons.length || readableBlockedExports.length || readableFailed.length
+      ? `What is still blocked: ${joinNatural(
+          readableBlockedReasons.length
+            ? readableBlockedReasons
+            : readableBlockedExports.length
+              ? readableBlockedExports
+              : readableFailed,
+        )}.`
+      : "Nothing is explicitly blocked right now.",
     producedDeliverables.length
-      ? `Produced: ${producedDeliverables.slice(0, 4).join(", ")}.`
+      ? `I produced ${joinNatural(readableProduced, 4)}.`
       : null,
     why,
   ].filter(Boolean);
