@@ -494,17 +494,22 @@ def _looks_like_continuation_edit(message: str, context: Dict[str, Any]) -> bool
     last_user = previous_user_messages[-1] if previous_user_messages else ""
 
     continuation_starters = [
-        "actually ",
-        "okay now ",
-        "ok now ",
-        "now ",
-        "also ",
-        "same but ",
-        "do the same but ",
-        "keep the ",
-        "leave the ",
-        "instead ",
-    ]
+            "actually ",
+            "okay now ",
+            "ok now ",
+            "now ",
+            "also ",
+            "same but ",
+            "do the same but ",
+            "keep the ",
+            "keep everything else ",
+            "keep the rest ",
+            "leave the ",
+            "leave everything else ",
+            "instead ",
+            "focus on ",
+            "prioritize ",
+        ]
     if any(lowered.startswith(prefix) for prefix in continuation_starters):
         if _has_edit_intent(message):
             return True
@@ -544,6 +549,108 @@ def _looks_like_continuation_edit(message: str, context: Dict[str, Any]) -> bool
         ):
             return True
     return False
+
+
+def _extract_revision_constraints(message: str) -> Dict[str, List[str]]:
+    lowered = _normalized_chat_text(message)
+    preserve_targets = [
+        "building",
+        "parking",
+        "road",
+        "roads",
+        "grading",
+        "drainage",
+        "storm",
+        "basin",
+        "utilities",
+        "utility",
+        "sanitary",
+        "water",
+        "layout",
+        "site",
+    ]
+    focus_targets = [
+        "grading",
+        "drainage",
+        "storm",
+        "basin",
+        "utilities",
+        "utility",
+        "sanitary",
+        "water",
+        "parking",
+        "layout",
+        "roads",
+        "building",
+    ]
+
+    preserve: List[str] = []
+    focus: List[str] = []
+
+    if any(phrase in lowered for phrase in ["keep everything else the same", "keep the rest the same", "leave everything else the same", "leave the rest the same"]):
+        preserve.append("the rest of the design")
+
+    for target in preserve_targets:
+        if any(
+            phrase in lowered
+            for phrase in [
+                f"keep the {target}",
+                f"leave the {target}",
+                f"do not change the {target}",
+                f"don't change the {target}",
+                f"dont change the {target}",
+            ]
+        ):
+            preserve.append(target)
+
+    for target in focus_targets:
+        if any(
+            phrase in lowered
+            for phrase in [
+                f"focus on {target}",
+                f"prioritize {target}",
+                f"focus more on {target}",
+                f"prioritise {target}",
+            ]
+        ):
+            focus.append(target)
+
+    return {
+        "preserve": list(dict.fromkeys(preserve)),
+        "focus": list(dict.fromkeys(focus)),
+    }
+
+
+def _revision_acknowledgement(message: str, context: Dict[str, Any]) -> str:
+    constraints = _extract_revision_constraints(message)
+    parts: List[str] = []
+    if bool(context.get("has_plan")):
+        parts.append("I’m updating the current design")
+    else:
+        parts.append("I have enough context to start the design")
+
+    if constraints["focus"]:
+        parts.append("with extra attention on " + _format_missing_requirements(constraints["focus"][:3]))
+    if constraints["preserve"]:
+        parts.append("while keeping " + _format_missing_requirements(constraints["preserve"][:3]) + " intact")
+
+    reply = " ".join(parts).strip()
+    if not reply.endswith("."):
+        reply += "."
+    return reply + _remembered_instruction_fragment(context)
+
+
+def _revision_mode_acknowledgement(message: str, context: Dict[str, Any], preamble: str) -> str:
+    constraints = _extract_revision_constraints(message)
+    parts: List[str] = [preamble.rstrip(".")]
+    if constraints["focus"]:
+        parts.append("with extra attention on " + _format_missing_requirements(constraints["focus"][:3]))
+    if constraints["preserve"]:
+        parts.append("while keeping " + _format_missing_requirements(constraints["preserve"][:3]) + " intact")
+    reply = " ".join(parts).strip()
+    if not reply.endswith("."):
+        reply += "."
+    return reply + _remembered_instruction_fragment(context)
 
 
 def _is_question(message: str) -> bool:
@@ -1514,8 +1621,11 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
     if _is_explicit_plan_tool_request(message, "fix"):
         return _base_decision(
             intent="fix",
-            assistant_message="I’ll run a focused fix pass on the current design."
-            + _remembered_instruction_fragment(context),
+            assistant_message=_revision_mode_acknowledgement(
+                message,
+                context,
+                "I’ll run a focused fix pass on the current design" if bool(context.get("has_plan")) else "I’ll run a focused fix pass on the design",
+            ),
             run_mode="fix",
             reason="Fix request detected",
             confidence=0.88,
@@ -1524,8 +1634,11 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
     if _is_explicit_plan_tool_request(message, "improve"):
         return _base_decision(
             intent="improve",
-            assistant_message="I’ll improve the current design while keeping your project intent intact."
-            + _remembered_instruction_fragment(context),
+            assistant_message=_revision_mode_acknowledgement(
+                message,
+                context,
+                "I’ll improve the current design" if bool(context.get("has_plan")) else "I’ll improve the design",
+            ),
             run_mode="improve",
             reason="Improve request detected",
             confidence=0.88,
@@ -1555,11 +1668,7 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     if design_like:
-        reply = (
-            "I’m updating the current design with that change."
-            if bool(context.get("has_plan"))
-            else "I have enough context to start the design."
-        ) + _remembered_instruction_fragment(context)
+        reply = _revision_acknowledgement(message, context)
         return _base_decision(
             intent="design",
             assistant_message=reply,

@@ -328,6 +328,40 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertIn("weakest part", result["assistant_message"])
         self.assertIn("storm coordination", result["assistant_message"])
 
+    def test_follow_up_design_acknowledges_focus_target(self):
+        result = _decide(
+            "focus on drainage and add more parking",
+            {
+                "has_plan": True,
+                "project_type": "commercial_pad",
+            },
+        )
+        self.assertEqual(result["intent"], "design")
+        self.assertIn("extra attention on drainage", result["assistant_message"])
+
+    def test_follow_up_design_acknowledges_preserved_scope(self):
+        result = _decide(
+            "keep the building and do the same but less parking",
+            {
+                "has_plan": True,
+                "project_type": "commercial_pad",
+            },
+        )
+        self.assertEqual(result["intent"], "design")
+        self.assertIn("keeping building intact", result["assistant_message"])
+
+    def test_fix_request_acknowledges_revision_priority(self):
+        result = _decide(
+            "fix this but keep the drainage and focus on utilities",
+            {
+                "has_plan": True,
+                "project_type": "commercial_pad",
+            },
+        )
+        self.assertEqual(result["intent"], "fix")
+        self.assertIn("focused fix pass", result["assistant_message"])
+        self.assertIn("extra attention on utilities", result["assistant_message"])
+
 
 if __name__ == "__main__":
     unittest.main()
