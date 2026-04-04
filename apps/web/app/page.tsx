@@ -330,6 +330,57 @@ function joinNatural(items: string[], limit = 3): string {
   return `${filtered.slice(0, -1).join(", ")}, and ${filtered[filtered.length - 1]}`;
 }
 
+function extractDesignMemory(thread: ChatMessage[]): {
+  preferences: string[];
+  constraints: string[];
+} {
+  const preferences: string[] = [];
+  const constraints: string[] = [];
+  const seen = new Set<string>();
+
+  for (const message of thread) {
+    if (message.role !== "user") continue;
+    const clauses = message.content.split(/[.!?\n;]+/);
+    for (const clause of clauses) {
+      const clean = clause.replace(/\s+/g, " ").trim();
+      if (!clean || clean.length < 8) continue;
+      const lowered = clean.toLowerCase();
+      const key = lowered.slice(0, 160);
+      if (seen.has(key)) continue;
+
+      if (
+        lowered.includes("make sure") ||
+        lowered.includes("remember to") ||
+        lowered.includes("prefer ") ||
+        lowered.includes("keep ") ||
+        lowered.includes("stay in ")
+      ) {
+        preferences.push(clean);
+        seen.add(key);
+        continue;
+      }
+
+      if (
+        lowered.includes("do not") ||
+        lowered.includes("don't") ||
+        lowered.includes("dont") ||
+        lowered.includes("never ") ||
+        lowered.includes("without ") ||
+        lowered.includes("no guessing") ||
+        lowered.includes("ask for clarification")
+      ) {
+        constraints.push(clean);
+        seen.add(key);
+      }
+    }
+  }
+
+  return {
+    preferences: preferences.slice(-8),
+    constraints: constraints.slice(-8),
+  };
+}
+
 function summarizePlanResponse(
   data: any,
   mode: PlanToolMode,
@@ -1112,6 +1163,7 @@ export default function PerformanceAIDashboard() {
     message: string,
   ) => {
     const nextStrategy = overrides.strategyMode ?? strategyMode;
+    const designMemory = extractDesignMemory(chatMessages);
     return {
       strategy_mode: nextStrategy,
       site_name: overrides.siteName ?? siteName,
@@ -1143,6 +1195,10 @@ export default function PerformanceAIDashboard() {
         ? currentPlanMeta.deliverables.produced
         : [],
       issues,
+      memory_summary: {
+        ...designMemory,
+        examples: [...designMemory.preferences, ...designMemory.constraints].slice(-8),
+      },
       chat_thread: [
         ...chatMessages,
         createChatMessage("user", message),
