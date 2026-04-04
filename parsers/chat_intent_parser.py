@@ -475,6 +475,13 @@ def _looks_like_follow_up_design_edit(message: str, context: Dict[str, Any]) -> 
             "more parking",
             "lower the",
             "raise the",
+            "go back",
+            "undo",
+            "revert",
+            "original idea",
+            "earlier version",
+            "last version",
+            "last change",
         ]
     ):
         return True
@@ -509,6 +516,10 @@ def _looks_like_continuation_edit(message: str, context: Dict[str, Any]) -> bool
             "instead ",
             "focus on ",
             "prioritize ",
+            "go back ",
+            "undo ",
+            "revert ",
+            "use the original ",
         ]
     if any(lowered.startswith(prefix) for prefix in continuation_starters):
         if _has_edit_intent(message):
@@ -595,6 +606,9 @@ def _extract_revision_constraints(message: str) -> Dict[str, List[str]]:
             phrase in lowered
             for phrase in [
                 f"keep the {target}",
+                f"keep {target}",
+                f"keep the new {target}",
+                f"keep new {target}",
                 f"leave the {target}",
                 f"do not change the {target}",
                 f"don't change the {target}",
@@ -621,10 +635,34 @@ def _extract_revision_constraints(message: str) -> Dict[str, List[str]]:
     }
 
 
+def _extract_revision_direction(message: str) -> Optional[str]:
+    lowered = _normalized_chat_text(message)
+    rollback_phrases = [
+        "go back to",
+        "go back",
+        "undo the last change",
+        "undo that",
+        "undo it",
+        "revert the last change",
+        "revert that",
+        "revert it",
+        "use the original idea",
+        "use the original version",
+        "back to the earlier version",
+        "back to the original",
+    ]
+    if any(phrase in lowered for phrase in rollback_phrases):
+        return "rollback"
+    return None
+
+
 def _revision_acknowledgement(message: str, context: Dict[str, Any]) -> str:
     constraints = _extract_revision_constraints(message)
+    direction = _extract_revision_direction(message)
     parts: List[str] = []
-    if bool(context.get("has_plan")):
+    if direction == "rollback":
+        parts.append("I’m rolling the design back toward the earlier direction")
+    elif bool(context.get("has_plan")):
         parts.append("I’m updating the current design")
     else:
         parts.append("I have enough context to start the design")
@@ -642,7 +680,10 @@ def _revision_acknowledgement(message: str, context: Dict[str, Any]) -> str:
 
 def _revision_mode_acknowledgement(message: str, context: Dict[str, Any], preamble: str) -> str:
     constraints = _extract_revision_constraints(message)
+    direction = _extract_revision_direction(message)
     parts: List[str] = [preamble.rstrip(".")]
+    if direction == "rollback":
+        parts.append("and steering it back toward the earlier version")
     if constraints["focus"]:
         parts.append("with extra attention on " + _format_missing_requirements(constraints["focus"][:3]))
     if constraints["preserve"]:
@@ -681,6 +722,8 @@ def _is_ambiguous_request(message: str, context: Dict[str, Any]) -> bool:
     lowered = _normalized_chat_text(message)
     if not lowered:
         return True
+    if _is_explicit_plan_tool_request(message, "fix") or _is_explicit_plan_tool_request(message, "improve"):
+        return False
 
     exact_ambiguous = {
         "do it",
@@ -1193,6 +1236,8 @@ def _is_explicit_plan_tool_request(text: str, tool: str) -> bool:
             "resolve the issues",
             "resolve conflicts",
             "run a fix pass",
+            "fix this and",
+            "fix it and",
         ],
         "improve": [
             "improve this",

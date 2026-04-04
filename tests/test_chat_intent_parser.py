@@ -362,6 +362,29 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertIn("focused fix pass", result["assistant_message"])
         self.assertIn("extra attention on utilities", result["assistant_message"])
 
+    def test_rollback_style_follow_up_runs_as_design_edit(self):
+        result = _decide(
+            "go back to the earlier version but keep the new drainage",
+            {
+                "has_plan": True,
+                "project_type": "commercial_pad",
+            },
+        )
+        self.assertEqual(result["intent"], "design")
+        self.assertIn("rolling the design back", result["assistant_message"])
+        self.assertIn("keeping drainage intact", result["assistant_message"])
+
+    def test_rollback_style_fix_acknowledges_earlier_direction(self):
+        result = _decide(
+            "fix this and go back to the original idea",
+            {
+                "has_plan": True,
+                "project_type": "commercial_pad",
+            },
+        )
+        self.assertEqual(result["intent"], "fix")
+        self.assertIn("earlier version", result["assistant_message"])
+
 
 if __name__ == "__main__":
     unittest.main()
