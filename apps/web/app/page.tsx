@@ -313,13 +313,7 @@ function summarizePlanResponse(
   const plan = data?.final_plan ?? {};
   const meta = plan?.meta ?? {};
   const explanation = meta?.explanation;
-  const truth = meta?.truth_audit?.success;
-  const engineeringStatus = meta?.engineering_status ?? {};
-  const engineeringState = String(engineeringStatus?.status || "").trim();
-  const unresolved =
-    meta?.coordination?.unresolved_conflicts?.length ??
-    meta?.coordination?.unresolved_conflicts ??
-    0;
+  const convergence = meta?.convergence_summary ?? {};
   const producedDeliverables = Array.isArray(meta?.deliverables?.produced)
     ? meta.deliverables.produced
     : Array.isArray(meta?.produced_deliverables)
@@ -328,14 +322,9 @@ function summarizePlanResponse(
   const failedDeliverables = Array.isArray(meta?.deliverables?.failed)
     ? meta.deliverables.failed
     : [];
-  const drainageExport = meta?.drainage?.export_validation ?? {};
-  const stormHydraulics = meta?.storm_pipes?.hydraulic_summary ?? {};
-  const drainageBlockedReasons = Array.isArray(drainageExport?.reasons)
-    ? drainageExport.reasons
-    : [];
   const assumptions = Array.isArray(data?.assumptions) ? data.assumptions : [];
   const issues = Array.isArray(data?.issues) ? data.issues : [];
-  const aiAssistanceSummary = assumptions.length
+  const assumptionExamples = assumptions.length
     ? (() => {
         const seen = new Set<string>();
         const formatted = assumptions
@@ -360,30 +349,27 @@ function summarizePlanResponse(
             return reason ? `${field} (${reason})` : field;
           })
           .filter(Boolean);
-        return formatted.length
-          ? `AI assisted with: ${formatted.slice(0, 3).join("; ")}.`
-          : null;
+        return formatted.slice(0, 3);
       })()
-    : null;
-  const stableDrainage =
-    drainageExport?.ready === true &&
-    stormHydraulics?.valid !== false;
-  const hasStormLikeOutput = producedDeliverables.some((item: string) =>
-    ["storm_pipe_plan", "drainage_plan"].includes(String(item)),
-  );
-  const hasOnlySiteLikeOutput =
-    producedDeliverables.length > 0 &&
-    producedDeliverables.every((item: string) =>
-      ["site_plan", "grading_plan", "contours", "spot_grades"].includes(
-        String(item),
-      ),
-    );
-  const partialEngineeringHeadline =
-    hasOnlySiteLikeOutput && !stableDrainage
-      ? "I generated a partial site and grading concept, but the drainage and storm design are not stable enough to treat this as a coordinated civil plan yet."
-      : null;
+    : [];
+  const fixSummary = convergence?.fix_summary ?? {};
+  const blockedReasons = Array.isArray(convergence?.blocked_reasons)
+    ? convergence.blocked_reasons
+    : [];
+  const blockedExports = Array.isArray(convergence?.blocked_exports)
+    ? convergence.blocked_exports
+    : [];
+  const reviewCategories = Array.isArray(convergence?.unresolved_issue_categories)
+    ? convergence.unresolved_issue_categories
+    : [];
+  const autofixActions = Array.isArray(fixSummary?.autofix_actions)
+    ? fixSummary.autofix_actions
+    : [];
+  const dominantFixTargets = Array.isArray(convergence?.dominant_issue_categories)
+    ? convergence.dominant_issue_categories
+    : [];
+  const unresolved = Number(convergence?.unresolved_conflict_count ?? 0);
   const headline =
-    partialEngineeringHeadline ||
     (typeof explanation?.summary === "string"
       ? explanation.summary
       : typeof explanation?.overview === "string"
@@ -403,30 +389,36 @@ function summarizePlanResponse(
         : null;
 
   const notes = [
-    truth === true ? "Truth checks passed." : "Truth checks need review.",
-    engineeringState === "partial"
-      ? "Engineering status is partial."
-      : engineeringState === "failed"
-        ? "Engineering validation failed."
-        : null,
-    `Unresolved conflicts: ${unresolved}.`,
+    assumptionExamples.length
+      ? `Assumptions made: ${assumptionExamples.join("; ")}.`
+      : "Assumptions made: none explicitly recorded.",
+    autofixActions.length || dominantFixTargets.length
+      ? `Fixes applied: ${
+          autofixActions.slice(0, 3).join(", ") ||
+          dominantFixTargets.slice(0, 3).join(", ")
+        }.`
+      : "Fixes applied: no recorded corrective actions were needed.",
+    reviewCategories.length || issues.length || unresolved > 0
+      ? `Needs review: ${
+          reviewCategories.slice(0, 3).join(", ") ||
+          issues
+            .slice(0, 2)
+            .map((issue: any) => issue?.message)
+            .filter(Boolean)
+            .join("; ") ||
+          `${unresolved} unresolved conflicts`
+        }.`
+      : "Needs review: no active review items are recorded.",
+    blockedReasons.length || blockedExports.length || failedDeliverables.length
+      ? `Blocked: ${
+          blockedReasons.slice(0, 3).join("; ") ||
+          blockedExports.slice(0, 3).join(", ") ||
+          failedDeliverables.slice(0, 3).join(", ")
+        }.`
+      : "Blocked: nothing is explicitly blocking release right now.",
     producedDeliverables.length
       ? `Produced: ${producedDeliverables.slice(0, 4).join(", ")}.`
       : null,
-    failedDeliverables.length
-      ? `Still missing: ${failedDeliverables.slice(0, 3).join(", ")}.`
-      : null,
-    !stableDrainage && (drainageBlockedReasons.length || hasStormLikeOutput)
-      ? `Storm/drainage export is not stable yet${drainageBlockedReasons.length ? `: ${drainageBlockedReasons.slice(0, 3).join(", ")}` : ""}.`
-      : null,
-    issues.length
-      ? `Open warnings: ${issues
-          .slice(0, 2)
-          .map((issue: any) => issue?.message)
-          .filter(Boolean)
-          .join("; ")}.`
-      : null,
-    aiAssistanceSummary,
     why,
   ].filter(Boolean);
 
@@ -1095,6 +1087,7 @@ export default function PerformanceAIDashboard() {
       current_explanation: currentExplanation,
       current_truth_audit: currentTruthAudit,
       engineering_status: currentPlanMeta?.engineering_status ?? {},
+      convergence_summary: currentPlanMeta?.convergence_summary ?? {},
       manual_failures: currentManualFailures,
       assumptions,
       produced_deliverables: Array.isArray(currentPlanMeta?.deliverables?.produced)

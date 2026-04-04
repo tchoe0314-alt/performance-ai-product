@@ -83,6 +83,7 @@ def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
     current_truth = context.get("current_truth_audit") or {}
     current_explanation = context.get("current_explanation") or {}
     engineering_status = context.get("engineering_status") or {}
+    convergence_summary = context.get("convergence_summary") or {}
     issues = context.get("issues") or []
     manual_failures = context.get("manual_failures") or []
     assumptions = context.get("assumptions") or []
@@ -108,6 +109,17 @@ def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
         "truth_success": current_truth.get("success"),
         "engineering_trust_score": current_truth.get("engineering_trust_score"),
         "engineering_status": engineering_status.get("status"),
+        "convergence_summary": {
+            "converged": bool(convergence_summary.get("converged")),
+            "passes_run": convergence_summary.get("passes_run"),
+            "unresolved_conflict_count": convergence_summary.get("unresolved_conflict_count"),
+            "blocked_exports": list(convergence_summary.get("blocked_exports") or []),
+            "blocked_reasons": list(convergence_summary.get("blocked_reasons") or []),
+            "unresolved_issue_categories": list(convergence_summary.get("unresolved_issue_categories") or []),
+            "dominant_issue_categories": list(convergence_summary.get("dominant_issue_categories") or []),
+            "rerun_summary": dict(convergence_summary.get("rerun_summary") or {}),
+            "fix_summary": dict(convergence_summary.get("fix_summary") or {}),
+        },
         "explanation_summary": current_explanation.get("summary")
         or current_explanation.get("overview"),
         "produced_deliverables": [str(item) for item in produced_deliverables[:8]],
@@ -429,6 +441,12 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
     manual_failures = context.get("manual_failures") or []
     assumptions = context.get("assumptions") or []
     deliverables = context.get("produced_deliverables") or []
+    convergence = context.get("convergence_summary") or {}
+    fix_summary = convergence.get("fix_summary") or {}
+    blocked_exports = convergence.get("blocked_exports") or []
+    blocked_reasons = convergence.get("blocked_reasons") or []
+    unresolved_categories = convergence.get("unresolved_issue_categories") or []
+    rerun_summary = convergence.get("rerun_summary") or {}
 
     if "what mode" in lowered or "which mode" in lowered:
         return f"You’re currently in {str(context.get('strategy_mode') or 'assisted').strip().lower()} mode."
@@ -447,6 +465,56 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
                 formatted.append(f"{field} ({reason})" if reason else field)
             return "AI helped fill in: " + "; ".join(formatted) + "."
         return "There are no explicit AI-filled assumptions recorded on the current design."
+    if "what did you fix" in lowered or "what did you change" in lowered or "what got fixed" in lowered:
+        autofix_actions = [str(item) for item in list(fix_summary.get("autofix_actions") or []) if str(item)]
+        dominant_targets = [str(item) for item in list(convergence.get("dominant_issue_categories") or []) if str(item)]
+        if autofix_actions or dominant_targets:
+            parts: List[str] = []
+            if autofix_actions:
+                parts.append("I applied: " + ", ".join(autofix_actions[:3]))
+            if dominant_targets:
+                parts.append("The main fix targets were " + ", ".join(dominant_targets[:3]))
+            return ". ".join(parts) + "."
+        return "I don’t have any recorded fix actions on the current design."
+    if "what needs review" in lowered or "what should i review" in lowered:
+        review_items = [str(item) for item in unresolved_categories if str(item)]
+        if manual_failures:
+            messages = [str(item.get("message") or "").strip() for item in manual_failures[:3] if isinstance(item, dict)]
+            messages = [item for item in messages if item]
+            if messages:
+                return "You should review: " + "; ".join(messages) + "."
+        if issues:
+            messages = [str(item.get("message") or "").strip() for item in issues[:3] if isinstance(item, dict)]
+            messages = [item for item in messages if item]
+            if messages:
+                return "You should review: " + "; ".join(messages) + "."
+        if review_items:
+            return "The main review categories are: " + ", ".join(review_items[:3]) + "."
+        return "I don’t see any explicit review items recorded on the current design."
+    if "what is blocked" in lowered or "what's blocked" in lowered or "whats blocked" in lowered:
+        if blocked_exports or blocked_reasons:
+            parts: List[str] = []
+            if blocked_exports:
+                parts.append("blocked outputs: " + ", ".join(str(item) for item in blocked_exports[:3]))
+            if blocked_reasons:
+                parts.append("reasons: " + "; ".join(str(item) for item in blocked_reasons[:3]))
+            return "Right now, " + ". ".join(parts) + "."
+        return "Nothing is explicitly blocked right now."
+    if "how many passes" in lowered or "how many reruns" in lowered or "did it converge" in lowered:
+        passes_run = convergence.get("passes_run")
+        rerun_total = rerun_summary.get("total_reruns")
+        converged = convergence.get("converged")
+        parts: List[str] = []
+        if passes_run is not None:
+            parts.append(f"it took {int(passes_run)} pass{'es' if int(passes_run) != 1 else ''}")
+        if rerun_total is not None:
+            parts.append(f"{int(rerun_total)} rerun{'s' if int(rerun_total) != 1 else ''}")
+        if converged is True:
+            parts.append("and it converged")
+        elif converged is False:
+            parts.append("and it did not fully converge")
+        if parts:
+            return "The latest run " + " ".join(parts) + "."
     if "what warnings" in lowered or "what issues" in lowered or "what's wrong" in lowered or "whats wrong" in lowered:
         messages = [str(item.get("message") or "").strip() for item in manual_failures[:2] if isinstance(item, dict)]
         messages += [str(item.get("message") or "").strip() for item in issues[:2] if isinstance(item, dict)]
@@ -847,15 +915,6 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             control_overrides=overrides,
         )
 
-    if _is_casual_chat_message(message):
-        return _base_decision(
-            intent="conversation",
-            assistant_message=_conversation_reply(message, context),
-            reason="Casual conversation detected",
-            confidence=0.95,
-            control_overrides=overrides,
-        )
-
     contextual_reply = _contextual_question_reply(message, context)
     if contextual_reply:
         intent = "explain" if ("why" in lowered or "explain" in lowered) else "conversation"
@@ -864,6 +923,15 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             assistant_message=contextual_reply,
             reason="Answered from current workspace context",
             confidence=0.9,
+            control_overrides=overrides,
+        )
+
+    if _is_casual_chat_message(message):
+        return _base_decision(
+            intent="conversation",
+            assistant_message=_conversation_reply(message, context),
+            reason="Casual conversation detected",
+            confidence=0.95,
             control_overrides=overrides,
         )
 
