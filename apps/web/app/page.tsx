@@ -784,6 +784,20 @@ function formatTimestamp(value?: number): string {
   }
 }
 
+function isLikelyStaleJob(job: JobSummary | null, nowMs: number): boolean {
+  if (!job?.updated_at) return false;
+  const status = String(job.status || "").toLowerCase();
+  if (!["queued", "running", "cancelling"].includes(status)) {
+    return false;
+  }
+  const updatedAtMs = Number(job.updated_at) * 1000;
+  if (!Number.isFinite(updatedAtMs) || updatedAtMs <= 0) {
+    return false;
+  }
+  const staleThresholdMs = status === "queued" ? 90_000 : 60_000;
+  return nowMs - updatedAtMs > staleThresholdMs;
+}
+
 function buildThinkingState({
   busy,
   activePlanTool,
@@ -791,6 +805,8 @@ function buildThinkingState({
   activeJobStage,
   activeJobDetail,
   activeJobProgress,
+  activeJobUpdatedAt,
+  staleJob,
   statusMessage,
 }: {
   busy: boolean;
@@ -799,6 +815,8 @@ function buildThinkingState({
   activeJobStage?: string;
   activeJobDetail?: string;
   activeJobProgress?: number;
+  activeJobUpdatedAt?: number;
+  staleJob?: boolean;
   statusMessage: string;
 }) {
   const normalizedJobStatus = String(activeJobStatus || "").trim().toLowerCase();
@@ -809,6 +827,22 @@ function buildThinkingState({
     typeof activeJobProgress === "number" && Number.isFinite(activeJobProgress)
       ? Math.max(0, Math.min(100, Math.round(activeJobProgress)))
       : null;
+  const lastUpdateText =
+    activeJobUpdatedAt && Number.isFinite(activeJobUpdatedAt)
+      ? `Last backend update: ${formatTimestamp(activeJobUpdatedAt)}.`
+      : "";
+
+  if (normalizedJobStatus && staleJob) {
+    return {
+      label: normalizedJobStatus === "queued" ? "Queue Delayed" : "Check Run Status",
+      detail:
+        stageDetail ||
+        `Civora has not received a fresh backend update for this ${normalizedJobStatus} job recently. ${lastUpdateText}`.trim(),
+      progress:
+        numericProgress ??
+        (normalizedJobStatus === "queued" ? 18 : normalizedJobStatus === "cancelling" ? 68 : 72),
+    };
+  }
 
   if (normalizedJobStatus && stageLabel) {
     return {
@@ -931,9 +965,11 @@ export default function PerformanceAIDashboard() {
   const [activePlanTool, setActivePlanTool] = useState<PlanToolMode>("run");
   const [selectedPlanToolPanel, setSelectedPlanToolPanel] =
     useState<"explain" | "fix" | "improve">("explain");
+  const [jobClockMs, setJobClockMs] = useState(() => Date.now());
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const runSubmissionRef = useRef(false);
   const lastJobStatusRef = useRef<Record<string, string>>({});
+  const lastStaleJobWarningRef = useRef<Record<string, boolean>>({});
   const chatMessagesRef = useRef<ChatMessage[]>([createWelcomeMessage()]);
 
   const disciplineToggles: DisciplineToggle[] = [
@@ -1078,6 +1114,10 @@ export default function PerformanceAIDashboard() {
     () => (projectId ? currentProjectActiveJob : activeJob),
     [activeJob, currentProjectActiveJob, projectId],
   );
+  const visibleActiveJobStale = useMemo(
+    () => isLikelyStaleJob(visibleActiveJob, jobClockMs),
+    [visibleActiveJob, jobClockMs],
+  );
   const thinkingState = useMemo(
     () =>
       buildThinkingState({
@@ -1087,9 +1127,11 @@ export default function PerformanceAIDashboard() {
         activeJobStage: visibleActiveJob?.stage,
         activeJobDetail: visibleActiveJob?.stage_detail,
         activeJobProgress: visibleActiveJob?.progress,
+        activeJobUpdatedAt: visibleActiveJob?.updated_at,
+        staleJob: visibleActiveJobStale,
         statusMessage,
       }),
-    [busy, visibleActiveJob?.status, visibleActiveJob?.stage, visibleActiveJob?.stage_detail, visibleActiveJob?.progress, activePlanTool, statusMessage],
+    [busy, visibleActiveJob?.status, visibleActiveJob?.stage, visibleActiveJob?.stage_detail, visibleActiveJob?.progress, visibleActiveJob?.updated_at, visibleActiveJobStale, activePlanTool, statusMessage],
   );
   const latestRunComparison = useMemo(() => {
     if (workflowRuns.length < 2) return null;
@@ -2500,6 +2542,34 @@ export default function PerformanceAIDashboard() {
       setActiveJobId("");
     }
   }, [activeJob, activeJobId, currentProjectActiveJob, projectId]);
+
+  useEffect(() => {
+    if (!visibleActiveJob) return;
+    const interval = window.setInterval(() => {
+      setJobClockMs(Date.now());
+    }, 5000);
+    return () => window.clearInterval(interval);
+  }, [visibleActiveJob?.job_id]);
+
+  useEffect(() => {
+    if (!visibleActiveJob?.job_id) return;
+    if (!visibleActiveJobStale) {
+      delete lastStaleJobWarningRef.current[visibleActiveJob.job_id];
+      return;
+    }
+    if (lastStaleJobWarningRef.current[visibleActiveJob.job_id]) {
+      return;
+    }
+    lastStaleJobWarningRef.current[visibleActiveJob.job_id] = true;
+    setStatusMessage(
+      `Job ${visibleActiveJob.job_id} has not reported a fresh backend update recently. It may still be running, but the status could be stalled.`,
+    );
+    appendChatMessage(
+      "assistant",
+      `Job ${visibleActiveJob.job_id} has not reported a fresh backend update recently. It may still be running, but the status may be stalled.`,
+      "status",
+    );
+  }, [visibleActiveJob?.job_id, visibleActiveJobStale]);
 
   useEffect(() => {
     if (!workflowRuns.length) {
