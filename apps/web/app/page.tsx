@@ -2078,6 +2078,7 @@ export default function PerformanceAIDashboard() {
       setStatusMessage("Run the planner first so there is something to preview.");
       return;
     }
+    setStatusMessage("Refreshing preview...");
     setBusy(true);
     try {
       await requestPreview(artifactPayload);
@@ -2957,19 +2958,6 @@ export default function PerformanceAIDashboard() {
                   Send a message and Civora AI will generate a plan preview here.
                 </div>
               )}
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Pill>{currentProject?.name || siteName}</Pill>
-                <Pill>{planPreviewSummary?.units || units}</Pill>
-                <Pill>{planPreviewSummary?.action_count ?? 0} actions</Pill>
-                <Pill>
-                  Truth{" "}
-                  {(backendResult?.final_plan?.meta?.truth_audit?.success ??
-                    selectedRun?.truth_success)
-                    ? "passed"
-                    : "review needed"}
-                </Pill>
-              </div>
 
               {planPreviewSummary?.review && (
                 <div
