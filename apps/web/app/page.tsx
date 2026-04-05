@@ -839,6 +839,7 @@ export default function PerformanceAIDashboard() {
   const [selectedPlanToolPanel, setSelectedPlanToolPanel] =
     useState<"explain" | "fix" | "improve">("explain");
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const runSubmissionRef = useRef(false);
 
   const disciplineToggles: DisciplineToggle[] = [
     {
@@ -1491,6 +1492,10 @@ export default function PerformanceAIDashboard() {
 
   const runOrchestrator = async (mode: PlanToolMode = "run") => {
     if (!token) return;
+    if (runSubmissionRef.current) {
+      setStatusMessage("Civora AI is already working on your last request.");
+      return;
+    }
     const trimmedPrompt = prompt.trim();
     if (mode === "run" && !trimmedPrompt && !imageName) {
       setStatusMessage("Add a request or image so Civora AI has something to work from.");
@@ -1528,12 +1533,14 @@ export default function PerformanceAIDashboard() {
       return;
     }
 
-    await ensureProjectDraft(trimmedPrompt);
-    setPrompt("");
-    appendChatMessage("user", trimmedPrompt);
+    runSubmissionRef.current = true;
     setBusy(true);
     setActivePlanTool("run");
+    setPrompt("");
+    appendChatMessage("user", trimmedPrompt);
+    setStatusMessage("Civora AI is reviewing your request and starting the design run.");
     try {
+      await ensureProjectDraft(trimmedPrompt);
       const decision = await postJson<ChatDecisionResponse>(
         "/api/chat/decide",
         {
@@ -1669,6 +1676,8 @@ export default function PerformanceAIDashboard() {
       );
       setBusy(false);
       setActivePlanTool("run");
+    } finally {
+      runSubmissionRef.current = false;
     }
   };
 
