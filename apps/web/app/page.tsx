@@ -781,6 +781,64 @@ function formatTimestamp(value?: number): string {
   }
 }
 
+function buildThinkingState({
+  busy,
+  activePlanTool,
+  activeJobStatus,
+  statusMessage,
+}: {
+  busy: boolean;
+  activePlanTool: PlanToolMode;
+  activeJobStatus?: string;
+  statusMessage: string;
+}) {
+  const normalizedJobStatus = String(activeJobStatus || "").trim().toLowerCase();
+  const normalizedStatus = statusMessage.toLowerCase();
+
+  if (normalizedJobStatus === "queued") {
+    return {
+      label: "Queued",
+      detail: "Civora queued the run and is waiting for a worker to pick it up.",
+      progress: 18,
+    };
+  }
+  if (normalizedJobStatus === "running") {
+    return {
+      label: "Running",
+      detail: "Civora is processing the design in the background now.",
+      progress: 68,
+    };
+  }
+  if (busy && activePlanTool === "fix") {
+    return {
+      label: "Fixing",
+      detail: "Applying a focused fix pass to the active design.",
+      progress: 62,
+    };
+  }
+  if (busy && activePlanTool === "improve") {
+    return {
+      label: "Improving",
+      detail: "Improving the current design while preserving the main intent.",
+      progress: 62,
+    };
+  }
+  if (busy && normalizedStatus.includes("reviewing your request")) {
+    return {
+      label: "Reading Request",
+      detail: "Reviewing your prompt and preparing the run.",
+      progress: 22,
+    };
+  }
+  return {
+    label: "Thinking",
+    detail:
+      statusMessage ||
+      "Civora is building the design, checking engineering constraints, and preparing the next result.",
+    progress: 42,
+  };
+}
+
 export default function PerformanceAIDashboard() {
   const [token, setToken] = useState("");
   const [user, setUser] = useState<UserRecord | null>(null);
@@ -966,6 +1024,20 @@ export default function PerformanceAIDashboard() {
       workflowRuns.find((run) => run.run_id === selectedRunId) ?? workflowRuns[0]
     );
   }, [workflowRuns, selectedRunId]);
+  const activeJob = useMemo(
+    () => jobs.find((job) => job.job_id === activeJobId) ?? null,
+    [jobs, activeJobId],
+  );
+  const thinkingState = useMemo(
+    () =>
+      buildThinkingState({
+        busy,
+        activePlanTool,
+        activeJobStatus: activeJob?.status,
+        statusMessage,
+      }),
+    [busy, activeJob?.status, activePlanTool, statusMessage],
+  );
   const latestRunComparison = useMemo(() => {
     if (workflowRuns.length < 2) return null;
     const current = workflowRuns[0];
@@ -2678,6 +2750,30 @@ export default function PerformanceAIDashboard() {
               </div>
 
               <div className="border-t border-slate-200 p-4 md:p-6">
+                {(busy || activeJobId) && (
+                  <div className="mb-4 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950">
+                          {thinkingState.label}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          {thinkingState.detail}
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        {thinkingState.progress}%
+                      </span>
+                    </div>
+                    <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-200">
+                      <div
+                        className="h-full rounded-full bg-slate-950 transition-all duration-500"
+                        style={{ width: `${thinkingState.progress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <div className="mb-4 rounded-3xl border border-slate-200 bg-slate-50 p-3">
                   <TextArea
                     value={prompt}
@@ -2760,15 +2856,9 @@ export default function PerformanceAIDashboard() {
                   </div>
                 </div>
 
-                {(statusMessage || busy) && (
+                {!busy && !activeJobId && statusMessage && (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                    {busy
-                      ? activePlanTool === "fix"
-                        ? "Civora AI is running a focused fix pass..."
-                        : activePlanTool === "improve"
-                          ? "Civora AI is improving the current plan..."
-                          : "Civora AI is updating the design..."
-                      : statusMessage}
+                    {statusMessage}
                   </div>
                 )}
               </div>
