@@ -1560,24 +1560,47 @@ export default function PerformanceAIDashboard() {
     setProjects(nextProjects);
   };
 
-  const refreshJobs = async (authToken = token) => {
+  const refreshJobs = async (
+    authToken = token,
+    { suppressError = false }: { suppressError?: boolean } = {},
+  ) => {
     if (!authToken) return;
-    const data = await getJson<{ jobs: JobSummary[] }>("/api/jobs", {
-      token: authToken,
-    });
-    setJobs(Array.isArray(data.jobs) ? data.jobs : []);
+    try {
+      const data = await getJson<{ jobs: JobSummary[] }>("/api/jobs", {
+        token: authToken,
+      });
+      setJobs(Array.isArray(data.jobs) ? data.jobs : []);
+    } catch (error) {
+      if (!suppressError) {
+        throw error;
+      }
+    }
   };
 
   const handleRefreshWorkspace = async () => {
     if (!token) return;
-    try {
-      await Promise.all([refreshProjects(), refreshJobs()]);
+    const results = await Promise.allSettled([
+      refreshProjects(),
+      refreshJobs(token, { suppressError: true }),
+    ]);
+    const projectsFailed = results[0].status === "rejected";
+    const jobsFailed = results[1].status === "rejected";
+    if (!projectsFailed && !jobsFailed) {
       setStatusMessage("Workspace refreshed.");
-    } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : "Workspace refresh failed.",
-      );
+      return;
     }
+    if (!projectsFailed && jobsFailed) {
+      setStatusMessage("Projects refreshed. Jobs could not be refreshed right now.");
+      return;
+    }
+    if (projectsFailed && !jobsFailed) {
+      const reason = results[0].status === "rejected" ? results[0].reason : null;
+      setStatusMessage(
+        reason instanceof Error ? reason.message : "Project refresh failed.",
+      );
+      return;
+    }
+    setStatusMessage("Workspace refresh failed.");
   };
 
   const handleAuth = async () => {
@@ -1605,7 +1628,7 @@ export default function PerformanceAIDashboard() {
       setStoredToken(data.token);
       setUser(data.user);
       await refreshProjects(data.token);
-      await refreshJobs(data.token);
+      await refreshJobs(data.token, { suppressError: true });
       setStatusMessage(`Signed in to Civora AI as ${data.user.name}.`);
     } catch (error) {
       setAuthError(
@@ -1985,7 +2008,6 @@ export default function PerformanceAIDashboard() {
     if (!token) return;
     try {
       setStatusMessage("Loading project...");
-      await refreshJobs();
       const data = await getJson<{ project: ProjectRecord }>(
         `/api/projects/${id}`,
         { token },
@@ -2010,6 +2032,7 @@ export default function PerformanceAIDashboard() {
         setPlanPreviewSummary(null);
       }
       setStatusMessage(`Loaded project "${project.name}".`);
+      void refreshJobs(token, { suppressError: true });
     } catch (error) {
       setStatusMessage(
         error instanceof Error ? error.message : "Project load failed.",
@@ -2407,7 +2430,10 @@ export default function PerformanceAIDashboard() {
     if (!stored) return;
     setToken(stored);
     void loadMe(stored)
-      .then(() => Promise.all([refreshProjects(stored), refreshJobs(stored)]))
+      .then(async () => {
+        await refreshProjects(stored);
+        await refreshJobs(stored, { suppressError: true });
+      })
       .catch(() => {
         clearStoredToken();
         setToken("");
