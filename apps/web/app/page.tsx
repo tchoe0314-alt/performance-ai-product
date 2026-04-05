@@ -406,34 +406,47 @@ function summarizePlanResponse(
       ? assumptionSummary.examples.map((example: any) => ({ field_name: "assumption", reason: String(example || "") }))
       : [];
   const issues = Array.isArray(data?.issues) ? data.issues : [];
-  const assumptionExamples = assumptions.length
-    ? (() => {
-        const seen = new Set<string>();
-        const formatted = assumptions
-          .map((assumption: any) => {
-            const field = String(
-              assumption?.field_name || assumption?.field || "an input",
-            )
-              .replace(/_/g, " ")
-              .trim();
-            const reason = String(assumption?.reason || "").trim();
-            if (
-              field.toLowerCase() === "plan" &&
-              reason.toLowerCase().includes("planner execution assumption")
-            ) {
-              return null;
-            }
-            const normalized = `${field}::${reason}`.toLowerCase();
-            if (seen.has(normalized)) {
-              return null;
-            }
-            seen.add(normalized);
-            return reason ? `${field} (${reason})` : field;
+  const assumptionExamples = (() => {
+    const seen = new Set<string>();
+    const formatted = assumptions
+      .map((assumption: any) => {
+        const field = String(
+          assumption?.field_name || assumption?.field || "an input",
+        )
+          .replace(/_/g, " ")
+          .trim();
+        const reason = String(assumption?.reason || "").trim();
+        const loweredField = field.toLowerCase();
+        const loweredReason = reason.toLowerCase();
+        if (
+          loweredField === "plan" ||
+          loweredField === "assumption" ||
+          loweredReason === "plan" ||
+          loweredReason.includes("planner execution assumption")
+        ) {
+          return null;
+        }
+        const normalized = `${field}::${reason}`.toLowerCase();
+        if (seen.has(normalized)) {
+          return null;
+        }
+        seen.add(normalized);
+        return reason ? `${field} (${reason})` : field;
+      })
+      .filter(Boolean);
+    if (formatted.length) {
+      return formatted.slice(0, 3);
+    }
+    const fallbackExamples = Array.isArray(assumptionSummary?.examples)
+      ? assumptionSummary.examples
+          .map((example: any) => String(example || "").trim())
+          .filter((example: string) => {
+            const lowered = example.toLowerCase();
+            return Boolean(example) && lowered !== "plan" && !lowered.includes("planner execution assumption");
           })
-          .filter(Boolean);
-        return formatted.slice(0, 3);
-      })()
-    : [];
+      : [];
+    return fallbackExamples.slice(0, 3);
+  })();
   const fixSummary = convergence?.fix_summary ?? {};
   const blockedReasons = Array.isArray(convergence?.blocked_reasons)
     ? convergence.blocked_reasons

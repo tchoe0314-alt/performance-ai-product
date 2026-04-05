@@ -214,6 +214,23 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertEqual(result["run_mode"], "run")
         self.assertFalse(result["needs_clarification"])
 
+    def test_manual_mode_reuses_prior_context_when_user_says_using_the_same_requirements(self):
+        result = _decide(
+            "Using the same 22-acre mixed-use site requirements, run the design in strict mode with no assumptions.",
+            {
+                "strategy_mode": "manual",
+                "chat_thread": [
+                    {
+                        "role": "user",
+                        "content": "Design a fully engineered civil site plan for a 22-acre mixed-use development on irregular terrain with an average slope of 5% from the northwest corner (112.5 ft) to the southeast corner (101.0 ft). Design storm drainage, sanitary sewer, and water systems with no conflicts.",
+                    },
+                ],
+            },
+        )
+        self.assertEqual(result["intent"], "design")
+        self.assertEqual(result["run_mode"], "run")
+        self.assertFalse(result["needs_clarification"])
+
     def test_follow_up_design_reply_mentions_remembered_constraint(self):
         result = _decide(
             "add more parking",

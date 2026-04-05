@@ -97,6 +97,42 @@ def _normalized_chat_text(text: str) -> str:
     return normalized
 
 
+def _references_prior_design_context(text: str) -> bool:
+    lowered = _normalized_chat_text(text)
+    return any(
+        phrase in lowered
+        for phrase in [
+            "same ",
+            "same requirements",
+            "same site",
+            "same design",
+            "same project",
+            "using the same",
+            "based on the same",
+            "previous prompt",
+            "earlier prompt",
+            "earlier requirements",
+            "original requirements",
+        ]
+    )
+
+
+def _recent_user_context_text(context: Dict[str, Any], current_message: str) -> str:
+    history = list(context.get("chat_history") or [])
+    if not history or not _references_prior_design_context(current_message):
+        return ""
+    normalized_current = _normalized_chat_text(current_message)
+    prior_user_messages = [
+        str(item.get("content") or "").strip()
+        for item in history
+        if str(item.get("role") or "").strip().lower() == "user"
+    ]
+    if prior_user_messages and _normalized_chat_text(prior_user_messages[-1]) == normalized_current:
+        prior_user_messages = prior_user_messages[:-1]
+    prior_user_messages = [item for item in prior_user_messages if item]
+    return "\n".join(prior_user_messages[-3:])
+
+
 def _extract_chat_memory(value: Any, limit: int = 8) -> Dict[str, Any]:
     if not isinstance(value, list):
         return {"preferences": [], "constraints": [], "examples": []}
@@ -1678,9 +1714,11 @@ def _build_design_readiness_reply(
 
 
 def _design_readiness_check(message: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    lowered = _normalized_chat_text(message)
+    reference_text = _recent_user_context_text(context, message)
+    analysis_text = f"{reference_text}\n{message}".strip() if reference_text else message
+    lowered = _normalized_chat_text(analysis_text)
     inferred_project_type = str(context.get("project_type") or "").strip() or _infer_project_type_from_message(
-        message
+        analysis_text
     )
     lot_width = _safe_positive_number(context.get("lot_width"))
     lot_height = _safe_positive_number(context.get("lot_height"))
@@ -1707,7 +1745,7 @@ def _design_readiness_check(message: str, context: Dict[str, Any]) -> Optional[D
             "northwest to southeast",
             "nw to se",
         ]
-    ) or _message_has_dimension_signal(message)
+    ) or _message_has_dimension_signal(analysis_text)
     building_program_signal = any(
         phrase in lowered
         for phrase in [
@@ -1746,7 +1784,7 @@ def _design_readiness_check(message: str, context: Dict[str, Any]) -> Optional[D
     missing: List[str] = []
     if not inferred_project_type and not explicit_site_layout_signal:
         missing.append("the site type or land use")
-    if not (lot_width and lot_height) and not _message_has_dimension_signal(message):
+    if not (lot_width and lot_height) and not _message_has_dimension_signal(analysis_text):
         missing.append("approximate lot dimensions or site area")
     if not parking_count and not building_program_signal:
         missing.append("the rough building or parking program")
@@ -1776,18 +1814,25 @@ def assess_design_readiness(message: str, context: Optional[Dict[str, Any]] = No
 
 
 def _is_well_specified_design_request(message: str, context: Dict[str, Any]) -> bool:
-    lowered = _normalized_chat_text(message)
+    reference_text = _recent_user_context_text(context, message)
+    analysis_text = f"{reference_text}\n{message}".strip() if reference_text else message
+    lowered = _normalized_chat_text(analysis_text)
     if _looks_like_follow_up_design_edit(message, context):
         return True
-    if not _looks_like_explicit_design_request(message):
+    explicit_request = _looks_like_explicit_design_request(message)
+    same_context_run_request = _references_prior_design_context(message) and any(
+        phrase in _normalized_chat_text(message)
+        for phrase in ["run the design", "run this design", "run it", "do the design", "start the design"]
+    )
+    if not explicit_request and not same_context_run_request:
         return False
 
     inferred_project_type = str(context.get("project_type") or "").strip() or _infer_project_type_from_message(
-        message
+        analysis_text
     )
     lot_width = _safe_positive_number(context.get("lot_width"))
     lot_height = _safe_positive_number(context.get("lot_height"))
-    has_site_size = bool(lot_width and lot_height) or _message_has_dimension_signal(message) or any(
+    has_site_size = bool(lot_width and lot_height) or _message_has_dimension_signal(analysis_text) or any(
         token in lowered for token in ["acre", "acres", "site area", "lot area"]
     )
     has_topography = any(
@@ -2008,15 +2053,35 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     if strategy_mode == "manual":
+        reference_text = _recent_user_context_text(context, message)
+        analysis_text = f"{reference_text}\n{message}".strip() if reference_text else message
+        lowered_manual = _normalized_chat_text(analysis_text)
+        if _references_prior_design_context(message) and _design_readiness_check(message, context) is None and any(
+            phrase in lowered_manual for phrase in ["run the design", "strict mode", "no assumptions"]
+        ):
+            return _base_decision(
+                intent="design",
+                assistant_message=_revision_acknowledgement(message, context),
+                run_mode="run",
+                design_prompt=message,
+                reason="Manual mode reused prior design context",
+                confidence=0.84,
+                control_overrides=overrides,
+            )
         inferred_project_type = str(context.get("project_type") or "").strip() or _infer_project_type_from_message(
-            message
+            analysis_text
         )
         manual_missing: List[str] = []
         if not inferred_project_type:
             manual_missing.append("the site type or land use")
-        if not (context.get("lot_width") and context.get("lot_height")) and not _message_has_dimension_signal(message):
+        if not (context.get("lot_width") and context.get("lot_height")) and not _message_has_dimension_signal(analysis_text):
             manual_missing.append("rough lot size")
-        manual_missing.append("which systems to include")
+        systems_present = any(
+            phrase in lowered_manual
+            for phrase in ["grading", "drainage", "storm", "sanitary", "water", "utility", "utilities", "road", "roads"]
+        )
+        if not systems_present:
+            manual_missing.append("which systems to include")
         return _base_decision(
             intent="conversation",
             assistant_message=_structured_clarification_reply(
