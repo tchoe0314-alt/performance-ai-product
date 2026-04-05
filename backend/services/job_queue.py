@@ -38,6 +38,31 @@ def _json_loads(value: Any, default: Any) -> Any:
         return default
 
 
+def _safe_text(value: Any) -> str:
+    if value is None:
+        return ""
+    try:
+        return str(value)
+    except Exception:
+        return ""
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    if value in (None, ""):
+        return default
+    try:
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, str):
+            cleaned = value.strip().rstrip("%").strip()
+            if not cleaned:
+                return default
+            return int(float(cleaned))
+        return int(value)
+    except Exception:
+        return default
+
+
 def _job_progress_payload(stage: str, detail: str, progress: int) -> Dict[str, Any]:
     return {
         "job_progress": {
@@ -115,7 +140,7 @@ class JobQueueService:
         try:
             rows = connection.execute(
                 """
-                SELECT job_id, job_type, status, created_at, updated_at, project_id, error_text
+                SELECT *
                 FROM jobs
                 WHERE user_id = ?
                 ORDER BY updated_at DESC
@@ -222,7 +247,11 @@ class JobQueueService:
         self._update_job_state(job_id, status="running", result=merged_result, error=None)
 
     def _job_summary(self, record: Dict[str, Any]) -> Dict[str, Any]:
-        job_progress = dict((record.get("result") or {}).get("job_progress") or {})
+        result = record.get("result")
+        if not isinstance(result, dict):
+            result = {}
+        raw_progress = result.get("job_progress")
+        job_progress = dict(raw_progress) if isinstance(raw_progress, dict) else {}
         return {
             "job_id": record["job_id"],
             "job_type": record["job_type"],
@@ -231,9 +260,9 @@ class JobQueueService:
             "updated_at": record["updated_at"],
             "project_id": record["project_id"],
             "error": record["error"],
-            "stage": str(job_progress.get("stage") or ""),
-            "stage_detail": str(job_progress.get("detail") or ""),
-            "progress": int(job_progress.get("progress") or 0),
+            "stage": _safe_text(job_progress.get("stage")),
+            "stage_detail": _safe_text(job_progress.get("detail")),
+            "progress": max(0, min(100, _safe_int(job_progress.get("progress"), 0))),
         }
 
     def _row_to_record(self, row: Any) -> Dict[str, Any]:
