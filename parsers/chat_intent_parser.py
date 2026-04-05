@@ -1579,6 +1579,68 @@ def _looks_like_explicit_design_request(text: str) -> bool:
     return False
 
 
+def _looks_like_assisted_scope_confirmation(text: str) -> bool:
+    normalized = _normalized_chat_text(text)
+    if not normalized:
+        return False
+    confirmation_phrases = [
+        "yes assist",
+        "yes, assist",
+        "use ai assistance",
+        "use ai help",
+        "go ahead and assist",
+        "go ahead with ai assistance",
+        "help fill in the missing details",
+        "fill in the missing details",
+        "fill in the blanks",
+        "infer the missing details",
+        "make the assumptions you need",
+        "make reasonable assumptions",
+        "you can infer the rest",
+    ]
+    if any(phrase in normalized for phrase in confirmation_phrases):
+        return True
+    return normalized in {
+        "assist",
+        "yes assist me",
+        "yes use ai",
+        "go ahead and do it with ai",
+    }
+
+
+def _last_design_request_from_history(context: Dict[str, Any]) -> str:
+    history = list(context.get("chat_history") or [])
+    for item in reversed(history):
+        if str(item.get("role") or "").strip().lower() != "user":
+            continue
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        if _looks_like_assisted_scope_confirmation(content):
+            continue
+        normalized = _normalized_chat_text(content)
+        if (
+            _looks_like_explicit_design_request(content)
+            or _message_has_dimension_signal(content)
+            or any(
+                phrase in normalized
+                for phrase in [
+                    "site plan",
+                    "civil site plan",
+                    "grading",
+                    "drainage",
+                    "storm",
+                    "sanitary",
+                    "water",
+                    "parking",
+                    "building",
+                ]
+            )
+        ):
+            return content
+    return ""
+
+
 def _is_explicit_plan_tool_request(text: str, tool: str) -> bool:
     normalized = _normalized_chat_text(text)
     explicit_phrases = {
@@ -1619,7 +1681,7 @@ def _clarifying_design_reply(context: Dict[str, Any]) -> str:
     missing.append("what systems matter most")
     ask = ", ".join(missing[:3])
     assist_line = (
-        " If you want, I can help fill in the blanks once you confirm that you want AI assistance."
+        " If you want, I can stay within exactly what you asked for, or I can assist by filling in only the missing engineering details once you say yes."
         if strategy_mode == "assisted"
         else ""
     )
@@ -1692,7 +1754,7 @@ def _structured_clarification_reply(
 
     if strategy_mode == "assisted":
         prompt_parts.append(
-            "If you want, I can help fill in the missing details once you tell me which assumptions you want Civora to make."
+            "If you want, I can stay within exactly what you asked for, or I can assist by filling in only the missing engineering details once you say yes."
         )
 
     return " ".join(prompt_parts) + _remembered_instruction_fragment(context)
@@ -2014,6 +2076,22 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             confidence=0.9,
             control_overrides=overrides,
         )
+
+    if strategy_mode == "assisted" and _looks_like_assisted_scope_confirmation(message):
+        prior_design = _last_design_request_from_history(context)
+        if prior_design:
+            return _base_decision(
+                intent="design",
+                assistant_message=(
+                    "I’ll keep the scope anchored to what you asked for and use AI assistance only for the missing engineering details you approved."
+                    + _remembered_instruction_fragment(context)
+                ),
+                run_mode="run",
+                design_prompt=prior_design,
+                reason="Assisted scope confirmation detected",
+                confidence=0.92,
+                control_overrides=overrides,
+            )
 
     if _looks_like_run_confirmation(message, context):
         previous_user = _last_user_message(context)

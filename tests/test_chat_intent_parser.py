@@ -182,7 +182,28 @@ class ChatIntentParserTest(unittest.TestCase):
         )
         self.assertEqual(result["intent"], "conversation")
         self.assertTrue(result["needs_clarification"])
-        self.assertIn("help fill in the missing details", result["assistant_message"])
+        self.assertIn("stay within exactly what you asked for", result["assistant_message"])
+        self.assertIn("only the missing engineering details", result["assistant_message"])
+
+    def test_assisted_scope_confirmation_reuses_prior_design_prompt(self):
+        prior_prompt = "Design a site for me with parking and drainage."
+        result = _decide(
+            "yes, assist with the missing details",
+            {
+                "strategy_mode": "assisted",
+                "chat_thread": [
+                    {"role": "user", "content": prior_prompt},
+                    {
+                        "role": "assistant",
+                        "content": "If you want, I can stay within exactly what you asked for, or I can assist by filling in only the missing engineering details once you say yes.",
+                    },
+                ],
+            },
+        )
+        self.assertEqual(result["intent"], "design")
+        self.assertEqual(result["run_mode"], "run")
+        self.assertEqual(result["design_prompt"], prior_prompt)
+        self.assertIn("use AI assistance", result["assistant_message"])
 
     def test_small_civil_site_prompt_runs_without_site_type_in_assisted_mode(self):
         result = _decide(
