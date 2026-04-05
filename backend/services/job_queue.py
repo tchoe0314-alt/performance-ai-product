@@ -34,6 +34,16 @@ def _json_loads(value: Any, default: Any) -> Any:
         return default
 
 
+def _job_progress_payload(stage: str, detail: str, progress: int) -> Dict[str, Any]:
+    return {
+        "job_progress": {
+            "stage": str(stage or "").strip(),
+            "detail": str(detail or "").strip(),
+            "progress": max(0, min(100, int(progress))),
+        }
+    }
+
+
 class JobQueueService:
     def __init__(self, db: Database) -> None:
         self.db = db
@@ -65,7 +75,7 @@ class JobQueueService:
             "updated_at": now,
             "project_id": project_id,
             "payload": dict(payload),
-            "result": {},
+            "result": _job_progress_payload("Queued", "Waiting for a worker to pick up the job.", 12),
             "error": None,
         }
 
@@ -109,15 +119,7 @@ class JobQueueService:
                 (user_id,),
             ).fetchall()
             return [
-                {
-                    "job_id": row["job_id"],
-                    "job_type": row["job_type"],
-                    "status": row["status"],
-                    "created_at": row["created_at"],
-                    "updated_at": row["updated_at"],
-                    "project_id": row["project_id"],
-                    "error": row["error_text"],
-                }
+                self._job_summary(self._row_to_record(row))
                 for row in rows
             ]
         finally:
@@ -184,7 +186,16 @@ class JobQueueService:
         finally:
             connection.close()
 
+    def update_job_progress(self, job_id: str, *, stage: str, detail: str, progress: int) -> None:
+        current = self._get_job_for_worker(job_id)
+        if current is None:
+            return
+        merged_result = dict(current.get("result") or {})
+        merged_result.update(_job_progress_payload(stage, detail, progress))
+        self._update_job_state(job_id, status="running", result=merged_result, error=None)
+
     def _job_summary(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        job_progress = dict((record.get("result") or {}).get("job_progress") or {})
         return {
             "job_id": record["job_id"],
             "job_type": record["job_type"],
@@ -193,6 +204,9 @@ class JobQueueService:
             "updated_at": record["updated_at"],
             "project_id": record["project_id"],
             "error": record["error"],
+            "stage": str(job_progress.get("stage") or ""),
+            "stage_detail": str(job_progress.get("detail") or ""),
+            "progress": int(job_progress.get("progress") or 0),
         }
 
     def _row_to_record(self, row: Any) -> Dict[str, Any]:
@@ -229,6 +243,12 @@ class JobQueueService:
 
             self._update_job_state(job_id, status="running", error=None)
             try:
+                self.update_job_progress(
+                    job_id,
+                    stage="Preparing",
+                    detail="Validating the request and preparing the engineering run.",
+                    progress=24,
+                )
                 result = runner(job)
                 self._update_job_state(job_id, status="completed", result=result, error=None)
             except Exception as exc:

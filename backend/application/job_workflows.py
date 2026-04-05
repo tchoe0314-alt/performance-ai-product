@@ -17,6 +17,9 @@ class JobQueueProtocol(Protocol):
     def register_handler(self, job_type: str, runner: Callable[[Dict[str, Any]], Dict[str, Any]]) -> None:
         ...
 
+    def update_job_progress(self, job_id: str, *, stage: str, detail: str, progress: int) -> None:
+        ...
+
 
 class ProjectStoreProtocol(Protocol):
     def get_project(self, *, user_id: str, project_id: str) -> Optional[Dict[str, Any]]:
@@ -78,16 +81,32 @@ def queue_orchestrate_job(
 def build_orchestrate_job_runner(
     *,
     project_store: ProjectStoreProtocol,
+    update_job_progress: Callable[..., None],
     run_orchestration: Callable[[Dict[str, Any]], Dict[str, Any]],
     build_run_summary: Callable[..., Dict[str, Any]],
     merge_project_metadata: Callable[..., Dict[str, Any]],
 ) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
     def orchestrate_runner(job: Dict[str, Any]) -> Dict[str, Any]:
         payload = dict(job.get("payload") or {})
+        job_id = str(job.get("job_id") or "").strip()
+        if job_id:
+            update_job_progress(
+                job_id,
+                stage="Engineering Run",
+                detail="Running the core design pipeline and building the plan.",
+                progress=48,
+            )
         result = run_orchestration(payload)
         project_id = job.get("project_id")
         user_id = job.get("user_id")
         if project_id and user_id:
+            if job_id:
+                update_job_progress(
+                    job_id,
+                    stage="Saving Project",
+                    detail="Saving the latest design state back into the project.",
+                    progress=76,
+                )
             existing = project_store.get_project(user_id=user_id, project_id=project_id)
             if existing is not None:
                 project_store.save_project(
@@ -112,8 +131,15 @@ def build_orchestrate_job_runner(
                 )
         enriched = dict(result)
         metadata = dict(enriched.get("metadata") or {})
+        if job_id:
+            update_job_progress(
+                job_id,
+                stage="Finalizing",
+                detail="Finalizing the run summary and preparing the result for the UI.",
+                progress=92,
+            )
         metadata["job_context"] = {
-            "job_id": job.get("job_id"),
+            "job_id": job_id,
             "job_type": job.get("job_type"),
             "project_id": project_id,
             "user_id": user_id,

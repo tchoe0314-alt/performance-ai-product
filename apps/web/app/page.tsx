@@ -83,6 +83,9 @@ type JobSummary = {
   project_id?: string | null;
   updated_at?: number;
   error?: string | null;
+  stage?: string;
+  stage_detail?: string;
+  progress?: number;
 };
 
 type WorkflowRunSummary = {
@@ -785,22 +788,45 @@ function buildThinkingState({
   busy,
   activePlanTool,
   activeJobStatus,
+  activeJobStage,
+  activeJobDetail,
+  activeJobProgress,
   statusMessage,
 }: {
   busy: boolean;
   activePlanTool: PlanToolMode;
   activeJobStatus?: string;
+  activeJobStage?: string;
+  activeJobDetail?: string;
+  activeJobProgress?: number;
   statusMessage: string;
 }) {
   const normalizedJobStatus = String(activeJobStatus || "").trim().toLowerCase();
   const normalizedStatus = statusMessage.toLowerCase();
+  const stageLabel = String(activeJobStage || "").trim();
+  const stageDetail = String(activeJobDetail || "").trim();
+  const numericProgress =
+    typeof activeJobProgress === "number" && Number.isFinite(activeJobProgress)
+      ? Math.max(0, Math.min(100, Math.round(activeJobProgress)))
+      : null;
+
+  if (normalizedJobStatus && stageLabel) {
+    return {
+      label: stageLabel,
+      detail:
+        stageDetail ||
+        (normalizedJobStatus === "queued"
+          ? "Civora queued the run and is waiting for a worker to pick it up."
+          : "Civora is processing the design in the background now."),
+      progress: numericProgress ?? (normalizedJobStatus === "queued" ? 12 : 48),
+    };
+  }
 
   if (normalizedJobStatus === "queued") {
     return {
       label: "Queued",
       detail: "Civora queued the run and is waiting for a worker to pick it up.",
       progress: 18,
-      eta: "About 1-2 min",
     };
   }
   if (normalizedJobStatus === "running") {
@@ -808,7 +834,6 @@ function buildThinkingState({
       label: "Running",
       detail: "Civora is processing the design in the background now.",
       progress: 68,
-      eta: "About 30-60 sec",
     };
   }
   if (busy && activePlanTool === "fix") {
@@ -816,7 +841,6 @@ function buildThinkingState({
       label: "Fixing",
       detail: "Applying a focused fix pass to the active design.",
       progress: 62,
-      eta: "About 20-40 sec",
     };
   }
   if (busy && activePlanTool === "improve") {
@@ -824,7 +848,6 @@ function buildThinkingState({
       label: "Improving",
       detail: "Improving the current design while preserving the main intent.",
       progress: 62,
-      eta: "About 20-40 sec",
     };
   }
   if (busy && normalizedStatus.includes("reviewing your request")) {
@@ -832,7 +855,6 @@ function buildThinkingState({
       label: "Reading Request",
       detail: "Reviewing your prompt and preparing the run.",
       progress: 22,
-      eta: "About 10-20 sec",
     };
   }
   return {
@@ -841,7 +863,6 @@ function buildThinkingState({
       statusMessage ||
       "Civora is building the design, checking engineering constraints, and preparing the next result.",
     progress: 42,
-    eta: "About 45-90 sec",
   };
 }
 
@@ -1040,9 +1061,12 @@ export default function PerformanceAIDashboard() {
         busy,
         activePlanTool,
         activeJobStatus: activeJob?.status,
+        activeJobStage: activeJob?.stage,
+        activeJobDetail: activeJob?.stage_detail,
+        activeJobProgress: activeJob?.progress,
         statusMessage,
       }),
-    [busy, activeJob?.status, activePlanTool, statusMessage],
+    [busy, activeJob?.status, activeJob?.stage, activeJob?.stage_detail, activeJob?.progress, activePlanTool, statusMessage],
   );
   const latestRunComparison = useMemo(() => {
     if (workflowRuns.length < 2) return null;
@@ -1942,6 +1966,16 @@ export default function PerformanceAIDashboard() {
     try {
       const data = await getJson<{ job: any }>(`/api/jobs/${id}`, { token });
       const job = data.job;
+      setJobs((current) => {
+        const next = [...current];
+        const existingIndex = next.findIndex((item) => item.job_id === job.job_id);
+        if (existingIndex >= 0) {
+          next[existingIndex] = { ...next[existingIndex], ...job };
+        } else {
+          next.unshift(job);
+        }
+        return next;
+      });
       setActiveJobId(job.job_id);
       const previousStatus = lastJobStatusRef.current[job.job_id];
       if (previousStatus !== job.status) {
@@ -1989,7 +2023,11 @@ export default function PerformanceAIDashboard() {
         setStatusMessage(job.error ?? "Job failed.");
         setActiveJobId("");
       } else {
-        setStatusMessage(`Job ${job.job_id} is ${job.status}.`);
+        setStatusMessage(
+          job.stage_detail
+            ? `${job.stage || "Running"}: ${job.stage_detail}`
+            : `Job ${job.job_id} is ${job.status}.`,
+        );
       }
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Job load failed.");
@@ -2765,9 +2803,6 @@ export default function PerformanceAIDashboard() {
                         </p>
                         <p className="mt-1 text-sm text-slate-600">
                           {thinkingState.detail}
-                        </p>
-                        <p className="mt-2 text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
-                          Estimated time left: {thinkingState.eta}
                         </p>
                       </div>
                       <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">

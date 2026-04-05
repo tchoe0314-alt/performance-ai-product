@@ -39,6 +39,7 @@ class FakeJobQueue:
     def __init__(self):
         self.submitted = None
         self.registered = {}
+        self.progress_updates = []
 
     def submit_job(self, *, user_id, job_type, payload, project_id=None):
         self.submitted = {
@@ -51,6 +52,16 @@ class FakeJobQueue:
 
     def register_handler(self, job_type, runner):
         self.registered[job_type] = runner
+
+    def update_job_progress(self, job_id, *, stage, detail, progress):
+        self.progress_updates.append(
+            {
+                "job_id": job_id,
+                "stage": stage,
+                "detail": detail,
+                "progress": progress,
+            }
+        )
 
 
 class ApplicationJobWorkflowsTest(unittest.TestCase):
@@ -96,8 +107,10 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
                 "metadata": {},
             }
         )
+        progress_updates = []
         runner = build_orchestrate_job_runner(
             project_store=store,
+            update_job_progress=lambda job_id, **kwargs: progress_updates.append({"job_id": job_id, **kwargs}),
             run_orchestration=lambda payload: {"success": True, "final_plan": {"project_name": "Demo", "meta": {}}},
             build_run_summary=lambda result, **kwargs: {"run_id": "run_1", "job_id": kwargs.get("job_id")},
             merge_project_metadata=lambda metadata, **kwargs: {"workflow": {"runs": [kwargs["run_summary"]]}},
@@ -115,6 +128,10 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertEqual(result["metadata"]["job_context"]["job_id"], "job_1")
         self.assertEqual(result["metadata"]["job_context"]["source"], "job_queue")
         self.assertEqual(store.saved_payload["metadata"]["workflow"]["runs"][0]["job_id"], "job_1")
+        self.assertEqual(
+            [item["stage"] for item in progress_updates],
+            ["Engineering Run", "Saving Project", "Finalizing"],
+        )
 
 
 if __name__ == "__main__":

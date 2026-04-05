@@ -317,6 +317,7 @@ def _register_job_handlers() -> None:
         "orchestrate",
         application_build_orchestrate_job_runner(
             project_store=PROJECT_STORE,
+            update_job_progress=JOB_QUEUE.update_job_progress,
             run_orchestration=_run_orchestration,
             build_run_summary=_build_run_summary,
             merge_project_metadata=_merge_project_metadata,
