@@ -934,6 +934,7 @@ export default function PerformanceAIDashboard() {
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const runSubmissionRef = useRef(false);
   const lastJobStatusRef = useRef<Record<string, string>>({});
+  const chatMessagesRef = useRef<ChatMessage[]>([createWelcomeMessage()]);
 
   const disciplineToggles: DisciplineToggle[] = [
     {
@@ -969,7 +970,7 @@ export default function PerformanceAIDashboard() {
       prompt_text: prompt || null,
       image_path: imageName || null,
       meta: {
-        chat_thread: chatMessages,
+        chat_thread: chatMessagesRef.current,
       },
       manual_fields: {
         project_name: siteName,
@@ -1205,7 +1206,11 @@ export default function PerformanceAIDashboard() {
     content: string,
     kind: ChatMessage["kind"] = "message",
   ) => {
-    setChatMessages((current) => [...current, createChatMessage(role, content, kind)]);
+    setChatMessages((current) => {
+      const next = [...current, createChatMessage(role, content, kind)];
+      chatMessagesRef.current = next;
+      return next;
+    });
   };
 
   useEffect(() => {
@@ -1215,6 +1220,10 @@ export default function PerformanceAIDashboard() {
       top: node.scrollHeight,
       behavior: "smooth",
     });
+  }, [chatMessages]);
+
+  useEffect(() => {
+    chatMessagesRef.current = chatMessages;
   }, [chatMessages]);
 
   const applyProjectInput = (projectInput: any) => {
@@ -1282,7 +1291,9 @@ export default function PerformanceAIDashboard() {
     setGrading(disciplines.includes("grading"));
     setDrainage(disciplines.includes("drainage"));
     setUtilities(disciplines.includes("utility"));
-    setChatMessages(restoredThread.length ? restoredThread : [createWelcomeMessage()]);
+    const nextThread = restoredThread.length ? restoredThread : [createWelcomeMessage()];
+    chatMessagesRef.current = nextThread;
+    setChatMessages(nextThread);
   };
 
   const applyControlOverrides = (overrides: ControlOverrides) => {
@@ -1310,7 +1321,8 @@ export default function PerformanceAIDashboard() {
     message: string,
   ) => {
     const nextStrategy = overrides.strategyMode ?? strategyMode;
-    const designMemory = extractDesignMemory(chatMessages);
+    const liveThread = chatMessagesRef.current;
+    const designMemory = extractDesignMemory(liveThread);
     return {
       strategy_mode: nextStrategy,
       site_name: overrides.siteName ?? siteName,
@@ -1347,7 +1359,7 @@ export default function PerformanceAIDashboard() {
         examples: [...designMemory.preferences, ...designMemory.constraints].slice(-8),
       },
       chat_thread: [
-        ...chatMessages,
+        ...liveThread,
         createChatMessage("user", message),
       ].map(({ role, content, kind }) => ({ role, content, kind })),
     };
@@ -1373,7 +1385,7 @@ export default function PerformanceAIDashboard() {
       prompt_text: (promptOverride ?? prompt) || null,
       image_path: imageName || null,
       meta: {
-        chat_thread: chatMessages,
+        chat_thread: chatMessagesRef.current,
       },
       manual_fields: {
         project_name: nextSiteName,
@@ -1904,6 +1916,7 @@ export default function PerformanceAIDashboard() {
     if (!silent) setBusy(true);
     const resolvedName = (nameOverride ?? siteName).trim();
     const resolvedFileName = (fileNameOverride ?? fileName).trim();
+    const liveChatThread = chatMessagesRef.current;
     const projectInputToSave = projectInputOverride
       ? {
           ...projectInputOverride,
@@ -1914,6 +1927,7 @@ export default function PerformanceAIDashboard() {
           },
           meta: {
             ...(projectInputOverride.meta ?? {}),
+            chat_thread: liveChatThread,
             auto_named: autoNamedOverride ?? siteNameAuto,
             auto_file_named: autoFileNamedOverride ?? fileNameAuto,
           },
@@ -1927,6 +1941,7 @@ export default function PerformanceAIDashboard() {
           },
           meta: {
             ...(payloadPreview.meta ?? {}),
+            chat_thread: liveChatThread,
             auto_named: autoNamedOverride ?? siteNameAuto,
             auto_file_named: autoFileNamedOverride ?? fileNameAuto,
           },
@@ -2256,7 +2271,9 @@ export default function PerformanceAIDashboard() {
     setDrainage(true);
     setUtilities(true);
     setStrategyMode("assisted");
-    setChatMessages([createWelcomeMessage()]);
+    const nextThread = [createWelcomeMessage()];
+    chatMessagesRef.current = nextThread;
+    setChatMessages(nextThread);
     setStatusMessage("Started a new project.");
     if (token) {
       await saveProject({
