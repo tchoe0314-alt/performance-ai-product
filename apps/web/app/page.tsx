@@ -1415,6 +1415,12 @@ export default function PerformanceAIDashboard() {
     };
   };
 
+  const isConnectivityFailureMessage = (message: string) =>
+    message.includes("could not reach the backend") ||
+    message.includes("Failed to fetch") ||
+    message.includes("Load failed") ||
+    message.includes("NetworkError");
+
   const executePlanAction = async ({
     mode,
     requestPayload,
@@ -1457,11 +1463,7 @@ export default function PerformanceAIDashboard() {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "";
-      const looksLikeConnectivityFailure =
-        errorMessage.includes("could not reach the backend") ||
-        errorMessage.includes("Failed to fetch") ||
-        errorMessage.includes("Load failed") ||
-        errorMessage.includes("NetworkError");
+      const looksLikeConnectivityFailure = isConnectivityFailureMessage(errorMessage);
       if (looksLikeConnectivityFailure && token) {
         try {
           const queued = await postJson<{ job: JobSummary }>(
@@ -1841,6 +1843,41 @@ export default function PerformanceAIDashboard() {
         autoFileNamedOverride: shouldAutoFileName,
       });
     } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "";
+      if (token && isConnectivityFailureMessage(errorMessage)) {
+        try {
+          const fallbackPayload = buildPayloadFromOverrides({}, trimmedPrompt);
+          const queued = await postJson<{ job: JobSummary }>(
+            "/api/jobs/orchestrate",
+            {
+              project_id: projectId || null,
+              request: fallbackPayload,
+            },
+            { token },
+          );
+          setActiveJobId(queued.job.job_id);
+          appendChatMessage(
+            "assistant",
+            `The live request could not stay connected long enough to finish the first pass, so I queued it in the background instead. Job ${queued.job.job_id} is now running and I’ll pick it up when it finishes.`,
+            "status",
+          );
+          setStatusMessage(
+            `The live request was queued as ${queued.job.job_id} because the direct connection dropped.`,
+          );
+          return;
+        } catch (queueError) {
+          appendChatMessage(
+            "assistant",
+            queueError instanceof Error ? queueError.message : "I couldn’t queue the design request either.",
+            "status",
+          );
+          setStatusMessage(
+            queueError instanceof Error ? queueError.message : "Queued fallback failed.",
+          );
+          return;
+        }
+      }
       appendChatMessage(
         "assistant",
         error instanceof Error ? error.message : "I couldn’t process that message.",
