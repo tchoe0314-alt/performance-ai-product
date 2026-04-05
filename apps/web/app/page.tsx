@@ -2725,6 +2725,12 @@ export default function PerformanceAIDashboard() {
               <h1 className="truncate text-lg font-semibold text-slate-950">
                 Civora AI
               </h1>
+              <p className="mt-1 truncate text-sm text-slate-600">
+                Current chat:{" "}
+                <span className="font-medium text-slate-900">
+                  {currentProject?.name || siteName || "New Project"}
+                </span>
+              </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <button
