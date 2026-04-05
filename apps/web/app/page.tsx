@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Save,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 
 import {
@@ -803,8 +804,8 @@ export default function PerformanceAIDashboard() {
   const [imageName, setImageName] = useState("");
   const [siteName, setSiteName] = useState("");
   const [fileName, setFileName] = useState("");
-  const [siteNameAuto, setSiteNameAuto] = useState(true);
-  const [fileNameAuto, setFileNameAuto] = useState(true);
+  const [siteNameAuto, setSiteNameAuto] = useState(false);
+  const [fileNameAuto, setFileNameAuto] = useState(false);
   const [lotWidth, setLotWidth] = useState("");
   const [lotHeight, setLotHeight] = useState("");
   const [buildingWidth, setBuildingWidth] = useState("");
@@ -1140,7 +1141,7 @@ export default function PerformanceAIDashboard() {
     );
     setUploadedImagePreviewUrl("");
     setSiteName(manualFields.project_name ?? "");
-    setFileName(manualFields.file_name ?? manualFields.project_name ?? "");
+    setFileName(manualFields.file_name ?? "");
     setSiteNameAuto(autoNamed || !manualFields.project_name);
     setFileNameAuto(autoFileNamed || !(manualFields.file_name ?? manualFields.project_name));
     setUnits(manualFields.units ?? "ft");
@@ -1499,20 +1500,10 @@ export default function PerformanceAIDashboard() {
       const overrides = decision.control_overrides ?? {};
       applyControlOverrides(overrides);
       const nextStrategy = overrides.strategyMode ?? strategyMode;
-      const shouldAutoName = siteNameAuto || !siteName.trim();
-      const shouldAutoFileName = fileNameAuto || !fileName.trim();
-      const generatedTitle = shouldAutoName ? guessProjectTitle(trimmedPrompt) : siteName.trim();
-      const generatedFileName = shouldAutoFileName
-        ? slugifyFileName(generatedTitle || trimmedPrompt)
-        : fileName.trim();
-      if (shouldAutoName && generatedTitle) {
-        setSiteName(generatedTitle);
-        setSiteNameAuto(true);
-      }
-      if (shouldAutoFileName) {
-        setFileName(generatedFileName);
-        setFileNameAuto(true);
-      }
+      const shouldAutoName = false;
+      const shouldAutoFileName = false;
+      const generatedTitle = siteName.trim();
+      const generatedFileName = fileName.trim();
 
       if (
         decision.needs_clarification ||
@@ -1660,6 +1651,10 @@ export default function PerformanceAIDashboard() {
     }
   };
 
+  const handleSendMessage = () => {
+    void runOrchestrator("run");
+  };
+
   const saveProject = async ({
     silent = false,
     projectIdOverride,
@@ -1681,7 +1676,7 @@ export default function PerformanceAIDashboard() {
   } = {}) => {
     if (!token) return;
     if (!silent) setBusy(true);
-    const resolvedName = (nameOverride ?? siteName).trim() || "New Project";
+    const resolvedName = (nameOverride ?? siteName).trim();
     const resolvedFileName = (fileNameOverride ?? fileName).trim();
     const projectInputToSave = projectInputOverride
       ? {
@@ -1730,7 +1725,9 @@ export default function PerformanceAIDashboard() {
       setCurrentProject(data.project);
       await refreshProjects();
       if (!silent) {
-        setStatusMessage(`Saved project "${data.project.name}".`);
+        setStatusMessage(
+          `Saved project "${data.project.name || resolvedName || "Untitled Project"}".`,
+        );
       }
     } catch (error) {
       if (!silent) {
@@ -1780,25 +1777,13 @@ export default function PerformanceAIDashboard() {
 
   const ensureProjectDraft = async (initialPrompt?: string) => {
     if (!token || projectId) return;
-    const generatedName =
-      siteName.trim() || (initialPrompt ? guessProjectTitle(initialPrompt) : "New Project");
-    const generatedFileName =
-      fileName.trim() || (initialPrompt ? slugifyFileName(generatedName) : "");
-    if (!siteName.trim()) {
-      setSiteName(generatedName);
-      setSiteNameAuto(true);
-    }
-    if (!fileName.trim()) {
-      setFileName(generatedFileName);
-      setFileNameAuto(true);
-    }
     await saveProject({
       silent: true,
       projectIdOverride: null,
-      nameOverride: generatedName,
-      fileNameOverride: generatedFileName,
-      autoNamedOverride: !siteName.trim(),
-      autoFileNamedOverride: !fileName.trim(),
+      nameOverride: siteName.trim(),
+      fileNameOverride: fileName.trim(),
+      autoNamedOverride: false,
+      autoFileNamedOverride: false,
     });
   };
 
@@ -1973,8 +1958,8 @@ export default function PerformanceAIDashboard() {
     setIssues(defaultIssues);
     setSiteName("");
     setFileName("");
-    setSiteNameAuto(true);
-    setFileNameAuto(true);
+    setSiteNameAuto(false);
+    setFileNameAuto(false);
     setProjectType("");
     setUnits("ft");
     setLotWidth("");
@@ -1994,7 +1979,7 @@ export default function PerformanceAIDashboard() {
       await saveProject({
         silent: true,
         projectIdOverride: null,
-        nameOverride: "New Project",
+        nameOverride: "",
         fileNameOverride: "",
         projectInputOverride: {
           input_mode: "assisted",
@@ -2003,11 +1988,11 @@ export default function PerformanceAIDashboard() {
           image_path: null,
           meta: {
             chat_thread: [createWelcomeMessage()],
-            auto_named: true,
-            auto_file_named: true,
+            auto_named: false,
+            auto_file_named: false,
           },
           manual_fields: {
-            project_name: "New Project",
+            project_name: "",
             file_name: "",
             units: "ft",
             project_type: "",
@@ -2021,8 +2006,8 @@ export default function PerformanceAIDashboard() {
           allow_ai_fill_for_blanks: true,
         },
         latestResultOverride: {},
-        autoNamedOverride: true,
-        autoFileNamedOverride: true,
+        autoNamedOverride: false,
+        autoFileNamedOverride: false,
       });
       await refreshProjects();
     }
@@ -2345,7 +2330,7 @@ export default function PerformanceAIDashboard() {
                 <option value="">Select project</option>
                 {projects.map((project) => (
                   <option key={project.project_id} value={project.project_id}>
-                    {project.name}
+                    {project.name || "Untitled Project"}
                   </option>
                 ))}
               </select>
@@ -2374,21 +2359,35 @@ export default function PerformanceAIDashboard() {
                   </div>
                 ) : (
                   projects.map((project) => (
-                    <button
+                    <div
                       key={project.project_id}
-                      type="button"
-                      onClick={() => void loadProject(project.project_id)}
-                      className={`block w-full rounded-2xl px-4 py-3 text-left text-sm transition ${
+                      className={`flex items-center gap-2 rounded-2xl px-2 py-2 transition ${
                         project.project_id === projectId
-                          ? "bg-white text-slate-950 shadow-sm ring-1 ring-slate-300"
-                          : "bg-transparent text-slate-700 hover:bg-white hover:shadow-sm"
+                          ? "bg-white shadow-sm ring-1 ring-slate-300"
+                          : "hover:bg-white"
                       }`}
                     >
-                      <p className="truncate font-medium">{project.name}</p>
-                      <p className="mt-1 truncate text-xs text-slate-500">
-                        {project.has_result ? "Saved result" : "Draft"}
-                      </p>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => void loadProject(project.project_id)}
+                        className="min-w-0 flex-1 px-2 py-1 text-left text-sm text-slate-700"
+                      >
+                        <p className="truncate font-medium text-slate-950">
+                          {project.name || "Untitled Project"}
+                        </p>
+                        <p className="mt-1 truncate text-xs text-slate-500">
+                          {project.has_result ? "Saved result" : "Draft"}
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void deleteProject(project.project_id)}
+                        aria-label={`Delete ${project.name || "Untitled Project"}`}
+                        className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   ))
                 )}
               </div>
@@ -2502,6 +2501,17 @@ export default function PerformanceAIDashboard() {
                   setSiteName(e.target.value);
                   setSiteNameAuto(false);
                 }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void saveProject({
+                      nameOverride: siteName.trim(),
+                      fileNameOverride: fileName.trim(),
+                      autoNamedOverride: false,
+                      autoFileNamedOverride: false,
+                    });
+                  }
+                }}
                 placeholder="Project name"
               />
 
@@ -2510,6 +2520,17 @@ export default function PerformanceAIDashboard() {
                 onChange={(e) => {
                   setFileName(e.target.value);
                   setFileNameAuto(false);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void saveProject({
+                      nameOverride: siteName.trim(),
+                      fileNameOverride: fileName.trim(),
+                      autoNamedOverride: false,
+                      autoFileNamedOverride: false,
+                    });
+                  }
                 }}
                 placeholder="File name"
               />
@@ -2578,10 +2599,14 @@ export default function PerformanceAIDashboard() {
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
                     onKeyDown={(event) => {
-                      if (event.key === "Enter" && !event.shiftKey) {
+                      if (
+                        event.key === "Enter" &&
+                        !event.shiftKey &&
+                        !(event.nativeEvent as KeyboardEvent).isComposing
+                      ) {
                         event.preventDefault();
                         if (!busy && (prompt.trim() || imageName)) {
-                          void runOrchestrator("run");
+                          handleSendMessage();
                         }
                       }
                     }}
@@ -2641,7 +2666,7 @@ export default function PerformanceAIDashboard() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => void runOrchestrator("run")}
+                        onClick={handleSendMessage}
                         disabled={busy}
                         className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                       >

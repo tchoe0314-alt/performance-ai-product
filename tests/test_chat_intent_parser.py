@@ -231,6 +231,17 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertEqual(result["run_mode"], "run")
         self.assertFalse(result["needs_clarification"])
 
+    def test_structured_design_prompt_with_review_bullets_does_not_get_treated_as_context_question(self):
+        result = _decide(
+            "Design a fully engineered civil site plan for a 22-acre mixed-use development on irregular terrain with an average slope of 5% from the northwest corner (112.5 ft) to the southeast corner (101.0 ft).\n\nInclude:\n- 3 multifamily buildings\n- 1 commercial retail pad\n\nRequirements:\n- Generate grading with spot elevations and 2-ft contours\n- Design storm drainage with inlets, pipes, inverts, and detention basin\n\nRun this in assisted mode. If you need to infer anything, do it, but clearly list:\n- assumptions made\n- why those assumptions were made\n- fixes applied\n- what still needs review\n- what is blocked",
+            {
+                "strategy_mode": "assisted",
+            },
+        )
+        self.assertEqual(result["intent"], "design")
+        self.assertEqual(result["run_mode"], "run")
+        self.assertFalse(result["needs_clarification"])
+
     def test_follow_up_design_reply_mentions_remembered_constraint(self):
         result = _decide(
             "add more parking",

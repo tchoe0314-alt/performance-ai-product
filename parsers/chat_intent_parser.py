@@ -918,6 +918,28 @@ def _settings_reply(overrides: Dict[str, Any]) -> str:
 
 def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optional[str]:
     lowered = _normalized_chat_text(message)
+    structured_prompt_markers = [
+        "include:",
+        "requirements:",
+        "output:",
+        "output requirements:",
+        "run this in",
+        "the site must include",
+    ]
+    looks_like_structured_design_prompt = (
+        len(message) > 180
+        and (
+            _looks_like_explicit_design_request(message)
+            or _references_prior_design_context(message)
+            or _message_has_dimension_signal(message)
+        )
+        and (
+            any(marker in lowered for marker in structured_prompt_markers)
+            or message.count("\n") >= 4
+        )
+    )
+    if looks_like_structured_design_prompt:
+        return None
     issues = context.get("issues") or []
     manual_failures = context.get("manual_failures") or []
     assumptions = context.get("assumptions") or []
