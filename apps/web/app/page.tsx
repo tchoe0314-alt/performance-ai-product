@@ -800,6 +800,7 @@ function buildThinkingState({
       label: "Queued",
       detail: "Civora queued the run and is waiting for a worker to pick it up.",
       progress: 18,
+      eta: "About 1-2 min",
     };
   }
   if (normalizedJobStatus === "running") {
@@ -807,6 +808,7 @@ function buildThinkingState({
       label: "Running",
       detail: "Civora is processing the design in the background now.",
       progress: 68,
+      eta: "About 30-60 sec",
     };
   }
   if (busy && activePlanTool === "fix") {
@@ -814,6 +816,7 @@ function buildThinkingState({
       label: "Fixing",
       detail: "Applying a focused fix pass to the active design.",
       progress: 62,
+      eta: "About 20-40 sec",
     };
   }
   if (busy && activePlanTool === "improve") {
@@ -821,6 +824,7 @@ function buildThinkingState({
       label: "Improving",
       detail: "Improving the current design while preserving the main intent.",
       progress: 62,
+      eta: "About 20-40 sec",
     };
   }
   if (busy && normalizedStatus.includes("reviewing your request")) {
@@ -828,6 +832,7 @@ function buildThinkingState({
       label: "Reading Request",
       detail: "Reviewing your prompt and preparing the run.",
       progress: 22,
+      eta: "About 10-20 sec",
     };
   }
   return {
@@ -836,6 +841,7 @@ function buildThinkingState({
       statusMessage ||
       "Civora is building the design, checking engineering constraints, and preparing the next result.",
     progress: 42,
+    eta: "About 45-90 sec",
   };
 }
 
@@ -2759,6 +2765,9 @@ export default function PerformanceAIDashboard() {
                         </p>
                         <p className="mt-1 text-sm text-slate-600">
                           {thinkingState.detail}
+                        </p>
+                        <p className="mt-2 text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                          Estimated time left: {thinkingState.eta}
                         </p>
                       </div>
                       <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
