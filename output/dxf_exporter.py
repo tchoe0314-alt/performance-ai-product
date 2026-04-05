@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime
 import math
+import re
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import ezdxf
@@ -1343,7 +1344,6 @@ def _site_plan_summary_rows(plan: Dict[str, Any], actions: List[Dict[str, Any]])
     optimization_scores = safe_dict(optimization.get("component_scores"))
     optimization_metrics = safe_dict(optimization.get("metrics"))
     optimization_comparison = safe_dict(optimization.get("comparison_summary"))
-    optimization_comparison = safe_dict(optimization.get("comparison_summary"))
     rows = [["DISCIPLINE", "KEY VALUE", "CHECK / STATUS"]]
     rows.append(["SITE", f"Imperv {safe_num(stats.get('impervious_area_sf')):.0f} SF", safe_text(meta.get("engineering_status"), "concept").upper()])
     rows.append([
@@ -1695,7 +1695,12 @@ def _site_plan_drainage_guidance_notes(plan: Dict[str, Any]) -> List[str]:
             release_status = "REVIEW"
             release_note = "ENGINEERING REVIEW REQUIRED BEFORE RELEASE"
         notes.append(f"25. RELEASE READINESS: {release_status} / {release_note}.")
-    return notes
+    renumbered_notes: List[str] = []
+    for index, note in enumerate(notes, start=1):
+        clean_note = re.sub(r"^\s*\d+\.\s*", "", safe_text(note, "")).strip()
+        if clean_note:
+            renumbered_notes.append(f"{index}. {clean_note}")
+    return renumbered_notes
 
 
 def _legend_items(plan: Dict[str, Any], actions: List[Dict[str, Any]]) -> List[Tuple[str, str, str]]:

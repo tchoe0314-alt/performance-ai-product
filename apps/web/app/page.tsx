@@ -389,6 +389,7 @@ function summarizePlanResponse(
   const meta = plan?.meta ?? {};
   const explanation = meta?.explanation;
   const convergence = meta?.convergence_summary ?? {};
+  const assumptionSummary = convergence?.assumption_summary ?? {};
   const producedDeliverables = Array.isArray(meta?.deliverables?.produced)
     ? meta.deliverables.produced
     : Array.isArray(meta?.produced_deliverables)
@@ -396,8 +397,14 @@ function summarizePlanResponse(
       : [];
   const failedDeliverables = Array.isArray(meta?.deliverables?.failed)
     ? meta.deliverables.failed
+    : Array.isArray(meta?.failed_deliverables)
+      ? meta.failed_deliverables
     : [];
-  const assumptions = Array.isArray(data?.assumptions) ? data.assumptions : [];
+  const assumptions = Array.isArray(data?.assumptions)
+    ? data.assumptions
+    : Array.isArray(assumptionSummary?.examples)
+      ? assumptionSummary.examples.map((example: any) => ({ field_name: "assumption", reason: String(example || "") }))
+      : [];
   const issues = Array.isArray(data?.issues) ? data.issues : [];
   const assumptionExamples = assumptions.length
     ? (() => {
