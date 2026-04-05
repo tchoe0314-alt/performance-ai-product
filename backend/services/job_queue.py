@@ -115,7 +115,7 @@ class JobQueueService:
         try:
             rows = connection.execute(
                 """
-                SELECT job_id, job_type, status, created_at, updated_at, project_id, error_text
+                SELECT *
                 FROM jobs
                 WHERE user_id = ?
                 ORDER BY updated_at DESC
@@ -223,6 +223,10 @@ class JobQueueService:
 
     def _job_summary(self, record: Dict[str, Any]) -> Dict[str, Any]:
         job_progress = dict((record.get("result") or {}).get("job_progress") or {})
+        try:
+            progress = int(job_progress.get("progress") or 0)
+        except Exception:
+            progress = 0
         return {
             "job_id": record["job_id"],
             "job_type": record["job_type"],
@@ -233,7 +237,7 @@ class JobQueueService:
             "error": record["error"],
             "stage": str(job_progress.get("stage") or ""),
             "stage_detail": str(job_progress.get("detail") or ""),
-            "progress": int(job_progress.get("progress") or 0),
+            "progress": progress,
         }
 
     def _row_to_record(self, row: Any) -> Dict[str, Any]:
