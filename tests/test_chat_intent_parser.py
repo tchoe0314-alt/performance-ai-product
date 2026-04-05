@@ -184,6 +184,36 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertTrue(result["needs_clarification"])
         self.assertIn("help fill in the missing details", result["assistant_message"])
 
+    def test_small_civil_site_prompt_runs_without_site_type_in_assisted_mode(self):
+        result = _decide(
+            "Design a civil site plan for a 120 ft by 100 ft lot. Include one 60 ft by 40 ft building centered on the lot, parking for 10 cars, one 12 ft wide driveway from the south side, maintain 10 ft setbacks, ensure proper drainage away from the building, and add a basic storm drainage layout with at least 2 inlets and 1 pipe.",
+            {
+                "strategy_mode": "assisted",
+                "roads": True,
+                "grading": True,
+                "drainage": True,
+                "utilities": False,
+            },
+        )
+        self.assertEqual(result["intent"], "design")
+        self.assertEqual(result["run_mode"], "run")
+        self.assertFalse(result["needs_clarification"])
+
+    def test_small_civil_site_prompt_runs_without_site_type_in_manual_mode(self):
+        result = _decide(
+            "Design a civil site plan for a 120 ft by 100 ft lot. Include one 60 ft by 40 ft building centered on the lot, parking for 10 cars, one 12 ft wide driveway from the south side, maintain 10 ft setbacks, ensure proper drainage away from the building, and add a basic storm drainage layout with at least 2 inlets and 1 pipe.",
+            {
+                "strategy_mode": "manual",
+                "roads": True,
+                "grading": True,
+                "drainage": True,
+                "utilities": False,
+            },
+        )
+        self.assertEqual(result["intent"], "design")
+        self.assertEqual(result["run_mode"], "run")
+        self.assertFalse(result["needs_clarification"])
+
     def test_follow_up_design_reply_mentions_remembered_constraint(self):
         result = _decide(
             "add more parking",

@@ -1654,6 +1654,12 @@ def _infer_project_type_from_message(message: str) -> str:
     for project_type, keywords in project_keywords.items():
         if any(keyword in lowered for keyword in keywords):
             return project_type
+    if (
+        any(keyword in lowered for keyword in ["site plan", "civil site plan", "lot", "driveway"])
+        and _message_has_dimension_signal(message)
+        and any(keyword in lowered for keyword in ["building", "parking", "pad", "road", "drainage"])
+    ):
+        return "generic_site"
     return ""
 
 
@@ -1715,6 +1721,11 @@ def _design_readiness_check(message: str, context: Dict[str, Any]) -> Optional[D
             "mixed use",
         ]
     )
+    explicit_site_layout_signal = (
+        any(phrase in lowered for phrase in ["site plan", "civil site plan", "lot", "driveway", "setback"])
+        and _message_has_dimension_signal(message)
+        and building_program_signal
+    )
     broad_engineering_scope = sum(
         1
         for phrase in [
@@ -1733,7 +1744,7 @@ def _design_readiness_check(message: str, context: Dict[str, Any]) -> Optional[D
     ) >= 4
 
     missing: List[str] = []
-    if not inferred_project_type:
+    if not inferred_project_type and not explicit_site_layout_signal:
         missing.append("the site type or land use")
     if not (lot_width and lot_height) and not _message_has_dimension_signal(message):
         missing.append("approximate lot dimensions or site area")
@@ -1809,6 +1820,8 @@ def _is_well_specified_design_request(message: str, context: Dict[str, Any]) -> 
             "cul-de-sac",
         ]
     )
+    if not inferred_project_type and has_site_size and has_program:
+        inferred_project_type = "generic_site"
     systems_count = sum(
         1
         for phrase in [
