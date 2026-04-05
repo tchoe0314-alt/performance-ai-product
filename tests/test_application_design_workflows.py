@@ -204,6 +204,22 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 409)
         self.assertIn("grading_fallback_used", str(ctx.exception.detail))
 
+    def test_final_plan_from_result_uses_fallback_grading_reason_when_empty(self):
+        with self.assertRaises(HTTPException) as ctx:
+            final_plan_from_result(
+                {
+                    "final_plan": {
+                        "actions": [{"task": "polyline", "layer": "FG_CONTOUR"}],
+                        "meta": {
+                            "deliverables": {"requested": ["grading_plan"], "produced": ["grading_plan"]},
+                            "grading": {"export_validation": {"ready": False, "reasons": []}},
+                        },
+                    }
+                }
+            )
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn("grading_export_not_ready", str(ctx.exception.detail))
+
     def test_final_plan_from_result_blocks_utility_fallback_export(self):
         with self.assertRaises(HTTPException) as ctx:
             final_plan_from_result(

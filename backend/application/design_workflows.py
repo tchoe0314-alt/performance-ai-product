@@ -251,6 +251,11 @@ def build_run_summary(
 
 
 def final_plan_from_result(result_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _normalized_reasons(value: Any, fallback: str) -> List[str]:
+        reasons = [str(item) for item in list(value or []) if str(item)]
+        deduped = list(dict.fromkeys(reasons))
+        return deduped or [fallback]
+
     final_plan = dict(result_data.get("final_plan") or result_data)
     actions = final_plan.get("actions")
     if isinstance(actions, list) and actions:
@@ -277,7 +282,10 @@ def final_plan_from_result(result_data: Dict[str, Any]) -> Dict[str, Any]:
             or any(any(token in item for token in ("storm", "drain", "basin", "inlet")) for item in produced | requested)
         )
         if needs_grading_truth and not bool(grading_export.get("ready")):
-            reasons = list(dict.fromkeys([str(item) for item in list(grading_export.get("reasons") or []) if str(item)]))
+            reasons = _normalized_reasons(
+                grading_export.get("reasons"),
+                "grading_export_not_ready",
+            )
             raise HTTPException(
                 status_code=409,
                 detail=(
@@ -291,7 +299,10 @@ def final_plan_from_result(result_data: Dict[str, Any]) -> Dict[str, Any]:
         )
         utility_export = dict(utilities.get("export_validation") or {})
         if needs_utility_truth and not bool(utility_export.get("ready")):
-            reasons = list(dict.fromkeys([str(item) for item in list(utility_export.get("reasons") or []) if str(item)]))
+            reasons = _normalized_reasons(
+                utility_export.get("reasons"),
+                "utility_export_not_ready",
+            )
             raise HTTPException(
                 status_code=409,
                 detail=(
@@ -311,7 +322,7 @@ def final_plan_from_result(result_data: Dict[str, Any]) -> Dict[str, Any]:
                 reasons.append("storm_hydraulics_invalid")
             if list(storm.get("missing_data_segments") or []):
                 reasons.append("storm_segments_incomplete")
-            reasons = list(dict.fromkeys([str(item) for item in reasons if str(item)]))
+            reasons = _normalized_reasons(reasons, "storm_export_not_ready")
             raise HTTPException(
                 status_code=409,
                 detail=(
