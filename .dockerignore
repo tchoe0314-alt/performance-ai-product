@@ -1,21 +1,32 @@
 .git
 .gitignore
-.venv
-venv
-__pycache__
-.pycache-temp
-.next
-node_modules
-apps/web/node_modules
-apps/web/.next
-data
-uploads
-*.pyc
-*.pyo
-*.pyd
-.DS_Store
-stdout.txt
-stderr.txt
-isolated_out.txt
-isolated_err.txt
-debug_trace.txt
+
+# Local Python environments and caches
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Frontend app is deployed separately on Vercel and makes the backend image huge
+apps/
+
+# Large local-only archives and artifacts
+archive/
+artifacts/
+
+# Local data/runtime state should not be baked into the backend image
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# Test and local output artifacts are not needed for Railway runtime
+tests/
+*.dxf
+*.log
+
+# Node/build caches if they appear at repo root
+node_modules/
+.next/
+dist/
+build/
