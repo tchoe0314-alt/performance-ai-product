@@ -89,6 +89,25 @@ def _build_workflow_summary(
     }
 
 
+def _project_operational_summary(record: Dict[str, Any]) -> Dict[str, Any]:
+    workflow_summary = dict(dict(record.get("metadata") or {}).get("workflow", {}).get("summary") or {})
+    return {
+        "operational_state": str(workflow_summary.get("latest_operational_state") or ""),
+        "primary_attention": str(workflow_summary.get("latest_primary_attention") or ""),
+        "release_ready": bool(workflow_summary.get("latest_release_ready")),
+        "run_count": int(workflow_summary.get("run_count") or 0),
+        "artifact_count": int(workflow_summary.get("artifact_count") or 0),
+        "latest_run_id": str(workflow_summary.get("latest_run_id") or ""),
+        "latest_artifact_id": str(workflow_summary.get("latest_artifact_id") or ""),
+    }
+
+
+def _record_with_operational_summary(record: Dict[str, Any]) -> Dict[str, Any]:
+    enriched = dict(record)
+    enriched["operational_summary"] = _project_operational_summary(record)
+    return enriched
+
+
 def merge_project_metadata(
     existing_metadata: Optional[Dict[str, Any]],
     *,
@@ -173,9 +192,14 @@ def list_projects(
     project_store: ProjectStoreProtocol,
     user_id: str,
 ) -> Dict[str, Any]:
+    projects = [
+        _record_with_operational_summary(dict(item))
+        for item in list(project_store.list_projects(user_id=user_id) or [])
+        if isinstance(item, dict)
+    ]
     return {
         "success": True,
-        "projects": project_store.list_projects(user_id=user_id),
+        "projects": projects,
     }
 
 
@@ -188,7 +212,7 @@ def get_project_detail(
     record = project_store.get_project(user_id=user_id, project_id=project_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Project not found.")
-    return {"success": True, "project": record}
+    return {"success": True, "project": _record_with_operational_summary(record)}
 
 
 def save_project_record(
@@ -232,7 +256,7 @@ def save_project_record(
         )
     except ValueError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
-    return {"success": True, "project": record}
+    return {"success": True, "project": _record_with_operational_summary(record)}
 
 
 def delete_project_record(

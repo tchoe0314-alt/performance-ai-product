@@ -24,7 +24,7 @@ class FakeProjectStore:
 
     def list_projects(self, *, user_id: str):
         if self.project and user_id == self.project.get("user_id"):
-            return [{"project_id": self.project["project_id"], "name": self.project.get("name", "")}]
+            return [dict(self.project)]
         return []
 
     def get_project(self, *, user_id: str, project_id: str):
@@ -87,16 +87,56 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 400)
 
     def test_list_projects_wraps_store_output(self):
-        store = FakeProjectStore({"user_id": "u1", "project_id": "p1", "name": "Demo"})
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Demo",
+                "metadata": {
+                    "workflow": {
+                        "summary": {
+                            "latest_operational_state": "ready",
+                            "latest_primary_attention": "",
+                            "latest_release_ready": True,
+                            "run_count": 2,
+                            "artifact_count": 1,
+                            "latest_run_id": "run_1",
+                            "latest_artifact_id": "artifact_1",
+                        }
+                    }
+                },
+            }
+        )
         response = list_projects(project_store=store, user_id="u1")
         self.assertTrue(response["success"])
         self.assertEqual(response["projects"][0]["project_id"], "p1")
+        self.assertEqual(response["projects"][0]["operational_summary"]["operational_state"], "ready")
 
     def test_get_project_detail_wraps_store_output(self):
-        store = FakeProjectStore({"user_id": "u1", "project_id": "p1", "name": "Demo"})
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Demo",
+                "metadata": {
+                    "workflow": {
+                        "summary": {
+                            "latest_operational_state": "retryable",
+                            "latest_primary_attention": "storm_hydraulics_invalid",
+                            "latest_release_ready": False,
+                            "run_count": 3,
+                            "artifact_count": 1,
+                            "latest_run_id": "run_2",
+                            "latest_artifact_id": "artifact_1",
+                        }
+                    }
+                },
+            }
+        )
         response = get_project_detail(project_store=store, user_id="u1", project_id="p1")
         self.assertTrue(response["success"])
         self.assertEqual(response["project"]["name"], "Demo")
+        self.assertEqual(response["project"]["operational_summary"]["primary_attention"], "storm_hydraulics_invalid")
 
     def test_merge_project_metadata_limits_runs_and_artifacts(self):
         metadata = {
@@ -213,6 +253,7 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertEqual(store.saved_payload["session_state"]["session_id"], "s1")
         self.assertEqual(store.saved_payload["metadata"]["workflow"]["runs"][0]["run_id"], "run_1")
         self.assertEqual(store.saved_payload["metadata"]["workflow"]["summary"]["latest_run_id"], "run_1")
+        self.assertIn("operational_summary", response["project"])
 
     def test_delete_project_record_reports_not_found(self):
         store = FakeProjectStore()
