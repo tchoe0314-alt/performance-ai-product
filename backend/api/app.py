@@ -39,6 +39,7 @@ from backend.application.file_workflows import (
 from backend.application.health_workflows import health_response as application_health_response
 from backend.application.job_workflows import (
     build_orchestrate_job_runner as application_build_orchestrate_job_runner,
+    cancel_existing_job as application_cancel_existing_job,
     queue_orchestrate_job as application_queue_orchestrate_job,
 )
 from backend.application.project_workflows import (
@@ -549,6 +550,15 @@ def get_job(job_id: str, current_user: Dict[str, Any] = Depends(get_current_user
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found.")
     return {"success": True, "job": job}
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+def cancel_job(job_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    return application_cancel_existing_job(
+        job_queue=JOB_QUEUE,
+        user_id=current_user["user_id"],
+        job_id=job_id,
+    )
 
 
 @app.get("/api/artifacts/{filename}")

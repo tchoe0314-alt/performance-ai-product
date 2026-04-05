@@ -13,6 +13,10 @@ from .database import Database
 JobRunner = Callable[[Dict[str, Any]], Dict[str, Any]]
 
 
+class JobCancelledError(RuntimeError):
+    pass
+
+
 def _now() -> float:
     return time.time()
 
@@ -140,6 +144,27 @@ class JobQueueService:
         finally:
             connection.close()
 
+    def cancel_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
+        record = self.get_job(user_id=user_id, job_id=job_id)
+        if record is None:
+            return None
+        if record["status"] in {"completed", "failed", "cancelled"}:
+            return self._job_summary(record)
+
+        result = dict(record.get("result") or {})
+        result.update(
+            _job_progress_payload(
+                "Cancelling",
+                "Cancellation requested. Civora is stopping this job as soon as it can.",
+                max(0, int(((record.get("result") or {}).get("job_progress") or {}).get("progress") or 0)),
+            )
+        )
+        next_status = "cancelled" if record["status"] == "queued" else "cancelling"
+        error = "Cancelled by user."
+        self._update_job_state(job_id, status=next_status, result=result, error=error)
+        updated = self.get_job(user_id=user_id, job_id=job_id)
+        return None if updated is None else self._job_summary(updated)
+
     def _enqueue_pending_jobs(self, job_type: str) -> None:
         connection = self.db.connect()
         try:
@@ -190,6 +215,8 @@ class JobQueueService:
         current = self._get_job_for_worker(job_id)
         if current is None:
             return
+        if current.get("status") in {"cancelling", "cancelled"}:
+            raise JobCancelledError("Cancelled by user.")
         merged_result = dict(current.get("result") or {})
         merged_result.update(_job_progress_payload(stage, detail, progress))
         self._update_job_state(job_id, status="running", result=merged_result, error=None)
@@ -234,6 +261,9 @@ class JobQueueService:
             if job is None:
                 self._queue.task_done()
                 continue
+            if job["status"] == "cancelled":
+                self._queue.task_done()
+                continue
 
             runner = self._handlers.get(job["job_type"])
             if runner is None:
@@ -250,7 +280,30 @@ class JobQueueService:
                     progress=24,
                 )
                 result = runner(job)
-                self._update_job_state(job_id, status="completed", result=result, error=None)
+                current = self._get_job_for_worker(job_id)
+                if current and current.get("status") in {"cancelling", "cancelled"}:
+                    cancelled_result = dict(current.get("result") or {})
+                    cancelled_result.update(
+                        _job_progress_payload(
+                            "Cancelled",
+                            "This run was cancelled before the result was returned.",
+                            int(((cancelled_result.get("job_progress") or {}).get("progress") or 0)),
+                        )
+                    )
+                    self._update_job_state(job_id, status="cancelled", result=cancelled_result, error="Cancelled by user.")
+                else:
+                    self._update_job_state(job_id, status="completed", result=result, error=None)
+            except JobCancelledError:
+                current = self._get_job_for_worker(job_id)
+                cancelled_result = dict((current or {}).get("result") or {})
+                cancelled_result.update(
+                    _job_progress_payload(
+                        "Cancelled",
+                        "This run was cancelled before completion.",
+                        int(((cancelled_result.get("job_progress") or {}).get("progress") or 0)),
+                    )
+                )
+                self._update_job_state(job_id, status="cancelled", result=cancelled_result, error="Cancelled by user.")
             except Exception as exc:
                 self._update_job_state(job_id, status="failed", result={}, error=str(exc))
             finally:

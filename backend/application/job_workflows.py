@@ -20,6 +20,9 @@ class JobQueueProtocol(Protocol):
     def update_job_progress(self, job_id: str, *, stage: str, detail: str, progress: int) -> None:
         ...
 
+    def cancel_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
+        ...
+
 
 class ProjectStoreProtocol(Protocol):
     def get_project(self, *, user_id: str, project_id: str) -> Optional[Dict[str, Any]]:
@@ -74,6 +77,32 @@ def queue_orchestrate_job(
             "project_id": project_id,
             "job_id": job.get("job_id"),
             "retryable": True,
+        },
+    }
+
+
+def cancel_existing_job(
+    *,
+    job_queue: JobQueueProtocol,
+    user_id: str,
+    job_id: str,
+) -> Dict[str, Any]:
+    job = job_queue.cancel_job(user_id=user_id, job_id=job_id)
+    if job is None:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return {
+        "success": True,
+        "job": job,
+        "operational_summary": {
+            "status": str(job.get("status") or "cancelled"),
+            "job_type": str(job.get("job_type") or "orchestrate"),
+            "job_bound": bool(job.get("job_id")),
+            "project_bound": bool(job.get("project_id")),
+            "project_id": job.get("project_id"),
+            "job_id": job.get("job_id"),
+            "retryable": False,
         },
     }
 

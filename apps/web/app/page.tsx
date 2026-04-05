@@ -836,6 +836,15 @@ function buildThinkingState({
       progress: 68,
     };
   }
+  if (normalizedJobStatus === "cancelling") {
+    return {
+      label: "Cancelling",
+      detail:
+        stageDetail ||
+        "Civora is stopping the background run and cleaning up the active job.",
+      progress: numericProgress ?? 68,
+    };
+  }
   if (busy && activePlanTool === "fix") {
     return {
       label: "Fixing",
@@ -1054,18 +1063,32 @@ export default function PerformanceAIDashboard() {
     () => jobs.find((job) => job.job_id === activeJobId) ?? null,
     [jobs, activeJobId],
   );
+  const currentProjectActiveJob = useMemo(
+    () =>
+      jobs.find(
+        (job) =>
+          Boolean(projectId) &&
+          job.project_id === projectId &&
+          ["queued", "running", "cancelling"].includes(String(job.status || "").toLowerCase()),
+      ) ?? null,
+    [jobs, projectId],
+  );
+  const visibleActiveJob = useMemo(
+    () => (projectId ? currentProjectActiveJob : activeJob),
+    [activeJob, currentProjectActiveJob, projectId],
+  );
   const thinkingState = useMemo(
     () =>
       buildThinkingState({
         busy,
         activePlanTool,
-        activeJobStatus: activeJob?.status,
-        activeJobStage: activeJob?.stage,
-        activeJobDetail: activeJob?.stage_detail,
-        activeJobProgress: activeJob?.progress,
+        activeJobStatus: visibleActiveJob?.status,
+        activeJobStage: visibleActiveJob?.stage,
+        activeJobDetail: visibleActiveJob?.stage_detail,
+        activeJobProgress: visibleActiveJob?.progress,
         statusMessage,
       }),
-    [busy, activeJob?.status, activeJob?.stage, activeJob?.stage_detail, activeJob?.progress, activePlanTool, statusMessage],
+    [busy, visibleActiveJob?.status, visibleActiveJob?.stage, visibleActiveJob?.stage_detail, visibleActiveJob?.progress, activePlanTool, statusMessage],
   );
   const latestRunComparison = useMemo(() => {
     if (workflowRuns.length < 2) return null;
@@ -1533,6 +1556,18 @@ export default function PerformanceAIDashboard() {
     setJobs(Array.isArray(data.jobs) ? data.jobs : []);
   };
 
+  const handleRefreshWorkspace = async () => {
+    if (!token) return;
+    try {
+      await Promise.all([refreshProjects(), refreshJobs()]);
+      setStatusMessage("Workspace refreshed.");
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : "Workspace refresh failed.",
+      );
+    }
+  };
+
   const handleAuth = async () => {
     setAuthLoading(true);
     setAuthError("");
@@ -1589,7 +1624,15 @@ export default function PerformanceAIDashboard() {
 
   const runOrchestrator = async (mode: PlanToolMode = "run") => {
     if (!token) return;
-    if (runSubmissionRef.current) {
+    if (
+      runSubmissionRef.current ||
+      Boolean(
+        currentProjectActiveJob &&
+          ["queued", "running", "cancelling"].includes(
+            String(currentProjectActiveJob.status || "").toLowerCase(),
+          ),
+      )
+    ) {
       setStatusMessage("Civora AI is already working on your last request.");
       return;
     }
@@ -1806,6 +1849,38 @@ export default function PerformanceAIDashboard() {
     void runOrchestrator("run");
   };
 
+  const handleCancelActiveJob = async () => {
+    if (!token || !visibleActiveJob?.job_id) return;
+    try {
+      const data = await postJson<{ job: JobSummary }>(
+        `/api/jobs/${visibleActiveJob.job_id}/cancel`,
+        {},
+        { token },
+      );
+      setJobs((current) => {
+        const next = [...current];
+        const index = next.findIndex((job) => job.job_id === data.job.job_id);
+        if (index >= 0) {
+          next[index] = { ...next[index], ...data.job };
+        } else {
+          next.unshift(data.job);
+        }
+        return next;
+      });
+      appendChatMessage("assistant", `Job ${data.job.job_id} was cancelled.`, "status");
+      setStatusMessage(`Cancelled job ${data.job.job_id}.`);
+      if (activeJobId === data.job.job_id) {
+        setActiveJobId("");
+      }
+      setBusy(false);
+      runSubmissionRef.current = false;
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : "Job cancel failed.",
+      );
+    }
+  };
+
   const saveProject = async ({
     silent = false,
     projectIdOverride,
@@ -1894,6 +1969,7 @@ export default function PerformanceAIDashboard() {
   const loadProject = async (id: string) => {
     if (!token) return;
     try {
+      await refreshJobs();
       const data = await getJson<{ project: ProjectRecord }>(
         `/api/projects/${id}`,
         { token },
@@ -1985,6 +2061,12 @@ export default function PerformanceAIDashboard() {
             `Job ${job.job_id} is running in the background now.`,
             "status",
           );
+        } else if (job.status === "cancelling") {
+          appendChatMessage(
+            "assistant",
+            `Job ${job.job_id} is cancelling now.`,
+            "status",
+          );
         }
       }
       if (job.status === "completed" && job.result) {
@@ -2014,6 +2096,14 @@ export default function PerformanceAIDashboard() {
           "status",
         );
         setStatusMessage(job.error ?? "Job failed.");
+        setActiveJobId("");
+      } else if (job.status === "cancelled") {
+        appendChatMessage(
+          "assistant",
+          `Job ${job.job_id} was cancelled before completion.`,
+          "status",
+        );
+        setStatusMessage(`Job ${job.job_id} was cancelled.`);
         setActiveJobId("");
       } else {
         setStatusMessage(
@@ -2316,6 +2406,21 @@ export default function PerformanceAIDashboard() {
   }, [token, activeJobId]);
 
   useEffect(() => {
+    if (currentProjectActiveJob && currentProjectActiveJob.job_id !== activeJobId) {
+      setActiveJobId(currentProjectActiveJob.job_id);
+      return;
+    }
+    if (
+      projectId &&
+      activeJob &&
+      activeJob.project_id === projectId &&
+      !["queued", "running", "cancelling"].includes(String(activeJob.status || "").toLowerCase())
+    ) {
+      setActiveJobId("");
+    }
+  }, [activeJob, activeJobId, currentProjectActiveJob, projectId]);
+
+  useEffect(() => {
     if (!workflowRuns.length) {
       setSelectedRunId("");
       return;
@@ -2607,7 +2712,7 @@ export default function PerformanceAIDashboard() {
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => void refreshProjects()}
+                onClick={() => void handleRefreshWorkspace()}
                 className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
               >
                 Refresh
@@ -2757,7 +2862,7 @@ export default function PerformanceAIDashboard() {
               </div>
 
               <div className="border-t border-slate-200 p-4 md:p-6">
-                {(busy || activeJobId) && (
+                {(busy || visibleActiveJob) && (
                   <div className="mb-4 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4">
                     <div className="flex items-start justify-between gap-4">
                       <div>
@@ -2778,6 +2883,20 @@ export default function PerformanceAIDashboard() {
                         style={{ width: `${thinkingState.progress}%` }}
                       />
                     </div>
+                    {visibleActiveJob && (
+                      <div className="mt-4 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={handleCancelActiveJob}
+                          disabled={String(visibleActiveJob.status || "").toLowerCase() === "cancelling"}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {String(visibleActiveJob.status || "").toLowerCase() === "cancelling"
+                            ? "Cancelling..."
+                            : "Cancel"}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -2792,7 +2911,7 @@ export default function PerformanceAIDashboard() {
                         !(event.nativeEvent as KeyboardEvent).isComposing
                       ) {
                         event.preventDefault();
-                        if (!busy && (prompt.trim() || imageName)) {
+                        if (!busy && !visibleActiveJob && (prompt.trim() || imageName)) {
                           handleSendMessage();
                         }
                       }
@@ -2828,7 +2947,7 @@ export default function PerformanceAIDashboard() {
                       <button
                         type="button"
                         onClick={() => void runOrchestrator("fix")}
-                        disabled={busy}
+                        disabled={busy || Boolean(visibleActiveJob)}
                         className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Fix
@@ -2836,7 +2955,7 @@ export default function PerformanceAIDashboard() {
                       <button
                         type="button"
                         onClick={() => void runOrchestrator("improve")}
-                        disabled={busy}
+                        disabled={busy || Boolean(visibleActiveJob)}
                         className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Improve
@@ -2846,7 +2965,7 @@ export default function PerformanceAIDashboard() {
                       <button
                         type="button"
                         onClick={() => void saveProject()}
-                        disabled={busy}
+                        disabled={busy || Boolean(visibleActiveJob)}
                         className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Save
@@ -2854,16 +2973,20 @@ export default function PerformanceAIDashboard() {
                       <button
                         type="button"
                         onClick={handleSendMessage}
-                        disabled={busy}
+                        disabled={busy || Boolean(visibleActiveJob)}
                         className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {busy && activePlanTool === "run" ? "Working..." : "Send"}
+                        {busy && activePlanTool === "run"
+                          ? "Working..."
+                          : visibleActiveJob
+                            ? "Working..."
+                            : "Send"}
                       </button>
                     </div>
                   </div>
                 </div>
 
-                {!busy && !activeJobId && statusMessage && (
+                {!busy && !visibleActiveJob && statusMessage && (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
                     {statusMessage}
                   </div>

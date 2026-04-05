@@ -4,6 +4,7 @@ from fastapi import HTTPException
 
 from backend.application.job_workflows import (
     build_orchestrate_job_runner,
+    cancel_existing_job,
     queue_orchestrate_job,
 )
 
@@ -40,6 +41,7 @@ class FakeJobQueue:
         self.submitted = None
         self.registered = {}
         self.progress_updates = []
+        self.cancelled = None
 
     def submit_job(self, *, user_id, job_type, payload, project_id=None):
         self.submitted = {
@@ -62,6 +64,12 @@ class FakeJobQueue:
                 "progress": progress,
             }
         )
+
+    def cancel_job(self, *, user_id, job_id):
+        self.cancelled = {"user_id": user_id, "job_id": job_id}
+        if job_id == "missing":
+            return None
+        return {"job_id": job_id, "status": "cancelled", "project_id": "p1", "job_type": "orchestrate"}
 
 
 class ApplicationJobWorkflowsTest(unittest.TestCase):
@@ -132,6 +140,19 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
             [item["stage"] for item in progress_updates],
             ["Engineering Run", "Saving Project", "Finalizing"],
         )
+
+    def test_cancel_existing_job_returns_summary(self):
+        queue = FakeJobQueue()
+        response = cancel_existing_job(job_queue=queue, user_id="u1", job_id="job_1")
+        self.assertTrue(response["success"])
+        self.assertEqual(queue.cancelled, {"user_id": "u1", "job_id": "job_1"})
+        self.assertEqual(response["job"]["status"], "cancelled")
+
+    def test_cancel_existing_job_raises_for_missing_job(self):
+        queue = FakeJobQueue()
+        with self.assertRaises(HTTPException) as ctx:
+            cancel_existing_job(job_queue=queue, user_id="u1", job_id="missing")
+        self.assertEqual(ctx.exception.status_code, 404)
 
 
 if __name__ == "__main__":
