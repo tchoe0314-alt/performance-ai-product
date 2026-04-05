@@ -6816,6 +6816,7 @@ def _prune_geometry_candidate_rows(
     *,
     metrics: Optional[Dict[str, Any]] = None,
     breadth_cap: int = 4,
+    preserve_first_hard_avoid: bool = False,
 ) -> List[Dict[str, Any]]:
     rows = [safe_dict(item) for item in candidate_rows if safe_dict(item)]
     _coordination_metric_inc(metrics, ["candidate_counts", "geometry_candidates_generated"], len(rows))
@@ -6825,6 +6826,7 @@ def _prune_geometry_candidate_rows(
     base_bends = _path_turn_count(base_path)
     kept: List[Dict[str, Any]] = []
     seen: set[Tuple[Tuple[float, float], ...]] = set()
+    preserved_hard_avoid = False
     for row in rows:
         path = safe_list(row.get("path"))
         if len(path) < 2:
@@ -6843,6 +6845,11 @@ def _prune_geometry_candidate_rows(
             if bool(safe_dict(hit).get("avoid")) and safe_str(safe_dict(hit).get("kind")) in {"ada_path", "fire_lane", "access_aisle", "retaining_sensitive"}
         ]
         if hard_hits:
+            if preserve_first_hard_avoid and not preserved_hard_avoid:
+                preserved_hard_avoid = True
+                row["_quick_score"] = 1_000_000.0 + safe_float(row.get("protected_penalty"), 0.0)
+                kept.append(row)
+                continue
             _coordination_record_prune(metrics, "protected_hard_avoid")
             continue
         if polyline_length(path) <= base_length + 0.5 and bend_count <= base_bends and safe_str(row.get("strategy")) != "terminal_shift":
@@ -8571,7 +8578,13 @@ def _apply_conflict_resolution(
                     cluster_context=cluster_context,
                     protected_zones=protected_zones,
                 )
-                candidate_paths = _prune_geometry_candidate_rows(candidate_paths, path, metrics=metrics, breadth_cap=4)
+                candidate_paths = _prune_geometry_candidate_rows(
+                    candidate_paths,
+                    path,
+                    metrics=metrics,
+                    breadth_cap=4,
+                    preserve_first_hard_avoid=(candidate_mode == "protected_zone_bias"),
+                )
                 for candidate_row in candidate_paths:
                     candidate_path = deepcopy(safe_list(candidate_row.get("path")))
                     _coordination_metric_inc(metrics, ["rollbacks"])

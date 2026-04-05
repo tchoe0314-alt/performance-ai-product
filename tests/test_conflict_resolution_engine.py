@@ -1001,7 +1001,7 @@ class ConflictResolutionEngineTest(unittest.TestCase):
         manager.latest_outputs["utilities"] = deepcopy(utilities)
         project.meta["utility_summary"] = deepcopy(utilities)
 
-        def fake_cluster_solver(_project, _manager, matched, assisted_mode=False, allowed_candidate_modes=None, crossing_strategy=""):
+        def fake_cluster_solver(_project, _manager, matched, assisted_mode=False, allowed_candidate_modes=None, crossing_strategy="", **_kwargs):
             strategy = crossing_strategy or "hierarchy_first"
             if strategy == "upper_reroute_first":
                 return {
