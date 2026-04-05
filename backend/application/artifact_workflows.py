@@ -51,6 +51,7 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
     convergence = dict(run_summary.get("convergence_summary") or {})
     engineering = dict(run_summary.get("engineering_status") or {})
     reliability = dict(run_summary.get("reliability_summary") or {})
+    optimization = dict(run_summary.get("optimization_summary") or {})
     assumption_summary = dict(convergence.get("assumption_summary") or {})
     fix_summary = dict(convergence.get("fix_summary") or {})
     rerun_summary = dict(convergence.get("rerun_summary") or {})
@@ -141,6 +142,7 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         "release_note": release_note,
         "engineering_status": str((final_plan.get("meta") or {}).get("engineering_status") or ""),
         "reliability": reliability,
+        "optimization": optimization,
     }
 
 

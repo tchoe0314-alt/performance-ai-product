@@ -207,6 +207,10 @@ def _planner_score_meta(plan: Dict[str, Any]) -> Dict[str, Any]:
     return _safe_dict(_safe_dict(plan.get("meta")).get("planner_score"))
 
 
+def _optimization_meta(plan: Dict[str, Any]) -> Dict[str, Any]:
+    return _safe_dict(_safe_dict(plan.get("meta")).get("optimization_summary"))
+
+
 def _manager_export_meta(plan: Dict[str, Any]) -> Dict[str, Any]:
     return _safe_dict(_safe_dict(plan.get("meta")).get("manager_export"))
 
@@ -832,6 +836,40 @@ class PlannerIntelligence:
                         "circulation_intent": "balanced",
                         "grading_intent": "supportive",
                         "drainage_intent": "maximize_clarity",
+                        "utility_intent": "balanced",
+                    },
+                ),
+            )
+        elif prefer_goal in {"reduce_pipe_length", "shorter_pipe", "pipe_efficiency"}:
+            base.insert(
+                0,
+                (
+                    "utility_efficient",
+                    "Pipe-Efficient Option",
+                    "Exploration biased toward shorter combined pipe and utility runs.",
+                    {
+                        "layout_intent": "utility_efficient",
+                        "parking_intent": "balanced",
+                        "circulation_intent": "balanced",
+                        "grading_intent": "balanced",
+                        "drainage_intent": "balanced",
+                        "utility_intent": "shorter_runs",
+                    },
+                ),
+            )
+        elif prefer_goal in {"balance_earthwork", "balance_cut_fill", "reduce_earthwork"}:
+            base.insert(
+                0,
+                (
+                    "grading_friendly",
+                    "Earthwork-Balanced Option",
+                    "Exploration biased toward smoother grading and lower net cut/fill imbalance.",
+                    {
+                        "layout_intent": "grading_friendly",
+                        "parking_intent": "balanced",
+                        "circulation_intent": "balanced",
+                        "grading_intent": "minimize_regrade",
+                        "drainage_intent": "supportive",
                         "utility_intent": "balanced",
                     },
                 ),
@@ -1582,6 +1620,13 @@ class PlannerIntelligence:
         if planner_score_total > 0:
             score.bonuses["planner_score_alignment"] = planner_score_total * 0.15
 
+        optimization = _optimization_meta(plan)
+        optimization_scores = _safe_dict(optimization.get("component_scores"))
+        optimization_metrics = _safe_dict(optimization.get("metrics"))
+        optimization_overall = _safe_float(optimization.get("overall_score"), 0.0)
+        if optimization_overall > 0:
+            score.bonuses["optimization_alignment"] = optimization_overall * 0.08
+
         if len(candidate.refinements) >= 2:
             score.bonuses["refinement_depth"] = 6.0
         if warnings == 0 and errors == 0:
@@ -1589,11 +1634,33 @@ class PlannerIntelligence:
 
         goal = _lower(preferences.get("goal"))
         if goal in {"maximize_parking", "more_parking"}:
-            score.bonuses["goal_match"] = score.parking * 0.10
+            score.bonuses["goal_match"] = max(
+                score.parking * 0.10,
+                _safe_float(optimization_scores.get("parking_fit"), 0.0) * 0.10,
+            )
         elif goal in {"reduce_grading", "less_grading"}:
-            score.bonuses["goal_match"] = score.grading * 0.10
+            score.bonuses["goal_match"] = max(
+                score.grading * 0.10,
+                _safe_float(optimization_scores.get("earthwork_balance"), 0.0) * 0.10,
+            )
         elif goal in {"improve_drainage", "better_drainage"}:
-            score.bonuses["goal_match"] = score.drainage * 0.10
+            score.bonuses["goal_match"] = max(
+                score.drainage * 0.10,
+                _safe_float(optimization_scores.get("drainage_capacity"), 0.0) * 0.10,
+            )
+        elif goal in {"reduce_pipe_length", "shorter_pipe", "pipe_efficiency"}:
+            score.bonuses["goal_match"] = _safe_float(optimization_scores.get("pipe_efficiency"), 0.0) * 0.12
+        elif goal in {"balance_earthwork", "balance_cut_fill", "reduce_earthwork"}:
+            score.bonuses["goal_match"] = _safe_float(optimization_scores.get("earthwork_balance"), 0.0) * 0.12
+        elif goal in {"improve_utilities", "utility_efficiency", "reduce_utility_conflicts"}:
+            score.bonuses["goal_match"] = _safe_float(optimization_scores.get("utility_efficiency"), 0.0) * 0.12
+
+        max_capacity_ratio = _safe_float(optimization_metrics.get("max_capacity_ratio"), 0.0)
+        if max_capacity_ratio > 1.0:
+            score.penalties["optimization_capacity_overflow"] = (max_capacity_ratio - 1.0) * 45.0
+        linear_density = _safe_float(optimization_metrics.get("normalized_linear_density"), 0.0)
+        if linear_density > 18.0:
+            score.penalties["optimization_linear_density"] = min((linear_density - 18.0) * 1.8, 30.0)
 
         weighted_positive = 0.0
         component_map = {
