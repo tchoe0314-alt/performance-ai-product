@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Civora AI — AI-Powered Civil Engineering Design Platform",
+  title: "Civora AI — Autonomous Civil Engineering Design",
   description:
     "Engineering-grade civil site planning with coordinated layouts, grading, drainage, utilities, profiles, and deliverables.",
 };

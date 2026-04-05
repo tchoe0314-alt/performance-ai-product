@@ -2148,7 +2148,7 @@ export default function PerformanceAIDashboard() {
             <div className="space-y-4">
               <Pill>Beta Control Room</Pill>
               <h1 className="max-w-2xl text-5xl font-semibold tracking-tight text-slate-950">
-                Civora AI — AI-Powered Civil Engineering Design Platform
+                Civora AI — Autonomous Civil Engineering Design
               </h1>
               <p className="max-w-2xl text-lg leading-8 text-slate-600">
                 Sign in to run civil site concepts, review clear engineering
