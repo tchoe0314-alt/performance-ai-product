@@ -915,7 +915,6 @@ export default function PerformanceAIDashboard() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [jobs, setJobs] = useState<JobSummary[]>([]);
   const [currentProject, setCurrentProject] = useState<ProjectRecord | null>(null);
-  const [projectToOpen, setProjectToOpen] = useState("");
   const [selectedRunId, setSelectedRunId] = useState("");
   const [activeJobId, setActiveJobId] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
@@ -1524,11 +1523,6 @@ export default function PerformanceAIDashboard() {
     });
     const nextProjects = Array.isArray(data.projects) ? data.projects : [];
     setProjects(nextProjects);
-    setProjectToOpen((current) =>
-      current && nextProjects.some((project) => project.project_id === current)
-        ? current
-        : nextProjects[0]?.project_id ?? "",
-    );
   };
 
   const refreshJobs = async (authToken = token) => {
@@ -1907,7 +1901,6 @@ export default function PerformanceAIDashboard() {
       const project = data.project;
       setCurrentProject(project);
       setProjectId(project.project_id);
-      setProjectToOpen(project.project_id);
       setSiteName(project.name ?? "");
       applyProjectInput(project.project_input ?? {});
       if (project.latest_result && Object.keys(project.latest_result).length) {
@@ -2145,7 +2138,6 @@ export default function PerformanceAIDashboard() {
   const handleNewProject = async () => {
     setProjectId("");
     setCurrentProject(null);
-    setProjectToOpen(projects[0]?.project_id ?? "");
     setSelectedRunId("");
     setActiveJobId("");
     setPrompt("");
@@ -2519,36 +2511,6 @@ export default function PerformanceAIDashboard() {
           </div>
 
           <div className="space-y-6 overflow-y-auto p-4">
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                Open Project
-              </p>
-              <select
-                value={projectToOpen}
-                onChange={(event) => setProjectToOpen(event.target.value)}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70"
-              >
-                <option value="">Select project</option>
-                {projects.map((project) => (
-                  <option key={project.project_id} value={project.project_id}>
-                    {project.name || "Untitled Project"}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={() => {
-                  if (projectToOpen) {
-                    void loadProject(projectToOpen);
-                  }
-                }}
-                disabled={!projectToOpen}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Open Project
-              </button>
-            </div>
-
             <div className="space-y-2">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                 Projects
