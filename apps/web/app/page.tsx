@@ -840,6 +840,7 @@ export default function PerformanceAIDashboard() {
     useState<"explain" | "fix" | "improve">("explain");
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const runSubmissionRef = useRef(false);
+  const lastJobStatusRef = useRef<Record<string, string>>({});
 
   const disciplineToggles: DisciplineToggle[] = [
     {
@@ -1864,6 +1865,23 @@ export default function PerformanceAIDashboard() {
       const data = await getJson<{ job: any }>(`/api/jobs/${id}`, { token });
       const job = data.job;
       setActiveJobId(job.job_id);
+      const previousStatus = lastJobStatusRef.current[job.job_id];
+      if (previousStatus !== job.status) {
+        lastJobStatusRef.current[job.job_id] = job.status;
+        if (job.status === "queued") {
+          appendChatMessage(
+            "assistant",
+            `Job ${job.job_id} is queued and waiting to run in the background.`,
+            "status",
+          );
+        } else if (job.status === "running") {
+          appendChatMessage(
+            "assistant",
+            `Job ${job.job_id} is running in the background now.`,
+            "status",
+          );
+        }
+      }
       if (job.status === "completed" && job.result) {
         applyBackendResult(job.result);
         await requestPreview(
@@ -1873,13 +1891,25 @@ export default function PerformanceAIDashboard() {
           },
           { silent: true },
         );
+        appendChatMessage(
+          "assistant",
+          summarizePlanResponse(job.result, "run"),
+          "message",
+        );
         setStatusMessage(`Job ${job.job_id} completed.`);
+        setActiveJobId("");
         await refreshProjects();
         if (job.project_id) {
           await loadProject(job.project_id);
         }
       } else if (job.status === "failed") {
+        appendChatMessage(
+          "assistant",
+          job.error ?? "The background job failed before Civora could finish the design.",
+          "status",
+        );
         setStatusMessage(job.error ?? "Job failed.");
+        setActiveJobId("");
       } else {
         setStatusMessage(`Job ${job.job_id} is ${job.status}.`);
       }
