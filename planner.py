@@ -196,6 +196,16 @@ from backend.planning.late_stage_runners import (
 from backend.planning.sheet_stage import (
     run_sheet_stage as _run_sheet_stage_impl,
 )
+from backend.planning.execution_control import (
+    canonical_state_snapshot as _canonical_state_snapshot_impl,
+    latest_stage_result as _latest_stage_result_impl,
+    mark_stage_skipped_clean as _mark_stage_skipped_clean_impl,
+    record_stage_audit as _record_stage_audit_impl,
+    stage_completeness_label as _stage_completeness_label_impl,
+    stage_dirty_reasons as _stage_dirty_reasons_impl,
+    stage_should_run as _stage_should_run_impl,
+    stage_sort_key as _stage_sort_key_impl,
+)
 from backend.planning.finalization import (
     build_optimization_summary as _build_optimization_summary_impl,
     canonical_area_accounting as _canonical_area_accounting_impl,
@@ -428,55 +438,19 @@ def _manual_mode_enabled(parsed: Dict[str, Any]) -> bool:
 
 
 def _latest_stage_result(ctx: PlannerExecutionContext, stage_name: str) -> Optional[PlannerStageResult]:
-    for stage in reversed(ctx.stage_results):
-        if safe_str(stage.stage_name) == safe_str(stage_name):
-            return stage
-    return None
+    return _latest_stage_result_impl(ctx, stage_name)
 
 
 def _stage_dirty_reasons(ctx: PlannerExecutionContext, stage_name: str) -> List[str]:
-    manager = ctx.manager
-    reasons: List[str] = []
-    dirty_map = getattr(manager, "system_dirty_state", {})
-    state_row = safe_dict(dirty_map.get(stage_name))
-    reasons.extend([safe_str(item) for item in safe_list(state_row.get("reasons")) if safe_str(item)])
-    for dep_name in declared_stage_dependencies(stage_name):
-        dep_row = safe_dict(dirty_map.get(dep_name))
-        if safe_str(dep_row.get("state")).lower() == "dirty":
-            reasons.append(f"Dependency '{dep_name}' is dirty.")
-    return dedupe_keep_order([item for item in reasons if item])
+    return _stage_dirty_reasons_impl(ctx, stage_name)
 
 
 def _stage_should_run(ctx: PlannerExecutionContext, stage_name: str, *, force_first_pass: bool = True) -> bool:
-    if force_first_pass and ctx.pass_index <= 1:
-        return True
-    if _latest_stage_result(ctx, stage_name) is None:
-        return True
-    manager = ctx.manager
-    if hasattr(manager, "is_system_dirty") and manager.is_system_dirty(stage_name):
-        return True
-    return bool(_stage_dirty_reasons(ctx, stage_name))
+    return _stage_should_run_impl(ctx, stage_name, force_first_pass=force_first_pass)
 
 
 def _mark_stage_skipped_clean(ctx: PlannerExecutionContext, stage_name: str) -> None:
-    reasons = _stage_dirty_reasons(ctx, stage_name)
-    ctx.add_stage(
-        stage_name,
-        True,
-        "Stage skipped because canonical state is already clean.",
-        rerun_skipped=True,
-        dirty_reasons=deepcopy(reasons),
-        declared_dependencies=declared_stage_dependencies(stage_name),
-    )
-    ctx.rerun_history.append(
-        {
-            "pass_index": ctx.pass_index,
-            "stage_name": stage_name,
-            "action": "skipped_clean",
-            "dirty_reasons": deepcopy(reasons),
-            "declared_dependencies": declared_stage_dependencies(stage_name),
-        }
-    )
+    _mark_stage_skipped_clean_impl(ctx, stage_name)
 
 
 def _manual_failure(
@@ -539,34 +513,7 @@ def _manual_failure_reasoning(failure: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _canonical_state_snapshot(project: ProjectModel, manager: ProjectManager) -> Dict[str, Any]:
-    drainage = safe_dict(manager.latest_outputs.get("drainage", project.meta.get("drainage_canonical", {})))
-    storm = safe_dict(manager.latest_outputs.get("storm_pipe_summary", project.meta.get("storm_pipe_summary", {})))
-    sanitary = safe_dict(manager.latest_outputs.get("sanitary", project.meta.get("sanitary_summary", {})))
-    utilities = safe_dict(manager.latest_outputs.get("utilities", project.meta.get("utility_summary", {})))
-    grading = safe_dict(manager.latest_outputs.get("grading", project.meta.get("grading_summary", {})))
-    expanded_actions = safe_list(safe_dict(project.meta.get("_expanded_plan")).get("actions"))
-    return {
-        "project_object_count": len(getattr(project, "objects", {}) or {}),
-        "project_graph_count": len(getattr(project, "graphs", {}) or {}),
-        "drawing_entity_count": len(getattr(project, "drawing_entities", []) or []),
-        "expanded_action_count": len(expanded_actions),
-        "drainage_structure_count": len(safe_list(drainage.get("structures"))),
-        "drainage_basin_count": len(safe_list(drainage.get("basins"))),
-        "drainage_pipe_run_count": len(safe_list(drainage.get("pipe_runs"))),
-        "storm_segment_count": len(safe_list(storm.get("segments"))),
-        "storm_total_length_ft": round(safe_float(storm.get("total_length_ft"), 0.0), 3),
-        "sanitary_segment_count": len(safe_list(sanitary.get("segments"))),
-        "sanitary_manhole_count": len(safe_list(sanitary.get("manholes"))),
-        "sanitary_total_length_ft": round(safe_float(sanitary.get("total_length_ft"), 0.0), 3),
-        "utility_segment_count": len(safe_list(safe_dict(utilities.get("conflict_hooks")).get("utility_segments"))),
-        "utility_structure_count": len(safe_list(utilities.get("structures"))),
-        "utility_total_length_ft": round(safe_float(utilities.get("total_length_ft"), 0.0), 3),
-        "profile_count": len(safe_list(project.meta.get("profiles"))),
-        "cross_section_count": len(safe_list(project.meta.get("cross_sections"))),
-        "grading_adjustment_count": len(safe_list(grading.get("local_adjustments"))),
-        "has_proposed_surface": bool(grading.get("proposed_surface")),
-        "review_issue_count": len(getattr(project, "review_issues", []) or []),
-    }
+    return _canonical_state_snapshot_impl(project, manager)
 
 
 def _canonical_state_diff(before: Dict[str, Any], after: Dict[str, Any]) -> Dict[str, Any]:
@@ -593,53 +540,22 @@ def _record_stage_audit(
     dirty_reasons: Sequence[str],
     before_state: Dict[str, Any],
 ) -> None:
-    after_state = _canonical_state_snapshot(ctx.manager.project, ctx.manager)
-    diff = _canonical_state_diff(before_state, after_state)
-    stage_meta = {
-        "pass_index": pass_index,
-        "stage_name": stage_name,
-        "action": action,
-        "declared_dependencies": declared_stage_dependencies(stage_name),
-        "dirty_reasons": list(dirty_reasons),
-        "canonical_snapshot_before": deepcopy(before_state),
-        "canonical_snapshot_after": deepcopy(after_state),
-        "canonical_diff": deepcopy(diff),
-    }
-    for result in reversed(ctx.stage_results):
-        if safe_str(result.stage_name) == stage_name:
-            result.meta.update(deepcopy(stage_meta))
-            break
-    ctx.rerun_history.append(deepcopy(stage_meta))
-    manager_meta = ctx.manager.state.meta.setdefault("stage_canonical_diffs", [])
-    manager_meta.append(deepcopy(stage_meta))
+    _record_stage_audit_impl(
+        ctx,
+        stage_name,
+        pass_index=pass_index,
+        action=action,
+        dirty_reasons=dirty_reasons,
+        before_state=before_state,
+    )
 
 
 def _stage_sort_key(stage_name: str) -> Tuple[int, str]:
-    if stage_name in PLANNER_STAGE_ORDER:
-        return (PLANNER_STAGE_ORDER.index(stage_name), stage_name)
-    if stage_name.endswith("_gate"):
-        base = stage_name.replace("_gate", "")
-        if base in PLANNER_STAGE_ORDER:
-            return (PLANNER_STAGE_ORDER.index(base), stage_name)
-    if stage_name == "coordination":
-        return (len(PLANNER_STAGE_ORDER) + 1, stage_name)
-    if stage_name == "fix":
-        return (len(PLANNER_STAGE_ORDER) + 2, stage_name)
-    return (len(PLANNER_STAGE_ORDER) + 10, stage_name)
+    return _stage_sort_key_impl(stage_name)
 
 
 def _stage_completeness_label(stage_name: str, success: bool, message: str, meta: Dict[str, Any]) -> str:
-    explicit = lower_text(meta.get("completeness"))
-    if explicit in {"complete", "partial", "failed", "assumed"}:
-        return explicit
-    if bool(meta.get("fallback_used")) or bool(meta.get("assumed")):
-        return "assumed"
-    lowered = lower_text(message)
-    if not success:
-        return "failed"
-    if "skipped" in lowered:
-        return "partial"
-    return "complete"
+    return _stage_completeness_label_impl(stage_name, success, message, meta)
 
 
 def _required_stage_names(parsed: Dict[str, Any], plan: Dict[str, Any]) -> List[str]:
