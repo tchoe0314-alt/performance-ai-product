@@ -236,6 +236,126 @@ def _sample_grid_surface(surface: Optional[GridSurface], x: float, y: float, def
         return default
 
 
+def _build_optimization_summary(parsed: Dict[str, Any], plan: Dict[str, Any]) -> Dict[str, Any]:
+    meta = safe_dict(plan.get("meta"))
+    planner_score = safe_dict(meta.get("planner_score"))
+    weighted = safe_dict(planner_score.get("weighted_components"))
+    quantities = safe_dict(safe_dict(meta.get("quantities")).get("totals"))
+    grading = safe_dict(meta.get("grading"))
+    earthwork = safe_dict(grading.get("earthwork"))
+    storm = safe_dict(meta.get("storm_pipes"))
+    storm_stats = safe_dict(storm.get("stats"))
+    utilities = safe_dict(meta.get("utilities"))
+    exec_payload = safe_dict(unwrap_fields_for_execution(parsed))
+    parking_program = safe_dict(meta.get("parking_program"))
+
+    lot = safe_dict(exec_payload.get("lot"))
+    lot_area_sf = max(
+        safe_float(lot.get("w"), 0.0) * safe_float(lot.get("h"), 0.0),
+        safe_float(quantities.get("lot_area_sf"), 0.0),
+        1.0,
+    )
+    site_plan = safe_dict(exec_payload.get("site_plan"))
+    parking_target = max(
+        safe_int(site_plan.get("parking_count"), 0),
+        safe_int(parking_program.get("target_count"), 0),
+    )
+    parking_actual = max(
+        safe_int(quantities.get("estimated_parking_stalls"), 0),
+        safe_int(parking_program.get("actual_count"), 0),
+        safe_int(parking_program.get("parking_actual"), 0),
+    )
+
+    if parking_target > 0:
+        parking_fit_score = max(0.0, min(100.0, (parking_actual / max(parking_target, 1)) * 100.0))
+    elif parking_actual > 0:
+        parking_fit_score = 75.0
+    else:
+        parking_fit_score = 0.0
+
+    net_cf = safe_float(earthwork.get("net_cf"), 0.0)
+    earthwork_balance_score = max(0.0, 100.0 - min(abs(net_cf) / 5000.0 * 100.0, 100.0))
+
+    deficient = safe_int(storm_stats.get("deficient_count"), 0)
+    marginal = safe_int(storm_stats.get("marginal_count"), 0)
+    max_capacity_ratio = safe_float(storm.get("max_capacity_ratio"), 0.0)
+    drainage_capacity_score = max(
+        0.0,
+        100.0
+        - deficient * 25.0
+        - marginal * 10.0
+        - max(0.0, max_capacity_ratio - 0.95) * 100.0,
+    )
+
+    storm_pipe_length_ft = max(
+        safe_float(quantities.get("pipe_length_ft"), 0.0),
+        safe_float(storm_stats.get("total_pipe_length_ft"), 0.0),
+    )
+    utility_length_ft = safe_float(quantities.get("utility_length_ft"), 0.0)
+    sanitary_length_ft = safe_float(quantities.get("sanitary_length_ft"), 0.0)
+    total_linear_utility_ft = storm_pipe_length_ft + utility_length_ft + sanitary_length_ft
+    normalized_linear_density = total_linear_utility_ft / max(math.sqrt(lot_area_sf), 1.0)
+    pipe_efficiency_score = max(0.0, 100.0 - min(normalized_linear_density * 6.0, 100.0))
+
+    utility_coordination = safe_dict(utilities.get("coordination"))
+    utility_efficiency_score = max(
+        0.0,
+        100.0
+        - safe_int(utility_coordination.get("unresolved_conflict_count"), 0) * 18.0
+        - max(0.0, 3.0 - safe_float(utilities.get("min_cover_ft"), 0.0)) * 12.0,
+    )
+
+    component_scores = {
+        "parking_fit": round(parking_fit_score, 1),
+        "earthwork_balance": round(earthwork_balance_score, 1),
+        "drainage_capacity": round(drainage_capacity_score, 1),
+        "pipe_efficiency": round(pipe_efficiency_score, 1),
+        "utility_efficiency": round(utility_efficiency_score, 1),
+    }
+    overall_score = round(sum(component_scores.values()) / max(len(component_scores), 1), 1)
+
+    optimization_goals = safe_dict(exec_payload.get("optimization_goals"))
+    active_goal = safe_str(optimization_goals.get("goal")) or safe_str(meta.get("optimize_goal")) or "balanced"
+    recommendations: List[str] = []
+    if parking_target > 0 and parking_actual < parking_target:
+        recommendations.append(
+            f"Parking program is below target by {max(parking_target - parking_actual, 0)} stalls; favor layout efficiency before adding corridor length."
+        )
+    if earthwork_balance_score < 70.0:
+        recommendations.append("Earthwork imbalance is still high; favor grading refinement and pad/road tie-in smoothing.")
+    if drainage_capacity_score < 75.0:
+        recommendations.append("Storm demand is pressuring capacity; prioritize basin release, trunk sizing, or catchment redistribution.")
+    if pipe_efficiency_score < 70.0:
+        recommendations.append("Utility and pipe runs are long for the site size; look for shorter trunk alignments or tighter corridor grouping.")
+    if utility_efficiency_score < 80.0:
+        recommendations.append("Utility coordination still carries efficiency risk; reduce unresolved crossings and shallow cover exposure.")
+    if not recommendations:
+        recommendations.append("Current design is reasonably balanced across parking, grading, drainage, and utility efficiency.")
+
+    return {
+        "active_goal": active_goal or "balanced",
+        "planner_score_total": round(safe_float(planner_score.get("total"), 0.0), 3),
+        "weighted_components": weighted,
+        "component_scores": component_scores,
+        "overall_score": overall_score,
+        "metrics": {
+            "parking_target": parking_target,
+            "parking_actual": parking_actual,
+            "earthwork_net_cf": round(net_cf, 3),
+            "storm_pipe_length_ft": round(storm_pipe_length_ft, 3),
+            "utility_length_ft": round(utility_length_ft, 3),
+            "sanitary_length_ft": round(sanitary_length_ft, 3),
+            "total_linear_utility_ft": round(total_linear_utility_ft, 3),
+            "lot_area_sf": round(lot_area_sf, 3),
+            "normalized_linear_density": round(normalized_linear_density, 3),
+            "storm_deficient_count": deficient,
+            "storm_marginal_count": marginal,
+            "max_capacity_ratio": round(max_capacity_ratio, 3),
+        },
+        "recommendations": recommendations[:4],
+    }
+
+
 def _segment_distance(a0: Sequence[float], a1: Sequence[float], b0: Sequence[float], b1: Sequence[float]) -> float:
     def _orientation(p: Tuple[float, float], q: Tuple[float, float], r: Tuple[float, float]) -> float:
         return (q[1] - p[1]) * (r[0] - q[0]) - (q[0] - p[0]) * (r[1] - q[1])
@@ -11897,6 +12017,8 @@ def _run_model_first_workflow(parsed: Dict[str, Any], route: RoutingDecision, op
         }
     except Exception as exc:
         plan["meta"]["quantities"] = {"success": False, "message": f"Quantity computation failed: {exc}"}
+
+    plan["meta"]["optimization_summary"] = _build_optimization_summary(parsed, plan)
 
     try:
         explanation = explain_plan(plan)

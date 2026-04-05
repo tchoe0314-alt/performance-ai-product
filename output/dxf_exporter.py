@@ -1339,6 +1339,9 @@ def _site_plan_summary_rows(plan: Dict[str, Any], actions: List[Dict[str, Any]])
     surface_guidance = safe_dict(drainage.get("surface_guidance"))
     export_validation = safe_dict(drainage.get("export_validation"))
     surface_alignment = safe_dict(export_validation.get("surface_alignment"))
+    optimization = safe_dict(meta.get("optimization_summary"))
+    optimization_scores = safe_dict(optimization.get("component_scores"))
+    optimization_metrics = safe_dict(optimization.get("metrics"))
     rows = [["DISCIPLINE", "KEY VALUE", "CHECK / STATUS"]]
     rows.append(["SITE", f"Imperv {safe_num(stats.get('impervious_area_sf')):.0f} SF", safe_text(meta.get("engineering_status"), "concept").upper()])
     rows.append([
@@ -1410,6 +1413,16 @@ def _site_plan_summary_rows(plan: Dict[str, Any], actions: List[Dict[str, Any]])
             f"{produced_count}/{requested_count or produced_count} ready",
             f"{failed_count} failed" if failed_count else "release review",
         ])
+    if optimization:
+        rows.append([
+            "OPT",
+            f"Score {safe_num(optimization.get('overall_score')):.1f} | Goal {safe_text(optimization.get('active_goal'), 'balanced').upper()}",
+            (
+                f"Park {safe_num(optimization_scores.get('parking_fit')):.0f} / "
+                f"Earth {safe_num(optimization_scores.get('earthwork_balance')):.0f} / "
+                f"Drain {safe_num(optimization_scores.get('drainage_capacity')):.0f}"
+            ),
+        ])
     return rows
 
 
@@ -1424,6 +1437,9 @@ def _site_plan_drainage_guidance_notes(plan: Dict[str, Any]) -> List[str]:
     utilities = safe_dict(meta.get("utilities"))
     utility_coordination = safe_dict(utilities.get("coordination"))
     convergence = safe_dict(meta.get("convergence_summary"))
+    optimization = safe_dict(meta.get("optimization_summary"))
+    optimization_scores = safe_dict(optimization.get("component_scores"))
+    optimization_metrics = safe_dict(optimization.get("metrics"))
     export_validation = safe_dict(drainage.get("export_validation"))
     surface_alignment = safe_dict(export_validation.get("surface_alignment"))
     surface_guidance = safe_dict(drainage.get("surface_guidance"))
@@ -1544,9 +1560,27 @@ def _site_plan_drainage_guidance_notes(plan: Dict[str, Any]) -> List[str]:
             f"CAP {safe_num(primary_spillway.get('assumed_capacity_cfs')):.2f} CFS / "
             f"DAYLIGHT {safe_text(primary_spillway.get('to_target_name'), 'DOWNSTREAM TARGET')}."
         )
+    if optimization:
+        notes.append(
+            "19. OPTIMIZATION REVIEW: "
+            f"GOAL {safe_text(optimization.get('active_goal'), 'BALANCED').upper()} / "
+            f"OVERALL {safe_num(optimization.get('overall_score')):.1f} / "
+            f"PARK {safe_num(optimization_scores.get('parking_fit')):.0f} / "
+            f"EARTH {safe_num(optimization_scores.get('earthwork_balance')):.0f} / "
+            f"DRAIN {safe_num(optimization_scores.get('drainage_capacity')):.0f} / "
+            f"PIPE {safe_num(optimization_scores.get('pipe_efficiency')):.0f}."
+        )
+        notes.append(
+            "20. OPTIMIZATION METRICS: "
+            f"PARK {int(round(safe_num(optimization_metrics.get('parking_actual'))))}/"
+            f"{int(round(safe_num(optimization_metrics.get('parking_target')))) if safe_num(optimization_metrics.get('parking_target')) > 0 else int(round(safe_num(optimization_metrics.get('parking_actual'))))} / "
+            f"NET EARTH {safe_num(optimization_metrics.get('earthwork_net_cf')):.0f} CF / "
+            f"LINEAR {safe_num(optimization_metrics.get('total_linear_utility_ft')):.0f} LF / "
+            f"CAP RATIO {safe_num(optimization_metrics.get('max_capacity_ratio')):.2f}."
+        )
     if utilities:
         notes.append(
-            "19. UTILITY CORRIDOR: "
+            "21. UTILITY CORRIDOR: "
             f"MIN COVER {safe_num(utilities.get('min_cover_ft')):.1f} FT / "
             f"MIN SEP {safe_num(utilities.get('min_horizontal_separation_ft')):.1f} H, "
             f"{safe_num(utilities.get('min_vertical_separation_ft')):.1f} V / "
@@ -1555,7 +1589,7 @@ def _site_plan_drainage_guidance_notes(plan: Dict[str, Any]) -> List[str]:
         )
     if utility_coordination:
         notes.append(
-            "20. UTILITY COORDINATION: "
+            "22. UTILITY COORDINATION: "
             f"{int(round(safe_num(utility_coordination.get('reroute_resolution_count'))))} REROUTE / "
             f"{int(round(safe_num(utility_coordination.get('vertical_adjustment_count'))))} VERTICAL ADJUST / "
             f"{int(round(safe_num(utility_coordination.get('added_structures_from_coordination'))))} STRUCTURES / "
@@ -1564,7 +1598,7 @@ def _site_plan_drainage_guidance_notes(plan: Dict[str, Any]) -> List[str]:
             f"{'POST-VALIDATED' if bool(utility_coordination.get('post_validation_valid', True)) else 'POST-VALIDATION CHECK REQUIRED'}."
         )
         notes.append(
-            "21. UTILITY CLEARANCE REVIEW: "
+            "23. UTILITY CLEARANCE REVIEW: "
             f"{int(round(safe_num(utility_coordination.get('clearance_compliant_checks'))))}/"
             f"{int(round(safe_num(utility_coordination.get('clearance_total_checks'))))} CHECKS COMPLIANT / "
             f"MIN ACHIEVED {safe_num(utility_coordination.get('min_achieved_horizontal_clearance_ft')):.1f} H, "

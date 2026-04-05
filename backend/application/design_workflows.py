@@ -133,6 +133,7 @@ def build_run_summary(
     stage_completeness = dict(plan_meta.get("stage_completeness") or {})
     coordination = dict(plan_meta.get("coordination") or {})
     convergence = dict(plan_meta.get("convergence_summary") or {})
+    optimization = dict(plan_meta.get("optimization_summary") or {})
     run_id = metadata.get("_workflow_run_id") or new_workflow_id("run")
     created_at = now_ts()
     blocked_exports = list(convergence.get("blocked_exports") or [])
@@ -215,6 +216,13 @@ def build_run_summary(
             "fix_summary": dict(convergence.get("fix_summary") or {}),
             "dominant_issue_categories": list(dict(convergence.get("fix_summary") or {}).get("dominant_issue_categories") or []),
             "last_fix_attempt": dict(dict(convergence.get("fix_summary") or {}).get("last_fix_attempt") or {}),
+        },
+        "optimization_summary": {
+            "active_goal": str(optimization.get("active_goal") or ""),
+            "overall_score": float(optimization.get("overall_score") or 0.0),
+            "component_scores": dict(optimization.get("component_scores") or {}),
+            "metrics": dict(optimization.get("metrics") or {}),
+            "recommendations": list(optimization.get("recommendations") or []),
         },
         "reliability_summary": {
             "release_ready": release_ready,

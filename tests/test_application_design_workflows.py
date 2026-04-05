@@ -35,6 +35,24 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
                             "statuses": {"layout": "complete"},
                         },
                         "coordination": {"selected_group_strategy": "balanced_group"},
+                        "optimization_summary": {
+                            "active_goal": "balanced",
+                            "overall_score": 82.5,
+                            "component_scores": {
+                                "parking_fit": 100.0,
+                                "earthwork_balance": 78.0,
+                                "drainage_capacity": 85.0,
+                                "pipe_efficiency": 74.0,
+                            },
+                            "metrics": {
+                                "parking_target": 24,
+                                "parking_actual": 24,
+                                "earthwork_net_cf": -320.0,
+                            },
+                            "recommendations": [
+                                "Earthwork imbalance is still high; favor grading refinement and pad/road tie-in smoothing."
+                            ],
+                        },
                         "convergence_summary": {
                             "converged": True,
                             "passes_run": 2,
@@ -115,6 +133,9 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertEqual(summary["run_id"], "run_123")
         self.assertEqual(summary["engineering_status"]["status"], "complete")
         self.assertEqual(summary["coordination_summary"]["selected_strategy"], "balanced_group")
+        self.assertEqual(summary["optimization_summary"]["active_goal"], "balanced")
+        self.assertEqual(summary["optimization_summary"]["component_scores"]["parking_fit"], 100.0)
+        self.assertEqual(summary["optimization_summary"]["metrics"]["parking_target"], 24)
         self.assertTrue(summary["convergence_summary"]["converged"])
         self.assertEqual(summary["convergence_summary"]["fix_summary"]["autofix_actions"], ["drainage_retry_bias"])
         self.assertEqual(summary["convergence_summary"]["assumption_summary"]["categories"], ["drainage", "layout"])
