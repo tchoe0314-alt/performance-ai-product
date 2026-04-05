@@ -1317,6 +1317,51 @@ export default function PerformanceAIDashboard() {
         setPrompt("");
       }
     } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "";
+      const looksLikeConnectivityFailure =
+        errorMessage.includes("could not reach the backend") ||
+        errorMessage.includes("Failed to fetch") ||
+        errorMessage.includes("Load failed") ||
+        errorMessage.includes("NetworkError");
+      if (looksLikeConnectivityFailure && token) {
+        try {
+          const queued = await postJson<{ job: JobSummary }>(
+            "/api/jobs/orchestrate",
+            {
+              project_id: projectId || null,
+              request: requestPayload,
+            },
+            { token },
+          );
+          setActiveJobId(queued.job.job_id);
+          appendChatMessage(
+            "assistant",
+            [
+              assistantPrefix,
+              "The live run took too long to stay on the direct connection, so I queued it in the background instead.",
+              `Job ${queued.job.job_id} is now running and I’ll pick it up when it finishes.`,
+            ]
+              .filter(Boolean)
+              .join(" "),
+            "status",
+          );
+          setStatusMessage(
+            `The live run was queued as ${queued.job.job_id} because the direct request took too long.`,
+          );
+          return;
+        } catch (queueError) {
+          const queueMessage =
+            queueError instanceof Error ? queueError.message : "Job queue failed.";
+          appendChatMessage(
+            "assistant",
+            queueMessage,
+            "status",
+          );
+          setStatusMessage(queueMessage);
+          return;
+        }
+      }
       appendChatMessage(
         "assistant",
         error instanceof Error
