@@ -133,6 +133,14 @@ def _recent_user_context_text(context: Dict[str, Any], current_message: str) -> 
     return "\n".join(prior_user_messages[-3:])
 
 
+def _last_user_message(context: Dict[str, Any]) -> str:
+    history = list(context.get("chat_history") or [])
+    for item in reversed(history):
+        if str(item.get("role") or "").strip().lower() == "user":
+            return str(item.get("content") or "").strip()
+    return ""
+
+
 def _extract_chat_memory(value: Any, limit: int = 8) -> Dict[str, Any]:
     if not isinstance(value, list):
         return {"preferences": [], "constraints": [], "examples": []}
@@ -852,6 +860,27 @@ def _is_ambiguous_request(message: str, context: Dict[str, Any]) -> bool:
             return True
 
     return False
+
+
+def _looks_like_run_confirmation(message: str, context: Dict[str, Any]) -> bool:
+    lowered = _normalized_chat_text(message)
+    if lowered not in {
+        "send it",
+        "run it",
+        "go ahead",
+        "go for it",
+        "start it",
+        "send",
+        "run",
+    }:
+        return False
+    previous_user = _last_user_message(context)
+    if not previous_user:
+        return False
+    return _looks_like_explicit_design_request(previous_user) or _is_well_specified_design_request(
+        previous_user,
+        context,
+    )
 
 
 def _conversation_reply(message: str, context: Dict[str, Any]) -> str:
@@ -1982,6 +2011,19 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             intent=intent,
             assistant_message=contextual_reply,
             reason="Answered from current workspace context",
+            confidence=0.9,
+            control_overrides=overrides,
+        )
+
+    if _looks_like_run_confirmation(message, context):
+        previous_user = _last_user_message(context)
+        return _base_decision(
+            intent="design",
+            assistant_message="I’m using the design request you just gave me and moving forward with it."
+            + _remembered_instruction_fragment(context),
+            run_mode="run",
+            design_prompt=previous_user,
+            reason="Follow-up run confirmation detected",
             confidence=0.9,
             control_overrides=overrides,
         )

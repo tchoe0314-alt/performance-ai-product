@@ -242,6 +242,24 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertEqual(result["run_mode"], "run")
         self.assertFalse(result["needs_clarification"])
 
+    def test_send_it_reuses_previous_design_prompt(self):
+        original_prompt = (
+            "Design a fully engineered civil site plan for a 22-acre mixed-use development on irregular terrain "
+            "with an average slope of 5% from the northwest corner (112.5 ft) to the southeast corner (101.0 ft)."
+        )
+        result = _decide(
+            "send it",
+            {
+                "strategy_mode": "assisted",
+                "chat_thread": [
+                    {"role": "user", "content": original_prompt},
+                ],
+            },
+        )
+        self.assertEqual(result["intent"], "design")
+        self.assertEqual(result["run_mode"], "run")
+        self.assertEqual(result["design_prompt"], original_prompt)
+
     def test_follow_up_design_reply_mentions_remembered_constraint(self):
         result = _decide(
             "add more parking",
