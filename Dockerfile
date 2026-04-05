@@ -12,10 +12,12 @@ RUN apt-get update \
 
 COPY requirements_backend.txt .
 RUN pip install -r requirements_backend.txt
+
 COPY . .
 
 ENV PERFORMANCE_AI_STORAGE_DIR=/data
 ENV MPLCONFIGDIR=/tmp/mplconfig
+
 EXPOSE 8002
 
 CMD ["sh", "-c", "mkdir -p \"$PERFORMANCE_AI_STORAGE_DIR\" \"$MPLCONFIGDIR\" && uvicorn backend.api.app:app --host 0.0.0.0 --port ${PORT:-8002}"]
