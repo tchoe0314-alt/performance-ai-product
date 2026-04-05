@@ -228,6 +228,23 @@ def _is_omitted(payload: Dict[str, Any], path: str) -> bool:
     return _field_source(payload, path) == "omit"
 
 
+def _component_label(name: str) -> str:
+    labels = {
+        "program_fit": "program fit",
+        "parking": "parking",
+        "circulation": "circulation",
+        "grading": "grading",
+        "drainage": "drainage",
+        "pipes": "pipe efficiency",
+        "utilities": "utility efficiency",
+        "compliance": "compliance",
+        "constructability": "constructability",
+        "completeness": "completeness",
+        "confidence": "confidence",
+    }
+    return labels.get(name, name.replace("_", " "))
+
+
 # =============================================================================
 # DATA MODELS
 # =============================================================================
@@ -485,6 +502,7 @@ class PlannerIntelligence:
                 "requested_top_k": top_k,
                 "preferences": deepcopy(preferences),
                 "evolution_rounds": evolution_rounds,
+                "comparison_summary": self._build_comparison_summary(recommended, top_options),
                 "round_records": [
                     {
                         "round_index": r.round_index,
@@ -499,6 +517,98 @@ class PlannerIntelligence:
             },
         )
         return result
+
+    def _candidate_component_scores(self, candidate: CandidatePlan) -> Dict[str, float]:
+        return {
+            "program_fit": _safe_float(candidate.score.program_fit),
+            "parking": _safe_float(candidate.score.parking),
+            "circulation": _safe_float(candidate.score.circulation),
+            "grading": _safe_float(candidate.score.grading),
+            "drainage": _safe_float(candidate.score.drainage),
+            "pipes": _safe_float(candidate.score.pipes),
+            "utilities": _safe_float(candidate.score.utilities),
+            "compliance": _safe_float(candidate.score.compliance),
+            "constructability": _safe_float(candidate.score.constructability),
+            "completeness": _safe_float(candidate.score.completeness),
+            "confidence": _safe_float(candidate.score.confidence),
+        }
+
+    def _build_comparison_summary(
+        self,
+        recommended: Optional[CandidatePlan],
+        top_options: Sequence[CandidatePlan],
+    ) -> Dict[str, Any]:
+        if recommended is None:
+            return {}
+
+        runner_up = next((option for option in top_options if option.candidate_id != recommended.candidate_id), None)
+        if runner_up is None:
+            return {
+                "recommended_option_name": recommended.option_name,
+                "runner_up_option_name": "",
+                "score_gap": 0.0,
+                "what_got_better": [],
+                "what_got_worse": [],
+                "why_it_won": list(recommended.pros[:3]),
+                "tradeoff_summary": f"{recommended.option_name} is currently the only viable high-ranked option.",
+            }
+
+        recommended_scores = self._candidate_component_scores(recommended)
+        runner_up_scores = self._candidate_component_scores(runner_up)
+        deltas: List[Tuple[str, float, float, float]] = []
+        for name, value in recommended_scores.items():
+            baseline = _safe_float(runner_up_scores.get(name), 0.0)
+            deltas.append((name, round(value - baseline, 2), value, baseline))
+
+        better = [
+            {
+                "dimension": name,
+                "label": _component_label(name),
+                "delta": delta,
+                "recommended_score": current,
+                "runner_up_score": baseline,
+            }
+            for name, delta, current, baseline in sorted(deltas, key=lambda item: item[1], reverse=True)
+            if delta >= 4.0
+        ][:3]
+        worse = [
+            {
+                "dimension": name,
+                "label": _component_label(name),
+                "delta": delta,
+                "recommended_score": current,
+                "runner_up_score": baseline,
+            }
+            for name, delta, current, baseline in sorted(deltas, key=lambda item: item[1])
+            if delta <= -4.0
+        ][:2]
+
+        why_it_won: List[str] = []
+        if better:
+            why_it_won.append(
+                f"It led on {better[0]['label']} by {abs(_safe_float(better[0]['delta'])):.1f} points."
+            )
+        why_it_won.extend(item for item in recommended.pros[:3] if item and item not in why_it_won)
+
+        better_labels = ", ".join(item["label"] for item in better) if better else "overall balance"
+        worse_labels = ", ".join(item["label"] for item in worse) if worse else "no major tradeoff"
+        tradeoff_summary = (
+            f"{recommended.option_name} beat {runner_up.option_name} by "
+            f"{_safe_float(recommended.score.total - runner_up.score.total):.1f} points. "
+            f"It was stronger in {better_labels}, while the main tradeoff was {worse_labels}."
+        )
+
+        return {
+            "recommended_option_name": recommended.option_name,
+            "runner_up_option_name": runner_up.option_name,
+            "recommended_candidate_id": recommended.candidate_id,
+            "runner_up_candidate_id": runner_up.candidate_id,
+            "score_gap": round(_safe_float(recommended.score.total - runner_up.score.total), 2),
+            "what_got_better": better,
+            "what_got_worse": worse,
+            "why_it_won": why_it_won,
+            "tradeoff_summary": tradeoff_summary,
+        }
 
     def generate_more_options(
         self,

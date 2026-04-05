@@ -223,6 +223,7 @@ def build_run_summary(
             "component_scores": dict(optimization.get("component_scores") or {}),
             "metrics": dict(optimization.get("metrics") or {}),
             "recommendations": list(optimization.get("recommendations") or []),
+            "comparison_summary": dict(optimization.get("comparison_summary") or metadata.get("comparison_summary") or {}),
         },
         "reliability_summary": {
             "release_ready": release_ready,

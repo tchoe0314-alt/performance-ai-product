@@ -758,6 +758,7 @@ def _multi_option_flow(parsed_payload: Dict[str, Any], req: PlannerOrchestratorR
         "recommended_family": result.recommended.option_family,
         "recommended_pros": list(result.recommended.pros),
         "recommended_cons": list(result.recommended.cons),
+        "comparison_summary": deepcopy(_safe_dict(result.metadata).get("comparison_summary", {})),
         "candidate_count": _safe_dict(result.metadata).get("candidate_count", len(result.top_options)),
         "requested_top_k": _safe_dict(result.metadata).get("requested_top_k", req.top_k),
         "preferences": deepcopy(_safe_dict(result.metadata).get("preferences", preferences)),

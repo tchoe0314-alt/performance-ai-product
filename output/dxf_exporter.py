@@ -1342,6 +1342,8 @@ def _site_plan_summary_rows(plan: Dict[str, Any], actions: List[Dict[str, Any]])
     optimization = safe_dict(meta.get("optimization_summary"))
     optimization_scores = safe_dict(optimization.get("component_scores"))
     optimization_metrics = safe_dict(optimization.get("metrics"))
+    optimization_comparison = safe_dict(optimization.get("comparison_summary"))
+    optimization_comparison = safe_dict(optimization.get("comparison_summary"))
     rows = [["DISCIPLINE", "KEY VALUE", "CHECK / STATUS"]]
     rows.append(["SITE", f"Imperv {safe_num(stats.get('impervious_area_sf')):.0f} SF", safe_text(meta.get("engineering_status"), "concept").upper()])
     rows.append([
@@ -1423,6 +1425,15 @@ def _site_plan_summary_rows(plan: Dict[str, Any], actions: List[Dict[str, Any]])
                 f"Drain {safe_num(optimization_scores.get('drainage_capacity')):.0f}"
             ),
         ])
+    if optimization_comparison:
+        rows.append([
+            "COMPARE",
+            (
+                f"{safe_text(optimization_comparison.get('recommended_option_name'), 'Recommended')} vs "
+                f"{safe_text(optimization_comparison.get('runner_up_option_name'), 'Runner-up')}"
+            ),
+            f"Gap {safe_num(optimization_comparison.get('score_gap')):.1f}",
+        ])
     return rows
 
 
@@ -1440,6 +1451,7 @@ def _site_plan_drainage_guidance_notes(plan: Dict[str, Any]) -> List[str]:
     optimization = safe_dict(meta.get("optimization_summary"))
     optimization_scores = safe_dict(optimization.get("component_scores"))
     optimization_metrics = safe_dict(optimization.get("metrics"))
+    optimization_comparison = safe_dict(optimization.get("comparison_summary"))
     export_validation = safe_dict(drainage.get("export_validation"))
     surface_alignment = safe_dict(export_validation.get("surface_alignment"))
     surface_guidance = safe_dict(drainage.get("surface_guidance"))
@@ -1578,9 +1590,18 @@ def _site_plan_drainage_guidance_notes(plan: Dict[str, Any]) -> List[str]:
             f"LINEAR {safe_num(optimization_metrics.get('total_linear_utility_ft')):.0f} LF / "
             f"CAP RATIO {safe_num(optimization_metrics.get('max_capacity_ratio')):.2f}."
         )
+    if optimization_comparison:
+        better = [safe_text(safe_dict(item).get("label"), "") for item in safe_list(optimization_comparison.get("what_got_better")) if safe_text(safe_dict(item).get("label"), "")]
+        worse = [safe_text(safe_dict(item).get("label"), "") for item in safe_list(optimization_comparison.get("what_got_worse")) if safe_text(safe_dict(item).get("label"), "")]
+        notes.append(
+            "21. OPTION COMPARISON: "
+            f"{safe_text(optimization_comparison.get('tradeoff_summary'), 'Recommended option comparison available.')} "
+            f"BETTER: {', '.join(better) if better else 'OVERALL BALANCE'} / "
+            f"TRADEOFFS: {', '.join(worse) if worse else 'NO MAJOR TRADEOFF'}."
+        )
     if utilities:
         notes.append(
-            "21. UTILITY CORRIDOR: "
+            "22. UTILITY CORRIDOR: "
             f"MIN COVER {safe_num(utilities.get('min_cover_ft')):.1f} FT / "
             f"MIN SEP {safe_num(utilities.get('min_horizontal_separation_ft')):.1f} H, "
             f"{safe_num(utilities.get('min_vertical_separation_ft')):.1f} V / "
@@ -1589,7 +1610,7 @@ def _site_plan_drainage_guidance_notes(plan: Dict[str, Any]) -> List[str]:
         )
     if utility_coordination:
         notes.append(
-            "22. UTILITY COORDINATION: "
+            "23. UTILITY COORDINATION: "
             f"{int(round(safe_num(utility_coordination.get('reroute_resolution_count'))))} REROUTE / "
             f"{int(round(safe_num(utility_coordination.get('vertical_adjustment_count'))))} VERTICAL ADJUST / "
             f"{int(round(safe_num(utility_coordination.get('added_structures_from_coordination'))))} STRUCTURES / "
@@ -1598,7 +1619,7 @@ def _site_plan_drainage_guidance_notes(plan: Dict[str, Any]) -> List[str]:
             f"{'POST-VALIDATED' if bool(utility_coordination.get('post_validation_valid', True)) else 'POST-VALIDATION CHECK REQUIRED'}."
         )
         notes.append(
-            "23. UTILITY CLEARANCE REVIEW: "
+            "24. UTILITY CLEARANCE REVIEW: "
             f"{int(round(safe_num(utility_coordination.get('clearance_compliant_checks'))))}/"
             f"{int(round(safe_num(utility_coordination.get('clearance_total_checks'))))} CHECKS COMPLIANT / "
             f"MIN ACHIEVED {safe_num(utility_coordination.get('min_achieved_horizontal_clearance_ft')):.1f} H, "

@@ -1,7 +1,7 @@
 import unittest
 
 from planner import build_plan
-from planner_intelligence import CandidateLineage, CandidatePlan, PlannerIntelligence
+from planner_intelligence import CandidateLineage, CandidatePlan, CandidateScore, PlannerIntelligence
 
 
 class Phase10OptimizationSummaryTest(unittest.TestCase):
@@ -62,6 +62,48 @@ class Phase10OptimizationSummaryTest(unittest.TestCase):
         intelligence._score_candidate(candidate, {"goal": "reduce_pipe_length"})
         self.assertGreater(candidate.score.bonuses.get("goal_match", 0.0), 0.0)
         self.assertGreater(candidate.score.bonuses.get("optimization_alignment", 0.0), 0.0)
+
+    def test_build_comparison_summary_reports_tradeoffs(self) -> None:
+        intelligence = PlannerIntelligence()
+        recommended = CandidatePlan(
+            candidate_id="cand_win",
+            option_name="Balanced Option",
+            strategy={},
+            payload={"mode": "site_plan"},
+            lineage=CandidateLineage(candidate_id="cand_win"),
+            score=CandidateScore(
+                total=92.5,
+                parking=72.0,
+                grading=85.0,
+                drainage=91.0,
+                utilities=79.0,
+                compliance=88.0,
+            ),
+            pros=["Strong drainage organization is stronger than lower-ranked alternatives."],
+        )
+        runner_up = CandidatePlan(
+            candidate_id="cand_alt",
+            option_name="Parking Option",
+            strategy={},
+            payload={"mode": "site_plan"},
+            lineage=CandidateLineage(candidate_id="cand_alt"),
+            score=CandidateScore(
+                total=84.0,
+                parking=84.0,
+                grading=68.0,
+                drainage=73.0,
+                utilities=70.0,
+                compliance=80.0,
+            ),
+            pros=["Strong parking performance relative to the requested or inferred program."],
+        )
+        comparison = intelligence._build_comparison_summary(recommended, [recommended, runner_up])
+        self.assertEqual(str(comparison.get("recommended_option_name") or ""), "Balanced Option")
+        self.assertEqual(str(comparison.get("runner_up_option_name") or ""), "Parking Option")
+        self.assertGreater(float(comparison.get("score_gap") or 0.0), 0.0)
+        self.assertIn("tradeoff_summary", comparison)
+        self.assertIn("why_it_won", comparison)
+        self.assertIn("what_got_better", comparison)
 
 
 if __name__ == "__main__":

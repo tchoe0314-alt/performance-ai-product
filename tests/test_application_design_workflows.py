@@ -52,6 +52,15 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
                             "recommendations": [
                                 "Earthwork imbalance is still high; favor grading refinement and pad/road tie-in smoothing."
                             ],
+                            "comparison_summary": {
+                                "recommended_option_name": "Balanced Option",
+                                "runner_up_option_name": "Drainage Option",
+                                "score_gap": 6.5,
+                                "tradeoff_summary": "Balanced Option beat Drainage Option by 6.5 points.",
+                                "what_got_better": [{"label": "drainage"}],
+                                "what_got_worse": [{"label": "parking"}],
+                                "why_it_won": ["It led on drainage by 8.0 points."],
+                            },
                         },
                         "convergence_summary": {
                             "converged": True,
@@ -136,6 +145,7 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertEqual(summary["optimization_summary"]["active_goal"], "balanced")
         self.assertEqual(summary["optimization_summary"]["component_scores"]["parking_fit"], 100.0)
         self.assertEqual(summary["optimization_summary"]["metrics"]["parking_target"], 24)
+        self.assertEqual(summary["optimization_summary"]["comparison_summary"]["runner_up_option_name"], "Drainage Option")
         self.assertTrue(summary["convergence_summary"]["converged"])
         self.assertEqual(summary["convergence_summary"]["fix_summary"]["autofix_actions"], ["drainage_retry_bias"])
         self.assertEqual(summary["convergence_summary"]["assumption_summary"]["categories"], ["drainage", "layout"])
