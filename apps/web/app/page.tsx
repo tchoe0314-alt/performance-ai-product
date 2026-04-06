@@ -2890,6 +2890,41 @@ export default function PerformanceAIDashboard() {
     );
   }
 
+  const previewReview = planPreviewSummary?.review;
+  const previewAssumptionCategories = (previewReview?.assumption_categories ?? [])
+    .map((item) => toReadableLabel(String(item || "")))
+    .filter(Boolean);
+  const previewFixActions = (previewReview?.autofix_actions ?? [])
+    .map((item) => toReadableLabel(String(item || "")))
+    .filter(Boolean);
+  const previewFixTargets = (previewReview?.dominant_fix_targets ?? [])
+    .map((item) => toReadableLabel(String(item || "")))
+    .filter(Boolean);
+  const previewReviewCategories = (previewReview?.review_categories ?? [])
+    .map((item) => toReadableLabel(String(item || "")))
+    .filter(
+      (item) =>
+        Boolean(item) &&
+        item.toLowerCase() !== "uncategorized" &&
+        item.toLowerCase() !== "general",
+    );
+  const previewBlockedReasons = (previewReview?.blocked_reasons ?? [])
+    .map((item) => toReadableLabel(String(item || "")))
+    .filter(Boolean);
+  const previewFailedDeliverables = (previewReview?.failed_deliverables ?? [])
+    .map((item) => toReadableLabel(String(item || "")))
+    .filter(Boolean);
+  const previewExtraDeliverables = (previewReview?.extra_deliverables ?? [])
+    .map((item) => toReadableLabel(String(item || "")))
+    .filter(Boolean);
+  const previewReadyDeliverables = (previewReview?.ready_deliverables ?? [])
+    .map((item) => toReadableLabel(String(item || "")))
+    .filter(Boolean);
+  const previewRerunSignals = [
+    ...(previewReview?.rerun_stages ?? []).map((item) => toReadableLabel(String(item || ""))),
+    ...(previewReview?.rerun_reasons ?? []).map((item) => toReadableLabel(String(item || ""))),
+  ].filter(Boolean);
+
   return (
     <div className="min-h-screen bg-[#f7f7f8] text-slate-950">
       <div className="flex min-h-screen">
@@ -3285,12 +3320,59 @@ export default function PerformanceAIDashboard() {
             </div>
 
             <div className="rounded-[28px] border border-slate-200 bg-white p-4 md:p-6">
-              <div className="mb-4 flex items-start justify-between gap-4">
-                <div>
+              <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                      Preview Workspace
+                    </span>
+                    {previewReview && (
+                      <span
+                        className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${
+                          previewReview.release_status === "ready"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : previewReview.release_status === "blocked"
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        {previewReview.release_status === "ready"
+                          ? "Release Ready"
+                          : previewReview.release_status === "blocked"
+                            ? "Blocked"
+                            : "Needs Review"}
+                      </span>
+                    )}
+                  </div>
                   <p className="text-sm font-semibold text-slate-950">Live Preview</p>
                   <p className="mt-1 text-sm text-slate-500">
-                    Preview stays centered and updates alongside the conversation.
+                    The preview shows the latest engineered plan even when final export is still under review.
                   </p>
+                  {previewReview && (
+                    <div
+                      className={`inline-flex max-w-3xl items-start rounded-2xl border px-4 py-3 text-sm ${
+                        previewReview.release_status === "ready"
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                          : previewReview.release_status === "blocked"
+                            ? "border-amber-200 bg-amber-50 text-amber-900"
+                            : "border-slate-200 bg-slate-50 text-slate-700"
+                      }`}
+                    >
+                      <div>
+                        <p className="font-semibold">
+                          {previewReview.release_status === "ready"
+                            ? "Release review is clear."
+                            : previewReview.release_status === "blocked"
+                              ? "Export is still blocked."
+                              : "Preview needs follow-up review."}
+                        </p>
+                        <p className="mt-1 text-xs">
+                          {previewReview.release_note ||
+                            "Preview review summary is available for the latest engineering pass."}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -3321,11 +3403,11 @@ export default function PerformanceAIDashboard() {
               </div>
 
               {planPreviewUrl ? (
-                <div className="flex min-h-[560px] items-center justify-center overflow-hidden rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top,#f8fafc_0%,#eef2f7_100%)] p-4">
+                <div className="flex min-h-[560px] items-center justify-center overflow-hidden rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top,#f8fafc_0%,#eef2f7_100%)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
                   <img
                     src={planPreviewUrl}
                     alt="Generated plan preview"
-                    className="max-h-[520px] w-full object-contain"
+                    className="max-h-[520px] w-full rounded-[20px] bg-white object-contain shadow-sm"
                   />
                 </div>
               ) : (
@@ -3334,142 +3416,125 @@ export default function PerformanceAIDashboard() {
                 </div>
               )}
 
-              {planPreviewSummary?.review && (
-                <div
-                  className={`mt-4 rounded-2xl border px-4 py-3 text-sm ${
-                    planPreviewSummary.review.release_status === "ready"
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                      : planPreviewSummary.review.release_status === "blocked"
-                        ? "border-amber-200 bg-amber-50 text-amber-900"
-                        : "border-slate-200 bg-slate-50 text-slate-700"
-                  }`}
-                >
-                  <p className="font-semibold">
-                    {planPreviewSummary.review.release_status === "ready"
-                      ? "Release Review: Ready"
-                      : planPreviewSummary.review.release_status === "blocked"
-                        ? "Release Review: Blocked"
-                        : "Release Review: Needs Review"}
-                  </p>
-                  <p className="mt-1 text-xs">
-                    {planPreviewSummary.review.release_note ||
-                      "Preview review summary is available for the latest engineering pass."}
-                  </p>
-                </div>
-              )}
+              {previewReview && (
+                <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(320px,1fr)]">
+                  <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Engineering Review
+                        </p>
+                        <p className="mt-2 text-base font-semibold text-slate-950">
+                          Latest run summary
+                        </p>
+                      </div>
+                      <div className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600 shadow-sm ring-1 ring-slate-200">
+                        {previewReview.unresolved_conflict_count ?? 0} unresolved
+                      </div>
+                    </div>
 
-              {planPreviewSummary?.review && (
-                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Assumptions
-                    </p>
-                    <p className="mt-2 text-sm font-medium text-slate-900">
-                      {planPreviewSummary.review.assumption_count ?? 0} recorded
-                    </p>
-                    <p className="mt-1 text-xs text-slate-600">
-                      {(planPreviewSummary.review.assumption_categories ?? [])
-                        .map((item) => toReadableLabel(String(item || "")))
-                        .slice(0, 3)
-                        .join(", ") || "No assisted assumptions recorded."}
-                    </p>
+                    <div className="mt-5 space-y-4">
+                      <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          Assumptions
+                        </p>
+                        <p className="mt-2 text-sm text-slate-700">
+                          {previewAssumptionCategories.length
+                            ? joinNatural(previewAssumptionCategories, 4)
+                            : "No assisted assumptions were recorded on the latest pass."}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          Fixes Applied
+                        </p>
+                        <p className="mt-2 text-sm text-slate-700">
+                          {previewFixActions.length
+                            ? joinNatural(previewFixActions, 4)
+                            : previewFixTargets.length
+                              ? joinNatural(previewFixTargets, 4)
+                              : "No corrective fix actions were recorded in the latest pass."}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          Needs Review
+                        </p>
+                        <p className="mt-2 text-sm text-slate-700">
+                          {previewReviewCategories.length
+                            ? joinNatural(previewReviewCategories, 4)
+                            : "No major review categories are currently flagged."}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          Blockers
+                        </p>
+                        <p className="mt-2 text-sm text-slate-700">
+                          {previewBlockedReasons.length
+                            ? joinNatural(previewBlockedReasons, 4)
+                            : "No export blockers are currently recorded."}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Fixes Applied
-                    </p>
-                    <p className="mt-2 text-sm font-medium text-slate-900">
-                      {(planPreviewSummary.review.autofix_actions ?? []).length} fix actions
-                    </p>
-                    <p className="mt-1 text-xs text-slate-600">
-                      {(planPreviewSummary.review.autofix_actions ?? [])
-                        .map((item) => toReadableLabel(String(item || "")))
-                        .slice(0, 2)
-                        .join(", ") ||
-                        (planPreviewSummary.review.dominant_fix_targets ?? [])
-                          .map((item) => toReadableLabel(String(item || "")))
-                          .slice(0, 2)
-                          .join(", ") ||
-                        "No fix actions recorded in the latest pass."}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Needs Review
-                    </p>
-                    <p className="mt-2 text-sm font-medium text-slate-900">
-                      {planPreviewSummary.review.unresolved_conflict_count ?? 0} unresolved
-                    </p>
-                    <p className="mt-1 text-xs text-slate-600">
-                      {(planPreviewSummary.review.review_categories ?? [])
-                        .map((item) => toReadableLabel(String(item || "")))
-                        .filter(
-                          (item) =>
-                            item.toLowerCase() !== "uncategorized" &&
-                            item.toLowerCase() !== "general",
-                        )
-                        .slice(0, 3)
-                        .join(", ") || "No outstanding review categories recorded."}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Blocked
-                    </p>
-                    <p className="mt-2 text-sm font-medium text-slate-900">
-                      {(planPreviewSummary.review.blocked_exports ?? []).length} blocked outputs
-                    </p>
-                    <p className="mt-1 text-xs text-slate-600">
-                      {(planPreviewSummary.review.blocked_reasons ?? [])
-                        .map((item) => toReadableLabel(String(item || "")))
-                        .slice(0, 2)
-                        .join(", ") || "No export blockers recorded."}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Deliverables
-                    </p>
-                    <p className="mt-2 text-sm font-medium text-slate-900">
-                      {(planPreviewSummary.review.ready_deliverables ?? []).length}/
-                      {(planPreviewSummary.review.requested_deliverables ?? []).length ||
-                        (planPreviewSummary.review.ready_deliverables ?? []).length} requested ready
-                    </p>
-                    <p className="mt-1 text-xs text-slate-600">
-                      {(planPreviewSummary.review.failed_deliverables ?? []).length
-                        ? `Failed: ${(planPreviewSummary.review.failed_deliverables ?? [])
-                            .map((item) => toReadableLabel(String(item || "")))
-                            .slice(0, 2)
-                            .join(", ")}`
-                        : (planPreviewSummary.review.extra_deliverables ?? []).length
-                          ? `Extra: ${(planPreviewSummary.review.extra_deliverables ?? [])
-                              .map((item) => toReadableLabel(String(item || "")))
-                              .slice(0, 2)
-                              .join(", ")}`
-                          : (planPreviewSummary.review.ready_deliverables ?? [])
-                              .map((item) => toReadableLabel(String(item || "")))
-                              .slice(0, 2)
-                              .join(", ") || "No deliverables recorded yet."}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Stability
-                    </p>
-                    <p className="mt-2 text-sm font-medium text-slate-900">
-                      {planPreviewSummary.review.rerun_total ?? 0} reruns
-                    </p>
-                    <p className="mt-1 text-xs text-slate-600">
-                      {(planPreviewSummary.review.rerun_stages ?? [])
-                        .map((item) => toReadableLabel(String(item || "")))
-                        .slice(0, 2)
-                        .join(", ") ||
-                        (planPreviewSummary.review.rerun_reasons ?? [])
-                          .map((item) => toReadableLabel(String(item || "")))
-                          .slice(0, 2)
-                          .join(", ") ||
-                        "No repeated reruns recorded."}
-                    </p>
+
+                  <div className="space-y-4">
+                    <div className="rounded-[24px] border border-slate-200 bg-white p-5">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Deliverables
+                      </p>
+                      <p className="mt-3 text-2xl font-semibold text-slate-950">
+                        {(previewReview.ready_deliverables ?? []).length}/
+                        {(previewReview.requested_deliverables ?? []).length ||
+                          (previewReview.ready_deliverables ?? []).length}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-500">Requested outputs ready</p>
+                      <div className="mt-4 space-y-3 text-sm text-slate-700">
+                        <div>
+                          <p className="font-medium text-slate-900">Ready now</p>
+                          <p className="mt-1 text-slate-600">
+                            {previewReadyDeliverables.length
+                              ? joinNatural(previewReadyDeliverables, 4)
+                              : "No ready deliverables recorded yet."}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="font-medium text-slate-900">Still blocked</p>
+                          <p className="mt-1 text-slate-600">
+                            {previewFailedDeliverables.length
+                              ? joinNatural(previewFailedDeliverables, 4)
+                              : "No requested deliverables are explicitly failed."}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="font-medium text-slate-900">Extra preview outputs</p>
+                          <p className="mt-1 text-slate-600">
+                            {previewExtraDeliverables.length
+                              ? joinNatural(previewExtraDeliverables, 4)
+                              : "No extra preview-only outputs were recorded."}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[24px] border border-slate-200 bg-white p-5">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Run Stability
+                      </p>
+                      <p className="mt-3 text-2xl font-semibold text-slate-950">
+                        {previewReview.rerun_total ?? 0}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-500">Reruns across the latest engineering cycle</p>
+                      <p className="mt-4 text-sm text-slate-600">
+                        {previewRerunSignals.length
+                          ? joinNatural(previewRerunSignals, 4)
+                          : "No repeated reruns were recorded in the latest pass."}
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}

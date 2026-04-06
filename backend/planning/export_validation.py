@@ -85,15 +85,35 @@ def primary_engineered_basins(drainage: Dict[str, Any]) -> List[Dict[str, Any]]:
             primary.append(rec)
             continue
         canonical_type = safe_str(rec.get("canonical_type"))
-        has_detention_design = bool(safe_dict(rec.get("detention_design")))
+        detention_design = safe_dict(rec.get("detention_design"))
+        has_detention_design = bool(detention_design)
         has_overflow = bool(safe_dict(rec.get("overflow_spillway")))
-        if is_exportable and (
+        if (
             canonical_type == "detention_basin"
             or has_detention_design
             or has_overflow
         ):
             candidates.append(rec)
-    return primary or candidates
+    if primary:
+        return primary
+
+    def _candidate_score(rec: Dict[str, Any]) -> tuple:
+        detention_design = safe_dict(rec.get("detention_design"))
+        geometry_quality = safe_dict(rec.get("geometry_quality"))
+        adequacy = safe_str(detention_design.get("adequacy_status"), "adequate").lower()
+        has_bottom = bool(geometry_quality.get("has_bottom"))
+        consistency = safe_float(geometry_quality.get("footprint_consistency_ratio"), 0.0)
+        return (
+            1 if bool(rec.get("exportable")) else 0,
+            1 if adequacy == "adequate" else 0,
+            1 if bool(safe_dict(rec.get("overflow_spillway"))) else 0,
+            1 if has_bottom else 0,
+            round(consistency, 3),
+            round(safe_float(rec.get("area_sf"), 0.0), 3),
+        )
+
+    candidates.sort(key=_candidate_score, reverse=True)
+    return candidates
 
 
 def grading_export_validation(
