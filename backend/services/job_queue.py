@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from queue import Empty, Queue
 from typing import Any, Callable, Dict, List, Optional
+from dataclasses import asdict, is_dataclass
+from enum import Enum
 import json
 import threading
 import time
@@ -25,8 +27,32 @@ def _new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Enum):
+        return value.value
+    if is_dataclass(value):
+        return _json_safe(asdict(value))
+    if isinstance(value, dict):
+        return {str(key): _json_safe(val) for key, val in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+    if hasattr(value, "to_dict") and callable(getattr(value, "to_dict")):
+        try:
+            return _json_safe(value.to_dict())
+        except Exception:
+            pass
+    if hasattr(value, "__dict__"):
+        try:
+            return _json_safe(vars(value))
+        except Exception:
+            pass
+    return str(value)
+
+
 def _json_dumps(value: Any) -> str:
-    return json.dumps(value if value is not None else {})
+    return json.dumps(_json_safe(value if value is not None else {}))
 
 
 def _json_loads(value: Any, default: Any) -> Any:

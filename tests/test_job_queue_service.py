@@ -5,6 +5,8 @@ from pathlib import Path
 
 from backend.services.database import Database
 from backend.services.job_queue import JobQueueService
+from backend.services.project_store import ProjectStore
+from engines.storm.storm_types import StormPipe, StormPipeType
 
 
 class JobQueueServiceTest(unittest.TestCase):
@@ -15,6 +17,7 @@ class JobQueueServiceTest(unittest.TestCase):
         self.queue = JobQueueService(self.db)
 
     def tearDown(self) -> None:
+        self.queue.db = Database(Path(tempfile.gettempdir()) / "civora_job_queue_teardown.db")
         self.tmpdir.cleanup()
 
     def test_list_jobs_returns_full_records(self):
@@ -91,6 +94,64 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(jobs, [])
         self.assertIsNotNone(self.queue._worker)
         self.assertTrue(self.queue._worker.is_alive())
+
+    def test_job_result_serializes_dataclass_objects(self):
+        self.queue.register_handler(
+            "orchestrate",
+            lambda job: {
+                "success": True,
+                "storm_pipe": StormPipe(
+                    name="P-001",
+                    pipe_type=StormPipeType.MAIN.value,
+                    upstream_node_name="I-1",
+                    downstream_node_name="J-1",
+                    route_points=[(0.0, 0.0), (10.0, 0.0)],
+                    diameter_in=18.0,
+                ),
+            },
+        )
+        created = self.queue.submit_job(
+            user_id="u1",
+            job_type="orchestrate",
+            payload={"prompt_text": "storm"},
+        )
+
+        deadline = time.time() + 3.0
+        record = None
+        while time.time() < deadline:
+            record = self.queue.get_job(user_id="u1", job_id=created["job_id"])
+            if record and record["status"] == "completed":
+                break
+            time.sleep(0.05)
+
+        self.assertIsNotNone(record)
+        self.assertEqual(record["status"], "completed")
+        self.assertEqual(record["result"]["storm_pipe"]["name"], "P-001")
+        self.assertEqual(record["result"]["storm_pipe"]["upstream_node_name"], "I-1")
+
+    def test_project_store_serializes_dataclass_results(self):
+        store = ProjectStore(self.db)
+        saved = store.save_project(
+            user_id="u1",
+            project_id=None,
+            name="Storm Demo",
+            latest_result={
+                "success": True,
+                "storm_pipe": StormPipe(
+                    name="P-002",
+                    pipe_type=StormPipeType.TRUNK.value,
+                    upstream_node_name="J-1",
+                    downstream_node_name="O-1",
+                    route_points=[(1.0, 2.0), (8.0, 9.0)],
+                    diameter_in=24.0,
+                ),
+            },
+        )
+
+        loaded = store.get_project(user_id="u1", project_id=saved["project_id"])
+        self.assertIsNotNone(loaded)
+        self.assertEqual(loaded["latest_result"]["storm_pipe"]["name"], "P-002")
+        self.assertEqual(loaded["latest_result"]["storm_pipe"]["diameter_in"], 24.0)
 
 
 if __name__ == "__main__":
