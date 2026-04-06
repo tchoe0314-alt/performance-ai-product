@@ -26,19 +26,97 @@ from core.utils import (
 LAYER_LINEWIDTH = {
     "BUILDING": 2.5,
     "PAVEMENT": 2.0,
+    "ROAD": 2.0,
     "PIPE": 2.0,
     "DRAIN_FLOW": 1.5,
     "SURFACE": 1.0,
     "EG_CONTOUR": 1.0,
     "FG_CONTOUR": 1.2,
     "BASIN_BOUNDARY": 1.8,
+    "UTILITY": 1.8,
+    "SAN": 1.8,
+    "STORM": 2.0,
+    "STRUCTURE": 1.6,
     "DEFAULT": 2.0,
 }
+
+LAYER_COLORS = {
+    "BUILDING": "#0f172a",
+    "PAVEMENT": "#64748b",
+    "ROAD": "#475569",
+    "PIPE": "#1d4ed8",
+    "STORM": "#0369a1",
+    "SAN": "#7c3aed",
+    "UTILITY": "#6d28d9",
+    "DRAIN_FLOW": "#0f766e",
+    "SURFACE": "#94a3b8",
+    "EG_CONTOUR": "#cbd5e1",
+    "FG_CONTOUR": "#f59e0b",
+    "BASIN_BOUNDARY": "#15803d",
+    "STRUCTURE": "#dc2626",
+    "DEFAULT": "#334155",
+}
+
+LAYER_LINESTYLE = {
+    "EG_CONTOUR": "--",
+    "FG_CONTOUR": "-.",
+    "DRAIN_FLOW": (0, (4, 4)),
+    "SURFACE": (0, (2, 4)),
+}
+
+SUPPRESSED_AUTO_LABEL_LAYERS = {
+    "PIPE",
+    "SAN",
+    "EG_CONTOUR",
+    "FG_CONTOUR",
+    "DRAIN_FLOW",
+    "BASIN_BOUNDARY",
+    "STRUCTURE",
+    "UTILITY",
+    "STORM",
+}
+SUPPRESSED_TEXT_LAYERS = {"EG_CONTOUR", "FG_CONTOUR", "DRAIN_FLOW", "LOW_POINTS", "UTILITY"}
+FOCUS_EXCLUDED_LAYERS = {"ANNO", "SYMBOL", "UTILITY", "DRAIN_FLOW", "EG_CONTOUR", "FG_CONTOUR", "SPOT_EG", "SPOT_FG", "LOW_POINTS"}
 
 
 def get_linewidth(action):
     layer = (action.get("layer") or "").upper()
     return LAYER_LINEWIDTH.get(layer, LAYER_LINEWIDTH["DEFAULT"])
+
+
+def get_color(action):
+    layer = (action.get("layer") or "").upper()
+    return LAYER_COLORS.get(layer, LAYER_COLORS["DEFAULT"])
+
+
+def get_linestyle(action):
+    layer = (action.get("layer") or "").upper()
+    return LAYER_LINESTYLE.get(layer, "-")
+
+
+def preview_label(action):
+    layer = (action.get("layer") or "").upper()
+    label = clean_label(action.get("label"), "")
+    if not label:
+        return ""
+    if layer in SUPPRESSED_AUTO_LABEL_LAYERS:
+        return ""
+    return label
+
+
+def _should_draw_text_note(action):
+    layer = (action.get("layer") or "").upper()
+    if layer in SUPPRESSED_TEXT_LAYERS:
+        return False
+    txt = safe_text(action.get("text"), "").strip()
+    if not txt:
+        return False
+    upper = txt.upper()
+    if len(txt) > 28:
+        return False
+    if any(token in upper for token in ("INV ", " S=", "LOW-", "GENERIC_UTILITY", "UTILITY-")):
+        return False
+    return True
 
 
 # ----------------------------------------
@@ -54,11 +132,29 @@ def draw_rectangle(ax, action):
     if w <= 0 or h <= 0:
         return None
 
-    rect = Rectangle((x, y), w, h, fill=False, linewidth=get_linewidth(action))
+    rect = Rectangle(
+        (x, y),
+        w,
+        h,
+        fill=False,
+        linewidth=get_linewidth(action),
+        edgecolor=get_color(action),
+        linestyle=get_linestyle(action),
+    )
     ax.add_patch(rect)
 
-    if label:
-        ax.text(x + w / 2, y + h / 2, label, ha="center", va="center", fontsize=9)
+    preview_text = preview_label(action)
+    if preview_text:
+        ax.text(
+            x + w / 2,
+            y + h / 2,
+            preview_text,
+            ha="center",
+            va="center",
+            fontsize=9,
+            fontweight="semibold",
+            color="#0f172a",
+        )
 
     return x, y, x + w, y + h
 
@@ -74,13 +170,19 @@ def draw_polygon(ax, action):
     xs_closed = xs + [pts[0][0]]
     ys_closed = ys + [pts[0][1]]
 
-    ax.plot(xs_closed, ys_closed, linewidth=get_linewidth(action))
+    ax.plot(
+        xs_closed,
+        ys_closed,
+        linewidth=get_linewidth(action),
+        color=get_color(action),
+        linestyle=get_linestyle(action),
+    )
 
-    label = clean_label(action.get("label"), "")
+    label = preview_label(action)
     if label:
         cx = sum(xs) / len(xs)
         cy = sum(ys) / len(ys)
-        ax.text(cx, cy, label, ha="center", va="center", fontsize=9)
+        ax.text(cx, cy, label, ha="center", va="center", fontsize=8, color=get_color(action))
 
     return min(xs_closed), min(ys_closed), max(xs_closed), max(ys_closed)
 
@@ -93,13 +195,19 @@ def draw_polyline(ax, action):
     xs = [p[0] for p in pts]
     ys = [p[1] for p in pts]
 
-    ax.plot(xs, ys, linewidth=get_linewidth(action))
+    ax.plot(
+        xs,
+        ys,
+        linewidth=get_linewidth(action),
+        color=get_color(action),
+        linestyle=get_linestyle(action),
+    )
 
-    label = clean_label(action.get("label"), "")
+    label = preview_label(action)
     if label:
         cx = sum(xs) / len(xs)
         cy = sum(ys) / len(ys)
-        ax.text(cx, cy, label, ha="center", va="center", fontsize=9)
+        ax.text(cx, cy, label, ha="center", va="center", fontsize=8, color=get_color(action))
 
     return min(xs), min(ys), max(xs), max(ys)
 
@@ -112,11 +220,19 @@ def draw_circle(ax, action):
     if r <= 0:
         return None
 
-    circle = Circle((cx, cy), r, fill=False, linewidth=get_linewidth(action))
+    circle = Circle(
+        (cx, cy),
+        r,
+        fill=False,
+        linewidth=get_linewidth(action),
+        edgecolor=get_color(action),
+        linestyle=get_linestyle(action),
+    )
     ax.add_patch(circle)
 
-    if label:
-        ax.text(cx, cy, label, ha="center", va="center", fontsize=9)
+    preview_text = preview_label(action)
+    if preview_text:
+        ax.text(cx, cy, preview_text, ha="center", va="center", fontsize=8, color=get_color(action))
 
     return cx - r, cy - r, cx + r, cy + r
 
@@ -131,11 +247,22 @@ def draw_arc(ax, action):
     if r <= 0:
         return None
 
-    arc = Arc((cx, cy), 2 * r, 2 * r, angle=0, theta1=a1, theta2=a2, linewidth=get_linewidth(action))
+    arc = Arc(
+        (cx, cy),
+        2 * r,
+        2 * r,
+        angle=0,
+        theta1=a1,
+        theta2=a2,
+        linewidth=get_linewidth(action),
+        edgecolor=get_color(action),
+        linestyle=get_linestyle(action),
+    )
     ax.add_patch(arc)
 
-    if label:
-        ax.text(cx, cy, label, ha="center", va="center", fontsize=9)
+    preview_text = preview_label(action)
+    if preview_text:
+        ax.text(cx, cy, preview_text, ha="center", va="center", fontsize=8, color=get_color(action))
 
     return cx - r, cy - r, cx + r, cy + r
 
@@ -145,7 +272,19 @@ def draw_text(ax, action):
     txt = safe_text(action.get("text"), "")
     h = max(safe_num(action.get("text_height"), 1.0), 0.5)
 
-    ax.text(x, y, txt, fontsize=min(6 + h, 16))
+    if not _should_draw_text_note(action):
+        return None
+
+    ax.text(
+        x,
+        y,
+        txt,
+        fontsize=min(5 + h, 12),
+        color=get_color(action),
+        ha="left",
+        va="bottom",
+        bbox={"boxstyle": "round,pad=0.18", "facecolor": "white", "edgecolor": "none", "alpha": 0.8},
+    )
 
     return x - 2, y - 2, x + 4, y + 2
 
@@ -155,11 +294,20 @@ def draw_point(ax, action):
     label = clean_label(action.get("label"), "")
     size = max(safe_num(action.get("radius"), 0.75), 0.25)
 
-    ax.plot([x - size, x + size], [y, y], linewidth=get_linewidth(action))
-    ax.plot([x, x], [y - size, y + size], linewidth=get_linewidth(action))
+    ax.plot([x - size, x + size], [y, y], linewidth=get_linewidth(action), color=get_color(action))
+    ax.plot([x, x], [y - size, y + size], linewidth=get_linewidth(action), color=get_color(action))
 
-    if label:
-        ax.text(x + size + 0.2, y + size + 0.2, label, ha="left", va="bottom", fontsize=8)
+    preview_text = preview_label(action)
+    if preview_text:
+        ax.text(
+            x + size + 0.2,
+            y + size + 0.2,
+            preview_text,
+            ha="left",
+            va="bottom",
+            fontsize=7,
+            color=get_color(action),
+        )
 
     return x - size, y - size, x + size, y + size
 
@@ -180,13 +328,24 @@ def draw_north_arrow(ax, action):
 # Main preview
 # ----------------------------------------
 
+def _expand_bounds(bounds, pad_ratio=0.08, min_pad=8.0):
+    min_x, min_y, max_x, max_y = bounds
+    width = max(max_x - min_x, 1.0)
+    height = max(max_y - min_y, 1.0)
+    pad_x = max(width * pad_ratio, min_pad)
+    pad_y = max(height * pad_ratio, min_pad)
+    return min_x - pad_x, min_y - pad_y, max_x + pad_x, max_y + pad_y
+
+
 def _draw_plan(ax, plan):
     actions = plan.get("actions", [])
     if not actions:
         return False
 
-    min_x, min_y = float("inf"), float("inf")
-    max_x, max_y = float("-inf"), float("-inf")
+    all_min_x, all_min_y = float("inf"), float("inf")
+    all_max_x, all_max_y = float("-inf"), float("-inf")
+    focus_min_x, focus_min_y = float("inf"), float("inf")
+    focus_max_x, focus_max_y = float("-inf"), float("-inf")
 
     for action in actions:
         task = action.get("task")
@@ -215,29 +374,58 @@ def _draw_plan(ax, plan):
 
         x1, y1, x2, y2 = bounds
 
-        min_x = min(min_x, x1)
-        min_y = min(min_y, y1)
-        max_x = max(max_x, x2)
-        max_y = max(max_y, y2)
+        all_min_x = min(all_min_x, x1)
+        all_min_y = min(all_min_y, y1)
+        all_max_x = max(all_max_x, x2)
+        all_max_y = max(all_max_y, y2)
 
-    if min_x == float("inf"):
+        layer = (action.get("layer") or "").upper()
+        if layer not in FOCUS_EXCLUDED_LAYERS:
+            focus_min_x = min(focus_min_x, x1)
+            focus_min_y = min(focus_min_y, y1)
+            focus_max_x = max(focus_max_x, x2)
+            focus_max_y = max(focus_max_y, y2)
+
+    if all_min_x == float("inf"):
         return False
 
-    pad_x = max((max_x - min_x) * 0.1, 5)
-    pad_y = max((max_y - min_y) * 0.1, 5)
+    all_bounds = (all_min_x, all_min_y, all_max_x, all_max_y)
+    focus_available = focus_min_x != float("inf")
+    selected_bounds = all_bounds
+    if focus_available:
+        all_width = max(all_max_x - all_min_x, 1.0)
+        all_height = max(all_max_y - all_min_y, 1.0)
+        focus_width = max(focus_max_x - focus_min_x, 1.0)
+        focus_height = max(focus_max_y - focus_min_y, 1.0)
+        if all_width / focus_width > 2.5 or all_height / focus_height > 2.5:
+            selected_bounds = (focus_min_x, focus_min_y, focus_max_x, focus_max_y)
 
-    ax.set_xlim(min_x - pad_x, max_x + pad_x)
-    ax.set_ylim(min_y - pad_y, max_y + pad_y)
+    min_x, min_y, max_x, max_y = _expand_bounds(selected_bounds)
+
+    ax.set_xlim(min_x, max_x)
+    ax.set_ylim(min_y, max_y)
 
     ax.set_aspect("equal")
-    ax.grid(True, linestyle="--", linewidth=0.5)
+    ax.set_facecolor("#f8fafc")
+    ax.grid(False)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_visible(False)
 
-    ax.set_title(plan.get("project_name", "Plan Preview"))
+    ax.set_title(
+        plan.get("project_name", "Plan Preview"),
+        fontsize=13,
+        fontweight="semibold",
+        color="#0f172a",
+        pad=12,
+    )
     return True
 
 
 def render_plan_preview_png(plan, *, figsize=(8, 8), dpi: int = 160) -> bytes:
     fig = Figure(figsize=figsize, dpi=dpi)
+    fig.patch.set_facecolor("#f8fafc")
     FigureCanvasAgg(fig)
     ax = fig.subplots()
 
