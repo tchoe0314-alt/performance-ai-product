@@ -254,6 +254,59 @@ class Phase5SurfaceDrainageCoordinationTests(unittest.TestCase):
         self.assertFalse(storm_validation.get("ready"))
         self.assertIn("primary_detention_geometry_weak", storm_validation.get("reasons", []))
 
+    def test_drainage_export_validation_accepts_engineered_detention_candidates_without_primary_role(self) -> None:
+        project = planner.ProjectModel(name="Fallback Detention Candidate")
+        project.meta["grading_summary"] = {
+            "success": True,
+            "fallback_used": False,
+            "existing_surface": {"nrows": 5, "ncols": 5},
+            "proposed_surface": {"nrows": 5, "ncols": 5},
+            "stats": {"proposed_contour_count": 3, "spot_grade_count": 2, "flow_arrow_count": 1},
+            "surface_controls": {
+                "has_primary_drainage_direction": True,
+                "primary_low_point": {"x": 10.0, "y": 10.0, "z": 95.0},
+            },
+        }
+        project.meta["drainage_canonical"] = {
+            "success": True,
+            "source": "drainage_engine",
+            "surface_guidance": {"downhill_vector": {"dx": 1.0, "dy": -1.0}},
+            "structures": [{"name": "INLET-1", "x": 10.0, "y": 10.0}],
+            "basins": [
+                {
+                    "id": "BASIN-1",
+                    "name": "BASIN-1",
+                    "canonical_type": "detention_basin",
+                    "exportable": True,
+                    "boundary_points": [[0.0, 0.0], [20.0, 0.0], [20.0, 20.0], [0.0, 20.0]],
+                    "detention_design": {"adequacy_status": "adequate"},
+                    "geometry_quality": {"has_bottom": True, "footprint_consistency_ratio": 0.75},
+                    "overflow_spillway": {"assumed_capacity_cfs": 1.5},
+                }
+            ],
+            "stats": {
+                "low_point_count": 1,
+                "flow_path_count": 1,
+                "total_contributing_area_sf": 1000.0,
+                "total_estimated_inlet_flow_cfs": 0.2,
+                "total_basin_runoff_cfs": 0.3,
+            },
+        }
+        project.meta["storm_pipe_summary"] = {
+            "segments": [{"name": "PIPE-1"}],
+            "graph_validation": {"valid": True},
+            "hydraulic_validation": {"valid": True},
+            "missing_data_segments": [],
+            "explain": {"implied_target_used": False},
+            "stats": {"selected_basin_name": "BASIN-1"},
+        }
+
+        drainage_validation = planner._drainage_export_validation(project)
+
+        self.assertTrue(drainage_validation.get("ready"))
+        self.assertNotIn("primary_detention_missing", drainage_validation.get("reasons", []))
+        self.assertEqual(drainage_validation.get("primary_basin_count"), 1)
+
     def test_utility_export_validation_blocks_shallow_and_weak_gravity_segments(self) -> None:
         project = planner.ProjectModel(name="Utility Export Guard")
         project.meta["utility_summary"] = {

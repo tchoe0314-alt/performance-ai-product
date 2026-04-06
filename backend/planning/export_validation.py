@@ -71,19 +71,29 @@ def drainage_surface_alignment(
 
 
 def primary_engineered_basins(drainage: Dict[str, Any]) -> List[Dict[str, Any]]:
+    candidates: List[Dict[str, Any]] = []
     primary: List[Dict[str, Any]] = []
     for item in safe_list(safe_dict(drainage).get("basins")):
         rec = safe_dict(item)
         if not rec:
             continue
-        if safe_str(rec.get("engineering_role")) != "primary_detention":
-            continue
-        if not bool(rec.get("exportable")):
-            continue
         if len(safe_list(rec.get("boundary_points"))) < 3:
             continue
-        primary.append(rec)
-    return primary
+        is_exportable = bool(rec.get("exportable"))
+        engineering_role = safe_str(rec.get("engineering_role"))
+        if engineering_role == "primary_detention" and is_exportable:
+            primary.append(rec)
+            continue
+        canonical_type = safe_str(rec.get("canonical_type"))
+        has_detention_design = bool(safe_dict(rec.get("detention_design")))
+        has_overflow = bool(safe_dict(rec.get("overflow_spillway")))
+        if is_exportable and (
+            canonical_type == "detention_basin"
+            or has_detention_design
+            or has_overflow
+        ):
+            candidates.append(rec)
+    return primary or candidates
 
 
 def grading_export_validation(
