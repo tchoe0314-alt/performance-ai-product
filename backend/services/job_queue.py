@@ -182,6 +182,19 @@ class JobQueueService:
         finally:
             connection.close()
 
+    def get_job_detail(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
+        record = self.get_job(user_id=user_id, job_id=job_id)
+        if record is None:
+            return None
+        detail = self._job_summary(record)
+        detail.update(
+            {
+                "payload": record.get("payload") or {},
+                "result": record.get("result") or {},
+            }
+        )
+        return detail
+
     def cancel_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
         self._ensure_worker_alive()
         record = self.get_job(user_id=user_id, job_id=job_id)

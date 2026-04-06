@@ -21,6 +21,7 @@ from backend.planning.common import (
     safe_list,
     safe_str,
 )
+from backend.planning.export_validation import detention_basin_score
 
 
 def storm_inlets_from_drainage(
@@ -620,8 +621,9 @@ def storm_summary_from_network_result(
         )
 
     selected_outfall_name = safe_str(explain.get("selected_outfall_name"), "")
+    basin_candidates = list(safe_list(getattr(network, "basins", [])))
     selected_basin: Optional[Any] = None
-    for basin in safe_list(getattr(network, "basins", [])):
+    for basin in basin_candidates:
         basin_name = safe_str(getattr(basin, "name", ""), "")
         connection_node_name = safe_str(
             getattr(basin, "connection_node_name", ""), f"{basin_name}_CONN"
@@ -629,6 +631,18 @@ def storm_summary_from_network_result(
         if connection_node_name == selected_outfall_name:
             selected_basin = basin
             break
+    if selected_basin is None and selected_outfall_name:
+        for basin in basin_candidates:
+            if safe_str(getattr(basin, "name", ""), "") == selected_outfall_name:
+                selected_basin = basin
+                break
+    if selected_basin is None and basin_candidates:
+        selected_basin = max(
+            basin_candidates,
+            key=lambda basin: detention_basin_score(
+                safe_dict(getattr(basin, "meta", {}))
+            ),
+        )
     selected_basin_meta = (
         safe_dict(getattr(selected_basin, "meta", {}))
         if selected_basin is not None

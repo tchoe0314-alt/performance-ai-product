@@ -547,7 +547,7 @@ def export_report(
 
 @app.get("/api/jobs/{job_id}")
 def get_job(job_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
-    job = JOB_QUEUE.get_job(user_id=current_user["user_id"], job_id=job_id)
+    job = JOB_QUEUE.get_job_detail(user_id=current_user["user_id"], job_id=job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found.")
     return {"success": True, "job": job}

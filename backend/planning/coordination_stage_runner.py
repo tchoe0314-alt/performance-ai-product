@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, List, Sequence, Tuple
 from core.config import PIPE_INTENSITY_IN_HR, PIPE_RUNOFF_C
 from core.project_manager import ConflictRecord, ConflictSeverity
 
-from .common import safe_dict, safe_float, safe_list, safe_str, lower_text
+from .common import safe_dict, safe_float, safe_int, safe_list, safe_str, lower_text
 from .runtime import PlannerExecutionContext
 
 

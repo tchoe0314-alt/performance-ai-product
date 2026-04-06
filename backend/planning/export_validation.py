@@ -116,6 +116,51 @@ def primary_engineered_basins(drainage: Dict[str, Any]) -> List[Dict[str, Any]]:
     return candidates
 
 
+def detention_basin_score(rec: Dict[str, Any]) -> tuple:
+    detention_design = safe_dict(rec.get("detention_design"))
+    geometry_quality = safe_dict(rec.get("geometry_quality"))
+    overflow = safe_dict(rec.get("overflow_spillway"))
+    adequacy = safe_str(detention_design.get("adequacy_status"), "adequate").lower()
+    has_bottom = bool(geometry_quality.get("has_bottom"))
+    consistency = safe_float(geometry_quality.get("footprint_consistency_ratio"), 0.0)
+    spillway_capacity = safe_float(overflow.get("assumed_capacity_cfs"), 0.0)
+    return (
+        1 if bool(rec.get("exportable")) else 0,
+        1 if adequacy == "adequate" else 0,
+        1 if spillway_capacity > 0.0 else 0,
+        1 if has_bottom else 0,
+        round(consistency, 3),
+        round(safe_float(rec.get("storage_cf"), 0.0), 3),
+        round(safe_float(rec.get("area_sf"), 0.0), 3),
+    )
+
+
+def basin_has_exportable_detention_geometry(rec: Dict[str, Any]) -> bool:
+    item = safe_dict(rec)
+    detention_design = safe_dict(item.get("detention_design"))
+    geometry_quality = safe_dict(item.get("geometry_quality"))
+    overflow = safe_dict(item.get("overflow_spillway"))
+    boundary_points = safe_list(item.get("boundary_points") or item.get("boundary"))
+    has_bottom = bool(geometry_quality.get("has_bottom"))
+    consistency = safe_float(geometry_quality.get("footprint_consistency_ratio"), 0.0)
+    provided_storage_cf = safe_float(detention_design.get("provided_storage_cf"), 0.0)
+    top_area_sf = max(
+        safe_float(item.get("top_of_bank_area_sf"), 0.0),
+        safe_float(item.get("area_sf"), 0.0),
+    )
+    spillway_capacity = safe_float(overflow.get("assumed_capacity_cfs"), 0.0)
+    if has_bottom and consistency >= 0.4:
+        return True
+    if (
+        len(boundary_points) >= 3
+        and top_area_sf > 0.0
+        and provided_storage_cf > 0.0
+        and spillway_capacity > 0.0
+    ):
+        return True
+    return False
+
+
 def grading_export_validation(
     project: ProjectModel,
     *,
@@ -175,10 +220,11 @@ def drainage_export_validation(
     validation_basins = [
         item
         for item in primary_basins
-        if not selected_basin_name or safe_str(item.get("name"), "") == selected_basin_name
+        if safe_str(item.get("name"), "") == selected_basin_name
     ]
-    if not validation_basins:
-        validation_basins = primary_basins
+    if not validation_basins and primary_basins:
+        best_basin = max(primary_basins, key=detention_basin_score)
+        validation_basins = [best_basin]
     drainage_stats = safe_dict(drainage.get("stats"))
     drainage_source = safe_str(drainage.get("source"), "")
     reasons: List[str] = []
@@ -214,16 +260,7 @@ def drainage_export_validation(
         weak_geometry = [
             item
             for item in validation_basins
-            if (
-                not bool(safe_dict(item.get("geometry_quality")).get("has_bottom"))
-                or safe_float(
-                    safe_dict(item.get("geometry_quality")).get(
-                        "footprint_consistency_ratio"
-                    ),
-                    1.0,
-                )
-                < 0.4
-            )
+            if not basin_has_exportable_detention_geometry(item)
         ]
         if weak_geometry:
             reasons.append("primary_detention_geometry_weak")
@@ -277,16 +314,7 @@ def drainage_export_validation(
             [
                 item
                 for item in validation_basins
-                if (
-                    not bool(safe_dict(item.get("geometry_quality")).get("has_bottom"))
-                    or safe_float(
-                        safe_dict(item.get("geometry_quality")).get(
-                            "footprint_consistency_ratio"
-                        ),
-                        1.0,
-                    )
-                    < 0.4
-                )
+                if not basin_has_exportable_detention_geometry(item)
             ]
         ),
         "storm_pipe_count": len(storm_segments),

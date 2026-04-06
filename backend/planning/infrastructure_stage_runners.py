@@ -598,6 +598,13 @@ def run_utility_stage(
                 "preferred_corridor": deepcopy(utility_preference),
             }
             utility_summary = enrich_utility_summary_with_coordination(utility_summary, project, manager)
+            conflict_hooks = safe_dict(utility_summary.get("conflict_hooks"))
+            utility_segments = safe_list(conflict_hooks.get("utility_segments"))
+            if (not success) or route_count <= 0 or not utility_segments:
+                raise RuntimeError(
+                    safe_str(message, "Utility engine produced no usable utility network.")
+                    or "Utility engine produced no usable utility network."
+                )
         except Exception as inner_exc:
             if strict_mode:
                 manager.set_metric("utility_route_count", 0, category="utilities")

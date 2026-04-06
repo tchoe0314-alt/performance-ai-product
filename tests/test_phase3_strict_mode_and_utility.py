@@ -38,6 +38,23 @@ class _ExplodingUtilityEngine:
         raise RuntimeError("simulated utility engine failure")
 
 
+class _EmptyUtilityEngine:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    class _Result:
+        success = False
+        message = "no routes produced"
+        route_count = 0
+        total_length = 0.0
+        warnings = []
+        explain = {"segments": []}
+        conflict_hooks = {"utility_segments": []}
+
+    def generate(self, *args, **kwargs):
+        return self._Result()
+
+
 class Phase3StrictModeTests(unittest.TestCase):
     def test_utility_engine_accepts_legacy_kwargs(self) -> None:
         engine = UtilityEngine(level="L1", layer_name="UTILITY", system_type="water")
@@ -64,6 +81,15 @@ class Phase3StrictModeTests(unittest.TestCase):
         self.assertFalse(utility_stage.get("success", True))
         self.assertEqual(utility_stage.get("meta", {}).get("failure_code"), "STRICT_UTILITY_FALLBACK_BLOCKED")
         self.assertIn("STRICT mode blocked utility fallback", " ".join(out.get("meta", {}).get("errors", [])))
+
+    def test_non_strict_mode_falls_back_when_utility_engine_returns_no_routes(self) -> None:
+        payload = {**DEMO, "strict_mode": False}
+        with patch.object(planner, "UtilityEngine", _EmptyUtilityEngine):
+            out = planner.build_plan(payload)
+        utility = dict((out.get("meta") or {}).get("utilities") or {})
+        self.assertTrue(utility.get("fallback_used"))
+        self.assertGreater(int(utility.get("route_count") or 0), 0)
+        self.assertNotIn("UTILITY_STAGE_FAILED", " ".join((out.get("meta") or {}).get("warnings", []) or []))
 
 
 if __name__ == "__main__":

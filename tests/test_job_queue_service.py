@@ -71,6 +71,42 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(jobs[0]["job_id"], "job_legacy")
         self.assertEqual(jobs[0]["progress"], 0)
 
+    def test_get_job_detail_exposes_progress_and_result_together(self):
+        ProjectStore(self.db).save_project(
+            user_id=self.user_id,
+            project_id="p1",
+            name="Project 1",
+        )
+        connection = self.db.connect()
+        try:
+            connection.execute(
+                """
+                INSERT INTO jobs (job_id, user_id, job_type, status, created_at, updated_at, project_id, payload_json, result_json, error_text)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "job_detail",
+                    self.user_id,
+                    "orchestrate",
+                    "running",
+                    1.0,
+                    2.0,
+                    "p1",
+                    '{"prompt_text":"demo"}',
+                    '{"job_progress":{"stage":"Engineering Run","detail":"Working","progress":48},"final_plan":{"name":"Demo"}}',
+                    None,
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        job = self.queue.get_job_detail(user_id=self.user_id, job_id="job_detail")
+        self.assertIsNotNone(job)
+        self.assertEqual(job["stage"], "Engineering Run")
+        self.assertEqual(job["progress"], 48)
+        self.assertEqual(job["result"]["final_plan"]["name"], "Demo")
+
     def test_worker_recovers_queued_jobs_from_database_without_in_memory_queue(self):
         self.queue.register_handler(
             "orchestrate",

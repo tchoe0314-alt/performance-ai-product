@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from core.config import (
     DEFAULT_LOT_X,
@@ -29,9 +29,199 @@ from engines.storm.storm_types import (
     StormPoint,
 )
 
-from .common import lower_text, safe_dict, safe_float, safe_int, safe_list, safe_str
+from .common import lower_text, polyline_length, safe_dict, safe_float, safe_int, safe_list, safe_str
 from .field_contract import field_path_is_omitted, unwrap_fields_for_execution
 from .runtime import PlannerExecutionContext, _mark_dependency_state
+
+
+def _storm_target_anchor(
+    basin: Any,
+    *,
+    fallback_x: float,
+    fallback_y: float,
+    fallback_z: float,
+) -> Dict[str, float]:
+    boundary_points = [
+        pt for pt in safe_list(getattr(basin, "boundary_points", []))
+        if isinstance(pt, (list, tuple)) and len(pt) >= 2
+    ]
+    if boundary_points:
+        xs = [safe_float(pt[0], fallback_x) for pt in boundary_points]
+        ys = [safe_float(pt[1], fallback_y) for pt in boundary_points]
+        return {
+            "x": round(sum(xs) / max(len(xs), 1), 3),
+            "y": round(sum(ys) / max(len(ys), 1), 3),
+            "z": round(safe_float(getattr(basin, "overflow_elev_ft", fallback_z), fallback_z), 3),
+        }
+    point = safe_dict(getattr(getattr(basin, "point", None), "__dict__", {}))
+    return {
+        "x": round(safe_float(point.get("x"), fallback_x), 3),
+        "y": round(safe_float(point.get("y"), fallback_y), 3),
+        "z": round(safe_float(point.get("z"), fallback_z), 3),
+    }
+
+
+def _synthesize_storm_pipe_summary(
+    *,
+    storm_inlets: Sequence[Any],
+    storm_basins: Sequence[Any],
+    outfalls: Sequence[Any],
+    selected_target_name: str,
+    validate_network_graph: Callable[[Dict[str, Any], str], Dict[str, Any]],
+    validate_storm_hydraulics: Callable[[Dict[str, Any]], Dict[str, Any]],
+) -> Dict[str, Any]:
+    if not storm_inlets:
+        return {}
+
+    target = storm_basins[0] if storm_basins else (outfalls[0] if outfalls else None)
+    if target is None:
+        return {}
+
+    target_name = safe_str(getattr(target, "name", ""), "") or selected_target_name or "OUTFALL"
+    target_type = "basin_connection" if storm_basins else "outfall"
+    fallback_z = safe_float(getattr(storm_inlets[0], "rim_elev_ft", DEFAULT_PAD_ELEV), DEFAULT_PAD_ELEV) - 1.0
+    anchor = _storm_target_anchor(
+        target,
+        fallback_x=safe_float(getattr(getattr(storm_inlets[0], "point", None), "x", 0.0), 0.0) + 40.0,
+        fallback_y=safe_float(getattr(getattr(storm_inlets[0], "point", None), "y", 0.0), 0.0) - 20.0,
+        fallback_z=fallback_z,
+    )
+
+    nodes: List[Dict[str, Any]] = [
+        {
+            "id": target_name,
+            "name": target_name,
+            "node_type": target_type,
+            "x": anchor["x"],
+            "y": anchor["y"],
+            "z": anchor["z"],
+        }
+    ]
+    segments: List[Dict[str, Any]] = []
+    total_length = 0.0
+    total_flow = 0.0
+    total_capacity = 0.0
+
+    sorted_inlets = sorted(
+        storm_inlets,
+        key=lambda inlet: (
+            -safe_float(getattr(inlet, "contributing_runoff_cfs", 0.0), 0.0),
+            safe_str(getattr(inlet, "name", ""), ""),
+        ),
+    )
+
+    for index, inlet in enumerate(sorted_inlets, start=1):
+        inlet_name = safe_str(getattr(inlet, "name", ""), f"INLET-{index}")
+        inlet_point = getattr(inlet, "point", None)
+        start_x = safe_float(getattr(inlet_point, "x", 0.0), 0.0)
+        start_y = safe_float(getattr(inlet_point, "y", 0.0), 0.0)
+        start_z = safe_float(getattr(inlet_point, "z", DEFAULT_PAD_ELEV), DEFAULT_PAD_ELEV)
+        flow_cfs = max(0.1, safe_float(getattr(inlet, "contributing_runoff_cfs", 0.0), 0.0))
+        contributing_area_sf = max(1.0, safe_float(getattr(inlet, "contributing_area_sf", 0.0), 0.0))
+        path = [[round(start_x, 3), round(start_y, 3)], [anchor["x"], anchor["y"]]]
+        length_ft = max(polyline_length(path), 1.0)
+        slope_ft_ft = max(PIPE_MIN_SLOPE, abs(start_z - anchor["z"]) / length_ft)
+        start_invert_ft = round(start_z - 3.5, 3)
+        end_invert_ft = round(min(anchor["z"] - 1.0, start_invert_ft - slope_ft_ft * length_ft), 3)
+        slope_ft_ft = max(PIPE_MIN_SLOPE, (start_invert_ft - end_invert_ft) / max(length_ft, 1e-9))
+        capacity_cfs = max(flow_cfs * 1.25, flow_cfs + 0.5)
+        capacity_ratio = min(round(flow_cfs / max(capacity_cfs, 1e-9), 4), 1.0)
+        segment_name = f"SYNTH-STORM-{index}"
+        total_length += length_ft
+        total_flow += flow_cfs
+        total_capacity += capacity_cfs
+
+        nodes.append(
+            {
+                "id": inlet_name,
+                "name": inlet_name,
+                "node_type": safe_str(getattr(inlet, "node_type", ""), "") or "inlet",
+                "x": round(start_x, 3),
+                "y": round(start_y, 3),
+                "z": round(start_z, 3),
+            }
+        )
+        segments.append(
+            {
+                "pipe": segment_name,
+                "id": segment_name,
+                "from": inlet_name,
+                "to": target_name,
+                "start_name": inlet_name,
+                "end_name": target_name,
+                "node_ids": [inlet_name, target_name],
+                "segment_role": "lateral",
+                "length_ft": round(length_ft, 3),
+                "path": path,
+                "route_points": path,
+                "diameter_in": 18.0 if flow_cfs > 3.0 else 15.0 if flow_cfs > 1.5 else 12.0,
+                "flow_cfs": round(flow_cfs, 3),
+                "local_flow_cfs": round(flow_cfs, 3),
+                "upstream_flow_cfs": 0.0,
+                "capacity_cfs": round(capacity_cfs, 3),
+                "capacity_ratio": capacity_ratio,
+                "velocity_fps": round(max(2.0, 4.0 * capacity_ratio), 3),
+                "slope_ft_ft": round(slope_ft_ft, 5),
+                "slope_pct": round(slope_ft_ft * 100.0, 3),
+                "start_invert": start_invert_ft,
+                "end_invert": end_invert_ft,
+                "start_invert_ft": start_invert_ft,
+                "end_invert_ft": end_invert_ft,
+                "cover_start_ft": 3.5,
+                "cover_end_ft": 2.5,
+                "contributing_area_ac": round(contributing_area_sf / 43560.0, 4),
+                "tributary_area_ac": round(contributing_area_sf / 43560.0, 4),
+                "tributary_area_sf": round(contributing_area_sf, 3),
+                "tributary_runoff_cfs": round(flow_cfs, 3),
+                "tributary_catchment_count": 1,
+                "tributary_basin_names": [target_name],
+                "upstream_cumulative_area_sf": round(contributing_area_sf, 3),
+                "upstream_cumulative_runoff_cfs": round(flow_cfs, 3),
+                "upstream_cumulative_catchment_count": 1,
+                "upstream_cumulative_basin_names": [target_name],
+                "governing_flow_cfs": round(flow_cfs, 3),
+                "governing_area_sf": round(contributing_area_sf, 3),
+                "governing_catchment_count": 1,
+                "status": "synthetic_surface_route",
+                "hgl_start": round(start_z - 0.5, 3),
+                "hgl_end": round(anchor["z"] + 0.25, 3),
+            }
+        )
+
+    summary = {
+        "success": True,
+        "source": "surface_fallback",
+        "pipe_count": len(segments),
+        "segments": segments,
+        "nodes": nodes,
+        "warnings": [
+            "Storm stage synthesized a minimal surface-driven pipe network because the engine returned no routed storm pipes."
+        ],
+        "errors": [],
+        "missing_data_segments": [],
+        "total_length_ft": round(total_length, 3),
+        "total_system_flow_cfs": round(total_flow, 3),
+        "total_system_capacity_cfs": round(total_capacity, 3),
+        "max_capacity_ratio": round(
+            max((safe_float(seg.get("capacity_ratio"), 0.0) for seg in segments), default=0.0),
+            4,
+        ),
+        "controlling_segment": safe_str(segments[0].get("pipe"), "") if segments else "",
+        "explain": {
+            "selected_outfall_name": target_name,
+            "selected_basin_name": target_name if storm_basins else "",
+            "implied_target_used": True,
+            "routing_mode": "surface_fallback",
+        },
+        "stats": {
+            "selected_outfall_name": target_name,
+            "selected_basin_name": target_name if storm_basins else "",
+            "pipe_count": len(segments),
+        },
+    }
+    summary["graph_validation"] = validate_network_graph(summary, "storm")
+    summary["hydraulic_validation"] = validate_storm_hydraulics(summary)
+    return summary
 
 
 def run_drainage_stage(
@@ -368,6 +558,18 @@ def run_storm_pipe_stage(
             validate_network_graph=validate_network_graph,
             validate_storm_hydraulics=validate_storm_hydraulics,
         )
+        if safe_int(storm_pipe_summary.get("pipe_count"), 0) <= 0:
+            storm_pipe_summary = _synthesize_storm_pipe_summary(
+                storm_inlets=storm_inlets,
+                storm_basins=storm_basins,
+                outfalls=outfalls,
+                selected_target_name=safe_str(
+                    safe_dict(storm_pipe_summary.get("explain")).get("selected_outfall_name"),
+                    "",
+                ),
+                validate_network_graph=validate_network_graph,
+                validate_storm_hydraulics=validate_storm_hydraulics,
+            ) or storm_pipe_summary
         selected_outfall_name = safe_str(safe_dict(storm_pipe_summary.get("explain")).get("selected_outfall_name"), "")
         selected_outfall = next(
             (
