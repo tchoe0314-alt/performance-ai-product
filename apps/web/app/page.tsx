@@ -1111,10 +1111,12 @@ export default function PerformanceAIDashboard() {
       ) ?? null,
     [jobs, projectId],
   );
-  const visibleActiveJob = useMemo(
-    () => (projectId ? currentProjectActiveJob : activeJob),
-    [activeJob, currentProjectActiveJob, projectId],
-  );
+  const visibleActiveJob = useMemo(() => {
+    if (activeJobId) {
+      return activeJob ?? currentProjectActiveJob;
+    }
+    return projectId ? currentProjectActiveJob : activeJob;
+  }, [activeJob, activeJobId, currentProjectActiveJob, projectId]);
   const hasDirectRunInFlight = busy && !visibleActiveJob && Boolean(directRunAbortRef.current);
   const visibleActiveJobStale = useMemo(
     () => isLikelyStaleJob(visibleActiveJob, jobClockMs),
@@ -2589,19 +2591,13 @@ export default function PerformanceAIDashboard() {
   }, [token, activeJobId]);
 
   useEffect(() => {
-    if (currentProjectActiveJob && currentProjectActiveJob.job_id !== activeJobId) {
-      setActiveJobId(currentProjectActiveJob.job_id);
+    if (!currentProjectActiveJob) {
       return;
     }
-    if (
-      projectId &&
-      activeJob &&
-      activeJob.project_id === projectId &&
-      !["queued", "running", "cancelling"].includes(String(activeJob.status || "").toLowerCase())
-    ) {
-      setActiveJobId("");
+    if (!activeJobId || currentProjectActiveJob.job_id !== activeJobId) {
+      setActiveJobId(currentProjectActiveJob.job_id);
     }
-  }, [activeJob, activeJobId, currentProjectActiveJob, projectId]);
+  }, [activeJobId, currentProjectActiveJob]);
 
   useEffect(() => {
     if (!visibleActiveJob) return;
