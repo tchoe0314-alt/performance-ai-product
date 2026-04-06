@@ -32,6 +32,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 import importlib
 import importlib.util
+import math
+import re
 import uuid
 
 
@@ -563,11 +565,261 @@ def _intent_summary_from_payload(payload: Dict[str, Any]) -> Dict[str, List[str]
     return summary
 
 
+def _parse_dim_pair_feet(text: str) -> Optional[Tuple[float, float]]:
+    match = re.search(r"(\d+(?:\.\d+)?)\s*ft\s*(?:x|by)\s*(\d+(?:\.\d+)?)\s*ft", text, flags=re.IGNORECASE)
+    if not match:
+        return None
+    return (_safe_float(match.group(1)), _safe_float(match.group(2)))
+
+
+def _extract_site_dimensions_from_prompt(prompt_text: str) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+    lowered = prompt_text.lower()
+    acre_match = re.search(r"(\d+(?:\.\d+)?)\s*-\s*acre|(\d+(?:\.\d+)?)\s*acre", lowered)
+    acreage = None
+    if acre_match:
+        acreage = _safe_float(acre_match.group(1) or acre_match.group(2))
+
+    explicit_lot = re.search(
+        r"(?:lot|site)[^.\n]*?(\d+(?:\.\d+)?)\s*ft\s*(?:x|by)\s*(\d+(?:\.\d+)?)\s*ft",
+        prompt_text,
+        flags=re.IGNORECASE,
+    )
+    if explicit_lot:
+        return (_safe_float(explicit_lot.group(1)), _safe_float(explicit_lot.group(2)), acreage)
+
+    if acreage and acreage > 0.0:
+        area_sf = acreage * 43560.0
+        side = math.sqrt(area_sf)
+        return (round(side, 1), round(side, 1), acreage)
+
+    dims = _parse_dim_pair_feet(prompt_text)
+    if dims:
+        return (dims[0], dims[1], acreage)
+    return (None, None, acreage)
+
+
+def _detect_project_type_from_prompt(prompt_text: str) -> str:
+    lowered = prompt_text.lower()
+    if "mixed-use" in lowered or "mixed use" in lowered:
+        return "mixed_use"
+    if "commercial" in lowered or "retail pad" in lowered:
+        return "commercial_pad"
+    if "multifamily" in lowered or "residential" in lowered:
+        return "multifamily"
+    return "generic_site"
+
+
+def _extract_buildings_from_prompt(prompt_text: str, project_type: str) -> List[Dict[str, Any]]:
+    buildings: List[Dict[str, Any]] = []
+    multi_match = re.search(
+        r"(\d+)\s+multifamily\s+buildings?[^.\n]*?(\d+(?:\.\d+)?)\s*ft\s*x\s*(\d+(?:\.\d+)?)\s*ft",
+        prompt_text,
+        flags=re.IGNORECASE,
+    )
+    if multi_match:
+        count = max(1, _safe_int(multi_match.group(1), 1))
+        width = _safe_float(multi_match.group(2))
+        depth = _safe_float(multi_match.group(3))
+        for idx in range(count):
+            buildings.append(
+                {
+                    "name": f"Building {idx + 1}",
+                    "use": "multifamily",
+                    "w": width,
+                    "d": depth,
+                }
+            )
+
+    retail_match = re.search(
+        r"(\d+)\s+commercial(?:\s+retail)?\s+pad[^.\n]*?(\d+(?:\.\d+)?)\s*ft\s*x\s*(\d+(?:\.\d+)?)\s*ft",
+        prompt_text,
+        flags=re.IGNORECASE,
+    )
+    if retail_match:
+        count = max(1, _safe_int(retail_match.group(1), 1))
+        width = _safe_float(retail_match.group(2))
+        depth = _safe_float(retail_match.group(3))
+        for idx in range(count):
+            buildings.append(
+                {
+                    "name": "Retail Pad" if count == 1 else f"Retail Pad {idx + 1}",
+                    "use": "retail",
+                    "w": width,
+                    "d": depth,
+                }
+            )
+
+    if buildings:
+        return buildings
+
+    single_building = re.search(
+        r"(?:one|1)\s+building[^.\n]*?(\d+(?:\.\d+)?)\s*ft\s*(?:x|by)\s*(\d+(?:\.\d+)?)\s*ft",
+        prompt_text,
+        flags=re.IGNORECASE,
+    )
+    if single_building:
+        buildings.append(
+            {
+                "name": "Building 1",
+                "use": "retail" if project_type == "commercial_pad" else "generic",
+                "w": _safe_float(single_building.group(1)),
+                "d": _safe_float(single_building.group(2)),
+            }
+        )
+    return buildings
+
+
+def _estimate_parking_count_from_prompt(prompt_text: str, buildings: List[Dict[str, Any]]) -> int:
+    explicit = re.search(r"parking\s+for\s+(\d+)\s+(?:cars|spaces?)", prompt_text, flags=re.IGNORECASE)
+    if explicit:
+        return max(0, _safe_int(explicit.group(1), 0))
+
+    lowered = prompt_text.lower()
+    residential_units = 0
+    residential_ratio = None
+    units_match = re.search(r"assume\s+(\d+)\s+units?\s+per\s+building", lowered)
+    ratio_match = re.search(r"residential:\s*(\d+(?:\.\d+)?)\s+spaces?\s+per\s+unit", lowered)
+    if units_match and ratio_match:
+        residential_count = sum(1 for b in buildings if _lower(b.get("use")) == "multifamily")
+        residential_units = residential_count * _safe_int(units_match.group(1), 0)
+        residential_ratio = _safe_float(ratio_match.group(1), 0.0)
+
+    commercial_spaces = 0
+    commercial_match = re.search(r"commercial:\s*1\s+space\s+per\s+(\d+(?:\.\d+)?)\s*sq\s*ft", lowered)
+    if commercial_match:
+        sf_per_space = max(_safe_float(commercial_match.group(1), 250.0), 1.0)
+        for b in buildings:
+            if _lower(b.get("use")) == "retail":
+                commercial_spaces += int(round((_safe_float(b.get("w")) * _safe_float(b.get("d"))) / sf_per_space))
+
+    if residential_units > 0 and residential_ratio is not None:
+        return int(round(residential_units * residential_ratio)) + commercial_spaces
+
+    return max(0, commercial_spaces)
+
+
+def _count_requested_systems(prompt_text: str) -> int:
+    lowered = prompt_text.lower()
+    return sum(
+        1
+        for token in ("grading", "drainage", "storm", "sanitary", "water", "utilities", "road", "ada", "detention")
+        if token in lowered
+    )
+
+
+def _is_structured_prompt_fast_path(req: PlannerOrchestratorRequest) -> bool:
+    prompt_text = _safe_str(req.prompt_text)
+    if not prompt_text or _lower(req.input_mode) not in {"assisted", "prompt", "text"}:
+        return False
+    lowered = prompt_text.lower()
+    has_site_size = bool(re.search(r"\d+(?:\.\d+)?\s*acre", lowered) or re.search(r"\d+(?:\.\d+)?\s*ft\s*(?:x|by)\s*\d+(?:\.\d+)?\s*ft", lowered))
+    has_program = any(token in lowered for token in ("building", "buildings", "parking", "retail", "multifamily"))
+    has_systems = _count_requested_systems(prompt_text) >= 3
+    has_layout_signal = any(token in lowered for token in ("driveway", "road", "cul-de-sac", "circulation", "setback"))
+    return has_site_size and has_program and (has_systems or has_layout_signal)
+
+
+def _fast_parse_from_prompt(req: PlannerOrchestratorRequest) -> Dict[str, Any]:
+    prompt_text = _safe_str(req.prompt_text)
+    project_type = _detect_project_type_from_prompt(prompt_text)
+    lot_w, lot_h, acreage = _extract_site_dimensions_from_prompt(prompt_text)
+    buildings = _extract_buildings_from_prompt(prompt_text, project_type)
+    parking_count = _estimate_parking_count_from_prompt(prompt_text, buildings)
+    first_building = buildings[0] if buildings else {}
+    lowered = prompt_text.lower()
+
+    setback_match = re.search(r"(\d+(?:\.\d+)?)\s*ft\s+setbacks?", prompt_text, flags=re.IGNORECASE)
+    driveway_match = re.search(r"(\d+(?:\.\d+)?)\s*ft\s+wide\s+driveway", prompt_text, flags=re.IGNORECASE)
+    road_width_match = re.search(r"road width:\s*(\d+(?:\.\d+)?)\s*ft", prompt_text, flags=re.IGNORECASE)
+    inlet_match = re.search(r"at least\s+(\d+)\s+inlets?", prompt_text, flags=re.IGNORECASE)
+    trunk_match = re.search(r"one\s+trunk\s+line|1\s+trunk\s+line", lowered)
+    culdesac_match = re.search(r"(\d+)\s+cul-de-sacs?", prompt_text, flags=re.IGNORECASE)
+
+    payload: Dict[str, Any] = {
+        "project_name": "Civora Design",
+        "units": req.units or "ft",
+        "mode": "site_plan",
+        "project_type": project_type,
+        "site_type": project_type,
+        "lot": {
+            "x": 0.0,
+            "y": 0.0,
+            "w": lot_w or 140.0,
+            "h": lot_h or 110.0,
+        },
+        "setback": _safe_float(setback_match.group(1), 15.0) if setback_match else 15.0,
+        "street_edge": "bottom",
+        "layout_strategy": "balanced",
+        "site_plan": {
+            "building_width": _safe_float(first_building.get("w"), 48.0),
+            "building_depth": _safe_float(first_building.get("d"), 34.0),
+            "parking_count": parking_count,
+            "driveway_width": _safe_float(driveway_match.group(1), 0.0) if driveway_match else None,
+            "aisle_width": 24.0 if "drive aisle" in lowered else None,
+        },
+        "buildings": buildings,
+        "terrain": " ".join(
+            part
+            for part in (
+                f"{acreage:g} acre site" if acreage else "",
+                "gentle slope" if "gentle slope" in lowered else "",
+                "slope falling from the northwest corner to the southeast corner" if "northwest" in lowered and "southeast" in lowered else "",
+                "average slope of 5%" if "5%" in lowered else "",
+            )
+            if part
+        ).strip(),
+        "grading": {
+            "contours_required": "contour" in lowered,
+            "min_slope_pct": 1.5 if "1.5%" in lowered else 2.0,
+        },
+        "drainage": {
+            "inlet_count": _safe_int(inlet_match.group(1), 2) if inlet_match else (4 if acreage and acreage >= 5 else 2),
+            "trunk_line_count": 1 if trunk_match or "trunk line" in lowered else 0,
+            "pond_count": 1 if "detention" in lowered else 0,
+            "outfall_side": "bottom" if "southeast" in lowered or "south" in lowered else "right",
+            "routing_required": "drainage" in lowered or "storm" in lowered,
+            "grading_required": "grading" in lowered,
+            "detention_required": "detention" in lowered,
+        },
+        "road": {
+            "lane_width": _safe_float(road_width_match.group(1), 28.0) / 2.0 if road_width_match else None,
+            "lanes": 2 if "2 lane" in lowered or "2 lanes" in lowered else None,
+            "max_grade_pct": 8.0 if "8%" in lowered else None,
+        },
+        "subdivision": {
+            "acreage": acreage,
+            "culdesac_count": _safe_int(culdesac_match.group(1), 0) if culdesac_match else (2 if "cul-de-sac" in lowered else 0),
+            "road_width": _safe_float(road_width_match.group(1), 0.0) if road_width_match else None,
+        },
+        "deliverables": [
+            item
+            for item in (
+                "site_plan",
+                "grading_plan" if "grading" in lowered or "contours" in lowered else None,
+                "storm_pipe_plan" if "storm" in lowered or "drainage" in lowered else None,
+                "utility_plan" if "sanitary" in lowered or "water" in lowered or "utilities" in lowered else None,
+            )
+            if item
+        ],
+        "assumptions": [
+            "Prompt was parsed with deterministic fast-path rules because it already contained detailed engineering scope.",
+        ],
+        "meta": {
+            "source_input_mode": "prompt",
+            "fast_prompt_parse": True,
+        },
+    }
+    return _normalize_with_planner(payload)
+
+
 # =============================================================================
 # PARSE ROUTING
 # =============================================================================
 
 def _parse_from_prompt(req: PlannerOrchestratorRequest) -> Dict[str, Any]:
+    if _is_structured_prompt_fast_path(req):
+        return _fast_parse_from_prompt(req)
+
     if command_mode is None:
         payload = deepcopy(req.manual_fields)
         payload.setdefault("meta", {})
