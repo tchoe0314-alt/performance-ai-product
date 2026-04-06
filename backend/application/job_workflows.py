@@ -186,6 +186,30 @@ def build_orchestrate_job_runner(
         if review_categories:
             enriched["review_categories"] = review_categories
 
+        final_plan = dict(enriched.get("final_plan") or {})
+        if final_plan:
+            final_meta = dict(final_plan.get("meta") or {})
+            final_meta["run_summary"] = run_summary
+            final_meta["release_review"] = {
+                "blocked_reasons": blocked_reasons,
+                "blocked_exports": blocked_exports,
+                "review_categories": review_categories,
+                "assumption_summary": assumption_summary,
+                "reliability_summary": reliability,
+            }
+            final_plan["meta"] = final_meta
+            final_plan["export_ready"] = not bool(blocked_reasons or blocked_exports)
+            final_plan["release_ready"] = bool(reliability.get("release_ready"))
+            final_plan["blockers"] = blocked_reasons or blocked_exports
+            final_plan["deliverables"] = {
+                "requested": list(run_summary.get("requested_deliverables") or []),
+                "produced": list(run_summary.get("produced_deliverables") or []),
+                "failed": list(run_summary.get("failed_deliverables") or []),
+                "ready": list(run_summary.get("ready_deliverables") or []),
+                "extra": list(run_summary.get("extra_deliverables") or []),
+            }
+            enriched["final_plan"] = final_plan
+
         metadata = dict(enriched.get("metadata") or {})
         metadata["run_summary"] = run_summary
         metadata["job_context"] = {

@@ -168,6 +168,10 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertEqual(result["review_categories"], ["drainage", "coordination"])
         self.assertEqual(result["blocked"], ["primary_detention_missing"])
         self.assertEqual(result["metadata"]["run_summary"]["run_id"], "run_1")
+        self.assertFalse(result["final_plan"]["export_ready"])
+        self.assertFalse(result["final_plan"]["release_ready"])
+        self.assertEqual(result["final_plan"]["blockers"], ["primary_detention_missing"])
+        self.assertEqual(result["final_plan"]["deliverables"]["ready"], [])
         self.assertEqual(result["metadata"]["job_context"]["job_id"], "job_1")
         self.assertEqual(result["metadata"]["job_context"]["source"], "job_queue")
         self.assertEqual(result["metadata"]["job_context"]["user_id"], "u1")
@@ -175,6 +179,10 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertEqual(
             store.saved_payload["latest_result"]["assumptions"][0]["assumed_value"],
             "Where widths are not explicit for linear features, discipline defaults are used.",
+        )
+        self.assertEqual(
+            store.saved_payload["latest_result"]["final_plan"]["blockers"],
+            ["primary_detention_missing"],
         )
         self.assertEqual(
             [item["stage"] for item in progress_updates],

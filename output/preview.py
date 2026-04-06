@@ -484,6 +484,14 @@ def _draw_plan(ax, plan):
 
 
 def render_plan_preview_png(plan, *, figsize=(8, 8), dpi: int = 160) -> bytes:
+    actions = [
+        action
+        for action in list(plan.get("actions") or [])
+        if isinstance(action, dict)
+    ]
+    if len(actions) >= 60:
+        figsize = (7.2, 7.2)
+        dpi = min(dpi, 120)
     fig = Figure(figsize=figsize, dpi=dpi)
     fig.patch.set_facecolor("#f8fafc")
     FigureCanvasAgg(fig)
