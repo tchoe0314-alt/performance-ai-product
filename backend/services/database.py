@@ -13,8 +13,10 @@ class Database:
         self._initialize()
 
     def connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.db_path, check_same_thread=False)
+        connection = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30.0)
         connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA busy_timeout = 30000;")
+        connection.execute("PRAGMA foreign_keys = ON;")
         return connection
 
     def _initialize(self) -> None:

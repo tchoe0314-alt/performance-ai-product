@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional
 import hashlib
 import os
 import secrets
+import sqlite3
 import time
 import uuid
 
@@ -118,11 +119,16 @@ class AuthStore:
             if row is None:
                 return None
 
-            connection.execute(
-                "UPDATE auth_tokens SET last_used_at = ? WHERE token = ?",
-                (_now(), token_value),
-            )
-            connection.commit()
+            try:
+                connection.execute(
+                    "UPDATE auth_tokens SET last_used_at = ? WHERE token = ?",
+                    (_now(), token_value),
+                )
+                connection.commit()
+            except sqlite3.OperationalError as exc:
+                # Avoid turning transient SQLite lock contention into auth 500s.
+                if "locked" not in str(exc).lower():
+                    raise
             return dict(row)
         finally:
             connection.close()

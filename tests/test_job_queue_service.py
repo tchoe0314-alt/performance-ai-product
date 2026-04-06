@@ -3,6 +3,7 @@ import time
 import unittest
 from pathlib import Path
 
+from backend.services.auth_store import AuthStore
 from backend.services.database import Database
 from backend.services.job_queue import JobQueueService
 from backend.services.project_store import ProjectStore
@@ -14,6 +15,9 @@ class JobQueueServiceTest(unittest.TestCase):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.db_path = Path(self.tmpdir.name) / "test.db"
         self.db = Database(self.db_path)
+        self.auth = AuthStore(self.db)
+        registered = self.auth.register_user(email="u1@example.com", password="password123", name="U1")
+        self.user_id = registered["user"]["user_id"]
         self.queue = JobQueueService(self.db)
 
     def tearDown(self) -> None:
@@ -21,13 +25,18 @@ class JobQueueServiceTest(unittest.TestCase):
         self.tmpdir.cleanup()
 
     def test_list_jobs_returns_full_records(self):
+        ProjectStore(self.db).save_project(
+            user_id=self.user_id,
+            project_id="p1",
+            name="Project 1",
+        )
         created = self.queue.submit_job(
-            user_id="u1",
+            user_id=self.user_id,
             job_type="orchestrate",
             payload={"prompt_text": "demo"},
             project_id="p1",
         )
-        jobs = self.queue.list_jobs(user_id="u1")
+        jobs = self.queue.list_jobs(user_id=self.user_id)
         self.assertEqual(len(jobs), 1)
         self.assertEqual(jobs[0]["job_id"], created["job_id"])
         self.assertEqual(jobs[0]["project_id"], "p1")
@@ -43,7 +52,7 @@ class JobQueueServiceTest(unittest.TestCase):
                 """,
                 (
                     "job_legacy",
-                    "u1",
+                    self.user_id,
                     "orchestrate",
                     "running",
                     1.0,
@@ -58,7 +67,7 @@ class JobQueueServiceTest(unittest.TestCase):
         finally:
             connection.close()
 
-        jobs = self.queue.list_jobs(user_id="u1")
+        jobs = self.queue.list_jobs(user_id=self.user_id)
         self.assertEqual(jobs[0]["job_id"], "job_legacy")
         self.assertEqual(jobs[0]["progress"], 0)
 
@@ -68,7 +77,7 @@ class JobQueueServiceTest(unittest.TestCase):
             lambda job: {"success": True, "result": {"job_id": job["job_id"]}},
         )
         created = self.queue.submit_job(
-            user_id="u1",
+            user_id=self.user_id,
             job_type="orchestrate",
             payload={"prompt_text": "demo"},
         )
@@ -80,7 +89,7 @@ class JobQueueServiceTest(unittest.TestCase):
         deadline = time.time() + 3.0
         record = None
         while time.time() < deadline:
-            record = self.queue.get_job(user_id="u1", job_id=created["job_id"])
+            record = self.queue.get_job(user_id=self.user_id, job_id=created["job_id"])
             if record and record["status"] == "completed":
                 break
             time.sleep(0.05)
@@ -90,7 +99,7 @@ class JobQueueServiceTest(unittest.TestCase):
 
     def test_list_jobs_restarts_worker_if_thread_dies(self):
         self.queue._worker = None
-        jobs = self.queue.list_jobs(user_id="u1")
+        jobs = self.queue.list_jobs(user_id=self.user_id)
         self.assertEqual(jobs, [])
         self.assertIsNotNone(self.queue._worker)
         self.assertTrue(self.queue._worker.is_alive())
@@ -111,7 +120,7 @@ class JobQueueServiceTest(unittest.TestCase):
             },
         )
         created = self.queue.submit_job(
-            user_id="u1",
+            user_id=self.user_id,
             job_type="orchestrate",
             payload={"prompt_text": "storm"},
         )
@@ -119,7 +128,7 @@ class JobQueueServiceTest(unittest.TestCase):
         deadline = time.time() + 3.0
         record = None
         while time.time() < deadline:
-            record = self.queue.get_job(user_id="u1", job_id=created["job_id"])
+            record = self.queue.get_job(user_id=self.user_id, job_id=created["job_id"])
             if record and record["status"] == "completed":
                 break
             time.sleep(0.05)
@@ -132,7 +141,7 @@ class JobQueueServiceTest(unittest.TestCase):
     def test_project_store_serializes_dataclass_results(self):
         store = ProjectStore(self.db)
         saved = store.save_project(
-            user_id="u1",
+            user_id=self.user_id,
             project_id=None,
             name="Storm Demo",
             latest_result={
@@ -148,7 +157,7 @@ class JobQueueServiceTest(unittest.TestCase):
             },
         )
 
-        loaded = store.get_project(user_id="u1", project_id=saved["project_id"])
+        loaded = store.get_project(user_id=self.user_id, project_id=saved["project_id"])
         self.assertIsNotNone(loaded)
         self.assertEqual(loaded["latest_result"]["storm_pipe"]["name"], "P-002")
         self.assertEqual(loaded["latest_result"]["storm_pipe"]["diameter_in"], 24.0)
