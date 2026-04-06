@@ -900,6 +900,13 @@ function buildThinkingState({
       progress: 22,
     };
   }
+  if (busy && normalizedStatus.includes("starting the engineering run")) {
+    return {
+      label: "Engineering Run",
+      detail: "Starting the core design pipeline and waiting for the first engineering result.",
+      progress: 34,
+    };
+  }
   return {
     label: "Thinking",
     detail:
@@ -1482,10 +1489,26 @@ export default function PerformanceAIDashboard() {
   }) => {
     setBusy(true);
     setActivePlanTool(mode);
+    setStatusMessage(
+      mode === "fix"
+        ? "Civora AI is starting the fix run."
+        : mode === "improve"
+          ? "Civora AI is starting the improvement run."
+          : "Civora AI is starting the engineering run.",
+    );
+    const liveRunController = new AbortController();
+    const liveRunTimeoutMs = 12_000;
+    let timedOut = false;
+    const handleAbort = () => liveRunController.abort();
+    signal?.addEventListener("abort", handleAbort, { once: true });
+    const timeoutId = window.setTimeout(() => {
+      timedOut = true;
+      liveRunController.abort();
+    }, liveRunTimeoutMs);
     try {
       const data = await postJson<any>("/api/orchestrate", requestPayload, {
         token,
-        signal,
+        signal: liveRunController.signal,
       });
       applyBackendResult(data);
       appendChatMessage(
@@ -1512,6 +1535,40 @@ export default function PerformanceAIDashboard() {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "";
+      if (timedOut && token) {
+        try {
+          const queued = await postJson<{ job: JobSummary }>(
+            "/api/jobs/orchestrate",
+            {
+              project_id: projectId || null,
+              request: requestPayload,
+            },
+            { token },
+          );
+          setActiveJobId(queued.job.job_id);
+          appendChatMessage(
+            "assistant",
+            [
+              assistantPrefix,
+              "The live run took too long to stay on the direct connection, so I queued it in the background instead.",
+              `Job ${queued.job.job_id} is now running and I’ll pick it up when it finishes.`,
+            ]
+              .filter(Boolean)
+              .join(" "),
+            "status",
+          );
+          setStatusMessage(
+            `The live run was queued as ${queued.job.job_id} because the direct request took too long.`,
+          );
+          return;
+        } catch (queueError) {
+          const queueMessage =
+            queueError instanceof Error ? queueError.message : "Job queue failed.";
+          appendChatMessage("assistant", queueMessage, "status");
+          setStatusMessage(queueMessage);
+          return;
+        }
+      }
       if (error instanceof Error && error.name === "AbortError") {
         appendChatMessage(
           "assistant",
@@ -1581,6 +1638,8 @@ export default function PerformanceAIDashboard() {
               : "Planner run failed.",
       );
     } finally {
+      window.clearTimeout(timeoutId);
+      signal?.removeEventListener("abort", handleAbort);
       setBusy(false);
       setActivePlanTool("run");
       directRunAbortRef.current = null;
