@@ -25,6 +25,7 @@ from core.utils import (
 
 LAYER_LINEWIDTH = {
     "BUILDING": 2.5,
+    "PAD": 1.4,
     "PAVEMENT": 2.0,
     "ROAD": 2.0,
     "PIPE": 2.0,
@@ -42,6 +43,7 @@ LAYER_LINEWIDTH = {
 
 LAYER_COLORS = {
     "BUILDING": "#0f172a",
+    "PAD": "#94a3b8",
     "PAVEMENT": "#64748b",
     "ROAD": "#475569",
     "PIPE": "#1d4ed8",
@@ -58,6 +60,7 @@ LAYER_COLORS = {
 }
 
 LAYER_LINESTYLE = {
+    "PAD": (0, (6, 4)),
     "EG_CONTOUR": "--",
     "FG_CONTOUR": "-.",
     "DRAIN_FLOW": (0, (4, 4)),
@@ -65,6 +68,7 @@ LAYER_LINESTYLE = {
 }
 
 SUPPRESSED_AUTO_LABEL_LAYERS = {
+    "PAD",
     "PIPE",
     "SAN",
     "EG_CONTOUR",
@@ -77,6 +81,7 @@ SUPPRESSED_AUTO_LABEL_LAYERS = {
 }
 SUPPRESSED_TEXT_LAYERS = {"EG_CONTOUR", "FG_CONTOUR", "DRAIN_FLOW", "LOW_POINTS", "UTILITY"}
 FOCUS_EXCLUDED_LAYERS = {"ANNO", "SYMBOL", "UTILITY", "DRAIN_FLOW", "EG_CONTOUR", "FG_CONTOUR", "SPOT_EG", "SPOT_FG", "LOW_POINTS"}
+SUPPRESSED_LABEL_TOKENS = ("BUILDABLE_AREA", "GENERIC_UTILITY", "SERVICE_TIE", "SOURCE_SERVICE", "BUILDING_SERVICE")
 
 
 def get_linewidth(action):
@@ -101,7 +106,10 @@ def preview_label(action):
         return ""
     if layer in SUPPRESSED_AUTO_LABEL_LAYERS:
         return ""
-    return label
+    upper = label.upper()
+    if any(token in upper for token in SUPPRESSED_LABEL_TOKENS):
+        return ""
+    return label.replace("_", " ").strip()
 
 
 def _should_draw_text_note(action):
@@ -114,9 +122,39 @@ def _should_draw_text_note(action):
     upper = txt.upper()
     if len(txt) > 28:
         return False
-    if any(token in upper for token in ("INV ", " S=", "LOW-", "GENERIC_UTILITY", "UTILITY-")):
+    if any(token in upper for token in ("INV ", " S=", "LOW-", "GENERIC_UTILITY", "UTILITY-", "SERVICE_TIE", "SOURCE_SERVICE", "BUILDING_SERVICE")):
         return False
     return True
+
+
+def _has_primary_site_geometry(actions):
+    for action in actions:
+        layer = (action.get("layer") or "").upper()
+        task = str(action.get("task") or "").lower()
+        if layer in {"BUILDING", "PAVEMENT", "ROAD"} and task in {"rectangle", "polygon", "polyline"}:
+            return True
+    return False
+
+
+def _filtered_preview_actions(actions):
+    records = [action for action in actions if isinstance(action, dict)]
+    has_primary_site_geometry = _has_primary_site_geometry(records)
+    filtered = []
+    for action in records:
+        layer = (action.get("layer") or "").upper()
+        label = clean_label(action.get("label"), "").upper()
+        text = safe_text(action.get("text"), "").upper()
+        task = str(action.get("task") or "").lower()
+        canonical_source_type = str(action.get("canonical_source_type") or "").upper()
+        helper_signature = " ".join(part for part in (label, text, canonical_source_type) if part)
+        if has_primary_site_geometry and layer == "PAD" and "BUILDABLE_AREA" in label:
+            continue
+        if task == "text_note" and any(token in text for token in SUPPRESSED_LABEL_TOKENS):
+            continue
+        if layer == "UTILITY" and any(token in helper_signature for token in ("SERVICE", "TIE", "GENERIC_UTILITY")):
+            continue
+        filtered.append(action)
+    return filtered
 
 
 # ----------------------------------------
@@ -132,11 +170,23 @@ def draw_rectangle(ax, action):
     if w <= 0 or h <= 0:
         return None
 
+    layer = (action.get("layer") or "").upper()
+    fill_alpha = 0.0
+    facecolor = "none"
+    if layer == "BUILDING":
+        fill_alpha = 0.08
+        facecolor = get_color(action)
+    elif layer == "PAVEMENT":
+        fill_alpha = 0.06
+        facecolor = get_color(action)
+
     rect = Rectangle(
         (x, y),
         w,
         h,
-        fill=False,
+        fill=fill_alpha > 0.0,
+        facecolor=facecolor,
+        alpha=fill_alpha if fill_alpha > 0.0 else 1.0,
         linewidth=get_linewidth(action),
         edgecolor=get_color(action),
         linestyle=get_linestyle(action),
@@ -338,7 +388,7 @@ def _expand_bounds(bounds, pad_ratio=0.08, min_pad=8.0):
 
 
 def _draw_plan(ax, plan):
-    actions = plan.get("actions", [])
+    actions = _filtered_preview_actions(plan.get("actions", []))
     if not actions:
         return False
 

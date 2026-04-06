@@ -15,11 +15,13 @@ import {
   History,
   LogOut,
   Map,
+  Maximize2,
   MessageSquarePlus,
   RefreshCw,
   Save,
   Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
 
 import {
@@ -985,6 +987,7 @@ export default function PerformanceAIDashboard() {
   const [planPreviewUrl, setPlanPreviewUrl] = useState("");
   const [planPreviewSummary, setPlanPreviewSummary] =
     useState<PreviewResponse["summary"] | null>(null);
+  const [previewFullscreenOpen, setPreviewFullscreenOpen] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [jobs, setJobs] = useState<JobSummary[]>([]);
@@ -3383,6 +3386,16 @@ export default function PerformanceAIDashboard() {
                   >
                     Refresh Preview
                   </button>
+                  {planPreviewUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => setPreviewFullscreenOpen(true)}
+                      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                    >
+                      <Maximize2 className="h-4 w-4" />
+                      Fullscreen Preview
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     onClick={handleExportDxf}
@@ -3407,7 +3420,8 @@ export default function PerformanceAIDashboard() {
                   <img
                     src={planPreviewUrl}
                     alt="Generated plan preview"
-                    className="max-h-[520px] w-full rounded-[20px] bg-white object-contain shadow-sm"
+                    className="max-h-[520px] w-full cursor-zoom-in rounded-[20px] bg-white object-contain shadow-sm"
+                    onClick={() => setPreviewFullscreenOpen(true)}
                   />
                 </div>
               ) : (
@@ -3415,6 +3429,38 @@ export default function PerformanceAIDashboard() {
                   Send a message and Civora AI will generate a plan preview here.
                 </div>
               )}
+
+              {previewFullscreenOpen && planPreviewUrl ? (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/88 p-4 backdrop-blur-sm">
+                  <div className="flex h-full w-full max-w-[96vw] flex-col rounded-[28px] border border-slate-700/60 bg-slate-950 shadow-[0_30px_90px_-40px_rgba(15,23,42,0.95)]">
+                    <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-5 py-4 text-white">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                          Fullscreen Preview
+                        </p>
+                        <p className="mt-1 text-sm text-slate-200">
+                          Inspect the latest engineered plan without the sidebar chrome.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewFullscreenOpen(false)}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-100 transition hover:bg-slate-800"
+                      >
+                        <X className="h-4 w-4" />
+                        Close
+                      </button>
+                    </div>
+                    <div className="flex min-h-0 flex-1 items-center justify-center p-4">
+                      <img
+                        src={planPreviewUrl}
+                        alt="Generated plan preview fullscreen"
+                        className="max-h-full w-full rounded-[20px] bg-white object-contain shadow-2xl"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               {previewReview && (
                 <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(320px,1fr)]">
