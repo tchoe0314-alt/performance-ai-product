@@ -968,6 +968,7 @@ export default function PerformanceAIDashboard() {
   const [jobClockMs, setJobClockMs] = useState(() => Date.now());
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const runSubmissionRef = useRef(false);
+  const directRunAbortRef = useRef<AbortController | null>(null);
   const lastJobStatusRef = useRef<Record<string, string>>({});
   const lastStaleJobWarningRef = useRef<Record<string, boolean>>({});
   const chatMessagesRef = useRef<ChatMessage[]>([createWelcomeMessage()]);
@@ -1114,6 +1115,7 @@ export default function PerformanceAIDashboard() {
     () => (projectId ? currentProjectActiveJob : activeJob),
     [activeJob, currentProjectActiveJob, projectId],
   );
+  const hasDirectRunInFlight = busy && !visibleActiveJob && Boolean(directRunAbortRef.current);
   const visibleActiveJobStale = useMemo(
     () => isLikelyStaleJob(visibleActiveJob, jobClockMs),
     [visibleActiveJob, jobClockMs],
@@ -1468,17 +1470,20 @@ export default function PerformanceAIDashboard() {
     requestPayload,
     assistantPrefix,
     clearPromptOnSuccess = false,
+    signal,
   }: {
     mode: PlanToolMode;
     requestPayload: any;
     assistantPrefix?: string | null;
     clearPromptOnSuccess?: boolean;
+    signal?: AbortSignal;
   }) => {
     setBusy(true);
     setActivePlanTool(mode);
     try {
       const data = await postJson<any>("/api/orchestrate", requestPayload, {
         token,
+        signal,
       });
       applyBackendResult(data);
       appendChatMessage(
@@ -1505,6 +1510,15 @@ export default function PerformanceAIDashboard() {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "";
+      if (error instanceof Error && error.name === "AbortError") {
+        appendChatMessage(
+          "assistant",
+          "I stopped the live request before it finished.",
+          "status",
+        );
+        setStatusMessage("Cancelled the live request.");
+        return;
+      }
       const looksLikeConnectivityFailure = isConnectivityFailureMessage(errorMessage);
       if (looksLikeConnectivityFailure && token) {
         try {
@@ -1567,6 +1581,7 @@ export default function PerformanceAIDashboard() {
     } finally {
       setBusy(false);
       setActivePlanTool("run");
+      directRunAbortRef.current = null;
     }
   };
 
@@ -1767,6 +1782,8 @@ export default function PerformanceAIDashboard() {
       return;
     }
 
+    const runController = new AbortController();
+    directRunAbortRef.current = runController;
     runSubmissionRef.current = true;
     setBusy(true);
     setActivePlanTool("run");
@@ -1781,7 +1798,7 @@ export default function PerformanceAIDashboard() {
           message: trimmedPrompt,
           context: buildChatDecisionContext({}, trimmedPrompt),
         },
-        { token },
+        { token, signal: runController.signal },
       );
       const overrides = decision.control_overrides ?? {};
       applyControlOverrides(overrides);
@@ -1846,6 +1863,7 @@ export default function PerformanceAIDashboard() {
           },
           assistantPrefix: decision.assistant_message,
           clearPromptOnSuccess: true,
+          signal: runController.signal,
         });
         await saveProject({
           silent: true,
@@ -1891,6 +1909,7 @@ export default function PerformanceAIDashboard() {
         },
         assistantPrefix: decision.assistant_message,
         clearPromptOnSuccess: true,
+        signal: runController.signal,
       });
       await saveProject({
         silent: true,
@@ -1902,6 +1921,18 @@ export default function PerformanceAIDashboard() {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "";
+      if (error instanceof Error && error.name === "AbortError") {
+        appendChatMessage(
+          "assistant",
+          "I stopped the live request before it finished.",
+          "status",
+        );
+        setStatusMessage("Cancelled the live request.");
+        setBusy(false);
+        setActivePlanTool("run");
+        directRunAbortRef.current = null;
+        return;
+      }
       if (token && isConnectivityFailureMessage(errorMessage)) {
         try {
           const fallbackPayload = buildPayloadFromOverrides({}, trimmedPrompt);
@@ -1947,6 +1978,7 @@ export default function PerformanceAIDashboard() {
       setActivePlanTool("run");
     } finally {
       runSubmissionRef.current = false;
+      directRunAbortRef.current = null;
     }
   };
 
@@ -1979,34 +2011,45 @@ export default function PerformanceAIDashboard() {
   };
 
   const handleCancelActiveJob = async () => {
-    if (!token || !visibleActiveJob?.job_id) return;
-    try {
-      const data = await postJson<{ job: JobSummary }>(
-        `/api/jobs/${visibleActiveJob.job_id}/cancel`,
-        {},
-        { token },
-      );
-      setJobs((current) => {
-        const next = [...current];
-        const index = next.findIndex((job) => job.job_id === data.job.job_id);
-        if (index >= 0) {
-          next[index] = { ...next[index], ...data.job };
-        } else {
-          next.unshift(data.job);
+    if (visibleActiveJob?.job_id && token) {
+      try {
+        const data = await postJson<{ job: JobSummary }>(
+          `/api/jobs/${visibleActiveJob.job_id}/cancel`,
+          {},
+          { token },
+        );
+        setJobs((current) => {
+          const next = [...current];
+          const index = next.findIndex((job) => job.job_id === data.job.job_id);
+          if (index >= 0) {
+            next[index] = { ...next[index], ...data.job };
+          } else {
+            next.unshift(data.job);
+          }
+          return next;
+        });
+        appendChatMessage("assistant", `Job ${data.job.job_id} was cancelled.`, "status");
+        setStatusMessage(`Cancelled job ${data.job.job_id}.`);
+        if (activeJobId === data.job.job_id) {
+          setActiveJobId("");
         }
-        return next;
-      });
-      appendChatMessage("assistant", `Job ${data.job.job_id} was cancelled.`, "status");
-      setStatusMessage(`Cancelled job ${data.job.job_id}.`);
-      if (activeJobId === data.job.job_id) {
-        setActiveJobId("");
+        setBusy(false);
+        runSubmissionRef.current = false;
+      } catch (error) {
+        setStatusMessage(
+          error instanceof Error ? error.message : "Job cancel failed.",
+        );
       }
-      setBusy(false);
+      return;
+    }
+    if (directRunAbortRef.current) {
+      directRunAbortRef.current.abort();
+      directRunAbortRef.current = null;
       runSubmissionRef.current = false;
-    } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : "Job cancel failed.",
-      );
+      setBusy(false);
+      setActivePlanTool("run");
+      setStatusMessage("Cancelling the live request...");
+      return;
     }
   };
 
@@ -3051,15 +3094,15 @@ export default function PerformanceAIDashboard() {
                         style={{ width: `${thinkingState.progress}%` }}
                       />
                     </div>
-                    {visibleActiveJob && (
+                    {(visibleActiveJob || hasDirectRunInFlight) && (
                       <div className="mt-4 flex justify-end">
                         <button
                           type="button"
                           onClick={handleCancelActiveJob}
-                          disabled={String(visibleActiveJob.status || "").toLowerCase() === "cancelling"}
+                          disabled={String(visibleActiveJob?.status || "").toLowerCase() === "cancelling"}
                           className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          {String(visibleActiveJob.status || "").toLowerCase() === "cancelling"
+                          {String(visibleActiveJob?.status || "").toLowerCase() === "cancelling"
                             ? "Cancelling..."
                             : "Cancel"}
                         </button>

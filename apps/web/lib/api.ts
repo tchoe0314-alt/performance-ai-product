@@ -25,6 +25,7 @@ export const API_BASE_URL = resolveApiBaseUrl();
 
 type RequestOptions = {
   token?: string | null;
+  signal?: AbortSignal;
 };
 
 function buildHeaders(token?: string | null, json = true): HeadersInit {
@@ -63,6 +64,9 @@ export function toApiUrl(path: string): string {
 
 function formatNetworkError(error: unknown): Error {
   if (error instanceof Error) {
+    if (error.name === "AbortError") {
+      return error;
+    }
     if (error.message.includes("NEXT_PUBLIC_API_BASE_URL")) {
       return error;
     }
@@ -103,6 +107,7 @@ export async function getJson<T>(
       method: "GET",
       cache: "no-store",
       headers: buildHeaders(options.token, false),
+      signal: options.signal,
     });
   } catch (error) {
     throw formatNetworkError(error);
@@ -121,6 +126,7 @@ export async function postJson<T>(
       method: "POST",
       headers: buildHeaders(options.token, true),
       body: JSON.stringify(body),
+      signal: options.signal,
     });
   } catch (error) {
     throw formatNetworkError(error);
@@ -139,6 +145,7 @@ export async function postForm<T>(
       method: "POST",
       headers: options.token ? buildHeaders(options.token, false) : undefined,
       body: formData,
+      signal: options.signal,
     });
   } catch (error) {
     throw formatNetworkError(error);
@@ -155,6 +162,7 @@ export async function deleteJson<T>(
     response = await fetch(toApiUrl(path), {
       method: "DELETE",
       headers: buildHeaders(options.token, false),
+      signal: options.signal,
     });
   } catch (error) {
     throw formatNetworkError(error);
@@ -173,6 +181,7 @@ export async function postBinary(
       method: "POST",
       headers: buildHeaders(options.token, true),
       body: JSON.stringify(body),
+      signal: options.signal,
     });
   } catch (error) {
     throw formatNetworkError(error);
