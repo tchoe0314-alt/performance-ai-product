@@ -1034,6 +1034,102 @@ export default function PerformanceAIDashboard() {
     },
   ];
 
+  const parsePositiveNumber = (value: string | number | null | undefined) => {
+    const numeric = Number(value ?? 0);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+  };
+
+  const buildManualFields = ({
+    strategy,
+    nextSiteName,
+    nextFileName,
+    nextUnits,
+    nextProjectType,
+    nextLotWidth,
+    nextLotHeight,
+    nextSetback,
+    nextBuildingWidth,
+    nextBuildingDepth,
+    nextParkingCount,
+    nextRoads,
+    nextGrading,
+    nextDrainage,
+    nextUtilities,
+  }: {
+    strategy: "manual" | "assisted";
+    nextSiteName: string;
+    nextFileName: string;
+    nextUnits: string;
+    nextProjectType: string;
+    nextLotWidth: string | number | null | undefined;
+    nextLotHeight: string | number | null | undefined;
+    nextSetback: string | number | null | undefined;
+    nextBuildingWidth: string | number | null | undefined;
+    nextBuildingDepth: string | number | null | undefined;
+    nextParkingCount: string | number | null | undefined;
+    nextRoads: boolean;
+    nextGrading: boolean;
+    nextDrainage: boolean;
+    nextUtilities: boolean;
+  }) => {
+    const lotWidthValue = parsePositiveNumber(nextLotWidth);
+    const lotHeightValue = parsePositiveNumber(nextLotHeight);
+    const setbackValue = parsePositiveNumber(nextSetback);
+    const buildingWidthValue = parsePositiveNumber(nextBuildingWidth);
+    const buildingDepthValue = parsePositiveNumber(nextBuildingDepth);
+    const parkingCountValue = parsePositiveNumber(nextParkingCount);
+
+    const manualFields: Record<string, any> = {
+      project_name: nextSiteName,
+      file_name: nextFileName,
+      units: nextUnits,
+      project_type: nextProjectType,
+      disciplines: [
+        nextRoads ? "corridor" : null,
+        nextGrading ? "grading" : null,
+        nextDrainage ? "drainage" : null,
+        nextUtilities ? "utility" : null,
+      ].filter(Boolean),
+    };
+
+    if (lotWidthValue !== null && lotHeightValue !== null) {
+      manualFields.lot = {
+        x: 0,
+        y: 0,
+        w: lotWidthValue,
+        h: lotHeightValue,
+      };
+    } else if (strategy === "manual") {
+      manualFields.lot = { x: 0, y: 0, w: 0, h: 0 };
+    }
+
+    if (setbackValue !== null) {
+      manualFields.setback = setbackValue;
+    } else if (strategy === "manual") {
+      manualFields.setback = 0;
+    }
+
+    if (buildingWidthValue !== null) {
+      manualFields.building_width = buildingWidthValue;
+    } else if (strategy === "manual") {
+      manualFields.building_width = 0;
+    }
+
+    if (buildingDepthValue !== null) {
+      manualFields.building_depth = buildingDepthValue;
+    } else if (strategy === "manual") {
+      manualFields.building_depth = 0;
+    }
+
+    if (parkingCountValue !== null) {
+      manualFields.site_plan = { parking_count: parkingCountValue };
+    } else if (strategy === "manual") {
+      manualFields.site_plan = { parking_count: 0 };
+    }
+
+    return manualFields;
+  };
+
   const payloadPreview = useMemo(
     () => ({
       input_mode: strategyMode,
@@ -1043,30 +1139,23 @@ export default function PerformanceAIDashboard() {
       meta: {
         chat_thread: chatMessagesRef.current,
       },
-      manual_fields: {
-        project_name: siteName,
-        file_name: fileName,
-        units,
-        project_type: projectType,
-        lot: {
-          x: 0,
-          y: 0,
-          w: Number(lotWidth || 0),
-          h: Number(lotHeight || 0),
-        },
-        setback: Number(setback || 0),
-        building_width: Number(buildingWidth || 0),
-        building_depth: Number(buildingDepth || 0),
-        site_plan: {
-          parking_count: Number(parkingCount || 0),
-        },
-        disciplines: [
-          roads ? "corridor" : null,
-          grading ? "grading" : null,
-          drainage ? "drainage" : null,
-          utilities ? "utility" : null,
-        ].filter(Boolean),
-      },
+      manual_fields: buildManualFields({
+        strategy: strategyMode,
+        nextSiteName: siteName,
+        nextFileName: fileName,
+        nextUnits: units,
+        nextProjectType: projectType,
+        nextLotWidth: lotWidth,
+        nextLotHeight: lotHeight,
+        nextSetback: setback,
+        nextBuildingWidth: buildingWidth,
+        nextBuildingDepth: buildingDepth,
+        nextParkingCount: parkingCount,
+        nextRoads: roads,
+        nextGrading: grading,
+        nextDrainage: drainage,
+        nextUtilities: utilities,
+      }),
       allow_ai_fill_for_blanks: strategyMode !== "manual",
     }),
     [
@@ -1467,30 +1556,23 @@ export default function PerformanceAIDashboard() {
       meta: {
         chat_thread: chatMessagesRef.current,
       },
-      manual_fields: {
-        project_name: nextSiteName,
-        file_name: nextFileName,
-        units: nextUnits,
-        project_type: nextProjectType,
-        lot: {
-          x: 0,
-          y: 0,
-          w: Number((overrides.lotWidth ?? lotWidth) || 0),
-          h: Number((overrides.lotHeight ?? lotHeight) || 0),
-        },
-        setback: Number((overrides.setback ?? setback) || 0),
-        building_width: Number((overrides.buildingWidth ?? buildingWidth) || 0),
-        building_depth: Number((overrides.buildingDepth ?? buildingDepth) || 0),
-        site_plan: {
-          parking_count: Number((overrides.parkingCount ?? parkingCount) || 0),
-        },
-        disciplines: [
-          nextRoads ? "corridor" : null,
-          nextGrading ? "grading" : null,
-          nextDrainage ? "drainage" : null,
-          nextUtilities ? "utility" : null,
-        ].filter(Boolean),
-      },
+      manual_fields: buildManualFields({
+        strategy: nextStrategy,
+        nextSiteName,
+        nextFileName,
+        nextUnits,
+        nextProjectType,
+        nextLotWidth: overrides.lotWidth ?? lotWidth,
+        nextLotHeight: overrides.lotHeight ?? lotHeight,
+        nextSetback: overrides.setback ?? setback,
+        nextBuildingWidth: overrides.buildingWidth ?? buildingWidth,
+        nextBuildingDepth: overrides.buildingDepth ?? buildingDepth,
+        nextParkingCount: overrides.parkingCount ?? parkingCount,
+        nextRoads,
+        nextGrading,
+        nextDrainage,
+        nextUtilities,
+      }),
       allow_ai_fill_for_blanks: nextStrategy !== "manual",
     };
   };

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from core.config import (
     DEFAULT_LOT_HEIGHT,
@@ -25,6 +25,215 @@ from .field_contract import (
     unwrap_fields_for_execution,
 )
 from .runtime import PlannerExecutionContext, _lot_area, _mark_dependency_state, collect_plan_stats
+
+
+def _program_building_specs(parsed: Dict[str, Any], site_plan: Dict[str, Any]) -> List[Dict[str, Any]]:
+    execution_payload = unwrap_fields_for_execution(parsed)
+    buildings = safe_list(execution_payload.get("buildings"))
+    specs: List[Dict[str, Any]] = []
+    default_w = max(20.0, safe_float(site_plan.get("building_width"), DEFAULT_PAD_WIDTH))
+    default_d = max(20.0, safe_float(site_plan.get("building_depth"), DEFAULT_PAD_DEPTH))
+    for idx, raw in enumerate(buildings, start=1):
+        rec = safe_dict(raw)
+        if not rec:
+            continue
+        specs.append(
+            {
+                "name": safe_str(rec.get("name"), f"Building {idx}"),
+                "use": lower_text(rec.get("use")) or "generic",
+                "w": max(20.0, safe_float(rec.get("w"), default_w)),
+                "d": max(20.0, safe_float(rec.get("d"), default_d)),
+            }
+        )
+    if specs:
+        return specs
+    return [{"name": "BUILDING", "use": "generic", "w": default_w, "d": default_d}]
+
+
+def _place_row(
+    specs: Sequence[Dict[str, Any]],
+    *,
+    min_x: float,
+    max_x: float,
+    base_y: float,
+    row_height: float,
+) -> List[Dict[str, Any]]:
+    if not specs:
+        return []
+    span_w = max(max_x - min_x, 1.0)
+    widths = [safe_float(spec.get("w"), 20.0) for spec in specs]
+    spacing = max(30.0, min(span_w * 0.06, 90.0))
+    total_w = sum(widths) + spacing * max(len(widths) - 1, 0)
+    if total_w > span_w and len(widths) > 1:
+        spacing = max(16.0, (span_w - sum(widths)) / max(len(widths) - 1, 1))
+        total_w = sum(widths) + spacing * max(len(widths) - 1, 0)
+    start_x = min_x + max((span_w - total_w) / 2.0, 0.0)
+    placements: List[Dict[str, Any]] = []
+    cursor_x = start_x
+    for spec in specs:
+        w = safe_float(spec.get("w"), 20.0)
+        d = safe_float(spec.get("d"), 20.0)
+        y = base_y + max((row_height - d) / 2.0, 0.0)
+        placements.append(
+            {
+                "name": safe_str(spec.get("name"), "BUILDING"),
+                "use": lower_text(spec.get("use")) or "generic",
+                "w": w,
+                "d": d,
+                "x": round(cursor_x, 3),
+                "y": round(y, 3),
+            }
+        )
+        cursor_x += w + spacing
+    return placements
+
+
+def _synthesized_program_layout(
+    *,
+    lot_x: float,
+    lot_y: float,
+    lot_w: float,
+    lot_h: float,
+    street_edge: str,
+    specs: Sequence[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    if not specs:
+        return []
+    margin_x = max(35.0, lot_w * 0.06)
+    margin_y = max(35.0, lot_h * 0.06)
+    min_x = lot_x + margin_x
+    max_x = lot_x + lot_w - margin_x
+    min_y = lot_y + margin_y
+    max_y = lot_y + lot_h - margin_y
+
+    frontage_uses = {"retail", "commercial", "pad"}
+    frontage = [spec for spec in specs if (lower_text(spec.get("use")) or "generic") in frontage_uses]
+    primary = [spec for spec in specs if spec not in frontage]
+    if not primary:
+        primary, frontage = frontage, []
+
+    placements: List[Dict[str, Any]] = []
+    vertical_span = max(max_y - min_y, 1.0)
+    frontage_on_bottom = lower_text(street_edge) != "top"
+    top_row_y = min_y + vertical_span * (0.58 if frontage else 0.45)
+    top_row_h = max_y - top_row_y
+    bottom_row_y = min_y
+    bottom_row_h = max(top_row_y - min_y - max(lot_h * 0.04, 20.0), vertical_span * 0.22)
+
+    if len(primary) > 3:
+        split = (len(primary) + 1) // 2
+        upper_specs = primary[:split]
+        lower_specs = primary[split:]
+        if frontage_on_bottom:
+            placements.extend(_place_row(upper_specs, min_x=min_x, max_x=max_x, base_y=top_row_y, row_height=top_row_h))
+            placements.extend(_place_row(lower_specs, min_x=min_x, max_x=max_x, base_y=bottom_row_y + bottom_row_h * 0.35, row_height=bottom_row_h * 0.5))
+        else:
+            placements.extend(_place_row(upper_specs, min_x=min_x, max_x=max_x, base_y=bottom_row_y + bottom_row_h * 0.35, row_height=bottom_row_h * 0.5))
+            placements.extend(_place_row(lower_specs, min_x=min_x, max_x=max_x, base_y=top_row_y, row_height=top_row_h))
+    else:
+        placements.extend(_place_row(primary, min_x=min_x, max_x=max_x, base_y=top_row_y, row_height=top_row_h))
+
+    if frontage:
+        frontage_y = bottom_row_y if frontage_on_bottom else top_row_y
+        frontage_h = bottom_row_h if frontage_on_bottom else top_row_h * 0.5
+        placements.extend(_place_row(frontage, min_x=min_x, max_x=max_x, base_y=frontage_y, row_height=frontage_h))
+    return placements
+
+
+def _layout_fallback_actions(
+    placements: Sequence[Dict[str, Any]],
+    *,
+    lot_x: float,
+    lot_y: float,
+    lot_w: float,
+    lot_h: float,
+    street_edge: str,
+    culdesac_count: int = 0,
+) -> List[Dict[str, Any]]:
+    if not placements:
+        return []
+    actions: List[Dict[str, Any]] = []
+    cluster_min_x = min(item["x"] for item in placements)
+    cluster_min_y = min(item["y"] for item in placements)
+    cluster_max_x = max(item["x"] + item["w"] for item in placements)
+    cluster_max_y = max(item["y"] + item["d"] for item in placements)
+
+    road_offset = max(40.0, min(lot_w, lot_h) * 0.05)
+    loop_min_x = max(lot_x + 15.0, cluster_min_x - road_offset)
+    loop_min_y = max(lot_y + 15.0, cluster_min_y - road_offset)
+    loop_max_x = min(lot_x + lot_w - 15.0, cluster_max_x + road_offset)
+    loop_max_y = min(lot_y + lot_h - 15.0, cluster_max_y + road_offset)
+
+    if loop_max_x > loop_min_x and loop_max_y > loop_min_y:
+        loop_points = [
+            [round(loop_min_x, 3), round(loop_min_y, 3)],
+            [round(loop_max_x, 3), round(loop_min_y, 3)],
+            [round(loop_max_x, 3), round(loop_max_y, 3)],
+            [round(loop_min_x, 3), round(loop_max_y, 3)],
+            [round(loop_min_x, 3), round(loop_min_y, 3)],
+        ]
+        actions.append({"task": "polyline", "layer": "ROAD", "points": loop_points, "closed": False})
+
+        entry_x = (loop_min_x + loop_max_x) / 2.0
+        if lower_text(street_edge) == "top":
+            entry_points = [[entry_x, lot_y + lot_h], [entry_x, loop_max_y]]
+        else:
+            entry_points = [[entry_x, lot_y], [entry_x, loop_min_y]]
+        actions.append({"task": "polyline", "layer": "ROAD", "points": [[round(pt[0], 3), round(pt[1], 3)] for pt in entry_points], "closed": False})
+
+        culdesac_radius = max(45.0, min(lot_w, lot_h) * 0.045)
+        if culdesac_count >= 1:
+            actions.append(
+                {
+                    "task": "circle",
+                    "layer": "ROAD",
+                    "center": [round(loop_min_x, 3), round((loop_min_y + loop_max_y) / 2.0, 3)],
+                    "radius": round(culdesac_radius, 3),
+                }
+            )
+        if culdesac_count >= 2:
+            actions.append(
+                {
+                    "task": "circle",
+                    "layer": "ROAD",
+                    "center": [round(loop_max_x, 3), round((loop_min_y + loop_max_y) / 2.0, 3)],
+                    "radius": round(culdesac_radius, 3),
+                }
+            )
+
+    frontage_on_bottom = lower_text(street_edge) != "top"
+    for placement in placements:
+        px = safe_float(placement.get("x"), 0.0)
+        py = safe_float(placement.get("y"), 0.0)
+        pw = safe_float(placement.get("w"), 20.0)
+        pd = safe_float(placement.get("d"), 20.0)
+        lot_depth = max(48.0, min(90.0, pd * 0.8))
+        pavement_y = max(lot_y + 15.0, py - lot_depth - 18.0) if frontage_on_bottom else min(lot_y + lot_h - lot_depth - 15.0, py + pd + 18.0)
+        actions.append(
+            {
+                "task": "rectangle",
+                "layer": "PAVEMENT",
+                "origin": [round(max(lot_x + 15.0, px - 18.0), 3), round(pavement_y, 3)],
+                "width": round(min(lot_w - 30.0, pw + 36.0), 3),
+                "height": round(lot_depth, 3),
+            }
+        )
+    return actions
+
+
+def _merge_layout_actions(existing: Sequence[Dict[str, Any]], new_actions: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    merged: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for action in list(existing) + list(new_actions):
+        rec = safe_dict(action)
+        if not rec:
+            continue
+        key = repr(rec)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(deepcopy(rec))
+    return merged
 
 
 def run_layout_stage(
@@ -55,36 +264,101 @@ def run_layout_stage(
         lot_y = safe_float(lot.get("y"), DEFAULT_LOT_Y)
         lot_w = safe_float(lot.get("w"), DEFAULT_LOT_WIDTH)
         lot_h = safe_float(lot.get("h"), DEFAULT_LOT_HEIGHT)
+        street_edge = safe_str(execution_payload.get("street_edge"), "bottom")
+        building_specs = _program_building_specs(parsed, site_plan)
 
-        building_action = None
+        building_actions: List[Dict[str, Any]] = []
         for action in safe_list(expanded.get("actions")):
             if not isinstance(action, dict):
                 continue
             if lower_text(action.get("task")) == "rectangle" and safe_str(action.get("layer")).upper() == "BUILDING":
-                building_action = action
-                break
+                building_actions.append(action)
 
-        if building_action is not None:
-            origin = safe_list(building_action.get("origin"))
-            bx = safe_float(origin[0], lot_x) if len(origin) >= 2 else lot_x
-            by = safe_float(origin[1], lot_y) if len(origin) >= 2 else lot_y
-            build_w = max(1.0, safe_float(building_action.get("width"), build_w))
-            build_d = max(1.0, safe_float(building_action.get("height"), build_d))
+        placements: List[Dict[str, Any]] = []
+        if len(building_actions) >= len(building_specs) and building_actions:
+            for idx, building_action in enumerate(building_actions[: len(building_specs)]):
+                origin = safe_list(building_action.get("origin"))
+                bx = safe_float(origin[0], lot_x) if len(origin) >= 2 else lot_x
+                by = safe_float(origin[1], lot_y) if len(origin) >= 2 else lot_y
+                placements.append(
+                    {
+                        "name": safe_str(building_specs[idx].get("name"), safe_str(building_action.get("label"), f"BUILDING-{idx + 1}")),
+                        "use": lower_text(building_specs[idx].get("use")) or "generic",
+                        "x": bx,
+                        "y": by,
+                        "w": max(1.0, safe_float(building_action.get("width"), safe_float(building_specs[idx].get("w"), build_w))),
+                        "d": max(1.0, safe_float(building_action.get("height"), safe_float(building_specs[idx].get("d"), build_d))),
+                    }
+                )
         else:
+            placements = _synthesized_program_layout(
+                lot_x=lot_x,
+                lot_y=lot_y,
+                lot_w=lot_w,
+                lot_h=lot_h,
+                street_edge=street_edge,
+                specs=building_specs,
+            )
+            fallback_actions = []
+            for placement in placements:
+                fallback_actions.append(
+                    {
+                        "task": "rectangle",
+                        "layer": "BUILDING",
+                        "label": safe_str(placement.get("name"), "BUILDING"),
+                        "origin": [round(safe_float(placement.get("x"), 0.0), 3), round(safe_float(placement.get("y"), 0.0), 3)],
+                        "width": round(safe_float(placement.get("w"), build_w), 3),
+                        "height": round(safe_float(placement.get("d"), build_d), 3),
+                    }
+                )
+            fallback_actions.extend(
+                _layout_fallback_actions(
+                    placements,
+                    lot_x=lot_x,
+                    lot_y=lot_y,
+                    lot_w=lot_w,
+                    lot_h=lot_h,
+                    street_edge=street_edge,
+                    culdesac_count=max(0, safe_int(safe_dict(execution_payload.get("subdivision")).get("culdesac_count"), 0)),
+                )
+            )
+            if fallback_actions:
+                store_expanded_plan(
+                    project,
+                    {
+                        "project_name": safe_str(parsed.get("project_name"), "Generated Plan"),
+                        "units": safe_str(parsed.get("units"), "ft"),
+                        "actions": _merge_layout_actions(safe_list(expanded.get("actions")), fallback_actions),
+                        "meta": dict(expanded.get("meta") or {}),
+                        "assumptions": list(expanded.get("assumptions") or []),
+                    },
+                )
+
+        if not placements:
             bx = lot_x + max(5.0, (lot_w - build_w) / 2.0)
             by = lot_y + max(5.0, (lot_h - build_d) / 2.0)
+            placements = [{"name": "BUILDING", "use": "generic", "x": bx, "y": by, "w": build_w, "d": build_d}]
 
-        project.add_zone(rect_zone(bx, by, build_w, build_d, zone_type=ZoneType.BUILDING, name="BUILDING"))
-        project.add_object(
-            EngineeringObject(
-                kind="building",
-                name="BUILDING",
-                anchor=Point3D(bx + build_w / 2.0, by + build_d / 2.0, DEFAULT_PAD_ELEV),
-                tags=["layout", "building"],
-                domain=EngineeringDomain.BUILDING,
-                properties={"width": build_w, "depth": build_d},
+        for placement in placements:
+            px = safe_float(placement.get("x"), 0.0)
+            py = safe_float(placement.get("y"), 0.0)
+            pw = max(1.0, safe_float(placement.get("w"), build_w))
+            pd = max(1.0, safe_float(placement.get("d"), build_d))
+            pname = safe_str(placement.get("name"), "BUILDING")
+            puse = lower_text(placement.get("use")) or "generic"
+            zone = rect_zone(px, py, pw, pd, zone_type=ZoneType.BUILDING, name=pname)
+            project.add_zone(zone)
+            project.add_object(
+                EngineeringObject(
+                    kind=f"{puse}_building" if puse and puse != "generic" else "building",
+                    name=pname,
+                    anchor=Point3D(px + pw / 2.0, py + pd / 2.0, DEFAULT_PAD_ELEV),
+                    boundary=zone.boundary,
+                    tags=["layout", "building", puse] if puse else ["layout", "building"],
+                    domain=EngineeringDomain.BUILDING,
+                    properties={"width": pw, "depth": pd, "use": puse},
+                )
             )
-        )
 
         if field_path_is_omitted(parsed, "site_plan.parking_count"):
             parking_count = 0
@@ -115,8 +389,9 @@ def run_layout_stage(
             True,
             "Layout stage completed.",
             parking_count=parking_count,
-            building_width=build_w,
-            building_depth=build_d,
+            building_width=max((safe_float(item.get("w"), 0.0) for item in placements), default=build_w),
+            building_depth=max((safe_float(item.get("d"), 0.0) for item in placements), default=build_d),
+            building_count=len(placements),
             expanded_action_count=len(safe_list(expanded.get("actions"))),
         )
     except Exception as exc:

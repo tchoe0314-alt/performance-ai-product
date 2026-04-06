@@ -366,9 +366,60 @@ def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any
     return _deep_merge_field_aware(base, override)
 
 
+def _manual_numeric_is_blank(path: str, value: Any) -> bool:
+    if value is None:
+        return True
+    try:
+        numeric = float(value)
+    except Exception:
+        return False
+    blank_numeric_paths = {
+        "setback",
+        "building_width",
+        "building_depth",
+        "site_plan.parking_count",
+        "lot.w",
+        "lot.h",
+    }
+    return path in blank_numeric_paths and numeric <= 0.0
+
+
+def _sanitize_manual_fill_value(path: str, value: Any, allow_fill_for_blanks: bool) -> Any:
+    if not allow_fill_for_blanks:
+        return deepcopy(value)
+    if _is_field_wrapper(value):
+        return deepcopy(value)
+    if isinstance(value, dict):
+        sanitized: Dict[str, Any] = {}
+        for key, nested in value.items():
+            nested_path = f"{path}.{key}" if path else key
+            cleaned = _sanitize_manual_fill_value(nested_path, nested, allow_fill_for_blanks)
+            if cleaned is None:
+                continue
+            sanitized[key] = cleaned
+        if path == "lot":
+            width = _safe_float(sanitized.get("w"), 0.0)
+            height = _safe_float(sanitized.get("h"), 0.0)
+            if width <= 0.0 or height <= 0.0:
+                return None
+        if path == "site_plan" and not sanitized:
+            return None
+        return sanitized or None
+    if isinstance(value, list):
+        cleaned_items = [deepcopy(item) for item in value if item not in (None, "", [], {})]
+        return cleaned_items or None
+    if value in (None, "", [], {}):
+        return None
+    if _manual_numeric_is_blank(path, value):
+        return None
+    return deepcopy(value)
+
+
 def _merge_manual_fields(parsed: Dict[str, Any], manual_fields: Dict[str, Any], allow_fill_for_blanks: bool = True) -> Dict[str, Any]:
     out = deepcopy(parsed)
     manual_fields = _safe_dict(manual_fields)
+    if allow_fill_for_blanks:
+        manual_fields = _safe_dict(_sanitize_manual_fill_value("", manual_fields, allow_fill_for_blanks))
 
     def _looks_like_field_wrapper(value: Any) -> bool:
         return isinstance(value, dict) and "source" in value and "value" in value
@@ -677,15 +728,21 @@ def _estimate_parking_count_from_prompt(prompt_text: str, buildings: List[Dict[s
     lowered = prompt_text.lower()
     residential_units = 0
     residential_ratio = None
-    units_match = re.search(r"assume\s+(\d+)\s+units?\s+per\s+building", lowered)
-    ratio_match = re.search(r"residential:\s*(\d+(?:\.\d+)?)\s+spaces?\s+per\s+unit", lowered)
+    units_match = re.search(r"(?:assume|assuming)\s+(\d+)\s+units?\s+per\s+building", lowered)
+    ratio_match = re.search(
+        r"(?:residential(?:\s+parking)?(?:\s+at)?\s*:?\s*)(\d+(?:\.\d+)?)\s+spaces?\s+per\s+unit",
+        lowered,
+    )
     if units_match and ratio_match:
         residential_count = sum(1 for b in buildings if _lower(b.get("use")) == "multifamily")
         residential_units = residential_count * _safe_int(units_match.group(1), 0)
         residential_ratio = _safe_float(ratio_match.group(1), 0.0)
 
     commercial_spaces = 0
-    commercial_match = re.search(r"commercial:\s*1\s+space\s+per\s+(\d+(?:\.\d+)?)\s*sq\s*ft", lowered)
+    commercial_match = re.search(
+        r"(?:commercial(?:\s+parking)?(?:\s+at)?\s*:?\s*)1\s+space\s+per\s+(\d+(?:\.\d+)?)\s*sq\s*ft",
+        lowered,
+    )
     if commercial_match:
         sf_per_space = max(_safe_float(commercial_match.group(1), 250.0), 1.0)
         for b in buildings:

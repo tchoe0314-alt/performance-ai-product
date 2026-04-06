@@ -80,7 +80,7 @@ SUPPRESSED_AUTO_LABEL_LAYERS = {
     "STORM",
 }
 SUPPRESSED_TEXT_LAYERS = {"EG_CONTOUR", "FG_CONTOUR", "DRAIN_FLOW", "LOW_POINTS", "UTILITY"}
-FOCUS_EXCLUDED_LAYERS = {"ANNO", "SYMBOL", "UTILITY", "DRAIN_FLOW", "EG_CONTOUR", "FG_CONTOUR", "SPOT_EG", "SPOT_FG", "LOW_POINTS"}
+FOCUS_EXCLUDED_LAYERS = {"ANNO", "SYMBOL", "SITE", "PAD", "UTILITY", "DRAIN_FLOW", "EG_CONTOUR", "FG_CONTOUR", "SPOT_EG", "SPOT_FG", "LOW_POINTS"}
 SUPPRESSED_LABEL_TOKENS = ("BUILDABLE_AREA", "GENERIC_UTILITY", "SERVICE_TIE", "SOURCE_SERVICE", "BUILDING_SERVICE")
 
 
@@ -139,6 +139,10 @@ def _has_primary_site_geometry(actions):
 def _filtered_preview_actions(actions):
     records = [action for action in actions if isinstance(action, dict)]
     has_primary_site_geometry = _has_primary_site_geometry(records)
+    has_building_shapes = any(
+        (str(action.get("layer") or "").upper() == "BUILDING" and str(action.get("task") or "").lower() in {"rectangle", "polygon"})
+        for action in records
+    )
     filtered = []
     for action in records:
         layer = (action.get("layer") or "").upper()
@@ -147,7 +151,13 @@ def _filtered_preview_actions(actions):
         task = str(action.get("task") or "").lower()
         canonical_source_type = str(action.get("canonical_source_type") or "").upper()
         helper_signature = " ".join(part for part in (label, text, canonical_source_type) if part)
+        if has_primary_site_geometry and layer == "SITE":
+            continue
         if has_primary_site_geometry and layer == "PAD" and "BUILDABLE_AREA" in label:
+            continue
+        if has_primary_site_geometry and layer == "PAD" and task == "rectangle" and not label and not text:
+            continue
+        if has_building_shapes and layer == "BUILDING" and task == "text_note":
             continue
         if task == "text_note" and any(token in text for token in SUPPRESSED_LABEL_TOKENS):
             continue

@@ -2838,6 +2838,48 @@ def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
     return actions
 
 
+def _has_primary_preview_geometry(actions: Sequence[Dict[str, Any]]) -> bool:
+    important_layers = {"BUILDING", "ROAD", "PAVEMENT", "PARKING", "WALK"}
+    geometric_tasks = {"rectangle", "polygon", "polyline", "circle"}
+    for action in safe_list(actions):
+        rec = safe_dict(action)
+        if not rec:
+            continue
+        if safe_str(rec.get("layer")).upper() not in important_layers:
+            continue
+        if lower_text(rec.get("task")) in geometric_tasks:
+            return True
+    return False
+
+
+def _filter_base_preview_actions_for_expanded_plan(
+    base_actions: Sequence[Dict[str, Any]],
+    expanded_actions: Sequence[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    has_primary = _has_primary_preview_geometry(expanded_actions)
+    has_building_shapes = any(
+        safe_str(safe_dict(action).get("layer")).upper() == "BUILDING"
+        and lower_text(safe_dict(action).get("task")) in {"rectangle", "polygon"}
+        for action in safe_list(expanded_actions)
+    )
+    filtered: List[Dict[str, Any]] = []
+    for action in safe_list(base_actions):
+        rec = safe_dict(action)
+        if not rec:
+            continue
+        layer = safe_str(rec.get("layer")).upper()
+        label = safe_str(rec.get("label")).upper()
+        task = lower_text(rec.get("task"))
+        if has_primary and layer == "SITE":
+            continue
+        if has_primary and layer == "PAD" and label in {"BUILDABLE_AREA", "SITE", "LOT"}:
+            continue
+        if has_building_shapes and layer == "BUILDING" and task == "text_note":
+            continue
+        filtered.append(rec)
+    return filtered
+
+
 def project_model_to_plan(project: ProjectModel, project_name: str) -> Dict[str, Any]:
     expanded = safe_dict(getattr(project, "meta", {}).get("_expanded_plan"))
     if expanded and safe_list(expanded.get("actions")):
@@ -2852,10 +2894,15 @@ def project_model_to_plan(project: ProjectModel, project_name: str) -> Dict[str,
         out["units"] = project_units_text
         out.setdefault("meta", {})
         out["meta"]["source"] = "project_model+expanded"
+        expanded_actions = _filter_placeholder_engineering_actions(project, out.get("actions", []))
+        base_actions = _filter_base_preview_actions_for_expanded_plan(
+            _project_model_base_actions(project),
+            expanded_actions,
+        )
         out["actions"] = _merge_plan_actions(
             _merge_plan_actions(
-                _project_model_base_actions(project),
-                _filter_placeholder_engineering_actions(project, out.get("actions", [])),
+                base_actions,
+                expanded_actions,
             ),
             _canonical_export_actions(project),
         )

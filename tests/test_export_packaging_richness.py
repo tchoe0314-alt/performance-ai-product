@@ -6,6 +6,56 @@ from output.dxf_exporter import _site_plan_drainage_guidance_notes, _site_plan_s
 
 
 class ExportPackagingRichnessTest(unittest.TestCase):
+    def test_multi_building_program_keeps_multiple_building_footprints_in_preview_plan(self) -> None:
+        plan = build_plan(
+            {
+                "project_name": "Mixed Use Preview Test",
+                "units": "ft",
+                "mode": "site_plan",
+                "project_type": "mixed_use",
+                "site_type": "mixed_use",
+                "lot": {"x": 0.0, "y": 0.0, "w": 978.9, "h": 978.9},
+                "setback": 15.0,
+                "street_edge": "bottom",
+                "layout_strategy": "balanced",
+                "site_plan": {"building_width": 120.0, "building_depth": 60.0, "parking_count": 0},
+                "buildings": [
+                    {"name": "Building 1", "use": "multifamily", "w": 120.0, "d": 60.0},
+                    {"name": "Building 2", "use": "multifamily", "w": 120.0, "d": 60.0},
+                    {"name": "Building 3", "use": "multifamily", "w": 120.0, "d": 60.0},
+                    {"name": "Retail Pad", "use": "retail", "w": 80.0, "d": 50.0},
+                ],
+                "subdivision": {"acreage": 22.0, "culdesac_count": 2},
+                "drainage": {"detention_required": True},
+                "meta": {"input_mode": "assisted", "source_input_mode": "prompt"},
+            }
+        )
+
+        building_rectangles = [
+            action
+            for action in plan.get("actions") or []
+            if str(action.get("layer") or "").upper() == "BUILDING"
+            and str(action.get("task") or "").lower() == "rectangle"
+        ]
+        road_shapes = [
+            action
+            for action in plan.get("actions") or []
+            if str(action.get("layer") or "").upper() == "ROAD"
+            and str(action.get("task") or "").lower() in {"polyline", "circle", "rectangle", "polygon"}
+        ]
+        pavement_shapes = [
+            action
+            for action in plan.get("actions") or []
+            if str(action.get("layer") or "").upper() == "PAVEMENT"
+            and str(action.get("task") or "").lower() == "rectangle"
+        ]
+
+        self.assertGreaterEqual(len(building_rectangles), 4)
+        self.assertTrue(any("BUILDING 1" in str(action.get("label") or "").upper() for action in building_rectangles))
+        self.assertTrue(any("RETAIL PAD" in str(action.get("label") or "").upper() for action in building_rectangles))
+        self.assertTrue(road_shapes)
+        self.assertTrue(pavement_shapes)
+
     def test_project_model_plan_keeps_site_geometry_when_expanded_plan_is_engineering_heavy(self) -> None:
         project = planner.ProjectModel(name="Preview Context Test", units="ft")
         project.add_zone(planner.rect_zone(0.0, 0.0, 220.0, 160.0, zone_type=planner.ZoneType.SITE, name="LOT"))
@@ -33,6 +83,53 @@ class ExportPackagingRichnessTest(unittest.TestCase):
         self.assertIn("BUILDING", rect_layers)
         self.assertTrue(
             any(str(action.get("canonical_source_type") or "") == "storm_pipe_segment" for action in actions)
+        )
+
+    def test_project_model_plan_hides_generic_site_envelopes_when_real_layout_geometry_exists(self) -> None:
+        project = planner.ProjectModel(name="Primary Preview Test", units="ft")
+        project.add_zone(planner.rect_zone(0.0, 0.0, 220.0, 160.0, zone_type=planner.ZoneType.SITE, name="SITE"))
+        project.add_zone(
+            planner.rect_zone(15.0, 15.0, 190.0, 130.0, zone_type=planner.ZoneType.PAD, name="BUILDABLE_AREA")
+        )
+        project.meta["_expanded_plan"] = {
+            "project_name": "Expanded Layout Preview",
+            "units": "ft",
+            "actions": [
+                {"task": "rectangle", "layer": "BUILDING", "origin": [20.0, 30.0], "width": 50.0, "height": 30.0, "label": "BUILDING 1"},
+                {"task": "rectangle", "layer": "BUILDING", "origin": [90.0, 30.0], "width": 50.0, "height": 30.0, "label": "BUILDING 2"},
+                {"task": "polyline", "layer": "ROAD", "points": [[10.0, 20.0], [200.0, 20.0], [200.0, 120.0], [10.0, 120.0], [10.0, 20.0]]},
+                {"task": "rectangle", "layer": "PAVEMENT", "origin": [18.0, 65.0], "width": 124.0, "height": 32.0},
+            ],
+        }
+
+        plan = planner.project_model_to_plan(project, "Primary Preview Test")
+        actions = plan.get("actions") or []
+
+        self.assertFalse(
+            any(
+                str(action.get("task") or "").lower() == "rectangle"
+                and str(action.get("layer") or "").upper() == "SITE"
+                for action in actions
+            )
+        )
+        self.assertFalse(
+            any(
+                str(action.get("task") or "").lower() == "rectangle"
+                and str(action.get("layer") or "").upper() == "PAD"
+                and str(action.get("label") or "").upper() == "BUILDABLE_AREA"
+                for action in actions
+            )
+        )
+        self.assertGreaterEqual(
+            len(
+                [
+                    action
+                    for action in actions
+                    if str(action.get("layer") or "").upper() == "BUILDING"
+                    and str(action.get("task") or "").lower() == "rectangle"
+                ]
+            ),
+            2,
         )
 
     def test_manual_mode_packages_canonical_engineering_layers_for_export(self) -> None:
