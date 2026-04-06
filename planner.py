@@ -1959,11 +1959,46 @@ def _enrich_drainage_basins_with_engineering(
         return canonical_drainage
     enriched = deepcopy(safe_dict(canonical_drainage))
     basins = [safe_dict(item) for item in safe_list(enriched.get("basins")) if safe_dict(item)]
+    structures = [safe_dict(item) for item in safe_list(enriched.get("structures")) if safe_dict(item)]
     if not basins:
-        return enriched
+        preferred_targets = [safe_dict(item) for item in safe_list(safe_dict(enriched.get("surface_guidance")).get("preferred_targets")) if safe_dict(item)]
+        preferred_target = preferred_targets[0] if preferred_targets else {}
+        total_inlet_area_sf = sum(max(0.0, safe_float(item.get("contributing_area_sf"), 0.0)) for item in structures)
+        total_inlet_flow_cfs = sum(max(0.0, safe_float(item.get("estimated_flow_cfs"), 0.0)) for item in structures)
+        synthetic_area_sf = max(1600.0, round(max(total_inlet_area_sf * 0.08, 0.0), 3))
+        target_name = safe_str(preferred_target.get("name"), "PRIMARY-DETENTION")
+        target_x = safe_float(preferred_target.get("x"), 0.0)
+        target_y = safe_float(preferred_target.get("y"), 0.0)
+        target_z = safe_float(preferred_target.get("z"), 0.0)
+        if target_x != 0.0 or target_y != 0.0 or synthetic_area_sf > 0.0:
+            basins = [
+                {
+                    "id": target_name,
+                    "name": target_name,
+                    "object_type": "basin",
+                    "canonical_type": "detention_basin",
+                    "layer": "BASIN_BOUNDARY",
+                    "sink": [],
+                    "sink_name": target_name,
+                    "centroid_xy": [round(target_x, 3), round(target_y, 3)],
+                    "area_sf": synthetic_area_sf,
+                    "contributing_cells": 0,
+                    "target_name": target_name,
+                    "average_z": round(target_z, 3),
+                    "estimated_runoff_cfs": round(total_inlet_flow_cfs, 3),
+                    "runoff_c": safe_float(hydrology.get("runoff_c"), PIPE_RUNOFF_C),
+                    "intensity_in_hr": safe_float(hydrology.get("intensity_in_hr"), PIPE_INTENSITY_IN_HR),
+                    "assumed": True,
+                    "assumptions": [
+                        "Primary detention basin footprint was synthesized from the preferred low-point target because the drainage engine did not emit an explicit basin record.",
+                    ],
+                }
+            ]
+            enriched["basins"] = deepcopy(basins)
+        else:
+            return enriched
 
     basin_cells = engine.drainage_basins(sample_step=2, min_slope=max(MIN_SLOPE, 0.001), max_steps=500)
-    basin_by_name = {safe_str(item.get("name")): item for item in basins if safe_str(item.get("name"))}
     preferred_outfall = safe_dict(coordination.get("preferred_outfall"))
     outfall_xy = [
         safe_float(preferred_outfall.get("x"), 0.0),
@@ -2010,6 +2045,19 @@ def _enrich_drainage_basins_with_engineering(
             hull = engine._convex_hull([engine._point_xy(r, c) for r, c in basin_cells[sink_key]])  # type: ignore[attr-defined]
             boundary_points = [[round(pt[0], 3), round(pt[1], 3)] for pt in hull]
         top_area_sf = _polygon_area(boundary_points) or safe_float(basin.get("area_sf"), 0.0)
+        centroid_xy = safe_list(basin.get("centroid_xy"))
+        if not boundary_points and len(centroid_xy) >= 2 and top_area_sf > 0.0:
+            side_ft = max(math.sqrt(max(top_area_sf, 1.0)), 20.0)
+            half_side = side_ft / 2.0
+            cx = safe_float(centroid_xy[0], 0.0)
+            cy = safe_float(centroid_xy[1], 0.0)
+            boundary_points = [
+                [round(cx - half_side, 3), round(cy - half_side, 3)],
+                [round(cx + half_side, 3), round(cy - half_side, 3)],
+                [round(cx + half_side, 3), round(cy + half_side, 3)],
+                [round(cx - half_side, 3), round(cy + half_side, 3)],
+            ]
+            top_area_sf = _polygon_area(boundary_points) or top_area_sf
         inflow_cfs = max(
             safe_float(structure_flow_by_target.get(safe_str(basin.get("target_name"))), 0.0),
             runoff_c * intensity * (safe_float(basin.get("area_sf"), 0.0) / 43560.0),
@@ -2053,7 +2101,6 @@ def _enrich_drainage_basins_with_engineering(
         )
         top_perimeter_ft = _polygon_perimeter(boundary_points)
         bottom_perimeter_ft = _polygon_perimeter(bottom_points)
-        centroid_xy = safe_list(basin.get("centroid_xy"))
         bottom_elev = round(
             safe_float(basin.get("average_z"), 0.0) - max(2.0, depth_ft),
             3,
@@ -2192,6 +2239,33 @@ def _enrich_drainage_basins_with_engineering(
         for item in updated_basins
         if safe_str(item.get("engineering_role")) == "primary_detention" and bool(item.get("exportable"))
     )
+    existing_flow_paths = [safe_dict(item) for item in safe_list(enriched.get("flow_paths")) if safe_dict(item)]
+    if not existing_flow_paths and structures and updated_basins:
+        target_basin = next((item for item in updated_basins if bool(item.get("exportable"))), updated_basins[0])
+        target_xy = safe_list(target_basin.get("centroid_xy"))
+        synthesized_flow_paths: List[Dict[str, Any]] = []
+        if len(target_xy) >= 2:
+            tx = round(safe_float(target_xy[0], 0.0), 3)
+            ty = round(safe_float(target_xy[1], 0.0), 3)
+            for index, structure in enumerate(structures, start=1):
+                sx = round(safe_float(structure.get("x"), 0.0), 3)
+                sy = round(safe_float(structure.get("y"), 0.0), 3)
+                if sx == tx and sy == ty:
+                    continue
+                path = [[sx, sy], [tx, ty]]
+                synthesized_flow_paths.append(
+                    {
+                        "id": f"FLOW-AUTO-{index}",
+                        "path": path,
+                        "target_name": safe_str(target_basin.get("name"), "PRIMARY-DETENTION"),
+                        "length_ft": round(polyline_length(path), 3),
+                        "assumed": True,
+                    }
+                )
+        if synthesized_flow_paths:
+            enriched["flow_paths"] = synthesized_flow_paths
+            stats["flow_path_count"] = len(synthesized_flow_paths)
+            stats["has_flow_paths"] = True
     enriched["stats"] = stats
     return enriched
 
@@ -7307,9 +7381,37 @@ def _run_model_first_workflow(parsed: Dict[str, Any], route: RoutingDecision, op
     coordination_meta = safe_dict(plan["meta"].get("coordination"))
     fix_summary = deepcopy(safe_dict(manager.project.meta.get("fix_summary")))
     unresolved_conflicts = safe_list(coordination_meta.get("unresolved_conflicts"))
+    def _review_category_from_value(value: str) -> str:
+        lowered = lower_text(value)
+        if not lowered:
+            return "general"
+        if "drain" in lowered or "basin" in lowered or "detention" in lowered or "inlet" in lowered or "flow_path" in lowered:
+            return "drainage"
+        if "storm" in lowered or "pipe" in lowered or "hydraulic" in lowered:
+            return "pipes"
+        if "utility" in lowered or "water" in lowered or "sanitary" in lowered or "sewer" in lowered:
+            return "utilities"
+        if "grade" in lowered or "contour" in lowered or "slope" in lowered or "surface" in lowered:
+            return "grading"
+        if "layout" in lowered or "parking" in lowered or "building" in lowered or "site" in lowered:
+            return "layout"
+        if "deliverable" in lowered or "profile" in lowered or "section" in lowered:
+            return "deliverables"
+        if "quantity" in lowered or "earthwork" in lowered:
+            return "quantities"
+        if "coordination" in lowered or "conflict" in lowered or "clearance" in lowered:
+            return "coordination"
+        if "qa" in lowered:
+            return "qa"
+        return "general"
+
     unresolved_category_counts: Dict[str, int] = {}
     for conflict in unresolved_conflicts:
-        category = lower_text(safe_str(safe_dict(conflict).get("category") or "uncategorized"))
+        category = _review_category_from_value(
+            safe_str(safe_dict(conflict).get("category"))
+            or safe_str(safe_dict(conflict).get("code"))
+            or safe_str(safe_dict(conflict).get("message"))
+        )
         unresolved_category_counts[category] = unresolved_category_counts.get(category, 0) + 1
     unresolved_issue_categories = [
         name
@@ -7319,42 +7421,42 @@ def _run_model_first_workflow(parsed: Dict[str, Any], route: RoutingDecision, op
     qa_issue_category_counts: Dict[str, int] = {}
     for issue in final_report.issues:
         code = lower_text(safe_str(issue.code))
-        category = "qa"
-        if "drain" in code:
-            category = "drainage"
-        elif "pipe" in code or "storm" in code:
-            category = "pipes"
-        elif "utility" in code or "water" in code or "sanitary" in code:
-            category = "utilities"
-        elif "grade" in code or "contour" in code or "slope" in code:
-            category = "grading"
-        elif "layout" in code or "constraint" in code or "site" in code:
-            category = "layout"
+        category = _review_category_from_value(code)
         qa_issue_category_counts[category] = qa_issue_category_counts.get(category, 0) + 1
     qa_issue_categories = [
         name
         for name, count in sorted(qa_issue_category_counts.items(), key=lambda item: (-item[1], item[0]))
         if count > 0
     ]
+    def _is_user_facing_assumption(value: str) -> bool:
+        lowered = lower_text(value)
+        if not lowered:
+            return False
+        internal_markers = (
+            "projectmanager as active lifecycle state",
+            "action geometry is treated as output packaging",
+            "quantities prefer canonical projectmanager metrics",
+            "planner executed model-first workflow",
+            "prompt was parsed with deterministic fast-path rules",
+            "planner execution assumption",
+            "autofix_site_layout",
+        )
+        return not any(marker in lowered for marker in internal_markers)
+
     assumption_items = dedupe_keep_order(
-        [safe_str(item) for item in list(ctx.assumptions) + list(parsed.get("_planner_review_notes") or []) if safe_str(item)]
+        [
+            safe_str(item)
+            for item in list(ctx.assumptions) + list(parsed.get("_planner_review_notes") or [])
+            if safe_str(item) and _is_user_facing_assumption(safe_str(item))
+        ]
     )
     quantity_assumptions = [safe_str(item) for item in safe_list(safe_dict(plan["meta"].get("quantities")).get("assumptions")) if safe_str(item)]
-    assumption_items = dedupe_keep_order(assumption_items + quantity_assumptions)
+    assumption_items = dedupe_keep_order(assumption_items + [item for item in quantity_assumptions if _is_user_facing_assumption(item)])
     assumption_category_counts: Dict[str, int] = {}
     for item in assumption_items:
-        lowered = lower_text(item)
-        category = "general"
-        if "drain" in lowered or "runoff" in lowered or "inlet" in lowered or "basin" in lowered:
-            category = "drainage"
-        elif "storm" in lowered or "pipe" in lowered or "hydraulic" in lowered:
+        category = _review_category_from_value(item)
+        if category == "pipes":
             category = "storm"
-        elif "utility" in lowered or "water" in lowered or "sanitary" in lowered or "sewer" in lowered:
-            category = "utilities"
-        elif "grade" in lowered or "surface" in lowered or "contour" in lowered or "slope" in lowered:
-            category = "grading"
-        elif "layout" in lowered or "site" in lowered or "parking" in lowered or "building" in lowered:
-            category = "layout"
         assumption_category_counts[category] = assumption_category_counts.get(category, 0) + 1
     assumption_categories = [
         name
@@ -7441,6 +7543,11 @@ def _run_model_first_workflow(parsed: Dict[str, Any], route: RoutingDecision, op
         blocked_reasons.extend(safe_str(item) for item in safe_list(safe_dict(storm_export).get("reasons")) if safe_str(item))
     blocked_exports = dedupe_keep_order(blocked_exports)
     blocked_reasons = dedupe_keep_order([item for item in blocked_reasons if item])
+    unresolved_issue_categories = dedupe_keep_order(
+        unresolved_issue_categories
+        + [_review_category_from_value(item) for item in blocked_reasons if safe_str(item)]
+        + qa_issue_categories
+    )
     plan["meta"]["convergence_summary"] = {
         "passes_run": ctx.pass_index,
         "max_passes": max_passes,

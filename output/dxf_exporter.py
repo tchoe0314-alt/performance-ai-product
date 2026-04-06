@@ -1406,14 +1406,25 @@ def _site_plan_summary_rows(plan: Dict[str, Any], actions: List[Dict[str, Any]])
             f"Grade LP {int(round(safe_num(surface_guidance.get('grading_low_point_count'))))}",
             target_name or f"Match {int(round(safe_num(surface_alignment.get('matched_low_points'))))}",
         ])
-    requested_count = len([item for item in safe_list(deliverables.get("requested")) if safe_text(item)])
-    produced_count = len([item for item in safe_list(deliverables.get("produced")) if safe_text(item)])
+    requested_items = [safe_text(item) for item in safe_list(deliverables.get("requested")) if safe_text(item)]
+    produced_items = [safe_text(item) for item in safe_list(deliverables.get("produced")) if safe_text(item)]
+    requested_count = len(requested_items)
+    produced_count = len(produced_items)
+    ready_count = len([item for item in requested_items if item in produced_items])
     failed_count = len([item for item in safe_list(deliverables.get("failed")) if safe_text(item)])
     if requested_count or produced_count or failed_count:
         rows.append([
             "DELIV",
-            f"{produced_count}/{requested_count or produced_count} ready",
-            f"{failed_count} failed" if failed_count else "release review",
+            (
+                f"{ready_count}/{requested_count} requested ready"
+                if requested_count
+                else f"{produced_count} produced"
+            ),
+            (
+                f"{failed_count} failed"
+                if failed_count
+                else (f"{max(produced_count - ready_count, 0)} extra" if requested_count and produced_count > ready_count else "release review")
+            ),
         ])
     if optimization:
         rows.append([

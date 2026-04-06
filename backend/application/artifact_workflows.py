@@ -98,6 +98,8 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
     requested_deliverables = list(run_summary.get("requested_deliverables") or [])
     produced_deliverables = list(run_summary.get("produced_deliverables") or [])
     failed_deliverables = list(run_summary.get("failed_deliverables") or [])
+    ready_deliverables = list(run_summary.get("ready_deliverables") or [])
+    extra_deliverables = list(run_summary.get("extra_deliverables") or [])
     if blocked_exports or blocked_reasons or failed_deliverables:
         release_status = "blocked"
         release_note = "Blocked until outstanding export issues are resolved."
@@ -135,6 +137,8 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         "requested_deliverables": requested_deliverables,
         "produced_deliverables": produced_deliverables,
         "failed_deliverables": failed_deliverables,
+        "ready_deliverables": ready_deliverables,
+        "extra_deliverables": extra_deliverables,
         "rerun_total": int(rerun_summary.get("total_reruns") or 0),
         "rerun_stages": dominant_rerun_stages[:3],
         "rerun_reasons": dominant_rerun_reasons[:3],

@@ -164,7 +164,9 @@ type PreviewResponse = {
       blocked_exports?: string[];
       blocked_reasons?: string[];
       requested_deliverables?: string[];
+      ready_deliverables?: string[];
       produced_deliverables?: string[];
+      extra_deliverables?: string[];
       failed_deliverables?: string[];
       rerun_total?: number;
       rerun_stages?: string[];
@@ -412,6 +414,21 @@ function summarizePlanResponse(
   const issues = Array.isArray(data?.issues) ? data.issues : [];
   const assumptionExamples = (() => {
     const seen = new Set<string>();
+    const isInternalAssumption = (value: string) => {
+      const lowered = value.toLowerCase();
+      return (
+        lowered === "plan" ||
+        lowered === "assumption" ||
+        lowered.includes("planner execution assumption") ||
+        lowered.includes("projectmanager as active lifecycle state") ||
+        lowered.includes("action geometry is treated as output packaging") ||
+        lowered.includes("quantities prefer canonical projectmanager metrics") ||
+        lowered.includes("planner executed model-first workflow") ||
+        lowered.includes("prompt was parsed with deterministic fast-path rules") ||
+        lowered.includes("autofix site layout") ||
+        lowered.includes("autofix_site_layout")
+      );
+    };
     const formatted = assumptions
       .map((assumption: any) => {
         const field = String(
@@ -421,12 +438,10 @@ function summarizePlanResponse(
           .trim();
         const reason = String(assumption?.reason || "").trim();
         const loweredField = field.toLowerCase();
-        const loweredReason = reason.toLowerCase();
         if (
           loweredField === "plan" ||
           loweredField === "assumption" ||
-          loweredReason === "plan" ||
-          loweredReason.includes("planner execution assumption")
+          isInternalAssumption(reason)
         ) {
           return null;
         }
@@ -444,10 +459,7 @@ function summarizePlanResponse(
     const fallbackExamples = Array.isArray(assumptionSummary?.examples)
       ? assumptionSummary.examples
           .map((example: any) => String(example || "").trim())
-          .filter((example: string) => {
-            const lowered = example.toLowerCase();
-            return Boolean(example) && lowered !== "plan" && !lowered.includes("planner execution assumption");
-          })
+          .filter((example: string) => Boolean(example) && !isInternalAssumption(example))
       : [];
     return fallbackExamples.slice(0, 3);
   })();
@@ -495,7 +507,12 @@ function summarizePlanResponse(
     .filter(Boolean);
   const readableReviewCategories = reviewCategories
     .map((item: any) => toReadableLabel(String(item || "")))
-    .filter(Boolean);
+    .filter(
+      (item: string) =>
+        Boolean(item) &&
+        item.toLowerCase() !== "uncategorized" &&
+        item.toLowerCase() !== "general",
+    );
   const readableBlockedReasons = blockedReasons
     .map((item: any) => toReadableLabel(String(item || "")))
     .filter(Boolean);
@@ -3375,6 +3392,11 @@ export default function PerformanceAIDashboard() {
                     </p>
                     <p className="mt-1 text-xs text-slate-600">
                       {(planPreviewSummary.review.review_categories ?? [])
+                        .filter(
+                          (item) =>
+                            item.toLowerCase() !== "uncategorized" &&
+                            item.toLowerCase() !== "general",
+                        )
                         .slice(0, 3)
                         .join(", ") || "No outstanding review categories recorded."}
                     </p>
@@ -3397,16 +3419,20 @@ export default function PerformanceAIDashboard() {
                       Deliverables
                     </p>
                     <p className="mt-2 text-sm font-medium text-slate-900">
-                      {(planPreviewSummary.review.produced_deliverables ?? []).length}/
+                      {(planPreviewSummary.review.ready_deliverables ?? []).length}/
                       {(planPreviewSummary.review.requested_deliverables ?? []).length ||
-                        (planPreviewSummary.review.produced_deliverables ?? []).length} ready
+                        (planPreviewSummary.review.ready_deliverables ?? []).length} requested ready
                     </p>
                     <p className="mt-1 text-xs text-slate-600">
                       {(planPreviewSummary.review.failed_deliverables ?? []).length
                         ? `Failed: ${(planPreviewSummary.review.failed_deliverables ?? [])
                             .slice(0, 2)
                             .join(", ")}`
-                        : (planPreviewSummary.review.produced_deliverables ?? [])
+                        : (planPreviewSummary.review.extra_deliverables ?? []).length
+                          ? `Extra: ${(planPreviewSummary.review.extra_deliverables ?? [])
+                              .slice(0, 2)
+                              .join(", ")}`
+                          : (planPreviewSummary.review.ready_deliverables ?? [])
                             .slice(0, 2)
                             .join(", ") || "No deliverables recorded yet."}
                     </p>

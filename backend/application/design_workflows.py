@@ -15,6 +15,112 @@ def new_workflow_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
+def _review_category_from_value(value: Any) -> str:
+    lowered = str(value or "").strip().lower()
+    if not lowered:
+        return "general"
+    if any(token in lowered for token in ("drain", "detention", "basin", "inlet", "flow_path")):
+        return "drainage"
+    if any(token in lowered for token in ("storm", "pipe", "hydraulic")):
+        return "pipes"
+    if any(token in lowered for token in ("utility", "water", "sanitary", "sewer")):
+        return "utilities"
+    if any(token in lowered for token in ("grade", "contour", "surface", "slope")):
+        return "grading"
+    if any(token in lowered for token in ("layout", "parking", "building", "site")):
+        return "layout"
+    if any(token in lowered for token in ("deliverable", "profile", "section")):
+        return "deliverables"
+    if any(token in lowered for token in ("earthwork", "quantity")):
+        return "quantities"
+    if any(token in lowered for token in ("coordination", "conflict", "clearance")):
+        return "coordination"
+    if "qa" in lowered:
+        return "qa"
+    return "general"
+
+
+def _is_user_facing_assumption(value: Any) -> bool:
+    lowered = str(value or "").strip().lower()
+    if not lowered:
+        return False
+    internal_markers = (
+        "projectmanager as active lifecycle state",
+        "action geometry is treated as output packaging",
+        "quantities prefer canonical projectmanager metrics",
+        "planner executed model-first workflow",
+        "prompt was parsed with deterministic fast-path rules",
+        "planner execution assumption",
+        "autofix_site_layout",
+    )
+    return not any(marker in lowered for marker in internal_markers)
+
+
+def _normalized_assumption_summary(raw_summary: Dict[str, Any]) -> Dict[str, Any]:
+    examples = [
+        str(item).strip()
+        for item in list(raw_summary.get("examples") or [])
+        if _is_user_facing_assumption(item)
+    ]
+    raw_categories = [
+        str(item).strip()
+        for item in list(raw_summary.get("categories") or [])
+        if str(item or "").strip()
+    ]
+    categories: list[str] = []
+    for item in raw_categories:
+        category = _review_category_from_value(item)
+        if category == "general" and str(item).strip():
+            category = str(item).strip().lower()
+        if category not in categories:
+            categories.append(category)
+    if not categories:
+        category_counts: Dict[str, int] = {}
+        for example in examples:
+            category = _review_category_from_value(example)
+            if category == "pipes":
+                category = "storm"
+            category_counts[category] = category_counts.get(category, 0) + 1
+        categories = [
+            name
+            for name, count in sorted(category_counts.items(), key=lambda item: (-item[1], item[0]))
+            if count > 0
+        ]
+    raw_count = int(raw_summary.get("count") or 0)
+    return {
+        "count": max(raw_count, len(examples)),
+        "categories": categories,
+        "examples": examples[:5],
+    }
+
+
+def _normalized_review_categories(convergence: Dict[str, Any]) -> list[str]:
+    raw = list(convergence.get("unresolved_issue_categories") or [])
+    blocked = list(convergence.get("blocked_reasons") or [])
+    qa = list(convergence.get("qa_issue_categories") or [])
+    out: list[str] = []
+    for item in raw + blocked + qa:
+        category = _review_category_from_value(item)
+        if category and category not in out:
+            out.append(category)
+    return out
+
+
+def _deliverable_summary(deliverables: Dict[str, Any]) -> Dict[str, list[str]]:
+    requested = [str(item) for item in list(deliverables.get("requested") or []) if str(item)]
+    produced = [str(item) for item in list(deliverables.get("produced") or []) if str(item)]
+    failed = [str(item) for item in list(deliverables.get("failed") or []) if str(item)]
+    ready_requested = [item for item in requested if item in produced]
+    extra_produced = [item for item in produced if item not in requested]
+    return {
+        "requested": requested,
+        "produced": produced,
+        "failed": failed,
+        "ready_requested": ready_requested,
+        "extra_produced": extra_produced,
+    }
+
+
 def run_orchestration(
     payload_data: Dict[str, Any],
     *,
@@ -140,6 +246,9 @@ def build_run_summary(
     blocked_reasons = list(convergence.get("blocked_reasons") or [])
     unresolved_conflict_count = int(convergence.get("unresolved_conflict_count") or 0)
     failed_deliverables = list(deliverables.get("failed") or [])
+    normalized_assumptions = _normalized_assumption_summary(dict(convergence.get("assumption_summary") or {}))
+    normalized_review_categories = _normalized_review_categories(convergence)
+    deliverable_summary = _deliverable_summary(deliverables)
     success = bool(result_data.get("success"))
     converged = bool(convergence.get("converged"))
     warning_count = len(list(result_data.get("warnings") or []))
@@ -185,9 +294,11 @@ def build_run_summary(
         },
         "truth_success": bool(truth.get("success")),
         "all_required_complete": bool(stage_completeness.get("all_required_complete")),
-        "requested_deliverables": list(deliverables.get("requested") or []),
-        "produced_deliverables": list(deliverables.get("produced") or []),
-        "failed_deliverables": failed_deliverables,
+        "requested_deliverables": deliverable_summary["requested"],
+        "produced_deliverables": deliverable_summary["produced"],
+        "failed_deliverables": deliverable_summary["failed"],
+        "ready_deliverables": deliverable_summary["ready_requested"],
+        "extra_deliverables": deliverable_summary["extra_produced"],
         "manual_failures": manual_failures,
         "stage_summary": {
             "all_required_complete": bool(stage_completeness.get("all_required_complete")),
@@ -206,8 +317,8 @@ def build_run_summary(
             "warning_count": int(convergence.get("warning_count") or 0),
             "error_count": int(convergence.get("error_count") or 0),
             "unresolved_conflict_count": unresolved_conflict_count,
-            "assumption_summary": dict(convergence.get("assumption_summary") or {}),
-            "unresolved_issue_categories": list(convergence.get("unresolved_issue_categories") or []),
+            "assumption_summary": normalized_assumptions,
+            "unresolved_issue_categories": normalized_review_categories,
             "qa_issue_categories": list(convergence.get("qa_issue_categories") or []),
             "rerun_summary": dict(convergence.get("rerun_summary") or {}),
             "blocked_exports": blocked_exports,
