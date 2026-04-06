@@ -322,6 +322,7 @@ def _register_job_handlers() -> None:
             run_orchestration=_run_orchestration,
             build_run_summary=_build_run_summary,
             merge_project_metadata=_merge_project_metadata,
+            final_plan_from_result=application_final_plan_from_result,
         ),
     )
 

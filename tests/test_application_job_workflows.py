@@ -119,9 +119,37 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         runner = build_orchestrate_job_runner(
             project_store=store,
             update_job_progress=lambda job_id, **kwargs: progress_updates.append({"job_id": job_id, **kwargs}),
-            run_orchestration=lambda payload: {"success": True, "final_plan": {"project_name": "Demo", "meta": {}}},
-            build_run_summary=lambda result, **kwargs: {"run_id": "run_1", "job_id": kwargs.get("job_id")},
+            run_orchestration=lambda payload: {
+                "success": True,
+                "final_plan": {"project_name": "Demo", "meta": {}},
+                "assumptions": [
+                    {
+                        "field_name": "plan",
+                        "assumed_value": "Planner executed model-first workflow with ProjectManager as active lifecycle state.",
+                        "reason": "Planner execution assumption",
+                    }
+                ],
+            },
+            build_run_summary=lambda result, **kwargs: {
+                "run_id": "run_1",
+                "job_id": kwargs.get("job_id"),
+                "convergence_summary": {
+                    "assumption_summary": {
+                        "count": 1,
+                        "categories": ["design_defaults"],
+                        "examples": ["Where widths are not explicit for linear features, discipline defaults are used."],
+                    },
+                    "unresolved_issue_categories": ["drainage", "coordination"],
+                    "blocked_reasons": ["primary_detention_missing"],
+                    "blocked_exports": ["dxf"],
+                },
+                "reliability_summary": {
+                    "operational_state": "review",
+                    "primary_attention": "primary_detention_missing",
+                },
+            },
             merge_project_metadata=lambda metadata, **kwargs: {"workflow": {"runs": [kwargs["run_summary"]]}},
+            final_plan_from_result=lambda result, **kwargs: result["final_plan"],
         )
         result = runner(
             {
@@ -133,9 +161,21 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
             }
         )
         self.assertTrue(result["success"])
+        self.assertEqual(
+            result["assumptions"][0]["assumed_value"],
+            "Where widths are not explicit for linear features, discipline defaults are used.",
+        )
+        self.assertEqual(result["review_categories"], ["drainage", "coordination"])
+        self.assertEqual(result["blocked"], ["primary_detention_missing"])
+        self.assertEqual(result["metadata"]["run_summary"]["run_id"], "run_1")
         self.assertEqual(result["metadata"]["job_context"]["job_id"], "job_1")
         self.assertEqual(result["metadata"]["job_context"]["source"], "job_queue")
+        self.assertEqual(result["metadata"]["job_context"]["user_id"], "u1")
         self.assertEqual(store.saved_payload["metadata"]["workflow"]["runs"][0]["job_id"], "job_1")
+        self.assertEqual(
+            store.saved_payload["latest_result"]["assumptions"][0]["assumed_value"],
+            "Where widths are not explicit for linear features, discipline defaults are used.",
+        )
         self.assertEqual(
             [item["stage"] for item in progress_updates],
             ["Engineering Run", "Saving Project", "Finalizing"],

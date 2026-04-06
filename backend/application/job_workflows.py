@@ -45,6 +45,16 @@ class ProjectStoreProtocol(Protocol):
         ...
 
 
+class FinalPlanBuilderProtocol(Protocol):
+    def __call__(
+        self,
+        result_data: Dict[str, Any],
+        *,
+        enforce_export_guards: bool = True,
+    ) -> Dict[str, Any]:
+        ...
+
+
 def queue_orchestrate_job(
     *,
     project_store: ProjectStoreProtocol,
@@ -114,7 +124,82 @@ def build_orchestrate_job_runner(
     run_orchestration: Callable[[Dict[str, Any]], Dict[str, Any]],
     build_run_summary: Callable[..., Dict[str, Any]],
     merge_project_metadata: Callable[..., Dict[str, Any]],
+    final_plan_from_result: FinalPlanBuilderProtocol,
 ) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
+    def _normalized_result_for_ui(
+        result: Dict[str, Any],
+        *,
+        project_id: Optional[str],
+        job_id: Optional[str],
+        user_id: Optional[str],
+    ) -> Dict[str, Any]:
+        enriched = dict(result)
+        try:
+            enriched["final_plan"] = final_plan_from_result(
+                enriched,
+                enforce_export_guards=False,
+            )
+        except Exception:
+            pass
+
+        run_summary = build_run_summary(
+            enriched,
+            source="queued_job",
+            project_id=project_id,
+            job_id=job_id,
+        )
+        convergence = dict(run_summary.get("convergence_summary") or {})
+        reliability = dict(run_summary.get("reliability_summary") or {})
+        assumption_summary = dict(convergence.get("assumption_summary") or {})
+        categories = [
+            str(item).strip()
+            for item in list(assumption_summary.get("categories") or [])
+            if str(item).strip()
+        ]
+        assumption_examples = [
+            str(item).strip()
+            for item in list(assumption_summary.get("examples") or [])
+            if str(item).strip()
+        ]
+        if assumption_examples:
+            fallback_category = categories[0] if categories else "design_defaults"
+            enriched["assumptions"] = [
+                {
+                    "field_name": fallback_category,
+                    "assumed_value": example,
+                    "reason": "Assisted design assumption",
+                }
+                for example in assumption_examples
+            ]
+        elif "assumptions" not in enriched:
+            enriched["assumptions"] = []
+
+        blocked_reasons = [str(item) for item in list(convergence.get("blocked_reasons") or []) if str(item)]
+        blocked_exports = [str(item) for item in list(convergence.get("blocked_exports") or []) if str(item)]
+        review_categories = [
+            str(item)
+            for item in list(convergence.get("unresolved_issue_categories") or [])
+            if str(item)
+        ]
+        if blocked_reasons or blocked_exports:
+            enriched["blocked"] = blocked_reasons or blocked_exports
+        if review_categories:
+            enriched["review_categories"] = review_categories
+
+        metadata = dict(enriched.get("metadata") or {})
+        metadata["run_summary"] = run_summary
+        metadata["job_context"] = {
+            "job_id": job_id,
+            "job_type": "orchestrate",
+            "project_id": project_id,
+            "user_id": user_id,
+            "source": "job_queue",
+            "operational_state": reliability.get("operational_state"),
+            "primary_attention": reliability.get("primary_attention"),
+        }
+        enriched["metadata"] = metadata
+        return enriched
+
     def orchestrate_runner(job: Dict[str, Any]) -> Dict[str, Any]:
         payload = dict(job.get("payload") or {})
         job_id = str(job.get("job_id") or "").strip()
@@ -128,6 +213,12 @@ def build_orchestrate_job_runner(
         result = run_orchestration(payload)
         project_id = job.get("project_id")
         user_id = job.get("user_id")
+        enriched = _normalized_result_for_ui(
+            result,
+            project_id=project_id,
+            job_id=job_id,
+            user_id=user_id,
+        )
         if project_id and user_id:
             if job_id:
                 update_job_progress(
@@ -146,20 +237,13 @@ def build_orchestrate_job_runner(
                     session_id=existing.get("session_id"),
                     tags=existing.get("tags", []),
                     project_input=payload,
-                    latest_result=result,
+                    latest_result=enriched,
                     session_state=existing.get("session_state", {}),
                     metadata=merge_project_metadata(
                         dict(existing.get("metadata") or {}),
-                        run_summary=build_run_summary(
-                            result,
-                            source="queued_job",
-                            project_id=project_id,
-                            job_id=job.get("job_id"),
-                        ),
+                        run_summary=dict(dict(enriched.get("metadata") or {}).get("run_summary") or {}),
                     ),
                 )
-        enriched = dict(result)
-        metadata = dict(enriched.get("metadata") or {})
         if job_id:
             update_job_progress(
                 job_id,
@@ -167,14 +251,6 @@ def build_orchestrate_job_runner(
                 detail="Finalizing the run summary and preparing the result for the UI.",
                 progress=92,
             )
-        metadata["job_context"] = {
-            "job_id": job_id,
-            "job_type": job.get("job_type"),
-            "project_id": project_id,
-            "user_id": user_id,
-            "source": "job_queue",
-        }
-        enriched["metadata"] = metadata
         return enriched
 
     return orchestrate_runner
