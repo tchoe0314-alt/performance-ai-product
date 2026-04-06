@@ -1,10 +1,40 @@
 import unittest
 
+import planner
 from planner import build_plan
 from output.dxf_exporter import _site_plan_drainage_guidance_notes, _site_plan_summary_rows
 
 
 class ExportPackagingRichnessTest(unittest.TestCase):
+    def test_project_model_plan_keeps_site_geometry_when_expanded_plan_is_engineering_heavy(self) -> None:
+        project = planner.ProjectModel(name="Preview Context Test", units="ft")
+        project.add_zone(planner.rect_zone(0.0, 0.0, 220.0, 160.0, zone_type=planner.ZoneType.SITE, name="LOT"))
+        project.add_zone(planner.rect_zone(40.0, 50.0, 80.0, 50.0, zone_type=planner.ZoneType.BUILDING, name="BLDG-1"))
+        project.meta["_expanded_plan"] = {
+            "project_name": "Expanded Preview",
+            "units": "ft",
+            "actions": [
+                {
+                    "task": "polyline",
+                    "layer": "PIPE",
+                    "points": [[10.0, 10.0], [140.0, 30.0]],
+                    "canonical_source_type": "storm_pipe_segment",
+                    "canonical_source_id": "PIPE-1",
+                }
+            ],
+        }
+
+        plan = planner.project_model_to_plan(project, "Preview Context Test")
+        actions = plan.get("actions") or []
+
+        rect_layers = {str(action.get("layer") or "").upper() for action in actions if str(action.get("task") or "").lower() == "rectangle"}
+
+        self.assertIn("SITE", rect_layers)
+        self.assertIn("BUILDING", rect_layers)
+        self.assertTrue(
+            any(str(action.get("canonical_source_type") or "") == "storm_pipe_segment" for action in actions)
+        )
+
     def test_manual_mode_packages_canonical_engineering_layers_for_export(self) -> None:
         plan = build_plan(
             {

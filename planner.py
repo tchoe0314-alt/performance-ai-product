@@ -2706,26 +2706,7 @@ def _nearest_polygon_vertex(points: Sequence[Sequence[float]], target_xy: Sequen
     return min(pts, key=lambda pt: (pt[0] - tx) ** 2 + (pt[1] - ty) ** 2)
 
 
-def project_model_to_plan(project: ProjectModel, project_name: str) -> Dict[str, Any]:
-    expanded = safe_dict(getattr(project, "meta", {}).get("_expanded_plan"))
-    if expanded and safe_list(expanded.get("actions")):
-        out = sanitize_plan(expanded)
-        out["project_name"] = safe_str(project_name, safe_str(out.get("project_name"), "Generated Plan"))
-        project_units = getattr(project, "units", out.get("units", "ft"))
-        project_units_text = safe_str(project_units, "ft")
-        if "." in project_units_text:
-            project_units_text = project_units_text.split(".")[-1].lower()
-        if project_units_text in {"feet", "foot"}:
-            project_units_text = "ft"
-        out["units"] = project_units_text
-        out.setdefault("meta", {})
-        out["meta"]["source"] = "project_model+expanded"
-        out["actions"] = _merge_plan_actions(
-            _filter_placeholder_engineering_actions(project, out.get("actions", [])),
-            _canonical_export_actions(project),
-        )
-        return out
-
+def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
     actions: List[Dict[str, Any]] = []
 
     zones = getattr(project, "zones", {}) or {}
@@ -2777,7 +2758,33 @@ def project_model_to_plan(project: ProjectModel, project_name: str) -> Dict[str,
                 "end_angle": None,
             })
 
-    actions = _merge_plan_actions(actions, _canonical_export_actions(project))
+    return actions
+
+
+def project_model_to_plan(project: ProjectModel, project_name: str) -> Dict[str, Any]:
+    expanded = safe_dict(getattr(project, "meta", {}).get("_expanded_plan"))
+    if expanded and safe_list(expanded.get("actions")):
+        out = sanitize_plan(expanded)
+        out["project_name"] = safe_str(project_name, safe_str(out.get("project_name"), "Generated Plan"))
+        project_units = getattr(project, "units", out.get("units", "ft"))
+        project_units_text = safe_str(project_units, "ft")
+        if "." in project_units_text:
+            project_units_text = project_units_text.split(".")[-1].lower()
+        if project_units_text in {"feet", "foot"}:
+            project_units_text = "ft"
+        out["units"] = project_units_text
+        out.setdefault("meta", {})
+        out["meta"]["source"] = "project_model+expanded"
+        out["actions"] = _merge_plan_actions(
+            _merge_plan_actions(
+                _project_model_base_actions(project),
+                _filter_placeholder_engineering_actions(project, out.get("actions", [])),
+            ),
+            _canonical_export_actions(project),
+        )
+        return out
+
+    actions = _merge_plan_actions(_project_model_base_actions(project), _canonical_export_actions(project))
 
     return sanitize_plan({
         "project_name": project_name,
