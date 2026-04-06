@@ -789,6 +789,41 @@ def _should_use_multi_option(parsed_payload: Dict[str, Any], req: PlannerOrchest
     if req.strict_mode:
         return False
 
+    prompt_text = _safe_str(req.prompt_text)
+    lowered_prompt = prompt_text.lower()
+    site_plan = _safe_dict(parsed_payload.get("site_plan"))
+    project_type = _lower(parsed_payload.get("project_type") or parsed_payload.get("site_type"))
+    heavy_keyword_hits = sum(
+        1
+        for token in (
+            "storm drainage",
+            "detention basin",
+            "sanitary",
+            "water system",
+            "utilities",
+            "grading",
+            "ada",
+            "mixed-use",
+            "mixed use",
+            "cul-de-sac",
+        )
+        if token in lowered_prompt
+    )
+    fully_engineered_prompt = "fully engineered civil site plan" in lowered_prompt
+    large_prompt = len(prompt_text) >= 900 or prompt_text.count("\n-") >= 10
+    large_parking_program = _safe_int(site_plan.get("parking_count"), 0) >= 80
+    force_single_plan = (
+        not req.full_design_mode
+        and (
+            project_type in {"mixed_use", "mixed-use", "subdivision"}
+            or (fully_engineered_prompt and heavy_keyword_hits >= 4)
+            or (large_prompt and heavy_keyword_hits >= 3)
+            or (large_parking_program and heavy_keyword_hits >= 3)
+        )
+    )
+    if force_single_plan:
+        return False
+
     mode = _lower(parsed_payload.get("mode"))
     if mode in {"site_plan", "subdivision", "road", "drainage", "bridge", "pool"}:
         return True
