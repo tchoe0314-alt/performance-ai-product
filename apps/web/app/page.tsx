@@ -1604,11 +1604,26 @@ export default function PerformanceAIDashboard() {
     setProjects(nextProjects);
   };
 
+  const hasTrackedJobs = useMemo(
+    () =>
+      Boolean(activeJobId) ||
+      jobs.some((job) =>
+        ["queued", "running", "cancelling"].includes(
+          String(job.status || "").toLowerCase(),
+        ),
+      ),
+    [activeJobId, jobs],
+  );
+
   const refreshJobs = async (
     authToken = token,
-    { suppressError = false }: { suppressError?: boolean } = {},
+    {
+      suppressError = false,
+      force = false,
+    }: { suppressError?: boolean; force?: boolean } = {},
   ) => {
     if (!authToken) return;
+    if (!force && !hasTrackedJobs) return;
     try {
       const data = await getJson<{ jobs: JobSummary[] }>("/api/jobs", {
         token: authToken,
@@ -1625,7 +1640,7 @@ export default function PerformanceAIDashboard() {
     if (!token) return;
     const results = await Promise.allSettled([
       refreshProjects(),
-      refreshJobs(token, { suppressError: true }),
+      refreshJobs(token, { suppressError: true, force: true }),
     ]);
     const projectsFailed = results[0].status === "rejected";
     const jobsFailed = results[1].status === "rejected";
@@ -2111,7 +2126,9 @@ export default function PerformanceAIDashboard() {
         setPlanPreviewSummary(null);
       }
       setStatusMessage(`Loaded project "${project.name}".`);
-      void refreshJobs(token, { suppressError: true });
+      if (activeJobId) {
+        void loadJob(activeJobId);
+      }
     } catch (error) {
       setStatusMessage(
         error instanceof Error ? error.message : "Project load failed.",
@@ -2523,7 +2540,7 @@ export default function PerformanceAIDashboard() {
     if (!token || !activeJobId) return;
     const interval = window.setInterval(() => {
       void loadJob(activeJobId);
-      void refreshJobs();
+      void refreshJobs(token, { suppressError: true, force: true });
     }, 3000);
     return () => window.clearInterval(interval);
   }, [token, activeJobId]);
