@@ -2706,6 +2706,62 @@ def _nearest_polygon_vertex(points: Sequence[Sequence[float]], target_xy: Sequen
     return min(pts, key=lambda pt: (pt[0] - tx) ** 2 + (pt[1] - ty) ** 2)
 
 
+def _zone_layer_for_preview(zone: Any) -> str:
+    zone_type = getattr(getattr(zone, "zone_type", None), "value", "SITE")
+    return str(zone_type or "SITE").upper()
+
+
+def _zone_label_for_preview(zone: Any) -> Optional[str]:
+    zone_name = safe_str(getattr(zone, "name", ""))
+    zone_layer = _zone_layer_for_preview(zone)
+    if zone_layer in {"SITE", "LOT"}:
+        return None
+    if zone_layer == "PAD" and zone_name.upper() in {"BUILDABLE_AREA", "SITE", "LOT"}:
+        return None
+    return zone_name or zone_layer
+
+
+def _object_layer_for_preview(obj: Any) -> Optional[str]:
+    kind = safe_str(getattr(obj, "kind", "")).lower()
+    tags = [safe_str(item, "").lower() for item in safe_list(getattr(obj, "tags", []))]
+    domain = safe_str(getattr(getattr(obj, "domain", None), "value", getattr(obj, "domain", ""))).lower()
+
+    helper_prefixes = (
+        "corridor_start",
+        "corridor_end",
+        "corridor_pi",
+        "building_entry",
+    )
+    helper_tokens = ("service_tie", "source", "control_point", "utility_source")
+    if kind.startswith(helper_prefixes) or any(token in kind for token in helper_tokens):
+        return None
+
+    if "building" in kind or "building" in tags:
+        return "BUILDING"
+    if any(token in kind for token in ("parking", "pavement", "pad")):
+        return "PAVEMENT"
+    if any(token in kind for token in ("road", "corridor", "drive", "fire_lane", "access_aisle")):
+        return "ROAD"
+    if any(token in kind for token in ("detention", "pond", "basin")):
+        return "BASIN_BOUNDARY"
+    if any(token in kind for token in ("storm", "inlet", "drain")):
+        return "DRAIN"
+    if any(token in kind for token in ("sanitary", "sewer")):
+        return "SAN"
+    if domain == "utility" or any(token in kind for token in ("utility", "water")):
+        return "UTILITY"
+    return None
+
+
+def _boundary_points_for_preview(boundary: Any) -> List[List[float]]:
+    points = []
+    for point in safe_list(getattr(boundary, "points", [])):
+        px = safe_float(getattr(point, "x", 0.0), 0.0)
+        py = safe_float(getattr(point, "y", 0.0), 0.0)
+        points.append([px, py])
+    return points
+
+
 def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
     actions: List[Dict[str, Any]] = []
 
@@ -2716,15 +2772,13 @@ def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
             bbox = getattr(boundary, "bbox", None)
             if bbox is None:
                 continue
-            zone_type = getattr(zone, "zone_type", None)
-            zone_type_value = getattr(zone_type, "value", "SITE")
             actions.append({
                 "task": "rectangle",
                 "origin": [bbox.min_x, bbox.min_y],
                 "width": bbox.width,
                 "height": bbox.height,
-                "label": getattr(zone, "name", None) or zone_type_value,
-                "layer": str(zone_type_value).upper(),
+                "label": _zone_label_for_preview(zone),
+                "layer": _zone_layer_for_preview(zone),
                 "points": None,
                 "closed": None,
                 "text": None,
@@ -2738,15 +2792,38 @@ def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
     objects_dict = getattr(project, "objects", {}) or {}
     if isinstance(objects_dict, dict):
         for obj in objects_dict.values():
+            layer = _object_layer_for_preview(obj)
+            boundary = getattr(obj, "boundary", None)
+            boundary_points = _boundary_points_for_preview(boundary) if boundary is not None else []
+            if layer and boundary_points:
+                actions.append({
+                    "task": "polygon",
+                    "points": boundary_points,
+                    "closed": True,
+                    "label": safe_str(getattr(obj, "name", "")) or None,
+                    "layer": layer,
+                    "origin": None,
+                    "width": None,
+                    "height": None,
+                    "text": None,
+                    "text_height": None,
+                    "center": None,
+                    "radius": None,
+                    "start_angle": None,
+                    "end_angle": None,
+                })
+                continue
             anchor = getattr(obj, "anchor", None)
             if anchor is None:
+                continue
+            if layer is None:
                 continue
             actions.append({
                 "task": "text_note",
                 "origin": [getattr(anchor, "x", 0.0), getattr(anchor, "y", 0.0)],
                 "text": safe_str(getattr(obj, "name", getattr(obj, "kind", "OBJECT"))),
                 "text_height": TEXT_HEIGHT_SMALL,
-                "layer": safe_str(getattr(obj, "kind", "OBJECT")).upper(),
+                "layer": layer,
                 "points": None,
                 "closed": None,
                 "width": None,
