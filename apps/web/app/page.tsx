@@ -313,7 +313,14 @@ function formatChatTimestamp(value: number) {
 }
 
 function toReadableLabel(value: string): string {
-  return value
+  const normalized = value
+    .replace(/design_defaults/gi, "design defaults")
+    .replace(/^qa$/i, "validation")
+    .replace(/^general$/i, "design")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return normalized
     .replace(/_/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -3362,6 +3369,7 @@ export default function PerformanceAIDashboard() {
                     </p>
                     <p className="mt-1 text-xs text-slate-600">
                       {(planPreviewSummary.review.assumption_categories ?? [])
+                        .map((item) => toReadableLabel(String(item || "")))
                         .slice(0, 3)
                         .join(", ") || "No assisted assumptions recorded."}
                     </p>
@@ -3375,9 +3383,11 @@ export default function PerformanceAIDashboard() {
                     </p>
                     <p className="mt-1 text-xs text-slate-600">
                       {(planPreviewSummary.review.autofix_actions ?? [])
+                        .map((item) => toReadableLabel(String(item || "")))
                         .slice(0, 2)
                         .join(", ") ||
                         (planPreviewSummary.review.dominant_fix_targets ?? [])
+                          .map((item) => toReadableLabel(String(item || "")))
                           .slice(0, 2)
                           .join(", ") ||
                         "No fix actions recorded in the latest pass."}
@@ -3392,6 +3402,7 @@ export default function PerformanceAIDashboard() {
                     </p>
                     <p className="mt-1 text-xs text-slate-600">
                       {(planPreviewSummary.review.review_categories ?? [])
+                        .map((item) => toReadableLabel(String(item || "")))
                         .filter(
                           (item) =>
                             item.toLowerCase() !== "uncategorized" &&
@@ -3410,6 +3421,7 @@ export default function PerformanceAIDashboard() {
                     </p>
                     <p className="mt-1 text-xs text-slate-600">
                       {(planPreviewSummary.review.blocked_reasons ?? [])
+                        .map((item) => toReadableLabel(String(item || "")))
                         .slice(0, 2)
                         .join(", ") || "No export blockers recorded."}
                     </p>
@@ -3426,15 +3438,18 @@ export default function PerformanceAIDashboard() {
                     <p className="mt-1 text-xs text-slate-600">
                       {(planPreviewSummary.review.failed_deliverables ?? []).length
                         ? `Failed: ${(planPreviewSummary.review.failed_deliverables ?? [])
+                            .map((item) => toReadableLabel(String(item || "")))
                             .slice(0, 2)
                             .join(", ")}`
                         : (planPreviewSummary.review.extra_deliverables ?? []).length
                           ? `Extra: ${(planPreviewSummary.review.extra_deliverables ?? [])
+                              .map((item) => toReadableLabel(String(item || "")))
                               .slice(0, 2)
                               .join(", ")}`
                           : (planPreviewSummary.review.ready_deliverables ?? [])
-                            .slice(0, 2)
-                            .join(", ") || "No deliverables recorded yet."}
+                              .map((item) => toReadableLabel(String(item || "")))
+                              .slice(0, 2)
+                              .join(", ") || "No deliverables recorded yet."}
                     </p>
                   </div>
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -3446,9 +3461,11 @@ export default function PerformanceAIDashboard() {
                     </p>
                     <p className="mt-1 text-xs text-slate-600">
                       {(planPreviewSummary.review.rerun_stages ?? [])
+                        .map((item) => toReadableLabel(String(item || "")))
                         .slice(0, 2)
                         .join(", ") ||
                         (planPreviewSummary.review.rerun_reasons ?? [])
+                          .map((item) => toReadableLabel(String(item || "")))
                           .slice(0, 2)
                           .join(", ") ||
                         "No repeated reruns recorded."}

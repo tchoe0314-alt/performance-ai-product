@@ -19,6 +19,8 @@ def _review_category_from_value(value: Any) -> str:
     lowered = str(value or "").strip().lower()
     if not lowered:
         return "general"
+    if any(token in lowered for token in ("width", "linear feature", "discipline default", "design default", "default")):
+        return "design_defaults"
     if any(token in lowered for token in ("drain", "detention", "basin", "inlet", "flow_path")):
         return "drainage"
     if any(token in lowered for token in ("storm", "pipe", "hydraulic")):
@@ -36,7 +38,7 @@ def _review_category_from_value(value: Any) -> str:
     if any(token in lowered for token in ("coordination", "conflict", "clearance")):
         return "coordination"
     if "qa" in lowered:
-        return "qa"
+        return "validation"
     return "general"
 
 
