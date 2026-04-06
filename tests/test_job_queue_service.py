@@ -1,4 +1,5 @@
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -57,6 +58,39 @@ class JobQueueServiceTest(unittest.TestCase):
         jobs = self.queue.list_jobs(user_id="u1")
         self.assertEqual(jobs[0]["job_id"], "job_legacy")
         self.assertEqual(jobs[0]["progress"], 0)
+
+    def test_worker_recovers_queued_jobs_from_database_without_in_memory_queue(self):
+        self.queue.register_handler(
+            "orchestrate",
+            lambda job: {"success": True, "result": {"job_id": job["job_id"]}},
+        )
+        created = self.queue.submit_job(
+            user_id="u1",
+            job_type="orchestrate",
+            payload={"prompt_text": "demo"},
+        )
+
+        drained_job_id = self.queue._queue.get(timeout=1.0)
+        self.assertEqual(drained_job_id, created["job_id"])
+        self.queue._queue.task_done()
+
+        deadline = time.time() + 3.0
+        record = None
+        while time.time() < deadline:
+            record = self.queue.get_job(user_id="u1", job_id=created["job_id"])
+            if record and record["status"] == "completed":
+                break
+            time.sleep(0.05)
+
+        self.assertIsNotNone(record)
+        self.assertEqual(record["status"], "completed")
+
+    def test_list_jobs_restarts_worker_if_thread_dies(self):
+        self.queue._worker = None
+        jobs = self.queue.list_jobs(user_id="u1")
+        self.assertEqual(jobs, [])
+        self.assertIsNotNone(self.queue._worker)
+        self.assertTrue(self.queue._worker.is_alive())
 
 
 if __name__ == "__main__":

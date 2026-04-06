@@ -54,11 +54,19 @@ class JobQueueService:
         self._queue: Queue[str] = Queue()
         self._handlers: Dict[str, JobRunner] = {}
         self._lock = threading.Lock()
-        self._worker = threading.Thread(target=self._run_worker, name="performance-ai-job-worker", daemon=True)
-        self._worker.start()
+        self._worker: Optional[threading.Thread] = None
+        self._ensure_worker_alive()
+
+    def _ensure_worker_alive(self) -> None:
+        with self._lock:
+            if self._worker is not None and self._worker.is_alive():
+                return
+            self._worker = threading.Thread(target=self._run_worker, name="performance-ai-job-worker", daemon=True)
+            self._worker.start()
 
     def register_handler(self, job_type: str, runner: JobRunner) -> None:
         self._handlers[job_type] = runner
+        self._ensure_worker_alive()
         self._enqueue_pending_jobs(job_type)
 
     def submit_job(
@@ -69,6 +77,7 @@ class JobQueueService:
         payload: Dict[str, Any],
         project_id: Optional[str] = None,
     ) -> Dict[str, Any]:
+        self._ensure_worker_alive()
         now = _now()
         record = {
             "job_id": _new_id("job"),
@@ -107,10 +116,12 @@ class JobQueueService:
         finally:
             connection.close()
 
-        self._queue.put(record["job_id"])
+        if job_type in self._handlers:
+            self._queue.put(record["job_id"])
         return self._job_summary(record)
 
     def list_jobs(self, *, user_id: str) -> List[Dict[str, Any]]:
+        self._ensure_worker_alive()
         connection = self.db.connect()
         try:
             rows = connection.execute(
@@ -130,6 +141,7 @@ class JobQueueService:
             connection.close()
 
     def get_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
+        self._ensure_worker_alive()
         connection = self.db.connect()
         try:
             row = connection.execute(
@@ -145,6 +157,7 @@ class JobQueueService:
             connection.close()
 
     def cancel_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
+        self._ensure_worker_alive()
         record = self.get_job(user_id=user_id, job_id=job_id)
         if record is None:
             return None
@@ -193,6 +206,29 @@ class JobQueueService:
         try:
             row = connection.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
             return None if row is None else self._row_to_record(row)
+        finally:
+            connection.close()
+
+    def _find_next_pending_job_id(self) -> Optional[str]:
+        if not self._handlers:
+            return None
+        job_types = sorted(self._handlers.keys())
+        placeholders = ",".join("?" for _ in job_types)
+        connection = self.db.connect()
+        try:
+            row = connection.execute(
+                f"""
+                SELECT job_id
+                FROM jobs
+                WHERE status = 'queued' AND job_type IN ({placeholders})
+                ORDER BY created_at ASC
+                LIMIT 1
+                """,
+                tuple(job_types),
+            ).fetchone()
+            if row is None:
+                return None
+            return str(row["job_id"])
         finally:
             connection.close()
 
@@ -259,20 +295,28 @@ class JobQueueService:
             try:
                 job_id = self._queue.get(timeout=0.25)
             except Empty:
-                continue
+                job_id = self._find_next_pending_job_id()
+                if not job_id:
+                    continue
+                queue_task = False
+            else:
+                queue_task = True
 
             job = self._get_job_for_worker(job_id)
             if job is None:
-                self._queue.task_done()
+                if queue_task:
+                    self._queue.task_done()
                 continue
             if job["status"] == "cancelled":
-                self._queue.task_done()
+                if queue_task:
+                    self._queue.task_done()
                 continue
 
             runner = self._handlers.get(job["job_type"])
             if runner is None:
                 self._update_job_state(job_id, status="failed", error=f"No handler registered for job type '{job['job_type']}'.")
-                self._queue.task_done()
+                if queue_task:
+                    self._queue.task_done()
                 continue
 
             self._update_job_state(job_id, status="running", error=None)
@@ -311,4 +355,5 @@ class JobQueueService:
             except Exception as exc:
                 self._update_job_state(job_id, status="failed", result={}, error=str(exc))
             finally:
-                self._queue.task_done()
+                if queue_task:
+                    self._queue.task_done()
