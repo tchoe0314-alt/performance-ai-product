@@ -151,7 +151,7 @@ def build_preview_response(
     artifact_service: ArtifactServiceProtocol,
     result_data: Dict[str, Any],
 ) -> Dict[str, Any]:
-    final_plan = final_plan_from_result(result_data)
+    final_plan = final_plan_from_result(result_data, enforce_export_guards=False)
     png_bytes = artifact_service.build_preview_png(final_plan)
     return {
         "success": True,

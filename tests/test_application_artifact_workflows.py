@@ -2,13 +2,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fastapi import HTTPException
-
 from backend.application.artifact_workflows import (
     build_preview_response,
     export_dxf_artifact,
     export_report_artifact,
 )
+from backend.application.design_workflows import final_plan_from_result
+from fastapi import HTTPException
 
 
 class FakeArtifactService:
@@ -137,12 +137,42 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertEqual(review["reliability"]["blocked_export_count"], 1)
         self.assertEqual(service.preview_plan["project_name"], "Demo")
 
-    def test_build_preview_response_respects_export_guard(self):
+    def test_build_preview_response_allows_blocked_export_preview(self):
         service = FakeArtifactService()
+        response = build_preview_response(
+            artifact_service=service,
+            result_data={
+                "final_plan": {
+                    "project_name": "Blocked Preview",
+                    "actions": [{"layer": "PIPE"}],
+                    "meta": {
+                        "deliverables": {"requested": ["storm_pipe_plan"], "produced": ["storm_pipe_plan"]},
+                        "drainage": {"export_validation": {"ready": False, "reasons": ["primary_detention_missing"]}},
+                        "storm_pipes": {
+                            "graph_validation": {"valid": False},
+                            "hydraulic_validation": {"valid": False},
+                            "missing_data_segments": [],
+                        },
+                        "convergence_summary": {
+                            "blocked_exports": ["storm"],
+                            "blocked_reasons": ["storm_graph_invalid"],
+                        },
+                    },
+                }
+            },
+        )
+        self.assertTrue(response["preview_image_data_url"].startswith("data:image/png;base64,"))
+        self.assertEqual(response["summary"]["project_name"], "Blocked Preview")
+        self.assertEqual(
+            response["summary"]["review"]["blocked_reasons"],
+            ["storm_graph_invalid"],
+        )
+        self.assertEqual(service.preview_plan["project_name"], "Blocked Preview")
+
+    def test_final_plan_from_result_still_enforces_export_guard_by_default(self):
         with self.assertRaises(HTTPException):
-            build_preview_response(
-                artifact_service=service,
-                result_data={
+            final_plan_from_result(
+                {
                     "final_plan": {
                         "actions": [{"layer": "PIPE"}],
                         "meta": {
@@ -155,7 +185,7 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
                             },
                         },
                     }
-                },
+                }
             )
 
     def test_export_dxf_artifact_updates_project_workflow(self):

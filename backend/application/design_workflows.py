@@ -250,7 +250,11 @@ def build_run_summary(
     }
 
 
-def final_plan_from_result(result_data: Dict[str, Any]) -> Dict[str, Any]:
+def final_plan_from_result(
+    result_data: Dict[str, Any],
+    *,
+    enforce_export_guards: bool = True,
+) -> Dict[str, Any]:
     def _normalized_reasons(value: Any, fallback: str) -> List[str]:
         reasons = [str(item) for item in list(value or []) if str(item)]
         deduped = list(dict.fromkeys(reasons))
@@ -281,7 +285,7 @@ def final_plan_from_result(result_data: Dict[str, Any]) -> Dict[str, Any]:
             engineering_layers.intersection({"PIPE", "DRAIN", "BASIN_BOUNDARY", "STRUCTURE"})
             or any(any(token in item for token in ("storm", "drain", "basin", "inlet")) for item in produced | requested)
         )
-        if needs_grading_truth and not bool(grading_export.get("ready")):
+        if enforce_export_guards and needs_grading_truth and not bool(grading_export.get("ready")):
             reasons = _normalized_reasons(
                 grading_export.get("reasons"),
                 "grading_export_not_ready",
@@ -298,7 +302,7 @@ def final_plan_from_result(result_data: Dict[str, Any]) -> Dict[str, Any]:
             or any(any(token in item for token in ("utility", "utilities", "water")) for item in produced | requested)
         )
         utility_export = dict(utilities.get("export_validation") or {})
-        if needs_utility_truth and not bool(utility_export.get("ready")):
+        if enforce_export_guards and needs_utility_truth and not bool(utility_export.get("ready")):
             reasons = _normalized_reasons(
                 utility_export.get("reasons"),
                 "utility_export_not_ready",
@@ -314,7 +318,7 @@ def final_plan_from_result(result_data: Dict[str, Any]) -> Dict[str, Any]:
         storm_ready = bool(dict(storm.get("graph_validation") or {}).get("valid", False)) and bool(
             dict(storm.get("hydraulic_validation") or {}).get("valid", False)
         ) and not list(storm.get("missing_data_segments") or [])
-        if needs_storm_truth and (not bool(drainage_export.get("ready")) or not storm_ready):
+        if enforce_export_guards and needs_storm_truth and (not bool(drainage_export.get("ready")) or not storm_ready):
             reasons = list(drainage_export.get("reasons") or [])
             if not bool(dict(storm.get("graph_validation") or {}).get("valid", False)):
                 reasons.append("storm_graph_invalid")
