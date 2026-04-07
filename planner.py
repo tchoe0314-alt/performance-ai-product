@@ -180,10 +180,10 @@ from backend.planning.export_validation import (
     utility_export_validation as _utility_export_validation,
 )
 from backend.planning.storm_translation import (
-    storm_basins_from_drainage as _storm_basins_from_drainage,
-    storm_catchments_from_drainage as _storm_catchments_from_drainage,
-    storm_inlets_from_drainage as _storm_inlets_from_drainage,
-    storm_summary_from_network_result as _storm_summary_from_network_result,
+    storm_basins_from_drainage as _storm_basins_from_drainage_impl,
+    storm_catchments_from_drainage as _storm_catchments_from_drainage_impl,
+    storm_inlets_from_drainage as _storm_inlets_from_drainage_impl,
+    storm_summary_from_network_result as _storm_summary_from_network_result_impl,
 )
 from backend.planning.canonical_export import (
     canonical_export_actions as _canonical_export_actions,
@@ -256,6 +256,49 @@ BASE_DIR = Path(__file__).parent
 LOGGER = logging.getLogger(__name__)
 if not LOGGER.handlers:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(name)s | %(message)s")
+
+
+def _storm_inlets_from_drainage(drainage_meta: Dict[str, Any]) -> List[Any]:
+    return _storm_inlets_from_drainage_impl(drainage_meta)  # type: ignore[name-defined]
+
+
+def _storm_basins_from_drainage(
+    drainage_meta: Dict[str, Any],
+    *,
+    primary_engineered_basins: Optional[Callable[[Dict[str, Any]], List[Dict[str, Any]]]] = None,
+) -> List[Any]:
+    return _storm_basins_from_drainage_impl(
+        drainage_meta,
+        primary_engineered_basins=primary_engineered_basins or _primary_engineered_basins,
+    )  # type: ignore[name-defined]
+
+
+def _storm_catchments_from_drainage(
+    drainage_meta: Dict[str, Any],
+    *,
+    runoff_c: float,
+    intensity_in_hr: float,
+) -> List[Any]:
+    return _storm_catchments_from_drainage_impl(
+        drainage_meta,
+        runoff_c=runoff_c,
+        intensity_in_hr=intensity_in_hr,
+    )  # type: ignore[name-defined]
+
+
+def _storm_summary_from_network_result(
+    network_result: Any,
+    hydraulic_result: Any,
+    *,
+    validate_network_graph: Optional[Callable[[Dict[str, Any], str], Dict[str, Any]]] = None,
+    validate_storm_hydraulics: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    return _storm_summary_from_network_result_impl(
+        network_result,
+        hydraulic_result,
+        validate_network_graph=validate_network_graph or _validate_network_graph,
+        validate_storm_hydraulics=validate_storm_hydraulics or _validate_storm_hydraulics,
+    )  # type: ignore[name-defined]
 
 
 def _user_supplied_geometry_available(parsed: Dict[str, Any], key: str) -> bool:
