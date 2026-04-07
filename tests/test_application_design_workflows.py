@@ -167,6 +167,33 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertEqual(summary["reliability_summary"]["blocked_export_count"], 1)
         self.assertEqual(summary["reliability_summary"]["trace"]["run_id"], "run_123")
 
+    def test_build_run_summary_prefers_release_review_blockers_over_convergence(self):
+        summary = build_run_summary(
+            {
+                "success": True,
+                "final_plan": {
+                    "actions": [{"layer": "PIPE"}],
+                    "meta": {
+                        "deliverables": {"requested": ["storm_pipe_plan"], "produced": ["storm_pipe_plan"], "failed": []},
+                        "engineering_status": {"success": True, "status": "complete", "engineering_trust_score": 80.0},
+                        "convergence_summary": {
+                            "converged": True,
+                            "blocked_exports": ["storm"],
+                            "blocked_reasons": ["storm_graph_invalid"],
+                            "unresolved_conflict_count": 0,
+                        },
+                        "release_review": {
+                            "blocked_exports": [],
+                            "blocked_reasons": [],
+                        },
+                    },
+                },
+            },
+            source="unit_test",
+        )
+        self.assertEqual(summary["convergence_summary"]["blocked_exports"], [])
+        self.assertEqual(summary["convergence_summary"]["blocked_reasons"], [])
+
     def test_final_plan_from_result_blocks_unstable_storm_export(self):
         with self.assertRaises(HTTPException) as ctx:
             final_plan_from_result(
@@ -233,6 +260,42 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
             )
         self.assertEqual(ctx.exception.status_code, 409)
         self.assertIn("utility_fallback_used", str(ctx.exception.detail))
+
+    def test_final_plan_from_result_accepts_viable_fallback_utility_export(self):
+        plan = final_plan_from_result(
+            {
+                "final_plan": {
+                    "actions": [{"task": "polyline", "layer": "UTILITY"}],
+                    "meta": {
+                        "deliverables": {"requested": ["utility_plan"], "produced": ["utility_plan"]},
+                        "utilities": {
+                            "export_validation": {"ready": False, "reasons": ["utility_fallback_used"]},
+                            "success": True,
+                            "fallback_used": True,
+                            "route_count": 1,
+                            "shallow_segment_count": 0,
+                            "gravity_slope_issue_count": 0,
+                            "conflict_hooks": {
+                                "utility_segments": [
+                                    {
+                                        "name": "WATER-1",
+                                        "hydraulic_mode": "pressurized",
+                                        "route_points": [[10.0, 10.0], [60.0, 10.0], [90.0, 40.0]],
+                                        "cover_start_ft": 4.0,
+                                        "cover_end_ft": 4.0,
+                                    }
+                                ]
+                            },
+                            "coordination": {
+                                "utility_related_unresolved_conflict_count": 0,
+                                "post_validation_valid": True,
+                            },
+                        },
+                    },
+                }
+            }
+        )
+        self.assertEqual(plan["actions"][0]["layer"], "UTILITY")
 
     def test_final_plan_from_result_accepts_ready_storm_export_validation(self):
         plan = final_plan_from_result(

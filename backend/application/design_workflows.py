@@ -241,11 +241,20 @@ def build_run_summary(
     stage_completeness = dict(plan_meta.get("stage_completeness") or {})
     coordination = dict(plan_meta.get("coordination") or {})
     convergence = dict(plan_meta.get("convergence_summary") or {})
+    final_release_review = dict(plan_meta.get("release_review") or {})
     optimization = dict(plan_meta.get("optimization_summary") or {})
     run_id = metadata.get("_workflow_run_id") or new_workflow_id("run")
     created_at = now_ts()
-    blocked_exports = list(convergence.get("blocked_exports") or [])
-    blocked_reasons = list(convergence.get("blocked_reasons") or [])
+    blocked_exports = list(
+        final_release_review.get("blocked_exports")
+        if "blocked_exports" in final_release_review
+        else (convergence.get("blocked_exports") or [])
+    )
+    blocked_reasons = list(
+        final_release_review.get("blocked_reasons")
+        if "blocked_reasons" in final_release_review
+        else (convergence.get("blocked_reasons") or [])
+    )
     unresolved_conflict_count = int(convergence.get("unresolved_conflict_count") or 0)
     failed_deliverables = list(deliverables.get("failed") or [])
     normalized_assumptions = _normalized_assumption_summary(dict(convergence.get("assumption_summary") or {}))
@@ -425,11 +434,18 @@ def final_plan_from_result(
             or any(any(token in item for token in ("utility", "utilities", "water")) for item in produced | requested)
         )
         utility_export = dict(utilities.get("export_validation") or {})
-        if enforce_export_guards and needs_utility_truth and not bool(utility_export.get("ready")):
-            reasons = _normalized_reasons(
-                utility_export.get("reasons"),
-                "utility_export_not_ready",
-            )
+        utility_ready = bool(utility_export.get("ready"))
+        utility_reasons = _normalized_reasons(
+            utility_export.get("reasons"),
+            "utility_export_not_ready",
+        )
+        if not utility_ready and utility_reasons == ["utility_fallback_used"]:
+            from backend.planning.export_validation import utility_summary_is_exportable
+
+            if utility_summary_is_exportable(utilities):
+                utility_ready = True
+        if enforce_export_guards and needs_utility_truth and not utility_ready:
+            reasons = utility_reasons
             raise HTTPException(
                 status_code=409,
                 detail=(
