@@ -47,7 +47,10 @@ class ProjectStoreProtocol(Protocol):
 
 
 def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, Any]) -> Dict[str, Any]:
-    run_summary = build_run_summary(result_data, source="preview")
+    stored_run_summary = dict(result_data.get("run_summary") or {})
+    if not stored_run_summary:
+        stored_run_summary = dict(dict(result_data.get("metadata") or {}).get("run_summary") or {})
+    run_summary = stored_run_summary or build_run_summary(result_data, source="preview")
     convergence = dict(run_summary.get("convergence_summary") or {})
     final_meta = dict(final_plan.get("meta") or {})
     final_release_review = dict(final_meta.get("release_review") or {})

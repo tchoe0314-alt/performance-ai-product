@@ -397,9 +397,13 @@ def final_plan_from_result(
         grading_export = dict(grading.get("export_validation") or {})
         grading_ready = bool(grading_export.get("ready"))
         grading_reasons = _normalized_reasons(grading_export.get("reasons"), "grading_export_not_ready")
+        grading_deliverables_present = bool(
+            produced.intersection({"grading_plan", "contours", "spot_grades", "flow_arrows"})
+            or requested.intersection({"grading_plan", "contours", "spot_grades", "flow_arrows"})
+        )
         if (
             not grading_ready
-            and grading_layers_present
+            and (grading_layers_present or grading_deliverables_present)
             and grading_reasons == ["grading_export_not_ready"]
         ):
             grading_ready = True

@@ -271,6 +271,23 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         )
         self.assertEqual(plan["actions"][0]["layer"], "FG_CONTOUR")
 
+    def test_final_plan_from_result_accepts_grading_deliverables_when_flag_is_generic(self):
+        plan = final_plan_from_result(
+            {
+                "final_plan": {
+                    "actions": [{"task": "polyline", "layer": "ROAD"}],
+                    "meta": {
+                        "deliverables": {
+                            "requested": ["grading_plan"],
+                            "produced": ["grading_plan", "contours", "spot_grades"],
+                        },
+                        "grading": {"export_validation": {"ready": False, "reasons": ["grading_export_not_ready"]}},
+                    },
+                }
+            }
+        )
+        self.assertEqual(plan["actions"][0]["layer"], "ROAD")
+
 
 if __name__ == "__main__":
     unittest.main()
