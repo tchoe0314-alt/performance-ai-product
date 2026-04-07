@@ -340,6 +340,7 @@ def health() -> Dict[str, Any]:
         app_version=APP_VERSION,
         product_mode=PRODUCT_MODE,
         user_count=user_count,
+        storage=DB.storage_kind,
     )
 
 

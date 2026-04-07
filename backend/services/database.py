@@ -1,18 +1,107 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, Iterable, Optional
+import os
 import sqlite3
 import threading
 
 
+class _PostgresRow(dict):
+    def __init__(self, columns: list[str], values: Iterable[Any]) -> None:
+        pairs = list(zip(columns, values))
+        super().__init__(pairs)
+        self._columns = [name for name, _ in pairs]
+        self._values = [value for _, value in pairs]
+
+    def __getitem__(self, key: Any) -> Any:
+        if isinstance(key, int):
+            return self._values[key]
+        return super().__getitem__(key)
+
+
+class _PostgresResult:
+    def __init__(self, cursor: Any) -> None:
+        self._cursor = cursor
+        self.rowcount = int(getattr(cursor, "rowcount", 0) or 0)
+        description = getattr(cursor, "description", None) or []
+        self._columns = [str(item[0]) for item in description]
+
+    def _wrap(self, row: Any) -> Any:
+        if row is None:
+            return None
+        if not self._columns:
+            return row
+        return _PostgresRow(self._columns, row)
+
+    def fetchone(self) -> Any:
+        return self._wrap(self._cursor.fetchone())
+
+    def fetchall(self) -> list[Any]:
+        return [self._wrap(row) for row in self._cursor.fetchall()]
+
+
+class _PostgresConnection:
+    def __init__(self, connection: Any) -> None:
+        self._connection = connection
+
+    def execute(self, sql: str, params: Iterable[Any] = ()) -> _PostgresResult:
+        cursor = self._connection.cursor()
+        cursor.execute(self._normalize_sql(sql), tuple(params or ()))
+        return _PostgresResult(cursor)
+
+    def executescript(self, script: str) -> None:
+        cursor = self._connection.cursor()
+        for statement in self._iter_statements(script):
+            cursor.execute(statement)
+
+    def commit(self) -> None:
+        self._connection.commit()
+
+    def rollback(self) -> None:
+        self._connection.rollback()
+
+    def close(self) -> None:
+        self._connection.close()
+
+    @staticmethod
+    def _normalize_sql(sql: str) -> str:
+        return str(sql or "").replace("?", "%s")
+
+    @classmethod
+    def _iter_statements(cls, script: str) -> list[str]:
+        statements: list[str] = []
+        for raw in str(script or "").split(";"):
+            statement = raw.strip()
+            if not statement:
+                continue
+            upper = statement.upper()
+            if upper.startswith("PRAGMA "):
+                continue
+            statements.append(statement)
+        return statements
+
+
 class Database:
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: Path, database_url: Optional[str] = None) -> None:
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+        self.database_url = str(database_url or os.getenv("DATABASE_URL") or "").strip()
+        self.storage_kind = "postgres" if self.database_url.startswith(("postgres://", "postgresql://")) else "sqlite"
         self._initialize()
 
-    def connect(self) -> sqlite3.Connection:
+    def connect(self) -> Any:
+        if self.storage_kind == "postgres":
+            try:
+                import psycopg
+            except ImportError as exc:
+                raise RuntimeError(
+                    "Postgres storage requires psycopg. Add psycopg[binary] to backend dependencies."
+                ) from exc
+            connection = psycopg.connect(self.database_url, autocommit=False)
+            return _PostgresConnection(connection)
+
         connection = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30.0)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA busy_timeout = 30000;")
@@ -20,7 +109,7 @@ class Database:
         return connection
 
     def _initialize(self) -> None:
-        schema = """
+        sqlite_schema = """
         PRAGMA journal_mode=WAL;
 
         CREATE TABLE IF NOT EXISTS users (
@@ -86,9 +175,70 @@ class Database:
         ON jobs(status, job_type);
         """
 
+        postgres_schema = """
+        CREATE TABLE IF NOT EXISTS users (
+            user_id TEXT PRIMARY KEY,
+            email TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            password_salt TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at DOUBLE PRECISION NOT NULL,
+            updated_at DOUBLE PRECISION NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS auth_tokens (
+            token TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            created_at DOUBLE PRECISION NOT NULL,
+            last_used_at DOUBLE PRECISION NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS projects (
+            project_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL,
+            created_at DOUBLE PRECISION NOT NULL,
+            updated_at DOUBLE PRECISION NOT NULL,
+            session_id TEXT,
+            has_result INTEGER NOT NULL DEFAULT 0,
+            tags_json TEXT NOT NULL,
+            project_input_json TEXT NOT NULL,
+            latest_result_json TEXT NOT NULL,
+            session_state_json TEXT NOT NULL,
+            metadata_json TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_projects_user_updated
+        ON projects(user_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS jobs (
+            job_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            job_type TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at DOUBLE PRECISION NOT NULL,
+            updated_at DOUBLE PRECISION NOT NULL,
+            project_id TEXT REFERENCES projects(project_id) ON DELETE SET NULL,
+            stage TEXT NOT NULL DEFAULT '',
+            stage_detail TEXT NOT NULL DEFAULT '',
+            progress INTEGER NOT NULL DEFAULT 0,
+            payload_json TEXT NOT NULL,
+            result_json TEXT NOT NULL,
+            error_text TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_jobs_user_updated
+        ON jobs(user_id, updated_at DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_jobs_status
+        ON jobs(status, job_type);
+        """
+
         with self._lock:
             connection = self.connect()
             try:
+                schema = postgres_schema if self.storage_kind == "postgres" else sqlite_schema
                 connection.executescript(schema)
                 connection.commit()
             finally:
@@ -96,20 +246,43 @@ class Database:
         self._ensure_jobs_runtime_columns()
         self._ensure_project_summary_columns()
 
+    def _get_table_columns(self, table_name: str) -> set[str]:
+        connection = self.connect()
+        try:
+            if self.storage_kind == "postgres":
+                rows = connection.execute(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = ?
+                    """,
+                    (table_name,),
+                ).fetchall()
+                return {str(row["column_name"]) for row in rows}
+            rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+            return {str(row["name"]) for row in rows}
+        finally:
+            connection.close()
+
     def _ensure_jobs_runtime_columns(self) -> None:
         with self._lock:
             connection = self.connect()
             try:
-                columns = {
-                    str(row["name"])
-                    for row in connection.execute("PRAGMA table_info(jobs)").fetchall()
-                }
-                if "stage" not in columns:
-                    connection.execute("ALTER TABLE jobs ADD COLUMN stage TEXT NOT NULL DEFAULT ''")
-                if "stage_detail" not in columns:
-                    connection.execute("ALTER TABLE jobs ADD COLUMN stage_detail TEXT NOT NULL DEFAULT ''")
-                if "progress" not in columns:
-                    connection.execute("ALTER TABLE jobs ADD COLUMN progress INTEGER NOT NULL DEFAULT 0")
+                columns = self._get_table_columns("jobs")
+                if self.storage_kind == "postgres":
+                    if "stage" not in columns:
+                        connection.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS stage TEXT NOT NULL DEFAULT ''")
+                    if "stage_detail" not in columns:
+                        connection.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS stage_detail TEXT NOT NULL DEFAULT ''")
+                    if "progress" not in columns:
+                        connection.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS progress INTEGER NOT NULL DEFAULT 0")
+                else:
+                    if "stage" not in columns:
+                        connection.execute("ALTER TABLE jobs ADD COLUMN stage TEXT NOT NULL DEFAULT ''")
+                    if "stage_detail" not in columns:
+                        connection.execute("ALTER TABLE jobs ADD COLUMN stage_detail TEXT NOT NULL DEFAULT ''")
+                    if "progress" not in columns:
+                        connection.execute("ALTER TABLE jobs ADD COLUMN progress INTEGER NOT NULL DEFAULT 0")
                 connection.commit()
             finally:
                 connection.close()
@@ -118,14 +291,17 @@ class Database:
         with self._lock:
             connection = self.connect()
             try:
-                columns = {
-                    str(row["name"])
-                    for row in connection.execute("PRAGMA table_info(projects)").fetchall()
-                }
-                if "has_result" not in columns:
-                    connection.execute(
-                        "ALTER TABLE projects ADD COLUMN has_result INTEGER NOT NULL DEFAULT 0"
-                    )
+                columns = self._get_table_columns("projects")
+                if self.storage_kind == "postgres":
+                    if "has_result" not in columns:
+                        connection.execute(
+                            "ALTER TABLE projects ADD COLUMN IF NOT EXISTS has_result INTEGER NOT NULL DEFAULT 0"
+                        )
+                else:
+                    if "has_result" not in columns:
+                        connection.execute(
+                            "ALTER TABLE projects ADD COLUMN has_result INTEGER NOT NULL DEFAULT 0"
+                        )
                 connection.execute(
                     """
                     UPDATE projects

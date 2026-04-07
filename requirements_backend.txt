@@ -22,6 +22,7 @@ numpy==2.0.2
 openai==2.30.0
 packaging==26.0
 pillow==11.3.0
+psycopg[binary]==3.2.9
 pydantic==2.12.5
 pydantic_core==2.41.5
 pyparsing==3.3.2

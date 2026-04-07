@@ -4,7 +4,6 @@ from typing import Any, Dict, Optional
 import hashlib
 import os
 import secrets
-import sqlite3
 import time
 import uuid
 
@@ -125,8 +124,8 @@ class AuthStore:
                     (_now(), token_value),
                 )
                 connection.commit()
-            except sqlite3.OperationalError as exc:
-                # Avoid turning transient SQLite lock contention into auth 500s.
+            except Exception as exc:
+                # Avoid turning transient storage lock contention into auth 500s.
                 if "locked" not in str(exc).lower():
                     raise
             return dict(row)
