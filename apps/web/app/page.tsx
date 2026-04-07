@@ -1238,7 +1238,7 @@ export default function PerformanceAIDashboard() {
   );
   const visibleActiveJob = useMemo(() => {
     if (activeJobId) {
-      return activeJob ?? currentProjectActiveJob;
+      return activeJob;
     }
     return projectId ? currentProjectActiveJob : activeJob;
   }, [activeJob, activeJobId, currentProjectActiveJob, projectId]);
@@ -2848,7 +2848,7 @@ export default function PerformanceAIDashboard() {
     if (!currentProjectActiveJob) {
       return;
     }
-    if (!activeJobId || currentProjectActiveJob.job_id !== activeJobId) {
+    if (!activeJobId) {
       setActiveJobId(currentProjectActiveJob.job_id);
     }
   }, [activeJobId, currentProjectActiveJob]);
