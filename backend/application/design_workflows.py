@@ -455,12 +455,44 @@ def final_plan_from_result(
             )
         drainage_export = dict(drainage.get("export_validation") or {})
         storm_export = dict(storm.get("export_validation") or {})
+        drainage_ready = bool(drainage_export.get("ready"))
+        drainage_reasons = _normalized_reasons(
+            drainage_export.get("reasons"),
+            "storm_export_not_ready",
+        )
         storm_ready = bool(storm_export.get("ready"))
         if not storm_ready:
-            storm_ready = bool(dict(storm.get("graph_validation") or {}).get("valid", False)) and bool(
-                dict(storm.get("hydraulic_validation") or {}).get("valid", False)
-            ) and not list(storm.get("missing_data_segments") or [])
-        if enforce_export_guards and needs_storm_truth and (not bool(drainage_export.get("ready")) or not storm_ready):
+            from backend.planning.export_validation import storm_summary_is_exportable
+
+            persisted_segments = [
+                dict(item)
+                for item in list(
+                    storm.get("storm_pipe_segments")
+                    or storm.get("pipe_segments")
+                    or storm.get("segments")
+                    or []
+                )
+                if isinstance(item, dict)
+            ]
+            storm_ready = storm_summary_is_exportable({**storm, "segments": persisted_segments}) or (
+                bool(dict(storm.get("graph_validation") or {}).get("valid", False))
+                and bool(dict(storm.get("hydraulic_validation") or {}).get("valid", False))
+                and not list(storm.get("missing_data_segments") or [])
+            )
+        storm_only_drainage_reasons = {
+            "storm_network_missing",
+            "storm_graph_invalid",
+            "storm_hydraulics_invalid",
+            "storm_segments_incomplete",
+        }
+        if (
+            not drainage_ready
+            and storm_ready
+            and drainage_reasons
+            and set(drainage_reasons).issubset(storm_only_drainage_reasons)
+        ):
+            drainage_ready = True
+        if enforce_export_guards and needs_storm_truth and (not drainage_ready or not storm_ready):
             reasons = list(drainage_export.get("reasons") or [])
             if storm_export:
                 reasons.extend(str(item) for item in list(storm_export.get("reasons") or []) if str(item))
