@@ -43,6 +43,27 @@ class DxfSheetLayoutsTest(unittest.TestCase):
             self.assertNotIn("SPOT_FG", modelspace_layers)
             self.assertNotIn("LOW_POINTS", modelspace_layers)
 
+    def test_modelspace_suppresses_wrapper_and_schematic_access_geometry(self) -> None:
+        plan = _sheet_test_plan()
+        actions = plan.setdefault("actions", [])
+        actions.extend(
+            [
+                {"layer": "ROAD", "task": "rectangle", "origin": [8, 18], "width": 88, "height": 74},
+                {"layer": "ROAD", "task": "circle", "center": [12, 44], "radius": 16},
+                {"layer": "ROAD", "task": "polyline", "points": [[52, -8], [52, 18], [52, 54]]},
+                {"layer": "WATER", "task": "polyline", "points": [[0, 0], [100, 0]]},
+            ]
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "modelspace-wrapper-filter-test.dxf"
+            save_dxf(plan, filename=str(path))
+
+            doc = ezdxf.readfile(path)
+            modelspace_layers = [entity.dxf.layer for entity in doc.modelspace()]
+
+            self.assertNotIn("WATER", modelspace_layers)
+            self.assertIn("BUILDING", modelspace_layers)
+
     def test_profiles_and_sections_keep_canonical_context(self) -> None:
         plan = _sheet_test_plan()
         profiles = ((plan.get("meta") or {}).get("profiles") or [])

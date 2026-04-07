@@ -469,6 +469,162 @@ def _plan_bbox(actions: List[Dict[str, Any]]) -> Tuple[float, float, float, floa
     return min(xs), min(ys), max(xs), max(ys)
 
 
+def _action_bounds(action: Dict[str, Any]) -> Tuple[float, float, float, float] | None:
+    task = safe_text(action.get("task"), "").strip().lower()
+    if task == "rectangle":
+        x, y = safe_origin(action)
+        w = safe_num(action.get("width"))
+        h = safe_num(action.get("height"))
+        if w <= 0 or h <= 0:
+            return None
+        return (x, y, x + w, y + h)
+    if task in {"polygon", "polyline"}:
+        pts = _dedupe_consecutive_points(_normalize_points(safe_points(action)))
+        if len(pts) < 2:
+            return None
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        return (min(xs), min(ys), max(xs), max(ys))
+    if task == "circle":
+        cx, cy = safe_center(action)
+        r = safe_num(action.get("radius"))
+        if r <= 0:
+            return None
+        return (cx - r, cy - r, cx + r, cy + r)
+    return None
+
+
+def _bounds_area(bounds: Tuple[float, float, float, float] | None) -> float:
+    if not bounds:
+        return 0.0
+    min_x, min_y, max_x, max_y = bounds
+    return max(0.0, max_x - min_x) * max(0.0, max_y - min_y)
+
+
+def _contains_bounds(
+    outer: Tuple[float, float, float, float] | None,
+    inner: Tuple[float, float, float, float] | None,
+    *,
+    tolerance: float = 0.0,
+) -> bool:
+    if not outer or not inner:
+        return False
+    outer_min_x, outer_min_y, outer_max_x, outer_max_y = outer
+    inner_min_x, inner_min_y, inner_max_x, inner_max_y = inner
+    return (
+        outer_min_x - tolerance <= inner_min_x
+        and outer_min_y - tolerance <= inner_min_y
+        and outer_max_x + tolerance >= inner_max_x
+        and outer_max_y + tolerance >= inner_max_y
+    )
+
+
+def _is_wrapper_layout_shape(action: Dict[str, Any], building_bounds: List[Dict[str, Any]]) -> bool:
+    layer = get_layer(action, "SITE")
+    task = safe_text(action.get("task"), "").strip().lower()
+    label = clean_label(action.get("label"), "").upper()
+    text = safe_text(action.get("text"), "").upper()
+    if layer not in {"SITE", "SETBACK", "ROAD", "PAVEMENT", "FIRE"}:
+        return False
+    if task not in {"rectangle", "polygon", "polyline"}:
+        return False
+    if label and label not in {"SITE", "LOT", "BUILDABLE_AREA", "DRIVE", "ROAD", "PAVEMENT"}:
+        return False
+    if text:
+        return False
+    if task == "polyline":
+        pts = _dedupe_consecutive_points(_normalize_points(safe_points(action)))
+        if len(pts) < 4:
+            return False
+        if abs(pts[0][0] - pts[-1][0]) > 1e-6 or abs(pts[0][1] - pts[-1][1]) > 1e-6:
+            return False
+    bounds = _action_bounds(action)
+    if not bounds:
+        return False
+    contained_buildings = [item for item in building_bounds if _contains_bounds(bounds, item["bounds"], tolerance=1.0)]
+    if len(contained_buildings) < max(2, len(building_bounds) - 1):
+        return False
+    wrapper_area = _bounds_area(bounds)
+    if wrapper_area <= 0:
+        return False
+    max_building_area = max((_bounds_area(item["bounds"]) for item in contained_buildings), default=0.0)
+    total_building_area = sum(_bounds_area(item["bounds"]) for item in contained_buildings)
+    if max_building_area <= 0:
+        return False
+    return wrapper_area >= max(max_building_area * 3.5, total_building_area * 1.15)
+
+
+def _is_schematic_access_shape(action: Dict[str, Any], building_bounds: List[Dict[str, Any]]) -> bool:
+    layer = get_layer(action, "SITE")
+    task = safe_text(action.get("task"), "").strip().lower()
+    label = clean_label(action.get("label"), "").upper()
+    if layer not in {"ROAD", "FIRE"}:
+        return False
+    if task == "circle":
+        if label:
+            return False
+        radius = safe_num(action.get("radius"))
+        if not building_bounds or radius < 6.0:
+            return False
+        bounds = _action_bounds(action)
+        if not bounds:
+            return False
+        min_building_x = min(item["bounds"][0] for item in building_bounds)
+        min_building_y = min(item["bounds"][1] for item in building_bounds)
+        max_building_x = max(item["bounds"][2] for item in building_bounds)
+        max_building_y = max(item["bounds"][3] for item in building_bounds)
+        line_min_x, line_min_y, line_max_x, line_max_y = bounds
+        near_layout = (
+            line_max_x >= min_building_x - 30.0
+            and line_min_x <= max_building_x + 30.0
+            and line_max_y >= min_building_y - 30.0
+            and line_min_y <= max_building_y + 30.0
+        )
+        extends_outside_layout = (
+            line_min_x < min_building_x - 10.0
+            or line_max_x > max_building_x + 10.0
+            or line_min_y < min_building_y - 10.0
+            or line_max_y > max_building_y + 10.0
+        )
+        return near_layout and extends_outside_layout
+    if task != "polyline":
+        return False
+    if label:
+        return False
+    bounds = _action_bounds(action)
+    if not bounds or not building_bounds:
+        return False
+    min_building_x = min(item["bounds"][0] for item in building_bounds)
+    min_building_y = min(item["bounds"][1] for item in building_bounds)
+    max_building_x = max(item["bounds"][2] for item in building_bounds)
+    max_building_y = max(item["bounds"][3] for item in building_bounds)
+    line_min_x, line_min_y, line_max_x, line_max_y = bounds
+    width = max(1e-6, line_max_x - line_min_x)
+    height = max(1e-6, line_max_y - line_min_y)
+    is_axis_aligned = min(width, height) <= max(width, height) * 0.15
+    if not is_axis_aligned:
+        return False
+    spans_into_layout = not (
+        line_max_x < min_building_x
+        or line_min_x > max_building_x
+        or line_max_y < min_building_y
+        or line_min_y > max_building_y
+    )
+    near_layout = (
+        line_max_x >= min_building_x - 20.0
+        and line_min_x <= max_building_x + 20.0
+        and line_max_y >= min_building_y - 20.0
+        and line_min_y <= max_building_y + 20.0
+    )
+    extends_outside_layout = (
+        line_min_x < min_building_x - 40.0
+        or line_max_x > max_building_x + 40.0
+        or line_min_y < min_building_y - 40.0
+        or line_max_y > max_building_y + 40.0
+    )
+    return (spans_into_layout or near_layout) and extends_outside_layout
+
+
 def _summary_anchor(actions: List[Dict[str, Any]]) -> Tuple[float, float]:
     bbox = _plan_bbox(actions)
     if bbox is None:
@@ -744,6 +900,12 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
         if isinstance(action, dict)
     }
     layout_first_modelspace = bool(raw_layers.intersection(MODELSPACE_PRIMARY_LAYOUT_LAYERS))
+    building_bounds = [
+        {"action": rec, "bounds": _action_bounds(rec)}
+        for rec in (safe_dict(action) for action in actions if isinstance(action, dict))
+        if get_layer(rec, "SITE") == "BUILDING" and safe_text(rec.get("task"), "").lower() in {"rectangle", "polygon"}
+    ]
+    building_bounds = [item for item in building_bounds if item["bounds"]]
     for action in actions:
         rec = safe_dict(action)
         if _is_debug_action(rec):
@@ -751,7 +913,13 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
         layer = get_layer(rec, "SITE")
         if layout_first_modelspace and layer in MODELSPACE_DETAIL_LAYERS:
             continue
+        if layout_first_modelspace and _is_wrapper_layout_shape(rec, building_bounds):
+            continue
+        if layout_first_modelspace and _is_schematic_access_shape(rec, building_bounds):
+            continue
         if layout_first_modelspace and layer == "SITE" and safe_text(rec.get("task"), "").lower() in {"rectangle", "polygon"}:
+            continue
+        if layout_first_modelspace and layer in {"SETBACK", "WATER"}:
             continue
         if use_surface_contours and layer in {"EG_CONTOUR", "FG_CONTOUR"}:
             continue
