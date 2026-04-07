@@ -75,7 +75,21 @@ class ProjectStore:
         try:
             rows = connection.execute(
                 """
-                SELECT project_id, name, description, created_at, updated_at, session_id, tags_json, latest_result_json
+                SELECT
+                    project_id,
+                    name,
+                    description,
+                    created_at,
+                    updated_at,
+                    session_id,
+                    tags_json,
+                    CASE
+                        WHEN latest_result_json IS NOT NULL
+                             AND latest_result_json != ''
+                             AND latest_result_json != '{}'
+                        THEN 1
+                        ELSE 0
+                    END AS has_result
                 FROM projects
                 WHERE user_id = ?
                 ORDER BY updated_at DESC
@@ -91,7 +105,7 @@ class ProjectStore:
                     "updated_at": row["updated_at"],
                     "session_id": row["session_id"],
                     "tags": _json_loads(row["tags_json"], []),
-                    "has_result": bool(_json_loads(row["latest_result_json"], {})),
+                    "has_result": bool(row["has_result"]),
                 }
                 for row in rows
             ]

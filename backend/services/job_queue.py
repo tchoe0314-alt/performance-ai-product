@@ -74,6 +74,13 @@ def _job_progress_payload(stage: str, detail: str, progress: int) -> Dict[str, A
     }
 
 
+def _coerce_progress(progress: Any) -> int:
+    try:
+        return max(0, min(100, int(progress or 0)))
+    except Exception:
+        return 0
+
+
 class JobQueueService:
     def __init__(self, db: Database) -> None:
         self.db = db
@@ -117,13 +124,17 @@ class JobQueueService:
             "result": _job_progress_payload("Queued", "Waiting for a worker to pick up the job.", 12),
             "error": None,
         }
+        job_progress = dict((record["result"] or {}).get("job_progress") or {})
 
         connection = self.db.connect()
         try:
             connection.execute(
                 """
-                INSERT INTO jobs (job_id, user_id, job_type, status, created_at, updated_at, project_id, payload_json, result_json, error_text)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO jobs (
+                    job_id, user_id, job_type, status, created_at, updated_at, project_id,
+                    stage, stage_detail, progress, payload_json, result_json, error_text
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record["job_id"],
@@ -133,6 +144,9 @@ class JobQueueService:
                     record["created_at"],
                     record["updated_at"],
                     record["project_id"],
+                    str(job_progress.get("stage") or ""),
+                    str(job_progress.get("detail") or ""),
+                    _coerce_progress(job_progress.get("progress")),
                     _json_dumps(record["payload"]),
                     _json_dumps(record["result"]),
                     record["error"],
@@ -152,7 +166,7 @@ class JobQueueService:
         try:
             rows = connection.execute(
                 """
-                SELECT *
+                SELECT job_id, job_type, status, created_at, updated_at, project_id, stage, stage_detail, progress, error_text
                 FROM jobs
                 WHERE user_id = ?
                 ORDER BY updated_at DESC
@@ -172,7 +186,7 @@ class JobQueueService:
         try:
             row = connection.execute(
                 """
-                SELECT *
+                SELECT job_id, user_id, job_type, status, created_at, updated_at, project_id, stage, stage_detail, progress, error_text
                 FROM jobs
                 WHERE user_id = ? AND job_id = ?
                 """,
@@ -183,14 +197,29 @@ class JobQueueService:
             connection.close()
 
     def get_job_detail(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
-        record = self.get_job(user_id=user_id, job_id=job_id)
+        connection = self.db.connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM jobs
+                WHERE user_id = ? AND job_id = ?
+                """,
+                (user_id, job_id),
+            ).fetchone()
+        finally:
+            connection.close()
+        record = None if row is None else self._row_to_record(row)
         if record is None:
             return None
         detail = self._job_summary(record)
+        result_payload: Dict[str, Any] = {}
+        if record["status"] in {"completed", "failed", "cancelled"}:
+            result_payload = record.get("result") or {}
         detail.update(
             {
                 "payload": record.get("payload") or {},
-                "result": record.get("result") or {},
+                "result": result_payload,
             }
         )
         return detail
@@ -232,8 +261,12 @@ class JobQueueService:
             for row in rows:
                 if row["status"] == "running":
                     connection.execute(
-                        "UPDATE jobs SET status = ?, updated_at = ?, error_text = ? WHERE job_id = ?",
-                        ("queued", _now(), "Recovered after process restart.", row["job_id"]),
+                        """
+                        UPDATE jobs
+                        SET status = ?, updated_at = ?, error_text = ?, stage = ?, stage_detail = ?, progress = ?
+                        WHERE job_id = ?
+                        """,
+                        ("queued", _now(), "Recovered after process restart.", "Queued", "Recovered after process restart.", 12, row["job_id"]),
                     )
                 self._queue.put(row["job_id"])
             connection.commit()
@@ -272,15 +305,25 @@ class JobQueueService:
             connection.close()
 
     def _update_job_state(self, job_id: str, *, status: str, result: Optional[Dict[str, Any]] = None, error: Optional[str] = None) -> None:
+        job_progress = dict((result or {}).get("job_progress") or {})
         connection = self.db.connect()
         try:
             connection.execute(
                 """
                 UPDATE jobs
-                SET status = ?, updated_at = ?, result_json = ?, error_text = ?
+                SET status = ?, updated_at = ?, stage = ?, stage_detail = ?, progress = ?, result_json = ?, error_text = ?
                 WHERE job_id = ?
                 """,
-                (status, _now(), _json_dumps(result or {}), error, job_id),
+                (
+                    status,
+                    _now(),
+                    str(job_progress.get("stage") or ""),
+                    str(job_progress.get("detail") or ""),
+                    _coerce_progress(job_progress.get("progress")),
+                    _json_dumps(result or {}),
+                    error,
+                    job_id,
+                ),
             )
             connection.commit()
         finally:
@@ -298,10 +341,11 @@ class JobQueueService:
 
     def _job_summary(self, record: Dict[str, Any]) -> Dict[str, Any]:
         job_progress = dict((record.get("result") or {}).get("job_progress") or {})
-        try:
-            progress = int(job_progress.get("progress") or 0)
-        except Exception:
-            progress = 0
+        stage = str(record.get("stage") or job_progress.get("stage") or "")
+        stage_detail = str(record.get("stage_detail") or job_progress.get("detail") or "")
+        progress = _coerce_progress(record.get("progress"))
+        if progress == 0 and job_progress:
+            progress = _coerce_progress(job_progress.get("progress"))
         return {
             "job_id": record["job_id"],
             "job_type": record["job_type"],
@@ -310,23 +354,27 @@ class JobQueueService:
             "updated_at": record["updated_at"],
             "project_id": record["project_id"],
             "error": record["error"],
-            "stage": str(job_progress.get("stage") or ""),
-            "stage_detail": str(job_progress.get("detail") or ""),
+            "stage": stage,
+            "stage_detail": stage_detail,
             "progress": progress,
         }
 
     def _row_to_record(self, row: Any) -> Dict[str, Any]:
+        keys = set(row.keys())
         return {
             "job_id": row["job_id"],
-            "user_id": row["user_id"],
+            "user_id": row["user_id"] if "user_id" in keys else None,
             "job_type": row["job_type"],
             "status": row["status"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
-            "project_id": row["project_id"],
-            "payload": _json_loads(row["payload_json"], {}),
-            "result": _json_loads(row["result_json"], {}),
-            "error": row["error_text"],
+            "project_id": row["project_id"] if "project_id" in keys else None,
+            "stage": row["stage"] if "stage" in keys else "",
+            "stage_detail": row["stage_detail"] if "stage_detail" in keys else "",
+            "progress": row["progress"] if "progress" in keys else 0,
+            "payload": _json_loads(row["payload_json"], {}) if "payload_json" in keys else {},
+            "result": _json_loads(row["result_json"], {}) if "result_json" in keys else {},
+            "error": row["error_text"] if "error_text" in keys else None,
         }
 
     def _run_worker(self) -> None:

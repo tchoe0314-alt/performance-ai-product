@@ -68,6 +68,9 @@ class Database:
             created_at REAL NOT NULL,
             updated_at REAL NOT NULL,
             project_id TEXT,
+            stage TEXT NOT NULL DEFAULT '',
+            stage_detail TEXT NOT NULL DEFAULT '',
+            progress INTEGER NOT NULL DEFAULT 0,
             payload_json TEXT NOT NULL,
             result_json TEXT NOT NULL,
             error_text TEXT,
@@ -86,6 +89,25 @@ class Database:
             connection = self.connect()
             try:
                 connection.executescript(schema)
+                connection.commit()
+            finally:
+                connection.close()
+        self._ensure_jobs_runtime_columns()
+
+    def _ensure_jobs_runtime_columns(self) -> None:
+        with self._lock:
+            connection = self.connect()
+            try:
+                columns = {
+                    str(row["name"])
+                    for row in connection.execute("PRAGMA table_info(jobs)").fetchall()
+                }
+                if "stage" not in columns:
+                    connection.execute("ALTER TABLE jobs ADD COLUMN stage TEXT NOT NULL DEFAULT ''")
+                if "stage_detail" not in columns:
+                    connection.execute("ALTER TABLE jobs ADD COLUMN stage_detail TEXT NOT NULL DEFAULT ''")
+                if "progress" not in columns:
+                    connection.execute("ALTER TABLE jobs ADD COLUMN progress INTEGER NOT NULL DEFAULT 0")
                 connection.commit()
             finally:
                 connection.close()

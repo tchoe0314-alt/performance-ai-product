@@ -47,8 +47,11 @@ class JobQueueServiceTest(unittest.TestCase):
         try:
             connection.execute(
                 """
-                INSERT INTO jobs (job_id, user_id, job_type, status, created_at, updated_at, project_id, payload_json, result_json, error_text)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO jobs (
+                    job_id, user_id, job_type, status, created_at, updated_at, project_id,
+                    stage, stage_detail, progress, payload_json, result_json, error_text
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     "job_legacy",
@@ -58,6 +61,9 @@ class JobQueueServiceTest(unittest.TestCase):
                     1.0,
                     2.0,
                     None,
+                    "Running",
+                    "legacy",
+                    0,
                     "{}",
                     '{"job_progress":{"stage":"Running","detail":"legacy","progress":"oops"}}',
                     None,
@@ -81,8 +87,11 @@ class JobQueueServiceTest(unittest.TestCase):
         try:
             connection.execute(
                 """
-                INSERT INTO jobs (job_id, user_id, job_type, status, created_at, updated_at, project_id, payload_json, result_json, error_text)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO jobs (
+                    job_id, user_id, job_type, status, created_at, updated_at, project_id,
+                    stage, stage_detail, progress, payload_json, result_json, error_text
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     "job_detail",
@@ -92,6 +101,9 @@ class JobQueueServiceTest(unittest.TestCase):
                     1.0,
                     2.0,
                     "p1",
+                    "Engineering Run",
+                    "Working",
+                    48,
                     '{"prompt_text":"demo"}',
                     '{"job_progress":{"stage":"Engineering Run","detail":"Working","progress":48},"final_plan":{"name":"Demo"}}',
                     None,
@@ -105,6 +117,41 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertIsNotNone(job)
         self.assertEqual(job["stage"], "Engineering Run")
         self.assertEqual(job["progress"], 48)
+        self.assertEqual(job["result"], {})
+
+    def test_get_job_detail_includes_result_after_completion_only(self):
+        connection = self.db.connect()
+        try:
+            connection.execute(
+                """
+                INSERT INTO jobs (
+                    job_id, user_id, job_type, status, created_at, updated_at, project_id,
+                    stage, stage_detail, progress, payload_json, result_json, error_text
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "job_done",
+                    self.user_id,
+                    "orchestrate",
+                    "completed",
+                    1.0,
+                    3.0,
+                    None,
+                    "Completed",
+                    "Ready",
+                    100,
+                    '{"prompt_text":"demo"}',
+                    '{"job_progress":{"stage":"Completed","detail":"Ready","progress":100},"final_plan":{"name":"Demo"}}',
+                    None,
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        job = self.queue.get_job_detail(user_id=self.user_id, job_id="job_done")
+        self.assertIsNotNone(job)
         self.assertEqual(job["result"]["final_plan"]["name"], "Demo")
 
     def test_worker_recovers_queued_jobs_from_database_without_in_memory_queue(self):
@@ -125,7 +172,7 @@ class JobQueueServiceTest(unittest.TestCase):
         deadline = time.time() + 3.0
         record = None
         while time.time() < deadline:
-            record = self.queue.get_job(user_id=self.user_id, job_id=created["job_id"])
+            record = self.queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
             if record and record["status"] == "completed":
                 break
             time.sleep(0.05)
@@ -164,7 +211,7 @@ class JobQueueServiceTest(unittest.TestCase):
         deadline = time.time() + 3.0
         record = None
         while time.time() < deadline:
-            record = self.queue.get_job(user_id=self.user_id, job_id=created["job_id"])
+            record = self.queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
             if record and record["status"] == "completed":
                 break
             time.sleep(0.05)
