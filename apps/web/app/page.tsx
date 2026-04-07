@@ -2786,9 +2786,6 @@ export default function PerformanceAIDashboard() {
         { token },
       );
       downloadBlob(blob, filename ?? "civora-ai-plan.dxf");
-      if (projectId) {
-        await loadProject(projectId);
-      }
       setStatusMessage("DXF export downloaded.");
     } catch (error) {
       setStatusMessage(
@@ -2813,9 +2810,6 @@ export default function PerformanceAIDashboard() {
         { token },
       );
       downloadBlob(blob, filename ?? "civora-ai-report.json");
-      if (projectId) {
-        await loadProject(projectId);
-      }
       setStatusMessage("Report export downloaded.");
     } catch (error) {
       setStatusMessage(
