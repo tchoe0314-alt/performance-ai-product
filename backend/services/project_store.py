@@ -82,14 +82,8 @@ class ProjectStore:
                     created_at,
                     updated_at,
                     session_id,
-                    tags_json,
-                    CASE
-                        WHEN latest_result_json IS NOT NULL
-                             AND latest_result_json != ''
-                             AND latest_result_json != '{}'
-                        THEN 1
-                        ELSE 0
-                    END AS has_result
+                    has_result,
+                    tags_json
                 FROM projects
                 WHERE user_id = ?
                 ORDER BY updated_at DESC
@@ -133,6 +127,7 @@ class ProjectStore:
             row = connection.execute(
                 """
                 SELECT project_id, user_id, name, description, created_at, updated_at, session_id,
+                       has_result,
                        tags_json, project_input_json, session_state_json, metadata_json
                 FROM projects
                 WHERE user_id = ? AND project_id = ?
@@ -149,6 +144,7 @@ class ProjectStore:
                 "created_at": row["created_at"],
                 "updated_at": row["updated_at"],
                 "session_id": row["session_id"],
+                "has_result": bool(row["has_result"]),
                 "tags": _json_loads(row["tags_json"], []),
                 "project_input": _json_loads(row["project_input_json"], {}),
                 "latest_result": {},
@@ -217,14 +213,16 @@ class ProjectStore:
                 """
                 INSERT INTO projects (
                     project_id, user_id, name, description, created_at, updated_at, session_id,
+                    has_result,
                     tags_json, project_input_json, latest_result_json, session_state_json, metadata_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(project_id) DO UPDATE SET
                     user_id = excluded.user_id,
                     name = excluded.name,
                     description = excluded.description,
                     updated_at = excluded.updated_at,
                     session_id = excluded.session_id,
+                    has_result = excluded.has_result,
                     tags_json = excluded.tags_json,
                     project_input_json = excluded.project_input_json,
                     latest_result_json = excluded.latest_result_json,
@@ -239,6 +237,7 @@ class ProjectStore:
                     record["created_at"],
                     record["updated_at"],
                     record["session_id"],
+                    1 if record["latest_result"] else 0,
                     _json_dumps(record["tags"]),
                     _json_dumps(record["project_input"]),
                     _json_dumps(record["latest_result"]),
@@ -272,6 +271,7 @@ class ProjectStore:
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "session_id": row["session_id"],
+            "has_result": bool(row["has_result"]) if "has_result" in row.keys() else bool(_json_loads(row["latest_result_json"], {})),
             "tags": _json_loads(row["tags_json"], []),
             "project_input": _json_loads(row["project_input_json"], {}),
             "latest_result": _json_loads(row["latest_result_json"], {}),

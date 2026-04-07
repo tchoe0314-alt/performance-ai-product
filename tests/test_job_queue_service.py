@@ -245,6 +245,27 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(loaded["latest_result"]["storm_pipe"]["name"], "P-002")
         self.assertEqual(loaded["latest_result"]["storm_pipe"]["diameter_in"], 24.0)
 
+    def test_project_list_uses_persisted_has_result_flag(self):
+        store = ProjectStore(self.db)
+        saved = store.save_project(
+            user_id=self.user_id,
+            project_id=None,
+            name="Summary Demo",
+            latest_result={},
+        )
+        summaries = store.list_projects(user_id=self.user_id)
+        self.assertEqual(len(summaries), 1)
+        self.assertFalse(summaries[0]["has_result"])
+
+        store.save_project(
+            user_id=self.user_id,
+            project_id=saved["project_id"],
+            name="Summary Demo",
+            latest_result={"final_plan": {"project_name": "Summary Demo"}},
+        )
+        summaries = store.list_projects(user_id=self.user_id)
+        self.assertTrue(summaries[0]["has_result"])
+
 
 if __name__ == "__main__":
     unittest.main()

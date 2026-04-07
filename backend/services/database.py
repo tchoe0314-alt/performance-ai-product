@@ -49,6 +49,7 @@ class Database:
             created_at REAL NOT NULL,
             updated_at REAL NOT NULL,
             session_id TEXT,
+            has_result INTEGER NOT NULL DEFAULT 0,
             tags_json TEXT NOT NULL,
             project_input_json TEXT NOT NULL,
             latest_result_json TEXT NOT NULL,
@@ -93,6 +94,7 @@ class Database:
             finally:
                 connection.close()
         self._ensure_jobs_runtime_columns()
+        self._ensure_project_summary_columns()
 
     def _ensure_jobs_runtime_columns(self) -> None:
         with self._lock:
@@ -108,6 +110,34 @@ class Database:
                     connection.execute("ALTER TABLE jobs ADD COLUMN stage_detail TEXT NOT NULL DEFAULT ''")
                 if "progress" not in columns:
                     connection.execute("ALTER TABLE jobs ADD COLUMN progress INTEGER NOT NULL DEFAULT 0")
+                connection.commit()
+            finally:
+                connection.close()
+
+    def _ensure_project_summary_columns(self) -> None:
+        with self._lock:
+            connection = self.connect()
+            try:
+                columns = {
+                    str(row["name"])
+                    for row in connection.execute("PRAGMA table_info(projects)").fetchall()
+                }
+                if "has_result" not in columns:
+                    connection.execute(
+                        "ALTER TABLE projects ADD COLUMN has_result INTEGER NOT NULL DEFAULT 0"
+                    )
+                connection.execute(
+                    """
+                    UPDATE projects
+                    SET has_result = CASE
+                        WHEN latest_result_json IS NOT NULL
+                             AND latest_result_json != ''
+                             AND latest_result_json != '{}'
+                        THEN 1
+                        ELSE 0
+                    END
+                    """
+                )
                 connection.commit()
             finally:
                 connection.close()

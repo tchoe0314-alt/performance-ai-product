@@ -73,6 +73,7 @@ type ProjectRecord = {
   project_id: string;
   name: string;
   description?: string;
+  updated_at?: number;
   project_input?: any;
   latest_result?: any;
   metadata?: any;
@@ -1790,6 +1791,37 @@ export default function PerformanceAIDashboard() {
     setProjects(nextProjects);
   };
 
+  const upsertProjectSummary = (project: ProjectRecord | ProjectSummary) => {
+    const summary: ProjectSummary = {
+      project_id: project.project_id,
+      name: project.name || "Untitled Project",
+      description: project.description ?? "",
+      has_result:
+        typeof project.has_result === "boolean"
+          ? project.has_result
+          : Boolean((project as ProjectRecord).latest_result),
+      updated_at: project.updated_at,
+    };
+    setProjects((current) => {
+      const existingIndex = current.findIndex(
+        (item) => item.project_id === summary.project_id,
+      );
+      if (existingIndex < 0) {
+        return [summary, ...current];
+      }
+      const next = [...current];
+      next[existingIndex] = { ...next[existingIndex], ...summary };
+      next.sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0));
+      return next;
+    });
+  };
+
+  const removeProjectSummary = (projectIdToRemove: string) => {
+    setProjects((current) =>
+      current.filter((item) => item.project_id !== projectIdToRemove),
+    );
+  };
+
   const hasTrackedJobs = useMemo(
     () =>
       Boolean(activeJobId) ||
@@ -2295,7 +2327,7 @@ export default function PerformanceAIDashboard() {
       );
       setProjectId(data.project.project_id);
       setCurrentProject(data.project);
-      await refreshProjects();
+      upsertProjectSummary(data.project);
       if (!silent) {
         setStatusMessage(
           `Saved project "${data.project.name || resolvedName || "Untitled Project"}".`,
@@ -2356,11 +2388,11 @@ export default function PerformanceAIDashboard() {
     if (!token) return;
     try {
       await deleteJson(`/api/projects/${id}`, { token });
+      removeProjectSummary(id);
       if (projectId === id) {
         setProjectId("");
         setCurrentProject(null);
       }
-      await refreshProjects();
       setStatusMessage("Project deleted.");
     } catch (error) {
       setStatusMessage(
@@ -2426,7 +2458,15 @@ export default function PerformanceAIDashboard() {
           "message",
         );
         setActiveJobId("");
-        await refreshProjects();
+        if (job.project_id) {
+          upsertProjectSummary({
+            project_id: job.project_id,
+            name: currentProject?.name || siteName || "Untitled Project",
+            description: currentProject?.description ?? "",
+            has_result: true,
+            updated_at: Date.now() / 1000,
+          });
+        }
         if (job.project_id) {
           void loadProject(job.project_id);
         }
@@ -2689,7 +2729,6 @@ export default function PerformanceAIDashboard() {
         autoNamedOverride: false,
         autoFileNamedOverride: false,
       });
-      await refreshProjects();
     }
   };
 
