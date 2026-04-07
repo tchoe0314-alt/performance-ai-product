@@ -40,6 +40,7 @@ LAYER_LINEWIDTH = {
     "FG_CONTOUR": 1.2,
     "BASIN_BOUNDARY": 1.8,
     "UTILITY": 1.8,
+    "WATER": 1.8,
     "SAN": 1.8,
     "STORM": 2.0,
     "STRUCTURE": 1.6,
@@ -60,6 +61,7 @@ LAYER_COLORS = {
     "STORM": "#0369a1",
     "SAN": "#7c3aed",
     "UTILITY": "#6d28d9",
+    "WATER": "#0ea5e9",
     "DRAIN_FLOW": "#0f766e",
     "SURFACE": "#94a3b8",
     "EG_CONTOUR": "#cbd5e1",
@@ -93,11 +95,12 @@ SUPPRESSED_AUTO_LABEL_LAYERS = {
     "BASIN_BOUNDARY",
     "STRUCTURE",
     "UTILITY",
+    "WATER",
     "STORM",
 }
-SUPPRESSED_TEXT_LAYERS = {"EG_CONTOUR", "FG_CONTOUR", "DRAIN_FLOW", "LOW_POINTS", "UTILITY"}
-FOCUS_EXCLUDED_LAYERS = {"ANNO", "SYMBOL", "SITE", "PAD", "SETBACK", "UTILITY", "DRAIN_FLOW", "EG_CONTOUR", "FG_CONTOUR", "SPOT_EG", "SPOT_FG", "LOW_POINTS"}
-SUPPRESSED_LABEL_TOKENS = ("BUILDABLE_AREA", "GENERIC_UTILITY", "SERVICE_TIE", "SOURCE_SERVICE", "BUILDING_SERVICE")
+SUPPRESSED_TEXT_LAYERS = {"EG_CONTOUR", "FG_CONTOUR", "DRAIN_FLOW", "LOW_POINTS", "UTILITY", "WATER"}
+FOCUS_EXCLUDED_LAYERS = {"ANNO", "SYMBOL", "SITE", "PAD", "SETBACK", "UTILITY", "WATER", "DRAIN_FLOW", "EG_CONTOUR", "FG_CONTOUR", "SPOT_EG", "SPOT_FG", "LOW_POINTS"}
+SUPPRESSED_LABEL_TOKENS = ("BUILDABLE_AREA", "GENERIC_UTILITY", "SERVICE_TIE", "SOURCE_SERVICE", "BUILDING_SERVICE", "UTILITY-")
 PRIMARY_LAYOUT_LAYERS = {"BUILDING", "ROAD", "PAVEMENT", "PARKING", "WALK", "FIRE"}
 SECONDARY_ENGINEERING_LAYERS = {
     "ANNO",
@@ -106,6 +109,7 @@ SECONDARY_ENGINEERING_LAYERS = {
     "STORM",
     "SAN",
     "UTILITY",
+    "WATER",
     "STRUCTURE",
     "DRAIN_FLOW",
     "EG_CONTOUR",
@@ -169,14 +173,22 @@ def _is_wrapper_layout_shape(action, building_bounds):
     task = str(action.get("task") or "").lower()
     label = clean_label(action.get("label"), "").upper()
     text = safe_text(action.get("text"), "").upper()
-    if layer not in {"SITE", "SETBACK", "ROAD", "PAVEMENT", "PAD"}:
+    if layer not in {"SITE", "SETBACK", "ROAD", "PAVEMENT", "PAD", "FIRE"}:
         return False
-    if task != "rectangle":
+    if task not in {"rectangle", "polygon", "polyline"}:
         return False
     if label and label not in {"SITE", "LOT", "BUILDABLE_AREA", "DRIVE", "ROAD", "PAVEMENT"}:
         return False
     if text:
         return False
+    if task == "polyline":
+        points = safe_points(action.get("points"))
+        if len(points) < 4:
+            return False
+        first_x, first_y = points[0]
+        last_x, last_y = points[-1]
+        if abs(first_x - last_x) > 1e-6 or abs(first_y - last_y) > 1e-6:
+            return False
     bounds = _action_bounds(action)
     if not bounds:
         return False
@@ -387,6 +399,8 @@ def _filtered_preview_actions(actions):
         if task == "text_note" and any(token in text for token in SUPPRESSED_LABEL_TOKENS):
             continue
         if layer == "UTILITY" and any(token in helper_signature for token in ("SERVICE", "TIE", "GENERIC_UTILITY")):
+            continue
+        if has_layout_scene and layer == "WATER":
             continue
         if has_layout_scene and layer in SECONDARY_ENGINEERING_LAYERS:
             continue
