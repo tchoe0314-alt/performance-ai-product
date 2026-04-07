@@ -188,6 +188,23 @@ def storm_summary_is_exportable(storm: Dict[str, Any]) -> bool:
     return safe_str(summary.get("source")) == "surface_fallback"
 
 
+def _storm_segments_from_project(project: ProjectModel, storm: Dict[str, Any]) -> List[Dict[str, Any]]:
+    summary = safe_dict(storm)
+    segments = [safe_dict(item) for item in safe_list(summary.get("segments")) if safe_dict(item)]
+    if segments:
+        return segments
+    persisted = [
+        safe_dict(item)
+        for item in safe_list(project.meta.get("storm_pipe_segments"))
+        if safe_dict(item)
+    ]
+    return persisted
+
+
+def _storm_segments_are_viable(segments: List[Dict[str, Any]]) -> bool:
+    return bool(segments) and all(_storm_segment_is_exportable(item) for item in segments)
+
+
 def _utility_segment_is_exportable(segment: Dict[str, Any]) -> bool:
     rec = safe_dict(segment)
     route_points = safe_list(rec.get("route_points"))
@@ -335,8 +352,10 @@ def drainage_export_validation(
         ):
             reasons.append("drainage_surface_alignment_missing")
 
-    storm_segments = safe_list(storm.get("segments"))
-    storm_exportable = storm_summary_is_exportable(storm)
+    storm_segments = _storm_segments_from_project(project, storm)
+    storm_exportable = storm_summary_is_exportable({**storm, "segments": storm_segments}) or _storm_segments_are_viable(
+        storm_segments
+    )
     if primary_basins:
         if not storm_segments:
             reasons.append("storm_network_missing")
@@ -403,8 +422,10 @@ def storm_export_validation(
     )
     drainage_validation = drainage_export_validation(project)
     reasons: List[str] = []
-    segments = safe_list(storm.get("segments"))
-    storm_exportable = storm_summary_is_exportable(storm)
+    segments = _storm_segments_from_project(project, storm)
+    storm_exportable = storm_summary_is_exportable({**storm, "segments": segments}) or _storm_segments_are_viable(
+        segments
+    )
     if not segments:
         reasons.append("storm_network_missing")
     if not storm_exportable and not bool(safe_dict(storm.get("graph_validation")).get("valid", False)):

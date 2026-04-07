@@ -489,6 +489,72 @@ class Phase5SurfaceDrainageCoordinationTests(unittest.TestCase):
         self.assertNotIn("storm_hydraulics_invalid", storm_validation.get("reasons", []))
         self.assertNotIn("storm_downstream_target_implied", storm_validation.get("reasons", []))
 
+    def test_storm_export_validation_uses_persisted_segments_when_summary_segments_missing(self) -> None:
+        project = planner.ProjectModel(name="Persisted Storm Segments Export")
+        project.meta["grading_summary"] = {
+            "success": True,
+            "fallback_used": False,
+            "existing_surface": {"nrows": 5, "ncols": 5},
+            "proposed_surface": {"nrows": 5, "ncols": 5},
+            "stats": {"proposed_contour_count": 3, "spot_grade_count": 2, "flow_arrow_count": 1},
+            "surface_controls": {
+                "has_primary_drainage_direction": True,
+                "primary_low_point": {"x": 10.0, "y": 10.0, "z": 95.0},
+            },
+        }
+        project.meta["drainage_canonical"] = {
+            "success": True,
+            "source": "drainage_engine",
+            "structures": [{"name": "INLET-1", "x": 10.0, "y": 10.0}],
+            "basins": [
+                {
+                    "id": "BASIN-1",
+                    "name": "BASIN-1",
+                    "canonical_type": "detention_basin",
+                    "exportable": True,
+                    "boundary_points": [[0.0, 0.0], [30.0, 0.0], [30.0, 30.0], [0.0, 30.0]],
+                    "detention_design": {"adequacy_status": "adequate", "provided_storage_cf": 3200.0},
+                    "geometry_quality": {"has_bottom": True, "footprint_consistency_ratio": 0.8},
+                    "overflow_spillway": {"assumed_capacity_cfs": 1.8},
+                }
+            ],
+            "stats": {"low_point_count": 1, "flow_path_count": 1},
+        }
+        project.meta["storm_pipe_summary"] = {
+            "success": True,
+            "source": "storm_engine",
+            "segments": [],
+            "graph_validation": {"valid": False},
+            "hydraulic_validation": {"valid": False},
+            "missing_data_segments": [],
+            "explain": {"implied_target_used": False},
+        }
+        project.meta["storm_pipe_segments"] = [
+            {
+                "pipe": "STORM-1",
+                "route_points": [[10.0, 10.0], [40.0, 20.0]],
+                "length_ft": 31.6,
+                "diameter_in": 15.0,
+                "flow_cfs": 0.8,
+                "capacity_cfs": 1.6,
+                "slope_ft_ft": 0.01,
+                "start_invert_ft": 99.0,
+                "end_invert_ft": 98.5,
+                "cover_start_ft": 3.5,
+                "cover_end_ft": 3.0,
+            }
+        ]
+
+        storm_validation = planner._storm_export_validation(project)
+        drainage_validation = planner._drainage_export_validation(project)
+
+        self.assertTrue(storm_validation.get("ready"))
+        self.assertNotIn("storm_network_missing", storm_validation.get("reasons", []))
+        self.assertNotIn("storm_graph_invalid", storm_validation.get("reasons", []))
+        self.assertNotIn("storm_hydraulics_invalid", storm_validation.get("reasons", []))
+        self.assertTrue(drainage_validation.get("ready"))
+        self.assertNotIn("storm_network_missing", drainage_validation.get("reasons", []))
+
     def test_utility_export_validation_accepts_viable_fallback_network(self) -> None:
         project = planner.ProjectModel(name="Utility Fallback Export")
         project.meta["utility_summary"] = {
