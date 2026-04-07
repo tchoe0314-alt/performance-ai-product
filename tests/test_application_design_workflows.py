@@ -204,21 +204,19 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 409)
         self.assertIn("grading_fallback_used", str(ctx.exception.detail))
 
-    def test_final_plan_from_result_uses_fallback_grading_reason_when_empty(self):
-        with self.assertRaises(HTTPException) as ctx:
-            final_plan_from_result(
-                {
-                    "final_plan": {
-                        "actions": [{"task": "polyline", "layer": "FG_CONTOUR"}],
-                        "meta": {
-                            "deliverables": {"requested": ["grading_plan"], "produced": ["grading_plan"]},
-                            "grading": {"export_validation": {"ready": False, "reasons": []}},
-                        },
-                    }
+    def test_final_plan_from_result_accepts_grading_layers_when_reason_list_is_empty(self):
+        plan = final_plan_from_result(
+            {
+                "final_plan": {
+                    "actions": [{"task": "polyline", "layer": "FG_CONTOUR"}],
+                    "meta": {
+                        "deliverables": {"requested": ["grading_plan"], "produced": ["grading_plan"]},
+                        "grading": {"export_validation": {"ready": False, "reasons": []}},
+                    },
                 }
-            )
-        self.assertEqual(ctx.exception.status_code, 409)
-        self.assertIn("grading_export_not_ready", str(ctx.exception.detail))
+            }
+        )
+        self.assertEqual(plan["actions"][0]["layer"], "FG_CONTOUR")
 
     def test_final_plan_from_result_blocks_utility_fallback_export(self):
         with self.assertRaises(HTTPException) as ctx:
@@ -255,6 +253,23 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
             }
         )
         self.assertEqual(plan["actions"][0]["layer"], "PIPE")
+
+    def test_final_plan_from_result_accepts_visible_grading_layers_when_export_flag_is_stale(self):
+        plan = final_plan_from_result(
+            {
+                "final_plan": {
+                    "actions": [
+                        {"task": "polyline", "layer": "FG_CONTOUR"},
+                        {"task": "point", "layer": "SPOT_FG"},
+                    ],
+                    "meta": {
+                        "deliverables": {"requested": ["grading_plan"], "produced": ["grading_plan"]},
+                        "grading": {"export_validation": {"ready": False, "reasons": ["grading_export_not_ready"]}},
+                    },
+                }
+            }
+        )
+        self.assertEqual(plan["actions"][0]["layer"], "FG_CONTOUR")
 
 
 if __name__ == "__main__":

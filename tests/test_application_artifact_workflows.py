@@ -169,6 +169,36 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         )
         self.assertEqual(service.preview_plan["project_name"], "Blocked Preview")
 
+    def test_build_preview_response_prefers_final_release_review_over_stale_convergence(self):
+        service = FakeArtifactService()
+        response = build_preview_response(
+            artifact_service=service,
+            result_data={
+                "final_plan": {
+                    "project_name": "Release Review Wins",
+                    "actions": [{"layer": "PIPE"}],
+                    "meta": {
+                        "deliverables": {"requested": ["storm_pipe_plan"], "produced": ["storm_pipe_plan"]},
+                        "release_review": {
+                            "blocked_exports": [],
+                            "blocked_reasons": [],
+                            "release_status": "ready",
+                            "release_note": "Fallback-ready systems can export.",
+                        },
+                        "convergence_summary": {
+                            "blocked_exports": ["storm", "utilities"],
+                            "blocked_reasons": ["storm_graph_invalid", "utility_fallback_used"],
+                        },
+                    },
+                }
+            },
+        )
+        review = response["summary"]["review"]
+        self.assertEqual(review["blocked_exports"], [])
+        self.assertEqual(review["blocked_reasons"], [])
+        self.assertEqual(review["release_status"], "ready")
+        self.assertEqual(review["release_note"], "Fallback-ready systems can export.")
+
     def test_final_plan_from_result_still_enforces_export_guard_by_default(self):
         with self.assertRaises(HTTPException):
             final_plan_from_result(

@@ -49,6 +49,8 @@ class ProjectStoreProtocol(Protocol):
 def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, Any]) -> Dict[str, Any]:
     run_summary = build_run_summary(result_data, source="preview")
     convergence = dict(run_summary.get("convergence_summary") or {})
+    final_meta = dict(final_plan.get("meta") or {})
+    final_release_review = dict(final_meta.get("release_review") or {})
     engineering = dict(run_summary.get("engineering_status") or {})
     reliability = dict(run_summary.get("reliability_summary") or {})
     optimization = dict(run_summary.get("optimization_summary") or {})
@@ -65,14 +67,24 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         for item in list(convergence.get("unresolved_issue_categories") or [])
         if str(item)
     ]
+    blocked_exports_source = (
+        final_release_review.get("blocked_exports")
+        if "blocked_exports" in final_release_review
+        else convergence.get("blocked_exports")
+    )
     blocked_exports = [
         str(item)
-        for item in list(convergence.get("blocked_exports") or [])
+        for item in list(blocked_exports_source or [])
         if str(item)
     ]
+    blocked_reasons_source = (
+        final_release_review.get("blocked_reasons")
+        if "blocked_reasons" in final_release_review
+        else convergence.get("blocked_reasons")
+    )
     blocked_reasons = [
         str(item)
-        for item in list(convergence.get("blocked_reasons") or [])
+        for item in list(blocked_reasons_source or [])
         if str(item)
     ]
     rerun_stages = dict(rerun_summary.get("stage_counts") or {})
@@ -103,6 +115,9 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
     if blocked_exports or blocked_reasons or failed_deliverables:
         release_status = "blocked"
         release_note = "Blocked until outstanding export issues are resolved."
+    elif str(final_release_review.get("release_status") or "").lower() == "ready":
+        release_status = "ready"
+        release_note = str(final_release_review.get("release_note") or "Release-ready engineering state.")
     elif bool(convergence.get("converged")) and int(convergence.get("unresolved_conflict_count") or 0) == 0:
         release_status = "ready"
         release_note = "Release-ready engineering state."

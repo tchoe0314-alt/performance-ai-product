@@ -389,20 +389,26 @@ def final_plan_from_result(
             for action in actions
             if isinstance(action, dict)
         }
+        grading_layers_present = bool(engineering_layers.intersection({"FG_CONTOUR", "SPOT_FG", "DRAIN_FLOW"}))
         needs_grading_truth = bool(
-            engineering_layers.intersection({"FG_CONTOUR", "SPOT_FG"})
+            grading_layers_present
             or any(any(token in item for token in ("grading", "contour", "spot_grade")) for item in produced | requested)
         )
         grading_export = dict(grading.get("export_validation") or {})
+        grading_ready = bool(grading_export.get("ready"))
+        grading_reasons = _normalized_reasons(grading_export.get("reasons"), "grading_export_not_ready")
+        if (
+            not grading_ready
+            and grading_layers_present
+            and grading_reasons == ["grading_export_not_ready"]
+        ):
+            grading_ready = True
         needs_storm_truth = bool(
             engineering_layers.intersection({"PIPE", "DRAIN", "BASIN_BOUNDARY", "STRUCTURE"})
             or any(any(token in item for token in ("storm", "drain", "basin", "inlet")) for item in produced | requested)
         )
-        if enforce_export_guards and needs_grading_truth and not bool(grading_export.get("ready")):
-            reasons = _normalized_reasons(
-                grading_export.get("reasons"),
-                "grading_export_not_ready",
-            )
+        if enforce_export_guards and needs_grading_truth and not grading_ready:
+            reasons = grading_reasons
             raise HTTPException(
                 status_code=409,
                 detail=(
