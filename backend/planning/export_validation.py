@@ -185,7 +185,13 @@ def storm_summary_is_exportable(storm: Dict[str, Any]) -> bool:
         safe_dict(summary.get("hydraulic_validation")).get("valid", False)
     ):
         return True
-    return safe_str(summary.get("source")) == "surface_fallback"
+    source = safe_str(summary.get("source"))
+    if source == "surface_fallback":
+        return True
+    has_route_count = safe_int(summary.get("pipe_count"), 0) > 0 or safe_int(summary.get("route_count"), 0) > 0
+    if has_route_count or segments:
+        return True
+    return False
 
 
 def _storm_segments_from_project(project: ProjectModel, storm: Dict[str, Any]) -> List[Dict[str, Any]]:

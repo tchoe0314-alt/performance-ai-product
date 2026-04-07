@@ -1,7 +1,10 @@
 import unittest
 
 import planner
-from backend.planning.export_validation import basin_has_exportable_detention_geometry
+from backend.planning.export_validation import (
+    basin_has_exportable_detention_geometry,
+    storm_summary_is_exportable,
+)
 from backend.planning.hydrology_stage_runners import _synthesize_storm_pipe_summary
 from engines.storm.hydraulic_engine import analyze_storm_hydraulics
 from engines.storm.storm_network_engine import StormNetworkEngine, build_storm_network
@@ -554,6 +557,25 @@ class Phase5SurfaceDrainageCoordinationTests(unittest.TestCase):
         self.assertNotIn("storm_hydraulics_invalid", storm_validation.get("reasons", []))
         self.assertTrue(drainage_validation.get("ready"))
         self.assertNotIn("storm_network_missing", drainage_validation.get("reasons", []))
+
+    def test_storm_summary_is_exportable_accepts_persisted_summary_segments_without_graph_flags(self) -> None:
+        summary = {
+            "success": True,
+            "segments": [
+                {
+                    "pipe": "STORM-1",
+                    "route_points": [[10.0, 10.0], [40.0, 20.0]],
+                    "length_ft": 31.6,
+                    "diameter_in": 15.0,
+                    "flow_cfs": 0.8,
+                }
+            ],
+            "graph_validation": None,
+            "hydraulic_validation": None,
+            "missing_data_segments": [],
+        }
+
+        self.assertTrue(storm_summary_is_exportable(summary))
 
     def test_utility_export_validation_accepts_viable_fallback_network(self) -> None:
         project = planner.ProjectModel(name="Utility Fallback Export")
