@@ -96,9 +96,9 @@ SUPPRESSED_AUTO_LABEL_LAYERS = {
     "STORM",
 }
 SUPPRESSED_TEXT_LAYERS = {"EG_CONTOUR", "FG_CONTOUR", "DRAIN_FLOW", "LOW_POINTS", "UTILITY"}
-FOCUS_EXCLUDED_LAYERS = {"ANNO", "SYMBOL", "SITE", "PAD", "UTILITY", "DRAIN_FLOW", "EG_CONTOUR", "FG_CONTOUR", "SPOT_EG", "SPOT_FG", "LOW_POINTS"}
+FOCUS_EXCLUDED_LAYERS = {"ANNO", "SYMBOL", "SITE", "PAD", "SETBACK", "UTILITY", "DRAIN_FLOW", "EG_CONTOUR", "FG_CONTOUR", "SPOT_EG", "SPOT_FG", "LOW_POINTS"}
 SUPPRESSED_LABEL_TOKENS = ("BUILDABLE_AREA", "GENERIC_UTILITY", "SERVICE_TIE", "SOURCE_SERVICE", "BUILDING_SERVICE")
-PRIMARY_LAYOUT_LAYERS = {"BUILDING", "ROAD", "PAVEMENT", "PARKING", "WALK", "SITE", "SETBACK", "FIRE"}
+PRIMARY_LAYOUT_LAYERS = {"BUILDING", "ROAD", "PAVEMENT", "PARKING", "WALK", "FIRE"}
 SECONDARY_ENGINEERING_LAYERS = {
     "ANNO",
     "BASIN_BOUNDARY",
@@ -116,6 +116,81 @@ SECONDARY_ENGINEERING_LAYERS = {
     "PAD",
     "SURFACE",
 }
+
+
+def _action_bounds(action):
+    task = str(action.get("task") or "").lower()
+    if task == "rectangle":
+        x, y = safe_origin(action)
+        w = safe_num(action.get("width"))
+        h = safe_num(action.get("height"))
+        if w <= 0 or h <= 0:
+            return None
+        return (x, y, x + w, y + h)
+    if task in {"polygon", "polyline"}:
+        points = safe_points(action.get("points"))
+        if len(points) < 2:
+            return None
+        xs = [safe_num(px) for px, _ in points]
+        ys = [safe_num(py) for _, py in points]
+        return (min(xs), min(ys), max(xs), max(ys))
+    if task == "circle":
+        center = safe_center(action)
+        radius = safe_num(action.get("radius"))
+        if center is None or radius <= 0:
+            return None
+        cx, cy = center
+        return (cx - radius, cy - radius, cx + radius, cy + radius)
+    return None
+
+
+def _bounds_area(bounds):
+    if not bounds:
+        return 0.0
+    min_x, min_y, max_x, max_y = bounds
+    return max(0.0, max_x - min_x) * max(0.0, max_y - min_y)
+
+
+def _contains_bounds(outer, inner, *, tolerance=0.0):
+    if not outer or not inner:
+        return False
+    outer_min_x, outer_min_y, outer_max_x, outer_max_y = outer
+    inner_min_x, inner_min_y, inner_max_x, inner_max_y = inner
+    return (
+        outer_min_x - tolerance <= inner_min_x
+        and outer_min_y - tolerance <= inner_min_y
+        and outer_max_x + tolerance >= inner_max_x
+        and outer_max_y + tolerance >= inner_max_y
+    )
+
+
+def _is_wrapper_layout_shape(action, building_bounds):
+    layer = (action.get("layer") or "").upper()
+    task = str(action.get("task") or "").lower()
+    label = clean_label(action.get("label"), "").upper()
+    text = safe_text(action.get("text"), "").upper()
+    if layer not in {"SITE", "SETBACK", "ROAD", "PAVEMENT", "PAD"}:
+        return False
+    if task != "rectangle":
+        return False
+    if label and label not in {"SITE", "LOT", "BUILDABLE_AREA", "DRIVE", "ROAD", "PAVEMENT"}:
+        return False
+    if text:
+        return False
+    bounds = _action_bounds(action)
+    if not bounds:
+        return False
+    contained_buildings = [item for item in building_bounds if _contains_bounds(bounds, item["bounds"], tolerance=1.0)]
+    if len(contained_buildings) < 2:
+        return False
+    wrapper_area = _bounds_area(bounds)
+    if wrapper_area <= 0:
+        return False
+    max_building_area = max((_bounds_area(item["bounds"]) for item in contained_buildings), default=0.0)
+    total_building_area = sum(_bounds_area(item["bounds"]) for item in contained_buildings)
+    if max_building_area <= 0:
+        return False
+    return wrapper_area >= max(max_building_area * 6.0, total_building_area * 1.8)
 
 
 def get_linewidth(action):
@@ -183,6 +258,12 @@ def _filtered_preview_actions(actions):
     records = [action for action in actions if isinstance(action, dict)]
     has_primary_site_geometry = _has_primary_site_geometry(records)
     has_layout_scene = _has_layout_scene(records)
+    building_bounds = [
+        {"action": action, "bounds": _action_bounds(action)}
+        for action in records
+        if (str(action.get("layer") or "").upper() == "BUILDING" and str(action.get("task") or "").lower() in {"rectangle", "polygon"})
+    ]
+    building_bounds = [item for item in building_bounds if item["bounds"]]
     has_building_shapes = any(
         (str(action.get("layer") or "").upper() == "BUILDING" and str(action.get("task") or "").lower() in {"rectangle", "polygon"})
         for action in records
@@ -197,6 +278,10 @@ def _filtered_preview_actions(actions):
         helper_signature = " ".join(part for part in (label, text, canonical_source_type) if part)
         if has_primary_site_geometry and layer == "SITE":
             continue
+        if has_layout_scene and _is_wrapper_layout_shape(action, building_bounds):
+            continue
+        if has_layout_scene and layer == "SETBACK":
+            continue
         if has_primary_site_geometry and layer == "PAD" and "BUILDABLE_AREA" in label:
             continue
         if has_primary_site_geometry and layer == "PAD" and task == "rectangle" and not label and not text:
@@ -208,8 +293,6 @@ def _filtered_preview_actions(actions):
         if layer == "UTILITY" and any(token in helper_signature for token in ("SERVICE", "TIE", "GENERIC_UTILITY")):
             continue
         if has_layout_scene and layer in SECONDARY_ENGINEERING_LAYERS:
-            continue
-        if has_layout_scene and layer == "PARKING" and task == "polyline" and not label and not text:
             continue
         if has_layout_scene and layer == "BUILDING" and task == "text_note":
             continue

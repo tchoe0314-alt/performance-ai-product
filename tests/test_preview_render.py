@@ -28,7 +28,24 @@ class PreviewRenderTests(unittest.TestCase):
         self.assertNotIn("UTILITY", kept_layers)
         self.assertNotIn("STRUCTURE", kept_layers)
         self.assertNotIn("FG_CONTOUR", kept_layers)
-        self.assertNotIn("PARKING", kept_layers)
+        self.assertIn("PARKING", kept_layers)
+
+    def test_layout_scene_suppresses_giant_wrapper_rectangles(self):
+        actions = [
+            {"layer": "ROAD", "task": "rectangle", "label": "DRIVE", "origin": [0, 0], "width": 100, "height": 100},
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [10, 10], "width": 12, "height": 8},
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 2", "origin": [32, 10], "width": 12, "height": 8},
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 3", "origin": [54, 10], "width": 12, "height": 8},
+            {"layer": "ROAD", "task": "polyline", "label": "Loop Road", "points": [[0, 70], [100, 70]]},
+            {"layer": "PARKING", "task": "rectangle", "label": "Lot A", "origin": [8, 24], "width": 24, "height": 12},
+        ]
+
+        filtered = _filtered_preview_actions(actions)
+        kept = [(str(action.get("layer") or "").upper(), str(action.get("task") or "").lower(), str(action.get("label") or "")) for action in filtered]
+
+        self.assertIn(("ROAD", "polyline", "Loop Road"), kept)
+        self.assertIn(("PARKING", "rectangle", "Lot A"), kept)
+        self.assertNotIn(("ROAD", "rectangle", "DRIVE"), kept)
 
     def test_non_layout_scene_keeps_engineering_geometry_available(self):
         actions = [
