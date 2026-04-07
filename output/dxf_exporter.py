@@ -209,6 +209,8 @@ CAD_BLOCKS = {
 SUPPRESSED_AUTO_LABEL_LAYERS = {"PIPE", "SAN", "EG_CONTOUR", "FG_CONTOUR", "DRAIN_FLOW", "BASIN_BOUNDARY", "STRUCTURE", "UTILITY"}
 SUPPRESSED_TEXT_LAYERS = {"EG_CONTOUR", "FG_CONTOUR", "DRAIN_FLOW", "LOW_POINTS"}
 MODELSPACE_DEBUG_LAYERS = {"GRID", "AXIS", "VIEWPORT", "SHEET", "MATCHLINE", "HATCH"}
+MODELSPACE_DETAIL_LAYERS = {"ANNO", "DRAIN_FLOW", "LOW_POINTS", "SPOT_EG", "SPOT_FG", "EG_CONTOUR", "FG_CONTOUR"}
+MODELSPACE_PRIMARY_LAYOUT_LAYERS = {"BUILDING", "ROAD", "PAVEMENT", "PARKING", "WALK", "FIRE"}
 
 
 def get_layer(action: Dict[str, Any], fallback: str) -> str:
@@ -736,14 +738,26 @@ def _surface_contour_actions(plan: Dict[str, Any]) -> List[Dict[str, Any]]:
 def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     prepared: List[Dict[str, Any]] = []
     use_surface_contours = bool(safe_dict(safe_dict(safe_dict(plan.get("meta")).get("grading")).get("proposed_surface")))
+    raw_layers = {
+        get_layer(safe_dict(action), "SITE")
+        for action in actions
+        if isinstance(action, dict)
+    }
+    layout_first_modelspace = bool(raw_layers.intersection(MODELSPACE_PRIMARY_LAYOUT_LAYERS))
     for action in actions:
         rec = safe_dict(action)
         if _is_debug_action(rec):
             continue
         layer = get_layer(rec, "SITE")
+        if layout_first_modelspace and layer in MODELSPACE_DETAIL_LAYERS:
+            continue
+        if layout_first_modelspace and layer == "SITE" and safe_text(rec.get("task"), "").lower() in {"rectangle", "polygon"}:
+            continue
         if use_surface_contours and layer in {"EG_CONTOUR", "FG_CONTOUR"}:
             continue
         if rec.get("canonical_source_type") in {"storm_pipe_segment", "sanitary_segment", "drainage_structure", "drainage_basin"} and safe_text(rec.get("task"), "").lower() == "text_note":
+            continue
+        if layout_first_modelspace and safe_text(rec.get("task"), "").lower() == "text_note":
             continue
         prepared.append(rec)
     if use_surface_contours:
@@ -3130,11 +3144,18 @@ def save_dxf(plan: Dict[str, Any], filename: str | None = None) -> str:
     ensure_blocks(doc)
 
     modelspace_actions = _prepare_modelspace_actions(plan, actions)
+    modelspace_layers = {
+        get_layer(safe_dict(action), "SITE")
+        for action in modelspace_actions
+        if isinstance(action, dict)
+    }
+    layout_first_modelspace = bool(modelspace_layers.intersection(MODELSPACE_PRIMARY_LAYOUT_LAYERS))
     msp = doc.modelspace()
     for action in modelspace_actions:
         _draw_action_to_modelspace(msp, safe_dict(action))
-    _draw_plan_pipe_annotations(msp, plan)
-    _draw_basin_annotations(msp, plan)
+    if not layout_first_modelspace:
+        _draw_plan_pipe_annotations(msp, plan)
+        _draw_basin_annotations(msp, plan)
 
     profiles = _export_profiles(plan)
     sections = _export_cross_sections(plan)

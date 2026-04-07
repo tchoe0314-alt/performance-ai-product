@@ -28,6 +28,21 @@ def _sheet_test_plan():
 
 
 class DxfSheetLayoutsTest(unittest.TestCase):
+    def test_modelspace_prefers_layout_layers_over_detail_noise(self) -> None:
+        plan = _sheet_test_plan()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "modelspace-clean-test.dxf"
+            save_dxf(plan, filename=str(path))
+
+            doc = ezdxf.readfile(path)
+            modelspace_layers = {entity.dxf.layer for entity in doc.modelspace()}
+
+            self.assertIn("BUILDING", modelspace_layers)
+            self.assertTrue({"ROAD", "PAVEMENT", "PARKING", "WALK"} & modelspace_layers)
+            self.assertNotIn("DRAIN_FLOW", modelspace_layers)
+            self.assertNotIn("SPOT_FG", modelspace_layers)
+            self.assertNotIn("LOW_POINTS", modelspace_layers)
+
     def test_profiles_and_sections_keep_canonical_context(self) -> None:
         plan = _sheet_test_plan()
         profiles = ((plan.get("meta") or {}).get("profiles") or [])
