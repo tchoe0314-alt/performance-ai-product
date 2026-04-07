@@ -2362,7 +2362,7 @@ export default function PerformanceAIDashboard() {
       setPlanPreviewSummary(null);
       setStatusMessage(`Loaded project "${project.name}".`);
       loadProjectResultInBackground(project);
-      if (activeJobId) {
+      if (activeJobId && (!projectId || currentProjectActiveJob?.project_id === id || activeJob?.project_id === id)) {
         void loadJob(activeJobId);
       }
     } catch (error) {
@@ -2448,7 +2448,10 @@ export default function PerformanceAIDashboard() {
             filename_stem: fileName || siteName,
           },
           {
-            loadingMessage: `Job ${job.job_id} completed. Refreshing preview...`,
+            loadingMessage:
+              projectId && job.project_id === projectId
+                ? `Job ${job.job_id} completed. Refreshing preview...`
+                : undefined,
             successMessage: `Job ${job.job_id} completed.`,
           },
         );
@@ -2467,8 +2470,11 @@ export default function PerformanceAIDashboard() {
             updated_at: Date.now() / 1000,
           });
         }
-        if (job.project_id) {
-          void loadProject(job.project_id);
+        if (job.project_id && projectId && job.project_id === projectId) {
+          loadProjectResultInBackground({
+            project_id: job.project_id,
+            name: currentProject?.name || siteName || "Untitled Project",
+          } as ProjectRecord);
         }
       } else if (job.status === "failed") {
         appendChatMessage(
@@ -2538,22 +2544,24 @@ export default function PerformanceAIDashboard() {
 
   const requestPreviewInBackground = (
     payload: any,
-    options?: { loadingMessage?: string; successMessage?: string },
+    options?: { loadingMessage?: string; successMessage?: string; silentStatus?: boolean },
   ) => {
     if (!token) return;
-    if (options?.loadingMessage) {
+    if (options?.loadingMessage && !options?.silentStatus) {
       setStatusMessage(options.loadingMessage);
     }
     void requestPreview(payload, { silent: true })
       .then(() => {
-        if (options?.successMessage) {
+        if (options?.successMessage && !options?.silentStatus) {
           setStatusMessage(options.successMessage);
         }
       })
       .catch((error) => {
-        setStatusMessage(
-          error instanceof Error ? error.message : "Preview generation failed.",
-        );
+        if (!options?.silentStatus) {
+          setStatusMessage(
+            error instanceof Error ? error.message : "Preview generation failed.",
+          );
+        }
       });
   };
 
@@ -2573,8 +2581,7 @@ export default function PerformanceAIDashboard() {
               filename_stem: fileName || project.name || "civora-ai-plan",
             },
             {
-              loadingMessage: `Loaded project "${project.name}". Refreshing preview...`,
-              successMessage: `Loaded project "${project.name}".`,
+              silentStatus: true,
             },
           );
         } else {
