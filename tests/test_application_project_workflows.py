@@ -8,6 +8,7 @@ from backend.application.project_workflows import (
     artifact_summary,
     delete_project_record,
     get_project_detail,
+    get_project_result,
     list_projects,
     merge_project_metadata,
     result_from_payload,
@@ -31,6 +32,20 @@ class FakeProjectStore:
         if self.project and user_id == self.project.get("user_id") and project_id == self.project.get("project_id"):
             return dict(self.project)
         return None
+
+    def get_project_shell(self, *, user_id: str, project_id: str):
+        project = self.get_project(user_id=user_id, project_id=project_id)
+        if project is None:
+            return None
+        shell = dict(project)
+        shell["latest_result"] = {}
+        return shell
+
+    def get_project_latest_result(self, *, user_id: str, project_id: str):
+        project = self.get_project(user_id=user_id, project_id=project_id)
+        if project is None:
+            return None
+        return dict(project.get("latest_result") or {})
 
     def save_project(self, **kwargs):
         self.saved_payload = dict(kwargs)
@@ -137,6 +152,21 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertTrue(response["success"])
         self.assertEqual(response["project"]["name"], "Demo")
         self.assertEqual(response["project"]["operational_summary"]["primary_attention"], "storm_hydraulics_invalid")
+        self.assertEqual(response["project"]["latest_result"], {})
+
+    def test_get_project_result_returns_saved_result_only(self):
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Demo",
+                "latest_result": {"final_plan": {"project_name": "Saved Demo"}},
+            }
+        )
+        response = get_project_result(project_store=store, user_id="u1", project_id="p1")
+        self.assertTrue(response["success"])
+        self.assertEqual(response["project_id"], "p1")
+        self.assertEqual(response["latest_result"]["final_plan"]["project_name"], "Saved Demo")
 
     def test_merge_project_metadata_limits_runs_and_artifacts(self):
         metadata = {

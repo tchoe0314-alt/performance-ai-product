@@ -113,6 +113,54 @@ class ProjectStore:
         finally:
             connection.close()
 
+    def get_project_shell(self, *, user_id: str, project_id: str) -> Optional[Dict[str, Any]]:
+        connection = self.db.connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT project_id, user_id, name, description, created_at, updated_at, session_id,
+                       tags_json, project_input_json, session_state_json, metadata_json
+                FROM projects
+                WHERE user_id = ? AND project_id = ?
+                """,
+                (user_id, project_id),
+            ).fetchone()
+            if row is None:
+                return None
+            return {
+                "project_id": row["project_id"],
+                "user_id": row["user_id"],
+                "name": row["name"],
+                "description": row["description"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+                "session_id": row["session_id"],
+                "tags": _json_loads(row["tags_json"], []),
+                "project_input": _json_loads(row["project_input_json"], {}),
+                "latest_result": {},
+                "session_state": _json_loads(row["session_state_json"], {}),
+                "metadata": _json_loads(row["metadata_json"], {}),
+            }
+        finally:
+            connection.close()
+
+    def get_project_latest_result(self, *, user_id: str, project_id: str) -> Optional[Dict[str, Any]]:
+        connection = self.db.connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT latest_result_json
+                FROM projects
+                WHERE user_id = ? AND project_id = ?
+                """,
+                (user_id, project_id),
+            ).fetchone()
+            if row is None:
+                return None
+            return _json_loads(row["latest_result_json"], {})
+        finally:
+            connection.close()
+
     def save_project(
         self,
         *,

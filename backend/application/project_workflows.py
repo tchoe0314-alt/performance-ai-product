@@ -15,6 +15,12 @@ class ProjectStoreProtocol(Protocol):
     def get_project(self, *, user_id: str, project_id: str) -> Optional[Dict[str, Any]]:
         ...
 
+    def get_project_shell(self, *, user_id: str, project_id: str) -> Optional[Dict[str, Any]]:
+        ...
+
+    def get_project_latest_result(self, *, user_id: str, project_id: str) -> Optional[Dict[str, Any]]:
+        ...
+
     def save_project(
         self,
         *,
@@ -209,10 +215,30 @@ def get_project_detail(
     user_id: str,
     project_id: str,
 ) -> Dict[str, Any]:
-    record = project_store.get_project(user_id=user_id, project_id=project_id)
+    record = project_store.get_project_shell(user_id=user_id, project_id=project_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Project not found.")
     return {"success": True, "project": _record_with_operational_summary(record)}
+
+
+def get_project_result(
+    *,
+    project_store: ProjectStoreProtocol,
+    user_id: str,
+    project_id: str,
+) -> Dict[str, Any]:
+    record = project_store.get_project_shell(user_id=user_id, project_id=project_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    latest_result = project_store.get_project_latest_result(
+        user_id=user_id,
+        project_id=project_id,
+    )
+    return {
+        "success": True,
+        "project_id": project_id,
+        "latest_result": dict(latest_result or {}),
+    }
 
 
 def save_project_record(

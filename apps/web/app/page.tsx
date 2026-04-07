@@ -76,6 +76,7 @@ type ProjectRecord = {
   project_input?: any;
   latest_result?: any;
   metadata?: any;
+  has_result?: boolean;
 };
 
 type JobSummary = {
@@ -2324,24 +2325,11 @@ export default function PerformanceAIDashboard() {
       setProjectId(project.project_id);
       setSiteName(project.name ?? "");
       applyProjectInput(project.project_input ?? {});
-      if (project.latest_result && Object.keys(project.latest_result).length) {
-        applyBackendResult(project.latest_result);
-        requestPreviewInBackground(
-          {
-            result: project.latest_result,
-            filename_stem: fileName || project.name || "civora-ai-plan",
-          },
-          {
-            loadingMessage: `Loaded project "${project.name}". Refreshing preview...`,
-            successMessage: `Loaded project "${project.name}".`,
-          },
-        );
-      } else {
-        setBackendResult(null);
-        setPlanPreviewUrl("");
-        setPlanPreviewSummary(null);
-        setStatusMessage(`Loaded project "${project.name}".`);
-      }
+      setBackendResult(null);
+      setPlanPreviewUrl("");
+      setPlanPreviewSummary(null);
+      setStatusMessage(`Loaded project "${project.name}".`);
+      loadProjectResultInBackground(project);
       if (activeJobId) {
         void loadJob(activeJobId);
       }
@@ -2525,6 +2513,39 @@ export default function PerformanceAIDashboard() {
       .catch((error) => {
         setStatusMessage(
           error instanceof Error ? error.message : "Preview generation failed.",
+        );
+      });
+  };
+
+  const loadProjectResultInBackground = (project: ProjectRecord) => {
+    if (!token) return;
+    void getJson<{ project_id: string; latest_result: any }>(
+      `/api/projects/${project.project_id}/result`,
+      { token },
+    )
+      .then((data) => {
+        const latestResult = data.latest_result ?? {};
+        if (latestResult && Object.keys(latestResult).length) {
+          applyBackendResult(latestResult);
+          requestPreviewInBackground(
+            {
+              result: latestResult,
+              filename_stem: fileName || project.name || "civora-ai-plan",
+            },
+            {
+              loadingMessage: `Loaded project "${project.name}". Refreshing preview...`,
+              successMessage: `Loaded project "${project.name}".`,
+            },
+          );
+        } else {
+          setBackendResult(null);
+          setPlanPreviewUrl("");
+          setPlanPreviewSummary(null);
+        }
+      })
+      .catch((error) => {
+        setStatusMessage(
+          error instanceof Error ? error.message : "Project result load failed.",
         );
       });
   };

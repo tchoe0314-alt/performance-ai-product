@@ -46,6 +46,7 @@ from backend.application.project_workflows import (
     artifact_summary as application_artifact_summary,
     delete_project_record as application_delete_project_record,
     get_project_detail as application_get_project_detail,
+    get_project_result as application_get_project_result,
     list_projects as application_list_projects,
     merge_project_metadata as application_merge_project_metadata,
     result_from_payload as application_result_from_payload,
@@ -457,6 +458,15 @@ def save_project(payload: SaveProjectPayload, current_user: Dict[str, Any] = Dep
 @app.get("/api/projects/{project_id}")
 def get_project(project_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     return application_get_project_detail(
+        project_store=PROJECT_STORE,
+        user_id=current_user["user_id"],
+        project_id=project_id,
+    )
+
+
+@app.get("/api/projects/{project_id}/result")
+def get_project_result(project_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    return application_get_project_result(
         project_store=PROJECT_STORE,
         user_id=current_user["user_id"],
         project_id=project_id,
