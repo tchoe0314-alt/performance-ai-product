@@ -173,6 +173,7 @@ def _layout_fallback_actions(
             [round(loop_min_x, 3), round(loop_min_y, 3)],
         ]
         actions.append({"task": "polyline", "layer": "ROAD", "points": loop_points, "closed": False})
+        actions.append({"task": "polyline", "layer": "FIRE", "points": loop_points, "closed": False})
 
         entry_x = (loop_min_x + loop_max_x) / 2.0
         if lower_text(street_edge) == "top":
@@ -180,6 +181,7 @@ def _layout_fallback_actions(
         else:
             entry_points = [[entry_x, lot_y], [entry_x, loop_min_y]]
         actions.append({"task": "polyline", "layer": "ROAD", "points": [[round(pt[0], 3), round(pt[1], 3)] for pt in entry_points], "closed": False})
+        actions.append({"task": "polyline", "layer": "FIRE", "points": [[round(pt[0], 3), round(pt[1], 3)] for pt in entry_points], "closed": False})
 
         culdesac_radius = max(45.0, min(lot_w, lot_h) * 0.045)
         if culdesac_count >= 1:
@@ -209,13 +211,34 @@ def _layout_fallback_actions(
         pd = safe_float(placement.get("d"), 20.0)
         lot_depth = max(48.0, min(90.0, pd * 0.8))
         pavement_y = max(lot_y + 15.0, py - lot_depth - 18.0) if frontage_on_bottom else min(lot_y + lot_h - lot_depth - 15.0, py + pd + 18.0)
+        park_x = round(max(lot_x + 15.0, px - 18.0), 3)
+        park_y = round(pavement_y, 3)
+        park_w = round(min(lot_w - 30.0, pw + 36.0), 3)
+        park_h = round(lot_depth, 3)
         actions.append(
             {
                 "task": "rectangle",
-                "layer": "PAVEMENT",
-                "origin": [round(max(lot_x + 15.0, px - 18.0), 3), round(pavement_y, 3)],
-                "width": round(min(lot_w - 30.0, pw + 36.0), 3),
-                "height": round(lot_depth, 3),
+                "layer": "PARKING",
+                "origin": [park_x, park_y],
+                "width": park_w,
+                "height": park_h,
+            }
+        )
+        walk_width = round(max(6.0, min(10.0, pw * 0.12)), 3)
+        walk_x = round(px + (pw - walk_width) / 2.0, 3)
+        if frontage_on_bottom:
+            walk_y = round(park_y + park_h, 3)
+            walk_h = round(max(6.0, py - walk_y), 3)
+        else:
+            walk_y = round(py + pd, 3)
+            walk_h = round(max(6.0, park_y - walk_y), 3)
+        actions.append(
+            {
+                "task": "rectangle",
+                "layer": "WALK",
+                "origin": [walk_x, walk_y],
+                "width": walk_width,
+                "height": walk_h,
             }
         )
     return actions

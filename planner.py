@@ -2781,9 +2781,17 @@ def _object_layer_for_preview(obj: Any) -> Optional[str]:
 
     if "building" in kind or "building" in tags:
         return "BUILDING"
-    if any(token in kind for token in ("parking", "pavement", "pad")):
+    if "parking" in kind or "parking" in tags:
+        return "PARKING"
+    if "fire_lane" in kind or "fire_lane" in tags:
+        return "FIRE"
+    if any(token in kind for token in ("access_aisle", "ada_path", "walk", "walkway", "sidewalk")) or any(
+        token in tags for token in ("access_aisle", "ada_path", "walk", "walkway", "sidewalk")
+    ):
+        return "WALK"
+    if any(token in kind for token in ("pavement", "pad")):
         return "PAVEMENT"
-    if any(token in kind for token in ("road", "corridor", "drive", "fire_lane", "access_aisle")):
+    if any(token in kind for token in ("road", "corridor", "drive")):
         return "ROAD"
     if any(token in kind for token in ("detention", "pond", "basin")):
         return "BASIN_BOUNDARY"
@@ -2882,7 +2890,7 @@ def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
 
 
 def _has_primary_preview_geometry(actions: Sequence[Dict[str, Any]]) -> bool:
-    important_layers = {"BUILDING", "ROAD", "PAVEMENT", "PARKING", "WALK"}
+    important_layers = {"BUILDING", "ROAD", "PAVEMENT", "PARKING", "WALK", "FIRE"}
     geometric_tasks = {"rectangle", "polygon", "polyline", "circle"}
     for action in safe_list(actions):
         rec = safe_dict(action)
