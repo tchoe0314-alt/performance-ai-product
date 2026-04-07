@@ -20,6 +20,7 @@ from core.geometry_core import (
     RoutingGraph,
     Zone,
     ZoneType,
+    _snapshot_serialize,
 )
 
 
@@ -694,7 +695,7 @@ class ProjectManager:
                 "snapshots": {sid: _snapshot_to_dict(snapshot) for sid, snapshot in self.state.snapshots.items()},
                 "variants": {vid: _variant_to_dict(variant) for vid, variant in self.state.variants.items()},
                 "audit_log": [_audit_event_to_dict(event) for event in self.state.audit_log],
-                "meta": copy.deepcopy(self.state.meta),
+                "meta": _snapshot_serialize(self.state.meta),
             },
         }
 
@@ -804,7 +805,7 @@ def _dependency_to_dict(dep: DependencyRecord) -> Dict[str, Any]:
         "target": dep.target,
         "reason": dep.reason,
         "state": dep.state.value,
-        "context": copy.deepcopy(dep.context),
+        "context": _snapshot_serialize(dep.context),
     }
 
 
@@ -816,7 +817,7 @@ def _conflict_to_dict(conflict: ConflictRecord) -> Dict[str, Any]:
         "severity": conflict.severity.value,
         "related_ids": list(conflict.related_ids),
         "category": conflict.category,
-        "context": copy.deepcopy(conflict.context),
+        "context": _snapshot_serialize(conflict.context),
         "resolved": conflict.resolved,
     }
 
@@ -825,10 +826,10 @@ def _metric_to_dict(metric: MetricRecord) -> Dict[str, Any]:
     return {
         "id": metric.id,
         "name": metric.name,
-        "value": copy.deepcopy(metric.value),
+        "value": _snapshot_serialize(metric.value),
         "units": metric.units,
         "category": metric.category,
-        "meta": copy.deepcopy(metric.meta),
+        "meta": _snapshot_serialize(metric.meta),
     }
 
 
@@ -841,7 +842,7 @@ def _system_to_dict(system: LinearSystemRecord) -> Dict[str, Any]:
         "zone_ids": list(system.zone_ids),
         "object_ids": list(system.object_ids),
         "related_system_ids": list(system.related_system_ids),
-        "meta": copy.deepcopy(system.meta),
+        "meta": _snapshot_serialize(system.meta),
     }
 
 
@@ -850,8 +851,8 @@ def _snapshot_to_dict(snapshot: DesignSnapshot) -> Dict[str, Any]:
         "id": snapshot.id,
         "name": snapshot.name,
         "description": snapshot.description,
-        "project_state": copy.deepcopy(snapshot.project_state),
-        "meta": copy.deepcopy(snapshot.meta),
+        "project_state": _snapshot_serialize(snapshot.project_state),
+        "meta": _snapshot_serialize(snapshot.meta),
     }
 
 
@@ -859,11 +860,11 @@ def _variant_to_dict(variant: DesignVariant) -> Dict[str, Any]:
     return {
         "id": variant.id,
         "name": variant.name,
-        "payload": copy.deepcopy(variant.payload),
+        "payload": _snapshot_serialize(variant.payload),
         "status": variant.status.value,
         "score": variant.score,
         "summary": variant.summary,
-        "meta": copy.deepcopy(variant.meta),
+        "meta": _snapshot_serialize(variant.meta),
     }
 
 
@@ -873,5 +874,5 @@ def _audit_event_to_dict(event: AuditEvent) -> Dict[str, Any]:
         "title": event.title,
         "description": event.description,
         "category": event.category,
-        "meta": copy.deepcopy(event.meta),
+        "meta": _snapshot_serialize(event.meta),
     }

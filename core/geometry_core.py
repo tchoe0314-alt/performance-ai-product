@@ -22,22 +22,76 @@ import uuid
 
 EPS = 1e-9
 MIN_GEOMETRY_SIZE = 1e-6
+_SNAPSHOT_MAX_DEPTH = 10
 
 
 def _new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:10]}"
 
 
-def _snapshot_serialize(value: Any) -> Any:
+def _snapshot_scalar(value: Any) -> bool:
+    return value is None or isinstance(value, (str, int, float, bool))
+
+
+def _snapshot_fallback(value: Any) -> Any:
+    if _snapshot_scalar(value):
+        return value
     if isinstance(value, Enum):
         return value.value
-    if is_dataclass(value):
-        return {f.name: _snapshot_serialize(getattr(value, f.name)) for f in fields(value)}
-    if isinstance(value, dict):
-        return {k: _snapshot_serialize(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple, set)):
-        return [_snapshot_serialize(v) for v in value]
-    return copy.deepcopy(value)
+    if hasattr(value, "to_dict") and callable(getattr(value, "to_dict")):
+        try:
+            return value.to_dict()
+        except Exception:
+            pass
+    if hasattr(value, "as_tuple") and callable(getattr(value, "as_tuple")):
+        try:
+            return list(value.as_tuple())
+        except Exception:
+            pass
+    return repr(value)
+
+
+def _snapshot_serialize(value: Any, *, _active: Optional[set[int]] = None, _depth: int = 0) -> Any:
+    if _snapshot_scalar(value):
+        return value
+    if isinstance(value, Enum):
+        return value.value
+
+    if _depth >= _SNAPSHOT_MAX_DEPTH:
+        return _snapshot_fallback(value)
+
+    active = _active if _active is not None else set()
+    needs_guard = is_dataclass(value) or isinstance(value, (dict, list, tuple, set)) or hasattr(value, "__dict__")
+    value_id = id(value) if needs_guard else None
+    if value_id is not None:
+        if value_id in active:
+            return _snapshot_fallback(value)
+        active.add(value_id)
+
+    try:
+        if is_dataclass(value):
+            payload: Dict[str, Any] = {}
+            for f in fields(value):
+                payload[f.name] = _snapshot_serialize(
+                    getattr(value, f.name),
+                    _active=active,
+                    _depth=_depth + 1,
+                )
+            return payload
+        if isinstance(value, dict):
+            payload = {}
+            for k, v in value.items():
+                key = str(k) if not _snapshot_scalar(k) else k
+                payload[key] = _snapshot_serialize(v, _active=active, _depth=_depth + 1)
+            return payload
+        if isinstance(value, (list, tuple, set)):
+            return [_snapshot_serialize(v, _active=active, _depth=_depth + 1) for v in value]
+        return copy.deepcopy(value)
+    except Exception:
+        return _snapshot_fallback(value)
+    finally:
+        if value_id is not None:
+            active.discard(value_id)
 
 
 def _snapshot_restore_value(expected_type: Any, value: Any) -> Any:
