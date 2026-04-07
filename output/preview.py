@@ -132,7 +132,7 @@ def _action_bounds(action):
             return None
         return (x, y, x + w, y + h)
     if task in {"polygon", "polyline"}:
-        points = safe_points(action.get("points"))
+        points = safe_points(action)
         if len(points) < 2:
             return None
         xs = [safe_num(px) for px, _ in points]
@@ -182,7 +182,7 @@ def _is_wrapper_layout_shape(action, building_bounds):
     if text:
         return False
     if task == "polyline":
-        points = safe_points(action.get("points"))
+        points = safe_points(action)
         if len(points) < 4:
             return False
         first_x, first_y = points[0]
@@ -203,6 +203,57 @@ def _is_wrapper_layout_shape(action, building_bounds):
     if max_building_area <= 0:
         return False
     return wrapper_area >= max(max_building_area * 6.0, total_building_area * 1.8)
+
+
+def _is_schematic_access_shape(action, building_bounds):
+    layer = (action.get("layer") or "").upper()
+    task = str(action.get("task") or "").lower()
+    label = clean_label(action.get("label"), "").upper()
+    if layer not in {"ROAD", "FIRE"}:
+        return False
+    if task == "circle":
+        radius = safe_num(action.get("radius"))
+        return bool(building_bounds) and radius >= 20.0
+    if task != "polyline":
+        return False
+    points = safe_points(action)
+    if len(points) != 2:
+        return False
+    if label:
+        return False
+    (x1, y1), (x2, y2) = points
+    is_axis_aligned = abs(x1 - x2) <= 1e-6 or abs(y1 - y2) <= 1e-6
+    if not is_axis_aligned:
+        return False
+    if not building_bounds:
+        return False
+    min_building_x = min(item["bounds"][0] for item in building_bounds)
+    min_building_y = min(item["bounds"][1] for item in building_bounds)
+    max_building_x = max(item["bounds"][2] for item in building_bounds)
+    max_building_y = max(item["bounds"][3] for item in building_bounds)
+    line_min_x = min(x1, x2)
+    line_max_x = max(x1, x2)
+    line_min_y = min(y1, y2)
+    line_max_y = max(y1, y2)
+    spans_into_layout = not (
+        line_max_x < min_building_x
+        or line_min_x > max_building_x
+        or line_max_y < min_building_y
+        or line_min_y > max_building_y
+    )
+    near_layout = (
+        line_max_x >= min_building_x - 20.0
+        and line_min_x <= max_building_x + 20.0
+        and line_max_y >= min_building_y - 20.0
+        and line_min_y <= max_building_y + 20.0
+    )
+    extends_outside_layout = (
+        line_min_x < min_building_x - 40.0
+        or line_max_x > max_building_x + 40.0
+        or line_min_y < min_building_y - 40.0
+        or line_max_y > max_building_y + 40.0
+    )
+    return (spans_into_layout or near_layout) and extends_outside_layout
 
 
 def get_linewidth(action):
@@ -387,6 +438,8 @@ def _filtered_preview_actions(actions):
         if has_primary_site_geometry and layer == "SITE":
             continue
         if has_layout_scene and _is_wrapper_layout_shape(action, building_bounds):
+            continue
+        if has_layout_scene and _is_schematic_access_shape(action, building_bounds):
             continue
         if has_layout_scene and layer == "SETBACK":
             continue
