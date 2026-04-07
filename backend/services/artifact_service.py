@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Dict, Optional
+import hashlib
 import json
 import re
 import time
@@ -21,6 +22,8 @@ class ArtifactService:
     def __init__(self, root_dir: Path) -> None:
         self.root_dir = root_dir
         self.root_dir.mkdir(parents=True, exist_ok=True)
+        self.preview_cache_dir = self.root_dir / "_preview_cache"
+        self.preview_cache_dir.mkdir(parents=True, exist_ok=True)
 
     def _user_dir(self, user_id: str) -> Path:
         target = self.root_dir / str(user_id)
@@ -33,8 +36,20 @@ class ArtifactService:
         suffix = uuid.uuid4().hex[:8]
         return f"{prefix}-{timestamp}-{suffix}.{ext}"
 
+    def _preview_cache_key(self, final_plan: Dict[str, Any]) -> str:
+        payload = json.dumps(final_plan or {}, sort_keys=True, default=str, separators=(",", ":"))
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
     def build_preview_png(self, final_plan: Dict[str, Any]) -> bytes:
-        return render_plan_preview_png(final_plan)
+        cache_path = self.preview_cache_dir / f"{self._preview_cache_key(final_plan)}.png"
+        if cache_path.exists():
+            return cache_path.read_bytes()
+        png_bytes = render_plan_preview_png(final_plan)
+        try:
+            cache_path.write_bytes(png_bytes)
+        except Exception:
+            pass
+        return png_bytes
 
     def export_dxf(self, *, user_id: str, final_plan: Dict[str, Any], stem: Optional[str] = None) -> Path:
         path = self._user_dir(user_id) / self._artifact_name(stem, "dxf")
