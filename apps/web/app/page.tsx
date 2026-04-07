@@ -2326,19 +2326,22 @@ export default function PerformanceAIDashboard() {
       applyProjectInput(project.project_input ?? {});
       if (project.latest_result && Object.keys(project.latest_result).length) {
         applyBackendResult(project.latest_result);
-        await requestPreview(
+        requestPreviewInBackground(
           {
             result: project.latest_result,
             filename_stem: fileName || project.name || "civora-ai-plan",
           },
-          { silent: true },
+          {
+            loadingMessage: `Loaded project "${project.name}". Refreshing preview...`,
+            successMessage: `Loaded project "${project.name}".`,
+          },
         );
       } else {
         setBackendResult(null);
         setPlanPreviewUrl("");
         setPlanPreviewSummary(null);
+        setStatusMessage(`Loaded project "${project.name}".`);
       }
-      setStatusMessage(`Loaded project "${project.name}".`);
       if (activeJobId) {
         void loadJob(activeJobId);
       }
@@ -2419,23 +2422,25 @@ export default function PerformanceAIDashboard() {
       }
       if (job.status === "completed" && job.result) {
         applyBackendResult(job.result);
-        await requestPreview(
+        requestPreviewInBackground(
           {
             result: job.result,
             filename_stem: fileName || siteName,
           },
-          { silent: true },
+          {
+            loadingMessage: `Job ${job.job_id} completed. Refreshing preview...`,
+            successMessage: `Job ${job.job_id} completed.`,
+          },
         );
         appendChatMessage(
           "assistant",
           summarizePlanResponse(job.result, "run"),
           "message",
         );
-        setStatusMessage(`Job ${job.job_id} completed.`);
         setActiveJobId("");
         await refreshProjects();
         if (job.project_id) {
-          await loadProject(job.project_id);
+          void loadProject(job.project_id);
         }
       } else if (job.status === "failed") {
         appendChatMessage(
@@ -2501,6 +2506,27 @@ export default function PerformanceAIDashboard() {
     if (!options?.silent) {
       setStatusMessage("Plan preview generated.");
     }
+  };
+
+  const requestPreviewInBackground = (
+    payload: any,
+    options?: { loadingMessage?: string; successMessage?: string },
+  ) => {
+    if (!token) return;
+    if (options?.loadingMessage) {
+      setStatusMessage(options.loadingMessage);
+    }
+    void requestPreview(payload, { silent: true })
+      .then(() => {
+        if (options?.successMessage) {
+          setStatusMessage(options.successMessage);
+        }
+      })
+      .catch((error) => {
+        setStatusMessage(
+          error instanceof Error ? error.message : "Preview generation failed.",
+        );
+      });
   };
 
   const handlePreviewPlan = async () => {
