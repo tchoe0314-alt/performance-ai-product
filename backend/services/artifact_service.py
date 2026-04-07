@@ -12,6 +12,8 @@ import report_builder
 from output.dxf_exporter import save_dxf
 from output.preview import render_plan_preview_png
 
+PREVIEW_RENDER_VERSION = "2026-04-07-layout-v2"
+
 
 def _slugify(value: str, default: str = "artifact") -> str:
     text = re.sub(r"[^a-z0-9]+", "-", str(value or "").strip().lower()).strip("-")
@@ -24,6 +26,7 @@ class ArtifactService:
         self.root_dir.mkdir(parents=True, exist_ok=True)
         self.preview_cache_dir = self.root_dir / "_preview_cache"
         self.preview_cache_dir.mkdir(parents=True, exist_ok=True)
+        self.preview_cache_version = PREVIEW_RENDER_VERSION
 
     def _user_dir(self, user_id: str) -> Path:
         target = self.root_dir / str(user_id)
@@ -37,7 +40,15 @@ class ArtifactService:
         return f"{prefix}-{timestamp}-{suffix}.{ext}"
 
     def _preview_cache_key(self, final_plan: Dict[str, Any]) -> str:
-        payload = json.dumps(final_plan or {}, sort_keys=True, default=str, separators=(",", ":"))
+        payload = json.dumps(
+            {
+                "render_version": self.preview_cache_version,
+                "final_plan": final_plan or {},
+            },
+            sort_keys=True,
+            default=str,
+            separators=(",", ":"),
+        )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def build_preview_png(self, final_plan: Dict[str, Any]) -> bytes:
