@@ -115,13 +115,24 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
                 "metadata": {},
             }
         )
+        def plan_builder(result, **kwargs):
+            if kwargs.get("enforce_export_guards"):
+                return result["final_plan"]
+            return result["final_plan"]
+
         progress_updates = []
         runner = build_orchestrate_job_runner(
             project_store=store,
             update_job_progress=lambda job_id, **kwargs: progress_updates.append({"job_id": job_id, **kwargs}),
             run_orchestration=lambda payload: {
                 "success": True,
-                "final_plan": {"project_name": "Demo", "meta": {}},
+                "final_plan": {
+                    "project_name": "Demo",
+                    "meta": {
+                        "drainage": {"export_validation": {"ready": False, "reasons": ["storm_network_missing"]}},
+                        "storm_pipes": {"storm_pipe_segments": [{"id": "sp-1"}]},
+                    },
+                },
                 "assumptions": [
                     {
                         "field_name": "plan",
@@ -149,7 +160,7 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
                 },
             },
             merge_project_metadata=lambda metadata, **kwargs: {"workflow": {"runs": [kwargs["run_summary"]]}},
-            final_plan_from_result=lambda result, **kwargs: result["final_plan"],
+            final_plan_from_result=plan_builder,
         )
         result = runner(
             {
@@ -166,11 +177,11 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
             "Where widths are not explicit for linear features, discipline defaults are used.",
         )
         self.assertEqual(result["review_categories"], ["drainage", "coordination"])
-        self.assertEqual(result["blocked"], ["primary_detention_missing"])
+        self.assertNotIn("blocked", result)
         self.assertEqual(result["metadata"]["run_summary"]["run_id"], "run_1")
-        self.assertFalse(result["final_plan"]["export_ready"])
-        self.assertFalse(result["final_plan"]["release_ready"])
-        self.assertEqual(result["final_plan"]["blockers"], ["primary_detention_missing"])
+        self.assertTrue(result["final_plan"]["export_ready"])
+        self.assertTrue(result["final_plan"]["release_ready"])
+        self.assertEqual(result["final_plan"]["blockers"], [])
         self.assertEqual(result["final_plan"]["deliverables"]["ready"], [])
         self.assertEqual(result["metadata"]["job_context"]["job_id"], "job_1")
         self.assertEqual(result["metadata"]["job_context"]["source"], "job_queue")
@@ -180,14 +191,78 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
             store.saved_payload["latest_result"]["assumptions"][0]["assumed_value"],
             "Where widths are not explicit for linear features, discipline defaults are used.",
         )
-        self.assertEqual(
-            store.saved_payload["latest_result"]["final_plan"]["blockers"],
-            ["primary_detention_missing"],
-        )
+        self.assertEqual(store.saved_payload["latest_result"]["final_plan"]["blockers"], [])
         self.assertEqual(
             [item["stage"] for item in progress_updates],
             ["Engineering Run", "Saving Project", "Finalizing"],
         )
+
+    def test_build_orchestrate_job_runner_preserves_current_export_guard_failures(self):
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Demo",
+                "description": "",
+                "session_id": None,
+                "tags": [],
+                "project_input": {},
+                "latest_result": {},
+                "session_state": {},
+                "metadata": {},
+            }
+        )
+
+        def plan_builder(result, **kwargs):
+            if kwargs.get("enforce_export_guards"):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "Export is blocked because the engineering design has not reached a stable "
+                        "drainage/storm state yet: storm_network_missing, storm_graph_invalid"
+                    ),
+                )
+            return {
+                "project_name": "Demo",
+                "meta": {
+                    "drainage": {"export_validation": {"ready": False}},
+                    "storm_pipes": {"storm_pipe_segments": [{"id": "sp-1"}]},
+                },
+            }
+
+        runner = build_orchestrate_job_runner(
+            project_store=store,
+            update_job_progress=lambda *_args, **_kwargs: None,
+            run_orchestration=lambda payload: {"success": True, "final_plan": {"project_name": "Demo", "meta": {}}},
+            build_run_summary=lambda result, **kwargs: {
+                "run_id": "run_2",
+                "job_id": kwargs.get("job_id"),
+                "convergence_summary": {
+                    "assumption_summary": {"count": 0, "categories": [], "examples": []},
+                    "unresolved_issue_categories": ["pipes"],
+                    "blocked_reasons": ["primary_detention_missing"],
+                    "blocked_exports": ["dxf"],
+                },
+                "reliability_summary": {
+                    "operational_state": "review",
+                    "primary_attention": "primary_detention_missing",
+                },
+            },
+            merge_project_metadata=lambda metadata, **kwargs: metadata,
+            final_plan_from_result=plan_builder,
+        )
+        result = runner(
+            {
+                "job_id": "job_2",
+                "job_type": "orchestrate",
+                "user_id": "u1",
+                "project_id": "p1",
+                "payload": {"prompt_text": "run"},
+            }
+        )
+        self.assertEqual(result["blocked"], ["storm_network_missing", "storm_graph_invalid"])
+        self.assertFalse(result["final_plan"]["export_ready"])
+        self.assertEqual(result["final_plan"]["blockers"], ["storm_network_missing", "storm_graph_invalid"])
 
     def test_cancel_existing_job_returns_summary(self):
         queue = FakeJobQueue()

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional, Protocol
 
+from fastapi import HTTPException
+
 
 class JobQueueProtocol(Protocol):
     def submit_job(
@@ -126,6 +128,34 @@ def build_orchestrate_job_runner(
     merge_project_metadata: Callable[..., Dict[str, Any]],
     final_plan_from_result: FinalPlanBuilderProtocol,
 ) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
+    def _current_export_guard_state(result_data: Dict[str, Any]) -> tuple[list[str], list[str]]:
+        final_plan = dict(result_data.get("final_plan") or {})
+        meta = dict(final_plan.get("meta") or {})
+        has_discipline_meta = any(
+            bool(meta.get(key))
+            for key in ("grading", "drainage", "storm_pipes", "utilities")
+        )
+        if not has_discipline_meta:
+            return [], []
+        try:
+            final_plan_from_result(result_data, enforce_export_guards=True)
+            return [], []
+        except HTTPException as exc:
+            detail = str(exc.detail or "")
+            lowered = detail.lower()
+            blocked_exports: list[str] = []
+            if "grading design" in lowered:
+                blocked_exports = ["grading"]
+            elif "utility design" in lowered:
+                blocked_exports = ["utilities"]
+            elif "drainage/storm state" in lowered:
+                blocked_exports = ["drainage", "storm"]
+            reasons_text = detail.split(": ", 1)[1] if ": " in detail else ""
+            blocked_reasons = [part.strip() for part in reasons_text.split(",") if part.strip()]
+            return blocked_exports, blocked_reasons
+        except Exception:
+            return [], []
+
     def _normalized_result_for_ui(
         result: Dict[str, Any],
         *,
@@ -181,14 +211,32 @@ def build_orchestrate_job_runner(
             for item in list(convergence.get("unresolved_issue_categories") or [])
             if str(item)
         ]
+        current_blocked_exports, current_blocked_reasons = _current_export_guard_state(enriched)
+        final_plan = dict(enriched.get("final_plan") or {})
+        final_meta = dict(final_plan.get("meta") or {})
+        if current_blocked_exports or current_blocked_reasons or (
+            bool(final_meta.get("grading") or final_meta.get("drainage") or final_meta.get("storm_pipes") or final_meta.get("utilities"))
+            and not current_blocked_exports
+            and not current_blocked_reasons
+        ):
+            blocked_exports = current_blocked_exports
+            blocked_reasons = current_blocked_reasons
         if blocked_reasons or blocked_exports:
             enriched["blocked"] = blocked_reasons or blocked_exports
+        elif "blocked" in enriched:
+            enriched.pop("blocked", None)
         if review_categories:
             enriched["review_categories"] = review_categories
 
-        final_plan = dict(enriched.get("final_plan") or {})
         if final_plan:
-            final_meta = dict(final_plan.get("meta") or {})
+            convergence["blocked_reasons"] = list(blocked_reasons)
+            convergence["blocked_exports"] = list(blocked_exports)
+            reliability["release_ready"] = not bool(blocked_reasons or blocked_exports)
+            reliability["blocked_export_count"] = len(blocked_exports)
+            if blocked_reasons or blocked_exports:
+                reliability["primary_attention"] = (blocked_reasons[:1] or blocked_exports[:1])[0]
+            run_summary["convergence_summary"] = convergence
+            run_summary["reliability_summary"] = reliability
             final_meta["run_summary"] = run_summary
             final_meta["release_review"] = {
                 "blocked_reasons": blocked_reasons,
