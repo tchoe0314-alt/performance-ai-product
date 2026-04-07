@@ -28,6 +28,11 @@ LAYER_LINEWIDTH = {
     "PAD": 1.4,
     "PAVEMENT": 2.0,
     "ROAD": 2.0,
+    "PARKING": 1.0,
+    "WALK": 1.2,
+    "FIRE": 1.4,
+    "SITE": 1.2,
+    "SETBACK": 1.0,
     "PIPE": 2.0,
     "DRAIN_FLOW": 1.5,
     "SURFACE": 1.0,
@@ -46,6 +51,11 @@ LAYER_COLORS = {
     "PAD": "#94a3b8",
     "PAVEMENT": "#64748b",
     "ROAD": "#475569",
+    "PARKING": "#cbd5e1",
+    "WALK": "#0f766e",
+    "FIRE": "#dc2626",
+    "SITE": "#94a3b8",
+    "SETBACK": "#d1d5db",
     "PIPE": "#1d4ed8",
     "STORM": "#0369a1",
     "SAN": "#7c3aed",
@@ -61,6 +71,7 @@ LAYER_COLORS = {
 
 LAYER_LINESTYLE = {
     "PAD": (0, (6, 4)),
+    "SETBACK": (0, (8, 4)),
     "EG_CONTOUR": "--",
     "FG_CONTOUR": "-.",
     "DRAIN_FLOW": (0, (4, 4)),
@@ -69,6 +80,11 @@ LAYER_LINESTYLE = {
 
 SUPPRESSED_AUTO_LABEL_LAYERS = {
     "PAD",
+    "SITE",
+    "SETBACK",
+    "PARKING",
+    "WALK",
+    "FIRE",
     "PIPE",
     "SAN",
     "EG_CONTOUR",
@@ -82,6 +98,24 @@ SUPPRESSED_AUTO_LABEL_LAYERS = {
 SUPPRESSED_TEXT_LAYERS = {"EG_CONTOUR", "FG_CONTOUR", "DRAIN_FLOW", "LOW_POINTS", "UTILITY"}
 FOCUS_EXCLUDED_LAYERS = {"ANNO", "SYMBOL", "SITE", "PAD", "UTILITY", "DRAIN_FLOW", "EG_CONTOUR", "FG_CONTOUR", "SPOT_EG", "SPOT_FG", "LOW_POINTS"}
 SUPPRESSED_LABEL_TOKENS = ("BUILDABLE_AREA", "GENERIC_UTILITY", "SERVICE_TIE", "SOURCE_SERVICE", "BUILDING_SERVICE")
+PRIMARY_LAYOUT_LAYERS = {"BUILDING", "ROAD", "PAVEMENT", "PARKING", "WALK", "SITE", "SETBACK", "FIRE"}
+SECONDARY_ENGINEERING_LAYERS = {
+    "ANNO",
+    "BASIN_BOUNDARY",
+    "PIPE",
+    "STORM",
+    "SAN",
+    "UTILITY",
+    "STRUCTURE",
+    "DRAIN_FLOW",
+    "EG_CONTOUR",
+    "FG_CONTOUR",
+    "SPOT_EG",
+    "SPOT_FG",
+    "LOW_POINTS",
+    "PAD",
+    "SURFACE",
+}
 
 
 def get_linewidth(action):
@@ -131,7 +165,16 @@ def _has_primary_site_geometry(actions):
     for action in actions:
         layer = (action.get("layer") or "").upper()
         task = str(action.get("task") or "").lower()
-        if layer in {"BUILDING", "PAVEMENT", "ROAD"} and task in {"rectangle", "polygon", "polyline"}:
+        if layer in {"BUILDING", "PAVEMENT", "ROAD", "PARKING", "WALK"} and task in {"rectangle", "polygon", "polyline"}:
+            return True
+    return False
+
+
+def _has_layout_scene(actions):
+    for action in actions:
+        layer = (action.get("layer") or "").upper()
+        task = str(action.get("task") or "").lower()
+        if layer in PRIMARY_LAYOUT_LAYERS and task in {"rectangle", "polygon", "polyline"}:
             return True
     return False
 
@@ -139,6 +182,7 @@ def _has_primary_site_geometry(actions):
 def _filtered_preview_actions(actions):
     records = [action for action in actions if isinstance(action, dict)]
     has_primary_site_geometry = _has_primary_site_geometry(records)
+    has_layout_scene = _has_layout_scene(records)
     has_building_shapes = any(
         (str(action.get("layer") or "").upper() == "BUILDING" and str(action.get("task") or "").lower() in {"rectangle", "polygon"})
         for action in records
@@ -162,6 +206,12 @@ def _filtered_preview_actions(actions):
         if task == "text_note" and any(token in text for token in SUPPRESSED_LABEL_TOKENS):
             continue
         if layer == "UTILITY" and any(token in helper_signature for token in ("SERVICE", "TIE", "GENERIC_UTILITY")):
+            continue
+        if has_layout_scene and layer in SECONDARY_ENGINEERING_LAYERS:
+            continue
+        if has_layout_scene and layer == "PARKING" and task == "polyline" and not label and not text:
+            continue
+        if has_layout_scene and layer == "BUILDING" and task == "text_note":
             continue
         filtered.append(action)
     return filtered
