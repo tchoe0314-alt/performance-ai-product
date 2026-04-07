@@ -100,6 +100,51 @@ class SnapshotRestoreExpandedPlanTest(unittest.TestCase):
         self.assertEqual(project_meta.get("runtime_recursive", {}).get("kind"), "runtime_recursive")
         self.assertIn("self", project_meta.get("runtime_recursive", {}))
 
+    def test_snapshot_payload_omits_recursive_history_state(self) -> None:
+        parsed = triple_check_parsed_payload(
+            {
+                "project_name": "Snapshot Lean State Test",
+                "units": "ft",
+                "mode": "site_plan",
+                "project_type": "mixed_use",
+                "site_type": "mixed_use",
+                "lot": {"x": 0.0, "y": 0.0, "w": 600.0, "h": 600.0},
+                "setback": 15.0,
+                "street_edge": "bottom",
+                "layout_strategy": "balanced",
+                "site_plan": {
+                    "building_width": 120.0,
+                    "building_depth": 60.0,
+                    "parking_count": 64,
+                },
+            }
+        )
+        manager = _bootstrap_manager(parsed)
+        _register_default_dependencies(manager)
+        ctx = PlannerExecutionContext(
+            parsed=deepcopy(parsed),
+            manager=manager,
+            route=choose_routing_path(parsed),
+            option_name="Base",
+            option_family="base",
+        )
+
+        _ingest_parsed_into_model(ctx)
+        _run_layout_stage(ctx)
+        first_snapshot_id = manager.snapshot("baseline")
+        second_snapshot_id = manager.snapshot("best_pass")
+
+        second_snapshot = manager.state.snapshots[second_snapshot_id]
+        second_state = second_snapshot.project_state.get("state") or {}
+
+        self.assertEqual(second_state.get("snapshots"), {})
+        self.assertEqual(second_state.get("variants"), {})
+        self.assertEqual(second_state.get("audit_log"), [])
+
+        manager.restore_snapshot(first_snapshot_id)
+        self.assertIn(first_snapshot_id, manager.state.snapshots)
+        self.assertIn(second_snapshot_id, manager.state.snapshots)
+
 
 if __name__ == "__main__":
     unittest.main()

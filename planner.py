@@ -7482,7 +7482,7 @@ def _run_model_first_workflow(parsed: Dict[str, Any], route: RoutingDecision, op
     plan["meta"]["rerun_history"] = deepcopy(ctx.rerun_history)
     plan["meta"]["routing"] = {"path": route.path, "reasons": list(route.reasons)}
     plan["meta"]["strict_mode"] = _strict_mode_enabled(parsed)
-    manager_export = manager.export_metrics() if hasattr(manager, "export_metrics") else {}
+    manager_export = manager.export_metrics(summary_only=True) if hasattr(manager, "export_metrics") else {}
     plan["meta"]["project_manager"] = {
         "metrics": {k: getattr(v, "value", None) for k, v in manager.metrics.items()},
         "conflict_count": len(manager.conflicts),

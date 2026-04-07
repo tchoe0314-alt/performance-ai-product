@@ -86,6 +86,14 @@ def _snapshot_serialize(value: Any, *, _active: Optional[set[int]] = None, _dept
             return payload
         if isinstance(value, (list, tuple, set)):
             return [_snapshot_serialize(v, _active=active, _depth=_depth + 1) for v in value]
+        if hasattr(value, "__dict__"):
+            payload = {}
+            for key, item in vars(value).items():
+                if str(key).startswith("_"):
+                    continue
+                payload[str(key)] = _snapshot_serialize(item, _active=active, _depth=_depth + 1)
+            if payload:
+                return payload
         return copy.deepcopy(value)
     except Exception:
         return _snapshot_fallback(value)
@@ -94,7 +102,7 @@ def _snapshot_serialize(value: Any, *, _active: Optional[set[int]] = None, _dept
             active.discard(value_id)
 
 
-def _snapshot_restore_value(expected_type: Any, value: Any) -> Any:
+def _snapshot_restore_value(expected_type: Any, value: Any, *, _copy: bool = True) -> Any:
     if value is None:
         return None
 
@@ -105,17 +113,17 @@ def _snapshot_restore_value(expected_type: Any, value: Any) -> Any:
         non_none = [arg for arg in args if arg is not type(None)]
         for arg in non_none:
             try:
-                restored = _snapshot_restore_value(arg, value)
+                restored = _snapshot_restore_value(arg, value, _copy=_copy)
                 if restored is not None or value is None:
                     return restored
             except Exception:
                 continue
-        return copy.deepcopy(value)
+        return copy.deepcopy(value) if _copy else value
 
     if origin in (list, List, Sequence, Iterable, tuple, set):
         inner = args[0] if args else Any
         seq = value if isinstance(value, (list, tuple, set)) else []
-        restored_items = [_snapshot_restore_value(inner, item) for item in seq]
+        restored_items = [_snapshot_restore_value(inner, item, _copy=_copy) for item in seq]
         if origin in (tuple,):
             return tuple(restored_items)
         if origin in (set,):
@@ -129,13 +137,13 @@ def _snapshot_restore_value(expected_type: Any, value: Any) -> Any:
             return {}
         out = {}
         for k, v in value.items():
-            rk = _snapshot_restore_value(key_type, k) if key_type is not Any else k
-            rv = _snapshot_restore_value(val_type, v) if val_type is not Any else copy.deepcopy(v)
+            rk = _snapshot_restore_value(key_type, k, _copy=_copy) if key_type is not Any else k
+            rv = _snapshot_restore_value(val_type, v, _copy=_copy) if val_type is not Any else (copy.deepcopy(v) if _copy else v)
             out[rk] = rv
         return out
 
     if expected_type is Any or expected_type is None:
-        return copy.deepcopy(value)
+        return copy.deepcopy(value) if _copy else value
 
     if isinstance(expected_type, type) and issubclass(expected_type, Enum):
         try:
@@ -154,10 +162,10 @@ def _snapshot_restore_value(expected_type: Any, value: Any) -> Any:
         for f in fields(expected_type):
             if f.name in value:
                 field_type = hints.get(f.name, f.type)
-                kwargs[f.name] = _snapshot_restore_value(field_type, value[f.name])
+                kwargs[f.name] = _snapshot_restore_value(field_type, value[f.name], _copy=_copy)
         return expected_type(**kwargs)
 
-    return copy.deepcopy(value)
+    return copy.deepcopy(value) if _copy else value
 
 
 def _require_number(value: Any, field_name: str) -> float:
@@ -1234,13 +1242,13 @@ class ProjectModel:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ProjectModel":
+    def from_dict(cls, data: Dict[str, Any], *, assume_isolated: bool = False) -> "ProjectModel":
         if not isinstance(data, dict):
             raise TypeError("ProjectModel.from_dict expects a dict.")
-        raw = copy.deepcopy(data)
+        raw = data if assume_isolated else copy.deepcopy(data)
         raw.pop("_snapshot_type", None)
         raw.pop("_snapshot_version", None)
-        return _snapshot_restore_value(cls, raw)
+        return _snapshot_restore_value(cls, raw, _copy=False)
 
     @classmethod
     def from_command(cls, parsed: Dict[str, Any]) -> "ProjectModel":

@@ -406,7 +406,16 @@ class ProjectManager:
         return default
 
     def snapshot(self, name: str, description: str = "", **meta: Any) -> str:
-        snap = DesignSnapshot(name=name, description=description, project_state=self.to_dict(), meta=dict(meta))
+        snap = DesignSnapshot(
+            name=name,
+            description=description,
+            project_state=self._export_state_bundle(
+                include_snapshots=False,
+                include_variants=False,
+                include_audit_log=False,
+            ),
+            meta=dict(meta),
+        )
         self.state.snapshots[snap.id] = snap
         self.record_event("snapshot", f"Created snapshot '{name}'.", category="snapshot", snapshot_id=snap.id)
         return snap.id
@@ -418,7 +427,16 @@ class ProjectManager:
 
         restored_state = copy.deepcopy(snap.project_state)
         if isinstance(restored_state, dict) and "project" in restored_state and "state" in restored_state:
-            restored_manager = self.from_dict(restored_state)
+            preserved_snapshots = copy.deepcopy(self.state.snapshots)
+            preserved_variants = copy.deepcopy(self.state.variants)
+            preserved_audit_log = copy.deepcopy(self.state.audit_log)
+            restored_manager = self.from_dict(restored_state, assume_isolated=True)
+            if not restored_manager.state.snapshots:
+                restored_manager.state.snapshots = preserved_snapshots
+            if not restored_manager.state.variants:
+                restored_manager.state.variants = preserved_variants
+            if not restored_manager.state.audit_log:
+                restored_manager.state.audit_log = preserved_audit_log
             self.project = restored_manager.project
             self.state = restored_manager.state
         elif hasattr(ProjectModel, "from_dict") and callable(getattr(ProjectModel, "from_dict")):
@@ -427,9 +445,9 @@ class ProjectManager:
             self.project = ProjectModel(**restored_state)
 
         self.record_event("snapshot_restore", f"Restored snapshot '{snap.name}'.", category="snapshot", snapshot_id=snapshot_id)
-        return self.to_dict() if isinstance(restored_state, dict) and "project" in restored_state and "state" in restored_state else (
-            self.project.to_dict() if hasattr(self.project, "to_dict") else restored_state
-        )
+        if isinstance(restored_state, dict) and "project" in restored_state and "state" in restored_state:
+            return restored_state
+        return self.project.to_dict() if hasattr(self.project, "to_dict") else restored_state
 
     def save_variant(
         self,
@@ -556,7 +574,7 @@ class ProjectManager:
         record.update({"status": "skipped", "message": message})
         self.mark_system_clean(name, message)
 
-    def export_metrics(self) -> Dict[str, Any]:
+    def export_metrics(self, *, summary_only: bool = False) -> Dict[str, Any]:
         metrics = {
             metric.name: {
                 "value": metric.value,
@@ -587,8 +605,8 @@ class ProjectManager:
             state = str(state).lower()
             dependency_counts[state] = dependency_counts.get(state, 0) + 1
 
-        engine_state = copy.deepcopy(self.engine_state)
-        dirty_state = copy.deepcopy(self.system_dirty_state)
+        engine_state = _snapshot_serialize(self.engine_state)
+        dirty_state = _snapshot_serialize(self.system_dirty_state)
         system_counts = {
             "declared": len(self.state.systems),
             "running": 0,
@@ -618,21 +636,22 @@ class ProjectManager:
             "review_issues": len(getattr(self.project, "review_issues", []) or []),
         }
 
-        manager_meta = copy.deepcopy(self.state.meta)
+        manager_meta = _snapshot_serialize(self.state.meta)
         manager_meta.pop("engine_state", None)
         manager_meta.pop("latest_outputs", None)
-
-        return {
+        result = {
             "metrics": metrics,
             "conflict_counts": conflict_counts,
             "dependency_counts": dependency_counts,
             "system_counts": system_counts,
             "project_counts": project_counts,
-            "engine_state": engine_state,
             "dirty_state": dirty_state,
-            "latest_outputs": copy.deepcopy(self.latest_outputs),
-            "manager_meta": manager_meta,
         }
+        if not summary_only:
+            result["engine_state"] = engine_state
+            result["latest_outputs"] = _snapshot_serialize(self.latest_outputs)
+            result["manager_meta"] = manager_meta
+        return result
 
     def register_graph_as_system(
         self,
@@ -684,7 +703,13 @@ class ProjectManager:
                     errors.append(f"System {system.id} references unknown object '{oid}'.")
         return errors
 
-    def to_dict(self) -> Dict[str, Any]:
+    def _export_state_bundle(
+        self,
+        *,
+        include_snapshots: bool = True,
+        include_variants: bool = True,
+        include_audit_log: bool = True,
+    ) -> Dict[str, Any]:
         return {
             "project": self.project.to_dict(),
             "state": {
@@ -692,25 +717,44 @@ class ProjectManager:
                 "conflicts": {cid: _conflict_to_dict(conflict) for cid, conflict in self.state.conflicts.items()},
                 "systems": {sid: _system_to_dict(system) for sid, system in self.state.systems.items()},
                 "metrics": {mid: _metric_to_dict(metric) for mid, metric in self.state.metrics.items()},
-                "snapshots": {sid: _snapshot_to_dict(snapshot) for sid, snapshot in self.state.snapshots.items()},
-                "variants": {vid: _variant_to_dict(variant) for vid, variant in self.state.variants.items()},
-                "audit_log": [_audit_event_to_dict(event) for event in self.state.audit_log],
+                "snapshots": (
+                    {sid: _snapshot_to_dict(snapshot) for sid, snapshot in self.state.snapshots.items()}
+                    if include_snapshots
+                    else {}
+                ),
+                "variants": (
+                    {vid: _variant_to_dict(variant) for vid, variant in self.state.variants.items()}
+                    if include_variants
+                    else {}
+                ),
+                "audit_log": (
+                    [_audit_event_to_dict(event) for event in self.state.audit_log]
+                    if include_audit_log
+                    else []
+                ),
                 "meta": _snapshot_serialize(self.state.meta),
             },
         }
+
+    def to_dict(self) -> Dict[str, Any]:
+        return self._export_state_bundle()
 
     @classmethod
     def from_project(cls, project: ProjectModel) -> "ProjectManager":
         return cls(project=project)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ProjectManager":
+    def from_dict(cls, data: Dict[str, Any], *, assume_isolated: bool = False) -> "ProjectManager":
         if not isinstance(data, dict):
             raise TypeError("ProjectManager.from_dict expects a dict payload.")
 
-        project_payload = copy.deepcopy(data.get("project", {}))
-        state_payload = copy.deepcopy(data.get("state", {}))
-        manager = cls(project=ProjectModel.from_dict(project_payload) if project_payload else ProjectModel())
+        project_payload = data.get("project", {}) if assume_isolated else copy.deepcopy(data.get("project", {}))
+        state_payload = data.get("state", {}) if assume_isolated else copy.deepcopy(data.get("state", {}))
+        manager = cls(
+            project=ProjectModel.from_dict(project_payload, assume_isolated=assume_isolated)
+            if project_payload
+            else ProjectModel()
+        )
 
         for dep_id, dep in (state_payload.get("dependencies") or {}).items():
             manager.state.dependencies[dep_id] = DependencyRecord(

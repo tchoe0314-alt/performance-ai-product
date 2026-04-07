@@ -12,11 +12,11 @@ from core.config import (
     DEFAULT_SETBACK,
     PIPE_INTENSITY_IN_HR,
 )
-from core.geometry_core import ProjectModel, ZoneType, rect_zone
+from core.geometry_core import ProjectModel, ZoneType, _snapshot_serialize, rect_zone
 from core.project_manager import ConflictSeverity, DependencyState, ProjectManager
 from engines.hydrology_engine import RationalArea, compute_rational_method
 
-from .common import clamp, dedupe_keep_order, lower_text, polyline_length, rect_area, safe_dict, safe_float, safe_list, safe_str
+from .common import clamp, dedupe_keep_order, lower_text, polyline_length, rect_area, safe_dict, safe_float, safe_int, safe_list, safe_str
 from .field_contract import field_path_is_omitted, preserve_field_states, resolve_field, unwrap_fields_for_execution
 
 
@@ -150,13 +150,201 @@ def sanitize_action(action: Dict[str, Any]) -> Dict[str, Any]:
     return preserve_field_states(norm)
 
 
+_PLAN_META_KEYS = {
+    "planner_workflow",
+    "planner_pass_count",
+    "option_name",
+    "option_family",
+    "stage_completeness",
+    "routing",
+    "strict_mode",
+    "planner_score",
+    "stats",
+    "quantities",
+    "deliverables",
+    "engineering_status",
+    "truth_audit",
+    "manual_validation",
+    "coordination",
+    "convergence_summary",
+    "optimization_summary",
+    "manager_export",
+    "grading",
+    "drainage",
+    "storm_pipes",
+    "sanitary",
+    "parking_program",
+    "utilities",
+    "requested_deliverables",
+    "produced_deliverables",
+    "release_ready",
+    "export_ready",
+    "blockers",
+    "review_categories",
+    "assumption_summary",
+}
+
+_MANAGER_EXPORT_METRIC_KEYS = {
+    "earthwork_cut_cf",
+    "earthwork_fill_cf",
+    "earthwork_net_cf",
+    "storm_pipe_length_ft",
+    "utility_total_length_ft",
+    "sanitary_total_length_ft",
+    "impervious_area_sf",
+    "building_area_sf",
+    "parking_area_sf",
+    "road_area_sf",
+}
+
+_COORDINATION_KEYS = {
+    "selected_group_strategy",
+    "selected_candidate_mode",
+    "post_validation_valid",
+    "reroute_resolution_count",
+    "vertical_adjustment_count",
+    "added_structures_from_coordination",
+    "clearance_compliant_checks",
+    "clearance_total_checks",
+    "min_achieved_horizontal_clearance_ft",
+    "min_achieved_vertical_clearance_ft",
+    "max_horizontal_clearance_deficit_ft",
+    "max_vertical_clearance_deficit_ft",
+}
+
+_CONVERGENCE_KEYS = {
+    "passes_run",
+    "max_passes",
+    "converged",
+    "warning_count",
+    "error_count",
+    "unresolved_conflict_count",
+    "blocked_exports",
+    "blocked_reasons",
+    "dominant_issue_categories",
+    "unresolved_issue_categories",
+    "qa_issue_categories",
+    "assumption_summary",
+    "last_fix_attempt",
+    "rerun_summary",
+}
+
+_DISCIPLINE_KEYS = {
+    "grading": {"existing_surface", "proposed_surface", "checks", "surface_controls", "export_validation"},
+    "drainage": {"structures", "basins", "stats", "surface_guidance", "export_validation"},
+    "storm_pipes": {"segments", "stats", "max_capacity_ratio", "selected_outfall_name", "selected_basin_name", "selected_basin_adequacy_status"},
+    "sanitary": {"segments", "manholes", "total_length_ft", "manhole_count", "service_count"},
+    "utilities": {
+        "route_count",
+        "min_horizontal_separation_ft",
+        "min_vertical_separation_ft",
+        "min_cover_ft",
+        "trunk_count",
+        "service_count",
+        "coordination",
+        "export_validation",
+    },
+}
+
+
+def _sanitize_manager_export(value: Any) -> Dict[str, Any]:
+    manager_export = safe_dict(value)
+    metrics = safe_dict(manager_export.get("metrics"))
+    clean_metrics: Dict[str, Any] = {}
+    for key in _MANAGER_EXPORT_METRIC_KEYS:
+        metric = safe_dict(metrics.get(key))
+        if metric:
+            clean_metrics[key] = {
+                "value": safe_float(metric.get("value"), 0.0),
+                "unit": safe_str(metric.get("unit"), ""),
+            }
+    return preserve_field_states(
+        {
+            "system_counts": _snapshot_serialize(safe_dict(manager_export.get("system_counts"))),
+            "dependency_counts": _snapshot_serialize(safe_dict(manager_export.get("dependency_counts"))),
+            "dirty_state": _snapshot_serialize(safe_dict(manager_export.get("dirty_state"))),
+            "metrics": clean_metrics,
+        }
+    )
+
+
+def _sanitize_coordination(value: Any) -> Dict[str, Any]:
+    coordination = safe_dict(value)
+    return preserve_field_states(
+        {
+            key: _snapshot_serialize(coordination.get(key))
+            for key in _COORDINATION_KEYS
+            if key in coordination
+        }
+    )
+
+
+def _sanitize_convergence_summary(value: Any) -> Dict[str, Any]:
+    convergence = safe_dict(value)
+    clean: Dict[str, Any] = {}
+    for key in _CONVERGENCE_KEYS:
+        if key not in convergence:
+            continue
+        if key == "last_fix_attempt":
+            fix_attempt = safe_dict(convergence.get(key))
+            clean[key] = {
+                "autofix_actions": [
+                    safe_str(item)
+                    for item in safe_list(fix_attempt.get("autofix_actions"))
+                    if safe_str(item)
+                ][:5]
+            }
+            continue
+        if key == "rerun_summary":
+            rerun = safe_dict(convergence.get(key))
+            clean[key] = {
+                "total_reruns": safe_int(rerun.get("total_reruns"), 0),
+                "stage_counts": _snapshot_serialize(safe_dict(rerun.get("stage_counts"))),
+                "reason_counts": _snapshot_serialize(safe_dict(rerun.get("reason_counts"))),
+            }
+            continue
+        clean[key] = _snapshot_serialize(convergence.get(key))
+    return preserve_field_states(clean)
+
+
+def _sanitize_discipline_meta(key: str, value: Any) -> Dict[str, Any]:
+    payload = safe_dict(value)
+    allowed = _DISCIPLINE_KEYS.get(key, set())
+    clean: Dict[str, Any] = {}
+    for subkey in allowed:
+        if subkey in payload:
+            if key == "utilities" and subkey == "coordination":
+                clean[subkey] = _sanitize_coordination(payload.get(subkey))
+            else:
+                clean[subkey] = _snapshot_serialize(payload.get(subkey))
+    return preserve_field_states(clean)
+
+
+def sanitize_plan_meta(meta: Dict[str, Any]) -> Dict[str, Any]:
+    clean: Dict[str, Any] = {}
+    for key, value in safe_dict(meta).items():
+        if key not in _PLAN_META_KEYS:
+            continue
+        if key == "manager_export":
+            clean[key] = _sanitize_manager_export(value)
+        elif key == "coordination":
+            clean[key] = _sanitize_coordination(value)
+        elif key == "convergence_summary":
+            clean[key] = _sanitize_convergence_summary(value)
+        elif key in _DISCIPLINE_KEYS:
+            clean[key] = _sanitize_discipline_meta(key, value)
+        else:
+            clean[key] = _snapshot_serialize(value)
+    return clean
+
+
 def sanitize_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
     out = {
         "project_name": safe_str(plan.get("project_name"), "Generated Plan"),
         "units": safe_str(plan.get("units"), "ft"),
         "actions": [],
         "assumptions": [safe_str(x) for x in safe_list(plan.get("assumptions")) if safe_str(x)],
-        "meta": deepcopy(safe_dict(plan.get("meta"))),
+        "meta": sanitize_plan_meta(safe_dict(plan.get("meta"))),
     }
     for action in safe_list(plan.get("actions")):
         if isinstance(action, dict):
