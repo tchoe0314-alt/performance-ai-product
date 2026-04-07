@@ -236,6 +236,26 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 409)
         self.assertIn("utility_fallback_used", str(ctx.exception.detail))
 
+    def test_final_plan_from_result_accepts_ready_storm_export_validation(self):
+        plan = final_plan_from_result(
+            {
+                "final_plan": {
+                    "actions": [{"task": "polyline", "layer": "PIPE"}],
+                    "meta": {
+                        "deliverables": {"requested": ["storm_pipe_plan"], "produced": ["storm_pipe_plan"]},
+                        "drainage": {"export_validation": {"ready": True, "reasons": []}},
+                        "storm_pipes": {
+                            "export_validation": {"ready": True, "reasons": []},
+                            "graph_validation": {"valid": False},
+                            "hydraulic_validation": {"valid": False},
+                            "missing_data_segments": ["legacy-fallback"],
+                        },
+                    },
+                }
+            }
+        )
+        self.assertEqual(plan["actions"][0]["layer"], "PIPE")
+
 
 if __name__ == "__main__":
     unittest.main()

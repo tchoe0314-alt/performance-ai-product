@@ -428,17 +428,23 @@ def final_plan_from_result(
                 ),
             )
         drainage_export = dict(drainage.get("export_validation") or {})
-        storm_ready = bool(dict(storm.get("graph_validation") or {}).get("valid", False)) and bool(
-            dict(storm.get("hydraulic_validation") or {}).get("valid", False)
-        ) and not list(storm.get("missing_data_segments") or [])
+        storm_export = dict(storm.get("export_validation") or {})
+        storm_ready = bool(storm_export.get("ready"))
+        if not storm_ready:
+            storm_ready = bool(dict(storm.get("graph_validation") or {}).get("valid", False)) and bool(
+                dict(storm.get("hydraulic_validation") or {}).get("valid", False)
+            ) and not list(storm.get("missing_data_segments") or [])
         if enforce_export_guards and needs_storm_truth and (not bool(drainage_export.get("ready")) or not storm_ready):
             reasons = list(drainage_export.get("reasons") or [])
-            if not bool(dict(storm.get("graph_validation") or {}).get("valid", False)):
-                reasons.append("storm_graph_invalid")
-            if not bool(dict(storm.get("hydraulic_validation") or {}).get("valid", False)):
-                reasons.append("storm_hydraulics_invalid")
-            if list(storm.get("missing_data_segments") or []):
-                reasons.append("storm_segments_incomplete")
+            if storm_export:
+                reasons.extend(str(item) for item in list(storm_export.get("reasons") or []) if str(item))
+            else:
+                if not bool(dict(storm.get("graph_validation") or {}).get("valid", False)):
+                    reasons.append("storm_graph_invalid")
+                if not bool(dict(storm.get("hydraulic_validation") or {}).get("valid", False)):
+                    reasons.append("storm_hydraulics_invalid")
+                if list(storm.get("missing_data_segments") or []):
+                    reasons.append("storm_segments_incomplete")
             reasons = _normalized_reasons(reasons, "storm_export_not_ready")
             raise HTTPException(
                 status_code=409,

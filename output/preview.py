@@ -254,8 +254,104 @@ def _has_layout_scene(actions):
     return False
 
 
+def _rect_center(bounds):
+    min_x, min_y, max_x, max_y = bounds
+    return (min_x + max_x) / 2.0, (min_y + max_y) / 2.0
+
+
+def _rect_gap(a, b):
+    a_min_x, a_min_y, a_max_x, a_max_y = a
+    b_min_x, b_min_y, b_max_x, b_max_y = b
+    gap_x = max(0.0, max(b_min_x - a_max_x, a_min_x - b_max_x))
+    gap_y = max(0.0, max(b_min_y - a_max_y, a_min_y - b_max_y))
+    return gap_x, gap_y
+
+
+def _synthesize_layout_preview_actions(actions):
+    records = [dict(action) for action in actions if isinstance(action, dict)]
+    building_rects = []
+    pavement_rects = []
+    road_actions = []
+    has_parking = False
+    has_walk = False
+    has_fire = False
+
+    for action in records:
+        layer = str(action.get("layer") or "").upper()
+        bounds = _action_bounds(action)
+        if layer == "BUILDING" and bounds:
+            building_rects.append(bounds)
+        elif layer == "PAVEMENT" and bounds:
+            pavement_rects.append((bounds, action))
+        elif layer == "ROAD":
+            road_actions.append(action)
+        elif layer == "PARKING":
+            has_parking = True
+        elif layer == "WALK":
+            has_walk = True
+        elif layer == "FIRE":
+            has_fire = True
+
+    synthesized = list(records)
+    seen = {repr(action) for action in synthesized}
+
+    if building_rects and not has_parking:
+        for bounds, action in pavement_rects:
+            center_x, _ = _rect_center(bounds)
+            nearest_gap = min((_rect_gap(bounds, b_bounds) for b_bounds in building_rects), key=lambda pair: pair[0] + pair[1], default=(9999.0, 9999.0))
+            overlaps_building_band = any(abs(center_x - _rect_center(b_bounds)[0]) <= max(bounds[2] - bounds[0], b_bounds[2] - b_bounds[0]) * 0.7 for b_bounds in building_rects)
+            if nearest_gap[1] <= 120.0 and overlaps_building_band:
+                out = dict(action)
+                out["layer"] = "PARKING"
+                key = repr(out)
+                if key not in seen:
+                    seen.add(key)
+                    synthesized.append(out)
+
+    parking_rects = [_action_bounds(action) for action in synthesized if str(action.get("layer") or "").upper() == "PARKING" and _action_bounds(action)]
+    if building_rects and parking_rects and not has_walk:
+        for building_bounds in building_rects:
+            bx1, by1, bx2, by2 = building_bounds
+            bcx, _ = _rect_center(building_bounds)
+            nearest_parking = min(parking_rects, key=lambda item: (_rect_gap(building_bounds, item)[0] + _rect_gap(building_bounds, item)[1]))
+            px1, py1, px2, py2 = nearest_parking
+            walk_width = round(max(6.0, min(10.0, (bx2 - bx1) * 0.12)), 3)
+            walk_x = round(bcx - walk_width / 2.0, 3)
+            if py2 <= by1:
+                walk_y = round(py2, 3)
+                walk_h = round(max(6.0, by1 - walk_y), 3)
+            elif by2 <= py1:
+                walk_y = round(by2, 3)
+                walk_h = round(max(6.0, py1 - walk_y), 3)
+            else:
+                continue
+            walk_action = {
+                "task": "rectangle",
+                "layer": "WALK",
+                "origin": [walk_x, walk_y],
+                "width": walk_width,
+                "height": walk_h,
+            }
+            key = repr(walk_action)
+            if key not in seen:
+                seen.add(key)
+                synthesized.append(walk_action)
+
+    if road_actions and not has_fire:
+        for action in road_actions:
+            out = dict(action)
+            out["layer"] = "FIRE"
+            key = repr(out)
+            if key not in seen:
+                seen.add(key)
+                synthesized.append(out)
+
+    return synthesized
+
+
 def _filtered_preview_actions(actions):
     records = [action for action in actions if isinstance(action, dict)]
+    records = _synthesize_layout_preview_actions(records)
     has_primary_site_geometry = _has_primary_site_geometry(records)
     has_layout_scene = _has_layout_scene(records)
     building_bounds = [

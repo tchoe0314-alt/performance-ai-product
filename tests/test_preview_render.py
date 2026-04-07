@@ -59,6 +59,21 @@ class PreviewRenderTests(unittest.TestCase):
         self.assertIn("PIPE", kept_layers)
         self.assertIn("STRUCTURE", kept_layers)
 
+    def test_layout_scene_synthesizes_parking_walk_and_fire_when_missing(self):
+        actions = [
+            {"layer": "BUILDING", "task": "rectangle", "origin": [20, 60], "width": 12, "height": 8, "label": "BLDG 1"},
+            {"layer": "BUILDING", "task": "rectangle", "origin": [40, 60], "width": 12, "height": 8, "label": "BLDG 2"},
+            {"layer": "ROAD", "task": "polyline", "points": [[10, 20], [90, 20]], "label": "Loop"},
+            {"layer": "PAVEMENT", "task": "rectangle", "origin": [18, 34], "width": 40, "height": 14, "label": "Lot Base"},
+        ]
+
+        filtered = _filtered_preview_actions(actions)
+        kept_layers = [str(action.get("layer") or "").upper() for action in filtered]
+
+        self.assertIn("PARKING", kept_layers)
+        self.assertIn("WALK", kept_layers)
+        self.assertIn("FIRE", kept_layers)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -197,6 +197,16 @@ def build_orchestrate_job_runner(
                 "assumption_summary": assumption_summary,
                 "reliability_summary": reliability,
             }
+            final_meta["blockers"] = blocked_reasons or blocked_exports
+            final_meta["export_ready"] = not bool(blocked_reasons or blocked_exports)
+            final_meta["release_ready"] = bool(reliability.get("release_ready"))
+            final_meta["deliverables"] = {
+                "requested": list(run_summary.get("requested_deliverables") or []),
+                "produced": list(run_summary.get("produced_deliverables") or []),
+                "failed": list(run_summary.get("failed_deliverables") or []),
+                "ready": list(run_summary.get("ready_deliverables") or []),
+                "extra": list(run_summary.get("extra_deliverables") or []),
+            }
             final_plan["meta"] = final_meta
             final_plan["export_ready"] = not bool(blocked_reasons or blocked_exports)
             final_plan["release_ready"] = bool(reliability.get("release_ready"))
