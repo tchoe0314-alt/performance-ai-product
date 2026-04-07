@@ -259,6 +259,142 @@ def _merge_layout_actions(existing: Sequence[Dict[str, Any]], new_actions: Seque
     return merged
 
 
+def _rectangle_bounds(action: Dict[str, Any]) -> Optional[Tuple[float, float, float, float]]:
+    if lower_text(action.get("task")) != "rectangle":
+        return None
+    origin = safe_list(action.get("origin"))
+    if len(origin) < 2:
+        return None
+    x = safe_float(origin[0], 0.0)
+    y = safe_float(origin[1], 0.0)
+    w = max(0.0, safe_float(action.get("width"), 0.0))
+    h = max(0.0, safe_float(action.get("height"), 0.0))
+    return x, y, w, h
+
+
+def _rect_center(bounds: Tuple[float, float, float, float]) -> Tuple[float, float]:
+    x, y, w, h = bounds
+    return x + w / 2.0, y + h / 2.0
+
+
+def _rect_gap(a: Tuple[float, float, float, float], b: Tuple[float, float, float, float]) -> Tuple[float, float]:
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    gap_x = max(0.0, max(bx - (ax + aw), ax - (bx + bw)))
+    gap_y = max(0.0, max(by - (ay + ah), ay - (by + bh)))
+    return gap_x, gap_y
+
+
+def _synthesize_layout_semantics(actions: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    normalized: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+
+    building_rects: List[Tuple[Tuple[float, float, float, float], Dict[str, Any]]] = []
+    pavement_rects: List[Tuple[Tuple[float, float, float, float], Dict[str, Any]]] = []
+    road_actions: List[Dict[str, Any]] = []
+    has_parking = False
+    has_walk = False
+    has_fire = False
+
+    for action in safe_list(actions):
+        rec = safe_dict(action)
+        if not rec:
+            continue
+        layer = safe_str(rec.get("layer")).upper()
+        bounds = _rectangle_bounds(rec)
+        if layer == "BUILDING" and bounds is not None:
+            building_rects.append((bounds, rec))
+        elif layer == "PAVEMENT" and bounds is not None:
+            pavement_rects.append((bounds, rec))
+        elif layer == "ROAD":
+            road_actions.append(rec)
+        elif layer == "PARKING":
+            has_parking = True
+        elif layer == "WALK":
+            has_walk = True
+        elif layer == "FIRE":
+            has_fire = True
+
+    for action in safe_list(actions):
+        rec = safe_dict(action)
+        if not rec:
+            continue
+        layer = safe_str(rec.get("layer")).upper()
+        bounds = _rectangle_bounds(rec)
+        out = deepcopy(rec)
+        if layer == "PAVEMENT" and bounds is not None and building_rects and not has_parking:
+            nearest_gap = min((_rect_gap(bounds, b_bounds) for b_bounds, _ in building_rects), key=lambda pair: pair[0] + pair[1])
+            center_x, _ = _rect_center(bounds)
+            overlaps_building_band = any(
+                abs(center_x - _rect_center(b_bounds)[0]) <= max(bounds[2], b_bounds[2]) * 0.7
+                for b_bounds, _ in building_rects
+            )
+            if nearest_gap[1] <= 120.0 and overlaps_building_band:
+                out["layer"] = "PARKING"
+        key = repr(out)
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(out)
+
+    if building_rects and not any(safe_str(safe_dict(a).get("layer")).upper() == "PARKING" for a in normalized):
+        for bounds, rec in pavement_rects:
+            out = deepcopy(rec)
+            out["layer"] = "PARKING"
+            key = repr(out)
+            if key not in seen:
+                seen.add(key)
+                normalized.append(out)
+
+    parking_rects = [
+        (_rectangle_bounds(safe_dict(action)), safe_dict(action))
+        for action in normalized
+        if safe_str(safe_dict(action).get("layer")).upper() == "PARKING" and _rectangle_bounds(safe_dict(action)) is not None
+    ]
+
+    if building_rects and parking_rects and not has_walk:
+        for building_bounds, _ in building_rects:
+            bx, by, bw, bh = building_bounds
+            bcx, _ = _rect_center(building_bounds)
+            nearest_parking_bounds, _ = min(
+                parking_rects,
+                key=lambda item: (_rect_gap(building_bounds, item[0])[0] + _rect_gap(building_bounds, item[0])[1]),
+            )
+            px, py, pw, ph = nearest_parking_bounds
+            walk_width = round(max(6.0, min(10.0, bw * 0.12)), 3)
+            walk_x = round(bcx - walk_width / 2.0, 3)
+            if py + ph <= by:
+                walk_y = round(py + ph, 3)
+                walk_h = round(max(6.0, by - walk_y), 3)
+            elif by + bh <= py:
+                walk_y = round(by + bh, 3)
+                walk_h = round(max(6.0, py - walk_y), 3)
+            else:
+                continue
+            walk_action = {
+                "task": "rectangle",
+                "layer": "WALK",
+                "origin": [walk_x, walk_y],
+                "width": walk_width,
+                "height": walk_h,
+            }
+            key = repr(walk_action)
+            if key not in seen:
+                seen.add(key)
+                normalized.append(walk_action)
+
+    if road_actions and not has_fire:
+        for action in road_actions:
+            out = deepcopy(action)
+            out["layer"] = "FIRE"
+            key = repr(out)
+            if key not in seen:
+                seen.add(key)
+                normalized.append(out)
+
+    return normalized
+
+
 def run_layout_stage(
     ctx: PlannerExecutionContext,
     *,
@@ -277,6 +413,7 @@ def run_layout_stage(
         expanded = legacy_expand_payload(execution_payload)
         if isinstance(expanded, dict):
             expanded_actions = filter_actions_by_field_intent(parsed, safe_list(expanded.get("actions")))
+            expanded_actions = _synthesize_layout_semantics(expanded_actions)
             expanded["actions"] = expanded_actions
         if safe_list(expanded.get("actions")):
             store_expanded_plan(project, expanded)
