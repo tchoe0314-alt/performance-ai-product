@@ -123,7 +123,7 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertEqual(review["trust_score"], 92.0)
         self.assertEqual(review["assumption_count"], 2)
         self.assertEqual(review["autofix_actions"], ["storm_validation_retry"])
-        self.assertEqual(review["blocked_reasons"], ["storm_graph_invalid"])
+        self.assertEqual(review["blocked_reasons"], [])
         self.assertEqual(review["requested_deliverables"], ["site_plan", "grading_plan", "utility_plan"])
         self.assertEqual(review["produced_deliverables"], ["site_plan", "grading_plan"])
         self.assertEqual(review["failed_deliverables"], ["utility_plan"])
@@ -165,7 +165,7 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertEqual(response["summary"]["project_name"], "Blocked Preview")
         self.assertEqual(
             response["summary"]["review"]["blocked_reasons"],
-            ["storm_graph_invalid"],
+            ["primary_detention_missing", "storm_graph_invalid", "storm_hydraulics_invalid"],
         )
         self.assertEqual(service.preview_plan["project_name"], "Blocked Preview")
 
@@ -242,6 +242,73 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertEqual(review["blocked_exports"], [])
         self.assertEqual(review["blocked_reasons"], [])
         self.assertEqual(review["release_status"], "ready")
+
+    def test_build_preview_response_prefers_current_export_guard_over_stale_saved_blockers(self):
+        service = FakeArtifactService()
+        response = build_preview_response(
+            artifact_service=service,
+            result_data={
+                "run_summary": {
+                    "engineering_status": {"trust_score": 65.0},
+                    "reliability_summary": {"operational_state": "retryable", "release_ready": False},
+                    "optimization_summary": {},
+                    "convergence_summary": {
+                        "converged": True,
+                        "passes_run": 1,
+                        "unresolved_conflict_count": 0,
+                        "assumption_summary": {"count": 0, "categories": [], "examples": []},
+                        "fix_summary": {"autofix_actions": []},
+                        "rerun_summary": {"total_reruns": 0, "stage_counts": {}, "reason_counts": {}},
+                        "dominant_issue_categories": [],
+                        "unresolved_issue_categories": [],
+                        "blocked_exports": ["drainage", "utilities"],
+                        "blocked_reasons": ["storm_network_missing", "utility_fallback_used"],
+                    },
+                    "requested_deliverables": ["grading_plan", "utility_plan"],
+                    "produced_deliverables": ["grading_plan", "utility_plan"],
+                    "failed_deliverables": [],
+                    "ready_deliverables": ["grading_plan", "utility_plan"],
+                    "extra_deliverables": [],
+                },
+                "final_plan": {
+                    "project_name": "Current Guard Wins",
+                    "actions": [
+                        {"layer": "FG_CONTOUR"},
+                        {"layer": "UTILITY"},
+                    ],
+                    "meta": {
+                        "grading": {"export_validation": {"ready": False, "reasons": ["grading_export_not_ready"]}},
+                        "utilities": {
+                            "export_validation": {"ready": False, "reasons": ["utility_fallback_used"]},
+                            "success": True,
+                            "fallback_used": True,
+                            "route_count": 1,
+                            "shallow_segment_count": 0,
+                            "gravity_slope_issue_count": 0,
+                            "conflict_hooks": {
+                                "utility_segments": [
+                                    {
+                                        "name": "WATER-1",
+                                        "hydraulic_mode": "pressurized",
+                                        "route_points": [[10.0, 10.0], [60.0, 10.0], [90.0, 40.0]],
+                                        "cover_start_ft": 4.0,
+                                        "cover_end_ft": 4.0,
+                                    }
+                                ]
+                            },
+                            "coordination": {
+                                "utility_related_unresolved_conflict_count": 0,
+                                "post_validation_valid": True,
+                            },
+                        },
+                        "deliverables": {"requested": ["grading_plan", "utility_plan"], "produced": ["grading_plan", "utility_plan"]},
+                    },
+                },
+            },
+        )
+        review = response["summary"]["review"]
+        self.assertEqual(review["blocked_exports"], [])
+        self.assertEqual(review["blocked_reasons"], [])
 
     def test_final_plan_from_result_still_enforces_export_guard_by_default(self):
         with self.assertRaises(HTTPException):

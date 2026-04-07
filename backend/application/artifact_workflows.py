@@ -4,6 +4,8 @@ from base64 import b64encode
 from pathlib import Path
 from typing import Any, Dict, Optional, Protocol
 
+from fastapi import HTTPException
+
 from backend.application.design_workflows import build_run_summary, final_plan_from_result
 from backend.application.project_workflows import artifact_summary, save_project_workflow_update
 
@@ -47,6 +49,31 @@ class ProjectStoreProtocol(Protocol):
 
 
 def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, Any]) -> Dict[str, Any]:
+    def _current_export_guard_state() -> tuple[list[str], list[str]]:
+        meta = dict(final_plan.get("meta") or {})
+        has_discipline_meta = any(
+            bool(meta.get(key))
+            for key in ("grading", "drainage", "storm_pipes", "utilities")
+        )
+        if not has_discipline_meta:
+            return [], []
+        try:
+            final_plan_from_result(result_data, enforce_export_guards=True)
+            return [], []
+        except HTTPException as exc:
+            detail = str(exc.detail or "")
+            lowered = detail.lower()
+            blocked_exports: list[str] = []
+            if "grading design" in lowered:
+                blocked_exports = ["grading"]
+            elif "utility design" in lowered:
+                blocked_exports = ["utilities"]
+            elif "drainage/storm state" in lowered:
+                blocked_exports = ["drainage", "storm"]
+            reasons_text = detail.split(": ", 1)[1] if ": " in detail else ""
+            blocked_reasons = [part.strip() for part in reasons_text.split(",") if part.strip()]
+            return blocked_exports, blocked_reasons
+
     stored_run_summary = dict(result_data.get("run_summary") or {})
     if not stored_run_summary:
         stored_run_summary = dict(dict(result_data.get("metadata") or {}).get("run_summary") or {})
@@ -90,6 +117,14 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         for item in list(blocked_reasons_source or [])
         if str(item)
     ]
+    current_blocked_exports, current_blocked_reasons = _current_export_guard_state()
+    if current_blocked_exports or current_blocked_reasons or (
+        bool(final_meta.get("grading") or final_meta.get("drainage") or final_meta.get("storm_pipes") or final_meta.get("utilities"))
+        and not current_blocked_exports
+        and not current_blocked_reasons
+    ):
+        blocked_exports = current_blocked_exports
+        blocked_reasons = current_blocked_reasons
     rerun_stages = dict(rerun_summary.get("stage_counts") or {})
     dominant_rerun_stages = [
         str(name)
