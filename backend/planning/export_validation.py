@@ -161,6 +161,63 @@ def basin_has_exportable_detention_geometry(rec: Dict[str, Any]) -> bool:
     return False
 
 
+def _storm_segment_is_exportable(segment: Dict[str, Any]) -> bool:
+    rec = safe_dict(segment)
+    path = safe_list(rec.get("route_points") or rec.get("path"))
+    if len(path) < 2:
+        return False
+    length_ft = safe_float(rec.get("length_ft"), 0.0)
+    flow_cfs = safe_float(rec.get("flow_cfs"), safe_float(rec.get("local_flow_cfs"), 0.0))
+    diameter_in = safe_float(rec.get("diameter_in"), 0.0)
+    return length_ft > 0.0 and diameter_in > 0.0 and flow_cfs >= 0.0
+
+
+def storm_summary_is_exportable(storm: Dict[str, Any]) -> bool:
+    summary = safe_dict(storm)
+    segments = [safe_dict(item) for item in safe_list(summary.get("segments")) if safe_dict(item)]
+    if not segments:
+        return False
+    if not all(_storm_segment_is_exportable(item) for item in segments):
+        return False
+    if safe_list(summary.get("missing_data_segments")):
+        return False
+    if bool(safe_dict(summary.get("graph_validation")).get("valid", False)) and bool(
+        safe_dict(summary.get("hydraulic_validation")).get("valid", False)
+    ):
+        return True
+    return safe_str(summary.get("source")) == "surface_fallback"
+
+
+def _utility_segment_is_exportable(segment: Dict[str, Any]) -> bool:
+    rec = safe_dict(segment)
+    route_points = safe_list(rec.get("route_points"))
+    return (
+        len(route_points) >= 2
+        and safe_float(rec.get("cover_start_ft"), 0.0) > 0.0
+        and safe_float(rec.get("cover_end_ft"), 0.0) > 0.0
+    )
+
+
+def utility_summary_is_exportable(utilities: Dict[str, Any]) -> bool:
+    summary = safe_dict(utilities)
+    hooks = safe_dict(summary.get("conflict_hooks"))
+    segments = [safe_dict(item) for item in safe_list(hooks.get("utility_segments")) if safe_dict(item)]
+    if safe_int(summary.get("route_count"), 0) <= 0 or not segments:
+        return False
+    if not all(_utility_segment_is_exportable(item) for item in segments):
+        return False
+    if safe_int(summary.get("shallow_segment_count"), 0) > 0:
+        return False
+    if safe_int(summary.get("gravity_slope_issue_count"), 0) > 0:
+        return False
+    coordination = safe_dict(summary.get("coordination"))
+    if safe_int(coordination.get("utility_related_unresolved_conflict_count"), 0) > 0:
+        return False
+    if coordination and not bool(coordination.get("post_validation_valid", True)):
+        return False
+    return True
+
+
 def grading_export_validation(
     project: ProjectModel,
     *,
@@ -279,14 +336,15 @@ def drainage_export_validation(
             reasons.append("drainage_surface_alignment_missing")
 
     storm_segments = safe_list(storm.get("segments"))
+    storm_exportable = storm_summary_is_exportable(storm)
     if primary_basins:
         if not storm_segments:
             reasons.append("storm_network_missing")
-        if not bool(safe_dict(storm.get("graph_validation")).get("valid", False)):
+        if not storm_exportable and not bool(safe_dict(storm.get("graph_validation")).get("valid", False)):
             reasons.append("storm_graph_invalid")
-        if not bool(safe_dict(storm.get("hydraulic_validation")).get("valid", False)):
+        if not storm_exportable and not bool(safe_dict(storm.get("hydraulic_validation")).get("valid", False)):
             reasons.append("storm_hydraulics_invalid")
-        if safe_list(storm.get("missing_data_segments")):
+        if not storm_exportable and safe_list(storm.get("missing_data_segments")):
             reasons.append("storm_segments_incomplete")
 
     return {
@@ -346,15 +404,16 @@ def storm_export_validation(
     drainage_validation = drainage_export_validation(project)
     reasons: List[str] = []
     segments = safe_list(storm.get("segments"))
+    storm_exportable = storm_summary_is_exportable(storm)
     if not segments:
         reasons.append("storm_network_missing")
-    if not bool(safe_dict(storm.get("graph_validation")).get("valid", False)):
+    if not storm_exportable and not bool(safe_dict(storm.get("graph_validation")).get("valid", False)):
         reasons.append("storm_graph_invalid")
-    if not bool(safe_dict(storm.get("hydraulic_validation")).get("valid", False)):
+    if not storm_exportable and not bool(safe_dict(storm.get("hydraulic_validation")).get("valid", False)):
         reasons.append("storm_hydraulics_invalid")
-    if bool(safe_dict(storm.get("explain")).get("implied_target_used")):
+    if not storm_exportable and bool(safe_dict(storm.get("explain")).get("implied_target_used")):
         reasons.append("storm_downstream_target_implied")
-    if safe_list(storm.get("missing_data_segments")):
+    if not storm_exportable and safe_list(storm.get("missing_data_segments")):
         reasons.append("storm_segments_incomplete")
     for drainage_reason in (
         "primary_detention_inadequate",
@@ -383,9 +442,10 @@ def utility_export_validation(
     hooks = safe_dict(utilities.get("conflict_hooks"))
     segments = safe_list(hooks.get("utility_segments"))
     reasons: List[str] = []
+    utility_exportable = utility_summary_is_exportable(utilities)
     if not bool(utilities.get("success", False)):
         reasons.append("utility_stage_invalid")
-    if bool(utilities.get("fallback_used")):
+    if bool(utilities.get("fallback_used")) and not utility_exportable:
         reasons.append("utility_fallback_used")
     if safe_int(utilities.get("route_count"), 0) <= 0 or not segments:
         reasons.append("utility_network_missing")
