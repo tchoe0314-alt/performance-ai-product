@@ -406,7 +406,7 @@ def _synthesize_drive_aisles(building_rects, parking_rects):
             min_x, _, max_x, _ = bounds
             aisle = {
                 "task": "rectangle",
-                "layer": "ROAD",
+                "layer": "PAVEMENT",
                 "origin": [round(min_x - 4.0, 3), aisle_y],
                 "width": round((max_x - min_x) + 8.0, 3),
                 "height": aisle_height,
@@ -435,7 +435,7 @@ def _synthesize_drive_aisles(building_rects, parking_rects):
         if spine_top > spine_y:
             drive_actions.append({
                 'task': 'rectangle',
-                'layer': 'ROAD',
+                'layer': 'PAVEMENT',
                 'origin': [spine_x, spine_y],
                 'width': spine_width,
                 'height': round(spine_top - spine_y, 3),
@@ -451,7 +451,7 @@ def _synthesize_drive_aisles(building_rects, parking_rects):
         if spine_top > spine_y:
             drive_actions.append({
                 'task': 'rectangle',
-                'layer': 'ROAD',
+                'layer': 'PAVEMENT',
                 'origin': [spine_x, spine_y],
                 'width': spine_width,
                 'height': round(spine_top - spine_y, 3),
@@ -536,16 +536,18 @@ def _synthesize_layout_preview_actions(actions):
         if not _is_wrapper_layout_shape(action, [{"bounds": bounds} for bounds in building_rects])
         and not _is_schematic_access_shape(action, [{"bounds": bounds} for bounds in building_rects])
     ]
+    synthesized_circulation = []
     if building_rects and parking_rects and not useful_road_actions:
         for action in _synthesize_drive_aisles(building_rects, parking_rects):
             key = repr(action)
             if key not in seen:
                 seen.add(key)
                 synthesized.append(action)
-                useful_road_actions.append(action)
+                synthesized_circulation.append(action)
 
-    if useful_road_actions and not has_fire:
-        for action in useful_road_actions:
+    if (useful_road_actions or synthesized_circulation) and not has_fire:
+        fire_sources = useful_road_actions or synthesized_circulation
+        for action in fire_sources:
             out = dict(action)
             out["layer"] = "FIRE"
             key = repr(out)

@@ -95,7 +95,13 @@ class PreviewRenderTests(unittest.TestCase):
                 for action in road_rectangles
             )
         )
-        self.assertGreaterEqual(len(road_rectangles), 1)
+        pavement_rectangles = [
+            action
+            for action in filtered
+            if str(action.get("layer") or "").upper() == "PAVEMENT"
+            and str(action.get("task") or "").lower() == "rectangle"
+        ]
+        self.assertGreaterEqual(len(pavement_rectangles), 1)
 
     def test_non_layout_scene_keeps_engineering_geometry_available(self):
         actions = [
@@ -141,10 +147,10 @@ class PreviewRenderTests(unittest.TestCase):
         ]
 
         filtered = _filtered_preview_actions(actions)
-        road_rectangles = [
+        pavement_rectangles = [
             action
             for action in filtered
-            if str(action.get("layer") or "").upper() == "ROAD"
+            if str(action.get("layer") or "").upper() == "PAVEMENT"
             and str(action.get("task") or "").lower() == "rectangle"
         ]
         fire_rectangles = [
@@ -154,7 +160,7 @@ class PreviewRenderTests(unittest.TestCase):
             and str(action.get("task") or "").lower() == "rectangle"
         ]
 
-        self.assertGreaterEqual(len(road_rectangles), 2)
+        self.assertGreaterEqual(len(pavement_rectangles), 2)
         self.assertGreaterEqual(len(fire_rectangles), 2)
 
 
