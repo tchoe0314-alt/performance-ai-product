@@ -893,21 +893,24 @@ def _surface_contour_actions(plan: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     prepared: List[Dict[str, Any]] = []
+    try:
+        from output.preview import _synthesize_layout_preview_actions  # reuse layout-first synthesis for modelspace
+        synthesized_actions = _synthesize_layout_preview_actions([safe_dict(action) for action in actions if isinstance(action, dict)])
+    except Exception:
+        synthesized_actions = [safe_dict(action) for action in actions if isinstance(action, dict)]
     use_surface_contours = bool(safe_dict(safe_dict(safe_dict(plan.get("meta")).get("grading")).get("proposed_surface")))
     raw_layers = {
         get_layer(safe_dict(action), "SITE")
-        for action in actions
-        if isinstance(action, dict)
+        for action in synthesized_actions
     }
     layout_first_modelspace = bool(raw_layers.intersection(MODELSPACE_PRIMARY_LAYOUT_LAYERS))
     building_bounds = [
         {"action": rec, "bounds": _action_bounds(rec)}
-        for rec in (safe_dict(action) for action in actions if isinstance(action, dict))
+        for rec in synthesized_actions
         if get_layer(rec, "SITE") == "BUILDING" and safe_text(rec.get("task"), "").lower() in {"rectangle", "polygon"}
     ]
     building_bounds = [item for item in building_bounds if item["bounds"]]
-    for action in actions:
-        rec = safe_dict(action)
+    for rec in synthesized_actions:
         if _is_debug_action(rec):
             continue
         layer = get_layer(rec, "SITE")
