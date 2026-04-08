@@ -397,20 +397,24 @@ def _synthesize_drive_aisles(building_rects, parking_rects):
 
     def _row_aisles(row_bounds):
         row_bounds = sorted(row_bounds, key=lambda bounds: _rect_center(bounds)[0])
+        if not row_bounds:
+            return [], 0.0, 0.0
         row_min_y = min(bounds[1] for bounds in row_bounds)
-        row_min_x = min(bounds[0] for bounds in row_bounds)
-        row_max_x = max(bounds[2] for bounds in row_bounds)
         parking_height = max(bounds[3] - bounds[1] for bounds in row_bounds)
         aisle_height = round(max(4.0, min(7.0, parking_height * 0.18)), 3)
         aisle_y = round(row_min_y - aisle_height - 2.0, 3)
-        aisle = {
-            "task": "rectangle",
-            "layer": "PAVEMENT",
-            "origin": [round(row_min_x - 6.0, 3), aisle_y],
-            "width": round((row_max_x - row_min_x) + 12.0, 3),
-            "height": aisle_height,
-        }
-        return [aisle], aisle_y, aisle_height
+        aisles = []
+        for bounds in row_bounds:
+            px1, _, px2, _ = bounds
+            aisle = {
+                "task": "rectangle",
+                "layer": "PAVEMENT",
+                "origin": [round(px1 + 2.0, 3), aisle_y],
+                "width": round(max(10.0, (px2 - px1) - 4.0), 3),
+                "height": aisle_height,
+            }
+            aisles.append(aisle)
+        return aisles, aisle_y, aisle_height
 
     upper_aisles, upper_aisle_y, upper_aisle_height = _row_aisles(upper_row)
     drive_actions.extend(upper_aisles)
