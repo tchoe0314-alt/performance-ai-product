@@ -398,64 +398,26 @@ def _synthesize_drive_aisles(building_rects, parking_rects):
     def _row_aisles(row_bounds):
         row_bounds = sorted(row_bounds, key=lambda bounds: _rect_center(bounds)[0])
         row_min_y = min(bounds[1] for bounds in row_bounds)
+        row_min_x = min(bounds[0] for bounds in row_bounds)
+        row_max_x = max(bounds[2] for bounds in row_bounds)
         parking_height = max(bounds[3] - bounds[1] for bounds in row_bounds)
-        aisle_height = round(max(5.0, min(8.0, parking_height * 0.22)), 3)
+        aisle_height = round(max(4.0, min(7.0, parking_height * 0.18)), 3)
         aisle_y = round(row_min_y - aisle_height - 2.0, 3)
-        aisles = []
-        for bounds in row_bounds:
-            min_x, _, max_x, _ = bounds
-            aisle = {
-                "task": "rectangle",
-                "layer": "PAVEMENT",
-                "origin": [round(min_x - 4.0, 3), aisle_y],
-                "width": round((max_x - min_x) + 8.0, 3),
-                "height": aisle_height,
-            }
-            aisles.append(aisle)
-        return aisles, aisle_y, aisle_height
+        aisle = {
+            "task": "rectangle",
+            "layer": "PAVEMENT",
+            "origin": [round(row_min_x - 6.0, 3), aisle_y],
+            "width": round((row_max_x - row_min_x) + 12.0, 3),
+            "height": aisle_height,
+        }
+        return [aisle], aisle_y, aisle_height
 
     upper_aisles, upper_aisle_y, upper_aisle_height = _row_aisles(upper_row)
     drive_actions.extend(upper_aisles)
-    upper_min_x = min(bounds[0] for bounds in upper_row)
-    upper_max_x = max(bounds[2] for bounds in upper_row)
 
     if lower_row:
         lower_aisles, lower_aisle_y, lower_aisle_height = _row_aisles(lower_row)
         drive_actions.extend(lower_aisles)
-        lower_min_x = min(bounds[0] for bounds in lower_row)
-        lower_max_x = max(bounds[2] for bounds in lower_row)
-
-        upper_center_x = (upper_min_x + upper_max_x) / 2.0
-        lower_center_x = (lower_min_x + lower_max_x) / 2.0
-        spine_center_x = round((upper_center_x + lower_center_x) / 2.0, 3)
-        spine_width = round(max(4.0, min(7.0, (upper_max_x - upper_min_x) * 0.03)), 3)
-        spine_x = round(spine_center_x - spine_width / 2.0, 3)
-        spine_y = round(lower_aisle_y + lower_aisle_height, 3)
-        spine_top = round(upper_aisle_y, 3)
-        if spine_top > spine_y:
-            drive_actions.append({
-                'task': 'rectangle',
-                'layer': 'PAVEMENT',
-                'origin': [spine_x, spine_y],
-                'width': spine_width,
-                'height': round(spine_top - spine_y, 3),
-            })
-    elif building_rects:
-        building_min_y = min(bounds[1] for bounds in building_rects)
-        building_max_x = max(bounds[2] for bounds in building_rects)
-        building_min_x = min(bounds[0] for bounds in building_rects)
-        spine_width = round(max(4.0, min(7.0, (building_max_x - building_min_x) * 0.03)), 3)
-        spine_x = round((upper_min_x + upper_max_x) / 2.0 - spine_width / 2.0, 3)
-        spine_y = round(0.0, 3)
-        spine_top = round(upper_aisle_y, 3)
-        if spine_top > spine_y:
-            drive_actions.append({
-                'task': 'rectangle',
-                'layer': 'PAVEMENT',
-                'origin': [spine_x, spine_y],
-                'width': spine_width,
-                'height': round(spine_top - spine_y, 3),
-            })
 
     return drive_actions
 
