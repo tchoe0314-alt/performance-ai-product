@@ -90,6 +90,35 @@ class LayoutFallbackActionsTests(unittest.TestCase):
         self.assertIn("WALK", layers)
         self.assertIn("FIRE", layers)
 
+    def test_semantic_cleanup_replaces_schematic_roads_with_collectors(self) -> None:
+        actions = [
+            {"task": "rectangle", "layer": "PARKING", "origin": [239.764, 643.265], "width": 156, "height": 48},
+            {"task": "rectangle", "layer": "PARKING", "origin": [411.45, 643.265], "width": 156, "height": 48},
+            {"task": "rectangle", "layer": "PARKING", "origin": [583.136, 643.265], "width": 156, "height": 48},
+            {"task": "rectangle", "layer": "PARKING", "origin": [431.45, 197.971], "width": 116, "height": 48},
+            {"task": "rectangle", "layer": "BUILDING", "origin": [257.764, 709.265], "width": 120, "height": 60},
+            {"task": "rectangle", "layer": "BUILDING", "origin": [429.45, 709.265], "width": 120, "height": 60},
+            {"task": "rectangle", "layer": "BUILDING", "origin": [601.136, 709.265], "width": 120, "height": 60},
+            {"task": "rectangle", "layer": "BUILDING", "origin": [449.45, 263.971], "width": 80, "height": 50},
+            {"task": "circle", "layer": "ROAD", "center": [208.819, 516.618], "radius": 45},
+            {"task": "circle", "layer": "ROAD", "center": [770.081, 516.618], "radius": 45},
+            {"task": "polyline", "layer": "ROAD", "points": [[208.819, 215.026], [770.081, 215.026], [770.081, 818.21], [208.819, 818.21], [208.819, 215.026]], "closed": False},
+            {"task": "polyline", "layer": "ROAD", "points": [[489.45, 0], [489.45, 215.026]], "closed": False},
+            {"task": "polyline", "layer": "FIRE", "points": [[208.819, 215.026], [770.081, 215.026], [770.081, 818.21], [208.819, 818.21], [208.819, 215.026]], "closed": False},
+            {"task": "polyline", "layer": "FIRE", "points": [[489.45, 0], [489.45, 215.026]], "closed": False},
+        ]
+
+        normalized = _synthesize_layout_semantics(actions)
+        road_tasks = [
+            (str(action.get("task", "")).lower(), str(action.get("layer", "")).upper())
+            for action in normalized
+            if str(action.get("layer", "")).upper() in {"ROAD", "FIRE"}
+        ]
+
+        self.assertTrue(all(task != "circle" for task, _ in road_tasks))
+        self.assertTrue(all(task != "polyline" for task, _ in road_tasks))
+        self.assertGreaterEqual(sum(1 for task, layer in road_tasks if task == "rectangle" and layer == "ROAD"), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

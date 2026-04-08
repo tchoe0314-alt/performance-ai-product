@@ -309,6 +309,94 @@ def _rect_gap(a: Tuple[float, float, float, float], b: Tuple[float, float, float
     return gap_x, gap_y
 
 
+def _polyline_bounds(points: Sequence[Sequence[Any]]) -> Optional[Tuple[float, float, float, float]]:
+    coords = [safe_list(point) for point in safe_list(points)]
+    coords = [point for point in coords if len(point) >= 2]
+    if len(coords) < 2:
+        return None
+    xs = [safe_float(point[0], 0.0) for point in coords]
+    ys = [safe_float(point[1], 0.0) for point in coords]
+    min_x = min(xs)
+    max_x = max(xs)
+    min_y = min(ys)
+    max_y = max(ys)
+    return min_x, min_y, max_x - min_x, max_y - min_y
+
+
+def _synthesize_layout_collectors(
+    parking_rects: Sequence[Tuple[Tuple[float, float, float, float], Dict[str, Any]]]
+) -> List[Dict[str, Any]]:
+    if not parking_rects:
+        return []
+
+    rows = sorted(
+        [
+            {
+                "bounds": bounds,
+                "cx": _rect_center(bounds)[0],
+                "cy": _rect_center(bounds)[1],
+            }
+            for bounds, _ in parking_rects
+        ],
+        key=lambda item: item["cy"],
+        reverse=True,
+    )
+    centers_y = [item["cy"] for item in rows]
+    split_y = (max(centers_y) + min(centers_y)) / 2.0 if centers_y else 0.0
+    upper_row = [item["bounds"] for item in rows if item["cy"] >= split_y]
+    lower_row = [item["bounds"] for item in rows if item["cy"] < split_y]
+    if not upper_row:
+        upper_row = [item["bounds"] for item in rows]
+
+    actions: List[Dict[str, Any]] = []
+
+    def _append_rect(bounds: Optional[Tuple[float, float, float, float]], layer: str) -> None:
+        if not bounds:
+            return
+        x, y, w, h = bounds
+        if w <= 0 or h <= 0:
+            return
+        actions.append(
+            {
+                "task": "rectangle",
+                "layer": layer,
+                "origin": [round(x, 3), round(y, 3)],
+                "width": round(w, 3),
+                "height": round(h, 3),
+            }
+        )
+
+    def _collector_for_row(row: Sequence[Tuple[float, float, float, float]]) -> Optional[Tuple[float, float, float, float]]:
+        if not row:
+            return None
+        row_min_x = min(x for x, _, _, _ in row)
+        row_max_x = max(x + w for x, _, w, _ in row)
+        row_min_y = min(y for _, y, _, _ in row)
+        parking_height = max(h for _, _, _, h in row)
+        collector_h = round(max(8.0, min(12.0, parking_height * 0.18)), 3)
+        collector_y = round(row_min_y - collector_h - 3.0, 3)
+        collector_x = round(row_min_x - 2.0, 3)
+        collector_w = round((row_max_x - row_min_x) + 4.0, 3)
+        return (collector_x, collector_y, collector_w, collector_h)
+
+    upper_collector = _collector_for_row(upper_row)
+    lower_collector = _collector_for_row(lower_row) if lower_row else None
+    _append_rect(upper_collector, "ROAD")
+    _append_rect(upper_collector, "FIRE")
+    _append_rect(lower_collector, "ROAD")
+
+    if upper_collector and lower_collector:
+        ux, uy, uw, uh = upper_collector
+        lx, ly, lw, lh = lower_collector
+        connector_w = round(max(10.0, min(14.0, min(uw, lw) * 0.08)), 3)
+        connector_x = round(max(ux, lx) + 12.0, 3)
+        connector_y = round(ly + lh, 3)
+        connector_h = round(max(0.0, uy - connector_y), 3)
+        _append_rect((connector_x, connector_y, connector_w, connector_h), "ROAD")
+
+    return actions
+
+
 def _synthesize_layout_semantics(actions: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     normalized: List[Dict[str, Any]] = []
     seen: set[str] = set()
@@ -415,6 +503,38 @@ def _synthesize_layout_semantics(actions: Sequence[Dict[str, Any]]) -> List[Dict
             if key not in seen:
                 seen.add(key)
                 normalized.append(out)
+
+    if building_rects and parking_rects:
+        schematic_road_actions: List[Dict[str, Any]] = []
+        for action in normalized:
+            layer = safe_str(safe_dict(action).get("layer")).upper()
+            task = lower_text(safe_dict(action).get("task"))
+            if layer not in {"ROAD", "FIRE"}:
+                continue
+            if task == "circle":
+                schematic_road_actions.append(action)
+                continue
+            if task == "polyline":
+                bounds = _polyline_bounds(safe_list(safe_dict(action).get("points")))
+                if not bounds:
+                    continue
+                _, _, w, h = bounds
+                if w > 300.0 and h > 300.0:
+                    schematic_road_actions.append(action)
+                    continue
+                if max(w, h) > 120.0 and min(w, h) < 24.0:
+                    schematic_road_actions.append(action)
+                    continue
+
+        if schematic_road_actions:
+            bad_keys = {repr(safe_dict(action)) for action in schematic_road_actions}
+            normalized = [action for action in normalized if repr(safe_dict(action)) not in bad_keys]
+            seen = {repr(safe_dict(action)) for action in normalized}
+            for action in _synthesize_layout_collectors(parking_rects):
+                key = repr(action)
+                if key not in seen:
+                    seen.add(key)
+                    normalized.append(action)
 
     return normalized
 
