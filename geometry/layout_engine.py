@@ -1225,10 +1225,10 @@ def _layout_to_actions(layout: Dict[str, Any]) -> List[Dict[str, Any]]:
     actions: List[Dict[str, Any]] = [
         _rect_action_from_obj(layout["lot"], "LOT", "SITE"),
         _rect_action_from_obj(layout["buildable"], "BUILDABLE", "SETBACK"),
-        _rect_action_from_obj(layout["frontage_road"], "FRONTAGE ROAD", "ROAD"),
+        _rect_action_from_obj(layout["frontage_road"], "FRONTAGE", "PAVEMENT"),
         _rect_action_from_obj(layout["building"], "BLDG", "BUILDING"),
         _rect_action_from_obj(layout["parking"], "PARK", "PARKING"),
-        _rect_action_from_obj(layout["driveway"], "DRIVE", "ROAD"),
+        _rect_action_from_obj(layout["driveway"], "ACCESS", "PAVEMENT"),
     ]
 
     for line in layout.get("parking_stall_lines", []):
@@ -1247,9 +1247,6 @@ def _layout_to_actions(layout: Dict[str, Any]) -> List[Dict[str, Any]]:
                 label=layout["fire_lane"].get("label"),
             )
         )
-
-    driveway_cl = _driveway_centerline(layout["driveway"])
-    actions.append(_polyline_action(driveway_cl, layer="ROAD", label="DRIVE-CL"))
 
     if layout.get("future_pad"):
         actions.append(_rect_action_from_obj(layout["future_pad"], "FUTURE PAD", "SITE"))
