@@ -627,13 +627,13 @@ def draw_rectangle(ax, action):
         fill_alpha = 0.08
         facecolor = get_color(action)
     elif layer == "ROAD":
-        fill_alpha = 0.02
-        facecolor = get_color(action)
-    elif layer == "PAVEMENT":
         fill_alpha = 0.06
         facecolor = get_color(action)
+    elif layer == "PAVEMENT":
+        fill_alpha = 0.10
+        facecolor = get_color(action)
     elif layer == "PARKING":
-        fill_alpha = 0.08
+        fill_alpha = 0.14
         facecolor = get_color(action)
     elif layer == "WALK":
         fill_alpha = 0.10
@@ -654,6 +654,21 @@ def draw_rectangle(ax, action):
         linestyle=get_linestyle(action),
     )
     ax.add_patch(rect)
+
+    if layer == "PARKING" and w >= 24 and h >= 10:
+        stripe_spacing = max(16.0, min(22.0, w / 6.0))
+        stripe_x = x + stripe_spacing
+        stripe_y1 = y + max(1.5, h * 0.12)
+        stripe_y2 = y + h - max(1.5, h * 0.12)
+        while stripe_x < x + w - stripe_spacing * 0.35:
+            ax.plot(
+                [stripe_x, stripe_x],
+                [stripe_y1, stripe_y2],
+                linewidth=0.8,
+                color="#ffffff",
+                alpha=0.65,
+            )
+            stripe_x += stripe_spacing
 
     preview_text = preview_label(action)
     if preview_text:
