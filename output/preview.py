@@ -400,13 +400,13 @@ def _synthesize_drive_aisles(building_rects, parking_rects):
     upper_min_y = min(bounds[1] for bounds in upper_row)
     upper_max_y = max(bounds[3] for bounds in upper_row)
     upper_parking_height = max(bounds[3] - bounds[1] for bounds in upper_row)
-    upper_aisle_height = round(max(10.0, upper_parking_height * 0.55), 3)
-    upper_aisle_y = round(upper_min_y - upper_aisle_height - 6.0, 3)
+    upper_aisle_height = round(max(6.0, min(10.0, upper_parking_height * 0.28)), 3)
+    upper_aisle_y = round(upper_min_y - upper_aisle_height - 2.5, 3)
     upper_aisle = {
         'task': 'rectangle',
         'layer': 'ROAD',
-        'origin': [round(upper_min_x - 8.0, 3), upper_aisle_y],
-        'width': round((upper_max_x - upper_min_x) + 16.0, 3),
+        'origin': [round(upper_min_x - 2.0, 3), upper_aisle_y],
+        'width': round((upper_max_x - upper_min_x) + 4.0, 3),
         'height': upper_aisle_height,
     }
     drive_actions.append(upper_aisle)
@@ -417,13 +417,13 @@ def _synthesize_drive_aisles(building_rects, parking_rects):
         lower_min_y = min(bounds[1] for bounds in lower_row)
         lower_max_y = max(bounds[3] for bounds in lower_row)
         lower_parking_height = max(bounds[3] - bounds[1] for bounds in lower_row)
-        lower_aisle_height = round(max(10.0, lower_parking_height * 0.55), 3)
-        lower_aisle_y = round(lower_min_y - lower_aisle_height - 6.0, 3)
+        lower_aisle_height = round(max(6.0, min(10.0, lower_parking_height * 0.28)), 3)
+        lower_aisle_y = round(lower_min_y - lower_aisle_height - 2.5, 3)
         lower_aisle = {
             'task': 'rectangle',
             'layer': 'ROAD',
-            'origin': [round(lower_min_x - 8.0, 3), lower_aisle_y],
-            'width': round((lower_max_x - lower_min_x) + 16.0, 3),
+            'origin': [round(lower_min_x - 2.0, 3), lower_aisle_y],
+            'width': round((lower_max_x - lower_min_x) + 4.0, 3),
             'height': lower_aisle_height,
         }
         drive_actions.append(lower_aisle)
@@ -431,7 +431,7 @@ def _synthesize_drive_aisles(building_rects, parking_rects):
         upper_center_x = (upper_min_x + upper_max_x) / 2.0
         lower_center_x = (lower_min_x + lower_max_x) / 2.0
         spine_center_x = round((upper_center_x + lower_center_x) / 2.0, 3)
-        spine_width = round(max(12.0, min(18.0, (upper_max_x - upper_min_x) * 0.08)), 3)
+        spine_width = round(max(6.0, min(10.0, (upper_max_x - upper_min_x) * 0.045)), 3)
         spine_x = round(spine_center_x - spine_width / 2.0, 3)
         spine_y = round(lower_aisle_y + lower_aisle_height, 3)
         spine_top = round(upper_aisle_y, 3)
@@ -447,7 +447,7 @@ def _synthesize_drive_aisles(building_rects, parking_rects):
         building_min_y = min(bounds[1] for bounds in building_rects)
         building_max_x = max(bounds[2] for bounds in building_rects)
         building_min_x = min(bounds[0] for bounds in building_rects)
-        spine_width = round(max(12.0, min(18.0, (building_max_x - building_min_x) * 0.08)), 3)
+        spine_width = round(max(6.0, min(10.0, (building_max_x - building_min_x) * 0.045)), 3)
         spine_x = round((upper_min_x + upper_max_x) / 2.0 - spine_width / 2.0, 3)
         spine_y = round(0.0, 3)
         spine_top = round(upper_aisle_y, 3)
@@ -630,7 +630,7 @@ def draw_rectangle(ax, action):
         fill_alpha = 0.08
         facecolor = get_color(action)
     elif layer == "ROAD":
-        fill_alpha = 0.07
+        fill_alpha = 0.02
         facecolor = get_color(action)
     elif layer == "PAVEMENT":
         fill_alpha = 0.06
@@ -642,8 +642,8 @@ def draw_rectangle(ax, action):
         fill_alpha = 0.10
         facecolor = get_color(action)
     elif layer == "FIRE":
-        fill_alpha = 0.05
-        facecolor = get_color(action)
+        fill_alpha = 0.0
+        facecolor = "none"
 
     rect = Rectangle(
         (x, y),
