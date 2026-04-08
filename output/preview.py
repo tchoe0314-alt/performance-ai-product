@@ -629,8 +629,20 @@ def draw_rectangle(ax, action):
     if layer == "BUILDING":
         fill_alpha = 0.08
         facecolor = get_color(action)
+    elif layer == "ROAD":
+        fill_alpha = 0.07
+        facecolor = get_color(action)
     elif layer == "PAVEMENT":
         fill_alpha = 0.06
+        facecolor = get_color(action)
+    elif layer == "PARKING":
+        fill_alpha = 0.08
+        facecolor = get_color(action)
+    elif layer == "WALK":
+        fill_alpha = 0.10
+        facecolor = get_color(action)
+    elif layer == "FIRE":
+        fill_alpha = 0.05
         facecolor = get_color(action)
 
     rect = Rectangle(
