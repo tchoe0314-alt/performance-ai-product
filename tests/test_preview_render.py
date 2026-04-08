@@ -164,6 +164,10 @@ class PreviewRenderTests(unittest.TestCase):
         self.assertGreaterEqual(len(pavement_rectangles), 2)
         self.assertGreaterEqual(len(fire_rectangles), 2)
         self.assertLessEqual(float(pavement_rectangles[0].get("width") or 0.0), 180.0)
+        self.assertTrue(
+            any(float(action.get("origin", [0.0])[0]) >= 740.0 for action in pavement_rectangles),
+            "expected synthesized connector pavement to route along the layout edge",
+        )
 
 
 if __name__ == "__main__":

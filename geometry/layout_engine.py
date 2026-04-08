@@ -1648,6 +1648,38 @@ def _append_line_network_actions(actions: List[Dict[str, Any]], items: List[Dict
             actions.append(_text_action(mx + 1.0, my + 1.0, f"{width_prefix} {_safe_float(item.get('width'), 0.0):.1f}", layer=layer, h=0.85))
 
 
+def _surface_rect_from_line_item(item: Dict[str, Any], *, layer: str) -> Optional[Dict[str, Any]]:
+    pts = item.get("points")
+    if not isinstance(pts, list) or len(pts) < 2:
+        return None
+    start = pts[0]
+    end = pts[-1]
+    if not (
+        isinstance(start, (list, tuple))
+        and len(start) >= 2
+        and isinstance(end, (list, tuple))
+        and len(end) >= 2
+    ):
+        return None
+    x1 = _safe_float(start[0], 0.0)
+    y1 = _safe_float(start[1], 0.0)
+    x2 = _safe_float(end[0], 0.0)
+    y2 = _safe_float(end[1], 0.0)
+    width = max(0.0, _safe_float(item.get("width"), 0.0))
+    if width <= 0.0:
+        return None
+    dx = abs(x2 - x1)
+    dy = abs(y2 - y1)
+    if dx <= 1e-6 and dy <= 1e-6:
+        return None
+    if dx >= dy:
+        rect = _rect(min(x1, x2), min(y1, y2) - width / 2.0, max(dx, 1.0), width)
+    else:
+        rect = _rect(min(x1, x2) - width / 2.0, min(y1, y2), width, max(dy, 1.0))
+    label = _safe_str(item.get("label"), "")
+    return _rect_action_from_obj(rect, label, layer)
+
+
 def _append_drainage_structure_actions(actions: List[Dict[str, Any]], structures: List[Dict[str, Any]]) -> None:
     for s in structures:
         x = _safe_float(s.get("x"), 0.0)
@@ -1817,10 +1849,25 @@ def _build_expanded_plan(parsed: Dict[str, Any]) -> Dict[str, Any]:
 
     _append_building_actions(actions, buildings)
     _append_parking_actions(actions, parking_areas)
-    _append_line_network_actions(actions, drive_aisles, width_prefix="W")
-    _append_line_network_actions(actions, roads_network, width_prefix="RW")
+    for item in drive_aisles:
+        surface = _surface_rect_from_line_item(item, layer="PAVEMENT")
+        if surface:
+            actions.append(surface)
+        else:
+            _append_line_network_actions(actions, [item], width_prefix="W")
+    for item in roads_network:
+        surface = _surface_rect_from_line_item(item, layer="ROAD")
+        if surface:
+            actions.append(surface)
+        else:
+            _append_line_network_actions(actions, [item], width_prefix="RW")
     _append_line_network_actions(actions, sidewalks, width_prefix="SW")
-    _append_line_network_actions(actions, fire_lanes, width_prefix="FIRE")
+    for item in fire_lanes:
+        surface = _surface_rect_from_line_item(item, layer="FIRE")
+        if surface:
+            actions.append(surface)
+        else:
+            _append_line_network_actions(actions, [item], width_prefix="FIRE")
     _append_drainage_structure_actions(actions, drainage_structures)
     _append_pipe_actions(actions, pipe_network)
     _append_pond_actions(actions, ponds)

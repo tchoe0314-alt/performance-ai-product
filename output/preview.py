@@ -400,6 +400,9 @@ def _synthesize_drive_aisles(building_rects, parking_rects):
         if not row_bounds:
             return [], 0.0, 0.0
         row_min_y = min(bounds[1] for bounds in row_bounds)
+        row_max_y = max(bounds[3] for bounds in row_bounds)
+        row_min_x = min(bounds[0] for bounds in row_bounds)
+        row_max_x = max(bounds[2] for bounds in row_bounds)
         parking_height = max(bounds[3] - bounds[1] for bounds in row_bounds)
         aisle_height = round(max(4.0, min(7.0, parking_height * 0.18)), 3)
         aisle_y = round(row_min_y - aisle_height - 2.0, 3)
@@ -414,14 +417,61 @@ def _synthesize_drive_aisles(building_rects, parking_rects):
                 "height": aisle_height,
             }
             aisles.append(aisle)
-        return aisles, aisle_y, aisle_height
+        return aisles, aisle_y, aisle_height, (row_min_x, row_min_y, row_max_x, row_max_y)
 
-    upper_aisles, upper_aisle_y, upper_aisle_height = _row_aisles(upper_row)
+    upper_aisles, upper_aisle_y, upper_aisle_height, upper_span = _row_aisles(upper_row)
     drive_actions.extend(upper_aisles)
 
+    lower_aisles = []
+    lower_aisle_y = 0.0
+    lower_aisle_height = 0.0
+    lower_span = None
     if lower_row:
-        lower_aisles, lower_aisle_y, lower_aisle_height = _row_aisles(lower_row)
+        lower_aisles, lower_aisle_y, lower_aisle_height, lower_span = _row_aisles(lower_row)
         drive_actions.extend(lower_aisles)
+
+    if upper_span:
+        upper_min_x, _, upper_max_x, _ = upper_span
+        connector_width = round(max(8.0, min(14.0, (upper_max_x - upper_min_x) * 0.035)), 3)
+        connector_x = round(upper_max_x + 12.0, 3)
+
+        if lower_span:
+            lower_min_x, _, lower_max_x, _ = lower_span
+            vertical_y = round(lower_aisle_y + lower_aisle_height, 3)
+            vertical_h = round(max(10.0, upper_aisle_y - vertical_y), 3)
+            drive_actions.append(
+                {
+                    "task": "rectangle",
+                    "layer": "PAVEMENT",
+                    "origin": [connector_x, vertical_y],
+                    "width": connector_width,
+                    "height": vertical_h,
+                }
+            )
+            lower_connector_x = round(min(lower_max_x, connector_x) - 2.0, 3)
+            lower_connector_w = round(max(18.0, abs(lower_connector_x - lower_min_x)), 3)
+            drive_actions.append(
+                {
+                    "task": "rectangle",
+                    "layer": "PAVEMENT",
+                    "origin": [round(lower_min_x + 2.0, 3), lower_aisle_y],
+                    "width": lower_connector_w,
+                    "height": lower_aisle_height,
+                }
+            )
+        else:
+            site_min_y = min(bounds[1] for _, bounds in parking_with_centers)
+            vertical_y = round(site_min_y - 40.0, 3)
+            vertical_h = round(max(10.0, upper_aisle_y - vertical_y), 3)
+            drive_actions.append(
+                {
+                    "task": "rectangle",
+                    "layer": "PAVEMENT",
+                    "origin": [connector_x, vertical_y],
+                    "width": connector_width,
+                    "height": vertical_h,
+                }
+            )
 
     return drive_actions
 
