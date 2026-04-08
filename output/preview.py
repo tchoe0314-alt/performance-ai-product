@@ -439,48 +439,19 @@ def _synthesize_drive_aisles(building_rects, parking_rects):
         lower_aisles, lower_aisle_y, lower_aisle_height, lower_span = _row_aisles(lower_row)
         drive_actions.extend(lower_aisles)
 
-    if upper_span:
-        upper_min_x, _, upper_max_x, _ = upper_span
-        connector_width = round(max(8.0, min(12.0, (upper_max_x - upper_min_x) * 0.03)), 3)
-        connector_x = round(upper_max_x - connector_width * 0.5, 3)
-
-        if lower_span:
-            lower_min_x, _, lower_max_x, _ = lower_span
-            vertical_y = round(lower_aisle_y + lower_aisle_height, 3)
-            vertical_h = round(max(10.0, upper_aisle_y - vertical_y), 3)
-            drive_actions.append(
-                {
-                    "task": "rectangle",
-                    "layer": "PAVEMENT",
-                    "origin": [connector_x, vertical_y],
-                    "width": connector_width,
-                    "height": vertical_h,
-                }
-            )
-            retail_collector_x = round(lower_min_x + 2.0, 3)
-            retail_collector_w = round(max(24.0, (lower_max_x - lower_min_x) - 4.0), 3)
-            drive_actions.append(
-                {
-                    "task": "rectangle",
-                    "layer": "PAVEMENT",
-                    "origin": [retail_collector_x, lower_aisle_y],
-                    "width": retail_collector_w,
-                    "height": lower_aisle_height,
-                }
-            )
-        else:
-            site_min_y = min(bounds[1] for _, bounds in parking_with_centers)
-            vertical_y = round(site_min_y - 40.0, 3)
-            vertical_h = round(max(10.0, upper_aisle_y - vertical_y), 3)
-            drive_actions.append(
-                {
-                    "task": "rectangle",
-                    "layer": "PAVEMENT",
-                    "origin": [connector_x, vertical_y],
-                    "width": connector_width,
-                    "height": vertical_h,
-                }
-            )
+    if lower_span:
+        lower_min_x, _, lower_max_x, _ = lower_span
+        retail_collector_x = round(lower_min_x + 2.0, 3)
+        retail_collector_w = round(max(24.0, (lower_max_x - lower_min_x) - 4.0), 3)
+        drive_actions.append(
+            {
+                "task": "rectangle",
+                "layer": "PAVEMENT",
+                "origin": [retail_collector_x, lower_aisle_y],
+                "width": retail_collector_w,
+                "height": lower_aisle_height,
+            }
+        )
 
     return drive_actions
 
