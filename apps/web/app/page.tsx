@@ -1788,6 +1788,12 @@ export default function PerformanceAIDashboard() {
       token: authToken,
     });
     const nextProjects = Array.isArray(data.projects) ? data.projects : [];
+    nextProjects.sort((a, b) => {
+      const aSaved = a.has_result ? 1 : 0;
+      const bSaved = b.has_result ? 1 : 0;
+      if (aSaved !== bSaved) return bSaved - aSaved;
+      return (b.updated_at ?? 0) - (a.updated_at ?? 0);
+    });
     setProjects(nextProjects);
   };
 
@@ -2893,6 +2899,14 @@ export default function PerformanceAIDashboard() {
         : workflowRuns[0].run_id,
     );
   }, [workflowRuns]);
+
+  useEffect(() => {
+    if (!token || projectId || projects.length === 0) return;
+    const preferredProject =
+      projects.find((project) => project.has_result) ?? projects[0];
+    if (!preferredProject) return;
+    void loadProject(preferredProject.project_id);
+  }, [token, projectId, projects]);
 
   if (!user) {
     return (
