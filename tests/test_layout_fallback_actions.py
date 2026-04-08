@@ -69,7 +69,7 @@ class LayoutFallbackActionsTests(unittest.TestCase):
         ]
         centered_spines = [
             action for action in narrow_vertical_roads
-            if 430.0 <= float(action.get("origin", [0])[0]) <= 520.0
+            if 300.0 <= float(action.get("origin", [0])[0]) <= 680.0
         ]
 
         self.assertEqual(len(centered_spines), 0)

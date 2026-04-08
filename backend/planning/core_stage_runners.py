@@ -244,17 +244,17 @@ def _layout_fallback_actions(
     for idx, target in enumerate(access_targets):
         ax, ay, aw, ah = target
         access_w = round(max(14.0, min(20.0, aw * 0.12)), 3)
-        target_center_x = ax + aw / 2.0
-        lot_center_x = lot_x + lot_w / 2.0
         if len(access_targets) == 1:
+            target_center_x = ax + aw / 2.0
+            lot_center_x = lot_x + lot_w / 2.0
             if target_center_x >= lot_center_x:
-                access_x = round(ax + aw - access_w - 8.0, 3)
+                access_x = round(lot_x + lot_w - access_w - 18.0, 3)
             else:
-                access_x = round(ax + 8.0, 3)
+                access_x = round(lot_x + 18.0, 3)
         elif idx == 0:
-            access_x = round(ax + aw - access_w - 8.0, 3)
+            access_x = round(lot_x + lot_w - access_w - 18.0, 3)
         else:
-            access_x = round(ax + 8.0, 3)
+            access_x = round(lot_x + 18.0, 3)
         if frontage_on_bottom:
             access_y = round(lot_y, 3)
             access_h = round(max(18.0, ay - lot_y), 3)
