@@ -202,7 +202,17 @@ def _is_wrapper_layout_shape(action, building_bounds):
     total_building_area = sum(_bounds_area(item["bounds"]) for item in contained_buildings)
     if max_building_area <= 0:
         return False
-    return wrapper_area >= max(max_building_area * 3.5, total_building_area * 1.15)
+    min_building_x = min(item["bounds"][0] for item in contained_buildings)
+    min_building_y = min(item["bounds"][1] for item in contained_buildings)
+    max_building_x = max(item["bounds"][2] for item in contained_buildings)
+    max_building_y = max(item["bounds"][3] for item in contained_buildings)
+    wrapper_extends_past_layout = (
+        bounds[0] < min_building_x - 10.0
+        or bounds[1] < min_building_y - 10.0
+        or bounds[2] > max_building_x + 10.0
+        or bounds[3] > max_building_y + 10.0
+    )
+    return wrapper_extends_past_layout and wrapper_area >= max(max_building_area * 3.0, total_building_area * 1.1)
 
 
 def _is_schematic_access_shape(action, building_bounds):
@@ -217,13 +227,15 @@ def _is_schematic_access_shape(action, building_bounds):
         radius = safe_num(action.get("radius"))
         if not building_bounds or radius < 6.0:
             return False
+        center = safe_center(action)
         bounds = _action_bounds(action)
-        if not bounds:
+        if not bounds or center is None:
             return False
         min_building_x = min(item["bounds"][0] for item in building_bounds)
         min_building_y = min(item["bounds"][1] for item in building_bounds)
         max_building_x = max(item["bounds"][2] for item in building_bounds)
         max_building_y = max(item["bounds"][3] for item in building_bounds)
+        cx, cy = center
         line_min_x, line_min_y, line_max_x, line_max_y = bounds
         near_layout = (
             line_max_x >= min_building_x - 30.0
@@ -237,7 +249,15 @@ def _is_schematic_access_shape(action, building_bounds):
             or line_min_y < min_building_y - 10.0
             or line_max_y > max_building_y + 10.0
         )
-        return near_layout and extends_outside_layout
+        is_side_circle = (
+            radius >= 20.0
+            and min_building_y - 80.0 <= cy <= max_building_y + 80.0
+            and (
+                abs(cx - min_building_x) <= radius + 10.0
+                or abs(cx - max_building_x) <= radius + 10.0
+            )
+        )
+        return (near_layout and extends_outside_layout) or is_side_circle
     if task != "polyline":
         return False
     points = safe_points(action)
@@ -278,7 +298,11 @@ def _is_schematic_access_shape(action, building_bounds):
         or line_min_y < min_building_y - 40.0
         or line_max_y > max_building_y + 40.0
     )
-    return (spans_into_layout or near_layout) and extends_outside_layout
+    crosses_layout_center = (
+        min_building_x <= (line_min_x + line_max_x) / 2.0 <= max_building_x
+        or min_building_y <= (line_min_y + line_max_y) / 2.0 <= max_building_y
+    )
+    return ((spans_into_layout or near_layout) and extends_outside_layout) or (is_axis_aligned and extends_outside_layout and crosses_layout_center)
 
 
 def get_linewidth(action):
