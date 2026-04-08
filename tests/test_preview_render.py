@@ -78,10 +78,24 @@ class PreviewRenderTests(unittest.TestCase):
 
         filtered = _filtered_preview_actions(actions)
         kept = [(str(action.get("layer") or "").upper(), str(action.get("task") or "").lower()) for action in filtered]
+        road_rectangles = [
+            action
+            for action in filtered
+            if str(action.get("layer") or "").upper() == "ROAD"
+            and str(action.get("task") or "").lower() == "rectangle"
+        ]
 
         self.assertIn(("PARKING", "rectangle"), kept)
         self.assertIn(("WALK", "rectangle"), kept)
-        self.assertNotIn(("ROAD", "rectangle"), kept)
+        self.assertFalse(
+            any(
+                action.get("origin") == [10, 20]
+                and action.get("width") == 74
+                and action.get("height") == 62
+                for action in road_rectangles
+            )
+        )
+        self.assertGreaterEqual(len(road_rectangles), 1)
 
     def test_non_layout_scene_keeps_engineering_geometry_available(self):
         actions = [
@@ -109,6 +123,39 @@ class PreviewRenderTests(unittest.TestCase):
         self.assertIn("PARKING", kept_layers)
         self.assertIn("WALK", kept_layers)
         self.assertIn("FIRE", kept_layers)
+
+    def test_layout_scene_synthesizes_drive_aisles_when_only_wrapper_roads_exist(self):
+        actions = [
+            {"layer": "BUILDING", "task": "rectangle", "origin": [220, 700], "width": 120, "height": 60, "label": "BLDG 1"},
+            {"layer": "BUILDING", "task": "rectangle", "origin": [410, 700], "width": 120, "height": 60, "label": "BLDG 2"},
+            {"layer": "BUILDING", "task": "rectangle", "origin": [600, 700], "width": 120, "height": 60, "label": "BLDG 3"},
+            {"layer": "BUILDING", "task": "rectangle", "origin": [435, 240], "width": 90, "height": 60, "label": "RETAIL PAD"},
+            {"layer": "PARKING", "task": "rectangle", "origin": [200, 560], "width": 160, "height": 70},
+            {"layer": "PARKING", "task": "rectangle", "origin": [390, 560], "width": 160, "height": 70},
+            {"layer": "PARKING", "task": "rectangle", "origin": [580, 560], "width": 160, "height": 70},
+            {"layer": "PARKING", "task": "rectangle", "origin": [420, 120], "width": 120, "height": 70},
+            {"layer": "ROAD", "task": "polyline", "points": [[208.819, 215.026], [770.081, 215.026], [770.081, 818.21], [208.819, 818.21], [208.819, 215.026]]},
+            {"layer": "ROAD", "task": "polyline", "points": [[489.45, 0.0], [489.45, 215.026]]},
+            {"layer": "ROAD", "task": "circle", "center": [208.819, 516.618], "radius": 45.0},
+            {"layer": "ROAD", "task": "circle", "center": [770.081, 516.618], "radius": 45.0},
+        ]
+
+        filtered = _filtered_preview_actions(actions)
+        road_rectangles = [
+            action
+            for action in filtered
+            if str(action.get("layer") or "").upper() == "ROAD"
+            and str(action.get("task") or "").lower() == "rectangle"
+        ]
+        fire_rectangles = [
+            action
+            for action in filtered
+            if str(action.get("layer") or "").upper() == "FIRE"
+            and str(action.get("task") or "").lower() == "rectangle"
+        ]
+
+        self.assertGreaterEqual(len(road_rectangles), 2)
+        self.assertGreaterEqual(len(fire_rectangles), 2)
 
 
 if __name__ == "__main__":

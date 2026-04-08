@@ -379,6 +379,90 @@ def _rect_gap(a, b):
     return gap_x, gap_y
 
 
+def _synthesize_drive_aisles(building_rects, parking_rects):
+    if not parking_rects:
+        return []
+    parking_with_centers = [(_rect_center(bounds), bounds) for bounds in parking_rects]
+    centers_y = [center[1] for center, _ in parking_with_centers]
+    if not centers_y:
+        return []
+    max_center_y = max(centers_y)
+    min_center_y = min(centers_y)
+    row_split = (max_center_y + min_center_y) / 2.0
+    upper_row = [bounds for (center, bounds) in parking_with_centers if center[1] >= row_split]
+    lower_row = [bounds for (center, bounds) in parking_with_centers if center[1] < row_split]
+    if not upper_row:
+        upper_row = [bounds for _, bounds in parking_with_centers]
+    drive_actions = []
+
+    upper_min_x = min(bounds[0] for bounds in upper_row)
+    upper_max_x = max(bounds[2] for bounds in upper_row)
+    upper_min_y = min(bounds[1] for bounds in upper_row)
+    upper_max_y = max(bounds[3] for bounds in upper_row)
+    upper_parking_height = max(bounds[3] - bounds[1] for bounds in upper_row)
+    upper_aisle_height = round(max(10.0, upper_parking_height * 0.55), 3)
+    upper_aisle_y = round(upper_min_y - upper_aisle_height - 6.0, 3)
+    upper_aisle = {
+        'task': 'rectangle',
+        'layer': 'ROAD',
+        'origin': [round(upper_min_x - 8.0, 3), upper_aisle_y],
+        'width': round((upper_max_x - upper_min_x) + 16.0, 3),
+        'height': upper_aisle_height,
+    }
+    drive_actions.append(upper_aisle)
+
+    if lower_row:
+        lower_min_x = min(bounds[0] for bounds in lower_row)
+        lower_max_x = max(bounds[2] for bounds in lower_row)
+        lower_min_y = min(bounds[1] for bounds in lower_row)
+        lower_max_y = max(bounds[3] for bounds in lower_row)
+        lower_parking_height = max(bounds[3] - bounds[1] for bounds in lower_row)
+        lower_aisle_height = round(max(10.0, lower_parking_height * 0.55), 3)
+        lower_aisle_y = round(lower_min_y - lower_aisle_height - 6.0, 3)
+        lower_aisle = {
+            'task': 'rectangle',
+            'layer': 'ROAD',
+            'origin': [round(lower_min_x - 8.0, 3), lower_aisle_y],
+            'width': round((lower_max_x - lower_min_x) + 16.0, 3),
+            'height': lower_aisle_height,
+        }
+        drive_actions.append(lower_aisle)
+
+        upper_center_x = (upper_min_x + upper_max_x) / 2.0
+        lower_center_x = (lower_min_x + lower_max_x) / 2.0
+        spine_center_x = round((upper_center_x + lower_center_x) / 2.0, 3)
+        spine_width = round(max(12.0, min(18.0, (upper_max_x - upper_min_x) * 0.08)), 3)
+        spine_x = round(spine_center_x - spine_width / 2.0, 3)
+        spine_y = round(lower_aisle_y + lower_aisle_height, 3)
+        spine_top = round(upper_aisle_y, 3)
+        if spine_top > spine_y:
+            drive_actions.append({
+                'task': 'rectangle',
+                'layer': 'ROAD',
+                'origin': [spine_x, spine_y],
+                'width': spine_width,
+                'height': round(spine_top - spine_y, 3),
+            })
+    elif building_rects:
+        building_min_y = min(bounds[1] for bounds in building_rects)
+        building_max_x = max(bounds[2] for bounds in building_rects)
+        building_min_x = min(bounds[0] for bounds in building_rects)
+        spine_width = round(max(12.0, min(18.0, (building_max_x - building_min_x) * 0.08)), 3)
+        spine_x = round((upper_min_x + upper_max_x) / 2.0 - spine_width / 2.0, 3)
+        spine_y = round(0.0, 3)
+        spine_top = round(upper_aisle_y, 3)
+        if spine_top > spine_y:
+            drive_actions.append({
+                'task': 'rectangle',
+                'layer': 'ROAD',
+                'origin': [spine_x, spine_y],
+                'width': spine_width,
+                'height': round(spine_top - spine_y, 3),
+            })
+
+    return drive_actions
+
+
 def _synthesize_layout_preview_actions(actions):
     records = [dict(action) for action in actions if isinstance(action, dict)]
     building_rects = []
@@ -449,8 +533,22 @@ def _synthesize_layout_preview_actions(actions):
                 seen.add(key)
                 synthesized.append(walk_action)
 
-    if road_actions and not has_fire:
-        for action in road_actions:
+    useful_road_actions = [
+        action
+        for action in road_actions
+        if not _is_wrapper_layout_shape(action, [{"bounds": bounds} for bounds in building_rects])
+        and not _is_schematic_access_shape(action, [{"bounds": bounds} for bounds in building_rects])
+    ]
+    if building_rects and parking_rects and not useful_road_actions:
+        for action in _synthesize_drive_aisles(building_rects, parking_rects):
+            key = repr(action)
+            if key not in seen:
+                seen.add(key)
+                synthesized.append(action)
+                useful_road_actions.append(action)
+
+    if useful_road_actions and not has_fire:
+        for action in useful_road_actions:
             out = dict(action)
             out["layer"] = "FIRE"
             key = repr(out)
