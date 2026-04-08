@@ -153,57 +153,8 @@ def _layout_fallback_actions(
     if not placements:
         return []
     actions: List[Dict[str, Any]] = []
-    cluster_min_x = min(item["x"] for item in placements)
-    cluster_min_y = min(item["y"] for item in placements)
-    cluster_max_x = max(item["x"] + item["w"] for item in placements)
-    cluster_max_y = max(item["y"] + item["d"] for item in placements)
-
-    road_offset = max(40.0, min(lot_w, lot_h) * 0.05)
-    loop_min_x = max(lot_x + 15.0, cluster_min_x - road_offset)
-    loop_min_y = max(lot_y + 15.0, cluster_min_y - road_offset)
-    loop_max_x = min(lot_x + lot_w - 15.0, cluster_max_x + road_offset)
-    loop_max_y = min(lot_y + lot_h - 15.0, cluster_max_y + road_offset)
-
-    if loop_max_x > loop_min_x and loop_max_y > loop_min_y:
-        loop_points = [
-            [round(loop_min_x, 3), round(loop_min_y, 3)],
-            [round(loop_max_x, 3), round(loop_min_y, 3)],
-            [round(loop_max_x, 3), round(loop_max_y, 3)],
-            [round(loop_min_x, 3), round(loop_max_y, 3)],
-            [round(loop_min_x, 3), round(loop_min_y, 3)],
-        ]
-        actions.append({"task": "polyline", "layer": "ROAD", "points": loop_points, "closed": False})
-        actions.append({"task": "polyline", "layer": "FIRE", "points": loop_points, "closed": False})
-
-        entry_x = (loop_min_x + loop_max_x) / 2.0
-        if lower_text(street_edge) == "top":
-            entry_points = [[entry_x, lot_y + lot_h], [entry_x, loop_max_y]]
-        else:
-            entry_points = [[entry_x, lot_y], [entry_x, loop_min_y]]
-        actions.append({"task": "polyline", "layer": "ROAD", "points": [[round(pt[0], 3), round(pt[1], 3)] for pt in entry_points], "closed": False})
-        actions.append({"task": "polyline", "layer": "FIRE", "points": [[round(pt[0], 3), round(pt[1], 3)] for pt in entry_points], "closed": False})
-
-        culdesac_radius = max(45.0, min(lot_w, lot_h) * 0.045)
-        if culdesac_count >= 1:
-            actions.append(
-                {
-                    "task": "circle",
-                    "layer": "ROAD",
-                    "center": [round(loop_min_x, 3), round((loop_min_y + loop_max_y) / 2.0, 3)],
-                    "radius": round(culdesac_radius, 3),
-                }
-            )
-        if culdesac_count >= 2:
-            actions.append(
-                {
-                    "task": "circle",
-                    "layer": "ROAD",
-                    "center": [round(loop_max_x, 3), round((loop_min_y + loop_max_y) / 2.0, 3)],
-                    "radius": round(culdesac_radius, 3),
-                }
-            )
-
     frontage_on_bottom = lower_text(street_edge) != "top"
+    parking_rects: List[Tuple[float, float, float, float]] = []
     for placement in placements:
         px = safe_float(placement.get("x"), 0.0)
         py = safe_float(placement.get("y"), 0.0)
@@ -224,6 +175,7 @@ def _layout_fallback_actions(
                 "height": park_h,
             }
         )
+        parking_rects.append((park_x, park_y, park_w, park_h))
         walk_width = round(max(6.0, min(10.0, pw * 0.12)), 3)
         walk_x = round(px + (pw - walk_width) / 2.0, 3)
         if frontage_on_bottom:
@@ -241,6 +193,86 @@ def _layout_fallback_actions(
                 "height": walk_h,
             }
         )
+
+    if not parking_rects:
+        return actions
+
+    parking_centers_y = [py + ph / 2.0 for _, py, _, ph in parking_rects]
+    split_y = (max(parking_centers_y) + min(parking_centers_y)) / 2.0
+    upper_row = [rect for rect in parking_rects if rect[1] + rect[3] / 2.0 >= split_y]
+    lower_row = [rect for rect in parking_rects if rect[1] + rect[3] / 2.0 < split_y]
+    if not upper_row:
+        upper_row = list(parking_rects)
+
+    def _collector_for_row(row: Sequence[Tuple[float, float, float, float]]) -> Optional[Tuple[float, float, float, float]]:
+        if not row:
+            return None
+        row_min_x = min(x for x, _, _, _ in row)
+        row_max_x = max(x + w for x, _, w, _ in row)
+        row_min_y = min(y for _, y, _, _ in row)
+        parking_h = max(h for _, _, _, h in row)
+        collector_h = round(max(10.0, min(16.0, parking_h * 0.18)), 3)
+        collector_y = round(max(lot_y + 12.0, row_min_y - collector_h - 4.0), 3)
+        collector_x = round(max(lot_x + 12.0, row_min_x - 4.0), 3)
+        collector_w = round(min(lot_w - 24.0, (row_max_x - row_min_x) + 8.0), 3)
+        return (collector_x, collector_y, collector_w, collector_h)
+
+    upper_collector = _collector_for_row(upper_row)
+    lower_collector = _collector_for_row(lower_row) if lower_row else None
+
+    def _append_surface(rect: Optional[Tuple[float, float, float, float]], *, layer: str) -> None:
+        if not rect:
+            return
+        x, y, w, h = rect
+        if w <= 0 or h <= 0:
+            return
+        actions.append(
+            {
+                "task": "rectangle",
+                "layer": layer,
+                "origin": [round(x, 3), round(y, 3)],
+                "width": round(w, 3),
+                "height": round(h, 3),
+            }
+        )
+
+    _append_surface(upper_collector, layer="ROAD")
+    _append_surface(upper_collector, layer="FIRE")
+    _append_surface(lower_collector, layer="ROAD")
+
+    if upper_collector and lower_collector:
+        ux, uy, uw, uh = upper_collector
+        lx, ly, lw, lh = lower_collector
+        connector_w = round(max(14.0, min(20.0, min(uw, lw) * 0.16)), 3)
+        overlap_min_x = max(ux, lx)
+        overlap_max_x = min(ux + uw, lx + lw)
+        if overlap_max_x - overlap_min_x >= connector_w + 8.0:
+            connector_x = round(overlap_max_x - connector_w - 8.0, 3)
+        else:
+            connector_x = round((lx + lw / 2.0) - connector_w / 2.0, 3)
+        connector_y = round(ly + lh, 3)
+        connector_h = round(max(0.0, uy - connector_y), 3)
+        if connector_h > 0:
+            connector = (connector_x, connector_y, connector_w, connector_h)
+            _append_surface(connector, layer="ROAD")
+            _append_surface(connector, layer="FIRE")
+        access_target = lower_collector
+    else:
+        access_target = upper_collector
+
+    if access_target:
+        ax, ay, aw, ah = access_target
+        access_w = round(max(16.0, min(24.0, aw * 0.18)), 3)
+        access_x = round((ax + aw / 2.0) - access_w / 2.0, 3)
+        if frontage_on_bottom:
+            access_y = round(lot_y, 3)
+            access_h = round(max(18.0, ay - lot_y), 3)
+        else:
+            access_y = round(ay + ah, 3)
+            access_h = round(max(18.0, lot_y + lot_h - access_y), 3)
+        access = (access_x, access_y, access_w, access_h)
+        _append_surface(access, layer="ROAD")
+        _append_surface(access, layer="FIRE")
     return actions
 
 
