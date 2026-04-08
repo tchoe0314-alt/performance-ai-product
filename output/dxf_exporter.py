@@ -916,6 +916,8 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
         layer = get_layer(rec, "SITE")
         if layout_first_modelspace and layer in MODELSPACE_DETAIL_LAYERS:
             continue
+        if layout_first_modelspace and layer in {"PIPE", "STORM", "SAN", "UTILITY", "WATER", "STRUCTURE", "BASIN_BOUNDARY"}:
+            continue
         if layout_first_modelspace and _is_wrapper_layout_shape(rec, building_bounds):
             continue
         if layout_first_modelspace and _is_schematic_access_shape(rec, building_bounds):
