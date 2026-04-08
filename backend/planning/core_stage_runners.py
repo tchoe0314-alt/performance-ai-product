@@ -240,30 +240,21 @@ def _layout_fallback_actions(
     _append_surface(upper_collector, layer="FIRE")
     _append_surface(lower_collector, layer="ROAD")
 
-    if upper_collector and lower_collector:
-        ux, uy, uw, uh = upper_collector
-        lx, ly, lw, lh = lower_collector
-        connector_w = round(max(14.0, min(20.0, min(uw, lw) * 0.16)), 3)
-        overlap_min_x = max(ux, lx)
-        overlap_max_x = min(ux + uw, lx + lw)
-        if overlap_max_x - overlap_min_x >= connector_w + 8.0:
-            connector_x = round(overlap_max_x - connector_w - 8.0, 3)
+    access_targets = [rect for rect in (upper_collector, lower_collector) if rect]
+    for idx, target in enumerate(access_targets):
+        ax, ay, aw, ah = target
+        access_w = round(max(14.0, min(20.0, aw * 0.12)), 3)
+        target_center_x = ax + aw / 2.0
+        lot_center_x = lot_x + lot_w / 2.0
+        if len(access_targets) == 1:
+            if target_center_x >= lot_center_x:
+                access_x = round(ax + aw - access_w - 8.0, 3)
+            else:
+                access_x = round(ax + 8.0, 3)
+        elif idx == 0:
+            access_x = round(ax + aw - access_w - 8.0, 3)
         else:
-            connector_x = round((lx + lw / 2.0) - connector_w / 2.0, 3)
-        connector_y = round(ly + lh, 3)
-        connector_h = round(max(0.0, uy - connector_y), 3)
-        if connector_h > 0:
-            connector = (connector_x, connector_y, connector_w, connector_h)
-            _append_surface(connector, layer="ROAD")
-            _append_surface(connector, layer="FIRE")
-        access_target = lower_collector
-    else:
-        access_target = upper_collector
-
-    if access_target:
-        ax, ay, aw, ah = access_target
-        access_w = round(max(16.0, min(24.0, aw * 0.18)), 3)
-        access_x = round((ax + aw / 2.0) - access_w / 2.0, 3)
+            access_x = round(ax + 8.0, 3)
         if frontage_on_bottom:
             access_y = round(lot_y, 3)
             access_h = round(max(18.0, ay - lot_y), 3)
@@ -272,7 +263,8 @@ def _layout_fallback_actions(
             access_h = round(max(18.0, lot_y + lot_h - access_y), 3)
         access = (access_x, access_y, access_w, access_h)
         _append_surface(access, layer="ROAD")
-        _append_surface(access, layer="FIRE")
+        if idx == 0:
+            _append_surface(access, layer="FIRE")
     return actions
 
 
