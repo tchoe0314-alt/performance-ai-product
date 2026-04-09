@@ -31,7 +31,7 @@ class PreviewRenderTests(unittest.TestCase):
         self.assertIn("STRUCTURE", kept_layers)
         self.assertNotIn("FG_CONTOUR", kept_layers)
         self.assertIn("PARKING", kept_layers)
-        self.assertIn("FIRE", kept_layers)
+        self.assertNotIn("FIRE", kept_layers)
 
     def test_layout_scene_suppresses_giant_wrapper_rectangles(self):
         actions = [
@@ -231,7 +231,7 @@ class PreviewRenderTests(unittest.TestCase):
 
         self.assertIn("PARKING", kept_layers)
         self.assertIn("WALK", kept_layers)
-        self.assertIn("FIRE", kept_layers)
+        self.assertNotIn("FIRE", kept_layers)
 
     def test_layout_scene_synthesizes_drive_aisles_when_only_wrapper_roads_exist(self):
         actions = [

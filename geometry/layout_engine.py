@@ -1242,10 +1242,11 @@ def _layout_to_actions(layout: Dict[str, Any]) -> List[Dict[str, Any]]:
         actions.append(_text_action(mx, my, f'SW {sidewalk.get("width", 5.0):.1f}', layer=sidewalk.get("layer", "WALK"), h=0.85))
 
     if layout.get("fire_lane"):
+        fire_layer = "PAVEMENT" if _safe_bool(layout["fire_lane"].get("synthetic_fire_lane")) or _safe_bool(layout["fire_lane"].get("fire_access")) else layout["fire_lane"].get("layer", "FIRE")
         actions.append(
             _polyline_action(
                 layout["fire_lane"]["points"],
-                layer=layout["fire_lane"].get("layer", "FIRE"),
+                layer=fire_layer,
                 label=layout["fire_lane"].get("label"),
             )
         )
@@ -1257,7 +1258,7 @@ def _layout_to_actions(layout: Dict[str, Any]) -> List[Dict[str, Any]]:
         actions.append(_rect_action_from_obj(layout["loading_area"], "LOAD", "PAVEMENT"))
 
     if layout.get("internal_lane"):
-        actions.append(_rect_action_from_obj(layout["internal_lane"], "LANE", "ROAD"))
+        actions.append(_rect_action_from_obj(layout["internal_lane"], "LANE", "PAVEMENT"))
 
     bx, by = _rect_center(layout["building"])
     actions.append(_text_action(bx, by, "BLDG", layer="BUILDING", h=1.0))
@@ -1682,6 +1683,16 @@ def _surface_rect_from_line_item(item: Dict[str, Any], *, layer: str) -> Optiona
     return _rect_action_from_obj(rect, label, layer)
 
 
+def _preferred_surface_layer_for_line_item(item: Dict[str, Any], default_layer: str) -> str:
+    default_layer = _safe_str(default_layer, "SITE")
+    item_type = _safe_str(item.get("type"), "").lower()
+    if item_type in {"frontage", "access_drive", "fire_lane"}:
+        return "PAVEMENT"
+    if _safe_bool(item.get("synthetic_fire_lane")) or _safe_bool(item.get("fire_access")):
+        return "PAVEMENT"
+    return default_layer
+
+
 def _append_drainage_structure_actions(actions: List[Dict[str, Any]], structures: List[Dict[str, Any]]) -> None:
     for s in structures:
         x = _safe_float(s.get("x"), 0.0)
@@ -1852,20 +1863,20 @@ def _build_expanded_plan(parsed: Dict[str, Any]) -> Dict[str, Any]:
     _append_building_actions(actions, buildings)
     _append_parking_actions(actions, parking_areas)
     for item in drive_aisles:
-        surface = _surface_rect_from_line_item(item, layer="PAVEMENT")
+        surface = _surface_rect_from_line_item(item, layer=_preferred_surface_layer_for_line_item(item, "PAVEMENT"))
         if surface:
             actions.append(surface)
         else:
             _append_line_network_actions(actions, [item], width_prefix="W")
     for item in roads_network:
-        surface = _surface_rect_from_line_item(item, layer="ROAD")
+        surface = _surface_rect_from_line_item(item, layer=_preferred_surface_layer_for_line_item(item, "ROAD"))
         if surface:
             actions.append(surface)
         else:
             _append_line_network_actions(actions, [item], width_prefix="RW")
     _append_line_network_actions(actions, sidewalks, width_prefix="SW")
     for item in fire_lanes:
-        surface = _surface_rect_from_line_item(item, layer="FIRE")
+        surface = _surface_rect_from_line_item(item, layer=_preferred_surface_layer_for_line_item(item, "FIRE"))
         if surface:
             actions.append(surface)
         else:

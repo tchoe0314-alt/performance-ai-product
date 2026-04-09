@@ -320,6 +320,26 @@ def _polyline_bounds(points: Sequence[Sequence[Any]]) -> Optional[Tuple[float, f
     return min_x, min_y, max_x - min_x, max_y - min_y
 
 
+def _action_shape_signature(action: Dict[str, Any]) -> Tuple[Any, ...]:
+    task = lower_text(action.get("task"))
+    if task == "rectangle":
+        bounds = _rectangle_bounds(action)
+        return ("rectangle", bounds)
+    if task in {"polyline", "polygon"}:
+        pts = tuple(
+            (round(safe_float(point[0], 0.0), 3), round(safe_float(point[1], 0.0), 3))
+            for point in safe_list(action.get("points"))
+            if len(safe_list(point)) >= 2
+        )
+        return (task, pts)
+    if task == "circle":
+        center = safe_list(action.get("center"))
+        if len(center) >= 2:
+            return ("circle", round(safe_float(center[0], 0.0), 3), round(safe_float(center[1], 0.0), 3), round(safe_float(action.get("radius"), 0.0), 3))
+        return ("circle", None)
+    return (task, repr(safe_dict(action)))
+
+
 def _synthesize_layout_collectors(
     parking_rects: Sequence[Tuple[Tuple[float, float, float, float], Dict[str, Any]]]
 ) -> List[Dict[str, Any]]:
@@ -439,6 +459,10 @@ def _synthesize_layout_semantics(actions: Sequence[Dict[str, Any]]) -> List[Dict
         layer = safe_str(rec.get("layer")).upper()
         bounds = _rectangle_bounds(rec)
         out = deepcopy(rec)
+        if layer == "ROAD" and bounds is not None:
+            out["layer"] = "PAVEMENT"
+        if layer == "FIRE":
+            out["layer"] = "PAVEMENT"
         if layer == "PAVEMENT" and bounds is not None and building_rects and not has_parking:
             nearest_gap = min((_rect_gap(bounds, b_bounds) for b_bounds, _ in building_rects), key=lambda pair: pair[0] + pair[1])
             center_x, _ = _rect_center(bounds)
@@ -525,8 +549,15 @@ def _synthesize_layout_semantics(actions: Sequence[Dict[str, Any]]) -> List[Dict
                     continue
 
         if schematic_road_actions:
-            bad_keys = {repr(safe_dict(action)) for action in schematic_road_actions}
-            normalized = [action for action in normalized if repr(safe_dict(action)) not in bad_keys]
+            bad_signatures = {_action_shape_signature(safe_dict(action)) for action in schematic_road_actions}
+            normalized = [
+                action
+                for action in normalized
+                if not (
+                    safe_str(safe_dict(action).get("layer")).upper() in {"ROAD", "PAVEMENT", "FIRE"}
+                    and _action_shape_signature(safe_dict(action)) in bad_signatures
+                )
+            ]
             seen = {repr(safe_dict(action)) for action in normalized}
             for action in _synthesize_layout_collectors(parking_rects):
                 key = repr(action)

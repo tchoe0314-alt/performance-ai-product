@@ -101,7 +101,7 @@ SUPPRESSED_AUTO_LABEL_LAYERS = {
 SUPPRESSED_TEXT_LAYERS = {"EG_CONTOUR", "FG_CONTOUR", "DRAIN_FLOW", "LOW_POINTS", "UTILITY", "WATER"}
 FOCUS_EXCLUDED_LAYERS = {"ANNO", "SYMBOL", "SITE", "PAD", "SETBACK", "UTILITY", "WATER", "DRAIN_FLOW", "EG_CONTOUR", "FG_CONTOUR", "SPOT_EG", "SPOT_FG", "LOW_POINTS"}
 SUPPRESSED_LABEL_TOKENS = ("BUILDABLE_AREA", "GENERIC_UTILITY", "SERVICE_TIE", "SOURCE_SERVICE", "BUILDING_SERVICE", "UTILITY-")
-PRIMARY_LAYOUT_LAYERS = {"BUILDING", "ROAD", "PAVEMENT", "PARKING", "WALK", "FIRE"}
+PRIMARY_LAYOUT_LAYERS = {"BUILDING", "PAVEMENT", "PARKING", "WALK"}
 SECONDARY_ENGINEERING_LAYERS = {
     "ANNO",
     "BASIN_BOUNDARY",
@@ -552,7 +552,6 @@ def _synthesize_layout_preview_actions(actions):
     road_actions = []
     has_parking = False
     has_walk = False
-    has_fire = False
 
     for action in records:
         layer = str(action.get("layer") or "").upper()
@@ -567,8 +566,6 @@ def _synthesize_layout_preview_actions(actions):
             has_parking = True
         elif layer == "WALK":
             has_walk = True
-        elif layer == "FIRE":
-            has_fire = True
 
     synthesized = list(records)
     seen = {repr(action) for action in synthesized}
@@ -629,18 +626,6 @@ def _synthesize_layout_preview_actions(actions):
                 seen.add(key)
                 synthesized.append(action)
                 synthesized_circulation.append(action)
-
-    if useful_road_actions and not has_fire:
-        fire_sources = useful_road_actions
-        for action in fire_sources:
-            if action.get("synthetic_layout_collector"):
-                continue
-            out = dict(action)
-            out["layer"] = "FIRE"
-            key = repr(out)
-            if key not in seen:
-                seen.add(key)
-                synthesized.append(out)
 
     return synthesized
 
