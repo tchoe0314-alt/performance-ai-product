@@ -1134,6 +1134,7 @@ export default function PerformanceAIDashboard() {
 
   const payloadPreview = useMemo(
     () => ({
+      project_id: projectId || null,
       input_mode: strategyMode,
       strict_mode: strategyMode === "manual",
       prompt_text: prompt || null,
@@ -1161,6 +1162,7 @@ export default function PerformanceAIDashboard() {
       allow_ai_fill_for_blanks: strategyMode !== "manual",
     }),
     [
+      projectId,
       strategyMode,
       prompt,
       imageName,
@@ -1551,6 +1553,7 @@ export default function PerformanceAIDashboard() {
     const nextUtilities = overrides.utilities ?? utilities;
 
     return {
+      project_id: projectId || null,
       input_mode: nextStrategy,
       strict_mode: nextStrategy === "manual",
       prompt_text: (promptOverride ?? prompt) || null,
