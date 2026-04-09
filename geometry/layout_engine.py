@@ -950,7 +950,9 @@ def _generate_fire_lane(layout: Dict[str, Any], road_standards: Dict[str, float]
         "points": pts,
         "width": width,
         "type": "fire_lane",
-        "layer": "FIRE",
+        "layer": "PAVEMENT",
+        "fire_access": True,
+        "synthetic_fire_lane": True,
     }
 
 

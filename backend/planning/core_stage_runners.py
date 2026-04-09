@@ -502,17 +502,6 @@ def _synthesize_layout_semantics(actions: Sequence[Dict[str, Any]]) -> List[Dict
                 seen.add(key)
                 normalized.append(walk_action)
 
-    if road_actions and not has_fire:
-        for action in road_actions:
-            if bool(safe_dict(action).get("synthetic_layout_collector")):
-                continue
-            out = deepcopy(action)
-            out["layer"] = "FIRE"
-            key = repr(out)
-            if key not in seen:
-                seen.add(key)
-                normalized.append(out)
-
     if building_rects and parking_rects:
         schematic_road_actions: List[Dict[str, Any]] = []
         for action in normalized:

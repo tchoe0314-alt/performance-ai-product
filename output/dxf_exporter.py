@@ -75,7 +75,7 @@ ALLOWED_LAYERS = {
 
 
 LAYER_ALIASES = {
-    "PARK": "PAVEMENT",
+    "PARK": "PARKING",
     "WALKWAY": "WALK",
     "SIDEWALK": "WALK",
     "PAD": "SITE",
