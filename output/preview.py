@@ -232,6 +232,15 @@ def _is_schematic_access_shape(action, building_bounds):
         line_min_x, line_min_y, line_max_x, line_max_y = bounds
         width = max(1e-6, line_max_x - line_min_x)
         height = max(1e-6, line_max_y - line_min_y)
+        if layer == "FIRE" and not label:
+            if width > 40.0 and height <= 16.0:
+                bar_y = (line_min_y + line_max_y) / 2.0
+                if min_building_y - 60.0 <= bar_y <= max_building_y + 30.0:
+                    return True
+            if height > 80.0 and width <= 18.0:
+                bar_x = (line_min_x + line_max_x) / 2.0
+                if bar_x >= max_building_x + 10.0 or bar_x <= min_building_x - 10.0:
+                    return True
         if layer == "FIRE" and width > 60.0 and height <= 12.0:
             bar_y = (line_min_y + line_max_y) / 2.0
             if min_building_y - 45.0 <= bar_y <= max_building_y + 25.0:
@@ -300,8 +309,32 @@ def _is_schematic_access_shape(action, building_bounds):
     width = max(1e-6, line_max_x - line_min_x)
     height = max(1e-6, line_max_y - line_min_y)
     is_axis_aligned = min(width, height) <= max(width, height) * 0.15
+    layout_w = max(1.0, max_building_x - min_building_x)
+    layout_h = max(1.0, max_building_y - min_building_y)
     if not is_axis_aligned:
-        return False
+        points = safe_points(action)
+        first_point = points[0] if points else None
+        last_point = points[-1] if points else None
+        endpoint_outside = 0
+        if first_point and not _point_within_layout(first_point, (min_building_x, min_building_y, max_building_x, max_building_y), padding=12.0):
+            endpoint_outside += 1
+        if last_point and not _point_within_layout(last_point, (min_building_x, min_building_y, max_building_x, max_building_y), padding=12.0):
+            endpoint_outside += 1
+        spans_multiple_sides = sum(
+            (
+                line_min_x < min_building_x - 20.0,
+                line_max_x > max_building_x + 20.0,
+                line_min_y < min_building_y - 20.0,
+                line_max_y > max_building_y + 20.0,
+            )
+        ) >= 2
+        diagonal_cross = (
+            width >= layout_w * 0.45
+            and height >= layout_h * 0.45
+            and endpoint_outside >= 1
+            and spans_multiple_sides
+        )
+        return diagonal_cross
     spans_into_layout = not (
         line_max_x < min_building_x
         or line_min_x > max_building_x
@@ -648,7 +681,7 @@ def _engineering_overlay_actions(records):
             and line_max_x >= layout_max_x + 10.0
             and line_max_y >= layout_max_y + 10.0
         )
-        oversized_diagonal = width >= layout_w * 0.85 and height >= layout_h * 0.55
+        oversized_diagonal = width >= layout_w * 0.65 and height >= layout_h * 0.45
         points = safe_points(action)
         first_point = points[0] if points else None
         last_point = points[-1] if points else None
@@ -674,7 +707,7 @@ def _engineering_overlay_actions(records):
             and spans_multiple_sides
         )
         oversized_span = (
-            line_length >= layout_w * 1.25
+            line_length >= layout_w * 1.1
             and width >= layout_w * 0.9
             and height <= max(10.0, layout_h * 0.25)
             and endpoint_outside >= 2
@@ -733,7 +766,7 @@ def _engineering_overlay_actions(records):
             seen.add(key)
             selected.append(action)
 
-    for _, action in sorted(line_candidates, key=lambda item: item[0], reverse=True)[:4]:
+    for _, action in sorted(line_candidates, key=lambda item: item[0], reverse=True)[:2]:
         key = repr(action)
         if key not in seen:
             seen.add(key)
@@ -745,7 +778,7 @@ def _engineering_overlay_actions(records):
             seen.add(key)
             selected.append(action)
 
-    for _, action in sorted(utility_candidates, key=lambda item: item[0], reverse=True)[:2]:
+    for _, action in sorted(utility_candidates, key=lambda item: item[0], reverse=True)[:1]:
         key = repr(action)
         if key not in seen:
             seen.add(key)
@@ -786,6 +819,8 @@ def _filtered_preview_actions(actions):
         if has_layout_scene and _is_wrapper_layout_shape(action, building_bounds):
             continue
         if has_layout_scene and _is_schematic_access_shape(action, building_bounds):
+            continue
+        if has_layout_scene and layer == "FIRE" and task == "rectangle" and not label:
             continue
         if has_layout_scene and layer == "SETBACK":
             continue

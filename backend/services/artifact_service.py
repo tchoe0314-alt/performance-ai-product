@@ -12,7 +12,7 @@ import report_builder
 from output.dxf_exporter import save_dxf
 from output.preview import render_plan_preview_png
 
-PREVIEW_RENDER_VERSION = "2026-04-08-layout-v15"
+PREVIEW_RENDER_VERSION = "2026-04-08-layout-v16"
 
 
 def _slugify(value: str, default: str = "artifact") -> str:
