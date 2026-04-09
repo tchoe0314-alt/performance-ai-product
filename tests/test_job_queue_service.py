@@ -18,7 +18,7 @@ class JobQueueServiceTest(unittest.TestCase):
         self.auth = AuthStore(self.db)
         registered = self.auth.register_user(email="u1@example.com", password="password123", name="U1")
         self.user_id = registered["user"]["user_id"]
-        self.queue = JobQueueService(self.db)
+        self.queue = JobQueueService(self.db, heartbeat_interval_sec=0.5)
 
     def tearDown(self) -> None:
         self.queue.db = Database(Path(tempfile.gettempdir()) / "civora_job_queue_teardown.db")
@@ -265,6 +265,40 @@ class JobQueueServiceTest(unittest.TestCase):
         )
         summaries = store.list_projects(user_id=self.user_id)
         self.assertTrue(summaries[0]["has_result"])
+
+    def test_running_job_heartbeat_keeps_updated_at_fresh(self):
+        self.queue.register_handler(
+            "orchestrate",
+            lambda job: (time.sleep(1.3), {"success": True})[1],
+        )
+        created = self.queue.submit_job(
+            user_id=self.user_id,
+            job_type="orchestrate",
+            payload={"prompt_text": "slow"},
+        )
+
+        initial_running = None
+        deadline = time.time() + 3.0
+        while time.time() < deadline:
+            current = self.queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
+            if current and current["status"] == "running":
+                initial_running = current
+                break
+            time.sleep(0.05)
+
+        self.assertIsNotNone(initial_running)
+
+        refreshed_running = None
+        heartbeat_deadline = time.time() + 2.0
+        while time.time() < heartbeat_deadline:
+            current = self.queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
+            if current and current["status"] == "running" and float(current["updated_at"]) > float(initial_running["updated_at"]):
+                refreshed_running = current
+                break
+            time.sleep(0.05)
+
+        self.assertIsNotNone(refreshed_running)
+        self.assertEqual(refreshed_running["progress"], 24)
 
 
 if __name__ == "__main__":

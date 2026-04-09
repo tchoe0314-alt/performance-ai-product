@@ -82,12 +82,13 @@ def _coerce_progress(progress: Any) -> int:
 
 
 class JobQueueService:
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, *, heartbeat_interval_sec: float = 10.0) -> None:
         self.db = db
         self._queue: Queue[str] = Queue()
         self._handlers: Dict[str, JobRunner] = {}
         self._lock = threading.Lock()
         self._worker: Optional[threading.Thread] = None
+        self._heartbeat_interval_sec = max(0.5, float(heartbeat_interval_sec or 10.0))
         self._ensure_worker_alive()
 
     def _ensure_worker_alive(self) -> None:
@@ -339,6 +340,33 @@ class JobQueueService:
         merged_result.update(_job_progress_payload(stage, detail, progress))
         self._update_job_state(job_id, status="running", result=merged_result, error=None)
 
+    def _touch_job_activity(self, job_id: str) -> bool:
+        current = self._get_job_for_worker(job_id)
+        if current is None:
+            return False
+        status = str(current.get("status") or "")
+        if status not in {"running", "cancelling"}:
+            return False
+        connection = self.db.connect()
+        try:
+            connection.execute(
+                """
+                UPDATE jobs
+                SET updated_at = ?
+                WHERE job_id = ? AND status IN ('running', 'cancelling')
+                """,
+                (_now(), job_id),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        return True
+
+    def _heartbeat_loop(self, job_id: str, stop_event: threading.Event) -> None:
+        while not stop_event.wait(self._heartbeat_interval_sec):
+            if not self._touch_job_activity(job_id):
+                break
+
     def _job_summary(self, record: Dict[str, Any]) -> Dict[str, Any]:
         job_progress = dict((record.get("result") or {}).get("job_progress") or {})
         stage = str(record.get("stage") or job_progress.get("stage") or "")
@@ -407,6 +435,14 @@ class JobQueueService:
                 continue
 
             self._update_job_state(job_id, status="running", error=None)
+            heartbeat_stop = threading.Event()
+            heartbeat_thread = threading.Thread(
+                target=self._heartbeat_loop,
+                args=(job_id, heartbeat_stop),
+                name=f"performance-ai-job-heartbeat-{job_id}",
+                daemon=True,
+            )
+            heartbeat_thread.start()
             try:
                 self.update_job_progress(
                     job_id,
@@ -442,5 +478,7 @@ class JobQueueService:
             except Exception as exc:
                 self._update_job_state(job_id, status="failed", result={}, error=str(exc))
             finally:
+                heartbeat_stop.set()
+                heartbeat_thread.join(timeout=1.0)
                 if queue_task:
                     self._queue.task_done()
