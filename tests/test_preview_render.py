@@ -13,6 +13,7 @@ class PreviewRenderTests(unittest.TestCase):
             {"layer": "PIPE", "task": "polyline", "label": "PIPE-1", "points": [[0, 0], [20, 0], [40, -10]]},
             {"layer": "BASIN_BOUNDARY", "task": "circle", "label": "SINK_0_43", "center": [50, 25], "radius": 12},
             {"layer": "UTILITY", "task": "polyline", "label": "generic_utility_1"},
+            {"layer": "WATER", "task": "polyline", "label": "WATER MAIN", "points": [[5, 10], [45, 10], [70, 18]]},
             {"layer": "STRUCTURE", "task": "circle", "label": "INLET-1", "center": [38, -8], "radius": 4},
             {"layer": "FG_CONTOUR", "task": "polyline", "label": "FG-101"},
         ]
@@ -26,6 +27,7 @@ class PreviewRenderTests(unittest.TestCase):
         self.assertIn("PIPE", kept_layers)
         self.assertIn("BASIN_BOUNDARY", kept_layers)
         self.assertNotIn("UTILITY", kept_layers)
+        self.assertIn("WATER", kept_layers)
         self.assertIn("STRUCTURE", kept_layers)
         self.assertNotIn("FG_CONTOUR", kept_layers)
         self.assertIn("PARKING", kept_layers)

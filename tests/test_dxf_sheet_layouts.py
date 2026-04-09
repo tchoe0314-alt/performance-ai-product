@@ -72,6 +72,7 @@ class DxfSheetLayoutsTest(unittest.TestCase):
                 {"layer": "BASIN_BOUNDARY", "task": "circle", "center": [110, 82], "radius": 10, "label": "BASIN-A"},
                 {"layer": "PIPE", "task": "polyline", "points": [[30, 40], [65, 55], [100, 75]], "label": "PIPE-1"},
                 {"layer": "STRUCTURE", "task": "circle", "center": [100, 75], "radius": 2.5, "label": "INLET-1"},
+                {"layer": "WATER", "task": "polyline", "points": [[20, 16], [80, 16], [110, 24]], "label": "WATER MAIN"},
                 {"layer": "UTILITY", "task": "polyline", "points": [[0, 0], [100, 0]], "label": "generic_utility_1"},
             ]
         )
@@ -86,6 +87,7 @@ class DxfSheetLayoutsTest(unittest.TestCase):
             self.assertIn("PIPE", modelspace_layers)
             self.assertIn("STRUCTURE", modelspace_layers)
             self.assertIn("BASIN_BOUNDARY", modelspace_layers)
+            self.assertIn("WATER", modelspace_layers)
             self.assertNotIn("UTILITY", modelspace_layers)
 
     def test_profiles_and_sections_keep_canonical_context(self) -> None:

@@ -936,7 +936,7 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
             continue
         if layout_first_modelspace and layer == "SITE" and safe_text(rec.get("task"), "").lower() in {"rectangle", "polygon"}:
             continue
-        if layout_first_modelspace and layer in {"SETBACK", "WATER"}:
+        if layout_first_modelspace and layer == "SETBACK":
             continue
         if use_surface_contours and layer in {"EG_CONTOUR", "FG_CONTOUR"}:
             continue

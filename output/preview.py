@@ -570,6 +570,7 @@ def _engineering_overlay_actions(records):
     basin_candidates = []
     line_candidates = []
     structure_candidates = []
+    utility_candidates = []
 
     for action in records:
         layer = str(action.get("layer") or "").upper()
@@ -583,6 +584,16 @@ def _engineering_overlay_actions(records):
             line_candidates.append((_polyline_length(action), action))
         elif layer == "STRUCTURE" and task in {"circle", "point", "rectangle"}:
             structure_candidates.append((_bounds_area(bounds), action))
+        elif layer in {"UTILITY", "WATER"} and task in {"polyline", "polygon"}:
+            label = clean_label(action.get("label"), "").upper()
+            text = safe_text(action.get("text"), "").upper()
+            canonical_source_type = str(action.get("canonical_source_type") or "").upper()
+            helper_signature = " ".join(part for part in (label, text, canonical_source_type) if part)
+            if not helper_signature:
+                continue
+            if any(token in helper_signature for token in ("SERVICE", "TIE", "GENERIC_UTILITY", "BUILDING_SERVICE", "SOURCE_SERVICE", "UTILITY-")):
+                continue
+            utility_candidates.append((_polyline_length(action), action))
 
     selected = []
     seen = set()
@@ -600,6 +611,12 @@ def _engineering_overlay_actions(records):
             selected.append(action)
 
     for _, action in sorted(structure_candidates, key=lambda item: item[0], reverse=True)[:4]:
+        key = repr(action)
+        if key not in seen:
+            seen.add(key)
+            selected.append(action)
+
+    for _, action in sorted(utility_candidates, key=lambda item: item[0], reverse=True)[:2]:
         key = repr(action)
         if key not in seen:
             seen.add(key)
@@ -652,8 +669,6 @@ def _filtered_preview_actions(actions):
         if task == "text_note" and any(token in text for token in SUPPRESSED_LABEL_TOKENS):
             continue
         if layer == "UTILITY" and any(token in helper_signature for token in ("SERVICE", "TIE", "GENERIC_UTILITY")):
-            continue
-        if has_layout_scene and layer == "WATER":
             continue
         if has_layout_scene and layer in SECONDARY_ENGINEERING_LAYERS and repr(action) not in engineering_overlay_keys:
             continue
