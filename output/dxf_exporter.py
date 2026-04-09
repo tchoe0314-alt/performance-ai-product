@@ -923,9 +923,16 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
     ]
     building_bounds = [item for item in building_bounds if item["bounds"]]
     for rec in synthesized_actions:
+        rec = dict(rec)
         if _is_debug_action(rec):
             continue
         layer = get_layer(rec, "SITE")
+        task = safe_text(rec.get("task"), "").lower()
+        label = clean_label(rec.get("label"), "").upper()
+        if layout_first_modelspace and layer in {"ROAD", "FIRE"} and task in {"rectangle", "polygon", "polyline"}:
+            if not label or label in {"ROAD", "DRIVE", "FIRE", "FIRE-1", "ROAD-1"}:
+                rec["layer"] = "PAVEMENT"
+                layer = "PAVEMENT"
         if layout_first_modelspace and layer in MODELSPACE_DETAIL_LAYERS:
             continue
         if layout_first_modelspace and layer == "ROUTE":

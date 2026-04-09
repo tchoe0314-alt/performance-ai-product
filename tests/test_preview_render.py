@@ -22,7 +22,8 @@ class PreviewRenderTests(unittest.TestCase):
         kept_layers = [str(action.get("layer") or "").upper() for action in filtered]
 
         self.assertIn("BUILDING", kept_layers)
-        self.assertIn("ROAD", kept_layers)
+        self.assertNotIn("ROAD", kept_layers)
+        self.assertIn("PAVEMENT", kept_layers)
         self.assertNotIn("ANNO", kept_layers)
         self.assertIn("PIPE", kept_layers)
         self.assertIn("BASIN_BOUNDARY", kept_layers)

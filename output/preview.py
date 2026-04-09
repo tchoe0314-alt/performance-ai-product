@@ -408,7 +408,7 @@ def _has_primary_site_geometry(actions):
     for action in actions:
         layer = (action.get("layer") or "").upper()
         task = str(action.get("task") or "").lower()
-        if layer in {"BUILDING", "PAVEMENT", "ROAD", "PARKING", "WALK"} and task in {"rectangle", "polygon", "polyline"}:
+        if layer in {"BUILDING", "PAVEMENT", "PARKING", "WALK"} and task in {"rectangle", "polygon", "polyline"}:
             return True
     return False
 
@@ -546,10 +546,20 @@ def _looks_like_parking_module(
 
 
 def _synthesize_layout_preview_actions(actions):
-    records = [dict(action) for action in actions if isinstance(action, dict)]
+    records = []
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        rec = dict(action)
+        layer = str(rec.get("layer") or "").upper()
+        task = str(rec.get("task") or "").lower()
+        label = clean_label(rec.get("label"), "").upper()
+        if layer in {"ROAD", "FIRE"} and task in {"rectangle", "polygon", "polyline"}:
+            if not label or label in {"ROAD", "DRIVE", "FIRE", "FIRE-1", "ROAD-1"}:
+                rec["layer"] = "PAVEMENT"
+        records.append(rec)
     building_rects = []
     pavement_rects = []
-    road_actions = []
     has_parking = False
     has_walk = False
 
@@ -560,8 +570,6 @@ def _synthesize_layout_preview_actions(actions):
             building_rects.append(bounds)
         elif layer == "PAVEMENT" and bounds:
             pavement_rects.append((bounds, action))
-        elif layer == "ROAD":
-            road_actions.append(action)
         elif layer == "PARKING":
             has_parking = True
         elif layer == "WALK":
@@ -612,14 +620,8 @@ def _synthesize_layout_preview_actions(actions):
                 seen.add(key)
                 synthesized.append(walk_action)
 
-    useful_road_actions = [
-        action
-        for action in road_actions
-        if not _is_wrapper_layout_shape(action, [{"bounds": bounds} for bounds in building_rects])
-        and not _is_schematic_access_shape(action, [{"bounds": bounds} for bounds in building_rects])
-    ]
     synthesized_circulation = []
-    if building_rects and parking_rects and not useful_road_actions:
+    if building_rects and parking_rects:
         for action in _synthesize_drive_aisles(building_rects, parking_rects):
             key = repr(action)
             if key not in seen:
@@ -651,7 +653,7 @@ def _engineering_overlay_actions(records):
         [
             _action_bounds(action)
             for action in records
-            if str(action.get("layer") or "").upper() in {"BUILDING", "PARKING", "PAVEMENT", "ROAD", "WALK"}
+            if str(action.get("layer") or "").upper() in {"BUILDING", "PARKING", "PAVEMENT", "WALK"}
         ]
     )
 
