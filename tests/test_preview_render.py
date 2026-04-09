@@ -178,9 +178,23 @@ class PreviewRenderTests(unittest.TestCase):
             any(
                 float(action.get("width") or 0.0) <= 20.0
                 and float(action.get("height") or 0.0) > 100.0
+                and 300.0 <= float(action.get("origin", [0.0])[0]) <= 680.0
                 for action in pavement_rectangles
             ),
-            "did not expect a tall thin synthetic connector stem in synthesized pavement",
+            "did not expect a tall thin synthetic connector stem through the center of the layout",
+        )
+        self.assertTrue(
+            all(str(action.get("layer") or "").upper() != "FIRE" for action in filtered),
+            "did not expect synthetic pavement aisles to be duplicated into fire overlays",
+        )
+        self.assertTrue(
+            any(
+                float(action.get("width") or 0.0) <= 14.0
+                and float(action.get("height") or 0.0) > 100.0
+                and float(action.get("origin", [0.0])[0]) >= 700.0
+                for action in pavement_rectangles
+            ),
+            "expected an edge-connected synthetic aisle connector instead of a centered spine",
         )
 
 

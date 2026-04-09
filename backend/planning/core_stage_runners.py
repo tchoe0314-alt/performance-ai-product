@@ -363,6 +363,7 @@ def _synthesize_layout_collectors(
                 "origin": [round(x, 3), round(y, 3)],
                 "width": round(w, 3),
                 "height": round(h, 3),
+                "synthetic_layout_collector": True,
             }
         )
 
@@ -382,14 +383,13 @@ def _synthesize_layout_collectors(
     upper_collector = _collector_for_row(upper_row)
     lower_collector = _collector_for_row(lower_row) if lower_row else None
     _append_rect(upper_collector, "ROAD")
-    _append_rect(upper_collector, "FIRE")
     _append_rect(lower_collector, "ROAD")
 
     if upper_collector and lower_collector:
         ux, uy, uw, uh = upper_collector
         lx, ly, lw, lh = lower_collector
-        connector_w = round(max(10.0, min(14.0, min(uw, lw) * 0.08)), 3)
-        connector_x = round(max(ux, lx) + 12.0, 3)
+        connector_w = round(max(8.0, min(12.0, min(uw, lw) * 0.06)), 3)
+        connector_x = round(max(ux + uw, lx + lw) - connector_w - 2.0, 3)
         connector_y = round(ly + lh, 3)
         connector_h = round(max(0.0, uy - connector_y), 3)
         _append_rect((connector_x, connector_y, connector_w, connector_h), "ROAD")

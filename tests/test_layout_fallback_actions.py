@@ -88,7 +88,8 @@ class LayoutFallbackActionsTests(unittest.TestCase):
 
         self.assertIn("PARKING", layers)
         self.assertIn("WALK", layers)
-        self.assertIn("FIRE", layers)
+        self.assertIn("ROAD", layers)
+        self.assertNotIn("FIRE", layers)
 
     def test_semantic_cleanup_replaces_schematic_roads_with_collectors(self) -> None:
         actions = [
@@ -118,6 +119,7 @@ class LayoutFallbackActionsTests(unittest.TestCase):
         self.assertTrue(all(task != "circle" for task, _ in road_tasks))
         self.assertTrue(all(task != "polyline" for task, _ in road_tasks))
         self.assertGreaterEqual(sum(1 for task, layer in road_tasks if task == "rectangle" and layer == "ROAD"), 2)
+        self.assertEqual(sum(1 for task, layer in road_tasks if task == "rectangle" and layer == "FIRE"), 0)
 
 
 if __name__ == "__main__":

@@ -439,19 +439,24 @@ def _synthesize_drive_aisles(building_rects, parking_rects):
         lower_aisles, lower_aisle_y, lower_aisle_height, lower_span = _row_aisles(lower_row)
         drive_actions.extend(lower_aisles)
 
-    if lower_span:
+    if upper_span and lower_span:
+        upper_min_x, _, upper_max_x, _ = upper_span
         lower_min_x, _, lower_max_x, _ = lower_span
-        retail_collector_x = round(lower_min_x + 2.0, 3)
-        retail_collector_w = round(max(24.0, (lower_max_x - lower_min_x) - 4.0), 3)
-        drive_actions.append(
-            {
-                "task": "rectangle",
-                "layer": "PAVEMENT",
-                "origin": [retail_collector_x, lower_aisle_y],
-                "width": retail_collector_w,
-                "height": lower_aisle_height,
-            }
-        )
+        connector_w = round(max(8.0, min(12.0, min(upper_max_x - upper_min_x, lower_max_x - lower_min_x) * 0.06)), 3)
+        connector_x = round(max(upper_max_x, lower_max_x) - connector_w - 2.0, 3)
+        connector_y = round(lower_aisle_y + lower_aisle_height, 3)
+        connector_h = round(max(0.0, upper_aisle_y - connector_y), 3)
+        if connector_h > 0.0:
+            drive_actions.append(
+                {
+                    "task": "rectangle",
+                    "layer": "PAVEMENT",
+                    "origin": [connector_x, connector_y],
+                    "width": connector_w,
+                    "height": connector_h,
+                    "synthetic_layout_collector": True,
+                }
+            )
 
     return drive_actions
 
@@ -544,6 +549,8 @@ def _synthesize_layout_preview_actions(actions):
     if useful_road_actions and not has_fire:
         fire_sources = useful_road_actions
         for action in fire_sources:
+            if action.get("synthetic_layout_collector"):
+                continue
             out = dict(action)
             out["layer"] = "FIRE"
             key = repr(out)
