@@ -1417,7 +1417,7 @@ def _infer_drive_aisles_from_legacy(parsed: Dict[str, Any], site_box: Rect, park
             "points": _driveway_centerline(d_rect),
             "width": road_stds["drive_width"],
             "type": "access_drive",
-            "layer": "ROAD",
+            "layer": "PAVEMENT",
         }
     ]
 
@@ -1438,7 +1438,7 @@ def _infer_roads_from_legacy(parsed: Dict[str, Any], site_box: Rect) -> List[Dic
             "points": pts,
             "width": road_stds["frontage_road_depth"],
             "type": "frontage",
-            "layer": "ROAD",
+            "layer": "PAVEMENT",
         }
     ]
 

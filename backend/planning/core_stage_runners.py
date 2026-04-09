@@ -255,11 +255,11 @@ def _layout_fallback_actions(
         else:
             access_x = round(lot_x + 18.0, 3)
         if frontage_on_bottom:
-            access_y = round(lot_y, 3)
-            access_h = round(max(18.0, ay - lot_y), 3)
+            access_y = round(max(lot_y + 8.0, ay - 28.0), 3)
+            access_h = round(min(max(18.0, ay - access_y), 32.0), 3)
         else:
             access_y = round(ay + ah, 3)
-            access_h = round(max(18.0, lot_y + lot_h - access_y), 3)
+            access_h = round(min(max(18.0, lot_y + lot_h - access_y - 8.0), 32.0), 3)
         access = (access_x, access_y, access_w, access_h)
         _append_surface(access, layer="PAVEMENT")
     return actions
@@ -382,15 +382,6 @@ def _synthesize_layout_collectors(
     _append_rect(upper_collector, "PAVEMENT")
     _append_rect(lower_collector, "PAVEMENT")
 
-    if upper_collector and lower_collector:
-        ux, uy, uw, uh = upper_collector
-        lx, ly, lw, lh = lower_collector
-        connector_w = round(max(8.0, min(12.0, min(uw, lw) * 0.06)), 3)
-        connector_x = round(max(ux + uw, lx + lw) - connector_w - 2.0, 3)
-        connector_y = round(ly + lh, 3)
-        connector_h = round(max(0.0, uy - connector_y), 3)
-        _append_rect((connector_x, connector_y, connector_w, connector_h), "PAVEMENT")
-
     return actions
 
 
@@ -404,6 +395,23 @@ def _synthesize_layout_semantics(actions: Sequence[Dict[str, Any]]) -> List[Dict
     has_parking = False
     has_walk = False
     has_fire = False
+
+    def _looks_like_parking_module(bounds: Tuple[float, float, float, float]) -> bool:
+        x, y, w, h = bounds
+        if w <= 0.0 or h <= 0.0:
+            return False
+        min_dim = min(w, h)
+        max_dim = max(w, h)
+        if min_dim < 12.0 or max_dim < 30.0:
+            return False
+        if (w * h) < 500.0:
+            return False
+        aspect = max_dim / max(min_dim, 1e-6)
+        near_building = any(
+            (_rect_gap(bounds, b_bounds)[0] + _rect_gap(bounds, b_bounds)[1]) <= 140.0
+            for b_bounds, _ in building_rects
+        )
+        return near_building and (aspect >= 1.6 or max_dim >= 70.0)
 
     for action in safe_list(actions):
         rec = safe_dict(action)
@@ -438,7 +446,7 @@ def _synthesize_layout_semantics(actions: Sequence[Dict[str, Any]]) -> List[Dict
                 abs(center_x - _rect_center(b_bounds)[0]) <= max(bounds[2], b_bounds[2]) * 0.7
                 for b_bounds, _ in building_rects
             )
-            if nearest_gap[1] <= 120.0 and overlaps_building_band:
+            if nearest_gap[1] <= 120.0 and overlaps_building_band and _looks_like_parking_module(bounds):
                 out["layer"] = "PARKING"
         key = repr(out)
         if key in seen:
@@ -448,6 +456,8 @@ def _synthesize_layout_semantics(actions: Sequence[Dict[str, Any]]) -> List[Dict
 
     if building_rects and not any(safe_str(safe_dict(a).get("layer")).upper() == "PARKING" for a in normalized):
         for bounds, rec in pavement_rects:
+            if not _looks_like_parking_module(bounds):
+                continue
             out = deepcopy(rec)
             out["layer"] = "PARKING"
             key = repr(out)

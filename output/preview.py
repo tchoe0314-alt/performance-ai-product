@@ -517,26 +517,32 @@ def _synthesize_drive_aisles(building_rects, parking_rects):
         lower_aisles, lower_aisle_y, lower_aisle_height, lower_span = _row_aisles(lower_row)
         drive_actions.extend(lower_aisles)
 
-    if upper_span and lower_span:
-        upper_min_x, _, upper_max_x, _ = upper_span
-        lower_min_x, _, lower_max_x, _ = lower_span
-        connector_w = round(max(8.0, min(12.0, min(upper_max_x - upper_min_x, lower_max_x - lower_min_x) * 0.06)), 3)
-        connector_x = round(max(upper_max_x, lower_max_x) - connector_w - 2.0, 3)
-        connector_y = round(lower_aisle_y + lower_aisle_height, 3)
-        connector_h = round(max(0.0, upper_aisle_y - connector_y), 3)
-        if connector_h > 0.0:
-            drive_actions.append(
-                {
-                    "task": "rectangle",
-                    "layer": "PAVEMENT",
-                    "origin": [connector_x, connector_y],
-                    "width": connector_w,
-                    "height": connector_h,
-                    "synthetic_layout_collector": True,
-                }
-            )
-
     return drive_actions
+
+
+def _looks_like_parking_module(
+    bounds: tuple[float, float, float, float],
+    building_rects: Sequence[tuple[float, float, float, float]],
+) -> bool:
+    x1, y1, x2, y2 = bounds
+    w = x2 - x1
+    h = y2 - y1
+    if w <= 0.0 or h <= 0.0:
+        return False
+    min_dim = min(w, h)
+    max_dim = max(w, h)
+    if min_dim < 12.0:
+        return False
+    if max_dim < 30.0:
+        return False
+    if (w * h) < 500.0:
+        return False
+    aspect = max_dim / max(min_dim, 1e-6)
+    near_building = any(
+        (_rect_gap(bounds, b_bounds)[0] + _rect_gap(bounds, b_bounds)[1]) <= 140.0
+        for b_bounds in building_rects
+    )
+    return near_building and (aspect >= 1.6 or max_dim >= 70.0)
 
 
 def _synthesize_layout_preview_actions(actions):
@@ -572,7 +578,7 @@ def _synthesize_layout_preview_actions(actions):
             center_x, _ = _rect_center(bounds)
             nearest_gap = min((_rect_gap(bounds, b_bounds) for b_bounds in building_rects), key=lambda pair: pair[0] + pair[1], default=(9999.0, 9999.0))
             overlaps_building_band = any(abs(center_x - _rect_center(b_bounds)[0]) <= max(bounds[2] - bounds[0], b_bounds[2] - b_bounds[0]) * 0.7 for b_bounds in building_rects)
-            if nearest_gap[1] <= 120.0 and overlaps_building_band:
+            if nearest_gap[1] <= 120.0 and overlaps_building_band and _looks_like_parking_module(bounds, building_rects):
                 out = dict(action)
                 out["layer"] = "PARKING"
                 key = repr(out)

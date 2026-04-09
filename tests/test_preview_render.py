@@ -290,12 +290,12 @@ class PreviewRenderTests(unittest.TestCase):
         )
         self.assertTrue(
             any(
-                float(action.get("width") or 0.0) <= 14.0
-                and float(action.get("height") or 0.0) > 100.0
-                and float(action.get("origin", [0.0])[0]) >= 700.0
+                float(action.get("width") or 0.0) >= 100.0
+                and float(action.get("height") or 0.0) <= 18.0
+                and 180.0 <= float(action.get("origin", [0.0])[0]) <= 760.0
                 for action in pavement_rectangles
             ),
-            "expected an edge-connected synthetic aisle connector instead of a centered spine",
+            "expected synthesized collector pavement to remain near the parking clusters",
         )
 
 
