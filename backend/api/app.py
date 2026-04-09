@@ -117,6 +117,7 @@ class LoginPayload(BaseModel):
 
 
 class OrchestratePayload(BaseModel):
+    project_id: Optional[str] = None
     input_mode: str = "assisted"
     strict_mode: bool = False
     prompt_text: Optional[str] = None
@@ -158,6 +159,23 @@ class ArtifactPayload(BaseModel):
 class ChatDecisionPayload(BaseModel):
     message: str
     context: Dict[str, Any] = Field(default_factory=dict)
+
+
+def _resolve_orchestration_project_id(
+    outer_project_id: Optional[str],
+    request_payload: OrchestratePayload,
+) -> Optional[str]:
+    return outer_project_id or request_payload.project_id
+
+
+def _queue_request_payload_with_project(
+    payload: QueueOrchestratePayload,
+) -> tuple[Optional[str], Dict[str, Any]]:
+    project_id = _resolve_orchestration_project_id(payload.project_id, payload.request)
+    request_payload = _model_to_dict(payload.request)
+    if project_id:
+        request_payload["project_id"] = project_id
+    return project_id, request_payload
 
 
 app = FastAPI(
@@ -493,12 +511,13 @@ def list_jobs(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[
 
 @app.post("/api/jobs/orchestrate")
 def queue_orchestrate_job(payload: QueueOrchestratePayload, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    project_id, request_payload = _queue_request_payload_with_project(payload)
     return application_queue_orchestrate_job(
         project_store=PROJECT_STORE,
         job_queue=JOB_QUEUE,
         user_id=current_user["user_id"],
-        project_id=payload.project_id,
-        request_payload=_model_to_dict(payload.request),
+        project_id=project_id,
+        request_payload=request_payload,
     )
 
 

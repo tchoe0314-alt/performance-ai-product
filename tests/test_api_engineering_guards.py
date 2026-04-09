@@ -2,10 +2,44 @@ import unittest
 
 from fastapi import HTTPException
 
-from backend.api.app import _final_plan_from_result, _run_orchestration
+from backend.api.app import (
+    OrchestratePayload,
+    QueueOrchestratePayload,
+    _final_plan_from_result,
+    _queue_request_payload_with_project,
+    _run_orchestration,
+)
 
 
 class ApiEngineeringGuardsTest(unittest.TestCase):
+    def test_queue_request_payload_uses_nested_project_id_when_outer_missing(self) -> None:
+        project_id, request_payload = _queue_request_payload_with_project(
+            QueueOrchestratePayload(
+                project_id=None,
+                request=OrchestratePayload(
+                    project_id="p_nested",
+                    input_mode="assisted",
+                    prompt_text="Design a mixed-use site.",
+                ),
+            )
+        )
+        self.assertEqual(project_id, "p_nested")
+        self.assertEqual(request_payload["project_id"], "p_nested")
+
+    def test_queue_request_payload_prefers_outer_project_id(self) -> None:
+        project_id, request_payload = _queue_request_payload_with_project(
+            QueueOrchestratePayload(
+                project_id="p_outer",
+                request=OrchestratePayload(
+                    project_id="p_nested",
+                    input_mode="assisted",
+                    prompt_text="Design a mixed-use site.",
+                ),
+            )
+        )
+        self.assertEqual(project_id, "p_outer")
+        self.assertEqual(request_payload["project_id"], "p_outer")
+
     def test_manual_orchestration_asks_for_clarification_when_prompt_is_underspecified(self) -> None:
         result = _run_orchestration(
             {
