@@ -165,6 +165,27 @@ class PreviewRenderTests(unittest.TestCase):
 
         self.assertEqual(kept_schematic, [])
 
+    def test_layout_scene_suppresses_structure_point_markers(self):
+        actions = [
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [20, 60], "width": 12, "height": 8},
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 2", "origin": [40, 60], "width": 12, "height": 8},
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 3", "origin": [60, 60], "width": 12, "height": 8},
+            {"layer": "PARKING", "task": "rectangle", "origin": [16, 40], "width": 58, "height": 10},
+            {"layer": "STRUCTURE", "task": "point", "origin": [5, 90], "label": "MH-1"},
+            {"layer": "STRUCTURE", "task": "point", "origin": [6, 15], "label": "INLET-1"},
+            {"layer": "STRUCTURE", "task": "circle", "center": [72, 34], "radius": 2.5, "label": "INLET-A"},
+        ]
+
+        filtered = _filtered_preview_actions(actions)
+        kept_structure_tasks = [
+            str(action.get("task") or "").lower()
+            for action in filtered
+            if str(action.get("layer") or "").upper() == "STRUCTURE"
+        ]
+
+        self.assertNotIn("point", kept_structure_tasks)
+        self.assertIn("circle", kept_structure_tasks)
+
     def test_non_layout_scene_keeps_engineering_geometry_available(self):
         actions = [
             {"layer": "PIPE", "task": "polyline", "label": "PIPE-1"},

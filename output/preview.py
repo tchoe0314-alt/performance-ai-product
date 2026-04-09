@@ -735,7 +735,7 @@ def _engineering_overlay_actions(records):
                 if points_in_layout <= 1 and len(points) >= 2:
                     continue
             line_candidates.append((_polyline_length(action), action))
-        elif layer == "STRUCTURE" and task in {"circle", "point", "rectangle"}:
+        elif layer == "STRUCTURE" and task in {"circle", "rectangle"}:
             structure_candidates.append((_bounds_area(bounds), action))
         elif layer in {"UTILITY", "WATER"} and task in {"polyline", "polygon"}:
             label = clean_label(action.get("label"), "").upper()
@@ -835,6 +835,8 @@ def _filtered_preview_actions(actions):
         if layer == "UTILITY" and any(token in helper_signature for token in ("SERVICE", "TIE", "GENERIC_UTILITY")):
             continue
         if has_layout_scene and layer in SECONDARY_ENGINEERING_LAYERS and repr(action) not in engineering_overlay_keys:
+            continue
+        if has_layout_scene and layer == "STRUCTURE" and task == "point":
             continue
         if has_layout_scene and layer == "BUILDING" and task == "text_note":
             continue
