@@ -541,8 +541,8 @@ def _synthesize_layout_preview_actions(actions):
                 synthesized.append(action)
                 synthesized_circulation.append(action)
 
-    if (useful_road_actions or synthesized_circulation) and not has_fire:
-        fire_sources = useful_road_actions or synthesized_circulation
+    if useful_road_actions and not has_fire:
+        fire_sources = useful_road_actions
         for action in fire_sources:
             out = dict(action)
             out["layer"] = "FIRE"

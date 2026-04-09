@@ -162,7 +162,7 @@ class PreviewRenderTests(unittest.TestCase):
         pavement_rectangles = sorted(pavement_rectangles, key=lambda action: float(action.get("width") or 0.0), reverse=True)
 
         self.assertGreaterEqual(len(pavement_rectangles), 2)
-        self.assertGreaterEqual(len(fire_rectangles), 2)
+        self.assertEqual(len(fire_rectangles), 0)
         self.assertLessEqual(float(pavement_rectangles[0].get("width") or 0.0), 180.0)
         self.assertTrue(
             any(
