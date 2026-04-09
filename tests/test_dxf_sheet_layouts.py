@@ -64,6 +64,30 @@ class DxfSheetLayoutsTest(unittest.TestCase):
             self.assertNotIn("WATER", modelspace_layers)
             self.assertIn("BUILDING", modelspace_layers)
 
+    def test_modelspace_keeps_curated_storm_context_in_layout_scene(self) -> None:
+        plan = _sheet_test_plan()
+        actions = plan.setdefault("actions", [])
+        actions.extend(
+            [
+                {"layer": "BASIN_BOUNDARY", "task": "circle", "center": [110, 82], "radius": 10, "label": "BASIN-A"},
+                {"layer": "PIPE", "task": "polyline", "points": [[30, 40], [65, 55], [100, 75]], "label": "PIPE-1"},
+                {"layer": "STRUCTURE", "task": "circle", "center": [100, 75], "radius": 2.5, "label": "INLET-1"},
+                {"layer": "UTILITY", "task": "polyline", "points": [[0, 0], [100, 0]], "label": "generic_utility_1"},
+            ]
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "modelspace-curated-storm-test.dxf"
+            save_dxf(plan, filename=str(path))
+
+            doc = ezdxf.readfile(path)
+            modelspace_layers = {entity.dxf.layer for entity in doc.modelspace()}
+
+            self.assertIn("BUILDING", modelspace_layers)
+            self.assertIn("PIPE", modelspace_layers)
+            self.assertIn("STRUCTURE", modelspace_layers)
+            self.assertIn("BASIN_BOUNDARY", modelspace_layers)
+            self.assertNotIn("UTILITY", modelspace_layers)
+
     def test_profiles_and_sections_keep_canonical_context(self) -> None:
         plan = _sheet_test_plan()
         profiles = ((plan.get("meta") or {}).get("profiles") or [])

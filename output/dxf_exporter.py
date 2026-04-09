@@ -894,10 +894,18 @@ def _surface_contour_actions(plan: Dict[str, Any]) -> List[Dict[str, Any]]:
 def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     prepared: List[Dict[str, Any]] = []
     try:
-        from output.preview import _synthesize_layout_preview_actions  # reuse layout-first synthesis for modelspace
+        from output.preview import (
+            _engineering_overlay_actions,
+            _synthesize_layout_preview_actions,
+        )  # reuse layout-first synthesis for modelspace
         synthesized_actions = _synthesize_layout_preview_actions([safe_dict(action) for action in actions if isinstance(action, dict)])
+        curated_engineering_overlay_keys = {
+            repr(action)
+            for action in _engineering_overlay_actions(synthesized_actions)
+        }
     except Exception:
         synthesized_actions = [safe_dict(action) for action in actions if isinstance(action, dict)]
+        curated_engineering_overlay_keys = set()
     use_surface_contours = bool(safe_dict(safe_dict(safe_dict(plan.get("meta")).get("grading")).get("proposed_surface")))
     raw_layers = {
         get_layer(safe_dict(action), "SITE")
@@ -916,7 +924,11 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
         layer = get_layer(rec, "SITE")
         if layout_first_modelspace and layer in MODELSPACE_DETAIL_LAYERS:
             continue
-        if layout_first_modelspace and layer in {"PIPE", "STORM", "SAN", "UTILITY", "WATER", "STRUCTURE", "BASIN_BOUNDARY"}:
+        if (
+            layout_first_modelspace
+            and layer in {"PIPE", "STORM", "SAN", "UTILITY", "WATER", "STRUCTURE", "BASIN_BOUNDARY"}
+            and repr(rec) not in curated_engineering_overlay_keys
+        ):
             continue
         if layout_first_modelspace and _is_wrapper_layout_shape(rec, building_bounds):
             continue
