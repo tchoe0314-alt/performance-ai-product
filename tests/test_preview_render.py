@@ -187,6 +187,26 @@ class PreviewRenderTests(unittest.TestCase):
         self.assertNotIn("point", kept_structure_tasks)
         self.assertIn("circle", kept_structure_tasks)
 
+    def test_layout_scene_suppresses_tiny_engineering_marker_circles(self):
+        actions = [
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [20, 60], "width": 12, "height": 8},
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 2", "origin": [40, 60], "width": 12, "height": 8},
+            {"layer": "PARKING", "task": "rectangle", "origin": [16, 40], "width": 42, "height": 10},
+            {"layer": "STRUCTURE", "task": "circle", "center": [5, 90], "radius": 0.8, "label": ""},
+            {"layer": "STRUCTURE", "task": "circle", "center": [72, 34], "radius": 2.5, "label": "INLET-A"},
+        ]
+
+        filtered = _filtered_preview_actions(actions)
+        kept_structure_circles = [
+            action
+            for action in filtered
+            if str(action.get("layer") or "").upper() == "STRUCTURE"
+            and str(action.get("task") or "").lower() == "circle"
+        ]
+
+        self.assertEqual(len(kept_structure_circles), 1)
+        self.assertEqual(kept_structure_circles[0].get("label"), "INLET-A")
+
     def test_layout_scene_suppresses_route_lines_and_route_points(self):
         actions = [
             {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [20, 60], "width": 12, "height": 8},
@@ -206,6 +226,23 @@ class PreviewRenderTests(unittest.TestCase):
         ]
 
         self.assertEqual(kept_route_layers, [])
+
+    def test_layout_scene_suppresses_long_cross_site_engineering_span(self):
+        actions = [
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [30, 60], "width": 12, "height": 8},
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 2", "origin": [50, 60], "width": 12, "height": 8},
+            {"layer": "PARKING", "task": "rectangle", "origin": [26, 40], "width": 40, "height": 10},
+            {"layer": "PIPE", "task": "polyline", "points": [[42, 25], [92, 15]], "label": "PIPE-2"},
+        ]
+
+        filtered = _filtered_preview_actions(actions)
+        kept_pipe = [
+            action
+            for action in filtered
+            if str(action.get("layer") or "").upper() == "PIPE"
+        ]
+
+        self.assertEqual(kept_pipe, [])
 
     def test_non_layout_scene_keeps_engineering_geometry_available(self):
         actions = [
@@ -298,6 +335,25 @@ class PreviewRenderTests(unittest.TestCase):
             ),
             "expected synthesized collector pavement to remain near the parking clusters",
         )
+
+    def test_layout_scene_suppresses_isolated_pavement_stem(self):
+        actions = [
+            {"layer": "BUILDING", "task": "rectangle", "origin": [220, 700], "width": 120, "height": 60, "label": "BLDG 1"},
+            {"layer": "BUILDING", "task": "rectangle", "origin": [410, 700], "width": 120, "height": 60, "label": "BLDG 2"},
+            {"layer": "PARKING", "task": "rectangle", "origin": [200, 560], "width": 160, "height": 70},
+            {"layer": "PARKING", "task": "rectangle", "origin": [390, 560], "width": 160, "height": 70},
+            {"layer": "PAVEMENT", "task": "rectangle", "origin": [815, 210], "width": 10, "height": 220},
+        ]
+
+        filtered = _filtered_preview_actions(actions)
+        kept_isolated = [
+            action
+            for action in filtered
+            if str(action.get("layer") or "").upper() == "PAVEMENT"
+            and action.get("origin") == [815, 210]
+        ]
+
+        self.assertEqual(kept_isolated, [])
 
 
 if __name__ == "__main__":

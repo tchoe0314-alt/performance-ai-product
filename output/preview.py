@@ -457,6 +457,48 @@ def _point_within_layout(point, layout_bounds, padding=0.0):
     )
 
 
+def _is_tiny_marker_circle(action):
+    task = str(action.get("task") or "").lower()
+    layer = str(action.get("layer") or "").upper()
+    radius = safe_num(action.get("radius"))
+    if task != "circle" or radius <= 0.0:
+        return False
+    return layer in SECONDARY_ENGINEERING_LAYERS and radius <= 1.5
+
+
+def _is_isolated_pavement_shape(action, building_bounds, parking_bounds):
+    layer = str(action.get("layer") or "").upper()
+    task = str(action.get("task") or "").lower()
+    if layer != "PAVEMENT" or task not in {"rectangle", "polygon"}:
+        return False
+    bounds = _action_bounds(action)
+    if not bounds:
+        return False
+    width = max(1e-6, bounds[2] - bounds[0])
+    height = max(1e-6, bounds[3] - bounds[1])
+    if min(width, height) > 18.0:
+        return False
+    layout_items = [*building_bounds, *parking_bounds]
+    if not layout_items:
+        return False
+    nearest = min(
+        (_rect_gap(bounds, other)[0] + _rect_gap(bounds, other)[1])
+        for other in layout_items
+    )
+    center_x, center_y = _rect_center(bounds)
+    min_x = min(item[0] for item in layout_items)
+    min_y = min(item[1] for item in layout_items)
+    max_x = max(item[2] for item in layout_items)
+    max_y = max(item[3] for item in layout_items)
+    outside_cluster = (
+        center_x < min_x - 10.0
+        or center_x > max_x + 10.0
+        or center_y < min_y - 10.0
+        or center_y > max_y + 10.0
+    )
+    return nearest >= 10.0 and outside_cluster
+
+
 def _synthesize_drive_aisles(building_rects, parking_rects):
     if not parking_rects:
         return []
@@ -546,34 +588,39 @@ def _looks_like_parking_module(
 
 
 def _synthesize_layout_preview_actions(actions):
-    records = []
-    for action in actions:
-        if not isinstance(action, dict):
-            continue
-        rec = dict(action)
-        layer = str(rec.get("layer") or "").upper()
-        task = str(rec.get("task") or "").lower()
-        label = clean_label(rec.get("label"), "").upper()
-        if layer in {"ROAD", "FIRE"} and task in {"rectangle", "polygon", "polyline"}:
-            if not label or label in {"ROAD", "DRIVE", "FIRE", "FIRE-1", "ROAD-1"}:
-                rec["layer"] = "PAVEMENT"
-        records.append(rec)
+    raw_records = [dict(action) for action in actions if isinstance(action, dict)]
     building_rects = []
     pavement_rects = []
     has_parking = False
     has_walk = False
 
-    for action in records:
+    for action in raw_records:
         layer = str(action.get("layer") or "").upper()
         bounds = _action_bounds(action)
         if layer == "BUILDING" and bounds:
             building_rects.append(bounds)
-        elif layer == "PAVEMENT" and bounds:
-            pavement_rects.append((bounds, action))
+
+    records = []
+    for action in raw_records:
+        rec = dict(action)
+        layer = str(rec.get("layer") or "").upper()
+        task = str(rec.get("task") or "").lower()
+        label = clean_label(rec.get("label"), "").upper()
+        if layer in {"ROAD", "FIRE"}:
+            if task in {"circle", "polyline"}:
+                if not label or label in {"ROAD", "DRIVE", "FIRE", "FIRE-1", "ROAD-1"}:
+                    continue
+            if task in {"rectangle", "polygon"} and (not label or label in {"ROAD", "DRIVE", "FIRE", "FIRE-1", "ROAD-1"}):
+                rec["layer"] = "PAVEMENT"
+                layer = "PAVEMENT"
+        bounds = _action_bounds(rec)
+        if layer == "PAVEMENT" and bounds:
+            pavement_rects.append((bounds, rec))
         elif layer == "PARKING":
             has_parking = True
         elif layer == "WALK":
             has_walk = True
+        records.append(rec)
 
     synthesized = list(records)
     seen = {repr(action) for action in synthesized}
@@ -656,6 +703,7 @@ def _engineering_overlay_actions(records):
             if str(action.get("layer") or "").upper() in {"BUILDING", "PARKING", "PAVEMENT", "WALK"}
         ]
     )
+    layout_diag = 0.0 if not layout_bounds else ((layout_bounds[2] - layout_bounds[0]) ** 2 + (layout_bounds[3] - layout_bounds[1]) ** 2) ** 0.5
 
     def _is_oversized_for_layout(action):
         if not layout_bounds:
@@ -706,7 +754,17 @@ def _engineering_overlay_actions(records):
             and height <= max(10.0, layout_h * 0.25)
             and endpoint_outside >= 2
         )
-        return encloses_layout or oversized_diagonal or diagonal_fanout or oversized_span
+        midpoint_outside = False
+        if points and layout_bounds:
+            mid_idx = len(points) // 2
+            midpoint_outside = not _point_within_layout(points[mid_idx], layout_bounds, padding=10.0)
+        long_cross_site = (
+            line_length >= max(layout_diag * 0.9, max(layout_w, layout_h) * 1.1)
+            and endpoint_outside >= 1
+            and midpoint_outside
+            and (width >= layout_w * 0.45 or height >= layout_h * 0.45)
+        )
+        return encloses_layout or oversized_diagonal or diagonal_fanout or oversized_span or long_cross_site
 
     for action in records:
         layer = str(action.get("layer") or "").upper()
@@ -730,6 +788,8 @@ def _engineering_overlay_actions(records):
                     continue
             line_candidates.append((_polyline_length(action), action))
         elif layer == "STRUCTURE" and task in {"circle", "rectangle"}:
+            if _is_tiny_marker_circle(action):
+                continue
             structure_candidates.append((_bounds_area(bounds), action))
         elif layer in {"UTILITY", "WATER"} and task in {"polyline", "polygon"}:
             label = clean_label(action.get("label"), "").upper()
@@ -796,6 +856,12 @@ def _filtered_preview_actions(actions):
         if (str(action.get("layer") or "").upper() == "BUILDING" and str(action.get("task") or "").lower() in {"rectangle", "polygon"})
     ]
     building_bounds = [item for item in building_bounds if item["bounds"]]
+    building_rects = [item["bounds"] for item in building_bounds]
+    parking_bounds = [
+        _action_bounds(action)
+        for action in records
+        if (str(action.get("layer") or "").upper() == "PARKING" and _action_bounds(action))
+    ]
     has_building_shapes = any(
         (str(action.get("layer") or "").upper() == "BUILDING" and str(action.get("task") or "").lower() in {"rectangle", "polygon"})
         for action in records
@@ -830,11 +896,15 @@ def _filtered_preview_actions(actions):
             continue
         if has_layout_scene and layer == "ROUTE":
             continue
+        if has_layout_scene and _is_tiny_marker_circle(action):
+            continue
         if has_layout_scene and layer in SECONDARY_ENGINEERING_LAYERS and repr(action) not in engineering_overlay_keys:
             continue
         if has_layout_scene and task == "point":
             continue
         if has_layout_scene and layer == "BUILDING" and task == "text_note":
+            continue
+        if has_layout_scene and _is_isolated_pavement_shape(action, building_rects, parking_bounds):
             continue
         filtered.append(action)
     return filtered
