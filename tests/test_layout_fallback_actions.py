@@ -4,7 +4,7 @@ from backend.planning.core_stage_runners import _layout_fallback_actions, _synth
 
 
 class LayoutFallbackActionsTests(unittest.TestCase):
-    def test_layout_fallback_emits_parking_walk_and_fire_layers(self) -> None:
+    def test_layout_fallback_emits_parking_walk_and_pavement_layers(self) -> None:
         actions = _layout_fallback_actions(
             [{"name": "BLDG 1", "x": 100.0, "y": 200.0, "w": 120.0, "d": 60.0}],
             lot_x=0.0,
@@ -16,10 +16,11 @@ class LayoutFallbackActionsTests(unittest.TestCase):
         )
 
         layers = [str(action.get("layer", "")).upper() for action in actions]
-        self.assertIn("ROAD", layers)
-        self.assertIn("FIRE", layers)
+        self.assertIn("PAVEMENT", layers)
         self.assertIn("PARKING", layers)
         self.assertIn("WALK", layers)
+        self.assertNotIn("ROAD", layers)
+        self.assertNotIn("FIRE", layers)
         self.assertNotIn("circle", [str(action.get("task", "")).lower() for action in actions])
 
     def test_layout_fallback_avoids_loop_and_culdesac_schematic_shapes(self) -> None:
@@ -60,7 +61,7 @@ class LayoutFallbackActionsTests(unittest.TestCase):
 
         road_rects = [
             action for action in actions
-            if str(action.get("layer", "")).upper() == "ROAD"
+            if str(action.get("layer", "")).upper() == "PAVEMENT"
             and str(action.get("task", "")).lower() == "rectangle"
         ]
         narrow_vertical_roads = [
@@ -88,7 +89,7 @@ class LayoutFallbackActionsTests(unittest.TestCase):
 
         self.assertIn("PARKING", layers)
         self.assertIn("WALK", layers)
-        self.assertIn("ROAD", layers)
+        self.assertIn("PAVEMENT", layers)
         self.assertNotIn("FIRE", layers)
 
     def test_semantic_cleanup_replaces_schematic_roads_with_collectors(self) -> None:
@@ -110,16 +111,16 @@ class LayoutFallbackActionsTests(unittest.TestCase):
         ]
 
         normalized = _synthesize_layout_semantics(actions)
-        road_tasks = [
+        synthetic_tasks = [
             (str(action.get("task", "")).lower(), str(action.get("layer", "")).upper())
             for action in normalized
-            if str(action.get("layer", "")).upper() in {"ROAD", "FIRE"}
+            if str(action.get("layer", "")).upper() in {"PAVEMENT", "FIRE"}
         ]
 
-        self.assertTrue(all(task != "circle" for task, _ in road_tasks))
-        self.assertTrue(all(task != "polyline" for task, _ in road_tasks))
-        self.assertGreaterEqual(sum(1 for task, layer in road_tasks if task == "rectangle" and layer == "ROAD"), 2)
-        self.assertEqual(sum(1 for task, layer in road_tasks if task == "rectangle" and layer == "FIRE"), 0)
+        self.assertTrue(all(task != "circle" for task, _ in synthetic_tasks))
+        self.assertTrue(all(task != "polyline" for task, _ in synthetic_tasks))
+        self.assertGreaterEqual(sum(1 for task, layer in synthetic_tasks if task == "rectangle" and layer == "PAVEMENT"), 2)
+        self.assertEqual(sum(1 for task, layer in synthetic_tasks if task == "rectangle" and layer == "FIRE"), 0)
 
 
 if __name__ == "__main__":

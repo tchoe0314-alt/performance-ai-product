@@ -236,9 +236,8 @@ def _layout_fallback_actions(
             }
         )
 
-    _append_surface(upper_collector, layer="ROAD")
-    _append_surface(upper_collector, layer="FIRE")
-    _append_surface(lower_collector, layer="ROAD")
+    _append_surface(upper_collector, layer="PAVEMENT")
+    _append_surface(lower_collector, layer="PAVEMENT")
 
     access_targets = [rect for rect in (upper_collector, lower_collector) if rect]
     for idx, target in enumerate(access_targets):
@@ -262,9 +261,7 @@ def _layout_fallback_actions(
             access_y = round(ay + ah, 3)
             access_h = round(max(18.0, lot_y + lot_h - access_y), 3)
         access = (access_x, access_y, access_w, access_h)
-        _append_surface(access, layer="ROAD")
-        if idx == 0:
-            _append_surface(access, layer="FIRE")
+        _append_surface(access, layer="PAVEMENT")
     return actions
 
 
@@ -382,8 +379,8 @@ def _synthesize_layout_collectors(
 
     upper_collector = _collector_for_row(upper_row)
     lower_collector = _collector_for_row(lower_row) if lower_row else None
-    _append_rect(upper_collector, "ROAD")
-    _append_rect(lower_collector, "ROAD")
+    _append_rect(upper_collector, "PAVEMENT")
+    _append_rect(lower_collector, "PAVEMENT")
 
     if upper_collector and lower_collector:
         ux, uy, uw, uh = upper_collector
@@ -392,7 +389,7 @@ def _synthesize_layout_collectors(
         connector_x = round(max(ux + uw, lx + lw) - connector_w - 2.0, 3)
         connector_y = round(ly + lh, 3)
         connector_h = round(max(0.0, uy - connector_y), 3)
-        _append_rect((connector_x, connector_y, connector_w, connector_h), "ROAD")
+        _append_rect((connector_x, connector_y, connector_w, connector_h), "PAVEMENT")
 
     return actions
 
@@ -497,6 +494,8 @@ def _synthesize_layout_semantics(actions: Sequence[Dict[str, Any]]) -> List[Dict
 
     if road_actions and not has_fire:
         for action in road_actions:
+            if bool(safe_dict(action).get("synthetic_layout_collector")):
+                continue
             out = deepcopy(action)
             out["layer"] = "FIRE"
             key = repr(out)
