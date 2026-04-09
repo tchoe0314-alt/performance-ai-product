@@ -119,6 +119,7 @@ SECONDARY_ENGINEERING_LAYERS = {
     "LOW_POINTS",
     "PAD",
     "SURFACE",
+    "ROUTE",
 }
 
 
@@ -834,9 +835,11 @@ def _filtered_preview_actions(actions):
             continue
         if layer == "UTILITY" and any(token in helper_signature for token in ("SERVICE", "TIE", "GENERIC_UTILITY")):
             continue
+        if has_layout_scene and layer == "ROUTE":
+            continue
         if has_layout_scene and layer in SECONDARY_ENGINEERING_LAYERS and repr(action) not in engineering_overlay_keys:
             continue
-        if has_layout_scene and layer == "STRUCTURE" and task == "point":
+        if has_layout_scene and task == "point":
             continue
         if has_layout_scene and layer == "BUILDING" and task == "text_note":
             continue

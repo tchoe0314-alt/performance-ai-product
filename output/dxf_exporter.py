@@ -924,6 +924,8 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
         layer = get_layer(rec, "SITE")
         if layout_first_modelspace and layer in MODELSPACE_DETAIL_LAYERS:
             continue
+        if layout_first_modelspace and layer == "ROUTE":
+            continue
         if (
             layout_first_modelspace
             and layer in {"PIPE", "STORM", "SAN", "UTILITY", "WATER", "STRUCTURE", "BASIN_BOUNDARY"}
@@ -941,6 +943,8 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
         if use_surface_contours and layer in {"EG_CONTOUR", "FG_CONTOUR"}:
             continue
         if rec.get("canonical_source_type") in {"storm_pipe_segment", "sanitary_segment", "drainage_structure", "drainage_basin"} and safe_text(rec.get("task"), "").lower() == "text_note":
+            continue
+        if layout_first_modelspace and safe_text(rec.get("task"), "").lower() == "point":
             continue
         if layout_first_modelspace and safe_text(rec.get("task"), "").lower() == "text_note":
             continue

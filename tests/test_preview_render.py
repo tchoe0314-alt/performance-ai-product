@@ -186,6 +186,26 @@ class PreviewRenderTests(unittest.TestCase):
         self.assertNotIn("point", kept_structure_tasks)
         self.assertIn("circle", kept_structure_tasks)
 
+    def test_layout_scene_suppresses_route_lines_and_route_points(self):
+        actions = [
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [20, 60], "width": 12, "height": 8},
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 2", "origin": [40, 60], "width": 12, "height": 8},
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 3", "origin": [60, 60], "width": 12, "height": 8},
+            {"layer": "PARKING", "task": "rectangle", "origin": [16, 40], "width": 58, "height": 10},
+            {"layer": "ROUTE", "task": "polyline", "points": [[5, 90], [50, 15], [95, 90]], "label": "SECTION CUT"},
+            {"layer": "ROUTE", "task": "point", "origin": [6, 88], "label": "SEC 10+00"},
+            {"layer": "ROUTE", "task": "point", "origin": [8, 14], "label": "SEC 12+00"},
+        ]
+
+        filtered = _filtered_preview_actions(actions)
+        kept_route_layers = [
+            str(action.get("layer") or "").upper()
+            for action in filtered
+            if str(action.get("layer") or "").upper() == "ROUTE"
+        ]
+
+        self.assertEqual(kept_route_layers, [])
+
     def test_non_layout_scene_keeps_engineering_geometry_available(self):
         actions = [
             {"layer": "PIPE", "task": "polyline", "label": "PIPE-1"},

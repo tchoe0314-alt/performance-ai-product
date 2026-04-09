@@ -90,6 +90,26 @@ class DxfSheetLayoutsTest(unittest.TestCase):
             self.assertIn("WATER", modelspace_layers)
             self.assertNotIn("UTILITY", modelspace_layers)
 
+    def test_modelspace_suppresses_route_and_point_noise_in_layout_scene(self) -> None:
+        plan = _sheet_test_plan()
+        actions = plan.setdefault("actions", [])
+        actions.extend(
+            [
+                {"layer": "ROUTE", "task": "polyline", "points": [[5, 100], [70, 18], [135, 100]], "label": "SECTION CUT"},
+                {"layer": "ROUTE", "task": "point", "origin": [6, 98], "label": "SEC 10+00"},
+                {"layer": "ROUTE", "task": "point", "origin": [8, 16], "label": "SEC 12+00"},
+            ]
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "modelspace-route-filter-test.dxf"
+            save_dxf(plan, filename=str(path))
+
+            doc = ezdxf.readfile(path)
+            modelspace_layers = {entity.dxf.layer for entity in doc.modelspace()}
+
+            self.assertIn("BUILDING", modelspace_layers)
+            self.assertNotIn("ROUTE", modelspace_layers)
+
     def test_profiles_and_sections_keep_canonical_context(self) -> None:
         plan = _sheet_test_plan()
         profiles = ((plan.get("meta") or {}).get("profiles") or [])
