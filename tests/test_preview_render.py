@@ -6,15 +6,15 @@ from output.preview import _filtered_preview_actions
 class PreviewRenderTests(unittest.TestCase):
     def test_layout_scene_suppresses_engineering_overlay_noise(self):
         actions = [
-            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1"},
-            {"layer": "ROAD", "task": "rectangle", "label": "DRIVE"},
-            {"layer": "PARKING", "task": "polyline", "label": None, "text": None},
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [20, 60], "width": 12, "height": 8},
+            {"layer": "ROAD", "task": "rectangle", "label": "DRIVE", "origin": [10, 20], "width": 80, "height": 8},
+            {"layer": "PARKING", "task": "rectangle", "origin": [16, 40], "width": 58, "height": 10},
             {"layer": "ANNO", "task": "text_note", "text": 'PIPE-1 12" INV 98.52->98.24'},
-            {"layer": "PIPE", "task": "polyline", "label": "PIPE-1", "points": [[0, 0], [20, 0], [40, -10]]},
-            {"layer": "BASIN_BOUNDARY", "task": "circle", "label": "SINK_0_43", "center": [50, 25], "radius": 12},
+            {"layer": "PIPE", "task": "polyline", "label": "PIPE-1", "points": [[30, 36], [45, 44], [58, 52]]},
+            {"layer": "BASIN_BOUNDARY", "task": "circle", "label": "BASIN-A", "center": [70, 48], "radius": 6},
             {"layer": "UTILITY", "task": "polyline", "label": "generic_utility_1"},
-            {"layer": "WATER", "task": "polyline", "label": "WATER MAIN", "points": [[5, 10], [45, 10], [70, 18]]},
-            {"layer": "STRUCTURE", "task": "circle", "label": "INLET-1", "center": [38, -8], "radius": 4},
+            {"layer": "WATER", "task": "polyline", "label": "WATER MAIN", "points": [[18, 32], [45, 32], [72, 34]]},
+            {"layer": "STRUCTURE", "task": "circle", "label": "INLET-1", "center": [58, 52], "radius": 2.5},
             {"layer": "FG_CONTOUR", "task": "polyline", "label": "FG-101"},
         ]
 
@@ -31,6 +31,7 @@ class PreviewRenderTests(unittest.TestCase):
         self.assertIn("STRUCTURE", kept_layers)
         self.assertNotIn("FG_CONTOUR", kept_layers)
         self.assertIn("PARKING", kept_layers)
+        self.assertIn("FIRE", kept_layers)
 
     def test_layout_scene_suppresses_giant_wrapper_rectangles(self):
         actions = [
@@ -104,6 +105,45 @@ class PreviewRenderTests(unittest.TestCase):
             and str(action.get("task") or "").lower() == "rectangle"
         ]
         self.assertGreaterEqual(len(pavement_rectangles), 1)
+
+    def test_layout_scene_suppresses_thin_fire_bars_near_buildings(self):
+        actions = [
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [20, 60], "width": 12, "height": 8},
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 2", "origin": [40, 60], "width": 12, "height": 8},
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 3", "origin": [60, 60], "width": 12, "height": 8},
+            {"layer": "PARKING", "task": "rectangle", "origin": [16, 40], "width": 58, "height": 10},
+            {"layer": "FIRE", "task": "rectangle", "origin": [14, 35], "width": 62, "height": 6},
+        ]
+
+        filtered = _filtered_preview_actions(actions)
+        kept_fire_rectangles = [
+            action
+            for action in filtered
+            if str(action.get("layer") or "").upper() == "FIRE"
+            and str(action.get("task") or "").lower() == "rectangle"
+        ]
+
+        self.assertEqual(len(kept_fire_rectangles), 0)
+
+    def test_layout_scene_suppresses_oversized_diagonal_engineering_lines(self):
+        actions = [
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [20, 60], "width": 12, "height": 8},
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 2", "origin": [40, 60], "width": 12, "height": 8},
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 3", "origin": [60, 60], "width": 12, "height": 8},
+            {"layer": "PARKING", "task": "rectangle", "origin": [16, 40], "width": 58, "height": 10},
+            {"layer": "PIPE", "task": "polyline", "points": [[5, 95], [50, 18], [95, 95]], "label": "PIPE-1"},
+            {"layer": "WATER", "task": "polyline", "points": [[5, 95], [95, 15]], "label": "WATER MAIN"},
+            {"layer": "STORM", "task": "polyline", "points": [[5, 20], [50, 18], [95, 20]], "label": "STORM-1"},
+        ]
+
+        filtered = _filtered_preview_actions(actions)
+        kept_engineering = [
+            action
+            for action in filtered
+            if str(action.get("layer") or "").upper() in {"PIPE", "WATER", "STORM"}
+        ]
+
+        self.assertEqual(len(kept_engineering), 0)
 
     def test_non_layout_scene_keeps_engineering_geometry_available(self):
         actions = [

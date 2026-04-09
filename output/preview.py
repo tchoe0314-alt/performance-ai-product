@@ -221,6 +221,28 @@ def _is_schematic_access_shape(action, building_bounds):
     label = clean_label(action.get("label"), "").upper()
     if layer not in {"ROAD", "FIRE"}:
         return False
+    if task == "rectangle":
+        bounds = _action_bounds(action)
+        if not bounds or not building_bounds or label:
+            return False
+        min_building_x = min(item["bounds"][0] for item in building_bounds)
+        min_building_y = min(item["bounds"][1] for item in building_bounds)
+        max_building_x = max(item["bounds"][2] for item in building_bounds)
+        max_building_y = max(item["bounds"][3] for item in building_bounds)
+        line_min_x, line_min_y, line_max_x, line_max_y = bounds
+        width = max(1e-6, line_max_x - line_min_x)
+        height = max(1e-6, line_max_y - line_min_y)
+        if layer == "FIRE" and width > 60.0 and height <= 12.0:
+            bar_y = (line_min_y + line_max_y) / 2.0
+            if min_building_y - 45.0 <= bar_y <= max_building_y + 25.0:
+                return True
+        if width > 120.0 and height <= 14.0:
+            bar_y = (line_min_y + line_max_y) / 2.0
+            return min_building_y - 40.0 <= bar_y <= max_building_y + 20.0
+        if height > 120.0 and width <= 14.0:
+            bar_x = (line_min_x + line_max_x) / 2.0
+            return bar_x >= max_building_x + 20.0 or bar_x <= min_building_x - 20.0
+        return False
     if task == "circle":
         if label:
             return False
@@ -377,6 +399,28 @@ def _rect_gap(a, b):
     gap_x = max(0.0, max(b_min_x - a_max_x, a_min_x - b_max_x))
     gap_y = max(0.0, max(b_min_y - a_max_y, a_min_y - b_max_y))
     return gap_x, gap_y
+
+
+def _merge_bounds(bounds_list):
+    valid = [bounds for bounds in bounds_list if bounds]
+    if not valid:
+        return None
+    min_x = min(bounds[0] for bounds in valid)
+    min_y = min(bounds[1] for bounds in valid)
+    max_x = max(bounds[2] for bounds in valid)
+    max_y = max(bounds[3] for bounds in valid)
+    return (min_x, min_y, max_x, max_y)
+
+
+def _point_within_layout(point, layout_bounds, padding=0.0):
+    if not point or not layout_bounds:
+        return False
+    x, y = point
+    min_x, min_y, max_x, max_y = layout_bounds
+    return (
+        min_x - padding <= x <= max_x + padding
+        and min_y - padding <= y <= max_y + padding
+    )
 
 
 def _synthesize_drive_aisles(building_rects, parking_rects):
@@ -578,6 +622,64 @@ def _engineering_overlay_actions(records):
     line_candidates = []
     structure_candidates = []
     utility_candidates = []
+    layout_bounds = _merge_bounds(
+        [
+            _action_bounds(action)
+            for action in records
+            if str(action.get("layer") or "").upper() in {"BUILDING", "PARKING", "PAVEMENT", "ROAD", "WALK"}
+        ]
+    )
+
+    def _is_oversized_for_layout(action):
+        if not layout_bounds:
+            return False
+        bounds = _action_bounds(action)
+        if not bounds:
+            return False
+        layout_min_x, layout_min_y, layout_max_x, layout_max_y = layout_bounds
+        line_min_x, line_min_y, line_max_x, line_max_y = bounds
+        layout_w = max(1.0, layout_max_x - layout_min_x)
+        layout_h = max(1.0, layout_max_y - layout_min_y)
+        width = max(1e-6, line_max_x - line_min_x)
+        height = max(1e-6, line_max_y - line_min_y)
+        encloses_layout = (
+            line_min_x <= layout_min_x - 10.0
+            and line_min_y <= layout_min_y - 10.0
+            and line_max_x >= layout_max_x + 10.0
+            and line_max_y >= layout_max_y + 10.0
+        )
+        oversized_diagonal = width >= layout_w * 0.85 and height >= layout_h * 0.55
+        points = safe_points(action)
+        first_point = points[0] if points else None
+        last_point = points[-1] if points else None
+        endpoint_outside = 0
+        if first_point and not _point_within_layout(first_point, layout_bounds, padding=8.0):
+            endpoint_outside += 1
+        if last_point and not _point_within_layout(last_point, layout_bounds, padding=8.0):
+            endpoint_outside += 1
+        spans_multiple_sides = sum(
+            (
+                line_min_x < layout_min_x - 20.0,
+                line_max_x > layout_max_x + 20.0,
+                line_min_y < layout_min_y - 20.0,
+                line_max_y > layout_max_y + 20.0,
+            )
+        ) >= 2
+        line_length = _polyline_length(action) if points else max(width, height)
+        diagonal_fanout = (
+            line_length >= max(layout_w, layout_h) * 1.8
+            and width >= layout_w * 0.55
+            and height >= layout_h * 0.55
+            and endpoint_outside >= 1
+            and spans_multiple_sides
+        )
+        oversized_span = (
+            line_length >= layout_w * 1.25
+            and width >= layout_w * 0.9
+            and height <= max(10.0, layout_h * 0.25)
+            and endpoint_outside >= 2
+        )
+        return encloses_layout or oversized_diagonal or diagonal_fanout or oversized_span
 
     for action in records:
         layer = str(action.get("layer") or "").upper()
@@ -586,8 +688,19 @@ def _engineering_overlay_actions(records):
         if not bounds:
             continue
         if layer == "BASIN_BOUNDARY" and task in {"circle", "polygon", "rectangle", "polyline"}:
+            if _is_oversized_for_layout(action):
+                continue
             basin_candidates.append((_bounds_area(bounds), action))
         elif layer in {"PIPE", "STORM"} and task in {"polyline", "polygon"}:
+            if _is_oversized_for_layout(action):
+                continue
+            points = safe_points(action)
+            if points:
+                points_in_layout = sum(
+                    1 for point in points if _point_within_layout(point, layout_bounds, padding=12.0)
+                )
+                if points_in_layout <= 1 and len(points) >= 2:
+                    continue
             line_candidates.append((_polyline_length(action), action))
         elif layer == "STRUCTURE" and task in {"circle", "point", "rectangle"}:
             structure_candidates.append((_bounds_area(bounds), action))
@@ -600,6 +713,15 @@ def _engineering_overlay_actions(records):
                 continue
             if any(token in helper_signature for token in ("SERVICE", "TIE", "GENERIC_UTILITY", "BUILDING_SERVICE", "SOURCE_SERVICE", "UTILITY-")):
                 continue
+            if _is_oversized_for_layout(action):
+                continue
+            points = safe_points(action)
+            if points:
+                points_in_layout = sum(
+                    1 for point in points if _point_within_layout(point, layout_bounds, padding=12.0)
+                )
+                if points_in_layout <= 1 and len(points) >= 2:
+                    continue
             utility_candidates.append((_polyline_length(action), action))
 
     selected = []
