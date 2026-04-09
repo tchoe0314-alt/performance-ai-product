@@ -554,11 +554,69 @@ def _synthesize_layout_preview_actions(actions):
     return synthesized
 
 
+def _polyline_length(action):
+    points = safe_points(action)
+    if len(points) < 2:
+        return 0.0
+    length = 0.0
+    for (x1, y1), (x2, y2) in zip(points, points[1:]):
+        dx = safe_num(x2) - safe_num(x1)
+        dy = safe_num(y2) - safe_num(y1)
+        length += (dx * dx + dy * dy) ** 0.5
+    return length
+
+
+def _engineering_overlay_actions(records):
+    basin_candidates = []
+    line_candidates = []
+    structure_candidates = []
+
+    for action in records:
+        layer = str(action.get("layer") or "").upper()
+        task = str(action.get("task") or "").lower()
+        bounds = _action_bounds(action)
+        if not bounds:
+            continue
+        if layer == "BASIN_BOUNDARY" and task in {"circle", "polygon", "rectangle", "polyline"}:
+            basin_candidates.append((_bounds_area(bounds), action))
+        elif layer in {"PIPE", "STORM"} and task in {"polyline", "polygon"}:
+            line_candidates.append((_polyline_length(action), action))
+        elif layer == "STRUCTURE" and task in {"circle", "point", "rectangle"}:
+            structure_candidates.append((_bounds_area(bounds), action))
+
+    selected = []
+    seen = set()
+
+    for _, action in sorted(basin_candidates, key=lambda item: item[0], reverse=True)[:1]:
+        key = repr(action)
+        if key not in seen:
+            seen.add(key)
+            selected.append(action)
+
+    for _, action in sorted(line_candidates, key=lambda item: item[0], reverse=True)[:4]:
+        key = repr(action)
+        if key not in seen:
+            seen.add(key)
+            selected.append(action)
+
+    for _, action in sorted(structure_candidates, key=lambda item: item[0], reverse=True)[:4]:
+        key = repr(action)
+        if key not in seen:
+            seen.add(key)
+            selected.append(action)
+
+    return selected
+
+
 def _filtered_preview_actions(actions):
     records = [action for action in actions if isinstance(action, dict)]
     records = _synthesize_layout_preview_actions(records)
     has_primary_site_geometry = _has_primary_site_geometry(records)
     has_layout_scene = _has_layout_scene(records)
+    engineering_overlay_keys = {
+        repr(action)
+        for action in (_engineering_overlay_actions(records) if has_layout_scene else [])
+    }
     building_bounds = [
         {"action": action, "bounds": _action_bounds(action)}
         for action in records
@@ -597,7 +655,7 @@ def _filtered_preview_actions(actions):
             continue
         if has_layout_scene and layer == "WATER":
             continue
-        if has_layout_scene and layer in SECONDARY_ENGINEERING_LAYERS:
+        if has_layout_scene and layer in SECONDARY_ENGINEERING_LAYERS and repr(action) not in engineering_overlay_keys:
             continue
         if has_layout_scene and layer == "BUILDING" and task == "text_note":
             continue

@@ -10,10 +10,10 @@ class PreviewRenderTests(unittest.TestCase):
             {"layer": "ROAD", "task": "rectangle", "label": "DRIVE"},
             {"layer": "PARKING", "task": "polyline", "label": None, "text": None},
             {"layer": "ANNO", "task": "text_note", "text": 'PIPE-1 12" INV 98.52->98.24'},
-            {"layer": "PIPE", "task": "polyline", "label": "PIPE-1"},
-            {"layer": "BASIN_BOUNDARY", "task": "circle", "label": "SINK_0_43"},
+            {"layer": "PIPE", "task": "polyline", "label": "PIPE-1", "points": [[0, 0], [20, 0], [40, -10]]},
+            {"layer": "BASIN_BOUNDARY", "task": "circle", "label": "SINK_0_43", "center": [50, 25], "radius": 12},
             {"layer": "UTILITY", "task": "polyline", "label": "generic_utility_1"},
-            {"layer": "STRUCTURE", "task": "circle", "label": "INLET-1"},
+            {"layer": "STRUCTURE", "task": "circle", "label": "INLET-1", "center": [38, -8], "radius": 4},
             {"layer": "FG_CONTOUR", "task": "polyline", "label": "FG-101"},
         ]
 
@@ -23,10 +23,10 @@ class PreviewRenderTests(unittest.TestCase):
         self.assertIn("BUILDING", kept_layers)
         self.assertIn("ROAD", kept_layers)
         self.assertNotIn("ANNO", kept_layers)
-        self.assertNotIn("PIPE", kept_layers)
-        self.assertNotIn("BASIN_BOUNDARY", kept_layers)
+        self.assertIn("PIPE", kept_layers)
+        self.assertIn("BASIN_BOUNDARY", kept_layers)
         self.assertNotIn("UTILITY", kept_layers)
-        self.assertNotIn("STRUCTURE", kept_layers)
+        self.assertIn("STRUCTURE", kept_layers)
         self.assertNotIn("FG_CONTOUR", kept_layers)
         self.assertIn("PARKING", kept_layers)
 
