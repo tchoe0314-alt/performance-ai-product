@@ -182,6 +182,14 @@ def build_orchestrate_job_runner(
             "coordination_resolution": "coordination_validation",
             "qa": "coordination_validation",
         }
+        stage_statuses = dict(
+            dict(
+                dict(dict(latest_result.get("final_plan") or {}).get("meta") or {})
+                .get("stage_completeness")
+                or {}
+            ).get("statuses")
+            or {}
+        )
         target_phase = stage_to_phase.get(stage_name)
         for phase_name in phase_order:
             phase_entry = dict(phase_checkpoints.get(phase_name) or {})
@@ -201,6 +209,14 @@ def build_orchestrate_job_runner(
             phase_entry["messages"] = messages[-3:]
             phase_entry["job_progress"] = int(progress or 0)
             phase_checkpoints[target_phase] = phase_entry
+        if stage_name:
+            normalized_status = {
+                "running": "running",
+                "complete": "complete",
+                "failed": "failed",
+            }.get(str(status or "").strip().lower(), str(status or "").strip().lower() or "pending")
+            if normalized_status:
+                stage_statuses[stage_name] = normalized_status
         completed_phase_count = sum(1 for name in phase_order if bool(dict(phase_checkpoints.get(name) or {}).get("ready")))
         run_summary["phase_checkpoints"] = phase_checkpoints
         run_summary["stage_summary"] = {
@@ -226,6 +242,10 @@ def build_orchestrate_job_runner(
         checkpoint_final_plan = dict(checkpoint_result.get("final_plan") or {})
         checkpoint_meta = dict(checkpoint_final_plan.get("meta") or {})
         checkpoint_meta["phase_checkpoints"] = phase_checkpoints
+        checkpoint_meta["stage_completeness"] = {
+            **dict(checkpoint_meta.get("stage_completeness") or {}),
+            "statuses": stage_statuses,
+        }
         checkpoint_meta["release_review"] = {
             **dict(checkpoint_meta.get("release_review") or {}),
             "phase_checkpoints": phase_checkpoints,

@@ -461,17 +461,33 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
             phase_save["latest_result"]["final_plan"]["meta"]["phase_checkpoints"]["layout"]["status"],
             "running",
         )
+        self.assertEqual(
+            phase_save["latest_result"]["final_plan"]["meta"]["stage_completeness"]["statuses"]["layout"],
+            "running",
+        )
         second_phase_save = store.save_calls[1]
         second_phase_run = second_phase_save["metadata"]["workflow"]["runs"][0]
         self.assertEqual(second_phase_run["phase_checkpoints"]["layout"]["status"], "complete")
         self.assertTrue(second_phase_run["phase_checkpoints"]["layout"]["ready"])
+        self.assertEqual(
+            second_phase_save["latest_result"]["final_plan"]["meta"]["stage_completeness"]["statuses"]["layout"],
+            "complete",
+        )
         third_phase_save = store.save_calls[2]
         third_phase_run = third_phase_save["metadata"]["workflow"]["runs"][0]
         self.assertEqual(third_phase_run["phase_checkpoints"]["grading"]["status"], "running")
+        self.assertEqual(
+            third_phase_save["latest_result"]["final_plan"]["meta"]["stage_completeness"]["statuses"]["grading"],
+            "running",
+        )
         fourth_phase_save = store.save_calls[3]
         fourth_phase_run = fourth_phase_save["metadata"]["workflow"]["runs"][0]
         self.assertEqual(fourth_phase_run["phase_checkpoints"]["grading"]["status"], "complete")
         self.assertTrue(fourth_phase_run["phase_checkpoints"]["grading"]["ready"])
+        self.assertEqual(
+            fourth_phase_save["latest_result"]["final_plan"]["meta"]["stage_completeness"]["statuses"]["grading"],
+            "complete",
+        )
 
     def test_build_orchestrate_job_runner_resumes_from_saved_checkpoint_state(self):
         captured_payload = {}
