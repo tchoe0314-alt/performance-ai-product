@@ -345,6 +345,7 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertEqual(review["blocked_exports"], [])
         self.assertEqual(review["blocked_reasons"], [])
         self.assertEqual(review["release_status"], "ready")
+        self.assertEqual(review["review_categories"], [])
 
     def test_build_preview_response_prefers_current_export_guard_over_stale_saved_blockers(self):
         service = FakeArtifactService()
@@ -412,6 +413,81 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         review = response["summary"]["review"]
         self.assertEqual(review["blocked_exports"], [])
         self.assertEqual(review["blocked_reasons"], [])
+
+    def test_build_preview_response_prefers_reliability_release_ready_over_review_status(self):
+        service = FakeArtifactService()
+        response = build_preview_response(
+            artifact_service=service,
+            result_data={
+                "run_summary": {
+                    "engineering_status": {"trust_score": 84.0},
+                    "reliability_summary": {"operational_state": "ready", "release_ready": True},
+                    "optimization_summary": {},
+                    "convergence_summary": {
+                        "converged": False,
+                        "passes_run": 3,
+                        "unresolved_conflict_count": 2,
+                        "assumption_summary": {"count": 1, "categories": ["design"], "examples": ["Defaulted drive aisle width."]},
+                        "fix_summary": {"autofix_actions": []},
+                        "rerun_summary": {"total_reruns": 1, "stage_counts": {"layout": 1}, "reason_counts": {"layout_retry": 1}},
+                        "dominant_issue_categories": [],
+                        "unresolved_issue_categories": ["general", "validation"],
+                        "blocked_exports": [],
+                        "blocked_reasons": [],
+                    },
+                    "requested_deliverables": ["site_plan", "grading_plan"],
+                    "produced_deliverables": ["site_plan", "grading_plan"],
+                    "failed_deliverables": [],
+                    "ready_deliverables": ["site_plan", "grading_plan"],
+                    "extra_deliverables": [],
+                },
+                "final_plan": {
+                    "project_name": "Release Ready Reliability",
+                    "actions": [{"layer": "BUILDING"}],
+                    "meta": {},
+                },
+            },
+        )
+        review = response["summary"]["review"]
+        self.assertEqual(review["release_status"], "ready")
+        self.assertEqual(review["review_categories"], [])
+
+    def test_build_preview_response_drops_general_when_other_review_categories_exist(self):
+        service = FakeArtifactService()
+        response = build_preview_response(
+            artifact_service=service,
+            result_data={
+                "run_summary": {
+                    "engineering_status": {"trust_score": 61.0},
+                    "reliability_summary": {"operational_state": "review", "release_ready": False},
+                    "optimization_summary": {},
+                    "convergence_summary": {
+                        "converged": False,
+                        "passes_run": 2,
+                        "unresolved_conflict_count": 3,
+                        "assumption_summary": {"count": 0, "categories": [], "examples": []},
+                        "fix_summary": {"autofix_actions": []},
+                        "rerun_summary": {"total_reruns": 0, "stage_counts": {}, "reason_counts": {}},
+                        "dominant_issue_categories": [],
+                        "unresolved_issue_categories": ["general", "coordination", "validation"],
+                        "blocked_exports": [],
+                        "blocked_reasons": [],
+                    },
+                    "requested_deliverables": ["site_plan"],
+                    "produced_deliverables": ["site_plan"],
+                    "failed_deliverables": [],
+                    "ready_deliverables": ["site_plan"],
+                    "extra_deliverables": [],
+                },
+                "final_plan": {
+                    "project_name": "Category Cleanup",
+                    "actions": [{"layer": "BUILDING"}],
+                    "meta": {},
+                },
+            },
+        )
+        review = response["summary"]["review"]
+        self.assertEqual(review["review_categories"], ["coordination", "validation"])
 
     def test_final_plan_from_result_still_enforces_export_guard_by_default(self):
         with self.assertRaises(HTTPException):

@@ -106,6 +106,19 @@ def _display_plan_from_result(result_data: Dict[str, Any], *, enforce_export_gua
 
 
 def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, Any]) -> Dict[str, Any]:
+    def _clean_review_categories(values: list[str], *, release_ready: bool) -> list[str]:
+        cleaned: list[str] = []
+        for item in values:
+            name = str(item or "").strip()
+            if not name or name in cleaned:
+                continue
+            cleaned.append(name)
+        if len(cleaned) > 1:
+            cleaned = [item for item in cleaned if item.lower() != "general"]
+        if release_ready and all(item.lower() in {"general", "validation"} for item in cleaned):
+            return []
+        return cleaned
+
     def _current_export_guard_state() -> tuple[list[str], list[str]]:
         meta = dict(final_plan.get("meta") or {})
         has_discipline_meta = any(
@@ -207,9 +220,17 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
     failed_deliverables = list(run_summary.get("failed_deliverables") or [])
     ready_deliverables = list(run_summary.get("ready_deliverables") or [])
     extra_deliverables = list(run_summary.get("extra_deliverables") or [])
+    release_ready = bool(reliability.get("release_ready")) or bool(final_meta.get("release_ready"))
+    unresolved_issue_categories = _clean_review_categories(
+        unresolved_issue_categories,
+        release_ready=release_ready and not blocked_exports and not blocked_reasons and not failed_deliverables,
+    )
     if blocked_exports or blocked_reasons or failed_deliverables:
         release_status = "blocked"
         release_note = "Blocked until outstanding export issues are resolved."
+    elif release_ready:
+        release_status = "ready"
+        release_note = str(final_release_review.get("release_note") or "Release-ready engineering state.")
     elif str(final_release_review.get("release_status") or "").lower() == "ready":
         release_status = "ready"
         release_note = str(final_release_review.get("release_note") or "Release-ready engineering state.")
