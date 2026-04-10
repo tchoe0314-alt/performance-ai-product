@@ -457,7 +457,10 @@ def _synthesize_layout_semantics(actions: Sequence[Dict[str, Any]]) -> List[Dict
         if not rec:
             continue
         layer = safe_str(rec.get("layer")).upper()
+        task = lower_text(rec.get("task"))
         bounds = _rectangle_bounds(rec)
+        if layer in {"ROAD", "FIRE"} and task in {"circle", "polyline"}:
+            continue
         out = deepcopy(rec)
         if layer == "ROAD" and bounds is not None:
             out["layer"] = "PAVEMENT"

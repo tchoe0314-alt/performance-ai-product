@@ -6,6 +6,58 @@ from output.dxf_exporter import _site_plan_drainage_guidance_notes, _site_plan_s
 
 
 class ExportPackagingRichnessTest(unittest.TestCase):
+    def test_unpositioned_mixed_use_building_specs_expand_into_multi_building_layout(self) -> None:
+        plan = build_plan(
+            {
+                "project_name": "Mixed Use Legacy Expansion Test",
+                "units": "ft",
+                "mode": "site_plan",
+                "project_type": "mixed_use",
+                "site_type": "mixed_use",
+                "lot": {"x": 0.0, "y": 0.0, "w": 700.0, "h": 560.0},
+                "setback": 15.0,
+                "street_edge": "bottom",
+                "layout_strategy": "balanced",
+                "site_plan": {"parking_count": 180, "building_width": 110.0, "building_depth": 58.0},
+                "buildings": [
+                    {"name": "BLDG 1", "use": "multifamily", "w": 110.0, "d": 58.0},
+                    {"name": "BLDG 2", "use": "multifamily", "w": 110.0, "d": 58.0},
+                    {"name": "BLDG 3", "use": "multifamily", "w": 110.0, "d": 58.0},
+                    {"name": "Retail Pad", "use": "retail", "w": 70.0, "d": 45.0},
+                ],
+            }
+        )
+
+        building_rectangles = [
+            action
+            for action in plan.get("actions") or []
+            if str(action.get("layer") or "").upper() == "BUILDING"
+            and str(action.get("task") or "").lower() == "rectangle"
+        ]
+        parking_rectangles = [
+            action
+            for action in plan.get("actions") or []
+            if str(action.get("layer") or "").upper() == "PARKING"
+            and str(action.get("task") or "").lower() == "rectangle"
+        ]
+        walk_actions = [
+            action
+            for action in plan.get("actions") or []
+            if str(action.get("layer") or "").upper() == "WALK"
+            and str(action.get("task") or "").lower() in {"rectangle", "polyline"}
+        ]
+        road_polylines = [
+            action
+            for action in plan.get("actions") or []
+            if str(action.get("layer") or "").upper() == "ROAD"
+            and str(action.get("task") or "").lower() in {"polyline", "polygon", "circle"}
+        ]
+
+        self.assertGreaterEqual(len(building_rectangles), 4)
+        self.assertGreaterEqual(len(parking_rectangles), 4)
+        self.assertGreaterEqual(len(walk_actions), 4)
+        self.assertFalse(road_polylines)
+
     def test_multi_building_program_keeps_multiple_building_footprints_in_preview_plan(self) -> None:
         plan = build_plan(
             {
@@ -55,6 +107,44 @@ class ExportPackagingRichnessTest(unittest.TestCase):
         self.assertTrue(any("RETAIL PAD" in str(action.get("label") or "").upper() for action in building_rectangles))
         self.assertTrue(road_shapes)
         self.assertTrue(pavement_shapes)
+
+    def test_prompt_shaped_mixed_use_specs_preserve_type_and_dimensions(self) -> None:
+        plan = build_plan(
+            {
+                "project_name": "Prompt Shaped Mixed Use Test",
+                "units": "ft",
+                "mode": "site_plan",
+                "project_type": "mixed_use",
+                "site_type": "mixed_use",
+                "lot": {"x": 0.0, "y": 0.0, "w": 620.0, "h": 980.0},
+                "setback": 15.0,
+                "street_edge": "bottom",
+                "buildings": [
+                    {"name": "MF-1", "type": "multifamily", "width": 110.0, "depth": 58.0, "stories": 3, "units": 20},
+                    {"name": "MF-2", "type": "multifamily", "width": 110.0, "depth": 58.0, "stories": 3, "units": 20},
+                    {"name": "MF-3", "type": "multifamily", "width": 110.0, "depth": 58.0, "stories": 3, "units": 20},
+                    {"name": "Retail", "type": "retail", "width": 70.0, "depth": 45.0},
+                ],
+            }
+        )
+
+        building_rectangles = [
+            action
+            for action in plan.get("actions") or []
+            if str(action.get("layer") or "").upper() == "BUILDING"
+            and str(action.get("task") or "").lower() == "rectangle"
+        ]
+        labels = {str(action.get("label") or ""): action for action in building_rectangles}
+
+        self.assertEqual(len(building_rectangles), 4)
+        self.assertAlmostEqual(float(labels["MF-1"]["width"]), 110.0)
+        self.assertAlmostEqual(float(labels["MF-1"]["height"]), 58.0)
+        self.assertAlmostEqual(float(labels["MF-2"]["width"]), 110.0)
+        self.assertAlmostEqual(float(labels["MF-2"]["height"]), 58.0)
+        self.assertAlmostEqual(float(labels["MF-3"]["width"]), 110.0)
+        self.assertAlmostEqual(float(labels["MF-3"]["height"]), 58.0)
+        self.assertAlmostEqual(float(labels["Retail"]["width"]), 70.0)
+        self.assertAlmostEqual(float(labels["Retail"]["height"]), 45.0)
 
     def test_project_model_plan_keeps_site_geometry_when_expanded_plan_is_engineering_heavy(self) -> None:
         project = planner.ProjectModel(name="Preview Context Test", units="ft")

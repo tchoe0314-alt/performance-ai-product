@@ -930,6 +930,8 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
         task = safe_text(rec.get("task"), "").lower()
         label = clean_label(rec.get("label"), "").upper()
         if layout_first_modelspace and layer in {"ROAD", "FIRE"} and task in {"rectangle", "polygon", "polyline"}:
+            if task in {"circle", "polyline"} and (not label or label in {"ROAD", "DRIVE", "FIRE", "FIRE-1", "ROAD-1"}):
+                continue
             if not label or label in {"ROAD", "DRIVE", "FIRE", "FIRE-1", "ROAD-1"}:
                 rec["layer"] = "PAVEMENT"
                 layer = "PAVEMENT"

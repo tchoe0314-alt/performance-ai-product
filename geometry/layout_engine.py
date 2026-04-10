@@ -170,6 +170,9 @@ def _normalize_site_type(site_type: str) -> str:
         "industrial": "industrial_site",
         "stripmall": "strip_center",
         "strip_center": "strip_center",
+        "mixed_use": "mixed_use",
+        "mixed-use": "mixed_use",
+        "mixed_use_site": "mixed_use",
         "multifamily": "multifamily_site",
         "multi_family": "multifamily_site",
         "apartment": "multifamily_site",
@@ -1284,6 +1287,17 @@ def _site_box_from_parsed(parsed: Dict[str, Any]) -> Rect:
 
 
 def _has_expanded_content(parsed: Dict[str, Any]) -> bool:
+    buildings = parsed.get("buildings")
+    if isinstance(buildings, list):
+        clean_buildings = [item for item in buildings if isinstance(item, dict)]
+        if len(clean_buildings) > 1:
+            return True
+        if any(
+            _safe_optional_float(item.get("x")) is not None
+            and _safe_optional_float(item.get("y")) is not None
+            for item in clean_buildings
+        ):
+            return True
     keys = [
         "buildings",
         "parking_areas",
@@ -1303,8 +1317,116 @@ def _infer_buildings_from_legacy(parsed: Dict[str, Any], site_box: Rect) -> List
     buildable = _buildable_area(site_box, _safe_float(parsed.get("setback"), 10.0))
     bw = _safe_optional_float(parsed.get("building_width"))
     bd = _safe_optional_float(parsed.get("building_depth"))
+    fallback_width = bw or 80.0
+    fallback_depth = bd or 50.0
     site_type = _normalize_site_type(_safe_str(parsed.get("site_type"), parsed.get("project_type") or "commercial_pad"))
     intensity = _safe_str(parsed.get("intensity"), "medium")
+    street_edge = _normalize_street_edge(_safe_str(parsed.get("street_edge"), "bottom"))
+
+    program_specs: List[Dict[str, Any]] = []
+    for idx, raw in enumerate(_nonempty_list(parsed.get("buildings")), start=1):
+        rec = dict(raw) if isinstance(raw, dict) else {}
+        if not rec:
+            continue
+        spec_w = max(
+            20.0,
+            _safe_float(
+                rec.get("w"),
+                _safe_float(rec.get("width"), fallback_width),
+            ),
+        )
+        spec_d = max(
+            20.0,
+            _safe_float(
+                rec.get("d"),
+                _safe_float(rec.get("depth"), fallback_depth),
+            ),
+        )
+        spec_use = _safe_str(
+            rec.get("use"),
+            _safe_str(rec.get("type"), _safe_str(parsed.get("project_type"), "building")),
+        ).lower()
+        program_specs.append(
+            {
+                "name": _safe_str(rec.get("name"), _safe_str(rec.get("label"), f"Building {idx}")),
+                "use": spec_use,
+                "w": spec_w,
+                "d": spec_d,
+                "floors": max(1, _safe_int(rec.get("floors"), _safe_int((parsed.get("building") or {}).get("floor_count"), 1))),
+            }
+        )
+
+    if program_specs:
+        frontage_uses = {"retail", "commercial", "pad"}
+        primary_specs = [spec for spec in program_specs if spec.get("use") not in frontage_uses]
+        frontage_specs = [spec for spec in program_specs if spec.get("use") in frontage_uses]
+        if not primary_specs:
+            primary_specs, frontage_specs = frontage_specs, []
+
+        margin_x = max(24.0, buildable["w"] * 0.05)
+        margin_y = max(24.0, buildable["h"] * 0.05)
+        min_x = buildable["x"] + margin_x
+        max_x = _rect_right(buildable) - margin_x
+        min_y = buildable["y"] + margin_y
+        max_y = _rect_top(buildable) - margin_y
+        vertical_span = max(max_y - min_y, 1.0)
+        frontage_on_bottom = street_edge != "top"
+        top_row_y = min_y + vertical_span * (0.58 if frontage_specs else 0.45)
+        top_row_h = max_y - top_row_y
+        bottom_row_y = min_y
+        bottom_row_h = max(top_row_y - min_y - max(buildable["h"] * 0.04, 18.0), vertical_span * 0.22)
+
+        def _place_row_specs(specs: Sequence[Dict[str, Any]], *, base_y: float, row_height: float) -> List[Dict[str, Any]]:
+            if not specs:
+                return []
+            span_w = max(max_x - min_x, 1.0)
+            widths = [max(20.0, _safe_float(spec.get("w"), fallback_width)) for spec in specs]
+            spacing = max(18.0, min(span_w * 0.06, 80.0))
+            total_w = sum(widths) + spacing * max(len(widths) - 1, 0)
+            if total_w > span_w and len(widths) > 1:
+                spacing = max(12.0, (span_w - sum(widths)) / max(len(widths) - 1, 1))
+                total_w = sum(widths) + spacing * max(len(widths) - 1, 0)
+            start_x = min_x + max((span_w - total_w) / 2.0, 0.0)
+            placements: List[Dict[str, Any]] = []
+            cursor_x = start_x
+            for spec in specs:
+                w = max(20.0, _safe_float(spec.get("w"), fallback_width))
+                d = max(20.0, _safe_float(spec.get("d"), fallback_depth))
+                y = base_y + max((row_height - d) / 2.0, 0.0)
+                placements.append(
+                    {
+                        "label": _safe_str(spec.get("name"), "BLDG"),
+                        "x": round(cursor_x, 3),
+                        "y": round(y, 3),
+                        "w": round(w, 3),
+                        "d": round(d, 3),
+                        "floors": max(1, _safe_int(spec.get("floors"), 1)),
+                        "use": _safe_str(spec.get("use"), parsed.get("project_type") or "building"),
+                        "layer": "BUILDING",
+                    }
+                )
+                cursor_x += w + spacing
+            return placements
+
+        placements: List[Dict[str, Any]] = []
+        if len(primary_specs) > 3:
+            split = (len(primary_specs) + 1) // 2
+            upper_specs = primary_specs[:split]
+            lower_specs = primary_specs[split:]
+            if frontage_on_bottom:
+                placements.extend(_place_row_specs(upper_specs, base_y=top_row_y, row_height=top_row_h))
+                placements.extend(_place_row_specs(lower_specs, base_y=bottom_row_y + bottom_row_h * 0.35, row_height=bottom_row_h * 0.5))
+            else:
+                placements.extend(_place_row_specs(upper_specs, base_y=bottom_row_y + bottom_row_h * 0.35, row_height=bottom_row_h * 0.5))
+                placements.extend(_place_row_specs(lower_specs, base_y=top_row_y, row_height=top_row_h))
+        else:
+            placements.extend(_place_row_specs(primary_specs, base_y=top_row_y, row_height=top_row_h))
+
+        if frontage_specs:
+            frontage_y = bottom_row_y if frontage_on_bottom else top_row_y
+            frontage_h = bottom_row_h if frontage_on_bottom else top_row_h * 0.5
+            placements.extend(_place_row_specs(frontage_specs, base_y=frontage_y, row_height=frontage_h))
+        return placements
 
     if bw is None or bd is None:
         chosen = _choose_building_size(buildable, site_type, intensity, bw, bd)
@@ -1312,7 +1434,6 @@ def _infer_buildings_from_legacy(parsed: Dict[str, Any], site_box: Rect) -> List
         bd = chosen["h"]
 
     floors = max(1, _safe_int((parsed.get("building") or {}).get("floor_count"), 1))
-    street_edge = _normalize_street_edge(_safe_str(parsed.get("street_edge"), "bottom"))
 
     primary = _position_building(
         buildable=buildable,
@@ -1367,6 +1488,55 @@ def _infer_parking_from_legacy(parsed: Dict[str, Any], site_box: Rect, buildings
     street_edge = _normalize_street_edge(_safe_str(parsed.get("street_edge"), "bottom"))
     layout_strategy = _normalize_layout_strategy(_safe_str(parsed.get("layout_strategy"), "front_parking"))
 
+    if len(buildings) > 1:
+        areas: List[Dict[str, Any]] = []
+        total_area = sum(max(1.0, _safe_float(b.get("w"), 0.0) * _safe_float(b.get("d"), 0.0)) for b in buildings)
+        explicit_total = max(0, parking_count)
+        for idx, building in enumerate(buildings, start=1):
+            bx = _safe_float(building.get("x"), buildable["x"])
+            by = _safe_float(building.get("y"), buildable["y"])
+            bw_val = max(20.0, _safe_float(building.get("w"), 40.0))
+            bd_val = max(20.0, _safe_float(building.get("d"), 40.0))
+            b_rect = _rect(bx, by, bw_val, bd_val)
+            lot_depth = max(46.0, min(72.0, bd_val * 0.9))
+            park_w = max(36.0, min(buildable["w"] * 0.36, bw_val + 34.0))
+            if street_edge in {"bottom", "top"}:
+                park_x = _clamp(bx + (bw_val - park_w) / 2.0, buildable["x"], _rect_right(buildable) - park_w)
+                if street_edge == "bottom":
+                    park_y = _clamp(by - lot_depth - 14.0, buildable["y"], _rect_top(buildable) - lot_depth)
+                else:
+                    park_y = _clamp(by + bd_val + 14.0, buildable["y"], _rect_top(buildable) - lot_depth)
+            else:
+                park_y = _clamp(by + (bd_val - lot_depth) / 2.0, buildable["y"], _rect_top(buildable) - lot_depth)
+                if street_edge == "left":
+                    park_x = _clamp(bx + bw_val + 14.0, buildable["x"], _rect_right(buildable) - park_w)
+                else:
+                    park_x = _clamp(bx - park_w - 14.0, buildable["x"], _rect_right(buildable) - park_w)
+            parking_rect = _rect(park_x, park_y, park_w, lot_depth)
+            capacity = _estimate_parking_capacity(parking_rect, standards)
+            if explicit_total > 0 and total_area > 0:
+                share = max(1, int(round(explicit_total * ((bw_val * bd_val) / total_area))))
+            else:
+                use_type = _safe_str(building.get("use"), site_type).lower()
+                program_site_type = "multifamily_site" if use_type == "multifamily" else "commercial_pad" if use_type == "retail" else site_type
+                share = _parking_count_from_program(b_rect, program_site_type, intensity, None)
+            areas.append(
+                {
+                    "label": f"PARK-{idx}",
+                    "x": round(parking_rect["x"], 3),
+                    "y": round(parking_rect["y"], 3),
+                    "w": round(parking_rect["w"], 3),
+                    "h": round(parking_rect["h"], 3),
+                    "stall_count": min(max(1, share), capacity),
+                    "stall_width": standards["stall_width"],
+                    "stall_depth": standards["stall_depth"],
+                    "aisle_width": standards["aisle_width"],
+                    "layout": _parking_orientation(parking_rect, standards),
+                    "layer": "PARKING",
+                }
+            )
+        return areas
+
     if buildings:
         primary = buildings[0]
         b = _rect(primary["x"], primary["y"], primary["w"], primary["d"])
@@ -1410,6 +1580,26 @@ def _infer_drive_aisles_from_legacy(parsed: Dict[str, Any], site_box: Rect, park
 
     street_edge = _normalize_street_edge(_safe_str(parsed.get("street_edge"), "bottom"))
     road_stds = _road_standards(parsed)
+    if len(parking_areas) > 1:
+        aisles: List[Dict[str, Any]] = []
+        rects = [
+            _rect(_safe_float(p.get("x"), 0.0), _safe_float(p.get("y"), 0.0), _safe_float(p.get("w"), 0.0), _safe_float(p.get("h"), 0.0))
+            for p in parking_areas
+        ]
+        rects = sorted(rects, key=lambda r: (-(r["y"] + r["h"] / 2.0), r["x"]))
+        for idx, rect in enumerate(rects, start=1):
+            aisle_y = max(site_box["y"] + 8.0, rect["y"] - max(10.0, road_stds["drive_width"] * 0.5))
+            aisles.append(
+                {
+                    "label": f"DRIVE-{idx}",
+                    "points": [[rect["x"] - 2.0, aisle_y + road_stds["drive_width"] / 2.0], [_rect_right(rect) + 2.0, aisle_y + road_stds["drive_width"] / 2.0]],
+                    "width": min(18.0, max(10.0, road_stds["drive_width"] * 0.6)),
+                    "type": "collector_aisle",
+                    "layer": "PAVEMENT",
+                }
+            )
+        return aisles
+
     p = parking_areas[0]
     p_rect = _rect(p["x"], p["y"], p["w"], p["h"])
     d_rect = _choose_best_driveway(site_box, p_rect, street_edge, road_stds)
@@ -1426,6 +1616,9 @@ def _infer_drive_aisles_from_legacy(parsed: Dict[str, Any], site_box: Rect, park
 
 
 def _infer_roads_from_legacy(parsed: Dict[str, Any], site_box: Rect) -> List[Dict[str, Any]]:
+    raw_buildings = parsed.get("buildings")
+    if isinstance(raw_buildings, list) and len([item for item in raw_buildings if isinstance(item, dict)]) > 1:
+        return []
     road_stds = _road_standards(parsed)
     street_edge = _normalize_street_edge(_safe_str(parsed.get("street_edge"), "bottom"))
     road = _frontage_road_rect(site_box, street_edge, road_stds)
@@ -1451,35 +1644,37 @@ def _infer_sidewalks_from_legacy(buildings: List[Dict[str, Any]], parking_areas:
         return []
 
     standards = _parking_standards(parsed)
-    b = buildings[0]
-    building = _rect(b["x"], b["y"], b["w"], b["d"])
-    p = None
-    if parking_areas:
-        pp = parking_areas[0]
-        p = _rect(pp["x"], pp["y"], pp["w"], pp["h"])
-
     street_edge = _normalize_street_edge(_safe_str(parsed.get("street_edge"), "bottom"))
-    entry = _building_entry_point(building, street_edge)
-
-    if p is not None:
-        target = _parking_connection_point(p, building)
-        points = [[entry[0], entry[1]], [target[0], target[1]]]
-    else:
-        points = [[entry[0], entry[1]], [entry[0], entry[1] - 20.0]]
-
-    return [
-        {
-            "label": "WALK-1",
-            "points": points,
-            "width": standards["sidewalk_width"],
-            "ada_required": True,
-            "layer": "WALK",
-        }
+    walks: List[Dict[str, Any]] = []
+    parking_rects = [
+        _rect(_safe_float(pp.get("x"), 0.0), _safe_float(pp.get("y"), 0.0), _safe_float(pp.get("w"), 0.0), _safe_float(pp.get("h"), 0.0))
+        for pp in parking_areas
     ]
+    for idx, b in enumerate(buildings, start=1):
+        building = _rect(_safe_float(b.get("x"), 0.0), _safe_float(b.get("y"), 0.0), _safe_float(b.get("w"), 20.0), _safe_float(b.get("d"), 20.0))
+        entry = _building_entry_point(building, street_edge)
+        target_rect = min(parking_rects, key=lambda p: (_parking_connection_point(p, building)[0] - entry[0]) ** 2 + (_parking_connection_point(p, building)[1] - entry[1]) ** 2) if parking_rects else None
+        if target_rect is not None:
+            target = _parking_connection_point(target_rect, building)
+            points = [[entry[0], entry[1]], [target[0], target[1]]]
+        else:
+            points = [[entry[0], entry[1]], [entry[0], entry[1] - 20.0]]
+        walks.append(
+            {
+                "label": f"WALK-{idx}",
+                "points": points,
+                "width": standards["sidewalk_width"],
+                "ada_required": True,
+                "layer": "WALK",
+            }
+        )
+    return walks
 
 
 def _infer_fire_lanes_from_legacy(buildings: List[Dict[str, Any]], parsed: Dict[str, Any], site_box: Rect) -> List[Dict[str, Any]]:
     if not buildings:
+        return []
+    if len(buildings) > 1:
         return []
 
     buildable = _buildable_area(site_box, _safe_float(parsed.get("setback"), 10.0))
@@ -1823,7 +2018,28 @@ def _build_expanded_plan(parsed: Dict[str, Any]) -> Dict[str, Any]:
     site_box = _site_box_from_parsed(parsed)
     actions: List[Dict[str, Any]] = [_rect_action_from_obj(site_box, "LOT", "SITE")]
 
-    buildings = _nonempty_list(parsed.get("buildings"))
+    raw_buildings = _nonempty_list(parsed.get("buildings"))
+    positioned_buildings = []
+    for b in raw_buildings:
+        if not isinstance(b, dict):
+            continue
+        bw = _safe_optional_float(b.get("w"))
+        if bw is None:
+            bw = _safe_optional_float(b.get("width"))
+        bd = _safe_optional_float(b.get("d"))
+        if bd is None:
+            bd = _safe_optional_float(b.get("depth"))
+        if (
+            _safe_optional_float(b.get("x")) is not None
+            and _safe_optional_float(b.get("y")) is not None
+            and bw is not None
+            and bd is not None
+        ):
+            normalized = dict(b)
+            normalized["w"] = bw
+            normalized["d"] = bd
+            positioned_buildings.append(normalized)
+    buildings = positioned_buildings if len(positioned_buildings) == len(raw_buildings) and raw_buildings else []
     if not buildings:
         buildings = _infer_buildings_from_legacy(parsed, site_box)
 
