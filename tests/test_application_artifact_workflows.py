@@ -105,6 +105,52 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         )
         self.assertTrue(any(action.get("layer") == "PIPE" for action in preview_actions))
 
+    def test_build_preview_response_prefers_richer_request_metadata_payload_for_legacy_scene(self):
+        service = FakeArtifactService()
+        response = build_preview_response(
+            artifact_service=service,
+            result_data={
+                "parsed_payload": {
+                    "project_type": "mixed_use",
+                    "lot": {"w": 620.0, "h": 980.0},
+                    "buildings": [
+                        {"name": "BLDG", "type": "commercial", "width": 80, "depth": 50},
+                    ],
+                },
+                "request_metadata": {
+                    "parsed_payload": {
+                        "project_type": "mixed_use",
+                        "lot": {"w": 620.0, "h": 980.0},
+                        "buildings": [
+                            {"name": "MF-1", "type": "multifamily", "width": 110, "depth": 58},
+                            {"name": "MF-2", "type": "multifamily", "width": 110, "depth": 58},
+                            {"name": "MF-3", "type": "multifamily", "width": 110, "depth": 58},
+                            {"name": "Retail", "type": "retail", "width": 70, "depth": 45},
+                        ],
+                    }
+                },
+                "final_plan": {
+                    "project_name": "Legacy Thin Scene",
+                    "actions": [
+                        {"task": "rectangle", "layer": "BUILDING", "origin": [250, 700], "width": 80, "height": 50, "label": "BLDG"},
+                        {"task": "rectangle", "layer": "PAVEMENT", "origin": [180, 520], "width": 260, "height": 28, "label": "FRONTAGE"},
+                        {"task": "text_note", "layer": "PAVEMENT", "origin": [290, 534], "text": "FRONTAGE ACCESS"},
+                    ],
+                    "meta": {},
+                },
+            },
+        )
+        self.assertTrue(response["preview_image_data_url"].startswith("data:image/png;base64,"))
+        preview_actions = service.preview_plan["actions"]
+        preview_buildings = [
+            action for action in preview_actions
+            if action.get("layer") == "BUILDING" and action.get("task") == "rectangle"
+        ]
+        self.assertGreaterEqual(len(preview_buildings), 4)
+        labels = {str(action.get("label") or "") for action in preview_buildings}
+        self.assertIn("MF-1", labels)
+        self.assertIn("Retail", labels)
+
     def test_export_dxf_artifact_rebuilds_legacy_frontage_scene_from_parsed_payload(self):
         service = FakeArtifactService()
         store = FakeProjectStore()

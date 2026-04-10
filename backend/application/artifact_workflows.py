@@ -73,17 +73,82 @@ def _has_legacy_frontage_scene(actions: list[dict[str, Any]]) -> bool:
     return False
 
 
+def _candidate_display_payloads(result_data: Dict[str, Any]) -> list[Dict[str, Any]]:
+    candidates: list[Dict[str, Any]] = []
+    for raw in (
+        result_data.get("parsed_payload"),
+        dict(result_data.get("request_metadata") or {}).get("parsed_payload"),
+        dict(result_data.get("metadata") or {}).get("parsed_payload"),
+    ):
+        if isinstance(raw, dict) and raw:
+            candidates.append(dict(raw))
+    return candidates
+
+
+def _payload_building_count(payload: Dict[str, Any]) -> int:
+    raw_buildings = payload.get("buildings")
+    if not isinstance(raw_buildings, list):
+        return 0
+    return len([item for item in raw_buildings if isinstance(item, dict)])
+
+
+def _best_display_payload(result_data: Dict[str, Any]) -> Dict[str, Any]:
+    candidates = _candidate_display_payloads(result_data)
+    if not candidates:
+        return {}
+    best = max(
+        candidates,
+        key=lambda payload: (
+            _payload_building_count(payload),
+            1 if isinstance(payload.get("lot"), dict) and payload.get("lot") else 0,
+            len(payload),
+        ),
+    )
+    merged = dict(best)
+    for candidate in candidates:
+        if _payload_building_count(candidate) > _payload_building_count(merged):
+            merged["buildings"] = list(candidate.get("buildings") or [])
+        if not isinstance(merged.get("lot"), dict) and isinstance(candidate.get("lot"), dict):
+            merged["lot"] = dict(candidate.get("lot") or {})
+        if not merged.get("project_type") and candidate.get("project_type"):
+            merged["project_type"] = candidate.get("project_type")
+        if not merged.get("site_type") and candidate.get("site_type"):
+            merged["site_type"] = candidate.get("site_type")
+        if not merged.get("street_edge") and candidate.get("street_edge"):
+            merged["street_edge"] = candidate.get("street_edge")
+    return merged
+
+
+def _layout_action_count(actions: list[dict[str, Any]]) -> int:
+    return sum(
+        1
+        for action in actions
+        if isinstance(action, dict)
+        and str(action.get("layer") or "").upper() in DISPLAY_LAYOUT_LAYERS
+    )
+
+
+def _should_rebuild_display_plan(actions: list[dict[str, Any]], parsed_building_count: int) -> bool:
+    building_count = _count_building_shapes(actions)
+    if parsed_building_count >= 2 and building_count < parsed_building_count:
+        return True
+    if parsed_building_count >= 2 and _has_legacy_frontage_scene(actions):
+        return True
+    if parsed_building_count >= 2 and _layout_action_count(actions) <= max(4, parsed_building_count + 1):
+        return True
+    return False
+
+
 def _display_plan_from_result(result_data: Dict[str, Any], *, enforce_export_guards: bool = False) -> Dict[str, Any]:
     final_plan = final_plan_from_result(result_data, enforce_export_guards=enforce_export_guards)
-    parsed_payload = dict(result_data.get("parsed_payload") or {})
+    parsed_payload = _best_display_payload(result_data)
     raw_buildings = parsed_payload.get("buildings")
     parsed_buildings = [item for item in raw_buildings if isinstance(item, dict)] if isinstance(raw_buildings, list) else []
     if len(parsed_buildings) < 2:
         return final_plan
 
     actions = [action for action in list(final_plan.get("actions") or []) if isinstance(action, dict)]
-    building_count = _count_building_shapes(actions)
-    if building_count >= len(parsed_buildings) and not _has_legacy_frontage_scene(actions):
+    if not _should_rebuild_display_plan(actions, len(parsed_buildings)):
         return final_plan
 
     rebuilt = _build_expanded_plan(parsed_payload)

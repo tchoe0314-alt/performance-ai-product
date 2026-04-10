@@ -1639,6 +1639,16 @@ def _infer_roads_from_legacy(parsed: Dict[str, Any], site_box: Rect) -> List[Dic
     ]
 
 
+def _is_schematic_frontage_item(item: Any) -> bool:
+    if not isinstance(item, dict):
+        return False
+    label = _safe_str(item.get("label"), "").upper()
+    item_type = _safe_str(item.get("type"), "").lower()
+    if "FRONTAGE" in label or "ACCESS" in label:
+        return True
+    return item_type in {"frontage", "access_drive", "collector_aisle"}
+
+
 def _infer_sidewalks_from_legacy(buildings: List[Dict[str, Any]], parking_areas: List[Dict[str, Any]], parsed: Dict[str, Any]) -> List[Dict[str, Any]]:
     if not buildings:
         return []
@@ -2042,16 +2052,21 @@ def _build_expanded_plan(parsed: Dict[str, Any]) -> Dict[str, Any]:
     buildings = positioned_buildings if len(positioned_buildings) == len(raw_buildings) and raw_buildings else []
     if not buildings:
         buildings = _infer_buildings_from_legacy(parsed, site_box)
+    is_multi_building_program = len(buildings) > 1 or len([item for item in raw_buildings if isinstance(item, dict)]) > 1
 
     parking_areas = _nonempty_list(parsed.get("parking_areas"))
     if not parking_areas:
         parking_areas = _infer_parking_from_legacy(parsed, site_box, buildings)
 
     drive_aisles = _nonempty_list(parsed.get("drive_aisles"))
+    if is_multi_building_program:
+        drive_aisles = [item for item in drive_aisles if not _is_schematic_frontage_item(item)]
     if not drive_aisles:
         drive_aisles = _infer_drive_aisles_from_legacy(parsed, site_box, parking_areas)
 
     roads_network = _nonempty_list(parsed.get("roads_network"))
+    if is_multi_building_program:
+        roads_network = [item for item in roads_network if not _is_schematic_frontage_item(item)]
     if not roads_network:
         roads_network = _infer_roads_from_legacy(parsed, site_box)
 
@@ -2060,6 +2075,8 @@ def _build_expanded_plan(parsed: Dict[str, Any]) -> Dict[str, Any]:
         sidewalks = _infer_sidewalks_from_legacy(buildings, parking_areas, parsed)
 
     fire_lanes = _nonempty_list(parsed.get("fire_lanes"))
+    if is_multi_building_program:
+        fire_lanes = [item for item in fire_lanes if not _is_schematic_frontage_item(item)]
     if not fire_lanes:
         fire_lanes = _infer_fire_lanes_from_legacy(buildings, parsed, site_box)
 
