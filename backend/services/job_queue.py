@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict, List, Optional
 from dataclasses import asdict, is_dataclass
 from enum import Enum
 import json
+import os
 import threading
 import time
 import uuid
@@ -82,25 +83,44 @@ def _coerce_progress(progress: Any) -> int:
 
 
 class JobQueueService:
-    def __init__(self, db: Database, *, heartbeat_interval_sec: float = 10.0) -> None:
+    def __init__(
+        self,
+        db: Database,
+        *,
+        heartbeat_interval_sec: float = 10.0,
+        worker_count: Optional[int] = None,
+    ) -> None:
         self.db = db
         self._queue: Queue[str] = Queue()
         self._handlers: Dict[str, JobRunner] = {}
         self._lock = threading.Lock()
-        self._worker: Optional[threading.Thread] = None
+        raw_worker_count = str(os.getenv("PERFORMANCE_AI_JOB_WORKERS") or "").strip()
+        if worker_count is None:
+            try:
+                worker_count = int(raw_worker_count) if raw_worker_count else 2
+            except Exception:
+                worker_count = 2
+        self._worker_count = max(1, int(worker_count or 1))
+        self._workers: List[threading.Thread] = []
         self._heartbeat_interval_sec = max(0.5, float(heartbeat_interval_sec or 10.0))
-        self._ensure_worker_alive()
+        self._ensure_workers_alive()
 
-    def _ensure_worker_alive(self) -> None:
+    def _ensure_workers_alive(self) -> None:
         with self._lock:
-            if self._worker is not None and self._worker.is_alive():
-                return
-            self._worker = threading.Thread(target=self._run_worker, name="performance-ai-job-worker", daemon=True)
-            self._worker.start()
+            self._workers = [worker for worker in self._workers if worker.is_alive()]
+            while len(self._workers) < self._worker_count:
+                worker_index = len(self._workers) + 1
+                worker = threading.Thread(
+                    target=self._run_worker,
+                    name=f"performance-ai-job-worker-{worker_index}",
+                    daemon=True,
+                )
+                worker.start()
+                self._workers.append(worker)
 
     def register_handler(self, job_type: str, runner: JobRunner) -> None:
         self._handlers[job_type] = runner
-        self._ensure_worker_alive()
+        self._ensure_workers_alive()
         self._enqueue_pending_jobs(job_type)
 
     def submit_job(
@@ -111,7 +131,7 @@ class JobQueueService:
         payload: Dict[str, Any],
         project_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        self._ensure_worker_alive()
+        self._ensure_workers_alive()
         now = _now()
         record = {
             "job_id": _new_id("job"),
@@ -162,7 +182,7 @@ class JobQueueService:
         return self._job_summary(record)
 
     def list_jobs(self, *, user_id: str) -> List[Dict[str, Any]]:
-        self._ensure_worker_alive()
+        self._ensure_workers_alive()
         connection = self.db.connect()
         try:
             rows = connection.execute(
@@ -182,7 +202,7 @@ class JobQueueService:
             connection.close()
 
     def get_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
-        self._ensure_worker_alive()
+        self._ensure_workers_alive()
         connection = self.db.connect()
         try:
             row = connection.execute(
@@ -226,7 +246,7 @@ class JobQueueService:
         return detail
 
     def cancel_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
-        self._ensure_worker_alive()
+        self._ensure_workers_alive()
         record = self.get_job(user_id=user_id, job_id=job_id)
         if record is None:
             return None

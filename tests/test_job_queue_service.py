@@ -181,11 +181,11 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(record["status"], "completed")
 
     def test_list_jobs_restarts_worker_if_thread_dies(self):
-        self.queue._worker = None
+        self.queue._workers = []
         jobs = self.queue.list_jobs(user_id=self.user_id)
         self.assertEqual(jobs, [])
-        self.assertIsNotNone(self.queue._worker)
-        self.assertTrue(self.queue._worker.is_alive())
+        self.assertTrue(self.queue._workers)
+        self.assertTrue(all(worker.is_alive() for worker in self.queue._workers))
 
     def test_job_result_serializes_dataclass_objects(self):
         self.queue.register_handler(
