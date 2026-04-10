@@ -328,6 +328,30 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
                     "failed_deliverables": [],
                     "ready_deliverables": ["site_plan"],
                     "extra_deliverables": [],
+                    "phase_checkpoints": {
+                        "layout": {
+                            "label": "Layout",
+                            "status": "ready",
+                            "ready": True,
+                            "deliverables": ["site_plan"],
+                            "messages": ["Buildings and parking are saved."],
+                        },
+                        "grading": {
+                            "label": "Grading",
+                            "status": "review",
+                            "ready": False,
+                            "deliverables": ["grading_plan"],
+                            "blockers": ["spot grades pending review"],
+                        },
+                        "combined_view": {
+                            "label": "Combined View",
+                            "status": "review",
+                            "ready": False,
+                            "completed_phase_count": 1,
+                            "total_phase_count": 5,
+                            "blocked_reasons": ["grading review pending"],
+                        },
+                    },
                 },
                 "final_plan": {
                     "project_name": "Stored Summary Wins",
@@ -346,6 +370,8 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertEqual(review["blocked_reasons"], [])
         self.assertEqual(review["release_status"], "ready")
         self.assertEqual(review["review_categories"], [])
+        self.assertEqual(review["phase_checkpoints"]["layout"]["status"], "ready")
+        self.assertEqual(review["phase_checkpoints"]["combined_view"]["total_phase_count"], 5)
 
     def test_build_preview_response_prefers_current_export_guard_over_stale_saved_blockers(self):
         service = FakeArtifactService()

@@ -273,6 +273,7 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         "rerun_total": int(rerun_summary.get("total_reruns") or 0),
         "rerun_stages": dominant_rerun_stages[:3],
         "rerun_reasons": dominant_rerun_reasons[:3],
+        "phase_checkpoints": dict(run_summary.get("phase_checkpoints") or {}),
         "release_status": release_status,
         "release_note": release_note,
         "engineering_status": str((final_plan.get("meta") or {}).get("engineering_status") or ""),

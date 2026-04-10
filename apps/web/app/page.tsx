@@ -175,6 +175,26 @@ type PreviewResponse = {
       rerun_total?: number;
       rerun_stages?: string[];
       rerun_reasons?: string[];
+      phase_checkpoints?: Record<
+        string,
+        {
+          label?: string;
+          status?: string;
+          ready?: boolean;
+          deliverables?: string[];
+          messages?: string[];
+          blockers?: string[];
+          has_data?: boolean;
+          stages?: string[];
+          completed_phase_count?: number;
+          total_phase_count?: number;
+          blocked_exports?: string[];
+          blocked_reasons?: string[];
+          deliverables_ready?: string[];
+          deliverables_extra?: string[];
+          note?: string;
+        }
+      >;
       release_status?: "ready" | "review" | "blocked" | string;
       release_note?: string;
     };
@@ -3161,6 +3181,63 @@ export default function PerformanceAIDashboard() {
   const previewReadyDeliverables = (previewReview?.ready_deliverables ?? [])
     .map((item) => toReadableLabel(String(item || "")))
     .filter(Boolean);
+  const previewPhaseEntries = (
+    [
+      "layout",
+      "grading",
+      "drainage_storm",
+      "utilities",
+      "coordination_validation",
+      "combined_view",
+    ] as const
+  )
+    .map((key) => {
+      const phase = previewReview?.phase_checkpoints?.[key];
+      if (!phase) {
+        return null;
+      }
+      const label = toReadableLabel(String(phase.label || key || "")) || "Phase";
+      const status = String(phase.status || (phase.ready ? "ready" : "review") || "review");
+      const deliverables = (phase.deliverables ?? [])
+        .map((item) => toReadableLabel(String(item || "")))
+        .filter(Boolean);
+      const blockers = [
+        ...(phase.blockers ?? []),
+        ...(phase.blocked_reasons ?? []),
+      ]
+        .map((item) => toReadableLabel(String(item || "")))
+        .filter(Boolean);
+      const messages = (phase.messages ?? [])
+        .map((item) => String(item || "").trim())
+        .filter(Boolean);
+      const note = String(phase.note || "").trim();
+      const phaseSummary =
+        key === "combined_view" && (phase.total_phase_count || phase.completed_phase_count)
+          ? `${phase.completed_phase_count ?? 0}/${phase.total_phase_count ?? 0} phases complete`
+          : messages[0] ||
+            note ||
+            (deliverables.length
+              ? `Ready: ${joinNatural(deliverables, 3)}`
+              : blockers.length
+                ? `Watch: ${joinNatural(blockers, 3)}`
+                : phase.ready
+                  ? "Phase outputs are saved."
+                  : "Phase is still under review.");
+      return {
+        key,
+        label,
+        status,
+        ready: Boolean(phase.ready),
+        summary: phaseSummary,
+      };
+    })
+    .filter(Boolean) as Array<{
+    key: string;
+    label: string;
+    status: string;
+    ready: boolean;
+    summary: string;
+  }>;
   const previewRerunSignals = [
     ...(previewReview?.rerun_stages ?? []).map((item) => toReadableLabel(String(item || ""))),
     ...(previewReview?.rerun_reasons ?? []).map((item) => toReadableLabel(String(item || ""))),
@@ -3718,6 +3795,38 @@ export default function PerformanceAIDashboard() {
                     </div>
 
                     <div className="mt-5 space-y-4">
+                      {previewPhaseEntries.length ? (
+                        <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                            Phase Progress
+                          </p>
+                          <div className="mt-3 space-y-2">
+                            {previewPhaseEntries.map((phase) => (
+                              <div
+                                key={phase.key}
+                                className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2"
+                              >
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-slate-900">{phase.label}</p>
+                                  <p className="mt-1 text-sm text-slate-600">{phase.summary}</p>
+                                </div>
+                                <span
+                                  className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                                    phase.status.toLowerCase() === "ready"
+                                      ? "bg-emerald-100 text-emerald-700"
+                                      : phase.status.toLowerCase() === "blocked"
+                                        ? "bg-rose-100 text-rose-700"
+                                        : "bg-amber-100 text-amber-700"
+                                  }`}
+                                >
+                                  {toReadableLabel(phase.status)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+
                       <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                           Assumptions
