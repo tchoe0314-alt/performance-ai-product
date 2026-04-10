@@ -139,6 +139,7 @@ def build_orchestrate_job_runner(
         status: str,
         detail: str,
         progress: int,
+        checkpoint: Optional[Dict[str, Any]] = None,
     ) -> None:
         if not (user_id and project_id and job_id):
             return
@@ -220,6 +221,8 @@ def build_orchestrate_job_runner(
         }
 
         checkpoint_result = dict(latest_result)
+        if checkpoint:
+            checkpoint_result["final_plan"] = dict(checkpoint)
         checkpoint_final_plan = dict(checkpoint_result.get("final_plan") or {})
         checkpoint_meta = dict(checkpoint_final_plan.get("meta") or {})
         checkpoint_meta["phase_checkpoints"] = phase_checkpoints
@@ -428,7 +431,14 @@ def build_orchestrate_job_runner(
             "qa": "Validation Phase",
         }
 
-        def _phase_progress_callback(stage_name: str, status: str, progress: int, detail: str) -> None:
+        def _phase_progress_callback(
+            stage_name: str,
+            status: str,
+            progress: int,
+            detail: str,
+            *,
+            checkpoint: Optional[Dict[str, Any]] = None,
+        ) -> None:
             if not job_id:
                 return
             label = stage_labels.get(str(stage_name or ""), "Engineering Run")
@@ -448,6 +458,7 @@ def build_orchestrate_job_runner(
                 status=str(status or ""),
                 detail=message,
                 progress=int(progress or 48),
+                checkpoint=checkpoint,
             )
 
         if job_id:

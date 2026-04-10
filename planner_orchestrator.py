@@ -296,7 +296,7 @@ class PlannerOrchestratorRequest:
     evolution_rounds: int = 3
 
     meta: Dict[str, Any] = field(default_factory=dict)
-    progress_callback: Optional[Callable[[str, str, int, str], None]] = None
+    progress_callback: Optional[Callable[..., None]] = None
 
 
 @dataclass
@@ -992,7 +992,7 @@ def _route_parse(req: PlannerOrchestratorRequest) -> Dict[str, Any]:
 def _single_plan_flow(
     parsed_payload: Dict[str, Any],
     *,
-    progress_callback: Optional[Callable[[str, str, int, str], None]] = None,
+    progress_callback: Optional[Callable[..., None]] = None,
 ) -> PlannerOrchestratorResult:
     final_plan = planner.build_plan(parsed_payload, progress_callback=progress_callback)
     warnings, errors = _collect_warnings_errors(final_plan)

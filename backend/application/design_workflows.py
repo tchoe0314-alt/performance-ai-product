@@ -278,7 +278,7 @@ def run_orchestration(
     *,
     load_orchestrator: Callable[[], tuple[Any, Any]],
     assess_design_readiness: Callable[[str, Optional[Dict[str, Any]]], Optional[Dict[str, Any]]],
-    progress_callback: Optional[Callable[[str, str, int, str], None]] = None,
+    progress_callback: Optional[Callable[..., None]] = None,
 ) -> Dict[str, Any]:
     PlannerOrchestratorRequest, orchestrate_plan = load_orchestrator()
 

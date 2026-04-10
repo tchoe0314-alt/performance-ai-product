@@ -20,6 +20,7 @@ Design rules
 - no capability loss; only stronger integration and coordination
 """
 
+import inspect
 import json
 import logging
 import math
@@ -7347,7 +7348,7 @@ def _run_model_first_workflow(
     route: RoutingDecision,
     option_name: str = "Base Option",
     option_family: str = "base",
-    progress_callback: Optional[Callable[[str, str, int, str], None]] = None,
+    progress_callback: Optional[Callable[..., None]] = None,
 ) -> PlannerExecutionContext:
     manager = _bootstrap_manager(parsed)
     _register_default_dependencies(manager)
@@ -7385,12 +7386,16 @@ def _run_model_first_workflow(
         "qa": ("Validation Phase", 94),
     }
 
-    def _emit_stage_progress(stage_name: str, status: str, detail: str) -> None:
+    def _emit_stage_progress(stage_name: str, status: str, detail: str, checkpoint: Optional[Dict[str, Any]] = None) -> None:
         if progress_callback is None:
             return
         label, progress_value = stage_progress.get(stage_name, ("Engineering Run", 48))
         try:
-            progress_callback(stage_name, status, progress_value, detail or label)
+            signature = inspect.signature(progress_callback)
+            if "checkpoint" in signature.parameters:
+                progress_callback(stage_name, status, progress_value, detail or label, checkpoint=checkpoint)
+            else:
+                progress_callback(stage_name, status, progress_value, detail or label)
         except Exception:
             pass
 
@@ -7405,10 +7410,28 @@ def _run_model_first_workflow(
             )
             result = runner(*args)
             latest = _latest_stage_result(ctx, stage_name)
+            checkpoint_plan: Optional[Dict[str, Any]] = None
+            if bool(getattr(latest, "success", True)):
+                try:
+                    checkpoint_plan = sanitize_plan(
+                        project_model_to_plan(
+                            manager.project,
+                            parsed.get("project_name") or "Generated Plan",
+                        )
+                    )
+                    checkpoint_plan.setdefault("meta", {})
+                    checkpoint_plan["meta"]["runtime_phase_checkpoint"] = {
+                        "stage_name": stage_name,
+                        "status": "complete",
+                        "message": safe_str(getattr(latest, "message", "")),
+                    }
+                except Exception:
+                    checkpoint_plan = None
             _emit_stage_progress(
                 stage_name,
                 "complete" if bool(getattr(latest, "success", True)) else "failed",
                 safe_str(getattr(latest, "message", "")) or f"{stage_progress.get(stage_name, ('Engineering Run', 48))[0]} completed.",
+                checkpoint=checkpoint_plan,
             )
             _record_stage_audit(
                 ctx,

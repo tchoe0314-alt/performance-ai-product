@@ -1027,6 +1027,7 @@ export default function PerformanceAIDashboard() {
   const directRunAbortRef = useRef<AbortController | null>(null);
   const lastJobStatusRef = useRef<Record<string, string>>({});
   const lastStaleJobWarningRef = useRef<Record<string, boolean>>({});
+  const lastProjectResultRefreshRef = useRef<Record<string, number>>({});
   const chatMessagesRef = useRef<ChatMessage[]>([createWelcomeMessage()]);
   const suppressProjectAutoLoadRef = useRef(false);
 
@@ -2510,6 +2511,25 @@ export default function PerformanceAIDashboard() {
             `Job ${job.job_id} is cancelling now.`,
             "status",
           );
+        }
+      }
+      if (
+        job.project_id &&
+        projectId &&
+        job.project_id === projectId &&
+        ["queued", "running"].includes(String(job.status || "").toLowerCase())
+      ) {
+        const refreshStamp =
+          typeof job.updated_at === "number" && Number.isFinite(job.updated_at)
+            ? job.updated_at
+            : Date.now() / 1000;
+        const previousRefresh = lastProjectResultRefreshRef.current[job.job_id] ?? 0;
+        if (refreshStamp > previousRefresh) {
+          lastProjectResultRefreshRef.current[job.job_id] = refreshStamp;
+          loadProjectResultInBackground({
+            project_id: job.project_id,
+            name: currentProject?.name || siteName || "Untitled Project",
+          } as ProjectRecord);
         }
       }
       if (job.status === "completed" && job.result) {
