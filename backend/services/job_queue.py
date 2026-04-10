@@ -97,9 +97,9 @@ class JobQueueService:
         raw_worker_count = str(os.getenv("PERFORMANCE_AI_JOB_WORKERS") or "").strip()
         if worker_count is None:
             try:
-                worker_count = int(raw_worker_count) if raw_worker_count else 2
+                worker_count = int(raw_worker_count) if raw_worker_count else 3
             except Exception:
-                worker_count = 2
+                worker_count = 3
         self._worker_count = max(1, int(worker_count or 1))
         self._workers: List[threading.Thread] = []
         self._heartbeat_interval_sec = max(0.5, float(heartbeat_interval_sec or 10.0))
@@ -194,8 +194,9 @@ class JobQueueService:
                 """,
                 (user_id,),
             ).fetchall()
+            queue_stats = self._queue_stats(connection, user_id=user_id)
             return [
-                self._job_summary(self._row_to_record(row))
+                self._job_summary(self._row_to_record(row), queue_stats=queue_stats)
                 for row in rows
             ]
         finally:
@@ -233,7 +234,12 @@ class JobQueueService:
         record = None if row is None else self._row_to_record(row)
         if record is None:
             return None
-        detail = self._job_summary(record)
+        connection = self.db.connect()
+        try:
+            queue_stats = self._queue_stats(connection, user_id=user_id)
+        finally:
+            connection.close()
+        detail = self._job_summary(record, queue_stats=queue_stats)
         result_payload: Dict[str, Any] = {}
         if record["status"] in {"completed", "failed", "cancelled"}:
             result_payload = record.get("result") or {}
@@ -387,13 +393,48 @@ class JobQueueService:
             if not self._touch_job_activity(job_id):
                 break
 
-    def _job_summary(self, record: Dict[str, Any]) -> Dict[str, Any]:
+    def _queue_stats(self, connection: Any, *, user_id: str) -> Dict[str, Any]:
+        running_count = int(
+            connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM jobs
+                WHERE user_id = ? AND status = 'running'
+                """,
+                (user_id,),
+            ).fetchone()[0]
+        )
+        queued_rows = connection.execute(
+            """
+            SELECT job_id
+            FROM jobs
+            WHERE user_id = ? AND status = 'queued'
+            ORDER BY created_at ASC
+            """,
+            (user_id,),
+        ).fetchall()
+        queued_ids = [str(row["job_id"]) for row in queued_rows]
+        return {
+            "running_count": running_count,
+            "queued_count": len(queued_ids),
+            "queued_positions": {job_id: index + 1 for index, job_id in enumerate(queued_ids)},
+        }
+
+    def _job_summary(self, record: Dict[str, Any], *, queue_stats: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         job_progress = dict((record.get("result") or {}).get("job_progress") or {})
         stage = str(record.get("stage") or job_progress.get("stage") or "")
         stage_detail = str(record.get("stage_detail") or job_progress.get("detail") or "")
         progress = _coerce_progress(record.get("progress"))
         if progress == 0 and job_progress:
             progress = _coerce_progress(job_progress.get("progress"))
+        queue_position = None
+        queued_count = 0
+        running_count = 0
+        if queue_stats:
+            queued_positions = dict(queue_stats.get("queued_positions") or {})
+            queue_position = queued_positions.get(record["job_id"])
+            queued_count = int(queue_stats.get("queued_count") or 0)
+            running_count = int(queue_stats.get("running_count") or 0)
         return {
             "job_id": record["job_id"],
             "job_type": record["job_type"],
@@ -405,6 +446,9 @@ class JobQueueService:
             "stage": stage,
             "stage_detail": stage_detail,
             "progress": progress,
+            "queue_position": queue_position,
+            "queued_count": queued_count,
+            "running_count": running_count,
         }
 
     def _row_to_record(self, row: Any) -> Dict[str, Any]:

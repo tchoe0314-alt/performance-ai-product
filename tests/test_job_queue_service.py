@@ -300,6 +300,99 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertIsNotNone(refreshed_running)
         self.assertEqual(refreshed_running["progress"], 24)
 
+    def test_job_summaries_include_queue_position_and_running_count(self):
+        store = ProjectStore(self.db)
+        for project_id in ("p1", "p2", "p3"):
+            store.save_project(
+                user_id=self.user_id,
+                project_id=project_id,
+                name=project_id.upper(),
+            )
+        connection = self.db.connect()
+        try:
+            connection.execute(
+                """
+                INSERT INTO jobs (
+                    job_id, user_id, job_type, status, created_at, updated_at, project_id,
+                    stage, stage_detail, progress, payload_json, result_json, error_text
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "job_running",
+                    self.user_id,
+                    "orchestrate",
+                    "running",
+                    1.0,
+                    5.0,
+                    "p1",
+                    "Engineering Run",
+                    "Working",
+                    48,
+                    "{}",
+                    '{"job_progress":{"stage":"Engineering Run","detail":"Working","progress":48}}',
+                    None,
+                ),
+            )
+            connection.execute(
+                """
+                INSERT INTO jobs (
+                    job_id, user_id, job_type, status, created_at, updated_at, project_id,
+                    stage, stage_detail, progress, payload_json, result_json, error_text
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "job_queued_1",
+                    self.user_id,
+                    "orchestrate",
+                    "queued",
+                    2.0,
+                    2.0,
+                    "p2",
+                    "Queued",
+                    "Waiting",
+                    12,
+                    "{}",
+                    '{"job_progress":{"stage":"Queued","detail":"Waiting","progress":12}}',
+                    None,
+                ),
+            )
+            connection.execute(
+                """
+                INSERT INTO jobs (
+                    job_id, user_id, job_type, status, created_at, updated_at, project_id,
+                    stage, stage_detail, progress, payload_json, result_json, error_text
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "job_queued_2",
+                    self.user_id,
+                    "orchestrate",
+                    "queued",
+                    3.0,
+                    3.0,
+                    "p3",
+                    "Queued",
+                    "Waiting",
+                    12,
+                    "{}",
+                    '{"job_progress":{"stage":"Queued","detail":"Waiting","progress":12}}',
+                    None,
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        jobs = {job["job_id"]: job for job in self.queue.list_jobs(user_id=self.user_id)}
+        self.assertEqual(jobs["job_running"]["running_count"], 1)
+        self.assertEqual(jobs["job_queued_1"]["queue_position"], 1)
+        self.assertEqual(jobs["job_queued_1"]["queued_count"], 2)
+        self.assertEqual(jobs["job_queued_1"]["running_count"], 1)
+        self.assertEqual(jobs["job_queued_2"]["queue_position"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

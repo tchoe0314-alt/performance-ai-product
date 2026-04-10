@@ -90,6 +90,9 @@ type JobSummary = {
   stage?: string;
   stage_detail?: string;
   progress?: number;
+  queue_position?: number | null;
+  queued_count?: number;
+  running_count?: number;
 };
 
 type WorkflowRunSummary = {
@@ -854,6 +857,9 @@ function buildThinkingState({
   activeJobDetail,
   activeJobProgress,
   activeJobUpdatedAt,
+  activeJobQueuePosition,
+  activeJobQueuedCount,
+  activeJobRunningCount,
   staleJob,
   statusMessage,
 }: {
@@ -864,6 +870,9 @@ function buildThinkingState({
   activeJobDetail?: string;
   activeJobProgress?: number;
   activeJobUpdatedAt?: number;
+  activeJobQueuePosition?: number | null;
+  activeJobQueuedCount?: number;
+  activeJobRunningCount?: number;
   staleJob?: boolean;
   statusMessage: string;
 }) {
@@ -879,6 +888,21 @@ function buildThinkingState({
     activeJobUpdatedAt && Number.isFinite(activeJobUpdatedAt)
       ? `Last backend update: ${formatTimestamp(activeJobUpdatedAt)}.`
       : "";
+  const queuePosition =
+    typeof activeJobQueuePosition === "number" && Number.isFinite(activeJobQueuePosition)
+      ? Math.max(1, Math.round(activeJobQueuePosition))
+      : null;
+  const queuedCount =
+    typeof activeJobQueuedCount === "number" && Number.isFinite(activeJobQueuedCount)
+      ? Math.max(0, Math.round(activeJobQueuedCount))
+      : 0;
+  const runningCount =
+    typeof activeJobRunningCount === "number" && Number.isFinite(activeJobRunningCount)
+      ? Math.max(0, Math.round(activeJobRunningCount))
+      : 0;
+  const queueDetail = queuePosition
+    ? `Civora queued the run. Queue position: ${queuePosition}${queuedCount > 0 ? ` of ${queuedCount}` : ""}. ${runningCount > 0 ? `${runningCount} worker${runningCount === 1 ? "" : "s"} active.` : ""}`.trim()
+    : "Civora queued the run and is waiting for a worker to pick it up.";
 
   if (normalizedJobStatus && staleJob) {
     return {
@@ -898,7 +922,7 @@ function buildThinkingState({
       detail:
         stageDetail ||
         (normalizedJobStatus === "queued"
-          ? "Civora queued the run and is waiting for a worker to pick it up."
+          ? queueDetail
           : "Civora is processing the design in the background now."),
       progress: numericProgress ?? (normalizedJobStatus === "queued" ? 12 : 48),
     };
@@ -907,7 +931,7 @@ function buildThinkingState({
   if (normalizedJobStatus === "queued") {
     return {
       label: "Queued",
-      detail: "Civora queued the run and is waiting for a worker to pick it up.",
+      detail: queueDetail,
       progress: 18,
     };
   }
@@ -1281,10 +1305,13 @@ export default function PerformanceAIDashboard() {
         activeJobDetail: visibleActiveJob?.stage_detail,
         activeJobProgress: visibleActiveJob?.progress,
         activeJobUpdatedAt: visibleActiveJob?.updated_at,
+        activeJobQueuePosition: visibleActiveJob?.queue_position,
+        activeJobQueuedCount: visibleActiveJob?.queued_count,
+        activeJobRunningCount: visibleActiveJob?.running_count,
         staleJob: visibleActiveJobStale,
         statusMessage,
       }),
-    [busy, visibleActiveJob?.status, visibleActiveJob?.stage, visibleActiveJob?.stage_detail, visibleActiveJob?.progress, visibleActiveJob?.updated_at, visibleActiveJobStale, activePlanTool, statusMessage],
+    [busy, visibleActiveJob?.status, visibleActiveJob?.stage, visibleActiveJob?.stage_detail, visibleActiveJob?.progress, visibleActiveJob?.updated_at, visibleActiveJob?.queue_position, visibleActiveJob?.queued_count, visibleActiveJob?.running_count, visibleActiveJobStale, activePlanTool, statusMessage],
   );
   const latestRunComparison = useMemo(() => {
     if (workflowRuns.length < 2) return null;
@@ -2492,9 +2519,23 @@ export default function PerformanceAIDashboard() {
       if (previousStatus !== job.status) {
         lastJobStatusRef.current[job.job_id] = job.status;
         if (job.status === "queued") {
+          const queuePosition =
+            typeof job.queue_position === "number" && Number.isFinite(job.queue_position)
+              ? Math.max(1, Math.round(job.queue_position))
+              : null;
+          const queuedCount =
+            typeof job.queued_count === "number" && Number.isFinite(job.queued_count)
+              ? Math.max(0, Math.round(job.queued_count))
+              : 0;
+          const runningCount =
+            typeof job.running_count === "number" && Number.isFinite(job.running_count)
+              ? Math.max(0, Math.round(job.running_count))
+              : 0;
           appendChatMessage(
             "assistant",
-            `Job ${job.job_id} is queued and waiting to run in the background.`,
+            queuePosition
+              ? `Job ${job.job_id} is queued in the background. Position ${queuePosition}${queuedCount > 0 ? ` of ${queuedCount}` : ""}. ${runningCount > 0 ? `${runningCount} worker${runningCount === 1 ? "" : "s"} active.` : ""}`.trim()
+              : `Job ${job.job_id} is queued and waiting to run in the background.`,
             "status",
           );
         } else if (job.status === "running") {
