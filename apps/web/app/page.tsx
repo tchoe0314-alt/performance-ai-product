@@ -1541,6 +1541,7 @@ export default function PerformanceAIDashboard() {
   const buildPayloadFromOverrides = (
     overrides: ControlOverrides = {},
     promptOverride?: string,
+    projectIdOverride?: string | null,
   ) => {
     const nextStrategy = overrides.strategyMode ?? strategyMode;
     const nextSiteName = overrides.siteName ?? siteName;
@@ -1553,7 +1554,8 @@ export default function PerformanceAIDashboard() {
     const nextUtilities = overrides.utilities ?? utilities;
 
     return {
-      project_id: projectId || null,
+      project_id:
+        projectIdOverride !== undefined ? projectIdOverride : projectId || null,
       input_mode: nextStrategy,
       strict_mode: nextStrategy === "manual",
       prompt_text: (promptOverride ?? prompt) || null,
@@ -1591,12 +1593,14 @@ export default function PerformanceAIDashboard() {
   const executePlanAction = async ({
     mode,
     requestPayload,
+    resolvedProjectId,
     assistantPrefix,
     clearPromptOnSuccess = false,
     signal,
   }: {
     mode: PlanToolMode;
     requestPayload: any;
+    resolvedProjectId?: string | null;
     assistantPrefix?: string | null;
     clearPromptOnSuccess?: boolean;
     signal?: AbortSignal;
@@ -1654,7 +1658,10 @@ export default function PerformanceAIDashboard() {
           const queued = await postJson<{ job: JobSummary }>(
             "/api/jobs/orchestrate",
             {
-              project_id: projectId || null,
+              project_id:
+                resolvedProjectId !== undefined
+                  ? resolvedProjectId
+                  : ((requestPayload?.project_id ?? projectId) || null),
               request: requestPayload,
             },
             { token },
@@ -1698,7 +1705,10 @@ export default function PerformanceAIDashboard() {
           const queued = await postJson<{ job: JobSummary }>(
             "/api/jobs/orchestrate",
             {
-              project_id: projectId || null,
+              project_id:
+                resolvedProjectId !== undefined
+                  ? resolvedProjectId
+                  : ((requestPayload?.project_id ?? projectId) || null),
               request: requestPayload,
             },
             { token },
@@ -1979,17 +1989,19 @@ export default function PerformanceAIDashboard() {
       await executePlanAction({
         mode,
         requestPayload: {
-          ...buildPayloadFromOverrides(),
+          ...buildPayloadFromOverrides({}, undefined, projectId || null),
           full_design_mode: true,
           optimize_goal:
             mode === "fix"
               ? suggestedImproveGoal ?? "reduce_pipe_length"
               : suggestedImproveGoal,
           meta: {
-            ...(buildPayloadFromOverrides() as any).meta,
+            ...(buildPayloadFromOverrides({}, undefined, projectId || null) as any)
+              .meta,
             requested_plan_tool: mode,
           },
         },
+        resolvedProjectId: projectId || null,
       });
       return;
     }
@@ -2003,7 +2015,8 @@ export default function PerformanceAIDashboard() {
     appendChatMessage("user", trimmedPrompt);
     setStatusMessage("Civora AI is reviewing your request and starting the design run.");
     try {
-      await ensureProjectDraft(trimmedPrompt);
+      const resolvedProjectId =
+        ((await ensureProjectDraft(trimmedPrompt)) ?? projectId) || null;
       const decision = await postJson<ChatDecisionResponse>(
         "/api/chat/decide",
         {
@@ -2061,18 +2074,23 @@ export default function PerformanceAIDashboard() {
         await executePlanAction({
           mode: resolvedMode,
           requestPayload: {
-            ...buildPayloadFromOverrides(overrides),
+            ...buildPayloadFromOverrides(overrides, undefined, resolvedProjectId),
             full_design_mode: true,
             optimize_goal:
               resolvedMode === "fix"
                 ? suggestedImproveGoal ?? "reduce_pipe_length"
                 : suggestedImproveGoal,
             meta: {
-              ...(buildPayloadFromOverrides(overrides) as any).meta,
+              ...(buildPayloadFromOverrides(
+                overrides,
+                undefined,
+                resolvedProjectId,
+              ) as any).meta,
               requested_plan_tool: resolvedMode,
               chat_decision_reason: decision.reason,
             },
           },
+          resolvedProjectId,
           assistantPrefix: decision.assistant_message,
           clearPromptOnSuccess: true,
           signal: runController.signal,
@@ -2112,13 +2130,22 @@ export default function PerformanceAIDashboard() {
       await executePlanAction({
         mode: "run",
         requestPayload: {
-          ...buildPayloadFromOverrides(overrides, decision.design_prompt || trimmedPrompt),
+          ...buildPayloadFromOverrides(
+            overrides,
+            decision.design_prompt || trimmedPrompt,
+            resolvedProjectId,
+          ),
           meta: {
-            ...(buildPayloadFromOverrides(overrides, decision.design_prompt || trimmedPrompt) as any).meta,
+            ...(buildPayloadFromOverrides(
+              overrides,
+              decision.design_prompt || trimmedPrompt,
+              resolvedProjectId,
+            ) as any).meta,
             chat_decision_reason: decision.reason,
             chat_decision_confidence: decision.confidence,
           },
         },
+        resolvedProjectId,
         assistantPrefix: decision.assistant_message,
         clearPromptOnSuccess: true,
         signal: runController.signal,
@@ -2147,11 +2174,17 @@ export default function PerformanceAIDashboard() {
       }
       if (token && isConnectivityFailureMessage(errorMessage)) {
         try {
-          const fallbackPayload = buildPayloadFromOverrides({}, trimmedPrompt);
+          const resolvedProjectId =
+            projectId || (await ensureProjectDraft(trimmedPrompt)) || null;
+          const fallbackPayload = buildPayloadFromOverrides(
+            {},
+            trimmedPrompt,
+            resolvedProjectId,
+          );
           const queued = await postJson<{ job: JobSummary }>(
             "/api/jobs/orchestrate",
             {
-              project_id: projectId || null,
+              project_id: resolvedProjectId,
               request: fallbackPayload,
             },
             { token },
@@ -2198,11 +2231,16 @@ export default function PerformanceAIDashboard() {
     if (!token) return;
     setBusy(true);
     try {
+      const resolvedProjectId =
+        projectId || (await ensureProjectDraft(prompt.trim())) || null;
       const data = await postJson<{ job: JobSummary }>(
         "/api/jobs/orchestrate",
         {
-          project_id: projectId || null,
-          request: payloadPreview,
+          project_id: resolvedProjectId,
+          request: {
+            ...payloadPreview,
+            project_id: resolvedProjectId,
+          },
         },
         { token },
       );
@@ -2283,8 +2321,8 @@ export default function PerformanceAIDashboard() {
     latestResultOverride?: any;
     autoNamedOverride?: boolean;
     autoFileNamedOverride?: boolean;
-  } = {}) => {
-    if (!token) return;
+  } = {}): Promise<ProjectRecord | null> => {
+    if (!token) return null;
     if (!silent) setBusy(true);
     const resolvedName = (nameOverride ?? siteName).trim();
     const resolvedFileName = (fileNameOverride ?? fileName).trim();
@@ -2342,12 +2380,14 @@ export default function PerformanceAIDashboard() {
           `Saved project "${data.project.name || resolvedName || "Untitled Project"}".`,
         );
       }
+      return data.project;
     } catch (error) {
       if (!silent) {
         setStatusMessage(
           error instanceof Error ? error.message : "Project save failed.",
         );
       }
+      return null;
     } finally {
       if (!silent) setBusy(false);
     }
@@ -2381,9 +2421,10 @@ export default function PerformanceAIDashboard() {
     }
   };
 
-  const ensureProjectDraft = async (initialPrompt?: string) => {
-    if (!token || projectId) return;
-    await saveProject({
+  const ensureProjectDraft = async (initialPrompt?: string): Promise<string | null> => {
+    if (!token) return null;
+    if (projectId) return projectId;
+    const savedProject = await saveProject({
       silent: true,
       projectIdOverride: null,
       nameOverride: siteName.trim(),
@@ -2391,6 +2432,7 @@ export default function PerformanceAIDashboard() {
       autoNamedOverride: false,
       autoFileNamedOverride: false,
     });
+    return savedProject?.project_id ?? null;
   };
 
   const deleteProject = async (id: string) => {
