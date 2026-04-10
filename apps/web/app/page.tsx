@@ -1008,6 +1008,7 @@ export default function PerformanceAIDashboard() {
   const lastJobStatusRef = useRef<Record<string, string>>({});
   const lastStaleJobWarningRef = useRef<Record<string, boolean>>({});
   const chatMessagesRef = useRef<ChatMessage[]>([createWelcomeMessage()]);
+  const suppressProjectAutoLoadRef = useRef(false);
 
   const disciplineToggles: DisciplineToggle[] = [
     {
@@ -2719,6 +2720,7 @@ export default function PerformanceAIDashboard() {
   };
 
   const handleNewProject = async () => {
+    suppressProjectAutoLoadRef.current = true;
     setProjectId("");
     setCurrentProject(null);
     setSelectedRunId("");
@@ -2753,40 +2755,47 @@ export default function PerformanceAIDashboard() {
     chatMessagesRef.current = nextThread;
     setChatMessages(nextThread);
     setStatusMessage("Started a new project.");
-    if (token) {
-      await saveProject({
-        silent: true,
-        projectIdOverride: null,
-        nameOverride: "",
-        fileNameOverride: "",
-        projectInputOverride: {
-          input_mode: "assisted",
-          strict_mode: false,
-          prompt_text: null,
-          image_path: null,
-          meta: {
-            chat_thread: [createWelcomeMessage()],
-            auto_named: false,
-            auto_file_named: false,
+    try {
+      if (token) {
+        const createdProject = await saveProject({
+          silent: true,
+          projectIdOverride: null,
+          nameOverride: "",
+          fileNameOverride: "",
+          projectInputOverride: {
+            input_mode: "assisted",
+            strict_mode: false,
+            prompt_text: null,
+            image_path: null,
+            meta: {
+              chat_thread: [createWelcomeMessage()],
+              auto_named: false,
+              auto_file_named: false,
+            },
+            manual_fields: {
+              project_name: "",
+              file_name: "",
+              units: "ft",
+              project_type: "",
+              lot: { x: 0, y: 0, w: 0, h: 0 },
+              setback: 0,
+              building_width: 0,
+              building_depth: 0,
+              site_plan: { parking_count: 0 },
+              disciplines: ["corridor", "grading", "drainage", "utility"],
+            },
+            allow_ai_fill_for_blanks: true,
           },
-          manual_fields: {
-            project_name: "",
-            file_name: "",
-            units: "ft",
-            project_type: "",
-            lot: { x: 0, y: 0, w: 0, h: 0 },
-            setback: 0,
-            building_width: 0,
-            building_depth: 0,
-            site_plan: { parking_count: 0 },
-            disciplines: ["corridor", "grading", "drainage", "utility"],
-          },
-          allow_ai_fill_for_blanks: true,
-        },
-        latestResultOverride: {},
-        autoNamedOverride: false,
-        autoFileNamedOverride: false,
-      });
+          latestResultOverride: {},
+          autoNamedOverride: false,
+          autoFileNamedOverride: false,
+        });
+        if (createdProject?.project_id) {
+          setProjectId(createdProject.project_id);
+        }
+      }
+    } finally {
+      suppressProjectAutoLoadRef.current = false;
     }
   };
 
@@ -2947,7 +2956,7 @@ export default function PerformanceAIDashboard() {
   }, [workflowRuns]);
 
   useEffect(() => {
-    if (!token || projectId || projects.length === 0) return;
+    if (!token || projectId || projects.length === 0 || suppressProjectAutoLoadRef.current) return;
     const preferredProject =
       projects.find((project) => project.has_result) ?? projects[0];
     if (!preferredProject) return;
