@@ -8,6 +8,7 @@ from fastapi import HTTPException
 
 from backend.application.design_workflows import build_run_summary, final_plan_from_result
 from backend.application.project_workflows import artifact_summary, save_project_workflow_update
+from geometry.layout_engine import _build_expanded_plan
 
 
 class ArtifactServiceProtocol(Protocol):
@@ -46,6 +47,62 @@ class ProjectStoreProtocol(Protocol):
         metadata: Dict[str, Any],
     ) -> Dict[str, Any]:
         ...
+
+
+DISPLAY_LAYOUT_LAYERS = {"BUILDING", "PARKING", "PAVEMENT", "ROAD", "WALK", "FIRE", "SITE", "SETBACK", "PAD"}
+
+
+def _count_building_shapes(actions: list[dict[str, Any]]) -> int:
+    return sum(
+        1
+        for action in actions
+        if isinstance(action, dict)
+        and str(action.get("layer") or "").upper() == "BUILDING"
+        and str(action.get("task") or "").lower() in {"rectangle", "polygon"}
+    )
+
+
+def _has_legacy_frontage_scene(actions: list[dict[str, Any]]) -> bool:
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        label = str(action.get("label") or "").upper()
+        text = str(action.get("text") or "").upper()
+        if "FRONTAGE" in label or "FRONTAGE ACCESS" in text or "FRONTAGE" in text:
+            return True
+    return False
+
+
+def _display_plan_from_result(result_data: Dict[str, Any], *, enforce_export_guards: bool = False) -> Dict[str, Any]:
+    final_plan = final_plan_from_result(result_data, enforce_export_guards=enforce_export_guards)
+    parsed_payload = dict(result_data.get("parsed_payload") or {})
+    raw_buildings = parsed_payload.get("buildings")
+    parsed_buildings = [item for item in raw_buildings if isinstance(item, dict)] if isinstance(raw_buildings, list) else []
+    if len(parsed_buildings) < 2:
+        return final_plan
+
+    actions = [action for action in list(final_plan.get("actions") or []) if isinstance(action, dict)]
+    building_count = _count_building_shapes(actions)
+    if building_count >= len(parsed_buildings) and not _has_legacy_frontage_scene(actions):
+        return final_plan
+
+    rebuilt = _build_expanded_plan(parsed_payload)
+    rebuilt_actions = [action for action in list(rebuilt.get("actions") or []) if isinstance(action, dict)]
+    rebuilt_building_count = _count_building_shapes(rebuilt_actions)
+    if rebuilt_building_count < len(parsed_buildings):
+        return final_plan
+
+    preserved_actions = [
+        dict(action)
+        for action in actions
+        if str(action.get("layer") or "").upper() not in DISPLAY_LAYOUT_LAYERS
+    ]
+    display_plan = dict(final_plan)
+    display_plan["actions"] = [dict(action) for action in rebuilt_actions] + preserved_actions
+    display_meta = dict(display_plan.get("meta") or {})
+    display_meta["display_rebuilt_from_parsed_payload"] = True
+    display_plan["meta"] = display_meta
+    return display_plan
 
 
 def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, Any]) -> Dict[str, Any]:
@@ -208,7 +265,7 @@ def build_preview_response(
     artifact_service: ArtifactServiceProtocol,
     result_data: Dict[str, Any],
 ) -> Dict[str, Any]:
-    final_plan = final_plan_from_result(result_data, enforce_export_guards=False)
+    final_plan = _display_plan_from_result(result_data, enforce_export_guards=False)
     png_bytes = artifact_service.build_preview_png(final_plan)
     return {
         "success": True,
@@ -231,7 +288,7 @@ def export_dxf_artifact(
     result_data: Dict[str, Any],
     filename_stem: Optional[str] = None,
 ) -> Path:
-    final_plan = final_plan_from_result(result_data)
+    final_plan = _display_plan_from_result(result_data, enforce_export_guards=True)
     stem = filename_stem or str(final_plan.get("project_name") or "civora-ai-plan")
     path = artifact_service.export_dxf(
         user_id=user_id,

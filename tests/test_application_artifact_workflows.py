@@ -62,6 +62,109 @@ class FakeProjectStore:
 
 
 class ApplicationArtifactWorkflowsTest(unittest.TestCase):
+    def test_build_preview_response_rebuilds_legacy_frontage_scene_from_parsed_payload(self):
+        service = FakeArtifactService()
+        response = build_preview_response(
+            artifact_service=service,
+            result_data={
+                "parsed_payload": {
+                    "project_type": "mixed_use",
+                    "lot": {"w": 620.0, "h": 980.0},
+                    "buildings": [
+                        {"name": "MF-1", "type": "multifamily", "width": 110, "depth": 58},
+                        {"name": "MF-2", "type": "multifamily", "width": 110, "depth": 58},
+                        {"name": "MF-3", "type": "multifamily", "width": 110, "depth": 58},
+                        {"name": "Retail", "type": "retail", "width": 70, "depth": 45},
+                    ],
+                },
+                "final_plan": {
+                    "project_name": "Legacy Frontage",
+                    "actions": [
+                        {"task": "rectangle", "layer": "BUILDING", "origin": [250, 700], "width": 80, "height": 50, "label": "BLDG"},
+                        {"task": "rectangle", "layer": "PAVEMENT", "origin": [180, 520], "width": 260, "height": 28, "label": "FRONTAGE"},
+                        {"task": "text_note", "layer": "PAVEMENT", "origin": [290, 534], "text": "FRONTAGE ACCESS"},
+                        {"task": "polyline", "layer": "PIPE", "points": [[220, 520], [310, 430], [410, 380]]},
+                    ],
+                    "meta": {},
+                },
+            },
+        )
+        self.assertTrue(response["preview_image_data_url"].startswith("data:image/png;base64,"))
+        preview_actions = service.preview_plan["actions"]
+        preview_buildings = [
+            action for action in preview_actions
+            if action.get("layer") == "BUILDING" and action.get("task") == "rectangle"
+        ]
+        self.assertGreaterEqual(len(preview_buildings), 4)
+        self.assertFalse(
+            any(
+                "FRONTAGE" in str(action.get("label") or "").upper()
+                or "FRONTAGE" in str(action.get("text") or "").upper()
+                for action in preview_actions
+            )
+        )
+        self.assertTrue(any(action.get("layer") == "PIPE" for action in preview_actions))
+
+    def test_export_dxf_artifact_rebuilds_legacy_frontage_scene_from_parsed_payload(self):
+        service = FakeArtifactService()
+        store = FakeProjectStore()
+        result_data = {
+            "parsed_payload": {
+                "project_type": "mixed_use",
+                "lot": {"w": 620.0, "h": 980.0},
+                "buildings": [
+                    {"name": "MF-1", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "MF-2", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "MF-3", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "Retail", "type": "retail", "width": 70, "depth": 45},
+                ],
+            },
+            "final_plan": {
+                "project_name": "Legacy DXF",
+                "actions": [
+                    {"task": "rectangle", "layer": "BUILDING", "origin": [250, 700], "width": 80, "height": 50, "label": "BLDG"},
+                    {"task": "rectangle", "layer": "PAVEMENT", "origin": [180, 520], "width": 260, "height": 28, "label": "FRONTAGE"},
+                    {"task": "text_note", "layer": "PAVEMENT", "origin": [290, 534], "text": "FRONTAGE ACCESS"},
+                    {"task": "polyline", "layer": "PIPE", "points": [[220, 520], [310, 430], [410, 380]]},
+                ],
+                "meta": {
+                    "drainage": {"export_validation": {"ready": True, "reasons": []}},
+                    "storm_pipes": {
+                        "segments": [
+                            {"points": [[220, 520], [310, 430], [410, 380]]},
+                        ],
+                        "graph_validation": {"valid": True},
+                        "hydraulic_validation": {"valid": True},
+                    },
+                    "utilities": {"export_validation": {"ready": True, "reasons": []}},
+                    "deliverables": {"requested": ["site_plan"], "produced": ["site_plan"]},
+                },
+            },
+        }
+        path = export_dxf_artifact(
+            artifact_service=service,
+            project_store=store,
+            user_id="u1",
+            project_id="p1",
+            result_data=result_data,
+            filename_stem="legacy-dxf",
+        )
+        self.assertEqual(path.name, "unit-plan.dxf")
+        export_actions = service.dxf_export["final_plan"]["actions"]
+        export_buildings = [
+            action for action in export_actions
+            if action.get("layer") == "BUILDING" and action.get("task") == "rectangle"
+        ]
+        self.assertGreaterEqual(len(export_buildings), 4)
+        self.assertFalse(
+            any(
+                "FRONTAGE" in str(action.get("label") or "").upper()
+                or "FRONTAGE" in str(action.get("text") or "").upper()
+                for action in export_actions
+            )
+        )
+        self.assertTrue(any(action.get("layer") == "PIPE" for action in export_actions))
+
     def test_build_preview_response_serializes_png(self):
         service = FakeArtifactService()
         response = build_preview_response(
