@@ -218,6 +218,23 @@ def build_orchestrate_job_runner(
             if normalized_status:
                 stage_statuses[stage_name] = normalized_status
         completed_phase_count = sum(1 for name in phase_order if bool(dict(phase_checkpoints.get(name) or {}).get("ready")))
+        combined_view = {
+            "label": "Combined View",
+            "status": "ready"
+            if completed_phase_count == len(phase_order) and not stage_name
+            else ("blocked" if str(status or "").strip().lower() == "failed" else "running"),
+            "ready": False,
+            "completed_phase_count": completed_phase_count,
+            "total_phase_count": len(phase_order),
+            "current_stage": stage_name,
+            "current_status": status,
+            "job_progress": int(progress or 0),
+            "note": "Run is advancing through persisted engineering phases.",
+            "messages": [detail] if detail else [],
+            "deliverables": [],
+            "blockers": [],
+        }
+        phase_checkpoints["combined_view"] = combined_view
         run_summary["phase_checkpoints"] = phase_checkpoints
         run_summary["stage_summary"] = {
             "current_stage": stage_name,
@@ -226,15 +243,7 @@ def build_orchestrate_job_runner(
             "progress": int(progress or 0),
         }
         run_summary["reliability_summary"] = dict(run_summary.get("reliability_summary") or {})
-        run_summary["combined_view"] = {
-            "status": "running",
-            "ready": False,
-            "completed_phase_count": completed_phase_count,
-            "total_phase_count": len(phase_order),
-            "current_stage": stage_name,
-            "progress": int(progress or 0),
-            "note": "Run is advancing through persisted engineering phases.",
-        }
+        run_summary["combined_view"] = dict(combined_view)
 
         checkpoint_result = dict(latest_result)
         if checkpoint:
