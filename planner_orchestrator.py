@@ -29,7 +29,7 @@ Key hardening upgrades
 from dataclasses import dataclass, field
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 import importlib
 import importlib.util
 import math
@@ -296,6 +296,7 @@ class PlannerOrchestratorRequest:
     evolution_rounds: int = 3
 
     meta: Dict[str, Any] = field(default_factory=dict)
+    progress_callback: Optional[Callable[[str, str, int, str], None]] = None
 
 
 @dataclass
@@ -988,8 +989,12 @@ def _route_parse(req: PlannerOrchestratorRequest) -> Dict[str, Any]:
 # CORE FLOWS
 # =============================================================================
 
-def _single_plan_flow(parsed_payload: Dict[str, Any]) -> PlannerOrchestratorResult:
-    final_plan = planner.build_plan(parsed_payload)
+def _single_plan_flow(
+    parsed_payload: Dict[str, Any],
+    *,
+    progress_callback: Optional[Callable[[str, str, int, str], None]] = None,
+) -> PlannerOrchestratorResult:
+    final_plan = planner.build_plan(parsed_payload, progress_callback=progress_callback)
     warnings, errors = _collect_warnings_errors(final_plan)
     success = not _manual_plan_failed(final_plan)
     message = "Generated coordinated plan." if success else "Manual-mode validation failed."
@@ -1235,7 +1240,11 @@ def _run_full_design_loop(parsed_payload: Dict[str, Any], req: PlannerOrchestrat
 
     for iteration_index in range(1, max_iters + 1):
         use_multi = _should_use_multi_option(current_payload, req)
-        current_result = _multi_option_flow(current_payload, req) if use_multi else _single_plan_flow(current_payload)
+        current_result = (
+            _multi_option_flow(current_payload, req)
+            if use_multi
+            else _single_plan_flow(current_payload, progress_callback=req.progress_callback)
+        )
 
         current_score = _safe_float(current_result.metadata.get("recommended_score"), _planner_score_from_plan(current_result.final_plan))
         state.record_score(current_score)
@@ -1341,7 +1350,7 @@ def orchestrate_plan(req: PlannerOrchestratorRequest) -> PlannerOrchestratorResu
         result = _run_full_design_loop(parsed_payload, req)
     else:
         wants_multi = _should_use_multi_option(parsed_payload, req)
-        result = _multi_option_flow(parsed_payload, req) if wants_multi else _single_plan_flow(parsed_payload)
+        result = _multi_option_flow(parsed_payload, req) if wants_multi else _single_plan_flow(parsed_payload, progress_callback=req.progress_callback)
 
     result.metadata.setdefault("input_mode", req.input_mode)
     result.metadata.setdefault("manual_mode", _lower(req.input_mode) == "manual")

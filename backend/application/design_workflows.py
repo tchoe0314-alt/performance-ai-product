@@ -278,6 +278,7 @@ def run_orchestration(
     *,
     load_orchestrator: Callable[[], tuple[Any, Any]],
     assess_design_readiness: Callable[[str, Optional[Dict[str, Any]]], Optional[Dict[str, Any]]],
+    progress_callback: Optional[Callable[[str, str, int, str], None]] = None,
 ) -> Dict[str, Any]:
     PlannerOrchestratorRequest, orchestrate_plan = load_orchestrator()
 
@@ -295,6 +296,7 @@ def run_orchestration(
         allow_ai_fill_for_blanks=bool(payload_data.get("allow_ai_fill_for_blanks", True)),
         persist_trace_metadata=bool(payload_data.get("persist_trace_metadata", True)),
         meta=dict(payload_data.get("meta") or {}),
+        progress_callback=progress_callback,
     )
 
     if str(req.input_mode or "assisted").strip().lower() == "manual" and str(req.prompt_text or "").strip():

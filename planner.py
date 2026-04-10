@@ -27,7 +27,7 @@ import re
 from copy import deepcopy
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import parsers.ai_parser
 from parsers.ai_parser import ask_mode, command_mode
@@ -7342,7 +7342,13 @@ def _apply_fix_pass(ctx: PlannerExecutionContext, report: PlanQualityReport) -> 
 # MODEL-FIRST ORCHESTRATION
 # =============================================================================
 
-def _run_model_first_workflow(parsed: Dict[str, Any], route: RoutingDecision, option_name: str = "Base Option", option_family: str = "base") -> PlannerExecutionContext:
+def _run_model_first_workflow(
+    parsed: Dict[str, Any],
+    route: RoutingDecision,
+    option_name: str = "Base Option",
+    option_family: str = "base",
+    progress_callback: Optional[Callable[[str, str, int, str], None]] = None,
+) -> PlannerExecutionContext:
     manager = _bootstrap_manager(parsed)
     _register_default_dependencies(manager)
     manual_mode = _manual_mode_enabled(parsed)
@@ -7366,11 +7372,44 @@ def _run_model_first_workflow(parsed: Dict[str, Any], route: RoutingDecision, op
     best_snapshot_id: Optional[str] = None
     best_score: Optional[float] = None
 
+    stage_progress = {
+        "layout": ("Layout Phase", 18),
+        "grading": ("Grading Phase", 30),
+        "drainage": ("Drainage Phase", 42),
+        "storm_pipes": ("Storm Pipe Phase", 54),
+        "sanitary": ("Sanitary Phase", 64),
+        "utility_network": ("Utilities Phase", 72),
+        "coordination_resolution": ("Coordination Phase", 82),
+        "earthwork": ("Earthwork Phase", 88),
+        "sheets": ("Sheet Phase", 91),
+        "qa": ("Validation Phase", 94),
+    }
+
+    def _emit_stage_progress(stage_name: str, status: str, detail: str) -> None:
+        if progress_callback is None:
+            return
+        label, progress_value = stage_progress.get(stage_name, ("Engineering Run", 48))
+        try:
+            progress_callback(stage_name, status, progress_value, detail or label)
+        except Exception:
+            pass
+
     def _run_declared_stage(stage_name: str, runner: Any, *args: Any) -> Any:
         before_state = _canonical_state_snapshot(manager.project, manager)
         dirty_reasons = _stage_dirty_reasons(ctx, stage_name)
         if _stage_should_run(ctx, stage_name):
+            _emit_stage_progress(
+                stage_name,
+                "running",
+                f"Running {stage_progress.get(stage_name, ('Engineering Run', 48))[0].lower()}.",
+            )
             result = runner(*args)
+            latest = _latest_stage_result(ctx, stage_name)
+            _emit_stage_progress(
+                stage_name,
+                "complete" if bool(getattr(latest, "success", True)) else "failed",
+                safe_str(getattr(latest, "message", "")) or f"{stage_progress.get(stage_name, ('Engineering Run', 48))[0]} completed.",
+            )
             _record_stage_audit(
                 ctx,
                 stage_name,
@@ -7885,9 +7924,14 @@ def _run_model_first_workflow(parsed: Dict[str, Any], route: RoutingDecision, op
 # PUBLIC BUILD ENTRYPOINTS
 # =============================================================================
 
-def build_plan_from_parsed(parsed: Dict[str, Any], route: RoutingDecision) -> Dict[str, Any]:
+def build_plan_from_parsed(
+    parsed: Dict[str, Any],
+    route: RoutingDecision,
+    *,
+    progress_callback: Optional[Callable[[str, str, int, str], None]] = None,
+) -> Dict[str, Any]:
     if route.path == "model_first":
-        ctx = _run_model_first_workflow(parsed, route)
+        ctx = _run_model_first_workflow(parsed, route, progress_callback=progress_callback)
         return ctx.final_plan
     raise ValueError(f"Unsupported planner route '{route.path}'.")
 
@@ -7902,10 +7946,14 @@ def finalize_plan(plan: Dict[str, Any], *, parsed: Dict[str, Any], route: Routin
     return final
 
 
-def build_plan(parsed: Dict[str, Any]) -> Dict[str, Any]:
+def build_plan(
+    parsed: Dict[str, Any],
+    *,
+    progress_callback: Optional[Callable[[str, str, int, str], None]] = None,
+) -> Dict[str, Any]:
     parsed_checked = triple_check_parsed_payload(parsed)
     route = choose_routing_path(parsed_checked)
-    raw = build_plan_from_parsed(parsed_checked, route)
+    raw = build_plan_from_parsed(parsed_checked, route, progress_callback=progress_callback)
     return finalize_plan(raw, parsed=parsed_checked, route=route)
 
 

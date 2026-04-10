@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from typing import Any, Callable, Dict, Optional, Protocol
 
 from fastapi import HTTPException
@@ -287,6 +288,31 @@ def build_orchestrate_job_runner(
     def orchestrate_runner(job: Dict[str, Any]) -> Dict[str, Any]:
         payload = dict(job.get("payload") or {})
         job_id = str(job.get("job_id") or "").strip()
+        stage_labels = {
+            "layout": "Layout Phase",
+            "grading": "Grading Phase",
+            "drainage": "Drainage Phase",
+            "storm_pipes": "Storm Pipe Phase",
+            "sanitary": "Sanitary Phase",
+            "utility_network": "Utilities Phase",
+            "coordination_resolution": "Coordination Phase",
+            "earthwork": "Earthwork Phase",
+            "sheets": "Sheet Phase",
+            "qa": "Validation Phase",
+        }
+
+        def _phase_progress_callback(stage_name: str, status: str, progress: int, detail: str) -> None:
+            if not job_id:
+                return
+            label = stage_labels.get(str(stage_name or ""), "Engineering Run")
+            message = str(detail or "").strip() or label
+            update_job_progress(
+                job_id,
+                stage=label,
+                detail=message,
+                progress=int(progress or 48),
+            )
+
         if job_id:
             update_job_progress(
                 job_id,
@@ -294,7 +320,11 @@ def build_orchestrate_job_runner(
                 detail="Running the core design pipeline and building the plan.",
                 progress=48,
             )
-        result = run_orchestration(payload)
+        run_signature = inspect.signature(run_orchestration)
+        if "progress_callback" in run_signature.parameters:
+            result = run_orchestration(payload, progress_callback=_phase_progress_callback)
+        else:
+            result = run_orchestration(payload)
         project_id = job.get("project_id")
         user_id = job.get("user_id")
         enriched = _normalized_result_for_ui(

@@ -275,6 +275,97 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertFalse(result["final_plan"]["export_ready"])
         self.assertEqual(result["final_plan"]["blockers"], ["storm_network_missing", "storm_graph_invalid"])
 
+    def test_build_orchestrate_job_runner_reports_real_phase_progress(self):
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Demo",
+                "description": "",
+                "session_id": None,
+                "tags": [],
+                "project_input": {},
+                "latest_result": {},
+                "session_state": {},
+                "metadata": {},
+            }
+        )
+        progress_updates = []
+
+        def run_orchestration(payload, progress_callback=None):
+            self.assertIsNotNone(progress_callback)
+            progress_callback("layout", "running", 18, "Running layout phase.")
+            progress_callback("grading", "running", 30, "Running grading phase.")
+            return {
+                "success": True,
+                "final_plan": {
+                    "project_name": "Demo",
+                    "meta": {
+                        "grading": {"surface": "ok"},
+                    },
+                },
+            }
+
+        runner = build_orchestrate_job_runner(
+            project_store=store,
+            update_job_progress=lambda job_id, **kwargs: progress_updates.append({"job_id": job_id, **kwargs}),
+            run_orchestration=run_orchestration,
+            build_run_summary=lambda result, **kwargs: {
+                "run_id": "run_phase",
+                "job_id": kwargs.get("job_id"),
+                "convergence_summary": {
+                    "assumption_summary": {"count": 0, "categories": [], "examples": []},
+                    "unresolved_issue_categories": [],
+                    "blocked_reasons": [],
+                    "blocked_exports": [],
+                },
+                "reliability_summary": {
+                    "operational_state": "ready",
+                    "release_ready": True,
+                },
+                "phase_checkpoints": {
+                    "layout": {"status": "complete", "ready": True},
+                    "grading": {"status": "complete", "ready": True},
+                    "combined_view": {"status": "ready", "ready": True},
+                },
+                "requested_deliverables": ["site_plan"],
+                "produced_deliverables": ["site_plan"],
+                "ready_deliverables": ["site_plan"],
+                "extra_deliverables": [],
+                "failed_deliverables": [],
+            },
+            merge_project_metadata=lambda metadata, **kwargs: metadata,
+            final_plan_from_result=lambda result, **kwargs: {
+                "project_name": "Demo",
+                "meta": {
+                    "grading": {"surface": "ok"},
+                },
+            },
+        )
+
+        runner(
+            {
+                "job_id": "job_phase",
+                "job_type": "orchestrate",
+                "user_id": "u1",
+                "project_id": "p1",
+                "payload": {"prompt_text": "run"},
+            }
+        )
+
+        self.assertEqual(
+            [item["stage"] for item in progress_updates],
+            [
+                "Engineering Run",
+                "Layout Phase",
+                "Grading Phase",
+                "Saving Project",
+                "Finalizing",
+            ],
+        )
+        self.assertEqual(progress_updates[1]["detail"], "Running layout phase.")
+        self.assertEqual(progress_updates[2]["detail"], "Running grading phase.")
+
     def test_cancel_existing_job_returns_summary(self):
         queue = FakeJobQueue()
         response = cancel_existing_job(job_queue=queue, user_id="u1", job_id="job_1")
