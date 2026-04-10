@@ -7368,6 +7368,107 @@ def _run_model_first_workflow(
     _ingest_parsed_into_model(ctx)
     manager.project.meta["preferred_corridors"] = _preferred_corridors(parsed, manager.project)
 
+    def _seed_runtime_resume_state() -> set[str]:
+        parsed_meta = safe_dict(parsed.get("meta"))
+        orchestrator_meta = safe_dict(parsed_meta.get("orchestrator_meta"))
+        resume_payload = safe_dict(orchestrator_meta.get("runtime_resume"))
+        checkpoint_plan = safe_dict(resume_payload.get("final_plan"))
+        checkpoint_meta = safe_dict(checkpoint_plan.get("meta"))
+        stage_statuses = safe_dict(
+            resume_payload.get("stage_statuses")
+            or safe_dict(safe_dict(checkpoint_meta.get("stage_completeness")).get("statuses"))
+        )
+        if not stage_statuses:
+            return set()
+
+        resumable_statuses = {"complete", "assumed"}
+        resumed: set[str] = set()
+
+        def _stage_is_resumable(stage_name: str) -> bool:
+            return lower_text(stage_statuses.get(stage_name)) in resumable_statuses
+
+        def _record_resumed_stage(stage_name: str, message: str) -> None:
+            manager.mark_system_complete(stage_name, message)
+            ctx.add_stage(
+                stage_name,
+                True,
+                message,
+                resumed_from_checkpoint=True,
+                completeness=lower_text(stage_statuses.get(stage_name)) or "complete",
+            )
+            resumed.add(stage_name)
+
+        if _stage_is_resumable("layout"):
+            restored_actions = [
+                sanitize_action(dict(action))
+                for action in safe_list(checkpoint_plan.get("actions"))
+                if isinstance(action, dict)
+            ]
+            if restored_actions:
+                manager.project.meta["_expanded_plan"] = {"actions": deepcopy(restored_actions)}
+                parking_program = deepcopy(safe_dict(checkpoint_meta.get("parking_program")))
+                if parking_program:
+                    manager.latest_outputs["parking_program"] = deepcopy(parking_program)
+                    manager.project.meta["parking_program"] = deepcopy(parking_program)
+                _record_resumed_stage("layout", "Restored layout state from saved checkpoint.")
+
+        if _stage_is_resumable("grading"):
+            grading_summary = deepcopy(safe_dict(checkpoint_meta.get("grading")))
+            if grading_summary:
+                manager.latest_outputs["grading"] = deepcopy(grading_summary)
+                manager.project.meta["grading_summary"] = deepcopy(grading_summary)
+                _record_resumed_stage("grading", "Restored grading state from saved checkpoint.")
+
+        if _stage_is_resumable("drainage"):
+            drainage_summary = deepcopy(safe_dict(checkpoint_meta.get("drainage")))
+            if drainage_summary:
+                manager.latest_outputs["drainage"] = deepcopy(drainage_summary)
+                manager.project.meta["drainage_canonical"] = deepcopy(drainage_summary)
+                manager.project.meta["drainage_summary"] = deepcopy(drainage_summary)
+                _record_resumed_stage("drainage", "Restored drainage state from saved checkpoint.")
+
+        if _stage_is_resumable("storm_pipes"):
+            storm_summary = deepcopy(safe_dict(checkpoint_meta.get("storm_pipes")))
+            if storm_summary:
+                manager.latest_outputs["storm_pipe_summary"] = deepcopy(storm_summary)
+                manager.project.meta["storm_pipe_summary"] = deepcopy(storm_summary)
+                manager.project.meta["storm_pipe_segments"] = deepcopy(
+                    safe_list(storm_summary.get("segments"))
+                )
+                _record_resumed_stage("storm_pipes", "Restored storm pipe state from saved checkpoint.")
+
+        if _stage_is_resumable("sanitary"):
+            sanitary_summary = deepcopy(safe_dict(checkpoint_meta.get("sanitary")))
+            if sanitary_summary:
+                manager.latest_outputs["sanitary"] = deepcopy(sanitary_summary)
+                manager.project.meta["sanitary_summary"] = deepcopy(sanitary_summary)
+                _record_resumed_stage("sanitary", "Restored sanitary state from saved checkpoint.")
+
+        if _stage_is_resumable("utility_network"):
+            utility_summary = deepcopy(safe_dict(checkpoint_meta.get("utilities")))
+            if utility_summary:
+                manager.latest_outputs["utilities"] = deepcopy(utility_summary)
+                manager.project.meta["utility_summary"] = deepcopy(utility_summary)
+                _record_resumed_stage("utility_network", "Restored utility state from saved checkpoint.")
+
+        if _stage_is_resumable("sheets"):
+            profiles = deepcopy(safe_list(checkpoint_meta.get("profiles")))
+            cross_sections = deepcopy(safe_list(checkpoint_meta.get("cross_sections")))
+            if profiles or cross_sections:
+                manager.latest_outputs["profiles"] = deepcopy(profiles)
+                manager.latest_outputs["cross_sections"] = deepcopy(cross_sections)
+                manager.project.meta["profiles"] = deepcopy(profiles)
+                manager.project.meta["cross_sections"] = deepcopy(cross_sections)
+                _record_resumed_stage("sheets", "Restored sheet state from saved checkpoint.")
+
+        if resumed:
+            ctx.record_assumption(
+                f"Resumed saved engineering phases from checkpoint state: {', '.join(sorted(resumed))}."
+            )
+        return resumed
+
+    resumed_stage_names = _seed_runtime_resume_state()
+
     max_passes = max(2, safe_int(safe_dict(parsed.get("meta")).get("planner_passes"), 2))
     final_report = PlanQualityReport()
     best_snapshot_id: Optional[str] = None
@@ -7402,7 +7503,11 @@ def _run_model_first_workflow(
     def _run_declared_stage(stage_name: str, runner: Any, *args: Any) -> Any:
         before_state = _canonical_state_snapshot(manager.project, manager)
         dirty_reasons = _stage_dirty_reasons(ctx, stage_name)
-        if _stage_should_run(ctx, stage_name):
+        if _stage_should_run(
+            ctx,
+            stage_name,
+            force_first_pass=stage_name not in resumed_stage_names,
+        ):
             _emit_stage_progress(
                 stage_name,
                 "running",

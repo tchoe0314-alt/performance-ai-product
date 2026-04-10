@@ -415,6 +415,7 @@ def build_orchestrate_job_runner(
 
     def orchestrate_runner(job: Dict[str, Any]) -> Dict[str, Any]:
         payload = dict(job.get("payload") or {})
+        run_payload = dict(payload)
         job_id = str(job.get("job_id") or "").strip()
         project_id = job.get("project_id")
         user_id = job.get("user_id")
@@ -468,11 +469,36 @@ def build_orchestrate_job_runner(
                 detail="Running the core design pipeline and building the plan.",
                 progress=48,
             )
+        existing = None
+        if project_id and user_id:
+            existing = project_store.get_project(user_id=user_id, project_id=project_id)
+            if existing is not None:
+                existing_result = dict(existing.get("latest_result") or {})
+                existing_final_plan = dict(existing_result.get("final_plan") or {})
+                existing_meta = dict(existing_final_plan.get("meta") or {})
+                stage_statuses = dict(
+                    dict(existing_meta.get("stage_completeness") or {}).get("statuses") or {}
+                )
+                phase_checkpoints = dict(
+                    existing_meta.get("phase_checkpoints")
+                    or dict(dict(existing_result.get("metadata") or {}).get("run_summary") or {}).get("phase_checkpoints")
+                    or {}
+                )
+                if existing_final_plan and (stage_statuses or phase_checkpoints):
+                    runtime_resume = {
+                        "project_id": project_id,
+                        "stage_statuses": stage_statuses,
+                        "phase_checkpoints": phase_checkpoints,
+                        "final_plan": existing_final_plan,
+                    }
+                    run_meta = dict(run_payload.get("meta") or {})
+                    run_meta["runtime_resume"] = runtime_resume
+                    run_payload["meta"] = run_meta
         run_signature = inspect.signature(run_orchestration)
         if "progress_callback" in run_signature.parameters:
-            result = run_orchestration(payload, progress_callback=_phase_progress_callback)
+            result = run_orchestration(run_payload, progress_callback=_phase_progress_callback)
         else:
-            result = run_orchestration(payload)
+            result = run_orchestration(run_payload)
         enriched = _normalized_result_for_ui(
             result,
             project_id=project_id,
@@ -487,7 +513,6 @@ def build_orchestrate_job_runner(
                     detail="Saving the latest design state back into the project.",
                     progress=76,
                 )
-            existing = project_store.get_project(user_id=user_id, project_id=project_id)
             if existing is not None:
                 project_store.save_project(
                     user_id=user_id,

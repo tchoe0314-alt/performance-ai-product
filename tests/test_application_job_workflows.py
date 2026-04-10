@@ -473,6 +473,117 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertEqual(fourth_phase_run["phase_checkpoints"]["grading"]["status"], "complete")
         self.assertTrue(fourth_phase_run["phase_checkpoints"]["grading"]["ready"])
 
+    def test_build_orchestrate_job_runner_resumes_from_saved_checkpoint_state(self):
+        captured_payload = {}
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Demo",
+                "description": "",
+                "session_id": None,
+                "tags": [],
+                "project_input": {},
+                "latest_result": {
+                    "final_plan": {
+                        "actions": [{"task": "rectangle", "layer": "BUILDING", "label": "MF-1"}],
+                        "meta": {
+                            "stage_completeness": {
+                                "statuses": {
+                                    "layout": "complete",
+                                    "grading": "complete",
+                                }
+                            },
+                            "phase_checkpoints": {
+                                "layout": {"status": "complete", "ready": True},
+                                "grading": {"status": "complete", "ready": True},
+                            },
+                            "parking_program": {"requested": 42},
+                            "grading": {"surface": "checkpoint"},
+                        },
+                    },
+                    "metadata": {
+                        "run_summary": {
+                            "phase_checkpoints": {
+                                "layout": {"status": "complete", "ready": True},
+                                "grading": {"status": "complete", "ready": True},
+                            }
+                        }
+                    },
+                },
+                "session_state": {},
+                "metadata": {},
+            }
+        )
+
+        def run_orchestration(payload, progress_callback=None):
+            captured_payload.update(payload)
+            return {
+                "success": True,
+                "final_plan": {
+                    "project_name": "Demo",
+                    "meta": {
+                        "grading": {"surface": "ok"},
+                    },
+                },
+            }
+
+        runner = build_orchestrate_job_runner(
+            project_store=store,
+            update_job_progress=lambda *_args, **_kwargs: None,
+            run_orchestration=run_orchestration,
+            build_run_summary=lambda result, **kwargs: {
+                "run_id": "run_resume",
+                "job_id": kwargs.get("job_id"),
+                "source": "queued_job",
+                "convergence_summary": {
+                    "assumption_summary": {"count": 0, "categories": [], "examples": []},
+                    "unresolved_issue_categories": [],
+                    "blocked_reasons": [],
+                    "blocked_exports": [],
+                },
+                "reliability_summary": {
+                    "operational_state": "ready",
+                    "release_ready": True,
+                },
+                "phase_checkpoints": {
+                    "layout": {"status": "complete", "ready": True},
+                    "grading": {"status": "complete", "ready": True},
+                    "combined_view": {"status": "ready", "ready": True},
+                },
+                "requested_deliverables": ["site_plan"],
+                "produced_deliverables": ["site_plan"],
+                "ready_deliverables": ["site_plan"],
+                "extra_deliverables": [],
+                "failed_deliverables": [],
+            },
+            merge_project_metadata=lambda metadata, **kwargs: metadata,
+            final_plan_from_result=lambda result, **kwargs: {
+                "project_name": "Demo",
+                "meta": {
+                    "grading": {"surface": "ok"},
+                },
+            },
+        )
+
+        runner(
+            {
+                "job_id": "job_resume",
+                "job_type": "orchestrate",
+                "user_id": "u1",
+                "project_id": "p1",
+                "payload": {"prompt_text": "run"},
+            }
+        )
+
+        runtime_resume = dict(dict(captured_payload.get("meta") or {}).get("runtime_resume") or {})
+        self.assertEqual(runtime_resume["project_id"], "p1")
+        self.assertEqual(runtime_resume["stage_statuses"]["layout"], "complete")
+        self.assertEqual(runtime_resume["stage_statuses"]["grading"], "complete")
+        self.assertTrue(runtime_resume["phase_checkpoints"]["layout"]["ready"])
+        self.assertEqual(runtime_resume["final_plan"]["meta"]["parking_program"]["requested"], 42)
+        self.assertEqual(store.saved_payload["project_input"], {"prompt_text": "run"})
+
     def test_cancel_existing_job_returns_summary(self):
         queue = FakeJobQueue()
         response = cancel_existing_job(job_queue=queue, user_id="u1", job_id="job_1")
