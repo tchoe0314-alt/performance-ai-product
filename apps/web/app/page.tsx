@@ -2159,7 +2159,7 @@ export default function PerformanceAIDashboard() {
           setActiveJobId(queued.job.job_id);
           appendChatMessage(
             "assistant",
-            `The live request could not stay connected long enough to finish the first pass, so I queued it in the background instead. Job ${queued.job.job_id} is now running and I’ll pick it up when it finishes.`,
+            `The live request could not stay connected long enough to finish the first pass, so I queued it in the background instead. Job ${queued.job.job_id} is queued and I’ll pick it up when it starts reporting progress.`,
             "status",
           );
           setStatusMessage(
@@ -2873,7 +2873,8 @@ export default function PerformanceAIDashboard() {
 
   useEffect(() => {
     if (!visibleActiveJob?.job_id) return;
-    if (!visibleActiveJobStale) {
+    const normalizedStatus = String(visibleActiveJob.status || "").toLowerCase();
+    if (!visibleActiveJobStale || normalizedStatus !== "running") {
       delete lastStaleJobWarningRef.current[visibleActiveJob.job_id];
       return;
     }
@@ -2889,7 +2890,7 @@ export default function PerformanceAIDashboard() {
       `Job ${visibleActiveJob.job_id} has not reported a fresh backend update recently. It may still be running, but the status may be stalled.`,
       "status",
     );
-  }, [visibleActiveJob?.job_id, visibleActiveJobStale]);
+  }, [visibleActiveJob?.job_id, visibleActiveJob?.status, visibleActiveJobStale]);
 
   useEffect(() => {
     if (!workflowRuns.length) {
