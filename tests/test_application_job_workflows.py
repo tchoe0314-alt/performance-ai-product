@@ -158,6 +158,11 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
                     "operational_state": "review",
                     "primary_attention": "primary_detention_missing",
                 },
+                "phase_checkpoints": {
+                    "layout": {"status": "complete", "ready": True},
+                    "grading": {"status": "partial", "ready": False},
+                    "combined_view": {"status": "review", "ready": False},
+                },
             },
             merge_project_metadata=lambda metadata, **kwargs: {"workflow": {"runs": [kwargs["run_summary"]]}},
             final_plan_from_result=plan_builder,
@@ -183,6 +188,8 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertTrue(result["final_plan"]["release_ready"])
         self.assertEqual(result["final_plan"]["blockers"], [])
         self.assertEqual(result["final_plan"]["deliverables"]["ready"], [])
+        self.assertEqual(result["final_plan"]["meta"]["phase_checkpoints"]["layout"]["status"], "complete")
+        self.assertFalse(result["final_plan"]["meta"]["phase_checkpoints"]["combined_view"]["ready"])
         self.assertEqual(result["metadata"]["job_context"]["job_id"], "job_1")
         self.assertEqual(result["metadata"]["job_context"]["source"], "job_queue")
         self.assertEqual(result["metadata"]["job_context"]["user_id"], "u1")
@@ -192,6 +199,10 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
             "Where widths are not explicit for linear features, discipline defaults are used.",
         )
         self.assertEqual(store.saved_payload["latest_result"]["final_plan"]["blockers"], [])
+        self.assertEqual(
+            store.saved_payload["latest_result"]["final_plan"]["meta"]["release_review"]["phase_checkpoints"]["layout"]["status"],
+            "complete",
+        )
         self.assertEqual(
             [item["stage"] for item in progress_updates],
             ["Engineering Run", "Saving Project", "Finalizing"],

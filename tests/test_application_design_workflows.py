@@ -166,6 +166,12 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertEqual(summary["reliability_summary"]["primary_attention"], "storm_hydraulics_invalid")
         self.assertEqual(summary["reliability_summary"]["blocked_export_count"], 1)
         self.assertEqual(summary["reliability_summary"]["trace"]["run_id"], "run_123")
+        self.assertEqual(summary["phase_checkpoints"]["layout"]["status"], "complete")
+        self.assertTrue(summary["phase_checkpoints"]["layout"]["has_data"])
+        self.assertEqual(summary["phase_checkpoints"]["drainage_storm"]["status"], "pending")
+        self.assertIn("storm", summary["phase_checkpoints"]["drainage_storm"]["blockers"][0])
+        self.assertEqual(summary["phase_checkpoints"]["combined_view"]["status"], "blocked")
+        self.assertEqual(summary["phase_checkpoints"]["combined_view"]["completed_phase_count"], 1)
 
     def test_build_run_summary_prefers_release_review_blockers_over_convergence(self):
         summary = build_run_summary(

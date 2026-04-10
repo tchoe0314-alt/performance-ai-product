@@ -123,6 +123,156 @@ def _deliverable_summary(deliverables: Dict[str, Any]) -> Dict[str, list[str]]:
     }
 
 
+def _build_phase_checkpoints(
+    *,
+    final_plan: Dict[str, Any],
+    stage_completeness: Dict[str, Any],
+    deliverable_summary: Dict[str, list[str]],
+    blocked_exports: list[str],
+    blocked_reasons: list[str],
+    release_ready: bool,
+) -> Dict[str, Any]:
+    meta = dict(final_plan.get("meta") or {})
+    actions = [
+        dict(action)
+        for action in list(final_plan.get("actions") or [])
+        if isinstance(action, dict)
+    ]
+    stage_rows = {
+        str(row.get("stage_name") or ""): dict(row)
+        for row in list(stage_completeness.get("stages") or [])
+        if str(dict(row).get("stage_name") or "")
+    }
+    compact_statuses = {
+        str(name): str(status)
+        for name, status in dict(stage_completeness.get("statuses") or {}).items()
+        if str(name)
+    }
+    required_status = dict(stage_completeness.get("required_stage_status") or {})
+    action_layers = {
+        str(action.get("layer") or "").upper()
+        for action in actions
+        if str(action.get("layer") or "")
+    }
+
+    def _phase_status(*stage_names: str) -> str:
+        statuses = [
+            str(required_status.get(stage) or compact_statuses.get(stage) or dict(stage_rows.get(stage) or {}).get("completeness") or "").strip().lower()
+            for stage in stage_names
+            if str(required_status.get(stage) or compact_statuses.get(stage) or dict(stage_rows.get(stage) or {}).get("completeness") or "").strip()
+        ]
+        if not statuses:
+            return "pending"
+        if any(status == "failed" for status in statuses):
+            return "failed"
+        if all(status == "complete" for status in statuses):
+            return "complete"
+        if any(status in {"running", "in_progress", "started"} for status in statuses):
+            return "running"
+        return "partial"
+
+    def _phase_messages(*stage_names: str) -> list[str]:
+        out: list[str] = []
+        for stage in stage_names:
+            row = dict(stage_rows.get(stage) or {})
+            message = str(row.get("message") or "").strip()
+            if message and message not in out:
+                out.append(message)
+        return out
+
+    def _phase(stage_names: tuple[str, ...], deliverables: list[str], has_data: bool, *, label: str, blockers: list[str]) -> Dict[str, Any]:
+        status = _phase_status(*stage_names)
+        ready = has_data and status == "complete" and not blockers
+        return {
+            "label": label,
+            "status": status,
+            "ready": ready,
+            "deliverables": deliverables,
+            "messages": _phase_messages(*stage_names)[:3],
+            "blockers": blockers,
+            "has_data": has_data,
+            "stages": list(stage_names),
+        }
+
+    requested = set(deliverable_summary.get("requested") or [])
+    produced = set(deliverable_summary.get("produced") or [])
+    layout_deliverables = sorted([item for item in requested | produced if item in {"site_plan"}])
+    grading_deliverables = sorted([item for item in requested | produced if item in {"grading_plan", "contours", "spot_grades", "flow_arrows"}])
+    drainage_deliverables = sorted([item for item in requested | produced if item in {"storm_pipe_plan", "drainage_plan"}])
+    utility_deliverables = sorted([item for item in requested | produced if item in {"utility_plan", "sanitary_plan", "water_plan"}])
+    coordination_deliverables = sorted([item for item in requested | produced if item in {"report", "coordination_report"}])
+
+    layout_blockers = [reason for reason in blocked_reasons if any(token in reason for token in ("layout", "building", "parking", "site"))]
+    grading_blockers = [reason for reason in blocked_reasons if any(token in reason for token in ("grading", "grade", "contour", "surface", "slope"))]
+    drainage_blockers = [reason for reason in blocked_reasons if any(token in reason for token in ("storm", "drain", "basin", "inlet", "pipe", "hydraulic"))]
+    utility_blockers = [reason for reason in blocked_reasons if any(token in reason for token in ("utility", "water", "sanitary", "sewer"))]
+    coordination_blockers = [reason for reason in blocked_reasons if reason not in layout_blockers + grading_blockers + drainage_blockers + utility_blockers]
+
+    phase_checkpoints = {
+        "layout": _phase(
+            ("layout",),
+            layout_deliverables,
+            has_data=bool(action_layers.intersection({"BUILDING", "PARKING", "PAVEMENT", "WALK", "ROAD"})) or "site_plan" in deliverable_summary.get("ready_requested", []),
+            label="Layout",
+            blockers=layout_blockers,
+        ),
+        "grading": _phase(
+            ("grading",),
+            grading_deliverables,
+            has_data=bool(meta.get("grading")) or bool(action_layers.intersection({"FG_CONTOUR", "SPOT_FG"})),
+            label="Grading",
+            blockers=grading_blockers,
+        ),
+        "drainage_storm": _phase(
+            ("drainage", "storm_pipes"),
+            drainage_deliverables,
+            has_data=bool(meta.get("drainage") or meta.get("storm_pipes")) or bool(action_layers.intersection({"PIPE", "BASIN_BOUNDARY", "STRUCTURE", "DRAIN", "STORM"})),
+            label="Drainage and Storm",
+            blockers=drainage_blockers,
+        ),
+        "utilities": _phase(
+            ("sanitary", "utility_network"),
+            utility_deliverables,
+            has_data=bool(meta.get("utilities") or meta.get("sanitary")) or bool(action_layers.intersection({"UTILITY", "WATER", "SAN"})),
+            label="Utilities",
+            blockers=utility_blockers,
+        ),
+        "coordination_validation": _phase(
+            ("coordination_resolution", "qa"),
+            coordination_deliverables,
+            has_data=bool(meta.get("coordination") or meta.get("manual_validation") or meta.get("truth_audit")),
+            label="Coordination and Validation",
+            blockers=coordination_blockers,
+        ),
+    }
+
+    completed_phases = sum(1 for item in phase_checkpoints.values() if bool(item.get("ready")))
+    combined_status = "ready" if release_ready else ("blocked" if blocked_exports or blocked_reasons else "review")
+    combined_note = (
+        "Combined engineering view is release-ready."
+        if combined_status == "ready"
+        else ("Combined engineering view is blocked pending remaining phase issues." if combined_status == "blocked" else "Combined engineering view is available for review while phases continue to mature.")
+    )
+    return {
+        "layout": phase_checkpoints["layout"],
+        "grading": phase_checkpoints["grading"],
+        "drainage_storm": phase_checkpoints["drainage_storm"],
+        "utilities": phase_checkpoints["utilities"],
+        "coordination_validation": phase_checkpoints["coordination_validation"],
+        "combined_view": {
+            "status": combined_status,
+            "ready": release_ready,
+            "completed_phase_count": completed_phases,
+            "total_phase_count": len(phase_checkpoints),
+            "blocked_exports": list(blocked_exports),
+            "blocked_reasons": list(blocked_reasons),
+            "deliverables_ready": list(deliverable_summary.get("ready_requested") or []),
+            "deliverables_extra": list(deliverable_summary.get("extra_produced") or []),
+            "note": combined_note,
+        },
+    }
+
+
 def run_orchestration(
     payload_data: Dict[str, Any],
     *,
@@ -288,6 +438,15 @@ def build_run_summary(
     elif job_id:
         persistence_scope = "job"
 
+    phase_checkpoints = _build_phase_checkpoints(
+        final_plan=final_plan,
+        stage_completeness=stage_completeness,
+        deliverable_summary=deliverable_summary,
+        blocked_exports=blocked_exports,
+        blocked_reasons=blocked_reasons,
+        release_ready=release_ready,
+    )
+
     return {
         "run_id": run_id,
         "project_id": project_id,
@@ -317,6 +476,7 @@ def build_run_summary(
             "complete_stage_count": int(stage_completeness.get("complete_stage_count") or 0),
             "statuses": dict(stage_completeness.get("statuses") or {}),
         },
+        "phase_checkpoints": phase_checkpoints,
         "coordination_summary": {
             "unresolved_conflicts": count_unresolved_conflicts(final_plan),
             "selected_strategy": coordination.get("selected_group_strategy") or "none",

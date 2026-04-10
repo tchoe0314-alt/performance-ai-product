@@ -238,12 +238,14 @@ def build_orchestrate_job_runner(
             run_summary["convergence_summary"] = convergence
             run_summary["reliability_summary"] = reliability
             final_meta["run_summary"] = run_summary
+            final_meta["phase_checkpoints"] = dict(run_summary.get("phase_checkpoints") or {})
             final_meta["release_review"] = {
                 "blocked_reasons": blocked_reasons,
                 "blocked_exports": blocked_exports,
                 "review_categories": review_categories,
                 "assumption_summary": assumption_summary,
                 "reliability_summary": reliability,
+                "phase_checkpoints": dict(run_summary.get("phase_checkpoints") or {}),
             }
             final_meta["blockers"] = blocked_reasons or blocked_exports
             final_meta["export_ready"] = not bool(blocked_reasons or blocked_exports)
