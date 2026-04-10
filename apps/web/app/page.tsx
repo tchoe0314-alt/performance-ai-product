@@ -1367,8 +1367,6 @@ export default function PerformanceAIDashboard() {
 
   const applyBackendResult = (data: any) => {
     setBackendResult(data);
-    setPlanPreviewUrl("");
-    setPlanPreviewSummary(null);
     if (Array.isArray(data?.assumptions)) {
       setAssumptions(
         data.assumptions.map((item: BackendAssumption) => ({
@@ -3258,6 +3256,10 @@ export default function PerformanceAIDashboard() {
     ready: boolean;
     summary: string;
   }>;
+  const activePreviewPhase =
+    previewPhaseEntries.find((phase) => phase.status.toLowerCase() === "running") ??
+    previewPhaseEntries.find((phase) => phase.key === "combined_view") ??
+    null;
   const previewRerunSignals = [
     ...(previewReview?.rerun_stages ?? []).map((item) => toReadableLabel(String(item || ""))),
     ...(previewReview?.rerun_reasons ?? []).map((item) => toReadableLabel(String(item || ""))),
@@ -3808,6 +3810,11 @@ export default function PerformanceAIDashboard() {
                         <p className="mt-2 text-base font-semibold text-slate-950">
                           Latest run summary
                         </p>
+                        {activePreviewPhase ? (
+                          <p className="mt-2 text-sm text-slate-600">
+                            {activePreviewPhase.label}: {activePreviewPhase.summary}
+                          </p>
+                        ) : null}
                       </div>
                       <div className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600 shadow-sm ring-1 ring-slate-200">
                         {previewReview.unresolved_conflict_count ?? 0} unresolved
