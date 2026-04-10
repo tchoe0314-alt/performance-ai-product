@@ -147,6 +147,7 @@ def build_orchestrate_job_runner(
             return
 
         metadata = dict(existing.get("metadata") or {})
+        latest_result = dict(existing.get("latest_result") or {})
         workflow = dict(metadata.get("workflow") or {})
         runs = [dict(item) for item in list(workflow.get("runs") or []) if isinstance(item, dict)]
         existing_run = next((item for item in runs if str(item.get("job_id") or "") == job_id), {})
@@ -192,7 +193,7 @@ def build_orchestrate_job_runner(
             phase_entry = dict(phase_checkpoints.get(target_phase) or {})
             phase_entry["label"] = labels[target_phase]
             phase_entry["status"] = str(status or phase_entry.get("status") or "pending")
-            phase_entry["ready"] = bool(status == "complete")
+            phase_entry["ready"] = bool(status == "complete") or bool(phase_entry.get("ready"))
             messages = [str(item) for item in list(phase_entry.get("messages") or []) if str(item).strip()]
             if detail and detail not in messages:
                 messages.append(detail)
@@ -217,6 +218,26 @@ def build_orchestrate_job_runner(
             "progress": int(progress or 0),
             "note": "Run is advancing through persisted engineering phases.",
         }
+
+        checkpoint_result = dict(latest_result)
+        checkpoint_final_plan = dict(checkpoint_result.get("final_plan") or {})
+        checkpoint_meta = dict(checkpoint_final_plan.get("meta") or {})
+        checkpoint_meta["phase_checkpoints"] = phase_checkpoints
+        checkpoint_meta["release_review"] = {
+            **dict(checkpoint_meta.get("release_review") or {}),
+            "phase_checkpoints": phase_checkpoints,
+        }
+        checkpoint_meta["run_summary"] = run_summary
+        checkpoint_final_plan["meta"] = checkpoint_meta
+        checkpoint_result["final_plan"] = checkpoint_final_plan
+        checkpoint_metadata = dict(checkpoint_result.get("metadata") or {})
+        checkpoint_metadata["run_summary"] = run_summary
+        checkpoint_result["metadata"] = checkpoint_metadata
+        if "success" not in checkpoint_result:
+            checkpoint_result["success"] = False
+        if "message" not in checkpoint_result:
+            checkpoint_result["message"] = "Run is progressing through engineering phases."
+
         project_store.save_project(
             user_id=user_id,
             project_id=project_id,
@@ -225,7 +246,7 @@ def build_orchestrate_job_runner(
             session_id=existing.get("session_id"),
             tags=existing.get("tags", []),
             project_input=payload,
-            latest_result=existing.get("latest_result", {}),
+            latest_result=checkpoint_result,
             session_state=existing.get("session_state", {}),
             metadata=merge_project_metadata(
                 metadata,
@@ -418,17 +439,16 @@ def build_orchestrate_job_runner(
                 detail=message,
                 progress=int(progress or 48),
             )
-            if status in {"complete", "failed"}:
-                _persist_runtime_phase_checkpoint(
-                    user_id=user_id,
-                    project_id=project_id,
-                    job_id=job_id,
-                    payload=payload,
-                    stage_name=str(stage_name or ""),
-                    status=str(status or ""),
-                    detail=message,
-                    progress=int(progress or 48),
-                )
+            _persist_runtime_phase_checkpoint(
+                user_id=user_id,
+                project_id=project_id,
+                job_id=job_id,
+                payload=payload,
+                stage_name=str(stage_name or ""),
+                status=str(status or ""),
+                detail=message,
+                progress=int(progress or 48),
+            )
 
         if job_id:
             update_job_progress(

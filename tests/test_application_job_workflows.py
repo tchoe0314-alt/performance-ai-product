@@ -385,7 +385,9 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         )
 
         def run_orchestration(payload, progress_callback=None):
+            progress_callback("layout", "running", 18, "Running layout phase.")
             progress_callback("layout", "complete", 18, "Layout complete.")
+            progress_callback("grading", "running", 30, "Running grading phase.")
             progress_callback("grading", "complete", 30, "Grading complete.")
             return {
                 "success": True,
@@ -449,15 +451,27 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
             }
         )
 
-        self.assertGreaterEqual(len(store.save_calls), 3)
+        self.assertGreaterEqual(len(store.save_calls), 5)
         phase_save = store.save_calls[0]
         phase_run = phase_save["metadata"]["workflow"]["runs"][0]
         self.assertEqual(phase_run["job_id"], "job_phase_persist")
-        self.assertEqual(phase_run["phase_checkpoints"]["layout"]["status"], "complete")
-        self.assertEqual(phase_run["phase_checkpoints"]["grading"]["status"], "pending")
+        self.assertEqual(phase_run["phase_checkpoints"]["layout"]["status"], "running")
+        self.assertFalse(phase_run["phase_checkpoints"]["layout"]["ready"])
+        self.assertEqual(
+            phase_save["latest_result"]["final_plan"]["meta"]["phase_checkpoints"]["layout"]["status"],
+            "running",
+        )
         second_phase_save = store.save_calls[1]
         second_phase_run = second_phase_save["metadata"]["workflow"]["runs"][0]
-        self.assertEqual(second_phase_run["phase_checkpoints"]["grading"]["status"], "complete")
+        self.assertEqual(second_phase_run["phase_checkpoints"]["layout"]["status"], "complete")
+        self.assertTrue(second_phase_run["phase_checkpoints"]["layout"]["ready"])
+        third_phase_save = store.save_calls[2]
+        third_phase_run = third_phase_save["metadata"]["workflow"]["runs"][0]
+        self.assertEqual(third_phase_run["phase_checkpoints"]["grading"]["status"], "running")
+        fourth_phase_save = store.save_calls[3]
+        fourth_phase_run = fourth_phase_save["metadata"]["workflow"]["runs"][0]
+        self.assertEqual(fourth_phase_run["phase_checkpoints"]["grading"]["status"], "complete")
+        self.assertTrue(fourth_phase_run["phase_checkpoints"]["grading"]["ready"])
 
     def test_cancel_existing_job_returns_summary(self):
         queue = FakeJobQueue()
