@@ -13,6 +13,7 @@ class FakeProjectStore:
     def __init__(self, project=None):
         self.project = project
         self.saved_payload = None
+        self.save_calls = []
 
     def get_project(self, *, user_id: str, project_id: str):
         if self.project and user_id == self.project.get("user_id") and project_id == self.project.get("project_id"):
@@ -21,6 +22,7 @@ class FakeProjectStore:
 
     def save_project(self, **kwargs):
         self.saved_payload = dict(kwargs)
+        self.save_calls.append(dict(kwargs))
         self.project = {
             "user_id": kwargs["user_id"],
             "project_id": kwargs["project_id"],
@@ -365,6 +367,97 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         )
         self.assertEqual(progress_updates[1]["detail"], "Running layout phase.")
         self.assertEqual(progress_updates[2]["detail"], "Running grading phase.")
+
+    def test_build_orchestrate_job_runner_persists_phase_checkpoints_mid_run(self):
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Demo",
+                "description": "",
+                "session_id": None,
+                "tags": [],
+                "project_input": {},
+                "latest_result": {},
+                "session_state": {},
+                "metadata": {},
+            }
+        )
+
+        def run_orchestration(payload, progress_callback=None):
+            progress_callback("layout", "complete", 18, "Layout complete.")
+            progress_callback("grading", "complete", 30, "Grading complete.")
+            return {
+                "success": True,
+                "final_plan": {
+                    "project_name": "Demo",
+                    "meta": {
+                        "grading": {"surface": "ok"},
+                    },
+                },
+            }
+
+        runner = build_orchestrate_job_runner(
+            project_store=store,
+            update_job_progress=lambda *_args, **_kwargs: None,
+            run_orchestration=run_orchestration,
+            build_run_summary=lambda result, **kwargs: {
+                "run_id": "run_final",
+                "job_id": kwargs.get("job_id"),
+                "source": "queued_job",
+                "convergence_summary": {
+                    "assumption_summary": {"count": 0, "categories": [], "examples": []},
+                    "unresolved_issue_categories": [],
+                    "blocked_reasons": [],
+                    "blocked_exports": [],
+                },
+                "reliability_summary": {
+                    "operational_state": "ready",
+                    "release_ready": True,
+                },
+                "phase_checkpoints": {
+                    "layout": {"status": "complete", "ready": True},
+                    "grading": {"status": "complete", "ready": True},
+                    "combined_view": {"status": "ready", "ready": True},
+                },
+                "requested_deliverables": ["site_plan"],
+                "produced_deliverables": ["site_plan"],
+                "ready_deliverables": ["site_plan"],
+                "extra_deliverables": [],
+                "failed_deliverables": [],
+            },
+            merge_project_metadata=lambda metadata, **kwargs: {
+                "workflow": {
+                    "runs": [kwargs["run_summary"]],
+                }
+            },
+            final_plan_from_result=lambda result, **kwargs: {
+                "project_name": "Demo",
+                "meta": {
+                    "grading": {"surface": "ok"},
+                },
+            },
+        )
+
+        runner(
+            {
+                "job_id": "job_phase_persist",
+                "job_type": "orchestrate",
+                "user_id": "u1",
+                "project_id": "p1",
+                "payload": {"prompt_text": "run"},
+            }
+        )
+
+        self.assertGreaterEqual(len(store.save_calls), 3)
+        phase_save = store.save_calls[0]
+        phase_run = phase_save["metadata"]["workflow"]["runs"][0]
+        self.assertEqual(phase_run["job_id"], "job_phase_persist")
+        self.assertEqual(phase_run["phase_checkpoints"]["layout"]["status"], "complete")
+        self.assertEqual(phase_run["phase_checkpoints"]["grading"]["status"], "pending")
+        second_phase_save = store.save_calls[1]
+        second_phase_run = second_phase_save["metadata"]["workflow"]["runs"][0]
+        self.assertEqual(second_phase_run["phase_checkpoints"]["grading"]["status"], "complete")
 
     def test_cancel_existing_job_returns_summary(self):
         queue = FakeJobQueue()

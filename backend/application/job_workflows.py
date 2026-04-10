@@ -129,6 +129,110 @@ def build_orchestrate_job_runner(
     merge_project_metadata: Callable[..., Dict[str, Any]],
     final_plan_from_result: FinalPlanBuilderProtocol,
 ) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
+    def _persist_runtime_phase_checkpoint(
+        *,
+        user_id: Optional[str],
+        project_id: Optional[str],
+        job_id: Optional[str],
+        payload: Dict[str, Any],
+        stage_name: str,
+        status: str,
+        detail: str,
+        progress: int,
+    ) -> None:
+        if not (user_id and project_id and job_id):
+            return
+        existing = project_store.get_project(user_id=user_id, project_id=project_id)
+        if existing is None:
+            return
+
+        metadata = dict(existing.get("metadata") or {})
+        workflow = dict(metadata.get("workflow") or {})
+        runs = [dict(item) for item in list(workflow.get("runs") or []) if isinstance(item, dict)]
+        existing_run = next((item for item in runs if str(item.get("job_id") or "") == job_id), {})
+        run_summary = dict(existing_run)
+        run_summary.setdefault("run_id", str(existing_run.get("run_id") or f"jobrun_{job_id}"))
+        run_summary["job_id"] = job_id
+        run_summary["project_id"] = project_id
+        run_summary["source"] = str(existing_run.get("source") or "queued_job")
+        phase_checkpoints = dict(run_summary.get("phase_checkpoints") or {})
+        phase_order = [
+            "layout",
+            "grading",
+            "drainage_storm",
+            "utilities",
+            "coordination_validation",
+        ]
+        labels = {
+            "layout": "Layout",
+            "grading": "Grading",
+            "drainage_storm": "Drainage and Storm",
+            "utilities": "Utilities",
+            "coordination_validation": "Coordination and Validation",
+        }
+        stage_to_phase = {
+            "layout": "layout",
+            "grading": "grading",
+            "drainage": "drainage_storm",
+            "storm_pipes": "drainage_storm",
+            "sanitary": "utilities",
+            "utility_network": "utilities",
+            "coordination_resolution": "coordination_validation",
+            "qa": "coordination_validation",
+        }
+        target_phase = stage_to_phase.get(stage_name)
+        for phase_name in phase_order:
+            phase_entry = dict(phase_checkpoints.get(phase_name) or {})
+            phase_entry.setdefault("label", labels[phase_name])
+            phase_entry.setdefault("status", "pending")
+            phase_entry.setdefault("ready", False)
+            phase_entry.setdefault("messages", [])
+            phase_checkpoints[phase_name] = phase_entry
+        if target_phase:
+            phase_entry = dict(phase_checkpoints.get(target_phase) or {})
+            phase_entry["label"] = labels[target_phase]
+            phase_entry["status"] = str(status or phase_entry.get("status") or "pending")
+            phase_entry["ready"] = bool(status == "complete")
+            messages = [str(item) for item in list(phase_entry.get("messages") or []) if str(item).strip()]
+            if detail and detail not in messages:
+                messages.append(detail)
+            phase_entry["messages"] = messages[-3:]
+            phase_entry["job_progress"] = int(progress or 0)
+            phase_checkpoints[target_phase] = phase_entry
+        completed_phase_count = sum(1 for name in phase_order if bool(dict(phase_checkpoints.get(name) or {}).get("ready")))
+        run_summary["phase_checkpoints"] = phase_checkpoints
+        run_summary["stage_summary"] = {
+            "current_stage": stage_name,
+            "current_status": status,
+            "current_detail": detail,
+            "progress": int(progress or 0),
+        }
+        run_summary["reliability_summary"] = dict(run_summary.get("reliability_summary") or {})
+        run_summary["combined_view"] = {
+            "status": "running",
+            "ready": False,
+            "completed_phase_count": completed_phase_count,
+            "total_phase_count": len(phase_order),
+            "current_stage": stage_name,
+            "progress": int(progress or 0),
+            "note": "Run is advancing through persisted engineering phases.",
+        }
+        project_store.save_project(
+            user_id=user_id,
+            project_id=project_id,
+            name=existing.get("name", "Untitled Project"),
+            description=existing.get("description", ""),
+            session_id=existing.get("session_id"),
+            tags=existing.get("tags", []),
+            project_input=payload,
+            latest_result=existing.get("latest_result", {}),
+            session_state=existing.get("session_state", {}),
+            metadata=merge_project_metadata(
+                metadata,
+                run_summary=run_summary,
+            ),
+        )
+
     def _current_export_guard_state(result_data: Dict[str, Any]) -> tuple[list[str], list[str]]:
         final_plan = dict(result_data.get("final_plan") or {})
         meta = dict(final_plan.get("meta") or {})
@@ -288,6 +392,8 @@ def build_orchestrate_job_runner(
     def orchestrate_runner(job: Dict[str, Any]) -> Dict[str, Any]:
         payload = dict(job.get("payload") or {})
         job_id = str(job.get("job_id") or "").strip()
+        project_id = job.get("project_id")
+        user_id = job.get("user_id")
         stage_labels = {
             "layout": "Layout Phase",
             "grading": "Grading Phase",
@@ -312,6 +418,17 @@ def build_orchestrate_job_runner(
                 detail=message,
                 progress=int(progress or 48),
             )
+            if status in {"complete", "failed"}:
+                _persist_runtime_phase_checkpoint(
+                    user_id=user_id,
+                    project_id=project_id,
+                    job_id=job_id,
+                    payload=payload,
+                    stage_name=str(stage_name or ""),
+                    status=str(status or ""),
+                    detail=message,
+                    progress=int(progress or 48),
+                )
 
         if job_id:
             update_job_progress(
@@ -325,8 +442,6 @@ def build_orchestrate_job_runner(
             result = run_orchestration(payload, progress_callback=_phase_progress_callback)
         else:
             result = run_orchestration(payload)
-        project_id = job.get("project_id")
-        user_id = job.get("user_id")
         enriched = _normalized_result_for_ui(
             result,
             project_id=project_id,
