@@ -74,14 +74,41 @@ def _has_legacy_frontage_scene(actions: list[dict[str, Any]]) -> bool:
 
 
 def _candidate_display_payloads(result_data: Dict[str, Any]) -> list[Dict[str, Any]]:
+    def _normalize_request_like_payload(raw: Any) -> Dict[str, Any]:
+        if not isinstance(raw, dict) or not raw:
+            return {}
+        if isinstance(raw.get("lot"), dict) or isinstance(raw.get("buildings"), list):
+            return dict(raw)
+        manual_fields = dict(raw.get("manual_fields") or {})
+        meta = dict(raw.get("meta") or {})
+        if not manual_fields and not meta:
+            return {}
+        normalized = dict(manual_fields)
+        if not normalized.get("project_type") and meta.get("project_type"):
+            normalized["project_type"] = meta.get("project_type")
+        if not normalized.get("site_type") and meta.get("site_type"):
+            normalized["site_type"] = meta.get("site_type")
+        if not normalized.get("street_edge") and meta.get("street_edge"):
+            normalized["street_edge"] = meta.get("street_edge")
+        if not normalized.get("lot") and isinstance((manual_fields.get("lot") or {}), dict):
+            normalized["lot"] = dict(manual_fields.get("lot") or {})
+        return normalized
+
     candidates: list[Dict[str, Any]] = []
     for raw in (
         result_data.get("parsed_payload"),
         dict(result_data.get("request_metadata") or {}).get("parsed_payload"),
         dict(result_data.get("metadata") or {}).get("parsed_payload"),
+        result_data.get("project_input"),
+        dict(result_data.get("request_metadata") or {}).get("project_input"),
+        dict(result_data.get("metadata") or {}).get("project_input"),
+        result_data.get("request_payload"),
+        dict(result_data.get("request_metadata") or {}).get("request_payload"),
+        dict(result_data.get("metadata") or {}).get("request_payload"),
     ):
-        if isinstance(raw, dict) and raw:
-            candidates.append(dict(raw))
+        normalized = _normalize_request_like_payload(raw)
+        if normalized:
+            candidates.append(normalized)
     return candidates
 
 
