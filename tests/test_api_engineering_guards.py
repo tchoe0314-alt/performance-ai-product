@@ -9,6 +9,7 @@ from backend.api.app import (
     _queue_request_payload_with_project,
     _run_orchestration,
 )
+from backend.planning.runtime import sanitize_plan
 
 
 class ApiEngineeringGuardsTest(unittest.TestCase):
@@ -102,6 +103,32 @@ class ApiEngineeringGuardsTest(unittest.TestCase):
             _final_plan_from_result({"final_plan": {"project_name": "No Actions", "actions": []}})
         self.assertEqual(exc_info.exception.status_code, 409)
         self.assertIn("stable engineered plan actions", str(exc_info.exception.detail))
+
+    def test_sanitize_plan_preserves_runtime_phase_checkpoint(self) -> None:
+        plan = sanitize_plan(
+            {
+                "project_name": "Checkpoint Plan",
+                "actions": [],
+                "meta": {
+                    "planner_workflow": "model_first",
+                    "runtime_phase_checkpoint": {
+                        "stage_name": "layout",
+                        "status": "complete",
+                        "message": "Layout checkpoint saved.",
+                        "yielded": True,
+                    },
+                },
+            }
+        )
+        self.assertEqual(
+            plan["meta"]["runtime_phase_checkpoint"],
+            {
+                "stage_name": "layout",
+                "status": "complete",
+                "message": "Layout checkpoint saved.",
+                "yielded": True,
+            },
+        )
 
 
 if __name__ == "__main__":

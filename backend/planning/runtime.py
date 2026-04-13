@@ -156,6 +156,7 @@ _PLAN_META_KEYS = {
     "option_name",
     "option_family",
     "stage_completeness",
+    "runtime_phase_checkpoint",
     "routing",
     "strict_mode",
     "planner_score",
