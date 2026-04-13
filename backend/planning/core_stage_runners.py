@@ -381,6 +381,7 @@ def _synthesize_layout_collectors(
                 "width": round(w, 3),
                 "height": round(h, 3),
                 "synthetic_layout_collector": True,
+                "semantic_surface_role": "circulation",
             }
         )
 
@@ -415,6 +416,21 @@ def _synthesize_layout_semantics(actions: Sequence[Dict[str, Any]]) -> List[Dict
     has_parking = False
     has_walk = False
     has_fire = False
+
+    def _has_parking_semantics(action: Dict[str, Any]) -> bool:
+        label = safe_str(action.get("label")).upper()
+        if action.get("semantic_surface_role") == "circulation":
+            return False
+        if label in {"DRIVE", "ROAD", "FIRE", "FRONTAGE", "ACCESS"}:
+            return False
+        if label.startswith("PARK") or label.startswith("STALL"):
+            return True
+        if safe_int(action.get("stall_count"), 0) > 0:
+            return True
+        item_type = lower_text(action.get("type"))
+        if item_type in {"frontage", "access_drive", "collector_aisle", "parking_aisle", "fire_lane"}:
+            return False
+        return item_type in {"parking", "parking_area", "parking_module", ""}
 
     def _looks_like_parking_module(bounds: Tuple[float, float, float, float]) -> bool:
         x, y, w, h = bounds
@@ -464,9 +480,11 @@ def _synthesize_layout_semantics(actions: Sequence[Dict[str, Any]]) -> List[Dict
         out = deepcopy(rec)
         if layer == "ROAD" and bounds is not None:
             out["layer"] = "PAVEMENT"
+            out["semantic_surface_role"] = "circulation"
         if layer == "FIRE":
             out["layer"] = "PAVEMENT"
-        if layer == "PAVEMENT" and bounds is not None and building_rects and not has_parking:
+            out["semantic_surface_role"] = "circulation"
+        if layer == "PAVEMENT" and bounds is not None and building_rects and not has_parking and _has_parking_semantics(rec):
             nearest_gap = min((_rect_gap(bounds, b_bounds) for b_bounds, _ in building_rects), key=lambda pair: pair[0] + pair[1])
             center_x, _ = _rect_center(bounds)
             overlaps_building_band = any(
@@ -483,6 +501,8 @@ def _synthesize_layout_semantics(actions: Sequence[Dict[str, Any]]) -> List[Dict
 
     if building_rects and not any(safe_str(safe_dict(a).get("layer")).upper() == "PARKING" for a in normalized):
         for bounds, rec in pavement_rects:
+            if not _has_parking_semantics(rec):
+                continue
             if not _looks_like_parking_module(bounds):
                 continue
             out = deepcopy(rec)
@@ -497,6 +517,11 @@ def _synthesize_layout_semantics(actions: Sequence[Dict[str, Any]]) -> List[Dict
         for action in normalized
         if safe_str(safe_dict(action).get("layer")).upper() == "PARKING" and _rectangle_bounds(safe_dict(action)) is not None
     ]
+    has_pavement_surface = any(
+        safe_str(safe_dict(action).get("layer")).upper() == "PAVEMENT"
+        and _rectangle_bounds(safe_dict(action)) is not None
+        for action in normalized
+    )
 
     if building_rects and parking_rects and not has_walk:
         for building_bounds, _ in building_rects:
@@ -562,6 +587,12 @@ def _synthesize_layout_semantics(actions: Sequence[Dict[str, Any]]) -> List[Dict
                 )
             ]
             seen = {repr(safe_dict(action)) for action in normalized}
+            for action in _synthesize_layout_collectors(parking_rects):
+                key = repr(action)
+                if key not in seen:
+                    seen.add(key)
+                    normalized.append(action)
+        elif not has_pavement_surface:
             for action in _synthesize_layout_collectors(parking_rects):
                 key = repr(action)
                 if key not in seen:

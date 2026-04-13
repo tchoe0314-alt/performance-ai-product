@@ -594,6 +594,21 @@ def _synthesize_layout_preview_actions(actions):
     has_parking = False
     has_walk = False
 
+    def _has_parking_semantics(action):
+        label = clean_label(action.get("label"), "").upper()
+        if action.get("semantic_surface_role") == "circulation":
+            return False
+        if label in {"DRIVE", "ROAD", "FIRE", "FRONTAGE", "ACCESS"}:
+            return False
+        if label.startswith("PARK") or label.startswith("STALL"):
+            return True
+        if safe_num(action.get("stall_count")) > 0:
+            return True
+        item_type = str(action.get("type") or "").strip().lower()
+        if item_type in {"frontage", "access_drive", "collector_aisle", "parking_aisle", "fire_lane"}:
+            return False
+        return item_type in {"parking", "parking_area", "parking_module", ""}
+
     for action in raw_records:
         layer = str(action.get("layer") or "").upper()
         bounds = _action_bounds(action)
@@ -612,6 +627,7 @@ def _synthesize_layout_preview_actions(actions):
                     continue
             if task in {"rectangle", "polygon"} and (not label or label in {"ROAD", "DRIVE", "FIRE", "FIRE-1", "ROAD-1"}):
                 rec["layer"] = "PAVEMENT"
+                rec["semantic_surface_role"] = "circulation"
                 layer = "PAVEMENT"
         bounds = _action_bounds(rec)
         if layer == "PAVEMENT" and bounds:
@@ -627,6 +643,8 @@ def _synthesize_layout_preview_actions(actions):
 
     if building_rects and not has_parking:
         for bounds, action in pavement_rects:
+            if not _has_parking_semantics(action):
+                continue
             center_x, _ = _rect_center(bounds)
             nearest_gap = min((_rect_gap(bounds, b_bounds) for b_bounds in building_rects), key=lambda pair: pair[0] + pair[1], default=(9999.0, 9999.0))
             overlaps_building_band = any(abs(center_x - _rect_center(b_bounds)[0]) <= max(bounds[2] - bounds[0], b_bounds[2] - b_bounds[0]) * 0.7 for b_bounds in building_rects)

@@ -122,6 +122,17 @@ class LayoutFallbackActionsTests(unittest.TestCase):
         self.assertGreaterEqual(sum(1 for task, layer in synthetic_tasks if task == "rectangle" and layer == "PAVEMENT"), 2)
         self.assertEqual(sum(1 for task, layer in synthetic_tasks if task == "rectangle" and layer == "FIRE"), 0)
 
+    def test_semantic_cleanup_does_not_promote_generic_pavement_to_parking(self) -> None:
+        actions = [
+            {"task": "rectangle", "layer": "BUILDING", "origin": [100, 200], "width": 120, "height": 60, "label": "BLDG 1"},
+            {"task": "rectangle", "layer": "PAVEMENT", "origin": [82, 110], "width": 156, "height": 72, "label": "DRIVE"},
+        ]
+
+        normalized = _synthesize_layout_semantics(actions)
+        layers = [str(action.get("layer", "")).upper() for action in normalized]
+        self.assertIn("PAVEMENT", layers)
+        self.assertNotIn("PARKING", layers)
+
 
 if __name__ == "__main__":
     unittest.main()

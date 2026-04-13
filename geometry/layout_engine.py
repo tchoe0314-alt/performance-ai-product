@@ -1578,7 +1578,6 @@ def _infer_drive_aisles_from_legacy(parsed: Dict[str, Any], site_box: Rect, park
     if not parking_areas:
         return []
 
-    street_edge = _normalize_street_edge(_safe_str(parsed.get("street_edge"), "bottom"))
     road_stds = _road_standards(parsed)
     if len(parking_areas) > 1:
         aisles: List[Dict[str, Any]] = []
@@ -1591,33 +1590,37 @@ def _infer_drive_aisles_from_legacy(parsed: Dict[str, Any], site_box: Rect, park
             aisle_y = max(site_box["y"] + 8.0, rect["y"] - max(10.0, road_stds["drive_width"] * 0.5))
             aisles.append(
                 {
-                    "label": f"DRIVE-{idx}",
+                    "label": f"AISLE-{idx}",
                     "points": [[rect["x"] - 2.0, aisle_y + road_stds["drive_width"] / 2.0], [_rect_right(rect) + 2.0, aisle_y + road_stds["drive_width"] / 2.0]],
                     "width": min(18.0, max(10.0, road_stds["drive_width"] * 0.6)),
-                    "type": "collector_aisle",
+                    "type": "parking_aisle",
                     "layer": "PAVEMENT",
+                    "synthetic_layout_surface": True,
                 }
             )
         return aisles
 
     p = parking_areas[0]
     p_rect = _rect(p["x"], p["y"], p["w"], p["h"])
-    d_rect = _choose_best_driveway(site_box, p_rect, street_edge, road_stds)
-
+    aisle_y = max(site_box["y"] + 8.0, p_rect["y"] - max(10.0, road_stds["drive_width"] * 0.5))
     return [
         {
-            "label": "DRIVE-1",
-            "points": _driveway_centerline(d_rect),
-            "width": road_stds["drive_width"],
-            "type": "access_drive",
+            "label": "AISLE-1",
+            "points": [[p_rect["x"] - 2.0, aisle_y + road_stds["drive_width"] / 2.0], [_rect_right(p_rect) + 2.0, aisle_y + road_stds["drive_width"] / 2.0]],
+            "width": min(18.0, max(10.0, road_stds["drive_width"] * 0.6)),
+            "type": "parking_aisle",
             "layer": "PAVEMENT",
+            "synthetic_layout_surface": True,
         }
     ]
 
 
 def _infer_roads_from_legacy(parsed: Dict[str, Any], site_box: Rect) -> List[Dict[str, Any]]:
     raw_buildings = parsed.get("buildings")
+    raw_parking = parsed.get("parking_areas")
     if isinstance(raw_buildings, list) and len([item for item in raw_buildings if isinstance(item, dict)]) > 1:
+        return []
+    if isinstance(raw_parking, list) and any(isinstance(item, dict) for item in raw_parking):
         return []
     road_stds = _road_standards(parsed)
     street_edge = _normalize_street_edge(_safe_str(parsed.get("street_edge"), "bottom"))
@@ -1891,7 +1894,7 @@ def _surface_rect_from_line_item(item: Dict[str, Any], *, layer: str) -> Optiona
 def _preferred_surface_layer_for_line_item(item: Dict[str, Any], default_layer: str) -> str:
     default_layer = _safe_str(default_layer, "SITE")
     item_type = _safe_str(item.get("type"), "").lower()
-    if item_type in {"frontage", "access_drive", "fire_lane"}:
+    if item_type in {"frontage", "access_drive", "fire_lane", "collector_aisle", "parking_aisle"}:
         return "PAVEMENT"
     if _safe_bool(item.get("synthetic_fire_lane")) or _safe_bool(item.get("fire_access")):
         return "PAVEMENT"
