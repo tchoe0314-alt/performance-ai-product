@@ -40,6 +40,24 @@ class ApiEngineeringGuardsTest(unittest.TestCase):
         self.assertEqual(project_id, "p_outer")
         self.assertEqual(request_payload["project_id"], "p_outer")
 
+    def test_queue_request_payload_promotes_prompt_alias_to_prompt_text(self) -> None:
+        project_id, request_payload = _queue_request_payload_with_project(
+            QueueOrchestratePayload(
+                project_id="p_outer",
+                request=OrchestratePayload(
+                    project_id="p_nested",
+                    input_mode="assisted",
+                    prompt="Design a mixed-use site from the prompt alias.",
+                ),
+            )
+        )
+        self.assertEqual(project_id, "p_outer")
+        self.assertEqual(request_payload["project_id"], "p_outer")
+        self.assertEqual(
+            request_payload["prompt_text"],
+            "Design a mixed-use site from the prompt alias.",
+        )
+
     def test_manual_orchestration_asks_for_clarification_when_prompt_is_underspecified(self) -> None:
         result = _run_orchestration(
             {

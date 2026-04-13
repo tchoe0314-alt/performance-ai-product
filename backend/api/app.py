@@ -121,6 +121,7 @@ class OrchestratePayload(BaseModel):
     input_mode: str = "assisted"
     strict_mode: bool = False
     prompt_text: Optional[str] = None
+    prompt: Optional[str] = None
     image_path: Optional[str] = None
     manual_fields: Dict[str, Any] = Field(default_factory=dict)
     image_width_px: Optional[int] = None
@@ -168,11 +169,18 @@ def _resolve_orchestration_project_id(
     return outer_project_id or request_payload.project_id
 
 
+def _orchestration_request_payload(payload: OrchestratePayload) -> Dict[str, Any]:
+    request_payload = _model_to_dict(payload)
+    if not request_payload.get("prompt_text") and request_payload.get("prompt"):
+        request_payload["prompt_text"] = request_payload["prompt"]
+    return request_payload
+
+
 def _queue_request_payload_with_project(
     payload: QueueOrchestratePayload,
 ) -> tuple[Optional[str], Dict[str, Any]]:
     project_id = _resolve_orchestration_project_id(payload.project_id, payload.request)
-    request_payload = _model_to_dict(payload.request)
+    request_payload = _orchestration_request_payload(payload.request)
     if project_id:
         request_payload["project_id"] = project_id
     return project_id, request_payload
@@ -452,7 +460,7 @@ def orchestrate(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
     _ = current_user
-    return _run_orchestration(_model_to_dict(payload))
+    return _run_orchestration(_orchestration_request_payload(payload))
 
 
 @app.get("/api/projects")
