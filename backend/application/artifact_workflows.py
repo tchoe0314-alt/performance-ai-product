@@ -209,6 +209,50 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
             blocked_reasons = [part.strip() for part in reasons_text.split(",") if part.strip()]
             return blocked_exports, blocked_reasons
 
+    def _normalize_phase_checkpoints(
+        phase_checkpoints: Dict[str, Any],
+        *,
+        release_status: str,
+        release_ready: bool,
+        blocked_exports: list[str],
+        blocked_reasons: list[str],
+        failed_deliverables: list[str],
+    ) -> Dict[str, Any]:
+        normalized = {
+            str(name): dict(value)
+            for name, value in dict(phase_checkpoints or {}).items()
+            if isinstance(value, dict)
+        }
+        if not normalized:
+            return {}
+        if release_status == "ready" and release_ready and not blocked_exports and not blocked_reasons and not failed_deliverables:
+            for name, phase in normalized.items():
+                if name == "combined_view":
+                    continue
+                if str(phase.get("status") or "").lower() == "running":
+                    continue
+                if list(phase.get("blockers") or []) or list(phase.get("blocked_reasons") or []):
+                    continue
+                if bool(phase.get("has_data")) or not list(phase.get("deliverables") or []):
+                    phase["status"] = "complete"
+                    phase["ready"] = True
+            combined = dict(normalized.get("combined_view") or {})
+            inferred_total_phase_count = len([name for name in normalized.keys() if name != "combined_view"])
+            total_phase_count = max(
+                1,
+                int(combined.get("total_phase_count") or 0),
+                inferred_total_phase_count,
+            )
+            combined["status"] = "ready"
+            combined["ready"] = True
+            combined["completed_phase_count"] = total_phase_count
+            combined["total_phase_count"] = total_phase_count
+            combined["blocked_exports"] = []
+            combined["blocked_reasons"] = []
+            combined["note"] = "Combined engineering view is release-ready."
+            normalized["combined_view"] = combined
+        return normalized
+
     stored_run_summary = dict(result_data.get("run_summary") or {})
     if not stored_run_summary:
         stored_run_summary = dict(dict(result_data.get("metadata") or {}).get("run_summary") or {})
@@ -305,6 +349,14 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
     else:
         release_status = "review"
         release_note = "Needs engineering review before release."
+    phase_checkpoints = _normalize_phase_checkpoints(
+        dict(run_summary.get("phase_checkpoints") or {}),
+        release_status=release_status,
+        release_ready=release_ready,
+        blocked_exports=blocked_exports,
+        blocked_reasons=blocked_reasons,
+        failed_deliverables=failed_deliverables,
+    )
     return {
         "trust_score": float(engineering.get("trust_score") or 0.0),
         "converged": bool(convergence.get("converged")),
@@ -338,7 +390,7 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         "rerun_total": int(rerun_summary.get("total_reruns") or 0),
         "rerun_stages": dominant_rerun_stages[:3],
         "rerun_reasons": dominant_rerun_reasons[:3],
-        "phase_checkpoints": dict(run_summary.get("phase_checkpoints") or {}),
+        "phase_checkpoints": phase_checkpoints,
         "release_status": release_status,
         "release_note": release_note,
         "engineering_status": str((final_plan.get("meta") or {}).get("engineering_status") or ""),

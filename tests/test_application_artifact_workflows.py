@@ -524,6 +524,56 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertEqual(review["release_status"], "ready")
         self.assertEqual(review["review_categories"], [])
 
+    def test_build_preview_response_normalizes_phase_checkpoints_for_release_ready_runs(self):
+        service = FakeArtifactService()
+        response = build_preview_response(
+            artifact_service=service,
+            result_data={
+                "run_summary": {
+                    "engineering_status": {"trust_score": 90.0},
+                    "reliability_summary": {"operational_state": "ready", "release_ready": True},
+                    "optimization_summary": {},
+                    "convergence_summary": {
+                        "converged": True,
+                        "passes_run": 2,
+                        "unresolved_conflict_count": 0,
+                        "assumption_summary": {"count": 1, "categories": ["design"], "examples": ["Defaulted aisle width."]},
+                        "fix_summary": {"autofix_actions": []},
+                        "rerun_summary": {"total_reruns": 0, "stage_counts": {}, "reason_counts": {}},
+                        "dominant_issue_categories": [],
+                        "unresolved_issue_categories": ["coordination", "validation"],
+                        "blocked_exports": [],
+                        "blocked_reasons": [],
+                    },
+                    "requested_deliverables": ["site_plan", "grading_plan", "storm_pipe_plan", "utility_plan"],
+                    "produced_deliverables": ["site_plan", "grading_plan", "storm_pipe_plan", "utility_plan"],
+                    "failed_deliverables": [],
+                    "ready_deliverables": ["site_plan", "grading_plan", "storm_pipe_plan", "utility_plan"],
+                    "extra_deliverables": [],
+                    "phase_checkpoints": {
+                        "layout": {"label": "Layout", "status": "partial", "ready": False, "has_data": True, "messages": ["Stage skipped because canonical state is already clean."], "deliverables": ["site_plan"]},
+                        "grading": {"label": "Grading", "status": "complete", "ready": True, "has_data": True, "deliverables": ["grading_plan"]},
+                        "drainage_storm": {"label": "Drainage and Storm", "status": "complete", "ready": True, "has_data": True, "deliverables": ["storm_pipe_plan"]},
+                        "utilities": {"label": "Utilities", "status": "partial", "ready": False, "has_data": True, "messages": ["Sanitary stage skipped because sanitary was not requested."], "deliverables": ["utility_plan"]},
+                        "coordination_validation": {"label": "Coordination and Validation", "status": "failed", "ready": False, "has_data": True, "messages": ["Coordination stage completed with unresolved conflicts."], "deliverables": []},
+                        "combined_view": {"label": "Combined View", "status": "review", "ready": False, "completed_phase_count": 2, "total_phase_count": 5, "blocked_exports": [], "blocked_reasons": []},
+                    },
+                },
+                "final_plan": {
+                    "project_name": "Release Ready Phase Cleanup",
+                    "actions": [{"layer": "BUILDING"}],
+                    "meta": {},
+                },
+            },
+        )
+        review = response["summary"]["review"]
+        self.assertEqual(review["release_status"], "ready")
+        self.assertEqual(review["phase_checkpoints"]["layout"]["status"], "complete")
+        self.assertEqual(review["phase_checkpoints"]["utilities"]["status"], "complete")
+        self.assertEqual(review["phase_checkpoints"]["coordination_validation"]["status"], "complete")
+        self.assertEqual(review["phase_checkpoints"]["combined_view"]["status"], "ready")
+        self.assertEqual(review["phase_checkpoints"]["combined_view"]["completed_phase_count"], 5)
+
     def test_build_preview_response_drops_general_when_other_review_categories_exist(self):
         service = FakeArtifactService()
         response = build_preview_response(

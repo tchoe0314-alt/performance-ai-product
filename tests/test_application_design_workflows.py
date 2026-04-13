@@ -200,6 +200,67 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertEqual(summary["convergence_summary"]["blocked_exports"], [])
         self.assertEqual(summary["convergence_summary"]["blocked_reasons"], [])
 
+    def test_build_run_summary_marks_release_ready_skipped_phases_complete(self):
+        summary = build_run_summary(
+            {
+                "success": True,
+                "final_plan": {
+                    "actions": [
+                        {"layer": "BUILDING"},
+                        {"layer": "PARKING"},
+                        {"layer": "FG_CONTOUR"},
+                        {"layer": "PIPE"},
+                        {"layer": "UTILITY"},
+                    ],
+                    "meta": {
+                        "deliverables": {
+                            "requested": ["site_plan", "grading_plan", "storm_pipe_plan", "utility_plan"],
+                            "produced": ["site_plan", "grading_plan", "storm_pipe_plan", "utility_plan"],
+                            "failed": [],
+                        },
+                        "convergence_summary": {
+                            "converged": True,
+                            "unresolved_conflict_count": 0,
+                            "blocked_exports": [],
+                            "blocked_reasons": [],
+                        },
+                        "stage_completeness": {
+                            "statuses": {
+                                "layout": "partial",
+                                "grading": "complete",
+                                "drainage": "complete",
+                                "storm_pipes": "complete",
+                                "sanitary": "partial",
+                                "utility_network": "complete",
+                                "coordination_resolution": "failed",
+                                "qa": "complete",
+                            },
+                            "stages": [
+                                {"stage_name": "layout", "message": "Stage skipped because canonical state is already clean.", "completeness": "partial"},
+                                {"stage_name": "grading", "message": "Proposed grading surface built.", "completeness": "complete"},
+                                {"stage_name": "drainage", "message": "Drainage network designed.", "completeness": "complete"},
+                                {"stage_name": "storm_pipes", "message": "Storm pipe network designed.", "completeness": "complete"},
+                                {"stage_name": "sanitary", "message": "Sanitary stage skipped because sanitary was not requested.", "completeness": "partial"},
+                                {"stage_name": "utility_network", "message": "Utility network designed.", "completeness": "complete"},
+                                {"stage_name": "coordination_resolution", "message": "Coordination stage completed with unresolved conflicts.", "completeness": "failed"},
+                                {"stage_name": "qa", "message": "Validation checks completed.", "completeness": "complete"},
+                            ],
+                        },
+                    },
+                },
+            },
+            source="unit_test",
+        )
+        self.assertTrue(summary["reliability_summary"]["release_ready"])
+        self.assertEqual(summary["phase_checkpoints"]["layout"]["status"], "complete")
+        self.assertTrue(summary["phase_checkpoints"]["layout"]["ready"])
+        self.assertEqual(summary["phase_checkpoints"]["utilities"]["status"], "complete")
+        self.assertTrue(summary["phase_checkpoints"]["utilities"]["ready"])
+        self.assertEqual(summary["phase_checkpoints"]["coordination_validation"]["status"], "complete")
+        self.assertTrue(summary["phase_checkpoints"]["coordination_validation"]["ready"])
+        self.assertEqual(summary["phase_checkpoints"]["combined_view"]["status"], "ready")
+        self.assertEqual(summary["phase_checkpoints"]["combined_view"]["completed_phase_count"], 5)
+
     def test_final_plan_from_result_blocks_unstable_storm_export(self):
         with self.assertRaises(HTTPException) as ctx:
             final_plan_from_result(

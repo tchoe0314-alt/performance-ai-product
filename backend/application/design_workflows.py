@@ -155,12 +155,45 @@ def _build_phase_checkpoints(
         if str(action.get("layer") or "")
     }
 
+    def _is_benign_skip_message(message: str) -> bool:
+        lowered = str(message or "").strip().lower()
+        if not lowered:
+            return False
+        return any(
+            token in lowered
+            for token in (
+                "skipped because canonical state is already clean",
+                "was not requested",
+                "omitted by user intent",
+                "source=omit",
+                "no profile or cross-section deliverables were requested",
+            )
+        )
+
+    def _stage_message(stage_name: str) -> str:
+        return str(dict(stage_rows.get(stage_name) or {}).get("message") or "").strip()
+
+    def _stage_state(stage_name: str) -> str:
+        raw_status = str(
+            required_status.get(stage_name)
+            or compact_statuses.get(stage_name)
+            or dict(stage_rows.get(stage_name) or {}).get("completeness")
+            or ""
+        ).strip().lower()
+        if not raw_status:
+            return "pending"
+        if raw_status == "failed":
+            return "failed"
+        if raw_status in {"running", "in_progress", "started"}:
+            return "running"
+        if raw_status in {"complete", "assumed"}:
+            return "complete"
+        if raw_status == "partial" and _is_benign_skip_message(_stage_message(stage_name)):
+            return "complete"
+        return raw_status
+
     def _phase_status(*stage_names: str) -> str:
-        statuses = [
-            str(required_status.get(stage) or compact_statuses.get(stage) or dict(stage_rows.get(stage) or {}).get("completeness") or "").strip().lower()
-            for stage in stage_names
-            if str(required_status.get(stage) or compact_statuses.get(stage) or dict(stage_rows.get(stage) or {}).get("completeness") or "").strip()
-        ]
+        statuses = [_stage_state(stage) for stage in stage_names if _stage_state(stage) != "pending"]
         if not statuses:
             return "pending"
         if any(status == "failed" for status in statuses):
@@ -182,13 +215,15 @@ def _build_phase_checkpoints(
 
     def _phase(stage_names: tuple[str, ...], deliverables: list[str], has_data: bool, *, label: str, blockers: list[str]) -> Dict[str, Any]:
         status = _phase_status(*stage_names)
-        ready = has_data and status == "complete" and not blockers
+        messages = _phase_messages(*stage_names)[:3]
+        benign_skip = any(_is_benign_skip_message(message) for message in messages)
+        ready = status == "complete" and not blockers and (has_data or not deliverables or benign_skip)
         return {
             "label": label,
             "status": status,
             "ready": ready,
             "deliverables": deliverables,
-            "messages": _phase_messages(*stage_names)[:3],
+            "messages": messages,
             "blockers": blockers,
             "has_data": has_data,
             "stages": list(stage_names),
@@ -245,6 +280,18 @@ def _build_phase_checkpoints(
             blockers=coordination_blockers,
         ),
     }
+
+    if release_ready and not blocked_exports and not blocked_reasons:
+        for item in phase_checkpoints.values():
+            if item.get("status") == "running":
+                continue
+            if item.get("blockers"):
+                continue
+            if item.get("has_data") or not item.get("deliverables") or any(
+                _is_benign_skip_message(message) for message in list(item.get("messages") or [])
+            ):
+                item["status"] = "complete"
+                item["ready"] = True
 
     completed_phases = sum(1 for item in phase_checkpoints.values() if bool(item.get("ready")))
     combined_status = "ready" if release_ready else ("blocked" if blocked_exports or blocked_reasons else "review")
