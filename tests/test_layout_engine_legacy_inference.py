@@ -46,6 +46,17 @@ class LayoutEngineLegacyInferenceTests(unittest.TestCase):
 
         self.assertEqual(roads, [])
 
+    def test_legacy_roads_are_suppressed_when_program_has_buildings(self) -> None:
+        parsed = {
+            "street_edge": "bottom",
+            "buildings": [{"x": 200.0, "y": 300.0, "w": 80.0, "d": 50.0, "name": "BLDG"}],
+        }
+        site_box = {"x": 0.0, "y": 0.0, "w": 500.0, "h": 500.0}
+
+        roads = _infer_roads_from_legacy(parsed, site_box)
+
+        self.assertEqual(roads, [])
+
     def test_expanded_multi_building_plan_drops_schematic_raw_actions(self) -> None:
         plan = _build_expanded_plan(
             {

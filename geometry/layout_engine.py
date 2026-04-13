@@ -1664,7 +1664,7 @@ def _infer_drive_aisles_from_legacy(parsed: Dict[str, Any], site_box: Rect, park
 def _infer_roads_from_legacy(parsed: Dict[str, Any], site_box: Rect) -> List[Dict[str, Any]]:
     raw_buildings = parsed.get("buildings")
     raw_parking = parsed.get("parking_areas")
-    if isinstance(raw_buildings, list) and len([item for item in raw_buildings if isinstance(item, dict)]) > 1:
+    if isinstance(raw_buildings, list) and any(isinstance(item, dict) for item in raw_buildings):
         return []
     if isinstance(raw_parking, list) and any(isinstance(item, dict) for item in raw_parking):
         return []
