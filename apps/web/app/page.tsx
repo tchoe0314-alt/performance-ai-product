@@ -373,6 +373,23 @@ function joinNatural(items: string[], limit = 3): string {
   return `${filtered.slice(0, -1).join(", ")}, and ${filtered[filtered.length - 1]}`;
 }
 
+function readPositiveNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const parsed = Number(trimmed);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
 function extractDesignMemory(thread: ChatMessage[]): {
   preferences: string[];
   constraints: string[];
@@ -3397,6 +3414,104 @@ export default function PerformanceAIDashboard() {
     ...(previewReview?.rerun_stages ?? []).map((item) => toReadableLabel(String(item || ""))),
     ...(previewReview?.rerun_reasons ?? []).map((item) => toReadableLabel(String(item || ""))),
   ].filter(Boolean);
+  const whatYouNeedSummary = useMemo(() => {
+    const manualFields =
+      currentProject?.project_input?.manual_fields && typeof currentProject.project_input.manual_fields === "object"
+        ? currentProject.project_input.manual_fields
+        : {};
+    const lot = manualFields.lot && typeof manualFields.lot === "object" ? manualFields.lot : {};
+    const sitePlan =
+      manualFields.site_plan && typeof manualFields.site_plan === "object" ? manualFields.site_plan : {};
+    const projectTypeValue = String(
+      manualFields.project_type || projectType || "",
+    ).trim();
+    const lotWidthValue = readPositiveNumber(lot.w ?? lotWidth);
+    const lotHeightValue = readPositiveNumber(lot.h ?? lotHeight);
+    const parkingValue = readPositiveNumber(sitePlan.parking_count ?? parkingCount);
+    const buildingWidthValue = readPositiveNumber(manualFields.building_width ?? buildingWidth);
+    const buildingDepthValue = readPositiveNumber(manualFields.building_depth ?? buildingDepth);
+    const requestedDeliverables = new Set(
+      (previewReview?.requested_deliverables ?? []).map((item) => String(item || "").trim()).filter(Boolean),
+    );
+    const disciplineSet = new Set(
+      [
+        ...(Array.isArray(manualFields.disciplines) ? manualFields.disciplines : []),
+        roads ? "corridor" : null,
+        grading ? "grading" : null,
+        drainage ? "drainage" : null,
+        utilities ? "utility" : null,
+      ]
+        .map((item) => String(item || "").trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const neededNow: string[] = [];
+    const supporting: string[] = [];
+    const inScope: string[] = [];
+
+    if (!projectTypeValue) {
+      neededNow.push("site type or land use");
+    }
+    if (!lotWidthValue || !lotHeightValue) {
+      neededNow.push("lot size or boundary dimensions");
+    }
+    if (!buildingWidthValue || !buildingDepthValue) {
+      neededNow.push("building footprint dimensions");
+    }
+    if (!parkingValue) {
+      neededNow.push("parking target or building program");
+    }
+
+    if (disciplineSet.has("corridor") || requestedDeliverables.has("site_plan")) {
+      inScope.push("roads and site access");
+      supporting.push("frontage access constraints");
+    }
+    if (disciplineSet.has("grading") || requestedDeliverables.has("grading_plan")) {
+      inScope.push("grading");
+      supporting.push("survey, slope, or benchmark elevations");
+    }
+    if (disciplineSet.has("drainage") || requestedDeliverables.has("storm_pipe_plan")) {
+      inScope.push("drainage and storm");
+      supporting.push("storm outfall or drainage direction");
+      supporting.push("existing drainage patterns");
+    }
+    if (disciplineSet.has("utility") || requestedDeliverables.has("utility_plan")) {
+      inScope.push("utilities");
+      supporting.push("water and sanitary tie-in points");
+      supporting.push("utility maps or known connection locations");
+    }
+
+    const blocked = previewBlockedReasons.filter(Boolean);
+    const note =
+      blocked.length > 0
+        ? `The current blockers are ${joinNatural(blocked, 3)}.`
+        : previewReview?.release_status === "ready"
+          ? "The core design inputs look complete enough for release-ready review."
+          : neededNow.length
+            ? "Filling the missing inputs below will make the next run more reliable."
+            : "The core design inputs are already in place. The supporting items below would sharpen the engineering output.";
+
+    return {
+      neededNow: Array.from(new Set(neededNow)),
+      supporting: Array.from(new Set(supporting)).filter((item) => !neededNow.includes(item)),
+      inScope: Array.from(new Set(inScope)),
+      note,
+    };
+  }, [
+    buildingDepth,
+    buildingWidth,
+    currentProject?.project_input,
+    drainage,
+    grading,
+    lotHeight,
+    lotWidth,
+    parkingCount,
+    previewBlockedReasons,
+    previewReview?.release_status,
+    previewReview?.requested_deliverables,
+    projectType,
+    roads,
+    utilities,
+  ]);
 
   return (
     <div className="min-h-screen bg-[#f7f7f8] text-slate-950">
@@ -4114,6 +4229,39 @@ export default function PerformanceAIDashboard() {
                             {previewExtraDeliverables.length
                               ? joinNatural(previewExtraDeliverables, 4)
                               : "No extra preview-only outputs were recorded."}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[24px] border border-slate-200 bg-white p-5">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        What You Need
+                      </p>
+                      <p className="mt-3 text-sm text-slate-600">{whatYouNeedSummary.note}</p>
+                      <div className="mt-4 space-y-3 text-sm text-slate-700">
+                        <div>
+                          <p className="font-medium text-slate-900">Needed now</p>
+                          <p className="mt-1 text-slate-600">
+                            {whatYouNeedSummary.neededNow.length
+                              ? joinNatural(whatYouNeedSummary.neededNow, 4)
+                              : "No critical missing inputs are recorded right now."}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="font-medium text-slate-900">Helpful next</p>
+                          <p className="mt-1 text-slate-600">
+                            {whatYouNeedSummary.supporting.length
+                              ? joinNatural(whatYouNeedSummary.supporting, 4)
+                              : "No additional supporting files or field references are specifically requested."}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="font-medium text-slate-900">Current scope</p>
+                          <p className="mt-1 text-slate-600">
+                            {whatYouNeedSummary.inScope.length
+                              ? joinNatural(whatYouNeedSummary.inScope, 4)
+                              : "No active systems are selected yet."}
                           </p>
                         </div>
                       </div>

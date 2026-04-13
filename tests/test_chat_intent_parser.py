@@ -363,6 +363,25 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertIn("site type", result["assistant_message"])
         self.assertIn("rough lot size", result["assistant_message"])
 
+    def test_supplies_question_answers_with_inputs_and_scope(self):
+        result = _decide(
+            "what supplies would you need for this?",
+            {
+                "strategy_mode": "assisted",
+                "project_type": "mixed_use",
+                "lot_width": "400",
+                "lot_height": "250",
+                "parking_count": "80",
+                "roads": True,
+                "grading": True,
+                "drainage": True,
+                "utilities": True,
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("supporting files or field information", result["assistant_message"])
+        self.assertIn("roads and access", result["assistant_message"])
+
     def test_are_you_sure_uses_blocked_state(self):
         result = _decide(
             "are you sure?",

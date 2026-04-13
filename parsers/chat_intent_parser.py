@@ -903,6 +903,21 @@ def _conversation_reply(message: str, context: Dict[str, Any]) -> str:
             "For a solid design start, the most useful inputs are the site type, rough lot size, building or parking program, terrain or slope information, and which systems you want included."
             + _remembered_instruction_fragment(context)
         )
+    if any(
+        phrase in lowered
+        for phrase in [
+            "what would i need",
+            "what do i need",
+            "what supplies",
+            "what materials",
+            "what equipment",
+        ]
+    ):
+        return (
+            "For Civora, the first thing I need is project input rather than construction materials: site type, lot size, building or parking program, terrain information, and which systems you want included. "
+            "If you want, I can also turn the current design scope into a practical checklist of supporting files, field information, and likely materials or equipment."
+            + _current_project_fragment(context)
+        )
     if "can you help" in lowered and bool(context.get("has_plan")):
         return (
             "Yes. I can explain the current design, help you choose the next revision, or make a targeted change once you tell me what you want adjusted."
@@ -984,6 +999,51 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
     remembered_preferences = list(memory_summary.get("preferences") or [])
     remembered_constraints = list(memory_summary.get("constraints") or [])
     trust_score = context.get("engineering_trust_score")
+    project_type = str(context.get("project_type") or "").strip()
+    lot_width = context.get("lot_width")
+    lot_height = context.get("lot_height")
+    disciplines = context.get("disciplines") or {}
+
+    def _format_requested_systems() -> str:
+        enabled = [
+            label
+            for key, label in [
+                ("roads", "roads and access"),
+                ("grading", "grading"),
+                ("drainage", "drainage and storm"),
+                ("utilities", "utilities"),
+            ]
+            if bool(disciplines.get(key))
+        ]
+        return joiner if (joiner := _format_missing_requirements(enabled[:4])) else "the current design systems"
+
+    def _current_input_needs() -> List[str]:
+        asks: List[str] = []
+        if not project_type:
+            asks.append("site type or land use")
+        if not (lot_width and lot_height):
+            asks.append("rough lot size or boundary dimensions")
+        if not context.get("parking_count"):
+            asks.append("building and parking program")
+        if bool(disciplines.get("grading")) or bool(disciplines.get("drainage")):
+            asks.append("topography, slope, or survey information")
+        if bool(disciplines.get("drainage")):
+            asks.append("storm outfall or drainage direction")
+        if bool(disciplines.get("utilities")):
+            asks.append("water and sanitary tie-in assumptions")
+        return asks
+
+    def _supporting_inputs() -> List[str]:
+        support: List[str] = []
+        if bool(disciplines.get("roads")):
+            support.append("frontage or access constraints")
+        if bool(disciplines.get("grading")):
+            support.append("benchmark or control elevations")
+        if bool(disciplines.get("drainage")):
+            support.append("existing drainage patterns or receiving point")
+        if bool(disciplines.get("utilities")):
+            support.append("utility maps or known connection points")
+        return support
 
     if "what mode" in lowered or "which mode" in lowered:
         return f"You’re currently in {str(context.get('strategy_mode') or 'assisted').strip().lower()} mode."
@@ -1035,20 +1095,32 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         or "what info do you need" in lowered
         or "what should i give you" in lowered
     ):
-        project_type = str(context.get("project_type") or "").strip()
-        lot_width = context.get("lot_width")
-        lot_height = context.get("lot_height")
-        parking_count = context.get("parking_count")
-        asks: List[str] = []
-        if not project_type:
-            asks.append("site type")
-        if not (lot_width and lot_height):
-            asks.append("rough lot size")
-        if not parking_count:
-            asks.append("building or parking program")
-        asks.append("terrain or slope information")
-        asks.append("which systems to include")
-        return "The most useful inputs right now are " + _format_missing_requirements(asks[:4]) + "."
+        asks = _current_input_needs()
+        if asks:
+            return "The most useful inputs right now are " + _format_missing_requirements(asks[:4]) + "."
+        support = _supporting_inputs()
+        if support:
+            return "The core design inputs are already there. The next most useful supporting information would be " + _format_missing_requirements(support[:4]) + "."
+        return "You already have the core inputs I’d normally ask for. At this point I’d focus on reviewing the current design outputs and tightening any open review items."
+    if (
+        "what supplies" in lowered
+        or "what materials" in lowered
+        or "what equipment" in lowered
+        or "what would i need" in lowered
+        or "what do i need" in lowered
+    ):
+        asks = _current_input_needs()
+        support = _supporting_inputs()
+        systems = _format_requested_systems()
+        parts: List[str] = []
+        if asks:
+            parts.append("For this design, the main missing inputs are " + _format_missing_requirements(asks[:4]))
+        else:
+            parts.append("The core design inputs are already in place")
+        if support:
+            parts.append("the most useful supporting files or field information would be " + _format_missing_requirements(support[:4]))
+        parts.append(f"and the active scope is {systems}")
+        return ". ".join(parts) + "."
     if (
         "what are you unsure about" in lowered
         or "what are you uncertain about" in lowered
@@ -2238,9 +2310,10 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     if _is_question(message):
+        fallback_reply = _conversation_reply(message, context)
         return _base_decision(
             intent="conversation",
-            assistant_message="I can help with that. If you want a design change, tell me exactly what to change. If you want me to start a new design, give me the site type, rough size, and the main systems you want included.",
+            assistant_message=fallback_reply,
             needs_clarification=True,
             reason="General question without enough specific context",
             confidence=0.68,
