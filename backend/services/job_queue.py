@@ -570,6 +570,7 @@ class JobQueueService:
                         )
                     )
                     self._update_job_state(job_id, status="queued", result=queued_result, error=None)
+                    self._queue.put(job_id)
                 else:
                     self._update_job_state(job_id, status="completed", result=result, error=None)
             except JobCancelledError:

@@ -445,6 +445,63 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(record["status"], "completed")
         self.assertEqual(call_count["value"], 2)
 
+    def test_worker_immediately_requeues_partial_runtime_phase_results_without_db_scan(self):
+        class NoDbScanJobQueueService(JobQueueService):
+            def _find_next_pending_job_id(self):
+                return None
+
+        queue = NoDbScanJobQueueService(self.db)
+        call_count = {"value": 0}
+
+        def runner(job):
+            call_count["value"] += 1
+            if call_count["value"] == 1:
+                return {
+                    "success": True,
+                    "final_plan": {
+                        "project_name": "Demo",
+                        "meta": {
+                            "runtime_phase_checkpoint": {
+                                "stage_name": "layout",
+                                "message": "Layout checkpoint saved.",
+                                "yielded": True,
+                            }
+                        },
+                    },
+                    "metadata": {
+                        "runtime_should_continue": True,
+                        "runtime_phase_checkpoint": {
+                            "stage_name": "layout",
+                            "message": "Layout checkpoint saved.",
+                            "yielded": True,
+                        },
+                    },
+                }
+            return {
+                "success": True,
+                "final_plan": {"project_name": "Demo", "meta": {}},
+                "metadata": {},
+            }
+
+        queue.register_handler("orchestrate", runner)
+        created = queue.submit_job(
+            user_id=self.user_id,
+            job_type="orchestrate",
+            payload={"prompt_text": "resume"},
+        )
+
+        record = None
+        deadline = time.time() + 4.0
+        while time.time() < deadline:
+            record = queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
+            if record and record["status"] == "completed":
+                break
+            time.sleep(0.05)
+
+        self.assertIsNotNone(record)
+        self.assertEqual(record["status"], "completed")
+        self.assertEqual(call_count["value"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()
