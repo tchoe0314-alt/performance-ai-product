@@ -73,6 +73,46 @@ def _has_legacy_frontage_scene(actions: list[dict[str, Any]]) -> bool:
     return False
 
 
+def _rect_payload_from_action(action: dict[str, Any]) -> Optional[Dict[str, float]]:
+    if not isinstance(action, dict):
+        return None
+    task = str(action.get("task") or "").lower()
+    if task == "rectangle":
+        origin = action.get("origin")
+        x = action.get("x")
+        y = action.get("y")
+        if x is None and isinstance(origin, (list, tuple)) and len(origin) >= 2:
+            x = origin[0]
+        if y is None and isinstance(origin, (list, tuple)) and len(origin) >= 2:
+            y = origin[1]
+        w = action.get("w", action.get("width"))
+        h = action.get("h", action.get("height"))
+        try:
+            if x is None or y is None or w is None or h is None:
+                return None
+            return {"x": float(x), "y": float(y), "w": float(w), "h": float(h)}
+        except (TypeError, ValueError):
+            return None
+    if task == "polygon":
+        points = action.get("points")
+        if not isinstance(points, list) or not points:
+            return None
+        coords: list[tuple[float, float]] = []
+        for point in points:
+            if not isinstance(point, (list, tuple)) or len(point) < 2:
+                continue
+            try:
+                coords.append((float(point[0]), float(point[1])))
+            except (TypeError, ValueError):
+                continue
+        if not coords:
+            return None
+        xs = [point[0] for point in coords]
+        ys = [point[1] for point in coords]
+        return {"x": min(xs), "y": min(ys), "w": max(xs) - min(xs), "h": max(ys) - min(ys)}
+    return None
+
+
 def _candidate_display_payloads(result_data: Dict[str, Any]) -> list[Dict[str, Any]]:
     def _normalize_request_like_payload(raw: Any) -> Dict[str, Any]:
         if not isinstance(raw, dict) or not raw:
@@ -141,6 +181,65 @@ def _payload_from_input_summary(raw: Any) -> Dict[str, Any]:
     return normalized
 
 
+def _payload_from_saved_actions(
+    actions: list[dict[str, Any]],
+    *,
+    project_type: Optional[str] = None,
+    site_type: Optional[str] = None,
+    street_edge: Optional[str] = None,
+) -> Dict[str, Any]:
+    buildings: list[Dict[str, Any]] = []
+    parking_areas: list[Dict[str, float]] = []
+    lot_candidate: Optional[Dict[str, float]] = None
+
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        layer = str(action.get("layer") or "").upper()
+        rect = _rect_payload_from_action(action)
+        if rect is None:
+            continue
+        if layer == "SITE":
+            if lot_candidate is None or (rect["w"] * rect["h"]) > (lot_candidate["w"] * lot_candidate["h"]):
+                lot_candidate = rect
+            continue
+        if layer == "BUILDING":
+            if rect["w"] <= 0 or rect["h"] <= 0:
+                continue
+            label = str(action.get("label") or "").strip() or f"BLDG-{len(buildings) + 1}"
+            buildings.append(
+                {
+                    "name": label,
+                    "type": "building",
+                    "x": rect["x"],
+                    "y": rect["y"],
+                    "width": rect["w"],
+                    "depth": rect["h"],
+                }
+            )
+            continue
+        if layer == "PARKING":
+            if rect["w"] < 12 or rect["h"] < 12:
+                continue
+            parking_areas.append(rect)
+
+    if len(buildings) < 2:
+        return {}
+
+    payload: Dict[str, Any] = {"buildings": buildings}
+    if lot_candidate:
+        payload["lot"] = {"w": lot_candidate["w"], "h": lot_candidate["h"]}
+    if parking_areas:
+        payload["parking_areas"] = parking_areas
+    if project_type:
+        payload["project_type"] = project_type
+    if site_type:
+        payload["site_type"] = site_type
+    if street_edge:
+        payload["street_edge"] = street_edge
+    return payload
+
+
 def _enrich_result_data_from_project(
     result_data: Dict[str, Any],
     *,
@@ -176,6 +275,27 @@ def _enrich_result_data_from_project(
     workflow_input_payload = _payload_from_input_summary(
         dict(workflow_runs[0]).get("input_summary") if workflow_runs else {}
     )
+    project_input_meta = dict(dict(project_input or {}).get("meta") or {})
+    project_best_meta = dict(project_best or {})
+    workflow_input_meta = dict(workflow_input_payload or {})
+    sparse_saved_actions_payload = _payload_from_saved_actions(
+        current_actions,
+        project_type=(
+            project_input_meta.get("project_type")
+            or project_best_meta.get("project_type")
+            or workflow_input_meta.get("project_type")
+        ),
+        site_type=(
+            project_input_meta.get("site_type")
+            or project_best_meta.get("site_type")
+            or workflow_input_meta.get("site_type")
+        ),
+        street_edge=(
+            project_input_meta.get("street_edge")
+            or project_best_meta.get("street_edge")
+            or workflow_input_meta.get("street_edge")
+        ),
+    )
     request_payload = (
         dict(project_latest_result.get("request_metadata") or {}).get("request_payload")
         or dict(project_latest_result.get("metadata") or {}).get("request_payload")
@@ -200,6 +320,14 @@ def _enrich_result_data_from_project(
     ):
         request_metadata = dict(enriched.get("request_metadata") or {})
         request_metadata["workflow_input_summary"] = workflow_input_payload
+        enriched["request_metadata"] = request_metadata
+
+    if sparse_saved_actions_payload and (
+        current_building_count < 2
+        or (legacy_display and _payload_display_richness(sparse_saved_actions_payload) > _payload_display_richness(current_best))
+    ):
+        request_metadata = dict(enriched.get("request_metadata") or {})
+        request_metadata["sparse_saved_actions"] = sparse_saved_actions_payload
         enriched["request_metadata"] = request_metadata
 
     if project_best and (
@@ -258,6 +386,9 @@ def _best_display_payload(result_data: Dict[str, Any]) -> Dict[str, Any]:
     )
     if workflow_input:
         candidates.append(workflow_input)
+    sparse_saved_actions = dict(result_data.get("request_metadata") or {}).get("sparse_saved_actions")
+    if isinstance(sparse_saved_actions, dict) and sparse_saved_actions:
+        candidates.append(sparse_saved_actions)
     if not candidates:
         return {}
     best = max(

@@ -333,6 +333,44 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertIn("MF-1", labels)
         self.assertIn("Retail", labels)
 
+    def test_build_preview_response_can_recover_from_sparse_saved_actions(self):
+        service = FakeArtifactService()
+        store = FakeProjectStore()
+        response = build_preview_response(
+            artifact_service=service,
+            project_store=store,
+            user_id="u1",
+            project_id="p1",
+            result_data={
+                "final_plan": {
+                    "project_name": "Sparse Legacy Geometry",
+                    "actions": [
+                        {"task": "rectangle", "layer": "SITE", "origin": [0, 0], "width": 620, "height": 980},
+                        {"task": "rectangle", "layer": "BUILDING", "origin": [120, 720], "width": 110, "height": 58, "label": "MF-1"},
+                        {"task": "rectangle", "layer": "BUILDING", "origin": [255, 720], "width": 110, "height": 58, "label": "MF-2"},
+                        {"task": "rectangle", "layer": "BUILDING", "origin": [390, 720], "width": 110, "height": 58, "label": "MF-3"},
+                        {"task": "rectangle", "layer": "BUILDING", "origin": [275, 360], "width": 70, "height": 45, "label": "Retail"},
+                        {"task": "rectangle", "layer": "PAVEMENT", "origin": [180, 520], "width": 260, "height": 28, "label": "FRONTAGE"},
+                        {"task": "text_note", "layer": "PAVEMENT", "origin": [290, 534], "text": "FRONTAGE ACCESS"},
+                    ],
+                    "meta": {},
+                },
+            },
+        )
+        self.assertTrue(response["preview_image_data_url"].startswith("data:image/png;base64,"))
+        preview_buildings = [
+            action for action in service.preview_plan["actions"]
+            if action.get("layer") == "BUILDING" and action.get("task") == "rectangle"
+        ]
+        self.assertGreaterEqual(len(preview_buildings), 4)
+        self.assertFalse(
+            any(
+                "FRONTAGE" in str(action.get("label") or "").upper()
+                or "FRONTAGE" in str(action.get("text") or "").upper()
+                for action in service.preview_plan["actions"]
+            )
+        )
+
     def test_export_dxf_artifact_enriches_thin_result_from_project_record(self):
         service = FakeArtifactService()
         store = FakeProjectStore()
