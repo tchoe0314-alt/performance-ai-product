@@ -530,6 +530,9 @@ def build_preview(
     return application_build_preview_response(
         artifact_service=ARTIFACTS,
         result_data=result_data,
+        project_store=PROJECT_STORE,
+        user_id=current_user["user_id"],
+        project_id=payload.project_id,
     )
 
 

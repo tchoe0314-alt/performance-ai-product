@@ -112,6 +112,55 @@ def _candidate_display_payloads(result_data: Dict[str, Any]) -> list[Dict[str, A
     return candidates
 
 
+def _enrich_result_data_from_project(
+    result_data: Dict[str, Any],
+    *,
+    project_store: Optional[ProjectStoreProtocol],
+    user_id: Optional[str],
+    project_id: Optional[str],
+) -> Dict[str, Any]:
+    if project_store is None or not user_id or not project_id:
+        return dict(result_data or {})
+    project = project_store.get_project(user_id=user_id, project_id=project_id)
+    if not isinstance(project, dict):
+        return dict(result_data or {})
+
+    enriched = dict(result_data or {})
+    current_best = _best_display_payload(enriched)
+    current_building_count = _payload_building_count(current_best)
+
+    project_input = project.get("project_input")
+    project_latest_result = dict(project.get("latest_result") or {})
+    project_best = _best_display_payload(project_latest_result)
+    project_best_count = _payload_building_count(project_best)
+    request_payload = (
+        dict(project_latest_result.get("request_metadata") or {}).get("request_payload")
+        or dict(project_latest_result.get("metadata") or {}).get("request_payload")
+        or project.get("request_payload")
+    )
+
+    if project_input and current_building_count < 2:
+        enriched.setdefault("project_input", project_input)
+        request_metadata = dict(enriched.get("request_metadata") or {})
+        request_metadata.setdefault("project_input", project_input)
+        enriched["request_metadata"] = request_metadata
+
+    if request_payload and current_building_count < 2:
+        enriched.setdefault("request_payload", request_payload)
+        request_metadata = dict(enriched.get("request_metadata") or {})
+        request_metadata.setdefault("request_payload", request_payload)
+        enriched["request_metadata"] = request_metadata
+
+    if project_best_count > current_building_count:
+        if project_best:
+            enriched.setdefault("parsed_payload", project_best)
+            request_metadata = dict(enriched.get("request_metadata") or {})
+            request_metadata.setdefault("parsed_payload", project_best)
+            enriched["request_metadata"] = request_metadata
+
+    return enriched
+
+
 def _payload_building_count(payload: Dict[str, Any]) -> int:
     raw_buildings = payload.get("buildings")
     if not isinstance(raw_buildings, list):
@@ -431,7 +480,16 @@ def build_preview_response(
     *,
     artifact_service: ArtifactServiceProtocol,
     result_data: Dict[str, Any],
+    project_store: Optional[ProjectStoreProtocol] = None,
+    user_id: Optional[str] = None,
+    project_id: Optional[str] = None,
 ) -> Dict[str, Any]:
+    result_data = _enrich_result_data_from_project(
+        result_data,
+        project_store=project_store,
+        user_id=user_id,
+        project_id=project_id,
+    )
     final_plan = _display_plan_from_result(result_data, enforce_export_guards=False)
     png_bytes = artifact_service.build_preview_png(final_plan)
     return {
@@ -455,6 +513,12 @@ def export_dxf_artifact(
     result_data: Dict[str, Any],
     filename_stem: Optional[str] = None,
 ) -> Path:
+    result_data = _enrich_result_data_from_project(
+        result_data,
+        project_store=project_store,
+        user_id=user_id,
+        project_id=project_id,
+    )
     final_plan = _display_plan_from_result(result_data, enforce_export_guards=True)
     stem = filename_stem or str(final_plan.get("project_name") or "civora-ai-plan")
     path = artifact_service.export_dxf(
@@ -486,6 +550,12 @@ def export_report_artifact(
     result_data: Dict[str, Any],
     filename_stem: Optional[str] = None,
 ) -> Path:
+    result_data = _enrich_result_data_from_project(
+        result_data,
+        project_store=project_store,
+        user_id=user_id,
+        project_id=project_id,
+    )
     final_plan = dict(result_data.get("final_plan") or {})
     stem = filename_stem or str(final_plan.get("project_name") or "civora-ai-report")
     enriched_result_data = dict(result_data)

@@ -188,6 +188,93 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         ]
         self.assertGreaterEqual(len(preview_buildings), 4)
 
+    def test_build_preview_response_enriches_thin_result_from_project_record(self):
+        service = FakeArtifactService()
+        store = FakeProjectStore()
+        store.project["project_input"] = {
+            "manual_fields": {
+                "project_type": "mixed_use",
+                "lot": {"w": 620.0, "h": 980.0},
+                "buildings": [
+                    {"name": "MF-1", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "MF-2", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "MF-3", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "Retail", "type": "retail", "width": 70, "depth": 45},
+                ],
+            },
+            "meta": {"project_type": "mixed_use"},
+        }
+        response = build_preview_response(
+            artifact_service=service,
+            project_store=store,
+            user_id="u1",
+            project_id="p1",
+            result_data={
+                "final_plan": {
+                    "project_name": "Thin Latest Result",
+                    "actions": [
+                        {"task": "rectangle", "layer": "BUILDING", "origin": [250, 700], "width": 80, "height": 50, "label": "BLDG"},
+                        {"task": "rectangle", "layer": "PAVEMENT", "origin": [180, 520], "width": 260, "height": 28, "label": "FRONTAGE"},
+                        {"task": "text_note", "layer": "PAVEMENT", "origin": [290, 534], "text": "FRONTAGE ACCESS"},
+                    ],
+                    "meta": {},
+                },
+            },
+        )
+        self.assertTrue(response["preview_image_data_url"].startswith("data:image/png;base64,"))
+        preview_actions = service.preview_plan["actions"]
+        preview_buildings = [
+            action for action in preview_actions
+            if action.get("layer") == "BUILDING" and action.get("task") == "rectangle"
+        ]
+        self.assertGreaterEqual(len(preview_buildings), 4)
+
+    def test_export_dxf_artifact_enriches_thin_result_from_project_record(self):
+        service = FakeArtifactService()
+        store = FakeProjectStore()
+        store.project["project_input"] = {
+            "manual_fields": {
+                "project_type": "mixed_use",
+                "lot": {"w": 620.0, "h": 980.0},
+                "buildings": [
+                    {"name": "MF-1", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "MF-2", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "MF-3", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "Retail", "type": "retail", "width": 70, "depth": 45},
+                ],
+            },
+            "meta": {"project_type": "mixed_use"},
+        }
+        path = export_dxf_artifact(
+            artifact_service=service,
+            project_store=store,
+            user_id="u1",
+            project_id="p1",
+            result_data={
+                "final_plan": {
+                    "project_name": "Thin DXF Result",
+                    "actions": [
+                        {"task": "rectangle", "layer": "BUILDING", "origin": [250, 700], "width": 80, "height": 50, "label": "BLDG"},
+                        {"task": "rectangle", "layer": "PAVEMENT", "origin": [180, 520], "width": 260, "height": 28, "label": "FRONTAGE"},
+                        {"task": "text_note", "layer": "PAVEMENT", "origin": [290, 534], "text": "FRONTAGE ACCESS"},
+                    ],
+                    "meta": {
+                        "drainage": {"export_validation": {"ready": True, "reasons": []}},
+                        "storm_pipes": {"graph_validation": {"valid": True}, "hydraulic_validation": {"valid": True}, "segments": []},
+                        "utilities": {"export_validation": {"ready": True, "reasons": []}},
+                    },
+                },
+            },
+            filename_stem="thin-project",
+        )
+        self.assertEqual(path.name, "unit-plan.dxf")
+        exported_actions = service.dxf_export["final_plan"]["actions"]
+        exported_buildings = [
+            action for action in exported_actions
+            if action.get("layer") == "BUILDING" and action.get("task") == "rectangle"
+        ]
+        self.assertGreaterEqual(len(exported_buildings), 4)
+
     def test_export_dxf_artifact_rebuilds_legacy_frontage_scene_from_parsed_payload(self):
         service = FakeArtifactService()
         store = FakeProjectStore()
