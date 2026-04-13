@@ -328,11 +328,14 @@ def run_orchestration(
     progress_callback: Optional[Callable[..., None]] = None,
 ) -> Dict[str, Any]:
     PlannerOrchestratorRequest, orchestrate_plan = load_orchestrator()
+    prompt_text = payload_data.get("prompt_text")
+    if prompt_text is None:
+        prompt_text = payload_data.get("prompt")
 
     req = PlannerOrchestratorRequest(
         input_mode=payload_data.get("input_mode", "assisted"),
         strict_mode=bool(payload_data.get("strict_mode", False)),
-        prompt_text=payload_data.get("prompt_text"),
+        prompt_text=prompt_text,
         image_path=payload_data.get("image_path"),
         manual_fields=dict(payload_data.get("manual_fields") or {}),
         image_width_px=payload_data.get("image_width_px"),

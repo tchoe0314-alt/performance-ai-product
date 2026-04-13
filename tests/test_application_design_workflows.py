@@ -1,11 +1,62 @@
 import unittest
+from dataclasses import dataclass, field
+from typing import Optional
 
 from fastapi import HTTPException
 
-from backend.application.design_workflows import build_run_summary, final_plan_from_result
+from backend.application.design_workflows import build_run_summary, final_plan_from_result, run_orchestration
 
 
 class ApplicationDesignWorkflowsTest(unittest.TestCase):
+    def test_run_orchestration_accepts_prompt_fallback_when_prompt_text_missing(self):
+        @dataclass
+        class FakeRequest:
+            input_mode: str
+            strict_mode: bool
+            prompt_text: Optional[str] = None
+            image_path: Optional[str] = None
+            manual_fields: dict = field(default_factory=dict)
+            image_width_px: Optional[int] = None
+            image_height_px: Optional[int] = None
+            pixels_per_unit: Optional[float] = None
+            plan_type_hint: Optional[str] = None
+            units: str = "ft"
+            allow_ai_fill_for_blanks: bool = True
+            persist_trace_metadata: bool = True
+            meta: dict = field(default_factory=dict)
+            progress_callback: Optional[object] = None
+
+        class FakeResult:
+            def __init__(self, prompt_text: Optional[str]):
+                self.success = True
+                self.message = "ok"
+                self.parsed_payload = {"project_type": "mixed_use", "prompt_echo": prompt_text}
+                self.final_plan = {"actions": [], "meta": {}}
+                self.warnings = []
+                self.errors = []
+                self.issues = []
+                self.assumptions = []
+                self.metadata = {}
+
+        def fake_load_orchestrator():
+            def fake_orchestrate(req):
+                return FakeResult(req.prompt_text)
+
+            return FakeRequest, fake_orchestrate
+
+        result = run_orchestration(
+            {
+                "input_mode": "assisted",
+                "prompt": "Design a mixed-use site with three multifamily buildings and one retail pad.",
+                "manual_fields": {},
+                "meta": {},
+            },
+            load_orchestrator=fake_load_orchestrator,
+            assess_design_readiness=lambda *_args, **_kwargs: None,
+        )
+        self.assertTrue(result["success"])
+        self.assertIn("three multifamily buildings", result["parsed_payload"]["prompt_echo"])
+
     def test_build_run_summary_reads_engineering_meta(self):
         summary = build_run_summary(
             {
