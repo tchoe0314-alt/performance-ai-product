@@ -997,7 +997,12 @@ def _single_plan_flow(
     final_plan = planner.build_plan(parsed_payload, progress_callback=progress_callback)
     warnings, errors = _collect_warnings_errors(final_plan)
     success = not _manual_plan_failed(final_plan)
-    message = "Generated coordinated plan." if success else "Manual-mode validation failed."
+    runtime_checkpoint = _safe_dict(_safe_dict(final_plan.get("meta")).get("runtime_phase_checkpoint"))
+    runtime_should_continue = bool(runtime_checkpoint.get("yielded"))
+    if runtime_should_continue:
+        message = _safe_str(runtime_checkpoint.get("message"), "Saved a phase checkpoint and prepared the next engineering phase.")
+    else:
+        message = "Generated coordinated plan." if success else "Manual-mode validation failed."
 
     return PlannerOrchestratorResult(
         success=success,
@@ -1014,6 +1019,8 @@ def _single_plan_flow(
             "workflow": "single_plan",
             "route": deepcopy(_safe_dict(_safe_dict(final_plan.get("meta")).get("routing"))),
             "recommended_score": _planner_score_from_plan(final_plan),
+            "runtime_should_continue": runtime_should_continue,
+            "runtime_phase_checkpoint": deepcopy(runtime_checkpoint),
         },
     )
 

@@ -393,6 +393,58 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(jobs["job_queued_1"]["running_count"], 1)
         self.assertEqual(jobs["job_queued_2"]["queue_position"], 2)
 
+    def test_worker_requeues_partial_runtime_phase_results(self):
+        call_count = {"value": 0}
+
+        def runner(job):
+            call_count["value"] += 1
+            if call_count["value"] == 1:
+                return {
+                    "success": True,
+                    "final_plan": {
+                        "project_name": "Demo",
+                        "meta": {
+                            "runtime_phase_checkpoint": {
+                                "stage_name": "layout",
+                                "message": "Layout checkpoint saved.",
+                                "yielded": True,
+                            }
+                        },
+                    },
+                    "metadata": {
+                        "runtime_should_continue": True,
+                        "runtime_phase_checkpoint": {
+                            "stage_name": "layout",
+                            "message": "Layout checkpoint saved.",
+                            "yielded": True,
+                        },
+                    },
+                }
+            return {
+                "success": True,
+                "final_plan": {"project_name": "Demo", "meta": {}},
+                "metadata": {},
+            }
+
+        self.queue.register_handler("orchestrate", runner)
+        created = self.queue.submit_job(
+            user_id=self.user_id,
+            job_type="orchestrate",
+            payload={"prompt_text": "resume"},
+        )
+
+        record = None
+        deadline = time.time() + 4.0
+        while time.time() < deadline:
+            record = self.queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
+            if record and record["status"] == "completed":
+                break
+            time.sleep(0.05)
+
+        self.assertIsNotNone(record)
+        self.assertEqual(record["status"], "completed")
+        self.assertEqual(call_count["value"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

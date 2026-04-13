@@ -7367,6 +7367,15 @@ def _run_model_first_workflow(
 
     _ingest_parsed_into_model(ctx)
     manager.project.meta["preferred_corridors"] = _preferred_corridors(parsed, manager.project)
+    orchestrator_meta = safe_dict(safe_dict(parsed.get("meta")).get("orchestrator_meta"))
+    runtime_phase_batch_limit = max(0, safe_int(orchestrator_meta.get("runtime_phase_batch_limit"), 0))
+
+    class _RuntimePhaseYield(Exception):
+        def __init__(self, plan: Dict[str, Any], stage_name: str, message: str) -> None:
+            super().__init__(message)
+            self.plan = plan
+            self.stage_name = stage_name
+            self.message = message
 
     def _seed_runtime_resume_state() -> set[str]:
         parsed_meta = safe_dict(parsed.get("meta"))
@@ -7468,6 +7477,7 @@ def _run_model_first_workflow(
         return resumed
 
     resumed_stage_names = _seed_runtime_resume_state()
+    newly_completed_stage_count = 0
 
     max_passes = max(2, safe_int(safe_dict(parsed.get("meta")).get("planner_passes"), 2))
     final_report = PlanQualityReport()
@@ -7500,7 +7510,69 @@ def _run_model_first_workflow(
         except Exception:
             pass
 
+    def _current_stage_statuses() -> Dict[str, str]:
+        statuses: Dict[str, str] = {}
+        for stage in ctx.stage_results:
+            stage_name = safe_str(stage.stage_name)
+            if not stage_name:
+                continue
+            statuses[stage_name] = _stage_completeness_label(
+                stage_name,
+                bool(stage.success),
+                safe_str(stage.message),
+                safe_dict(stage.meta),
+            )
+        return statuses
+
+    def _build_runtime_checkpoint_plan(stage_name: str, message: str) -> Dict[str, Any]:
+        checkpoint_plan = sanitize_plan(
+            project_model_to_plan(
+                manager.project,
+                parsed.get("project_name") or "Generated Plan",
+            )
+        )
+        checkpoint_plan.setdefault("meta", {})
+        checkpoint_plan["meta"]["planner_workflow"] = "model_first"
+        checkpoint_plan["meta"]["routing"] = {"path": route.path, "reasons": list(route.reasons)}
+        checkpoint_plan["meta"]["option_name"] = option_name
+        checkpoint_plan["meta"]["option_family"] = option_family
+        checkpoint_plan["meta"]["runtime_phase_checkpoint"] = {
+            "stage_name": stage_name,
+            "status": "complete",
+            "message": message,
+            "yielded": False,
+        }
+        checkpoint_plan["meta"]["stage_completeness"] = {
+            "statuses": _current_stage_statuses(),
+        }
+        checkpoint_plan["meta"]["parking_program"] = deepcopy(
+            manager.latest_outputs.get("parking_program", manager.project.meta.get("parking_program", {}))
+        )
+        checkpoint_plan["meta"]["grading"] = deepcopy(
+            manager.latest_outputs.get("grading", manager.project.meta.get("grading_summary", {}))
+        )
+        checkpoint_plan["meta"]["drainage"] = deepcopy(
+            manager.latest_outputs.get("drainage", manager.project.meta.get("drainage_canonical", {}))
+        )
+        checkpoint_plan["meta"]["storm_pipes"] = deepcopy(
+            manager.latest_outputs.get("storm_pipe_summary", manager.project.meta.get("storm_pipe_summary", {}))
+        )
+        checkpoint_plan["meta"]["sanitary"] = deepcopy(
+            manager.latest_outputs.get("sanitary", manager.project.meta.get("sanitary_summary", {}))
+        )
+        checkpoint_plan["meta"]["utilities"] = deepcopy(
+            manager.latest_outputs.get("utilities", manager.project.meta.get("utility_summary", {}))
+        )
+        checkpoint_plan["meta"]["profiles"] = deepcopy(
+            manager.latest_outputs.get("profiles", manager.project.meta.get("profiles", []))
+        )
+        checkpoint_plan["meta"]["cross_sections"] = deepcopy(
+            manager.latest_outputs.get("cross_sections", manager.project.meta.get("cross_sections", []))
+        )
+        return checkpoint_plan
+
     def _run_declared_stage(stage_name: str, runner: Any, *args: Any) -> Any:
+        nonlocal newly_completed_stage_count
         before_state = _canonical_state_snapshot(manager.project, manager)
         dirty_reasons = _stage_dirty_reasons(ctx, stage_name)
         if _stage_should_run(
@@ -7518,18 +7590,10 @@ def _run_model_first_workflow(
             checkpoint_plan: Optional[Dict[str, Any]] = None
             if bool(getattr(latest, "success", True)):
                 try:
-                    checkpoint_plan = sanitize_plan(
-                        project_model_to_plan(
-                            manager.project,
-                            parsed.get("project_name") or "Generated Plan",
-                        )
+                    checkpoint_plan = _build_runtime_checkpoint_plan(
+                        stage_name,
+                        safe_str(getattr(latest, "message", "")),
                     )
-                    checkpoint_plan.setdefault("meta", {})
-                    checkpoint_plan["meta"]["runtime_phase_checkpoint"] = {
-                        "stage_name": stage_name,
-                        "status": "complete",
-                        "message": safe_str(getattr(latest, "message", "")),
-                    }
                 except Exception:
                     checkpoint_plan = None
             _emit_stage_progress(
@@ -7546,6 +7610,28 @@ def _run_model_first_workflow(
                 dirty_reasons=dirty_reasons,
                 before_state=before_state,
             )
+            if bool(getattr(latest, "success", True)) and stage_name not in resumed_stage_names:
+                newly_completed_stage_count += 1
+                if runtime_phase_batch_limit and newly_completed_stage_count >= runtime_phase_batch_limit:
+                    yielded_plan = checkpoint_plan or _build_runtime_checkpoint_plan(
+                        stage_name,
+                        safe_str(getattr(latest, "message", "")),
+                    )
+                    yielded_plan.setdefault("meta", {})
+                    yielded_meta = safe_dict(yielded_plan.get("meta"))
+                    yielded_meta["runtime_phase_checkpoint"] = {
+                        **safe_dict(yielded_meta.get("runtime_phase_checkpoint")),
+                        "stage_name": stage_name,
+                        "status": "complete",
+                        "message": safe_str(getattr(latest, "message", "")),
+                        "yielded": True,
+                    }
+                    yielded_plan["meta"] = yielded_meta
+                    raise _RuntimePhaseYield(
+                        yielded_plan,
+                        stage_name,
+                        safe_str(getattr(latest, "message", "")) or f"{stage_name} phase checkpoint saved.",
+                    )
             return result
         _mark_stage_skipped_clean(ctx, stage_name)
         _record_stage_audit(
@@ -7558,69 +7644,73 @@ def _run_model_first_workflow(
         )
         return final_report if stage_name == "qa" else None
 
-    for pass_index in range(1, max_passes + 1):
-        ctx.pass_index = pass_index
-        manager.log("planner_pass", pass_index=pass_index, option_name=option_name, option_family=option_family)
+    try:
+        for pass_index in range(1, max_passes + 1):
+            ctx.pass_index = pass_index
+            manager.log("planner_pass", pass_index=pass_index, option_name=option_name, option_family=option_family)
 
-        preliminary_plan = project_model_to_plan(manager.project, parsed.get("project_name") or "Generated Plan")
-        preliminary_stats = collect_plan_stats(preliminary_plan)
-        hydrology = _compute_hydrology_metrics(parsed, preliminary_stats)
+            preliminary_plan = project_model_to_plan(manager.project, parsed.get("project_name") or "Generated Plan")
+            preliminary_stats = collect_plan_stats(preliminary_plan)
+            hydrology = _compute_hydrology_metrics(parsed, preliminary_stats)
 
-        txn_id = manager.begin_transaction(f"planner_pass_{pass_index}")
+            txn_id = manager.begin_transaction(f"planner_pass_{pass_index}")
 
-        _run_declared_stage("layout", _run_layout_stage, ctx)
-        if manual_mode:
-            _run_manual_gate(ctx, "layout_gate")
-        _run_declared_stage("grading", _run_grading_stage, ctx, hydrology)
-        if manual_mode:
-            _run_manual_gate(ctx, "grading_gate")
-        _run_declared_stage("drainage", _run_drainage_stage, ctx, hydrology)
-        if manual_mode:
-            _run_manual_gate(ctx, "drainage_gate")
-        _run_declared_stage("storm_pipes", _run_storm_pipe_stage, ctx, hydrology)
-        if manual_mode:
-            _run_manual_gate(ctx, "storm_pipe_gate")
-        _run_declared_stage("sanitary", _run_sanitary_stage, ctx)
-        if manual_mode:
-            _run_manual_gate(ctx, "sanitary_gate")
-        _run_declared_stage("utility_network", _run_utility_stage, ctx)
-        if manual_mode:
-            _run_manual_gate(ctx, "utility_gate")
-        _run_declared_stage("coordination_resolution", _run_conflict_resolution_stage, ctx, hydrology)
-        if manual_mode:
-            _run_manual_gate(ctx, "coordination_gate")
-        _run_declared_stage("earthwork", _run_earthwork_stage, ctx)
-        _run_declared_stage("sheets", _run_sheet_stage, ctx)
-        report = _run_declared_stage("qa", _run_qa_stage, ctx)
-        final_report = report
+            _run_declared_stage("layout", _run_layout_stage, ctx)
+            if manual_mode:
+                _run_manual_gate(ctx, "layout_gate")
+            _run_declared_stage("grading", _run_grading_stage, ctx, hydrology)
+            if manual_mode:
+                _run_manual_gate(ctx, "grading_gate")
+            _run_declared_stage("drainage", _run_drainage_stage, ctx, hydrology)
+            if manual_mode:
+                _run_manual_gate(ctx, "drainage_gate")
+            _run_declared_stage("storm_pipes", _run_storm_pipe_stage, ctx, hydrology)
+            if manual_mode:
+                _run_manual_gate(ctx, "storm_pipe_gate")
+            _run_declared_stage("sanitary", _run_sanitary_stage, ctx)
+            if manual_mode:
+                _run_manual_gate(ctx, "sanitary_gate")
+            _run_declared_stage("utility_network", _run_utility_stage, ctx)
+            if manual_mode:
+                _run_manual_gate(ctx, "utility_gate")
+            _run_declared_stage("coordination_resolution", _run_conflict_resolution_stage, ctx, hydrology)
+            if manual_mode:
+                _run_manual_gate(ctx, "coordination_gate")
+            _run_declared_stage("earthwork", _run_earthwork_stage, ctx)
+            _run_declared_stage("sheets", _run_sheet_stage, ctx)
+            report = _run_declared_stage("qa", _run_qa_stage, ctx)
+            final_report = report
 
-        score_total, _ = _planner_score_from_manager(manager)
-        if best_score is None or score_total > best_score:
-            best_score = score_total
-            best_snapshot_id = manager.snapshot(f"best_pass_{pass_index}")
-            manager.commit_transaction(txn_id)
-        else:
-            manager.rollback_transaction(txn_id)
+            score_total, _ = _planner_score_from_manager(manager)
+            if best_score is None or score_total > best_score:
+                best_score = score_total
+                best_snapshot_id = manager.snapshot(f"best_pass_{pass_index}")
+                manager.commit_transaction(txn_id)
+            else:
+                manager.rollback_transaction(txn_id)
 
-        if manual_mode and ctx.errors:
-            ctx.add_stage(
-                "coordination",
-                False,
-                "Manual mode validation blocked assisted-style retries and returned the current engineering state as failed.",
-                pass_index=pass_index,
-                planner_score=score_total,
-                manual_mode=True,
-            )
-            break
+            if manual_mode and ctx.errors:
+                ctx.add_stage(
+                    "coordination",
+                    False,
+                    "Manual mode validation blocked assisted-style retries and returned the current engineering state as failed.",
+                    pass_index=pass_index,
+                    planner_score=score_total,
+                    manual_mode=True,
+                )
+                break
 
-        if report.error_count() == 0 and report.warning_count() < 5:
-            ctx.add_stage("coordination", True, "Planner reached acceptable convergence.", pass_index=pass_index, planner_score=score_total)
-            break
+            if report.error_count() == 0 and report.warning_count() < 5:
+                ctx.add_stage("coordination", True, "Planner reached acceptable convergence.", pass_index=pass_index, planner_score=score_total)
+                break
 
-        if pass_index < max_passes:
-            _apply_fix_pass(ctx, report)
-        else:
-            ctx.add_stage("coordination", True, "Reached max planner passes; preserving best coordinated state.", pass_index=pass_index, planner_score=score_total)
+            if pass_index < max_passes:
+                _apply_fix_pass(ctx, report)
+            else:
+                ctx.add_stage("coordination", True, "Reached max planner passes; preserving best coordinated state.", pass_index=pass_index, planner_score=score_total)
+    except _RuntimePhaseYield as yielded:
+        ctx.final_plan = sanitize_plan(dict(yielded.plan))
+        return ctx
 
     if best_snapshot_id:
         try:

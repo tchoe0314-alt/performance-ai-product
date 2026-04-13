@@ -501,7 +501,7 @@ def build_orchestrate_job_runner(
         existing = None
         if project_id and user_id:
             existing = project_store.get_project(user_id=user_id, project_id=project_id)
-            if existing is not None:
+        if existing is not None:
                 existing_result = dict(existing.get("latest_result") or {})
                 existing_final_plan = dict(existing_result.get("final_plan") or {})
                 existing_meta = dict(existing_final_plan.get("meta") or {})
@@ -523,6 +523,9 @@ def build_orchestrate_job_runner(
                     run_meta = dict(run_payload.get("meta") or {})
                     run_meta["runtime_resume"] = runtime_resume
                     run_payload["meta"] = run_meta
+        run_meta = dict(run_payload.get("meta") or {})
+        run_meta["runtime_phase_batch_limit"] = 1
+        run_payload["meta"] = run_meta
         run_signature = inspect.signature(run_orchestration)
         if "progress_callback" in run_signature.parameters:
             result = run_orchestration(run_payload, progress_callback=_phase_progress_callback)
@@ -534,6 +537,7 @@ def build_orchestrate_job_runner(
             job_id=job_id,
             user_id=user_id,
         )
+        runtime_should_continue = bool(dict(enriched.get("metadata") or {}).get("runtime_should_continue"))
         if project_id and user_id:
             if job_id:
                 update_job_progress(
@@ -558,6 +562,17 @@ def build_orchestrate_job_runner(
                         run_summary=dict(dict(enriched.get("metadata") or {}).get("run_summary") or {}),
                     ),
                 )
+        if runtime_should_continue and job_id:
+            stage_name = str(
+                dict(dict(enriched.get("metadata") or {}).get("runtime_phase_checkpoint") or {}).get("stage_name") or ""
+            )
+            update_job_progress(
+                job_id,
+                stage="Queued Next Phase",
+                detail=f"Saved {stage_name or 'current'} checkpoint and queued the next engineering phase.",
+                progress=60,
+            )
+            return enriched
         if job_id:
             update_job_progress(
                 job_id,

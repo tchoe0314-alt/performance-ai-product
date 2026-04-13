@@ -308,6 +308,31 @@ class JobQueueService:
         finally:
             connection.close()
 
+    def _claim_job_for_worker(self, job_id: str) -> Optional[Dict[str, Any]]:
+        current = self._get_job_for_worker(job_id)
+        if current is None:
+            return None
+        if current.get("status") == "cancelled":
+            return current
+        if current.get("status") != "queued":
+            return None
+        connection = self.db.connect()
+        try:
+            cursor = connection.execute(
+                """
+                UPDATE jobs
+                SET status = ?, updated_at = ?
+                WHERE job_id = ? AND status = 'queued'
+                """,
+                ("running", _now(), job_id),
+            )
+            connection.commit()
+            if int(getattr(cursor, "rowcount", 0) or 0) <= 0:
+                return None
+        finally:
+            connection.close()
+        return self._get_job_for_worker(job_id)
+
     def _find_next_pending_job_id(self) -> Optional[str]:
         if not self._handlers:
             return None
@@ -481,7 +506,7 @@ class JobQueueService:
             else:
                 queue_task = True
 
-            job = self._get_job_for_worker(job_id)
+            job = self._claim_job_for_worker(job_id)
             if job is None:
                 if queue_task:
                     self._queue.task_done()
@@ -498,7 +523,6 @@ class JobQueueService:
                     self._queue.task_done()
                 continue
 
-            self._update_job_state(job_id, status="running", error=None)
             heartbeat_stop = threading.Event()
             heartbeat_thread = threading.Thread(
                 target=self._heartbeat_loop,
@@ -515,6 +539,9 @@ class JobQueueService:
                     progress=24,
                 )
                 result = runner(job)
+                runtime_should_continue = bool(
+                    dict((result or {}).get("metadata") or {}).get("runtime_should_continue")
+                )
                 current = self._get_job_for_worker(job_id)
                 if current and current.get("status") in {"cancelling", "cancelled"}:
                     cancelled_result = dict(current.get("result") or {})
@@ -526,6 +553,23 @@ class JobQueueService:
                         )
                     )
                     self._update_job_state(job_id, status="cancelled", result=cancelled_result, error="Cancelled by user.")
+                elif runtime_should_continue:
+                    checkpoint = dict(
+                        dict((result or {}).get("metadata") or {}).get("runtime_phase_checkpoint") or {}
+                    )
+                    stage_name = str(checkpoint.get("stage_name") or "").strip()
+                    detail = str(checkpoint.get("message") or "").strip() or (
+                        f"Saved {stage_name or 'current'} checkpoint and queued the next engineering phase."
+                    )
+                    queued_result = dict(result or {})
+                    queued_result.update(
+                        _job_progress_payload(
+                            "Queued Next Phase",
+                            detail,
+                            60,
+                        )
+                    )
+                    self._update_job_state(job_id, status="queued", result=queued_result, error=None)
                 else:
                     self._update_job_state(job_id, status="completed", result=result, error=None)
             except JobCancelledError:
