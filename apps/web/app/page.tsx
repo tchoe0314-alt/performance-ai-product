@@ -3414,7 +3414,7 @@ export default function PerformanceAIDashboard() {
     ...(previewReview?.rerun_stages ?? []).map((item) => toReadableLabel(String(item || ""))),
     ...(previewReview?.rerun_reasons ?? []).map((item) => toReadableLabel(String(item || ""))),
   ].filter(Boolean);
-  const whatYouNeedSummary = useMemo(() => {
+  const whatYouNeedSummary = (() => {
     const manualFields =
       currentProject?.project_input?.manual_fields && typeof currentProject.project_input.manual_fields === "object"
         ? currentProject.project_input.manual_fields
@@ -3496,22 +3496,7 @@ export default function PerformanceAIDashboard() {
       inScope: Array.from(new Set(inScope)),
       note,
     };
-  }, [
-    buildingDepth,
-    buildingWidth,
-    currentProject?.project_input,
-    drainage,
-    grading,
-    lotHeight,
-    lotWidth,
-    parkingCount,
-    previewBlockedReasons,
-    previewReview?.release_status,
-    previewReview?.requested_deliverables,
-    projectType,
-    roads,
-    utilities,
-  ]);
+  })();
 
   return (
     <div className="min-h-screen bg-[#f7f7f8] text-slate-950">
