@@ -3328,6 +3328,71 @@ export default function PerformanceAIDashboard() {
       : previewReview?.unresolved_conflict_count ?? 0;
   const combinedPreviewPhase =
     previewPhaseEntries.find((phase) => phase.key === "combined_view") ?? null;
+  const phaseOnlyEntries = previewPhaseEntries.filter(
+    (phase) => phase.key !== "combined_view",
+  );
+  const previewCompletedPhaseCount = (() => {
+    const explicitCount = Number(
+      previewReview?.phase_checkpoints?.combined_view?.completed_phase_count ?? NaN,
+    );
+    if (Number.isFinite(explicitCount) && explicitCount >= 0) {
+      return explicitCount;
+    }
+    return phaseOnlyEntries.filter((phase) =>
+      ["ready", "complete"].includes(phase.status.toLowerCase()),
+    ).length;
+  })();
+  const previewTotalPhaseCount = (() => {
+    const explicitTotal = Number(
+      previewReview?.phase_checkpoints?.combined_view?.total_phase_count ?? NaN,
+    );
+    if (Number.isFinite(explicitTotal) && explicitTotal > 0) {
+      return explicitTotal;
+    }
+    return phaseOnlyEntries.length;
+  })();
+  const previewRunningPhase =
+    phaseOnlyEntries.find((phase) =>
+      ["running"].includes(phase.status.toLowerCase()) ||
+      phase.currentStatus.toLowerCase() === "running",
+    ) ?? null;
+  const previewNextPendingPhase =
+    phaseOnlyEntries.find((phase) =>
+      ["pending", "partial", "review"].includes(phase.status.toLowerCase()),
+    ) ?? null;
+  const previewPhaseProgressPercent = (() => {
+    if (!previewTotalPhaseCount) return 0;
+    const explicitJobProgress = Number(
+      previewReview?.phase_checkpoints?.combined_view?.job_progress ?? NaN,
+    );
+    const base = Math.max(
+      0,
+      Math.min(1, previewCompletedPhaseCount / previewTotalPhaseCount),
+    );
+    if (Number.isFinite(explicitJobProgress) && previewRunningPhase) {
+      const perPhase = 1 / previewTotalPhaseCount;
+      const runningFraction = Math.max(0, Math.min(1, explicitJobProgress / 100));
+      return Math.round(
+        Math.max(
+          base,
+          Math.min(1, base + perPhase * runningFraction),
+        ) * 100,
+      );
+    }
+    if (previewRunningPhase) {
+      return Math.round(
+        Math.min(1, base + 0.5 / previewTotalPhaseCount) * 100,
+      );
+    }
+    return Math.round(base * 100);
+  })();
+  const previewPhaseHeadline = previewRunningPhase
+    ? `Continuing with ${previewRunningPhase.label}`
+    : previewNextPendingPhase
+      ? `Waiting to continue with ${previewNextPendingPhase.label}`
+      : previewTotalPhaseCount > 0
+        ? `${previewCompletedPhaseCount}/${previewTotalPhaseCount} phases complete`
+        : "";
   const previewRerunSignals = [
     ...(previewReview?.rerun_stages ?? []).map((item) => toReadableLabel(String(item || ""))),
     ...(previewReview?.rerun_reasons ?? []).map((item) => toReadableLabel(String(item || ""))),
@@ -3915,6 +3980,20 @@ export default function PerformanceAIDashboard() {
                               {toReadableLabel(combinedPreviewPhase.status)}
                             </span>
                           </div>
+                          {previewTotalPhaseCount > 0 ? (
+                            <div className="mt-4">
+                              <div className="flex items-center justify-between gap-3 text-xs font-medium text-slate-500">
+                                <span>{previewPhaseHeadline}</span>
+                                <span>{previewPhaseProgressPercent}%</span>
+                              </div>
+                              <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+                                <div
+                                  className="h-full rounded-full bg-slate-900 transition-all duration-500"
+                                  style={{ width: `${previewPhaseProgressPercent}%` }}
+                                />
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
                       {previewPhaseEntries.length ? (
