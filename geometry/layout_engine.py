@@ -1227,10 +1227,6 @@ def _circle_action(x: float, y: float, radius: float, layer: str, label: Optiona
 
 
 def _layout_to_actions(layout: Dict[str, Any]) -> List[Dict[str, Any]]:
-    frontage_action = _rect_action_from_obj(layout["frontage_road"], "FRONTAGE", "PAVEMENT")
-    frontage_action["label"] = None
-    frontage_action["synthetic_layout_surface"] = True
-    frontage_action["semantic_surface_role"] = "circulation"
     driveway_action = _rect_action_from_obj(layout["driveway"], "ACCESS", "PAVEMENT")
     driveway_action["label"] = None
     driveway_action["synthetic_layout_surface"] = True
@@ -1238,7 +1234,6 @@ def _layout_to_actions(layout: Dict[str, Any]) -> List[Dict[str, Any]]:
     actions: List[Dict[str, Any]] = [
         _rect_action_from_obj(layout["lot"], "LOT", "SITE"),
         _rect_action_from_obj(layout["buildable"], "BUILDABLE", "SETBACK"),
-        frontage_action,
         _rect_action_from_obj(layout["building"], "BLDG", "BUILDING"),
         _rect_action_from_obj(layout["parking"], "PARK", "PARKING"),
         driveway_action,
