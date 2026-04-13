@@ -885,6 +885,33 @@ def _driveway_centerline(driveway: Rect) -> List[List[float]]:
     return [[x, driveway["y"]], [x, _rect_top(driveway)]]
 
 
+def _local_collector_from_parking(parking: Rect, lot: Rect, street_edge: str, road_standards: Dict[str, float]) -> Rect:
+    street_edge = _normalize_street_edge(street_edge)
+    depth = min(18.0, max(10.0, road_standards["drive_width"] * 0.6))
+    offset = 2.0
+
+    if street_edge == "bottom":
+        width = min(parking["w"] + 4.0, lot["w"] * 0.78)
+        x = _clamp(parking["x"] - 2.0, lot["x"], _rect_right(lot) - width)
+        y = max(lot["y"], parking["y"] - depth - offset)
+        return _rect(x, y, width, depth)
+    if street_edge == "top":
+        width = min(parking["w"] + 4.0, lot["w"] * 0.78)
+        x = _clamp(parking["x"] - 2.0, lot["x"], _rect_right(lot) - width)
+        y = min(_rect_top(lot) - depth, _rect_top(parking) + offset)
+        return _rect(x, y, width, depth)
+    if street_edge == "left":
+        height = min(parking["h"] + 4.0, lot["h"] * 0.78)
+        y = _clamp(parking["y"] - 2.0, lot["y"], _rect_top(lot) - height)
+        x = max(lot["x"], parking["x"] - depth - offset)
+        return _rect(x, y, depth, height)
+
+    height = min(parking["h"] + 4.0, lot["h"] * 0.78)
+    y = _clamp(parking["y"] - 2.0, lot["y"], _rect_top(lot) - height)
+    x = min(_rect_right(lot) - depth, _rect_right(parking) + offset)
+    return _rect(x, y, depth, height)
+
+
 def _building_entry_point(building: Rect, street_edge: str) -> Point:
     street_edge = _normalize_street_edge(street_edge)
     if street_edge == "bottom":
@@ -1227,16 +1254,25 @@ def _circle_action(x: float, y: float, radius: float, layer: str, label: Optiona
 
 
 def _layout_to_actions(layout: Dict[str, Any]) -> List[Dict[str, Any]]:
-    driveway_action = _rect_action_from_obj(layout["driveway"], "ACCESS", "PAVEMENT")
-    driveway_action["label"] = None
-    driveway_action["synthetic_layout_surface"] = True
-    driveway_action["semantic_surface_role"] = "circulation"
+    collector_action = _rect_action_from_obj(
+        _local_collector_from_parking(
+            layout["parking"],
+            layout["lot"],
+            layout["street_edge"],
+            layout["road_standards"],
+        ),
+        None,
+        "PAVEMENT",
+    )
+    collector_action["label"] = None
+    collector_action["synthetic_layout_surface"] = True
+    collector_action["semantic_surface_role"] = "circulation"
     actions: List[Dict[str, Any]] = [
         _rect_action_from_obj(layout["lot"], "LOT", "SITE"),
         _rect_action_from_obj(layout["buildable"], "BUILDABLE", "SETBACK"),
         _rect_action_from_obj(layout["building"], "BLDG", "BUILDING"),
         _rect_action_from_obj(layout["parking"], "PARK", "PARKING"),
-        driveway_action,
+        collector_action,
     ]
 
     for line in layout.get("parking_stall_lines", []):
@@ -1247,7 +1283,10 @@ def _layout_to_actions(layout: Dict[str, Any]) -> List[Dict[str, Any]]:
         mx, my = _midpoint(tuple(sidewalk["points"][0]), tuple(sidewalk["points"][-1]))
         actions.append(_text_action(mx, my, f'SW {sidewalk.get("width", 5.0):.1f}', layer=sidewalk.get("layer", "WALK"), h=0.85))
 
-    if layout.get("fire_lane"):
+    if layout.get("fire_lane") and not (
+        _safe_bool(layout["fire_lane"].get("synthetic_fire_lane"))
+        or _safe_bool(layout["fire_lane"].get("fire_access"))
+    ):
         fire_layer = "PAVEMENT" if _safe_bool(layout["fire_lane"].get("synthetic_fire_lane")) or _safe_bool(layout["fire_lane"].get("fire_access")) else layout["fire_lane"].get("layer", "FIRE")
         fire_label = None if fire_layer == "PAVEMENT" else layout["fire_lane"].get("label")
         actions.append(

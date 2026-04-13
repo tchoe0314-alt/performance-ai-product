@@ -112,6 +112,33 @@ class LayoutEngineLegacyInferenceTests(unittest.TestCase):
             any(float(action.get("width") or 0.0) >= 100.0 and float(action.get("height") or 0.0) >= 20.0 for action in pavement_rects)
         )
 
+    def test_simple_layout_actions_do_not_emit_long_driveway_stem_or_synthetic_fire_polyline(self) -> None:
+        layout = generate_smart_layout(
+            lot={"x": 0.0, "y": 0.0, "w": 120.0, "h": 100.0},
+            setback=10.0,
+            layout_strategy="front_parking",
+            street_edge="bottom",
+            site_type="commercial_pad",
+        )
+
+        actions = _layout_to_actions(layout)
+        pavement_rects = [
+            action
+            for action in actions
+            if str(action.get("layer") or "").upper() == "PAVEMENT"
+            and str(action.get("task") or "").lower() == "rectangle"
+        ]
+        self.assertFalse(
+            any(float(action.get("height") or 0.0) >= 45.0 and float(action.get("width") or 0.0) <= 35.0 for action in pavement_rects)
+        )
+        self.assertFalse(
+            any(
+                str(action.get("layer") or "").upper() == "PAVEMENT"
+                and str(action.get("task") or "").lower() == "polyline"
+                for action in actions
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
