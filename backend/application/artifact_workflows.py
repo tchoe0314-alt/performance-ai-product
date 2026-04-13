@@ -178,10 +178,10 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
             if not name or name in cleaned:
                 continue
             cleaned.append(name)
+        if release_ready:
+            return []
         if len(cleaned) > 1:
             cleaned = [item for item in cleaned if item.lower() != "general"]
-        if release_ready and all(item.lower() in {"general", "validation"} for item in cleaned):
-            return []
         return cleaned
 
     def _current_export_guard_state() -> tuple[list[str], list[str]]:
@@ -225,7 +225,7 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         }
         if not normalized:
             return {}
-        if release_status == "ready" and release_ready and not blocked_exports and not blocked_reasons and not failed_deliverables:
+        if release_status == "ready" and not blocked_exports and not blocked_reasons and not failed_deliverables:
             for name, phase in normalized.items():
                 if name == "combined_view":
                     continue
@@ -330,10 +330,6 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
     ready_deliverables = list(run_summary.get("ready_deliverables") or [])
     extra_deliverables = list(run_summary.get("extra_deliverables") or [])
     release_ready = bool(reliability.get("release_ready")) or bool(final_meta.get("release_ready"))
-    unresolved_issue_categories = _clean_review_categories(
-        unresolved_issue_categories,
-        release_ready=release_ready and not blocked_exports and not blocked_reasons and not failed_deliverables,
-    )
     if blocked_exports or blocked_reasons or failed_deliverables:
         release_status = "blocked"
         release_note = "Blocked until outstanding export issues are resolved."
@@ -349,10 +345,15 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
     else:
         release_status = "review"
         release_note = "Needs engineering review before release."
+    effective_release_ready = release_status == "ready" and not blocked_exports and not blocked_reasons and not failed_deliverables
+    unresolved_issue_categories = _clean_review_categories(
+        unresolved_issue_categories,
+        release_ready=effective_release_ready,
+    )
     phase_checkpoints = _normalize_phase_checkpoints(
         dict(run_summary.get("phase_checkpoints") or {}),
         release_status=release_status,
-        release_ready=release_ready,
+        release_ready=effective_release_ready,
         blocked_exports=blocked_exports,
         blocked_reasons=blocked_reasons,
         failed_deliverables=failed_deliverables,

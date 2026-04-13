@@ -574,6 +574,54 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertEqual(review["phase_checkpoints"]["combined_view"]["status"], "ready")
         self.assertEqual(review["phase_checkpoints"]["combined_view"]["completed_phase_count"], 5)
 
+    def test_build_preview_response_normalizes_legacy_ready_status_when_reliability_flag_is_false(self):
+        service = FakeArtifactService()
+        response = build_preview_response(
+            artifact_service=service,
+            result_data={
+                "run_summary": {
+                    "engineering_status": {"trust_score": 74.0},
+                    "reliability_summary": {"operational_state": "review", "release_ready": False},
+                    "optimization_summary": {},
+                    "convergence_summary": {
+                        "converged": False,
+                        "passes_run": 1,
+                        "unresolved_conflict_count": 0,
+                        "assumption_summary": {"count": 1, "categories": ["design"], "examples": ["Legacy saved run."]},
+                        "fix_summary": {"autofix_actions": []},
+                        "rerun_summary": {"total_reruns": 0, "stage_counts": {}, "reason_counts": {}},
+                        "dominant_issue_categories": [],
+                        "unresolved_issue_categories": ["coordination", "validation"],
+                        "blocked_exports": [],
+                        "blocked_reasons": [],
+                    },
+                    "requested_deliverables": ["site_plan", "storm_pipe_plan"],
+                    "produced_deliverables": ["site_plan", "storm_pipe_plan"],
+                    "failed_deliverables": [],
+                    "ready_deliverables": ["site_plan", "storm_pipe_plan"],
+                    "extra_deliverables": [],
+                    "phase_checkpoints": {
+                        "layout": {"label": "Layout", "status": "partial", "ready": False, "has_data": True, "messages": ["Stage skipped because canonical state is already clean."], "deliverables": ["site_plan"]},
+                        "grading": {"label": "Grading", "status": "complete", "ready": True, "has_data": True, "deliverables": []},
+                        "drainage_storm": {"label": "Drainage and Storm", "status": "complete", "ready": True, "has_data": True, "deliverables": ["storm_pipe_plan"]},
+                        "utilities": {"label": "Utilities", "status": "partial", "ready": False, "has_data": False, "messages": ["Sanitary stage skipped because sanitary was not requested."], "deliverables": []},
+                        "coordination_validation": {"label": "Coordination and Validation", "status": "failed", "ready": False, "has_data": True, "messages": ["Coordination stage completed with unresolved conflicts."], "deliverables": []},
+                        "combined_view": {"label": "Combined View", "status": "review", "ready": False, "completed_phase_count": 2, "total_phase_count": 5, "blocked_exports": [], "blocked_reasons": []},
+                    },
+                },
+                "final_plan": {
+                    "project_name": "Legacy Ready Status",
+                    "actions": [{"layer": "BUILDING"}],
+                    "meta": {"release_review": {"release_status": "ready", "release_note": "Release-ready engineering state."}},
+                },
+            },
+        )
+        review = response["summary"]["review"]
+        self.assertEqual(review["release_status"], "ready")
+        self.assertEqual(review["review_categories"], [])
+        self.assertEqual(review["phase_checkpoints"]["combined_view"]["status"], "ready")
+        self.assertEqual(review["phase_checkpoints"]["combined_view"]["completed_phase_count"], 5)
+
     def test_build_preview_response_drops_general_when_other_review_categories_exist(self):
         service = FakeArtifactService()
         response = build_preview_response(
