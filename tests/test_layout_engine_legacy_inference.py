@@ -1,6 +1,6 @@
 import unittest
 
-from geometry.layout_engine import _infer_drive_aisles_from_legacy, _infer_roads_from_legacy
+from geometry.layout_engine import _build_expanded_plan, _infer_drive_aisles_from_legacy, _infer_roads_from_legacy
 
 
 class LayoutEngineLegacyInferenceTests(unittest.TestCase):
@@ -39,6 +39,32 @@ class LayoutEngineLegacyInferenceTests(unittest.TestCase):
         roads = _infer_roads_from_legacy(parsed, site_box)
 
         self.assertEqual(roads, [])
+
+    def test_expanded_multi_building_plan_drops_schematic_raw_actions(self) -> None:
+        plan = _build_expanded_plan(
+            {
+                "project_type": "mixed_use",
+                "lot": {"w": 620.0, "h": 980.0},
+                "buildings": [
+                    {"name": "MF-1", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "MF-2", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "MF-3", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "Retail", "type": "retail", "width": 70, "depth": 45},
+                ],
+                "actions": [
+                    {"task": "text_note", "layer": "PAVEMENT", "origin": [290, 534], "text": "FRONTAGE ACCESS"},
+                    {"task": "polyline", "layer": "ROAD", "points": [[0, 0], [300, 300]]},
+                    {"task": "circle", "layer": "FIRE", "center": [10, 10], "radius": 15},
+                    {"task": "polyline", "layer": "PIPE", "points": [[220, 520], [310, 430], [410, 380]]},
+                ],
+            }
+        )
+
+        actions = plan["actions"]
+        self.assertFalse(any("FRONTAGE" in str(action.get("text") or "").upper() for action in actions))
+        self.assertFalse(any(str(action.get("layer") or "").upper() == "ROAD" and str(action.get("task") or "").lower() == "polyline" for action in actions))
+        self.assertFalse(any(str(action.get("layer") or "").upper() == "FIRE" and str(action.get("task") or "").lower() == "circle" for action in actions))
+        self.assertTrue(any(str(action.get("layer") or "").upper() == "PIPE" for action in actions))
 
 
 if __name__ == "__main__":

@@ -1227,13 +1227,19 @@ def _circle_action(x: float, y: float, radius: float, layer: str, label: Optiona
 
 
 def _layout_to_actions(layout: Dict[str, Any]) -> List[Dict[str, Any]]:
+    frontage_action = _rect_action_from_obj(layout["frontage_road"], "FRONTAGE", "PAVEMENT")
+    frontage_action["synthetic_layout_surface"] = True
+    frontage_action["semantic_surface_role"] = "circulation"
+    driveway_action = _rect_action_from_obj(layout["driveway"], "ACCESS", "PAVEMENT")
+    driveway_action["synthetic_layout_surface"] = True
+    driveway_action["semantic_surface_role"] = "circulation"
     actions: List[Dict[str, Any]] = [
         _rect_action_from_obj(layout["lot"], "LOT", "SITE"),
         _rect_action_from_obj(layout["buildable"], "BUILDABLE", "SETBACK"),
-        _rect_action_from_obj(layout["frontage_road"], "FRONTAGE", "PAVEMENT"),
+        frontage_action,
         _rect_action_from_obj(layout["building"], "BLDG", "BUILDING"),
         _rect_action_from_obj(layout["parking"], "PARK", "PARKING"),
-        _rect_action_from_obj(layout["driveway"], "ACCESS", "PAVEMENT"),
+        driveway_action,
     ]
 
     for line in layout.get("parking_stall_lines", []):
@@ -1650,6 +1656,25 @@ def _is_schematic_frontage_item(item: Any) -> bool:
     if "FRONTAGE" in label or "ACCESS" in label:
         return True
     return item_type in {"frontage", "access_drive", "collector_aisle"}
+
+
+def _is_schematic_layout_action(action: Any) -> bool:
+    if not isinstance(action, dict):
+        return False
+    layer = _safe_str(action.get("layer"), "").upper()
+    task = _safe_str(action.get("task"), "").lower()
+    label = _safe_str(action.get("label"), "").upper()
+    text = _safe_str(action.get("text"), "").upper()
+    item_type = _safe_str(action.get("type"), "").lower()
+    if "FRONTAGE" in label or "FRONTAGE" in text or "ACCESS" in label or "ACCESS" in text:
+        return True
+    if item_type in {"frontage", "access_drive", "collector_aisle", "parking_aisle", "fire_lane"}:
+        return True
+    if layer in {"ROAD", "FIRE"} and task in {"polyline", "polygon", "circle"}:
+        return True
+    if layer == "ROUTE":
+        return True
+    return False
 
 
 def _infer_sidewalks_from_legacy(buildings: List[Dict[str, Any]], parking_areas: List[Dict[str, Any]], parsed: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -2124,7 +2149,10 @@ def _build_expanded_plan(parsed: Dict[str, Any]) -> Dict[str, Any]:
     _append_grading_actions(actions, grading, site_box, buildings, ponds)
 
     if parsed.get("actions"):
-        actions.extend(parsed["actions"])
+        extra_actions = _nonempty_list(parsed.get("actions"))
+        if is_multi_building_program:
+            extra_actions = [action for action in extra_actions if not _is_schematic_layout_action(action)]
+        actions.extend(extra_actions)
 
     assumptions = list(parsed.get("assumptions") or [])
     assumptions.extend(
