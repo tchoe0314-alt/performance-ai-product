@@ -112,6 +112,35 @@ def _candidate_display_payloads(result_data: Dict[str, Any]) -> list[Dict[str, A
     return candidates
 
 
+def _payload_from_input_summary(raw: Any) -> Dict[str, Any]:
+    if not isinstance(raw, dict) or not raw:
+        return {}
+    buildings = [item for item in list(raw.get("buildings") or []) if isinstance(item, dict)]
+    lot = dict(raw.get("lot") or {})
+    if not buildings and not lot:
+        return {}
+    normalized: Dict[str, Any] = {}
+    if lot:
+        normalized["lot"] = lot
+    if raw.get("project_type"):
+        normalized["project_type"] = raw.get("project_type")
+    if raw.get("site_type"):
+        normalized["site_type"] = raw.get("site_type")
+    if raw.get("street_edge"):
+        normalized["street_edge"] = raw.get("street_edge")
+    if buildings:
+        normalized["buildings"] = [
+            {
+                "name": item.get("name"),
+                "type": item.get("type"),
+                "width": item.get("width"),
+                "depth": item.get("depth"),
+            }
+            for item in buildings
+        ]
+    return normalized
+
+
 def _enrich_result_data_from_project(
     result_data: Dict[str, Any],
     *,
@@ -139,6 +168,14 @@ def _enrich_result_data_from_project(
     project_latest_result = dict(project.get("latest_result") or {})
     project_best = _best_display_payload(project_latest_result)
     project_best_count = _payload_building_count(project_best)
+    workflow_runs = [
+        item
+        for item in list(dict(project.get("metadata") or {}).get("workflow", {}).get("runs") or [])
+        if isinstance(item, dict)
+    ]
+    workflow_input_payload = _payload_from_input_summary(
+        dict(workflow_runs[0]).get("input_summary") if workflow_runs else {}
+    )
     request_payload = (
         dict(project_latest_result.get("request_metadata") or {}).get("request_payload")
         or dict(project_latest_result.get("metadata") or {}).get("request_payload")
@@ -155,6 +192,14 @@ def _enrich_result_data_from_project(
         enriched["request_payload"] = request_payload
         request_metadata = dict(enriched.get("request_metadata") or {})
         request_metadata["request_payload"] = request_payload
+        enriched["request_metadata"] = request_metadata
+
+    if workflow_input_payload and (
+        current_building_count < 2
+        or (legacy_display and _payload_display_richness(workflow_input_payload) > _payload_display_richness(current_best))
+    ):
+        request_metadata = dict(enriched.get("request_metadata") or {})
+        request_metadata["workflow_input_summary"] = workflow_input_payload
         enriched["request_metadata"] = request_metadata
 
     if project_best and (
@@ -208,6 +253,11 @@ def _payload_display_richness(payload: Dict[str, Any]) -> int:
 
 def _best_display_payload(result_data: Dict[str, Any]) -> Dict[str, Any]:
     candidates = _candidate_display_payloads(result_data)
+    workflow_input = _payload_from_input_summary(
+        dict(result_data.get("request_metadata") or {}).get("workflow_input_summary")
+    )
+    if workflow_input:
+        candidates.append(workflow_input)
     if not candidates:
         return {}
     best = max(

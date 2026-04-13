@@ -444,6 +444,24 @@ def build_run_summary(
     optimization = dict(plan_meta.get("optimization_summary") or {})
     run_id = metadata.get("_workflow_run_id") or new_workflow_id("run")
     created_at = now_ts()
+    parsed_payload = dict(result_data.get("parsed_payload") or {})
+    input_summary = {
+        "project_type": parsed_payload.get("project_type") or parsed_payload.get("site_type") or "",
+        "site_type": parsed_payload.get("site_type") or parsed_payload.get("project_type") or "",
+        "street_edge": parsed_payload.get("street_edge") or "",
+        "lot": dict(parsed_payload.get("lot") or {}),
+        "building_count": len([item for item in list(parsed_payload.get("buildings") or []) if isinstance(item, dict)]),
+        "buildings": [
+            {
+                "name": str(item.get("name") or item.get("label") or item.get("type") or ""),
+                "type": str(item.get("type") or ""),
+                "width": item.get("width", item.get("w")),
+                "depth": item.get("depth", item.get("d")),
+            }
+            for item in list(parsed_payload.get("buildings") or [])
+            if isinstance(item, dict)
+        ],
+    }
     blocked_exports = list(
         final_release_review.get("blocked_exports")
         if "blocked_exports" in final_release_review
@@ -502,6 +520,7 @@ def build_run_summary(
         "job_id": job_id,
         "source": source,
         "created_at": created_at,
+        "input_summary": input_summary,
         "input_mode": metadata.get("input_mode") or dict(result_data.get("parsed_payload") or {}).get("input_mode"),
         "strict_mode": bool(dict(result_data.get("parsed_payload") or {}).get("strict_mode", False)),
         "success": success,

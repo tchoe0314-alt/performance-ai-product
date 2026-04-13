@@ -284,6 +284,55 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertIn("MF-1", labels)
         self.assertIn("Retail", labels)
 
+    def test_build_preview_response_can_recover_from_workflow_input_summary(self):
+        service = FakeArtifactService()
+        store = FakeProjectStore()
+        store.project["metadata"] = {
+            "workflow": {
+                "runs": [
+                    {
+                        "input_summary": {
+                            "project_type": "mixed_use",
+                            "site_type": "mixed_use",
+                            "street_edge": "bottom",
+                            "lot": {"w": 620.0, "h": 980.0},
+                            "buildings": [
+                                {"name": "MF-1", "type": "multifamily", "width": 110, "depth": 58},
+                                {"name": "MF-2", "type": "multifamily", "width": 110, "depth": 58},
+                                {"name": "MF-3", "type": "multifamily", "width": 110, "depth": 58},
+                                {"name": "Retail", "type": "retail", "width": 70, "depth": 45},
+                            ],
+                        }
+                    }
+                ]
+            }
+        }
+        response = build_preview_response(
+            artifact_service=service,
+            project_store=store,
+            user_id="u1",
+            project_id="p1",
+            result_data={
+                "final_plan": {
+                    "project_name": "Thin Legacy Workflow Scene",
+                    "actions": [
+                        {"task": "rectangle", "layer": "BUILDING", "origin": [250, 700], "width": 80, "height": 50, "label": "BLDG"},
+                        {"task": "rectangle", "layer": "PAVEMENT", "origin": [180, 520], "width": 260, "height": 28, "label": "FRONTAGE"},
+                        {"task": "text_note", "layer": "PAVEMENT", "origin": [290, 534], "text": "FRONTAGE ACCESS"},
+                    ],
+                    "meta": {},
+                },
+            },
+        )
+        self.assertTrue(response["preview_image_data_url"].startswith("data:image/png;base64,"))
+        preview_buildings = [
+            action for action in service.preview_plan["actions"]
+            if action.get("layer") == "BUILDING" and action.get("task") == "rectangle"
+        ]
+        labels = {str(action.get("label") or "") for action in preview_buildings}
+        self.assertIn("MF-1", labels)
+        self.assertIn("Retail", labels)
+
     def test_export_dxf_artifact_enriches_thin_result_from_project_record(self):
         service = FakeArtifactService()
         store = FakeProjectStore()
