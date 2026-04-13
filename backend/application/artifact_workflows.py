@@ -128,6 +128,12 @@ def _enrich_result_data_from_project(
     enriched = dict(result_data or {})
     current_best = _best_display_payload(enriched)
     current_building_count = _payload_building_count(current_best)
+    current_actions = [
+        action
+        for action in list(dict(enriched.get("final_plan") or {}).get("actions") or [])
+        if isinstance(action, dict)
+    ]
+    legacy_display = _should_rebuild_display_plan(current_actions, current_building_count)
 
     project_input = project.get("project_input")
     project_latest_result = dict(project.get("latest_result") or {})
@@ -139,23 +145,26 @@ def _enrich_result_data_from_project(
         or project.get("request_payload")
     )
 
-    if project_input and current_building_count < 2:
-        enriched.setdefault("project_input", project_input)
+    if project_input and (current_building_count < 2 or legacy_display):
+        enriched["project_input"] = project_input
         request_metadata = dict(enriched.get("request_metadata") or {})
-        request_metadata.setdefault("project_input", project_input)
+        request_metadata["project_input"] = project_input
         enriched["request_metadata"] = request_metadata
 
-    if request_payload and current_building_count < 2:
-        enriched.setdefault("request_payload", request_payload)
+    if request_payload and (current_building_count < 2 or legacy_display):
+        enriched["request_payload"] = request_payload
         request_metadata = dict(enriched.get("request_metadata") or {})
-        request_metadata.setdefault("request_payload", request_payload)
+        request_metadata["request_payload"] = request_payload
         enriched["request_metadata"] = request_metadata
 
-    if project_best_count > current_building_count:
+    if project_best and (
+        project_best_count > current_building_count
+        or (legacy_display and _payload_display_richness(project_best) > _payload_display_richness(current_best))
+    ):
         if project_best:
-            enriched.setdefault("parsed_payload", project_best)
+            enriched["parsed_payload"] = project_best
             request_metadata = dict(enriched.get("request_metadata") or {})
-            request_metadata.setdefault("parsed_payload", project_best)
+            request_metadata["parsed_payload"] = project_best
             enriched["request_metadata"] = request_metadata
 
     return enriched
@@ -168,6 +177,35 @@ def _payload_building_count(payload: Dict[str, Any]) -> int:
     return len([item for item in raw_buildings if isinstance(item, dict)])
 
 
+def _payload_display_richness(payload: Dict[str, Any]) -> int:
+    score = _payload_building_count(payload) * 100
+    if isinstance(payload.get("lot"), dict) and payload.get("lot"):
+        score += 20
+    for key in (
+        "parking_areas",
+        "drive_aisles",
+        "roads_network",
+        "sidewalks",
+        "fire_lanes",
+        "drainage_structures",
+        "pipe_network",
+        "ponds",
+        "utility_network",
+    ):
+        value = payload.get(key)
+        if isinstance(value, list) and value:
+            score += 12
+    if isinstance(payload.get("grading"), dict) and payload.get("grading"):
+        score += 8
+    if payload.get("project_type"):
+        score += 4
+    if payload.get("site_type"):
+        score += 4
+    if payload.get("street_edge"):
+        score += 2
+    return score
+
+
 def _best_display_payload(result_data: Dict[str, Any]) -> Dict[str, Any]:
     candidates = _candidate_display_payloads(result_data)
     if not candidates:
@@ -175,8 +213,7 @@ def _best_display_payload(result_data: Dict[str, Any]) -> Dict[str, Any]:
     best = max(
         candidates,
         key=lambda payload: (
-            _payload_building_count(payload),
-            1 if isinstance(payload.get("lot"), dict) and payload.get("lot") else 0,
+            _payload_display_richness(payload),
             len(payload),
         ),
     )
