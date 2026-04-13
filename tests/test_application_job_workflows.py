@@ -188,10 +188,12 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertEqual(result["metadata"]["run_summary"]["run_id"], "run_1")
         self.assertTrue(result["final_plan"]["export_ready"])
         self.assertTrue(result["final_plan"]["release_ready"])
+        self.assertEqual(result["final_plan"]["release_status"], "ready")
         self.assertEqual(result["final_plan"]["blockers"], [])
         self.assertEqual(result["final_plan"]["deliverables"]["ready"], [])
         self.assertEqual(result["final_plan"]["meta"]["phase_checkpoints"]["layout"]["status"], "complete")
-        self.assertFalse(result["final_plan"]["meta"]["phase_checkpoints"]["combined_view"]["ready"])
+        self.assertTrue(result["final_plan"]["meta"]["phase_checkpoints"]["combined_view"]["ready"])
+        self.assertEqual(result["final_plan"]["meta"]["phase_checkpoints"]["combined_view"]["completed_phase_count"], 2)
         self.assertEqual(result["metadata"]["job_context"]["job_id"], "job_1")
         self.assertEqual(result["metadata"]["job_context"]["source"], "job_queue")
         self.assertEqual(result["metadata"]["job_context"]["user_id"], "u1")
@@ -204,6 +206,10 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertEqual(
             store.saved_payload["latest_result"]["final_plan"]["meta"]["release_review"]["phase_checkpoints"]["layout"]["status"],
             "complete",
+        )
+        self.assertEqual(
+            store.saved_payload["latest_result"]["final_plan"]["meta"]["release_review"]["release_status"],
+            "ready",
         )
         self.assertEqual(
             [item["stage"] for item in progress_updates],

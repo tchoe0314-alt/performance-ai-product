@@ -129,6 +129,72 @@ def build_orchestrate_job_runner(
     merge_project_metadata: Callable[..., Dict[str, Any]],
     final_plan_from_result: FinalPlanBuilderProtocol,
 ) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
+    def _is_benign_skip_message(message: str) -> bool:
+        lowered = str(message or "").strip().lower()
+        if not lowered:
+            return False
+        return any(
+            token in lowered
+            for token in (
+                "skipped because canonical state is already clean",
+                "was not requested",
+                "omitted by user intent",
+                "source=omit",
+                "no profile or cross-section deliverables were requested",
+            )
+        )
+
+    def _normalize_completed_phase_checkpoints(
+        phase_checkpoints: Dict[str, Any],
+        *,
+        release_status: str,
+        release_ready: bool,
+        blocked_exports: list[str],
+        blocked_reasons: list[str],
+        failed_deliverables: list[str],
+    ) -> Dict[str, Any]:
+        normalized = {
+            str(name): dict(value)
+            for name, value in dict(phase_checkpoints or {}).items()
+            if isinstance(value, dict)
+        }
+        if not normalized:
+            return {}
+        if release_status != "ready" or blocked_exports or blocked_reasons or failed_deliverables:
+            return normalized
+
+        for name, phase in normalized.items():
+            if name == "combined_view":
+                continue
+            if str(phase.get("status") or "").lower() == "running":
+                continue
+            if list(phase.get("blockers") or []) or list(phase.get("blocked_reasons") or []):
+                continue
+            has_data = bool(phase.get("has_data"))
+            deliverables = list(phase.get("deliverables") or [])
+            benign_skip = any(_is_benign_skip_message(message) for message in list(phase.get("messages") or []))
+            if has_data or not deliverables or benign_skip:
+                phase["status"] = "complete"
+                phase["ready"] = True
+
+        inferred_total = len([name for name in normalized.keys() if name != "combined_view"])
+        combined = dict(normalized.get("combined_view") or {})
+        total_phase_count = max(
+            1,
+            int(combined.get("total_phase_count") or 0),
+            inferred_total,
+        )
+        combined["label"] = str(combined.get("label") or "Combined View")
+        combined["status"] = "ready"
+        combined["ready"] = bool(release_ready)
+        combined["completed_phase_count"] = total_phase_count
+        combined["total_phase_count"] = total_phase_count
+        combined["blocked_exports"] = []
+        combined["blocked_reasons"] = []
+        combined["note"] = "Combined engineering view is release-ready."
+        normalized["combined_view"] = combined
+        return normalized
+
     def _persist_runtime_phase_checkpoint(
         *,
         user_id: Optional[str],
@@ -393,6 +459,24 @@ def build_orchestrate_job_runner(
             reliability["blocked_export_count"] = len(blocked_exports)
             if blocked_reasons or blocked_exports:
                 reliability["primary_attention"] = (blocked_reasons[:1] or blocked_exports[:1])[0]
+            failed_deliverables = [str(item) for item in list(run_summary.get("failed_deliverables") or []) if str(item)]
+            release_status = "blocked" if (blocked_reasons or blocked_exports or failed_deliverables) else ("ready" if bool(reliability.get("release_ready")) else "review")
+            release_note = (
+                "Blocked until outstanding export issues are resolved."
+                if release_status == "blocked"
+                else ("Release-ready engineering state." if release_status == "ready" else "Needs engineering review before release.")
+            )
+            normalized_phase_checkpoints = _normalize_completed_phase_checkpoints(
+                dict(run_summary.get("phase_checkpoints") or {}),
+                release_status=release_status,
+                release_ready=bool(reliability.get("release_ready")),
+                blocked_exports=blocked_exports,
+                blocked_reasons=blocked_reasons,
+                failed_deliverables=failed_deliverables,
+            )
+            if normalized_phase_checkpoints:
+                run_summary["phase_checkpoints"] = normalized_phase_checkpoints
+                run_summary["combined_view"] = dict(normalized_phase_checkpoints.get("combined_view") or {})
             run_summary["convergence_summary"] = convergence
             run_summary["reliability_summary"] = reliability
             final_meta["run_summary"] = run_summary
@@ -404,10 +488,13 @@ def build_orchestrate_job_runner(
                 "assumption_summary": assumption_summary,
                 "reliability_summary": reliability,
                 "phase_checkpoints": dict(run_summary.get("phase_checkpoints") or {}),
+                "release_status": release_status,
+                "release_note": release_note,
             }
             final_meta["blockers"] = blocked_reasons or blocked_exports
             final_meta["export_ready"] = not bool(blocked_reasons or blocked_exports)
             final_meta["release_ready"] = bool(reliability.get("release_ready"))
+            final_meta["release_status"] = release_status
             final_meta["deliverables"] = {
                 "requested": list(run_summary.get("requested_deliverables") or []),
                 "produced": list(run_summary.get("produced_deliverables") or []),
@@ -418,6 +505,7 @@ def build_orchestrate_job_runner(
             final_plan["meta"] = final_meta
             final_plan["export_ready"] = not bool(blocked_reasons or blocked_exports)
             final_plan["release_ready"] = bool(reliability.get("release_ready"))
+            final_plan["release_status"] = release_status
             final_plan["blockers"] = blocked_reasons or blocked_exports
             final_plan["deliverables"] = {
                 "requested": list(run_summary.get("requested_deliverables") or []),
