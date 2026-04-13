@@ -609,9 +609,15 @@ def build_orchestrate_job_runner(
                         "final_plan": existing_final_plan,
                     }
                     run_meta = dict(run_payload.get("meta") or {})
+                    orchestrator_meta = dict(run_meta.get("orchestrator_meta") or {})
+                    orchestrator_meta["runtime_resume"] = runtime_resume
+                    run_meta["orchestrator_meta"] = orchestrator_meta
                     run_meta["runtime_resume"] = runtime_resume
                     run_payload["meta"] = run_meta
         run_meta = dict(run_payload.get("meta") or {})
+        orchestrator_meta = dict(run_meta.get("orchestrator_meta") or {})
+        orchestrator_meta["runtime_phase_batch_limit"] = 1
+        run_meta["orchestrator_meta"] = orchestrator_meta
         run_meta["runtime_phase_batch_limit"] = 1
         run_payload["meta"] = run_meta
         run_signature = inspect.signature(run_orchestration)

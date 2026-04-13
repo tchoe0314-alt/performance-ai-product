@@ -374,6 +374,100 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertEqual(progress_updates[1]["detail"], "Running layout phase.")
         self.assertEqual(progress_updates[2]["detail"], "Running grading phase.")
 
+    def test_build_orchestrate_job_runner_passes_runtime_controls_through_orchestrator_meta(self):
+        existing_final_plan = {
+            "project_name": "Demo",
+            "meta": {
+                "stage_completeness": {"statuses": {"layout": "complete"}},
+                "phase_checkpoints": {
+                    "layout": {"status": "complete", "ready": True},
+                    "grading": {"status": "pending", "ready": False},
+                },
+            },
+        }
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Demo",
+                "description": "",
+                "session_id": None,
+                "tags": [],
+                "project_input": {},
+                "latest_result": {"final_plan": existing_final_plan, "metadata": {"run_summary": {"phase_checkpoints": existing_final_plan["meta"]["phase_checkpoints"]}}},
+                "session_state": {},
+                "metadata": {},
+            }
+        )
+        seen_meta = {}
+
+        def run_orchestration(payload, progress_callback=None):
+            nonlocal seen_meta
+            seen_meta = dict(payload.get("meta") or {})
+            return {
+                "success": True,
+                "final_plan": existing_final_plan,
+                "metadata": {
+                    "runtime_should_continue": True,
+                    "runtime_phase_checkpoint": {
+                        "stage_name": "grading",
+                        "status": "complete",
+                        "message": "Grading checkpoint saved.",
+                    },
+                },
+            }
+
+        runner = build_orchestrate_job_runner(
+            project_store=store,
+            update_job_progress=lambda *_args, **_kwargs: None,
+            run_orchestration=run_orchestration,
+            build_run_summary=lambda result, **kwargs: {
+                "run_id": "run_resume",
+                "job_id": kwargs.get("job_id"),
+                "source": "queued_job",
+                "convergence_summary": {
+                    "assumption_summary": {"count": 0, "categories": [], "examples": []},
+                    "unresolved_issue_categories": [],
+                    "blocked_reasons": [],
+                    "blocked_exports": [],
+                },
+                "reliability_summary": {
+                    "operational_state": "review",
+                    "release_ready": False,
+                },
+                "phase_checkpoints": {
+                    "layout": {"status": "complete", "ready": True},
+                    "grading": {"status": "pending", "ready": False},
+                    "combined_view": {"status": "review", "ready": False},
+                },
+                "requested_deliverables": [],
+                "produced_deliverables": [],
+                "ready_deliverables": [],
+                "extra_deliverables": [],
+                "failed_deliverables": [],
+            },
+            merge_project_metadata=lambda metadata, **kwargs: metadata,
+            final_plan_from_result=lambda result, **kwargs: existing_final_plan,
+        )
+
+        result = runner(
+            {
+                "job_id": "job_resume",
+                "job_type": "orchestrate",
+                "user_id": "u1",
+                "project_id": "p1",
+                "payload": {"prompt_text": "run"},
+            }
+        )
+
+        self.assertTrue(result["metadata"]["runtime_should_continue"])
+        orchestrator_meta = dict(seen_meta.get("orchestrator_meta") or {})
+        self.assertEqual(orchestrator_meta.get("runtime_phase_batch_limit"), 1)
+        self.assertEqual(
+            dict(orchestrator_meta.get("runtime_resume") or {}).get("stage_statuses"),
+            {"layout": "complete"},
+        )
+
     def test_build_orchestrate_job_runner_persists_phase_checkpoints_mid_run(self):
         store = FakeProjectStore(
             {
