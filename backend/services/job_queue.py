@@ -241,8 +241,14 @@ class JobQueueService:
             connection.close()
         detail = self._job_summary(record, queue_stats=queue_stats)
         result_payload: Dict[str, Any] = {}
-        if record["status"] in {"completed", "failed", "cancelled"}:
-            result_payload = record.get("result") or {}
+        candidate_result = dict(record.get("result") or {})
+        has_partial_plan = bool(
+            dict(candidate_result.get("final_plan") or {})
+            or dict(candidate_result.get("metadata") or {}).get("run_summary")
+            or dict(candidate_result.get("job_progress") or {}).get("partial_result_ready")
+        )
+        if record["status"] in {"completed", "failed", "cancelled"} or has_partial_plan:
+            result_payload = candidate_result
         detail.update(
             {
                 "payload": record.get("payload") or {},

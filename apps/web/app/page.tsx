@@ -1072,6 +1072,7 @@ export default function PerformanceAIDashboard() {
   const lastJobStatusRef = useRef<Record<string, string>>({});
   const lastStaleJobWarningRef = useRef<Record<string, boolean>>({});
   const lastProjectResultRefreshRef = useRef<Record<string, number>>({});
+  const lastJobPartialResultRefreshRef = useRef<Record<string, number>>({});
   const chatMessagesRef = useRef<ChatMessage[]>([createWelcomeMessage()]);
   const suppressProjectAutoLoadRef = useRef(false);
 
@@ -2589,6 +2590,34 @@ export default function PerformanceAIDashboard() {
             project_id: job.project_id,
             name: currentProject?.name || siteName || "Untitled Project",
           } as ProjectRecord);
+        }
+      }
+      if (
+        job.result &&
+        Object.keys(job.result).length &&
+        job.project_id &&
+        projectId &&
+        job.project_id === projectId &&
+        ["queued", "running"].includes(String(job.status || "").toLowerCase())
+      ) {
+        const partialRefreshStamp =
+          typeof job.updated_at === "number" && Number.isFinite(job.updated_at)
+            ? job.updated_at
+            : Date.now() / 1000;
+        const previousPartialRefresh =
+          lastJobPartialResultRefreshRef.current[job.job_id] ?? 0;
+        if (partialRefreshStamp > previousPartialRefresh) {
+          lastJobPartialResultRefreshRef.current[job.job_id] = partialRefreshStamp;
+          applyBackendResult(job.result);
+          requestPreviewInBackground(
+            {
+              result: job.result,
+              filename_stem: fileName || currentProject?.name || siteName || "civora-ai-plan",
+            },
+            {
+              silentStatus: true,
+            },
+          );
         }
       }
       if (job.status === "completed" && job.result) {

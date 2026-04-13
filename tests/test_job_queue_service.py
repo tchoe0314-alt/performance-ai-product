@@ -117,7 +117,7 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertIsNotNone(job)
         self.assertEqual(job["stage"], "Engineering Run")
         self.assertEqual(job["progress"], 48)
-        self.assertEqual(job["result"], {})
+        self.assertEqual(job["result"]["final_plan"]["name"], "Demo")
 
     def test_get_job_detail_includes_result_after_completion_only(self):
         connection = self.db.connect()
@@ -153,6 +153,41 @@ class JobQueueServiceTest(unittest.TestCase):
         job = self.queue.get_job_detail(user_id=self.user_id, job_id="job_done")
         self.assertIsNotNone(job)
         self.assertEqual(job["result"]["final_plan"]["name"], "Demo")
+
+    def test_get_job_detail_hides_non_plan_running_result_payloads(self):
+        connection = self.db.connect()
+        try:
+            connection.execute(
+                """
+                INSERT INTO jobs (
+                    job_id, user_id, job_type, status, created_at, updated_at, project_id,
+                    stage, stage_detail, progress, payload_json, result_json, error_text
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "job_progress_only",
+                    self.user_id,
+                    "orchestrate",
+                    "running",
+                    1.0,
+                    2.0,
+                    None,
+                    "Engineering Run",
+                    "Working",
+                    48,
+                    '{"prompt_text":"demo"}',
+                    '{"job_progress":{"stage":"Engineering Run","detail":"Working","progress":48}}',
+                    None,
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        job = self.queue.get_job_detail(user_id=self.user_id, job_id="job_progress_only")
+        self.assertIsNotNone(job)
+        self.assertEqual(job["result"], {})
 
     def test_worker_recovers_queued_jobs_from_database_without_in_memory_queue(self):
         self.queue.register_handler(
