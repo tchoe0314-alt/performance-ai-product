@@ -1228,9 +1228,11 @@ def _circle_action(x: float, y: float, radius: float, layer: str, label: Optiona
 
 def _layout_to_actions(layout: Dict[str, Any]) -> List[Dict[str, Any]]:
     frontage_action = _rect_action_from_obj(layout["frontage_road"], "FRONTAGE", "PAVEMENT")
+    frontage_action["label"] = None
     frontage_action["synthetic_layout_surface"] = True
     frontage_action["semantic_surface_role"] = "circulation"
     driveway_action = _rect_action_from_obj(layout["driveway"], "ACCESS", "PAVEMENT")
+    driveway_action["label"] = None
     driveway_action["synthetic_layout_surface"] = True
     driveway_action["semantic_surface_role"] = "circulation"
     actions: List[Dict[str, Any]] = [
@@ -1252,11 +1254,12 @@ def _layout_to_actions(layout: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     if layout.get("fire_lane"):
         fire_layer = "PAVEMENT" if _safe_bool(layout["fire_lane"].get("synthetic_fire_lane")) or _safe_bool(layout["fire_lane"].get("fire_access")) else layout["fire_lane"].get("layer", "FIRE")
+        fire_label = None if fire_layer == "PAVEMENT" else layout["fire_lane"].get("label")
         actions.append(
             _polyline_action(
                 layout["fire_lane"]["points"],
                 layer=fire_layer,
-                label=layout["fire_lane"].get("label"),
+                label=fire_label,
             )
         )
 
@@ -1267,7 +1270,10 @@ def _layout_to_actions(layout: Dict[str, Any]) -> List[Dict[str, Any]]:
         actions.append(_rect_action_from_obj(layout["loading_area"], "LOAD", "PAVEMENT"))
 
     if layout.get("internal_lane"):
-        actions.append(_rect_action_from_obj(layout["internal_lane"], "LANE", "PAVEMENT"))
+        internal_lane_action = _rect_action_from_obj(layout["internal_lane"], None, "PAVEMENT")
+        internal_lane_action["synthetic_layout_surface"] = True
+        internal_lane_action["semantic_surface_role"] = "circulation"
+        actions.append(internal_lane_action)
 
     bx, by = _rect_center(layout["building"])
     actions.append(_text_action(bx, by, "BLDG", layer="BUILDING", h=1.0))

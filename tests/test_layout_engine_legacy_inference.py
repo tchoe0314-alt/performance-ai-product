@@ -1,6 +1,12 @@
 import unittest
 
-from geometry.layout_engine import _build_expanded_plan, _infer_drive_aisles_from_legacy, _infer_roads_from_legacy
+from geometry.layout_engine import (
+    _build_expanded_plan,
+    _infer_drive_aisles_from_legacy,
+    _infer_roads_from_legacy,
+    _layout_to_actions,
+    generate_smart_layout,
+)
 
 
 class LayoutEngineLegacyInferenceTests(unittest.TestCase):
@@ -65,6 +71,25 @@ class LayoutEngineLegacyInferenceTests(unittest.TestCase):
         self.assertFalse(any(str(action.get("layer") or "").upper() == "ROAD" and str(action.get("task") or "").lower() == "polyline" for action in actions))
         self.assertFalse(any(str(action.get("layer") or "").upper() == "FIRE" and str(action.get("task") or "").lower() == "circle" for action in actions))
         self.assertTrue(any(str(action.get("layer") or "").upper() == "PIPE" for action in actions))
+
+    def test_simple_layout_actions_do_not_label_synthetic_circulation_as_frontage_or_access(self) -> None:
+        layout = generate_smart_layout(
+            lot={"x": 0.0, "y": 0.0, "w": 120.0, "h": 100.0},
+            setback=10.0,
+            layout_strategy="front_parking",
+            street_edge="bottom",
+            site_type="commercial_pad",
+        )
+
+        actions = _layout_to_actions(layout)
+        circulation_labels = [
+            str(action.get("label") or "").upper()
+            for action in actions
+            if action.get("semantic_surface_role") == "circulation"
+        ]
+
+        self.assertNotIn("FRONTAGE", circulation_labels)
+        self.assertNotIn("ACCESS", circulation_labels)
 
 
 if __name__ == "__main__":
