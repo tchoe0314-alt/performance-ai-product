@@ -1211,6 +1211,7 @@ export default function PerformanceAIDashboard() {
   const payloadPreview = useMemo(
     () => ({
       project_id: projectId || null,
+      full_design_mode: true,
       input_mode: strategyMode,
       strict_mode: strategyMode === "manual",
       prompt_text: prompt || null,
@@ -1633,6 +1634,7 @@ export default function PerformanceAIDashboard() {
     return {
       project_id:
         projectIdOverride !== undefined ? projectIdOverride : projectId || null,
+      full_design_mode: true,
       input_mode: nextStrategy,
       strict_mode: nextStrategy === "manual",
       prompt_text: (promptOverride ?? prompt) || null,
