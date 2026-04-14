@@ -1084,6 +1084,7 @@ export default function PerformanceAIDashboard() {
   const lastJobPartialResultRefreshRef = useRef<Record<string, number>>({});
   const chatMessagesRef = useRef<ChatMessage[]>([createWelcomeMessage()]);
   const suppressProjectAutoLoadRef = useRef(false);
+  const chatAutosaveTimeoutRef = useRef<number | null>(null);
 
   const disciplineToggles: DisciplineToggle[] = [
     {
@@ -1476,6 +1477,14 @@ export default function PerformanceAIDashboard() {
   useEffect(() => {
     chatMessagesRef.current = chatMessages;
   }, [chatMessages]);
+
+  useEffect(() => {
+    return () => {
+      if (chatAutosaveTimeoutRef.current !== null) {
+        window.clearTimeout(chatAutosaveTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const applyProjectInput = (projectInput: any) => {
     if (!projectInput || typeof projectInput !== "object") {
@@ -2505,6 +2514,36 @@ export default function PerformanceAIDashboard() {
       if (!silent) setBusy(false);
     }
   };
+
+  useEffect(() => {
+    if (!token || !projectId || !currentProject) return;
+    const savedThread = Array.isArray(currentProject?.project_input?.meta?.chat_thread)
+      ? currentProject.project_input.meta.chat_thread
+      : [];
+    const currentThread = chatMessagesRef.current.map(
+      ({ role, content, kind, createdAt, id }) => ({
+        role,
+        content,
+        kind,
+        createdAt,
+        id,
+      }),
+    );
+    const savedPrompt = String(currentProject?.project_input?.prompt_text ?? "");
+    const currentPrompt = String(prompt ?? "");
+    const threadChanged =
+      JSON.stringify(savedThread) !== JSON.stringify(currentThread);
+    const promptChanged = savedPrompt !== currentPrompt;
+    if (!threadChanged && !promptChanged) {
+      return;
+    }
+    if (chatAutosaveTimeoutRef.current !== null) {
+      window.clearTimeout(chatAutosaveTimeoutRef.current);
+    }
+    chatAutosaveTimeoutRef.current = window.setTimeout(() => {
+      void saveProject({ silent: true, projectIdOverride: projectId });
+    }, 700);
+  }, [chatMessages, prompt, token, projectId, currentProject]);
 
   const loadProject = async (id: string) => {
     if (!token) return;
