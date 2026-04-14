@@ -428,7 +428,7 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(jobs["job_queued_1"]["running_count"], 1)
         self.assertEqual(jobs["job_queued_2"]["queue_position"], 2)
 
-    def test_worker_requeues_partial_runtime_phase_results(self):
+    def test_worker_waits_for_approval_after_partial_runtime_phase_result(self):
         call_count = {"value": 0}
 
         def runner(job):
@@ -472,6 +472,74 @@ class JobQueueServiceTest(unittest.TestCase):
         deadline = time.time() + 4.0
         while time.time() < deadline:
             record = self.queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
+            if record and record["status"] == "awaiting_approval":
+                break
+            time.sleep(0.05)
+
+        self.assertIsNotNone(record)
+        self.assertEqual(record["status"], "awaiting_approval")
+        self.assertEqual(call_count["value"], 1)
+        self.assertEqual(record["stage"], "Awaiting Approval")
+        self.assertIn("Review it and approve", record["stage_detail"])
+
+    def test_continue_job_requeues_saved_phase_after_approval(self):
+        call_count = {"value": 0}
+
+        def runner(job):
+            call_count["value"] += 1
+            if call_count["value"] == 1:
+                return {
+                    "success": True,
+                    "final_plan": {
+                        "project_name": "Demo",
+                        "meta": {
+                            "runtime_phase_checkpoint": {
+                                "stage_name": "layout",
+                                "message": "Layout checkpoint saved.",
+                                "yielded": True,
+                            }
+                        },
+                    },
+                    "metadata": {
+                        "runtime_should_continue": True,
+                        "runtime_phase_checkpoint": {
+                            "stage_name": "layout",
+                            "message": "Layout checkpoint saved.",
+                            "yielded": True,
+                        },
+                    },
+                }
+            return {
+                "success": True,
+                "final_plan": {"project_name": "Demo", "meta": {}},
+                "metadata": {},
+            }
+
+        self.queue.register_handler("orchestrate", runner)
+        created = self.queue.submit_job(
+            user_id=self.user_id,
+            job_type="orchestrate",
+            payload={"prompt_text": "resume"},
+        )
+
+        waiting = None
+        deadline = time.time() + 4.0
+        while time.time() < deadline:
+            waiting = self.queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
+            if waiting and waiting["status"] == "awaiting_approval":
+                break
+            time.sleep(0.05)
+
+        self.assertIsNotNone(waiting)
+        self.assertEqual(waiting["status"], "awaiting_approval")
+        continued = self.queue.continue_job(user_id=self.user_id, job_id=created["job_id"])
+        self.assertIsNotNone(continued)
+        self.assertEqual(continued["status"], "queued")
+
+        record = None
+        deadline = time.time() + 4.0
+        while time.time() < deadline:
+            record = self.queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
             if record and record["status"] == "completed":
                 break
             time.sleep(0.05)
@@ -480,7 +548,7 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(record["status"], "completed")
         self.assertEqual(call_count["value"], 2)
 
-    def test_worker_immediately_requeues_partial_runtime_phase_results_without_db_scan(self):
+    def test_worker_does_not_auto_continue_partial_runtime_phase_results_without_approval(self):
         class NoDbScanJobQueueService(JobQueueService):
             def _find_next_pending_job_id(self):
                 return None
@@ -529,13 +597,13 @@ class JobQueueServiceTest(unittest.TestCase):
         deadline = time.time() + 4.0
         while time.time() < deadline:
             record = queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
-            if record and record["status"] == "completed":
+            if record and record["status"] == "awaiting_approval":
                 break
             time.sleep(0.05)
 
         self.assertIsNotNone(record)
-        self.assertEqual(record["status"], "completed")
-        self.assertEqual(call_count["value"], 2)
+        self.assertEqual(record["status"], "awaiting_approval")
+        self.assertEqual(call_count["value"], 1)
 
 
 if __name__ == "__main__":

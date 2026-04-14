@@ -279,6 +279,26 @@ class JobQueueService:
         updated = self.get_job(user_id=user_id, job_id=job_id)
         return None if updated is None else self._job_summary(updated)
 
+    def continue_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
+        self._ensure_workers_alive()
+        record = self.get_job(user_id=user_id, job_id=job_id)
+        if record is None:
+            return None
+        if record["status"] != "awaiting_approval":
+            return self._job_summary(record)
+
+        result = dict(record.get("result") or {})
+        checkpoint = dict(dict(result.get("metadata") or {}).get("runtime_phase_checkpoint") or {})
+        stage_name = str(checkpoint.get("stage_name") or "").strip()
+        detail = (
+            f"Approval received. Queued the next engineering phase after {stage_name or 'the saved'} checkpoint."
+        )
+        result.update(_job_progress_payload("Queued Next Phase", detail, 64))
+        self._update_job_state(job_id, status="queued", result=result, error=None)
+        self._queue.put(job_id)
+        updated = self.get_job(user_id=user_id, job_id=job_id)
+        return None if updated is None else self._job_summary(updated)
+
     def _enqueue_pending_jobs(self, job_type: str) -> None:
         connection = self.db.connect()
         try:
@@ -564,19 +584,21 @@ class JobQueueService:
                         dict((result or {}).get("metadata") or {}).get("runtime_phase_checkpoint") or {}
                     )
                     stage_name = str(checkpoint.get("stage_name") or "").strip()
-                    detail = str(checkpoint.get("message") or "").strip() or (
-                        f"Saved {stage_name or 'current'} checkpoint and queued the next engineering phase."
+                    checkpoint_message = str(checkpoint.get("message") or "").strip()
+                    detail = (
+                        f"{checkpoint_message} Review it and approve when you want to continue."
+                        if checkpoint_message
+                        else f"Saved {stage_name or 'current'} checkpoint. Review it and approve when you want to continue."
                     )
-                    queued_result = dict(result or {})
-                    queued_result.update(
+                    awaiting_result = dict(result or {})
+                    awaiting_result.update(
                         _job_progress_payload(
-                            "Queued Next Phase",
+                            "Awaiting Approval",
                             detail,
                             60,
                         )
                     )
-                    self._update_job_state(job_id, status="queued", result=queued_result, error=None)
-                    self._queue.put(job_id)
+                    self._update_job_state(job_id, status="awaiting_approval", result=awaiting_result, error=None)
                 else:
                     self._update_job_state(job_id, status="completed", result=result, error=None)
             except JobCancelledError:

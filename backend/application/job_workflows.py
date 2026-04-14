@@ -26,6 +26,9 @@ class JobQueueProtocol(Protocol):
     def cancel_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
         ...
 
+    def continue_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
+        ...
+
 
 class ProjectStoreProtocol(Protocol):
     def get_project(self, *, user_id: str, project_id: str) -> Optional[Dict[str, Any]]:
@@ -116,6 +119,30 @@ def cancel_existing_job(
             "project_id": job.get("project_id"),
             "job_id": job.get("job_id"),
             "retryable": False,
+        },
+    }
+
+
+def continue_existing_job(
+    *,
+    job_queue: JobQueueProtocol,
+    user_id: str,
+    job_id: str,
+) -> Dict[str, Any]:
+    job = job_queue.continue_job(user_id=user_id, job_id=job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return {
+        "success": True,
+        "job": job,
+        "operational_summary": {
+            "status": str(job.get("status") or "queued"),
+            "job_type": str(job.get("job_type") or "orchestrate"),
+            "job_bound": bool(job.get("job_id")),
+            "project_bound": bool(job.get("project_id")),
+            "project_id": job.get("project_id"),
+            "job_id": job.get("job_id"),
+            "retryable": True,
         },
     }
 
@@ -662,8 +689,8 @@ def build_orchestrate_job_runner(
             )
             update_job_progress(
                 job_id,
-                stage="Queued Next Phase",
-                detail=f"Saved {stage_name or 'current'} checkpoint and queued the next engineering phase.",
+                stage="Awaiting Approval",
+                detail=f"Saved {stage_name or 'current'} checkpoint. Review it and approve when you want to continue.",
                 progress=60,
             )
             return enriched

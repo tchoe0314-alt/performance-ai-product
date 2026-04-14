@@ -955,6 +955,15 @@ function buildThinkingState({
       progress: 18,
     };
   }
+  if (normalizedJobStatus === "awaiting_approval") {
+    return {
+      label: stageLabel || "Awaiting Approval",
+      detail:
+        stageDetail ||
+        "Civora saved the current phase result and is waiting for your approval to continue.",
+      progress: numericProgress ?? 60,
+    };
+  }
   if (normalizedJobStatus === "running") {
     return {
       label: "Running",
@@ -1301,7 +1310,7 @@ export default function PerformanceAIDashboard() {
         (job) =>
           Boolean(projectId) &&
           job.project_id === projectId &&
-          ["queued", "running", "cancelling"].includes(String(job.status || "").toLowerCase()),
+          ["queued", "running", "awaiting_approval", "cancelling"].includes(String(job.status || "").toLowerCase()),
       ) ?? null,
     [jobs, projectId],
   );
@@ -1913,7 +1922,7 @@ export default function PerformanceAIDashboard() {
     () =>
       Boolean(activeJobId) ||
       jobs.some((job) =>
-        ["queued", "running", "cancelling"].includes(
+        ["queued", "running", "awaiting_approval", "cancelling"].includes(
           String(job.status || "").toLowerCase(),
         ),
       ),
@@ -2027,7 +2036,7 @@ export default function PerformanceAIDashboard() {
       runSubmissionRef.current ||
       Boolean(
         currentProjectActiveJob &&
-          ["queued", "running", "cancelling"].includes(
+          ["queued", "running", "awaiting_approval", "cancelling"].includes(
             String(currentProjectActiveJob.status || "").toLowerCase(),
           ),
       )
@@ -2371,6 +2380,40 @@ export default function PerformanceAIDashboard() {
     }
   };
 
+  const handleContinueActiveJob = async () => {
+    if (!visibleActiveJob?.job_id || !token) return;
+    try {
+      const data = await postJson<{ job: JobSummary }>(
+        `/api/jobs/${visibleActiveJob.job_id}/continue`,
+        {},
+        { token },
+      );
+      setJobs((current) => {
+        const next = [...current];
+        const index = next.findIndex((job) => job.job_id === data.job.job_id);
+        if (index >= 0) {
+          next[index] = { ...next[index], ...data.job };
+        } else {
+          next.unshift(data.job);
+        }
+        return next;
+      });
+      appendChatMessage(
+        "assistant",
+        `Approved job ${data.job.job_id}. Civora queued the next phase.`,
+        "status",
+      );
+      setStatusMessage(`Approved ${data.job.job_id}. Continuing with the next phase.`);
+      if (data.job.job_id) {
+        setActiveJobId(data.job.job_id);
+      }
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : "Could not continue the staged run.",
+      );
+    }
+  };
+
   const saveProject = async ({
     silent = false,
     projectIdOverride,
@@ -2565,6 +2608,12 @@ export default function PerformanceAIDashboard() {
             `Job ${job.job_id} is running in the background now.`,
             "status",
           );
+        } else if (job.status === "awaiting_approval") {
+          appendChatMessage(
+            "assistant",
+            `Job ${job.job_id} is waiting for your approval to continue to the next phase.`,
+            "status",
+          );
         } else if (job.status === "cancelling") {
           appendChatMessage(
             "assistant",
@@ -2577,7 +2626,7 @@ export default function PerformanceAIDashboard() {
         job.project_id &&
         projectId &&
         job.project_id === projectId &&
-        ["queued", "running"].includes(String(job.status || "").toLowerCase())
+        ["queued", "running", "awaiting_approval"].includes(String(job.status || "").toLowerCase())
       ) {
         const refreshStamp =
           typeof job.updated_at === "number" && Number.isFinite(job.updated_at)
@@ -2598,7 +2647,7 @@ export default function PerformanceAIDashboard() {
         job.project_id &&
         projectId &&
         job.project_id === projectId &&
-        ["queued", "running"].includes(String(job.status || "").toLowerCase())
+        ["queued", "running", "awaiting_approval"].includes(String(job.status || "").toLowerCase())
       ) {
         const partialRefreshStamp =
           typeof job.updated_at === "number" && Number.isFinite(job.updated_at)
@@ -3822,6 +3871,15 @@ export default function PerformanceAIDashboard() {
                             ? "Cancelling..."
                             : "Cancel"}
                         </button>
+                        {String(visibleActiveJob?.status || "").toLowerCase() === "awaiting_approval" && (
+                          <button
+                            type="button"
+                            onClick={handleContinueActiveJob}
+                            className="ml-2 rounded-xl border border-slate-900 bg-slate-950 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+                          >
+                            Approve &amp; Continue
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
