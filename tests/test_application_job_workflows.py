@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from backend.application.job_workflows import (
     build_orchestrate_job_runner,
     cancel_existing_job,
+    revise_existing_job,
     queue_orchestrate_job,
 )
 
@@ -44,6 +45,9 @@ class FakeJobQueue:
         self.registered = {}
         self.progress_updates = []
         self.cancelled = None
+        self.continued = None
+        self.revised = None
+        self.jobs = {}
 
     def submit_job(self, *, user_id, job_type, payload, project_id=None):
         self.submitted = {
@@ -52,7 +56,9 @@ class FakeJobQueue:
             "payload": dict(payload),
             "project_id": project_id,
         }
-        return {"job_id": "job_1", "status": "queued", "project_id": project_id, "job_type": job_type}
+        job = {"job_id": "job_1", "status": "queued", "project_id": project_id, "job_type": job_type, "payload": dict(payload), "result": {}}
+        self.jobs[job["job_id"]] = dict(job)
+        return job
 
     def register_handler(self, job_type, runner):
         self.registered[job_type] = runner
@@ -72,6 +78,30 @@ class FakeJobQueue:
         if job_id == "missing":
             return None
         return {"job_id": job_id, "status": "cancelled", "project_id": "p1", "job_type": "orchestrate"}
+
+    def continue_job(self, *, user_id, job_id):
+        self.continued = {"user_id": user_id, "job_id": job_id}
+        if job_id == "missing":
+            return None
+        job = dict(self.jobs.get(job_id) or {"job_id": job_id, "project_id": "p1", "job_type": "orchestrate"})
+        job["status"] = "queued"
+        self.jobs[job_id] = dict(job)
+        return job
+
+    def revise_job(self, *, user_id, job_id, payload=None):
+        self.revised = {"user_id": user_id, "job_id": job_id, "payload": dict(payload or {})}
+        if job_id == "missing":
+            return None
+        job = dict(self.jobs.get(job_id) or {"job_id": job_id, "project_id": "p1", "job_type": "orchestrate"})
+        job["status"] = "queued"
+        job["payload"] = dict(payload or {})
+        self.jobs[job_id] = dict(job)
+        return job
+
+    def get_job_detail(self, *, user_id, job_id):
+        if job_id == "missing":
+            return None
+        return dict(self.jobs.get(job_id) or {})
 
 
 class ApplicationJobWorkflowsTest(unittest.TestCase):
@@ -101,6 +131,111 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertEqual(response["operational_summary"]["status"], "queued")
         self.assertTrue(response["operational_summary"]["project_bound"])
         self.assertEqual(response["operational_summary"]["job_id"], "job_1")
+
+    def test_revise_existing_job_requeues_current_phase_with_saved_project_input(self):
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Demo",
+                "description": "",
+                "session_id": None,
+                "tags": [],
+                "project_input": {
+                    "prompt_text": "move the basin south and widen access",
+                    "manual_fields": {"project_name": "Demo"},
+                    "meta": {"chat_thread": [{"role": "user", "content": "adjust grading"}]},
+                },
+                "latest_result": {
+                    "final_plan": {
+                        "project_name": "Demo",
+                        "release_ready": True,
+                        "export_ready": True,
+                        "release_status": "ready",
+                        "meta": {
+                            "runtime_phase_checkpoint": {
+                                "stage_name": "grading",
+                                "status": "complete",
+                                "message": "Grading checkpoint saved.",
+                                "yielded": True,
+                            },
+                            "stage_completeness": {
+                                "statuses": {
+                                    "layout": "complete",
+                                    "grading": "complete",
+                                    "drainage": "pending",
+                                }
+                            },
+                            "phase_checkpoints": {
+                                "layout": {"status": "complete", "ready": True},
+                                "grading": {"status": "complete", "ready": True},
+                                "drainage_storm": {"status": "pending", "ready": False},
+                                "utilities": {"status": "pending", "ready": False},
+                                "coordination_validation": {"status": "pending", "ready": False},
+                                "combined_view": {"status": "ready", "ready": True, "completed_phase_count": 2, "total_phase_count": 5},
+                            },
+                            "release_review": {"release_status": "ready"},
+                        },
+                    },
+                    "metadata": {
+                        "runtime_phase_checkpoint": {
+                            "stage_name": "grading",
+                            "status": "complete",
+                            "message": "Grading checkpoint saved.",
+                            "yielded": True,
+                        },
+                        "run_summary": {
+                            "phase_checkpoints": {
+                                "layout": {"status": "complete", "ready": True},
+                                "grading": {"status": "complete", "ready": True},
+                                "drainage_storm": {"status": "pending", "ready": False},
+                                "utilities": {"status": "pending", "ready": False},
+                                "coordination_validation": {"status": "pending", "ready": False},
+                                "combined_view": {"status": "ready", "ready": True, "completed_phase_count": 2, "total_phase_count": 5},
+                            },
+                            "reliability_summary": {"release_ready": True, "operational_state": "ready"},
+                        },
+                    },
+                },
+                "session_state": {},
+                "metadata": {},
+            }
+        )
+        queue = FakeJobQueue()
+        queue.jobs["job_await"] = {
+            "job_id": "job_await",
+            "status": "awaiting_approval",
+            "project_id": "p1",
+            "job_type": "orchestrate",
+            "payload": {"prompt_text": "old prompt"},
+            "result": {
+                "metadata": {
+                    "runtime_phase_checkpoint": {
+                        "stage_name": "grading",
+                        "message": "Grading checkpoint saved.",
+                        "yielded": True,
+                    }
+                }
+            },
+        }
+
+        response = revise_existing_job(
+            project_store=store,
+            job_queue=queue,
+            user_id="u1",
+            job_id="job_await",
+        )
+
+        self.assertTrue(response["success"])
+        self.assertEqual(response["job"]["status"], "queued")
+        self.assertEqual(queue.revised["payload"]["prompt_text"], "move the basin south and widen access")
+        saved_final_plan = store.saved_payload["latest_result"]["final_plan"]
+        self.assertFalse(saved_final_plan["release_ready"])
+        self.assertFalse(saved_final_plan["export_ready"])
+        self.assertEqual(saved_final_plan["meta"]["stage_completeness"]["statuses"]["grading"], "pending")
+        self.assertEqual(saved_final_plan["meta"]["phase_checkpoints"]["grading"]["status"], "pending")
+        self.assertFalse(saved_final_plan["meta"]["phase_checkpoints"]["grading"]["ready"])
+        self.assertEqual(saved_final_plan["meta"]["phase_checkpoints"]["combined_view"]["status"], "pending")
 
     def test_build_orchestrate_job_runner_updates_project(self):
         store = FakeProjectStore(

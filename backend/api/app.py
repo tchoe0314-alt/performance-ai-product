@@ -42,6 +42,7 @@ from backend.application.job_workflows import (
     cancel_existing_job as application_cancel_existing_job,
     continue_existing_job as application_continue_existing_job,
     queue_orchestrate_job as application_queue_orchestrate_job,
+    revise_existing_job as application_revise_existing_job,
 )
 from backend.application.project_workflows import (
     artifact_summary as application_artifact_summary,
@@ -607,6 +608,16 @@ def cancel_job(job_id: str, current_user: Dict[str, Any] = Depends(get_current_u
 @app.post("/api/jobs/{job_id}/continue")
 def continue_job(job_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     return application_continue_existing_job(
+        job_queue=JOB_QUEUE,
+        user_id=current_user["user_id"],
+        job_id=job_id,
+    )
+
+
+@app.post("/api/jobs/{job_id}/revise")
+def revise_job(job_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    return application_revise_existing_job(
+        project_store=PROJECT_STORE,
         job_queue=JOB_QUEUE,
         user_id=current_user["user_id"],
         job_id=job_id,

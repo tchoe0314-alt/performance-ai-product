@@ -2425,6 +2425,48 @@ export default function PerformanceAIDashboard() {
     }
   };
 
+  const handleReviseActiveJob = async () => {
+    if (!visibleActiveJob?.job_id || !token) return;
+    try {
+      const targetProjectId =
+        projectId || visibleActiveJob.project_id || currentProject?.project_id || null;
+      if (targetProjectId) {
+        await saveProject({
+          silent: true,
+          projectIdOverride: targetProjectId,
+        });
+      }
+      const data = await postJson<{ job: JobSummary }>(
+        `/api/jobs/${visibleActiveJob.job_id}/revise`,
+        {},
+        { token },
+      );
+      setJobs((current) => {
+        const next = [...current];
+        const index = next.findIndex((job) => job.job_id === data.job.job_id);
+        if (index >= 0) {
+          next[index] = { ...next[index], ...data.job };
+        } else {
+          next.unshift(data.job);
+        }
+        return next;
+      });
+      appendChatMessage(
+        "assistant",
+        `Saved your changes and requeued ${data.job.job_id} to revise the current phase.`,
+        "status",
+      );
+      setStatusMessage(`Saved your changes. Requeued ${data.job.job_id} to revise this phase.`);
+      if (data.job.job_id) {
+        setActiveJobId(data.job.job_id);
+      }
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : "Could not revise the current phase.",
+      );
+    }
+  };
+
   const saveProject = async ({
     silent = false,
     projectIdOverride,
@@ -3913,13 +3955,22 @@ export default function PerformanceAIDashboard() {
                             : "Cancel"}
                         </button>
                         {String(visibleActiveJob?.status || "").toLowerCase() === "awaiting_approval" && (
-                          <button
-                            type="button"
-                            onClick={handleContinueActiveJob}
-                            className="ml-2 rounded-xl border border-slate-900 bg-slate-950 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
-                          >
-                            Approve &amp; Continue
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              onClick={handleReviseActiveJob}
+                              className="ml-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                            >
+                              Save Changes &amp; Revise Phase
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleContinueActiveJob}
+                              className="ml-2 rounded-xl border border-slate-900 bg-slate-950 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+                            >
+                              Approve &amp; Continue
+                            </button>
+                          </>
                         )}
                       </div>
                     )}

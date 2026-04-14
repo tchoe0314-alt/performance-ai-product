@@ -299,6 +299,34 @@ class JobQueueService:
         updated = self.get_job(user_id=user_id, job_id=job_id)
         return None if updated is None else self._job_summary(updated)
 
+    def revise_job(
+        self,
+        *,
+        user_id: str,
+        job_id: str,
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        self._ensure_workers_alive()
+        record = self.get_job(user_id=user_id, job_id=job_id)
+        if record is None:
+            return None
+        if record["status"] != "awaiting_approval":
+            return self._job_summary(record)
+
+        result = dict(record.get("result") or {})
+        checkpoint = dict(dict(result.get("metadata") or {}).get("runtime_phase_checkpoint") or {})
+        stage_name = str(checkpoint.get("stage_name") or "").strip()
+        detail = (
+            f"Revision requested. Queued {stage_name or 'current'} phase again with your latest changes."
+        )
+        result.update(_job_progress_payload("Queued Phase Revision", detail, 62))
+        if payload is not None:
+            self._update_job_payload(job_id, payload)
+        self._update_job_state(job_id, status="queued", result=result, error=None)
+        self._queue.put(job_id)
+        updated = self.get_job(user_id=user_id, job_id=job_id)
+        return None if updated is None else self._job_summary(updated)
+
     def _enqueue_pending_jobs(self, job_type: str) -> None:
         connection = self.db.connect()
         try:
@@ -400,6 +428,25 @@ class JobQueueService:
                     _coerce_progress(job_progress.get("progress")),
                     _json_dumps(result or {}),
                     error,
+                    job_id,
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+    def _update_job_payload(self, job_id: str, payload: Dict[str, Any]) -> None:
+        connection = self.db.connect()
+        try:
+            connection.execute(
+                """
+                UPDATE jobs
+                SET payload_json = ?, updated_at = ?
+                WHERE job_id = ?
+                """,
+                (
+                    _json_dumps(payload or {}),
+                    _now(),
                     job_id,
                 ),
             )

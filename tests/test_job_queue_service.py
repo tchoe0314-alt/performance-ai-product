@@ -548,6 +548,76 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(record["status"], "completed")
         self.assertEqual(call_count["value"], 2)
 
+    def test_revise_job_requeues_saved_phase_with_updated_payload(self):
+        call_payloads = []
+
+        def runner(job):
+            call_payloads.append(dict(job.get("payload") or {}))
+            if len(call_payloads) == 1:
+                return {
+                    "success": True,
+                    "final_plan": {
+                        "project_name": "Demo",
+                        "meta": {
+                            "runtime_phase_checkpoint": {
+                                "stage_name": "grading",
+                                "message": "Grading checkpoint saved.",
+                                "yielded": True,
+                            }
+                        },
+                    },
+                    "metadata": {
+                        "runtime_should_continue": True,
+                        "runtime_phase_checkpoint": {
+                            "stage_name": "grading",
+                            "message": "Grading checkpoint saved.",
+                            "yielded": True,
+                        },
+                    },
+                }
+            return {
+                "success": True,
+                "final_plan": {"project_name": "Demo", "meta": {}},
+                "metadata": {},
+            }
+
+        self.queue.register_handler("orchestrate", runner)
+        created = self.queue.submit_job(
+            user_id=self.user_id,
+            job_type="orchestrate",
+            payload={"prompt_text": "old prompt"},
+        )
+
+        waiting = None
+        deadline = time.time() + 4.0
+        while time.time() < deadline:
+            waiting = self.queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
+            if waiting and waiting["status"] == "awaiting_approval":
+                break
+            time.sleep(0.05)
+
+        self.assertIsNotNone(waiting)
+        revised = self.queue.revise_job(
+            user_id=self.user_id,
+            job_id=created["job_id"],
+            payload={"prompt_text": "new prompt"},
+        )
+        self.assertIsNotNone(revised)
+        self.assertEqual(revised["status"], "queued")
+
+        record = None
+        deadline = time.time() + 4.0
+        while time.time() < deadline:
+            record = self.queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
+            if record and record["status"] == "completed":
+                break
+            time.sleep(0.05)
+
+        self.assertIsNotNone(record)
+        self.assertEqual(record["status"], "completed")
+        self.assertEqual(call_payloads[0]["prompt_text"], "old prompt")
+        self.assertEqual(call_payloads[-1]["prompt_text"], "new prompt")
+
     def test_worker_does_not_auto_continue_partial_runtime_phase_results_without_approval(self):
         class NoDbScanJobQueueService(JobQueueService):
             def _find_next_pending_job_id(self):

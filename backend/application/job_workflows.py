@@ -29,6 +29,18 @@ class JobQueueProtocol(Protocol):
     def continue_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
         ...
 
+    def revise_job(
+        self,
+        *,
+        user_id: str,
+        job_id: str,
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        ...
+
+    def get_job_detail(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
+        ...
+
 
 class ProjectStoreProtocol(Protocol):
     def get_project(self, *, user_id: str, project_id: str) -> Optional[Dict[str, Any]]:
@@ -142,6 +154,216 @@ def continue_existing_job(
             "project_bound": bool(job.get("project_id")),
             "project_id": job.get("project_id"),
             "job_id": job.get("job_id"),
+            "retryable": True,
+        },
+    }
+
+
+def revise_existing_job(
+    *,
+    project_store: ProjectStoreProtocol,
+    job_queue: JobQueueProtocol,
+    user_id: str,
+    job_id: str,
+) -> Dict[str, Any]:
+    job = job_queue.get_job_detail(user_id=user_id, job_id=job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    project_id = str(job.get("project_id") or "").strip()
+    if not project_id:
+        raise HTTPException(status_code=409, detail="Job is not bound to a project.")
+
+    project = project_store.get_project(user_id=user_id, project_id=project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    latest_result = dict(project.get("latest_result") or {})
+    final_plan = dict(latest_result.get("final_plan") or {})
+    final_meta = dict(final_plan.get("meta") or {})
+    result_metadata = dict(latest_result.get("metadata") or {})
+    runtime_checkpoint = dict(
+        result_metadata.get("runtime_phase_checkpoint")
+        or final_meta.get("runtime_phase_checkpoint")
+        or dict(job.get("result") or {}).get("metadata", {}).get("runtime_phase_checkpoint")
+        or {}
+    )
+    stage_name = str(runtime_checkpoint.get("stage_name") or "").strip()
+    if not stage_name:
+        raise HTTPException(status_code=409, detail="No saved phase checkpoint is available to revise.")
+
+    stage_order = [
+        "layout",
+        "grading",
+        "drainage",
+        "storm_pipes",
+        "sanitary",
+        "utility_network",
+        "coordination_resolution",
+        "earthwork",
+        "sheets",
+        "qa",
+    ]
+    stage_to_phase = {
+        "layout": "layout",
+        "grading": "grading",
+        "drainage": "drainage_storm",
+        "storm_pipes": "drainage_storm",
+        "sanitary": "utilities",
+        "utility_network": "utilities",
+        "coordination_resolution": "coordination_validation",
+        "earthwork": "coordination_validation",
+        "sheets": "coordination_validation",
+        "qa": "coordination_validation",
+    }
+    phase_order = [
+        "layout",
+        "grading",
+        "drainage_storm",
+        "utilities",
+        "coordination_validation",
+    ]
+
+    try:
+        target_stage_index = stage_order.index(stage_name)
+    except ValueError:
+        target_stage_index = 0
+    target_phase = stage_to_phase.get(stage_name, "layout")
+    target_phase_index = phase_order.index(target_phase) if target_phase in phase_order else 0
+
+    stage_statuses = dict(dict(final_meta.get("stage_completeness") or {}).get("statuses") or {})
+    for staged_name in stage_order[target_stage_index:]:
+        stage_statuses[staged_name] = "pending"
+
+    phase_checkpoints = dict(
+        final_meta.get("phase_checkpoints")
+        or dict(result_metadata.get("run_summary") or {}).get("phase_checkpoints")
+        or {}
+    )
+    phase_labels = {
+        "layout": "Layout",
+        "grading": "Grading",
+        "drainage_storm": "Drainage and Storm",
+        "utilities": "Utilities",
+        "coordination_validation": "Coordination and Validation",
+    }
+    for phase_name in phase_order:
+        phase_entry = dict(phase_checkpoints.get(phase_name) or {})
+        phase_entry.setdefault("label", phase_labels[phase_name])
+        if phase_order.index(phase_name) >= target_phase_index:
+            messages = [
+                str(item)
+                for item in list(phase_entry.get("messages") or [])
+                if str(item).strip()
+            ]
+            revision_message = (
+                f"Revision requested. {phase_labels[target_phase]} will rerun using the latest saved changes."
+            )
+            if revision_message not in messages:
+                messages.append(revision_message)
+            phase_entry["status"] = "pending"
+            phase_entry["ready"] = False
+            phase_entry["messages"] = messages[-3:]
+            phase_entry["job_progress"] = 62
+        phase_checkpoints[phase_name] = phase_entry
+
+    completed_phase_count = sum(
+        1
+        for phase_name in phase_order
+        if phase_order.index(phase_name) < target_phase_index
+        and bool(dict(phase_checkpoints.get(phase_name) or {}).get("ready"))
+    )
+    combined_view = dict(phase_checkpoints.get("combined_view") or {})
+    combined_view.update(
+        {
+            "label": str(combined_view.get("label") or "Combined View"),
+            "status": "pending",
+            "ready": False,
+            "completed_phase_count": completed_phase_count,
+            "total_phase_count": max(int(combined_view.get("total_phase_count") or 0), len(phase_order)),
+            "current_stage": stage_name,
+            "current_status": "pending",
+            "job_progress": 62,
+            "note": f"Revision requested. Waiting to rerun {phase_labels[target_phase]}.",
+            "messages": [f"{phase_labels[target_phase]} is queued to rerun with the latest saved changes."],
+            "deliverables": [],
+            "blockers": [],
+        }
+    )
+    phase_checkpoints["combined_view"] = combined_view
+
+    release_review = dict(final_meta.get("release_review") or {})
+    release_review["phase_checkpoints"] = phase_checkpoints
+    release_review["release_status"] = "review"
+    release_review["release_note"] = f"{phase_labels[target_phase]} is queued for revision."
+
+    final_meta["stage_completeness"] = {
+        **dict(final_meta.get("stage_completeness") or {}),
+        "statuses": stage_statuses,
+    }
+    final_meta["phase_checkpoints"] = phase_checkpoints
+    final_meta["release_review"] = release_review
+    final_meta["runtime_phase_checkpoint"] = {
+        **runtime_checkpoint,
+        "stage_name": stage_name,
+        "status": "pending",
+        "message": f"Revision requested for {phase_labels[target_phase]}.",
+        "yielded": True,
+    }
+    final_plan["meta"] = final_meta
+    final_plan["release_ready"] = False
+    final_plan["export_ready"] = False
+    final_plan["release_status"] = "review"
+
+    run_summary = dict(result_metadata.get("run_summary") or {})
+    if run_summary:
+        run_summary["phase_checkpoints"] = phase_checkpoints
+        run_summary["combined_view"] = dict(combined_view)
+        reliability_summary = dict(run_summary.get("reliability_summary") or {})
+        reliability_summary["release_ready"] = False
+        reliability_summary["operational_state"] = "review"
+        run_summary["reliability_summary"] = reliability_summary
+    result_metadata["run_summary"] = run_summary
+    result_metadata["runtime_phase_checkpoint"] = dict(final_meta["runtime_phase_checkpoint"])
+    result_metadata["runtime_should_continue"] = True
+    latest_result["final_plan"] = final_plan
+    latest_result["metadata"] = result_metadata
+
+    project_input = dict(project.get("project_input") or {})
+    revised_payload = dict(job.get("payload") or {})
+    revised_payload.update(project_input)
+    revised_payload["project_id"] = project_id
+
+    project_store.save_project(
+        user_id=user_id,
+        project_id=project_id,
+        name=str(project.get("name") or "Untitled Project"),
+        description=str(project.get("description") or ""),
+        session_id=project.get("session_id"),
+        tags=list(project.get("tags") or []),
+        project_input=project_input,
+        latest_result=latest_result,
+        session_state=dict(project.get("session_state") or {}),
+        metadata=dict(project.get("metadata") or {}),
+    )
+
+    revised_job = job_queue.revise_job(
+        user_id=user_id,
+        job_id=job_id,
+        payload=revised_payload,
+    )
+    if revised_job is None:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return {
+        "success": True,
+        "job": revised_job,
+        "operational_summary": {
+            "status": str(revised_job.get("status") or "queued"),
+            "job_type": str(revised_job.get("job_type") or "orchestrate"),
+            "job_bound": bool(revised_job.get("job_id")),
+            "project_bound": bool(revised_job.get("project_id")),
+            "project_id": revised_job.get("project_id"),
+            "job_id": revised_job.get("job_id"),
             "retryable": True,
         },
     }
