@@ -281,7 +281,7 @@ class JobQueueService:
 
     def continue_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
         self._ensure_workers_alive()
-        record = self.get_job(user_id=user_id, job_id=job_id)
+        record = self.get_job_detail(user_id=user_id, job_id=job_id)
         if record is None:
             return None
         if record["status"] != "awaiting_approval":
@@ -307,7 +307,7 @@ class JobQueueService:
         payload: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         self._ensure_workers_alive()
-        record = self.get_job(user_id=user_id, job_id=job_id)
+        record = self.get_job_detail(user_id=user_id, job_id=job_id)
         if record is None:
             return None
         if record["status"] != "awaiting_approval":

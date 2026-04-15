@@ -532,9 +532,24 @@ class JobQueueServiceTest(unittest.TestCase):
 
         self.assertIsNotNone(waiting)
         self.assertEqual(waiting["status"], "awaiting_approval")
+        self.assertEqual(
+            waiting["result"]["metadata"]["runtime_phase_checkpoint"]["stage_name"],
+            "layout",
+        )
         continued = self.queue.continue_job(user_id=self.user_id, job_id=created["job_id"])
         self.assertIsNotNone(continued)
-        self.assertEqual(continued["status"], "queued")
+        self.assertIn(continued["status"], {"queued", "running"})
+
+        queued_detail = self.queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
+        self.assertIsNotNone(queued_detail)
+        self.assertEqual(
+            queued_detail["result"]["metadata"]["runtime_phase_checkpoint"]["stage_name"],
+            "layout",
+        )
+        self.assertEqual(
+            queued_detail["result"]["job_progress"]["stage"],
+            "Queued Next Phase",
+        )
 
         record = None
         deadline = time.time() + 4.0
@@ -597,13 +612,28 @@ class JobQueueServiceTest(unittest.TestCase):
             time.sleep(0.05)
 
         self.assertIsNotNone(waiting)
+        self.assertEqual(
+            waiting["result"]["metadata"]["runtime_phase_checkpoint"]["stage_name"],
+            "grading",
+        )
         revised = self.queue.revise_job(
             user_id=self.user_id,
             job_id=created["job_id"],
             payload={"prompt_text": "new prompt"},
         )
         self.assertIsNotNone(revised)
-        self.assertEqual(revised["status"], "queued")
+        self.assertIn(revised["status"], {"queued", "running"})
+
+        queued_detail = self.queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
+        self.assertIsNotNone(queued_detail)
+        self.assertEqual(
+            queued_detail["result"]["metadata"]["runtime_phase_checkpoint"]["stage_name"],
+            "grading",
+        )
+        self.assertEqual(
+            queued_detail["result"]["job_progress"]["stage"],
+            "Queued Phase Revision",
+        )
 
         record = None
         deadline = time.time() + 4.0
