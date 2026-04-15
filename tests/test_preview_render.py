@@ -67,6 +67,18 @@ class PreviewRenderTests(unittest.TestCase):
 
         self.assertEqual(selected, (0, 390, 780, 650))
 
+    def test_choose_view_bounds_grading_returns_phase_frame_even_when_not_tighter(self):
+        drawn_items = [
+            ("BUILDING", "rectangle", (165, 440, 615, 572)),
+            ("PARKING", "rectangle", (180, 430, 626, 560)),
+            ("FG_CONTOUR", "polyline", (0, 390, 780, 650)),
+            ("EG_CONTOUR", "polyline", (0, 390, 780, 650)),
+        ]
+
+        selected = _choose_view_bounds(drawn_items, engineering_profile="grading")
+
+        self.assertEqual(selected, (0, 390, 780, 650))
+
     def test_choose_view_bounds_grading_includes_spot_grade_cluster(self):
         drawn_items = [
             ("SITE", "rectangle", (0, 0, 500, 380)),

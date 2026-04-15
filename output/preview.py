@@ -1454,6 +1454,8 @@ def _choose_view_bounds(drawn_items, *, engineering_profile="layout"):
     zoom_gain = max(all_width / preferred_width, all_height / preferred_height)
 
     # Favor the primary layout/engineering cluster once it yields a materially tighter frame.
+    if engineering_profile in {"grading", "drainage"} and phase_engineering_bounds:
+        return preferred_bounds
     if zoom_gain >= (1.15 if rich_engineering else 1.25):
         return preferred_bounds
     return focus_bounds or preferred_bounds or all_bounds
