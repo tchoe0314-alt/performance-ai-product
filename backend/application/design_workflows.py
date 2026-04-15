@@ -335,6 +335,7 @@ def run_orchestration(
     req = PlannerOrchestratorRequest(
         input_mode=payload_data.get("input_mode", "assisted"),
         strict_mode=bool(payload_data.get("strict_mode", False)),
+        full_design_mode=bool(payload_data.get("full_design_mode", False)),
         prompt_text=prompt_text,
         image_path=payload_data.get("image_path"),
         manual_fields=dict(payload_data.get("manual_fields") or {}),

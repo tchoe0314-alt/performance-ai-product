@@ -13,6 +13,7 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         class FakeRequest:
             input_mode: str
             strict_mode: bool
+            full_design_mode: bool = False
             prompt_text: Optional[str] = None
             image_path: Optional[str] = None
             manual_fields: dict = field(default_factory=dict)
@@ -56,6 +57,57 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         )
         self.assertTrue(result["success"])
         self.assertIn("three multifamily buildings", result["parsed_payload"]["prompt_echo"])
+
+    def test_run_orchestration_preserves_full_design_mode(self):
+        @dataclass
+        class FakeRequest:
+            input_mode: str
+            strict_mode: bool
+            full_design_mode: bool = False
+            prompt_text: Optional[str] = None
+            image_path: Optional[str] = None
+            manual_fields: dict = field(default_factory=dict)
+            image_width_px: Optional[int] = None
+            image_height_px: Optional[int] = None
+            pixels_per_unit: Optional[float] = None
+            plan_type_hint: Optional[str] = None
+            units: str = "ft"
+            allow_ai_fill_for_blanks: bool = True
+            persist_trace_metadata: bool = True
+            meta: dict = field(default_factory=dict)
+            progress_callback: Optional[object] = None
+
+        class FakeResult:
+            def __init__(self, full_design_mode: bool):
+                self.success = True
+                self.message = "ok"
+                self.parsed_payload = {"project_type": "mixed_use"}
+                self.final_plan = {"actions": [], "meta": {}}
+                self.warnings = []
+                self.errors = []
+                self.issues = []
+                self.assumptions = []
+                self.metadata = {"full_design_mode_seen": full_design_mode}
+
+        def fake_load_orchestrator():
+            def fake_orchestrate(req):
+                return FakeResult(req.full_design_mode)
+
+            return FakeRequest, fake_orchestrate
+
+        result = run_orchestration(
+            {
+                "input_mode": "assisted",
+                "prompt_text": "Design a mixed-use site.",
+                "manual_fields": {},
+                "full_design_mode": True,
+                "meta": {},
+            },
+            load_orchestrator=fake_load_orchestrator,
+            assess_design_readiness=lambda *_args, **_kwargs: None,
+        )
+        self.assertTrue(result["success"])
+        self.assertTrue(result["metadata"]["full_design_mode_seen"])
 
     def test_build_run_summary_reads_engineering_meta(self):
         summary = build_run_summary(
