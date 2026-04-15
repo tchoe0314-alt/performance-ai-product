@@ -72,6 +72,12 @@ test("live civora flow", async ({ page, request, baseURL }) => {
       page.getByText(/Engineering Review|Generated plan preview|Phase Progress|Awaiting Approval/i),
     ).toBeVisible({ timeout: 60_000 });
 
+    const awaitingApproval = page.getByText(/Awaiting Approval/i).first();
+    if (await awaitingApproval.isVisible().catch(() => false)) {
+      const previewImage = page.getByAltText("Generated plan preview");
+      await previewImage.waitFor({ state: "visible", timeout: 12_000 }).catch(() => null);
+    }
+
     await page.screenshot({
       path: path.join(artifactDir, "civora-after-prompt.png"),
       fullPage: true,
