@@ -1078,6 +1078,7 @@ export default function PerformanceAIDashboard() {
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const runSubmissionRef = useRef(false);
   const directRunAbortRef = useRef<AbortController | null>(null);
+  const draftProjectPromiseRef = useRef<Promise<ProjectRecord | null> | null>(null);
   const lastJobStatusRef = useRef<Record<string, string>>({});
   const lastStaleJobWarningRef = useRef<Record<string, boolean>>({});
   const lastProjectResultRefreshRef = useRef<Record<string, number>>({});
@@ -2621,7 +2622,12 @@ export default function PerformanceAIDashboard() {
   const ensureProjectDraft = async (initialPrompt?: string): Promise<string | null> => {
     if (!token) return null;
     if (projectId) return projectId;
-    const savedProject = await saveProject({
+    if (currentProject?.project_id) return currentProject.project_id;
+    if (draftProjectPromiseRef.current) {
+      const inFlightProject = await draftProjectPromiseRef.current;
+      return inFlightProject?.project_id ?? null;
+    }
+    draftProjectPromiseRef.current = saveProject({
       silent: true,
       projectIdOverride: null,
       nameOverride: siteName.trim(),
@@ -2629,7 +2635,12 @@ export default function PerformanceAIDashboard() {
       autoNamedOverride: false,
       autoFileNamedOverride: false,
     });
-    return savedProject?.project_id ?? null;
+    try {
+      const savedProject = await draftProjectPromiseRef.current;
+      return savedProject?.project_id ?? null;
+    } finally {
+      draftProjectPromiseRef.current = null;
+    }
   };
 
   const deleteProject = async (id: string) => {
@@ -3071,6 +3082,7 @@ export default function PerformanceAIDashboard() {
 
   const handleNewProject = async () => {
     suppressProjectAutoLoadRef.current = true;
+    draftProjectPromiseRef.current = null;
     setProjectId("");
     setCurrentProject(null);
     setSelectedRunId("");
@@ -3107,7 +3119,7 @@ export default function PerformanceAIDashboard() {
     setStatusMessage("Started a new project.");
     try {
       if (token) {
-        const createdProject = await saveProject({
+        draftProjectPromiseRef.current = saveProject({
           silent: true,
           projectIdOverride: null,
           nameOverride: "",
@@ -3140,11 +3152,13 @@ export default function PerformanceAIDashboard() {
           autoNamedOverride: false,
           autoFileNamedOverride: false,
         });
+        const createdProject = await draftProjectPromiseRef.current;
         if (createdProject?.project_id) {
           setProjectId(createdProject.project_id);
         }
       }
     } finally {
+      draftProjectPromiseRef.current = null;
       suppressProjectAutoLoadRef.current = false;
     }
   };
