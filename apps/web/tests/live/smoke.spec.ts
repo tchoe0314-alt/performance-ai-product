@@ -83,9 +83,16 @@ test("live civora flow", async ({ page, request, baseURL }) => {
     if (await approveButton.isVisible().catch(() => false)) {
       await approveButton.scrollIntoViewIfNeeded();
       await approveButton.click({ force: true });
-      await expect(
-        page.getByText(/Proposed grading surface built\.|2\/5 phases complete/i),
-      ).toBeVisible({ timeout: 60_000 });
+      const gradingMessage = page.getByText(
+        "Proposed grading surface built. Review it and approve when you want to continue.",
+        { exact: true },
+      );
+      const completedPhaseSummary = page.getByText("2/5 phases complete", { exact: true });
+      try {
+        await expect(gradingMessage).toBeVisible({ timeout: 60_000 });
+      } catch {
+        await expect(completedPhaseSummary).toBeVisible({ timeout: 60_000 });
+      }
       await previewImage.waitFor({ state: "visible", timeout: 12_000 }).catch(() => null);
       await page.screenshot({
         path: path.join(artifactDir, "civora-after-approve.png"),

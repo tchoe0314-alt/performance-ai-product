@@ -192,6 +192,12 @@ class ProjectStore:
                 raise ValueError("That project belongs to another user.")
 
         existing = self.get_project(user_id=user_id, project_id=project_id) if project_id else None
+        existing_latest_result = dict((existing or {}).get("latest_result") or {})
+        incoming_latest_result = dict(latest_result or {})
+        # Empty autosaves should never wipe a richer staged checkpoint that is
+        # already persisted on the project record.
+        if existing_latest_result and not incoming_latest_result:
+            incoming_latest_result = existing_latest_result
         record = {
             "project_id": project_id or _new_id("project"),
             "user_id": user_id,
@@ -202,7 +208,7 @@ class ProjectStore:
             "session_id": session_id,
             "tags": list(tags or []),
             "project_input": dict(project_input or {}),
-            "latest_result": dict(latest_result or {}),
+            "latest_result": incoming_latest_result,
             "session_state": dict(session_state or {}),
             "metadata": dict(metadata or {}),
         }

@@ -301,6 +301,36 @@ class JobQueueServiceTest(unittest.TestCase):
         summaries = store.list_projects(user_id=self.user_id)
         self.assertTrue(summaries[0]["has_result"])
 
+    def test_project_store_preserves_existing_latest_result_on_empty_save(self):
+        store = ProjectStore(self.db)
+        saved = store.save_project(
+            user_id=self.user_id,
+            project_id=None,
+            name="Checkpoint Demo",
+            latest_result={
+                "final_plan": {
+                    "project_name": "Checkpoint Demo",
+                    "meta": {"phase_checkpoints": {"layout": {"status": "complete"}}},
+                }
+            },
+        )
+
+        store.save_project(
+            user_id=self.user_id,
+            project_id=saved["project_id"],
+            name="Checkpoint Demo",
+            latest_result={},
+        )
+
+        loaded = store.get_project_latest_result(
+            user_id=self.user_id,
+            project_id=saved["project_id"],
+        )
+        self.assertEqual(
+            dict(loaded or {}).get("final_plan", {}).get("project_name"),
+            "Checkpoint Demo",
+        )
+
     def test_running_job_heartbeat_keeps_updated_at_fresh(self):
         self.queue.register_handler(
             "orchestrate",
