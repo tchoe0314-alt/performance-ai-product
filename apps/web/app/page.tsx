@@ -3013,6 +3013,16 @@ export default function PerformanceAIDashboard() {
           if (activeProjectForPreview && activeProjectForPreview !== project.project_id) {
             return;
           }
+          const activeStatus = String(visibleActiveJob?.status || "").toLowerCase();
+          const shouldPreserveCurrentPreview =
+            project.project_id &&
+            activeProjectForPreview === project.project_id &&
+            (activeStatus === "running" ||
+              activeStatus === "queued" ||
+              activeStatus === "awaiting_approval");
+          if (shouldPreserveCurrentPreview && (planPreviewUrl || backendResult)) {
+            return;
+          }
           setBackendResult(null);
           setPlanPreviewUrl("");
           setPlanPreviewSummary(null);
