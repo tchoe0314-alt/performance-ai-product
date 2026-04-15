@@ -105,6 +105,8 @@ SUPPRESSED_TEXT_LAYERS = {"EG_CONTOUR", "FG_CONTOUR", "DRAIN_FLOW", "LOW_POINTS"
 FOCUS_EXCLUDED_LAYERS = {"ANNO", "SYMBOL", "SITE", "PAD", "SETBACK", "UTILITY", "WATER", "DRAIN_FLOW", "EG_CONTOUR", "FG_CONTOUR", "SPOT_EG", "SPOT_FG", "LOW_POINTS"}
 SUPPRESSED_LABEL_TOKENS = ("BUILDABLE_AREA", "GENERIC_UTILITY", "SERVICE_TIE", "SOURCE_SERVICE", "BUILDING_SERVICE", "UTILITY-")
 PRIMARY_LAYOUT_LAYERS = {"BUILDING", "PAVEMENT", "PARKING", "WALK"}
+PRIMARY_VIEW_LAYERS = {"BUILDING", "PAVEMENT", "PARKING", "WALK", "PAD"}
+KEY_ENGINEERING_VIEW_LAYERS = {"BASIN_BOUNDARY", "DRAIN", "PIPE", "STORM", "SAN", "UTILITY", "WATER", "STRUCTURE"}
 SECONDARY_ENGINEERING_LAYERS = {
     "ANNO",
     "BASIN_BOUNDARY",
@@ -1282,6 +1284,56 @@ def _expand_bounds(bounds, pad_ratio=0.08, min_pad=8.0):
     return min_x - pad_x, min_y - pad_y, max_x + pad_x, max_y + pad_y
 
 
+def _update_bounds(current, bounds):
+    if not bounds:
+        return current
+    if current is None:
+        return bounds
+    return (
+        min(current[0], bounds[0]),
+        min(current[1], bounds[1]),
+        max(current[2], bounds[2]),
+        max(current[3], bounds[3]),
+    )
+
+
+def _choose_view_bounds(drawn_items, *, rich_engineering=False):
+    all_bounds = None
+    focus_bounds = None
+    primary_bounds = None
+    engineering_bounds = None
+
+    for layer, task, bounds in drawn_items:
+        if not bounds:
+            continue
+        if task not in {"text_note", "point", "north_arrow"}:
+            all_bounds = _update_bounds(all_bounds, bounds)
+        if layer not in FOCUS_EXCLUDED_LAYERS:
+            focus_bounds = _update_bounds(focus_bounds, bounds)
+        if layer in PRIMARY_VIEW_LAYERS:
+            primary_bounds = _update_bounds(primary_bounds, bounds)
+        elif layer in KEY_ENGINEERING_VIEW_LAYERS:
+            engineering_bounds = _update_bounds(engineering_bounds, bounds)
+
+    if all_bounds is None:
+        return None
+
+    preferred_bounds = primary_bounds or focus_bounds or all_bounds
+    if rich_engineering and primary_bounds and engineering_bounds:
+        preferred_bounds = _merge_bounds([primary_bounds, engineering_bounds]) or preferred_bounds
+
+    preferred_width = max(preferred_bounds[2] - preferred_bounds[0], 1.0)
+    preferred_height = max(preferred_bounds[3] - preferred_bounds[1], 1.0)
+    all_width = max(all_bounds[2] - all_bounds[0], 1.0)
+    all_height = max(all_bounds[3] - all_bounds[1], 1.0)
+    zoom_gain = max(all_width / preferred_width, all_height / preferred_height)
+
+    # Favor the primary layout/engineering cluster once it yields a materially tighter frame.
+    if zoom_gain >= (1.15 if rich_engineering else 1.25):
+        return preferred_bounds
+    return focus_bounds or preferred_bounds or all_bounds
+
+
 def _draw_plan(ax, plan):
     meta = plan.get("meta") or {}
     phase_checkpoints = meta.get("phase_checkpoints") or {}
@@ -1299,10 +1351,7 @@ def _draw_plan(ax, plan):
     if not actions:
         return False
 
-    all_min_x, all_min_y = float("inf"), float("inf")
-    all_max_x, all_max_y = float("-inf"), float("-inf")
-    focus_min_x, focus_min_y = float("inf"), float("inf")
-    focus_max_x, focus_max_y = float("-inf"), float("-inf")
+    drawn_items = []
 
     for action in actions:
         task = action.get("task")
@@ -1329,33 +1378,12 @@ def _draw_plan(ax, plan):
         if bounds is None:
             continue
 
-        x1, y1, x2, y2 = bounds
-
-        all_min_x = min(all_min_x, x1)
-        all_min_y = min(all_min_y, y1)
-        all_max_x = max(all_max_x, x2)
-        all_max_y = max(all_max_y, y2)
-
         layer = (action.get("layer") or "").upper()
-        if layer not in FOCUS_EXCLUDED_LAYERS:
-            focus_min_x = min(focus_min_x, x1)
-            focus_min_y = min(focus_min_y, y1)
-            focus_max_x = max(focus_max_x, x2)
-            focus_max_y = max(focus_max_y, y2)
+        drawn_items.append((layer, str(task or "").lower(), bounds))
 
-    if all_min_x == float("inf"):
+    selected_bounds = _choose_view_bounds(drawn_items, rich_engineering=rich_engineering)
+    if selected_bounds is None:
         return False
-
-    all_bounds = (all_min_x, all_min_y, all_max_x, all_max_y)
-    focus_available = focus_min_x != float("inf")
-    selected_bounds = all_bounds
-    if focus_available:
-        all_width = max(all_max_x - all_min_x, 1.0)
-        all_height = max(all_max_y - all_min_y, 1.0)
-        focus_width = max(focus_max_x - focus_min_x, 1.0)
-        focus_height = max(focus_max_y - focus_min_y, 1.0)
-        if all_width / focus_width > 2.5 or all_height / focus_height > 2.5:
-            selected_bounds = (focus_min_x, focus_min_y, focus_max_x, focus_max_y)
 
     min_x, min_y, max_x, max_y = _expand_bounds(selected_bounds)
 

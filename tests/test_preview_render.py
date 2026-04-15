@@ -1,9 +1,35 @@
 import unittest
 
-from output.preview import _filtered_preview_actions
+from output.preview import _choose_view_bounds, _filtered_preview_actions
 
 
 class PreviewRenderTests(unittest.TestCase):
+    def test_choose_view_bounds_prefers_primary_layout_cluster(self):
+        drawn_items = [
+            ("SITE", "rectangle", (0, 0, 400, 300)),
+            ("BUILDING", "rectangle", (120, 140, 210, 210)),
+            ("PARKING", "rectangle", (110, 90, 240, 135)),
+            ("WALK", "rectangle", (160, 135, 170, 160)),
+        ]
+
+        selected = _choose_view_bounds(drawn_items, rich_engineering=False)
+
+        self.assertEqual(selected, (110, 90, 240, 210))
+
+    def test_choose_view_bounds_keeps_key_engineering_with_completed_runs(self):
+        drawn_items = [
+            ("SITE", "rectangle", (0, 0, 400, 300)),
+            ("BUILDING", "rectangle", (120, 140, 210, 210)),
+            ("PARKING", "rectangle", (110, 90, 240, 135)),
+            ("PIPE", "polyline", (220, 70, 280, 125)),
+            ("BASIN_BOUNDARY", "polygon", (250, 40, 320, 100)),
+            ("FG_CONTOUR", "polyline", (40, 30, 360, 240)),
+        ]
+
+        selected = _choose_view_bounds(drawn_items, rich_engineering=True)
+
+        self.assertEqual(selected, (110, 40, 320, 210))
+
     def test_layout_scene_suppresses_engineering_overlay_noise(self):
         actions = [
             {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [20, 60], "width": 12, "height": 8},
