@@ -129,6 +129,15 @@ SECONDARY_ENGINEERING_LAYERS = {
 }
 
 
+def _normalize_engineering_profile(profile):
+    if profile is True:
+        return "complete"
+    if profile in (False, None, ""):
+        return "layout"
+    normalized = str(profile).strip().lower()
+    return normalized or "layout"
+
+
 def _action_bounds(action):
     task = str(action.get("task") or "").lower()
     if task == "rectangle":
@@ -463,6 +472,19 @@ def _point_within_layout(point, layout_bounds, padding=0.0):
     )
 
 
+def _bounds_near_layout(bounds, layout_bounds, padding=0.0):
+    if not bounds or not layout_bounds:
+        return False
+    min_x, min_y, max_x, max_y = bounds
+    layout_min_x, layout_min_y, layout_max_x, layout_max_y = layout_bounds
+    return not (
+        max_x < layout_min_x - padding
+        or min_x > layout_max_x + padding
+        or max_y < layout_min_y - padding
+        or min_y > layout_max_y + padding
+    )
+
+
 def _is_tiny_marker_circle(action):
     task = str(action.get("task") or "").lower()
     layer = str(action.get("layer") or "").upper()
@@ -715,7 +737,11 @@ def _polyline_length(action):
     return length
 
 
-def _engineering_overlay_actions(records, *, rich_engineering=False):
+def _engineering_overlay_actions(records, *, engineering_profile="layout"):
+    engineering_profile = _normalize_engineering_profile(engineering_profile)
+    allow_contours = engineering_profile in {"grading", "drainage", "utilities", "complete"}
+    allow_flow = engineering_profile in {"drainage", "utilities", "complete"}
+    rich_engineering = engineering_profile in {"utilities", "complete"}
     basin_candidates = []
     line_candidates = []
     flow_candidates = []
@@ -813,26 +839,26 @@ def _engineering_overlay_actions(records, *, rich_engineering=False):
                 if points_in_layout <= 1 and len(points) >= 2:
                     continue
             line_candidates.append((_polyline_length(action), action))
-        elif rich_engineering and layer == "DRAIN_FLOW" and task in {"polyline", "polygon"}:
-            if _is_oversized_for_layout(action):
+        elif allow_flow and layer == "DRAIN_FLOW" and task in {"polyline", "polygon"}:
+            if _is_oversized_for_layout(action) and not _bounds_near_layout(bounds, layout_bounds, padding=24.0):
                 continue
             points = safe_points(action)
             if points:
                 points_in_layout = sum(
                     1 for point in points if _point_within_layout(point, layout_bounds, padding=12.0)
                 )
-                if points_in_layout <= 1 and len(points) >= 2:
+                if points_in_layout <= 1 and len(points) >= 2 and not _bounds_near_layout(bounds, layout_bounds, padding=18.0):
                     continue
             flow_candidates.append((_polyline_length(action), action))
-        elif rich_engineering and layer in {"EG_CONTOUR", "FG_CONTOUR"} and task in {"polyline", "polygon"}:
-            if _is_oversized_for_layout(action):
+        elif allow_contours and layer in {"EG_CONTOUR", "FG_CONTOUR"} and task in {"polyline", "polygon"}:
+            if _is_oversized_for_layout(action) and not _bounds_near_layout(bounds, layout_bounds, padding=32.0):
                 continue
             points = safe_points(action)
             if points:
                 points_in_layout = sum(
                     1 for point in points if _point_within_layout(point, layout_bounds, padding=16.0)
                 )
-                if points_in_layout <= 1 and len(points) >= 2:
+                if points_in_layout <= 1 and len(points) >= 2 and not _bounds_near_layout(bounds, layout_bounds, padding=24.0):
                     continue
             contour_candidates.append((_polyline_length(action), action))
         elif layer == "STRUCTURE" and task in {"circle", "rectangle"}:
@@ -874,13 +900,13 @@ def _engineering_overlay_actions(records, *, rich_engineering=False):
             seen.add(key)
             selected.append(action)
 
-    for _, action in sorted(flow_candidates, key=lambda item: item[0], reverse=True)[:(4 if rich_engineering else 0)]:
+    for _, action in sorted(flow_candidates, key=lambda item: item[0], reverse=True)[:(4 if allow_flow else 0)]:
         key = repr(action)
         if key not in seen:
             seen.add(key)
             selected.append(action)
 
-    for _, action in sorted(contour_candidates, key=lambda item: item[0], reverse=True)[:(8 if rich_engineering else 0)]:
+    for _, action in sorted(contour_candidates, key=lambda item: item[0], reverse=True)[:(8 if allow_contours else 0)]:
         key = repr(action)
         if key not in seen:
             seen.add(key)
@@ -958,6 +984,7 @@ def _dedupe_primary_layout_records(records):
 
 
 def _filtered_preview_actions(actions, *, rich_engineering=False):
+    engineering_profile = _normalize_engineering_profile(rich_engineering)
     records = [action for action in actions if isinstance(action, dict)]
     records = _synthesize_layout_preview_actions(records)
     records = _dedupe_primary_layout_records(records)
@@ -965,7 +992,7 @@ def _filtered_preview_actions(actions, *, rich_engineering=False):
     has_layout_scene = _has_layout_scene(records)
     engineering_overlay_keys = {
         repr(action)
-        for action in (_engineering_overlay_actions(records, rich_engineering=rich_engineering) if has_layout_scene else [])
+        for action in (_engineering_overlay_actions(records, engineering_profile=engineering_profile) if has_layout_scene else [])
     }
     building_bounds = [
         {"action": action, "bounds": _action_bounds(action)}
@@ -1342,12 +1369,27 @@ def _draw_plan(ax, plan):
     total_phases = safe_num(combined_view.get("total_phase_count"))
     engineering_status = safe_text(meta.get("engineering_status"), "").lower()
     release_status = safe_text(meta.get("release_status"), "").lower()
-    rich_engineering = (
+    runtime_checkpoint = meta.get("runtime_phase_checkpoint") or {}
+    checkpoint_stage = safe_text(runtime_checkpoint.get("stage_name"), "").lower()
+    grading_complete = bool((phase_checkpoints.get("grading") or {}).get("ready"))
+    drainage_complete = bool((phase_checkpoints.get("drainage_storm") or {}).get("ready"))
+    utilities_complete = bool((phase_checkpoints.get("utilities") or {}).get("ready"))
+    coordination_complete = bool((phase_checkpoints.get("coordination_validation") or {}).get("ready"))
+    engineering_profile = "layout"
+    if (
         (total_phases > 0 and completed_phases >= total_phases)
         or release_status == "ready"
         or engineering_status in {"complete", "ready", "release_ready"}
-    )
-    actions = _filtered_preview_actions(plan.get("actions", []), rich_engineering=rich_engineering)
+        or coordination_complete
+    ):
+        engineering_profile = "complete"
+    elif utilities_complete or checkpoint_stage in {"sanitary", "utility_network"}:
+        engineering_profile = "utilities"
+    elif drainage_complete or checkpoint_stage in {"drainage", "storm_pipes"}:
+        engineering_profile = "drainage"
+    elif grading_complete or checkpoint_stage == "grading":
+        engineering_profile = "grading"
+    actions = _filtered_preview_actions(plan.get("actions", []), rich_engineering=engineering_profile)
     if not actions:
         return False
 
@@ -1381,7 +1423,10 @@ def _draw_plan(ax, plan):
         layer = (action.get("layer") or "").upper()
         drawn_items.append((layer, str(task or "").lower(), bounds))
 
-    selected_bounds = _choose_view_bounds(drawn_items, rich_engineering=rich_engineering)
+    selected_bounds = _choose_view_bounds(
+        drawn_items,
+        rich_engineering=engineering_profile != "layout",
+    )
     if selected_bounds is None:
         return False
 
