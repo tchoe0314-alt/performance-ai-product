@@ -1312,9 +1312,6 @@ def _layout_to_actions(layout: Dict[str, Any]) -> List[Dict[str, Any]]:
     bx, by = _rect_center(layout["building"])
     actions.append(_text_action(bx, by, "BLDG", layer="BUILDING", h=1.0))
 
-    px, py = _rect_center(layout["parking"])
-    actions.append(_text_action(px, py, f'PARK {layout.get("parking_count", 0)} STALLS', layer="PARKING", h=1.0))
-
     return actions
 
 
@@ -1896,8 +1893,6 @@ def _append_parking_actions(actions: List[Dict[str, Any]], parking_areas: List[D
         stalls = _safe_int(p.get("stall_count"), 0)
         layer = _safe_str(p.get("layer"), "PARKING")
         actions.append(_rect_action_from_obj(_rect(x, y, w, h), label, layer))
-        if stalls > 0:
-            actions.append(_text_action(x + 2.0, y + h / 2.0, f"{stalls} STALLS", layer=layer))
 
         standards = {
             "stall_width": _safe_float(p.get("stall_width"), 9.0),

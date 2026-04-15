@@ -115,6 +115,13 @@ class LayoutEngineLegacyInferenceTests(unittest.TestCase):
                 for action in actions
             )
         )
+        self.assertFalse(
+            any(
+                str(action.get("layer") or "").upper() == "PARKING"
+                and str(action.get("task") or "").lower() == "text_note"
+                for action in actions
+            )
+        )
 
     def test_simple_layout_actions_do_not_label_synthetic_circulation_as_frontage_or_access(self) -> None:
         layout = generate_smart_layout(
@@ -179,6 +186,13 @@ class LayoutEngineLegacyInferenceTests(unittest.TestCase):
             any(
                 str(action.get("layer") or "").upper() == "PAVEMENT"
                 and str(action.get("task") or "").lower() == "polyline"
+                for action in actions
+            )
+        )
+        self.assertFalse(
+            any(
+                str(action.get("layer") or "").upper() == "PARKING"
+                and str(action.get("task") or "").lower() == "text_note"
                 for action in actions
             )
         )
