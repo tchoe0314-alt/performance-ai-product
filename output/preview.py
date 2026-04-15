@@ -102,7 +102,7 @@ SUPPRESSED_AUTO_LABEL_LAYERS = {
     "STORM",
 }
 SUPPRESSED_TEXT_LAYERS = {"EG_CONTOUR", "FG_CONTOUR", "DRAIN_FLOW", "LOW_POINTS", "UTILITY", "WATER"}
-FOCUS_EXCLUDED_LAYERS = {"ANNO", "SYMBOL", "SITE", "PAD", "SETBACK", "UTILITY", "WATER", "DRAIN_FLOW", "EG_CONTOUR", "FG_CONTOUR", "SPOT_EG", "SPOT_FG", "LOW_POINTS"}
+FOCUS_EXCLUDED_LAYERS = {"ANNO", "SYMBOL", "SITE", "PAD", "SETBACK", "UTILITY", "WATER", "DRAIN_FLOW", "EG_CONTOUR", "FG_CONTOUR", "LOW_POINTS"}
 SUPPRESSED_LABEL_TOKENS = ("BUILDABLE_AREA", "GENERIC_UTILITY", "SERVICE_TIE", "SOURCE_SERVICE", "BUILDING_SERVICE", "UTILITY-")
 PRIMARY_LAYOUT_LAYERS = {"BUILDING", "PAVEMENT", "PARKING", "WALK"}
 PRIMARY_VIEW_LAYERS = {"BUILDING", "PAVEMENT", "PARKING", "WALK", "PAD"}
@@ -130,11 +130,11 @@ SECONDARY_ENGINEERING_LAYERS = {
 
 PHASE_ENGINEERING_FOCUS_LAYERS = {
     "layout": set(),
-    "grading": {"FG_CONTOUR", "EG_CONTOUR", "PAD"},
+    "grading": {"FG_CONTOUR", "EG_CONTOUR", "SPOT_FG", "SPOT_EG", "PAD"},
     "drainage": {"DRAIN", "DRAIN_FLOW", "STRUCTURE"},
     "storm": {"DRAIN", "PIPE", "STORM", "BASIN_BOUNDARY", "STRUCTURE", "DRAIN_FLOW"},
     "utilities": {"DRAIN", "PIPE", "STORM", "SAN", "UTILITY", "WATER", "BASIN_BOUNDARY", "STRUCTURE", "DRAIN_FLOW"},
-    "complete": {"DRAIN", "PIPE", "STORM", "SAN", "UTILITY", "WATER", "BASIN_BOUNDARY", "STRUCTURE", "DRAIN_FLOW", "FG_CONTOUR", "EG_CONTOUR"},
+    "complete": {"DRAIN", "PIPE", "STORM", "SAN", "UTILITY", "WATER", "BASIN_BOUNDARY", "STRUCTURE", "DRAIN_FLOW", "FG_CONTOUR", "EG_CONTOUR", "SPOT_FG", "SPOT_EG"},
     "baseline": {"DRAIN", "PIPE", "STORM", "SAN", "UTILITY", "WATER", "BASIN_BOUNDARY", "STRUCTURE"},
 }
 
@@ -760,12 +760,14 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
     allow_pipe = engineering_profile in {"baseline", "storm", "utilities", "complete"}
     allow_drain = engineering_profile in {"baseline", "drainage", "storm", "utilities", "complete"}
     allow_contours = engineering_profile in {"grading", "storm", "utilities", "complete"}
+    allow_spot_grades = engineering_profile in {"grading", "complete"}
     allow_flow = engineering_profile in {"drainage", "storm", "utilities", "complete"}
     rich_engineering = engineering_profile in {"baseline", "utilities", "complete"}
     basin_candidates = []
     line_candidates = []
     flow_candidates = []
     contour_candidates = []
+    spot_grade_candidates = []
     structure_candidates = []
     utility_candidates = []
     drain_label_candidates = []
@@ -896,6 +898,18 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                 if points_in_layout <= 1 and len(points) >= 2 and not _bounds_near_layout(bounds, layout_bounds, padding=24.0):
                     continue
             contour_candidates.append((_polyline_length(action), action))
+        elif allow_spot_grades and layer in {"SPOT_EG", "SPOT_FG"} and task in {"text_note", "point"}:
+            if not _bounds_near_layout(bounds, layout_bounds, padding=48.0):
+                continue
+            x1, y1, x2, y2 = bounds
+            cx = (x1 + x2) / 2.0
+            cy = (y1 + y2) / 2.0
+            if layout_bounds and not _point_within_layout((cx, cy), layout_bounds, padding=18.0):
+                continue
+            score = 1.0
+            if task == "text_note":
+                score = max(1.0, len(safe_text(action.get("text"), "").strip()))
+            spot_grade_candidates.append((score, action))
         elif (allow_drain or allow_pipe) and layer == "STRUCTURE" and task in {"circle", "rectangle"}:
             if _is_tiny_marker_circle(action):
                 continue
@@ -948,6 +962,12 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
             selected.append(action)
 
     for _, action in sorted(contour_candidates, key=lambda item: item[0], reverse=True)[:(8 if allow_contours else 0)]:
+        key = repr(action)
+        if key not in seen:
+            seen.add(key)
+            selected.append(action)
+
+    for _, action in sorted(spot_grade_candidates, key=lambda item: item[0], reverse=True)[:(12 if allow_spot_grades else 0)]:
         key = repr(action)
         if key not in seen:
             seen.add(key)

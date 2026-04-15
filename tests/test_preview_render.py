@@ -52,6 +52,21 @@ class PreviewRenderTests(unittest.TestCase):
 
         self.assertEqual(selected, (105, 110, 275, 255))
 
+    def test_choose_view_bounds_grading_includes_spot_grade_cluster(self):
+        drawn_items = [
+            ("SITE", "rectangle", (0, 0, 500, 380)),
+            ("BUILDING", "rectangle", (140, 170, 230, 240)),
+            ("PARKING", "rectangle", (120, 120, 260, 165)),
+            ("FG_CONTOUR", "polyline", (118, 118, 270, 252)),
+            ("SPOT_FG", "text_note", (132, 132, 132, 132)),
+            ("SPOT_FG", "text_note", (252, 238, 252, 238)),
+            ("DRAIN_FLOW", "polyline", (70, 50, 430, 320)),
+        ]
+
+        selected = _choose_view_bounds(drawn_items, engineering_profile="grading")
+
+        self.assertEqual(selected, (118, 118, 270, 252))
+
     def test_choose_view_bounds_drainage_prefers_on_site_drain_network(self):
         drawn_items = [
             ("SITE", "rectangle", (0, 0, 500, 380)),
@@ -293,14 +308,24 @@ class PreviewRenderTests(unittest.TestCase):
             {"layer": "BASIN_BOUNDARY", "task": "polygon", "label": "BASIN-A", "points": [[70, 18], [80, 18], [82, 10], [68, 10], [70, 18]]},
             {"layer": "FG_CONTOUR", "task": "polyline", "label": "FG-1", "points": [[14, 72], [40, 70], [78, 68]]},
             {"layer": "EG_CONTOUR", "task": "polyline", "label": "EG-1", "points": [[14, 64], [40, 62], [78, 60]]},
+            {"layer": "SPOT_FG", "task": "text_note", "text": "101.2", "origin": [28, 58]},
+            {"layer": "SPOT_FG", "task": "text_note", "text": "100.8", "origin": [52, 48]},
             {"layer": "DRAIN_FLOW", "task": "polyline", "label": "FLOW-1", "points": [[26, 54], [34, 44], [44, 34]]},
         ]
 
         filtered = _filtered_preview_actions(actions, rich_engineering="grading")
         kept_layers = [str(action.get("layer") or "").upper() for action in filtered]
+        spot_texts = [
+            str(action.get("text") or "")
+            for action in filtered
+            if str(action.get("layer") or "").upper() == "SPOT_FG"
+        ]
 
         self.assertIn("FG_CONTOUR", kept_layers)
         self.assertIn("EG_CONTOUR", kept_layers)
+        self.assertIn("SPOT_FG", kept_layers)
+        self.assertIn("101.2", spot_texts)
+        self.assertIn("100.8", spot_texts)
         self.assertNotIn("DRAIN_FLOW", kept_layers)
         self.assertNotIn("PIPE", kept_layers)
         self.assertNotIn("BASIN_BOUNDARY", kept_layers)
