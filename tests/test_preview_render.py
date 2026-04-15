@@ -422,6 +422,8 @@ class PreviewRenderTests(unittest.TestCase):
 
         self.assertGreaterEqual(len(fg_contours), len(eg_contours))
         self.assertGreaterEqual(len(fg_spots), len(eg_spots))
+        self.assertEqual(len(eg_contours), 0)
+        self.assertEqual(len(eg_spots), 0)
         self.assertIn("FG 101.2", contour_texts)
         self.assertNotIn("EG 100.8", contour_texts)
 

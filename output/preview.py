@@ -142,7 +142,7 @@ PHASE_ENGINEERING_FOCUS_LAYERS = {
     "drainage": {"DRAIN", "DRAIN_FLOW", "STRUCTURE"},
     "storm": {"DRAIN", "PIPE", "STORM", "BASIN_BOUNDARY", "STRUCTURE", "DRAIN_FLOW"},
     "utilities": {"DRAIN", "PIPE", "STORM", "SAN", "UTILITY", "WATER", "BASIN_BOUNDARY", "STRUCTURE", "DRAIN_FLOW"},
-    "complete": {"DRAIN", "PIPE", "STORM", "SAN", "UTILITY", "WATER", "BASIN_BOUNDARY", "STRUCTURE", "DRAIN_FLOW", "FG_CONTOUR", "EG_CONTOUR", "SPOT_FG", "SPOT_EG"},
+    "complete": {"DRAIN", "PIPE", "STORM", "SAN", "UTILITY", "WATER", "BASIN_BOUNDARY", "STRUCTURE", "DRAIN_FLOW", "FG_CONTOUR", "SPOT_FG"},
     "baseline": {"DRAIN", "PIPE", "STORM", "SAN", "UTILITY", "WATER", "BASIN_BOUNDARY", "STRUCTURE"},
 }
 
@@ -959,6 +959,8 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
             label_score = _engineering_score(bounds, 1.0)
             drain_label_candidates.append((label_score, action))
         elif allow_contours and layer in {"EG_CONTOUR", "FG_CONTOUR"} and task in {"polyline", "polygon"}:
+            if engineering_profile in {"storm", "utilities", "complete"} and layer == "EG_CONTOUR":
+                continue
             if engineering_profile == "grading":
                 if not _bounds_near_layout(bounds, layout_bounds, padding=160.0):
                     continue
