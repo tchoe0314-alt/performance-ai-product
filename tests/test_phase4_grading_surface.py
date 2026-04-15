@@ -58,12 +58,19 @@ class Phase4GradingSurfaceTests(unittest.TestCase):
         )
 
         actions = surface_actions_from_grid(surface, layer="FG_CONTOUR", note_prefix="FG", sample_lines=2)
+        polylines = [
+            action for action in actions
+            if str(action.get("task") or "").lower() == "polyline"
+            and str(action.get("layer") or "").upper() == "FG_CONTOUR"
+        ]
         labels = [
             action for action in actions
             if str(action.get("task") or "").lower() == "text_note"
             and str(action.get("layer") or "").upper() == "FG_CONTOUR"
         ]
 
+        self.assertTrue(polylines)
+        self.assertTrue(all(not action.get("label") for action in polylines))
         self.assertTrue(labels)
         self.assertNotEqual(labels[0].get("origin"), [0.0, 0.0])
 

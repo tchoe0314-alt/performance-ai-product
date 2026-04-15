@@ -281,6 +281,38 @@ class LayoutEngineLegacyInferenceTests(unittest.TestCase):
         self.assertNotIn("BASIN-1", generic_labels)
         self.assertNotIn("WATER", generic_labels)
 
+    def test_expanded_plan_drops_synthetic_flow_and_contour_labels(self) -> None:
+        plan = _build_expanded_plan(
+            {
+                "project_type": "mixed_use",
+                "lot": {"w": 620.0, "h": 980.0},
+                "buildings": [
+                    {"name": "MF-1", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "MF-2", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "MF-3", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "Retail", "type": "retail", "width": 70, "depth": 45},
+                ],
+                "grading": {"contours_required": True, "flow_arrow_count": 2, "pad_count": 1, "min_slope_pct": 2.5},
+            }
+        )
+
+        drain_flow_texts = [
+            str(action.get("text") or "").upper()
+            for action in plan["actions"]
+            if str(action.get("task") or "").lower() == "text_note"
+            and str(action.get("layer") or "").upper() == "DRAIN_FLOW"
+        ]
+        contour_labels = [
+            str(action.get("label") or "").upper()
+            for action in plan["actions"]
+            if str(action.get("task") or "").lower() == "polyline"
+            and str(action.get("layer") or "").upper() == "FG_CONTOUR"
+        ]
+
+        self.assertFalse(any(text.endswith(" FLOW") for text in drain_flow_texts))
+        self.assertTrue(contour_labels)
+        self.assertTrue(all(not label for label in contour_labels))
+
 
 if __name__ == "__main__":
     unittest.main()

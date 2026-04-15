@@ -96,7 +96,6 @@ def surface_actions_from_grid(surface: Optional[GridSurface], *, layer: str, not
     if nrows <= 1 or ncols <= 1:
         return actions
     step = max(1, nrows // max(1, sample_lines))
-    counter = 0
     for row in range(0, nrows, step):
         pts: List[List[float]] = []
         z_vals: List[float] = []
@@ -106,7 +105,6 @@ def surface_actions_from_grid(surface: Optional[GridSurface], *, layer: str, not
         if len(pts) < 2:
             continue
         avg_z = sum(z_vals) / max(len(z_vals), 1)
-        counter += 1
         actions.append({
             "task": "polyline",
             "origin": None,
@@ -114,7 +112,7 @@ def surface_actions_from_grid(surface: Optional[GridSurface], *, layer: str, not
             "closed": False,
             "width": None,
             "height": None,
-            "label": f"{note_prefix}-{counter}",
+            "label": None,
             "layer": layer,
             "text": None,
             "text_height": None,

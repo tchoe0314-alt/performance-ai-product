@@ -2105,10 +2105,7 @@ def _append_grading_actions(actions: List[Dict[str, Any]], grading: Dict[str, An
             sx = site_box["x"] + site_box["w"] * (0.15 + 0.7 * ((i % 4) / 4.0))
             sy = site_box["y"] + site_box["h"] * (0.25 + 0.5 * (((i // 4) % 3) / 3.0))
             tx, ty = min(targets, key=lambda p: (p[0] - sx) ** 2 + (p[1] - sy) ** 2)
-            mx = (sx + tx) / 2.0
-            my = (sy + ty) / 2.0
             actions.append(_polyline_action([[sx, sy], [tx, ty]], layer="DRAIN_FLOW", label=None, closed=False))
-            actions.append(_text_action(mx, my, f"{min_slope:.1f}% FLOW", layer="DRAIN_FLOW", h=0.8))
 
     if contours_required:
         y_step = max(12.0, site_box["h"] / 5.0)
@@ -2120,7 +2117,7 @@ def _append_grading_actions(actions: List[Dict[str, Any]], grading: Dict[str, An
                 [site_box["x"] + site_box["w"] * 0.7, y - 1.5],
                 [_rect_right(site_box) - 5.0, y + 1.0],
             ]
-            actions.append(_polyline_action(pts, layer="FG_CONTOUR", label=f"C{i}", closed=False))
+            actions.append(_polyline_action(pts, layer="FG_CONTOUR", label=None, closed=False))
 
 
 def _build_expanded_plan(parsed: Dict[str, Any]) -> Dict[str, Any]:
