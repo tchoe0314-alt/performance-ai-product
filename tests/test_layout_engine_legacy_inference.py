@@ -197,6 +197,65 @@ class LayoutEngineLegacyInferenceTests(unittest.TestCase):
             )
         )
 
+    def test_simple_layout_actions_do_not_emit_redundant_building_or_walk_text_notes(self) -> None:
+        layout = generate_smart_layout(
+            lot={"x": 0.0, "y": 0.0, "w": 120.0, "h": 100.0},
+            setback=10.0,
+            layout_strategy="front_parking",
+            street_edge="bottom",
+            site_type="commercial_pad",
+        )
+
+        actions = _layout_to_actions(layout)
+        text_notes = [
+            action
+            for action in actions
+            if str(action.get("task") or "").lower() == "text_note"
+        ]
+
+        self.assertFalse(
+            any(str(action.get("layer") or "").upper() in {"BUILDING", "WALK"} for action in text_notes)
+        )
+
+    def test_expanded_plan_drops_redundant_network_annotation_notes(self) -> None:
+        plan = _build_expanded_plan(
+            {
+                "project_type": "mixed_use",
+                "lot": {"w": 620.0, "h": 980.0},
+                "buildings": [
+                    {"name": "MF-1", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "MF-2", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "MF-3", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "Retail", "type": "retail", "width": 70, "depth": 45},
+                ],
+                "drive_aisles": [
+                    {"label": "AISLE-1", "layer": "PAVEMENT", "width": 26.0, "points": [[180.0, 450.0], [420.0, 450.0]]}
+                ],
+                "sidewalks": [
+                    {"label": "ADA", "layer": "WALK", "width": 5.0, "points": [[230.0, 520.0], [230.0, 430.0]]}
+                ],
+                "pipe_network": [
+                    {"label": "PIPE-1", "layer": "PIPE", "diameter": 24.0, "start": [260.0, 500.0], "end": [380.0, 430.0]}
+                ],
+                "ponds": [
+                    {"label": "BASIN-1", "layer": "BASIN_BOUNDARY", "x": 440.0, "y": 260.0, "w": 90.0, "h": 70.0}
+                ],
+                "utility_network": [
+                    {"label": "WATER", "layer": "WATER", "points": [[160.0, 400.0], [440.0, 400.0]]}
+                ],
+            }
+        )
+
+        text_notes = [
+            action
+            for action in plan["actions"]
+            if str(action.get("task") or "").lower() == "text_note"
+        ]
+
+        self.assertFalse(
+            any(str(action.get("layer") or "").upper() in {"PAVEMENT", "WALK", "PIPE", "BASIN_BOUNDARY", "WATER", "UTILITY"} for action in text_notes)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

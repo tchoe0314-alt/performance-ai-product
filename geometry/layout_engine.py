@@ -1280,8 +1280,6 @@ def _layout_to_actions(layout: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     for sidewalk in layout.get("sidewalks", []):
         actions.append(_polyline_action(sidewalk["points"], layer=sidewalk.get("layer", "WALK"), label=sidewalk.get("label")))
-        mx, my = _midpoint(tuple(sidewalk["points"][0]), tuple(sidewalk["points"][-1]))
-        actions.append(_text_action(mx, my, f'SW {sidewalk.get("width", 5.0):.1f}', layer=sidewalk.get("layer", "WALK"), h=0.85))
 
     if layout.get("fire_lane") and not (
         _safe_bool(layout["fire_lane"].get("synthetic_fire_lane"))
@@ -1308,9 +1306,6 @@ def _layout_to_actions(layout: Dict[str, Any]) -> List[Dict[str, Any]]:
         internal_lane_action["synthetic_layout_surface"] = True
         internal_lane_action["semantic_surface_role"] = "circulation"
         actions.append(internal_lane_action)
-
-    bx, by = _rect_center(layout["building"])
-    actions.append(_text_action(bx, by, "BLDG", layer="BUILDING", h=1.0))
 
     return actions
 
@@ -1923,11 +1918,6 @@ def _append_line_network_actions(actions: List[Dict[str, Any]], items: List[Dict
         layer = _safe_str(item.get("layer"), "SITE")
         actions.append(_polyline_action(clean_pts, layer=layer, label=label, closed=False))
 
-        if width_prefix is not None and item.get("width") is not None:
-            mx = (clean_pts[0][0] + clean_pts[-1][0]) / 2.0
-            my = (clean_pts[0][1] + clean_pts[-1][1]) / 2.0
-            actions.append(_text_action(mx + 1.0, my + 1.0, f"{width_prefix} {_safe_float(item.get('width'), 0.0):.1f}", layer=layer, h=0.85))
-
 
 def _surface_rect_from_line_item(item: Dict[str, Any], *, layer: str) -> Optional[Dict[str, Any]]:
     pts = item.get("points")
@@ -2002,9 +1992,6 @@ def _append_pipe_actions(actions: List[Dict[str, Any]], pipes: List[Dict[str, An
         dia = _safe_float(p.get("diameter"), 18.0)
 
         actions.append(_polyline_action(pts, layer=layer, label=label, closed=False))
-        mx = (pts[0][0] + pts[1][0]) / 2.0
-        my = (pts[0][1] + pts[1][1]) / 2.0
-        actions.append(_text_action(mx + 0.5, my + 0.5, f'{label} {dia:.0f}"', layer=layer, h=0.85))
 
 
 def _append_pond_actions(actions: List[Dict[str, Any]], ponds: List[Dict[str, Any]]) -> None:
@@ -2025,7 +2012,6 @@ def _append_pond_actions(actions: List[Dict[str, Any]], ponds: List[Dict[str, An
             [x, y + h * 0.45],
         ]
         actions.append(_polyline_action(poly, layer=layer, label=label, closed=True))
-        actions.append(_text_action(x + w / 2.0, y + h / 2.0, label, layer=layer))
 
 
 def _append_utility_actions(actions: List[Dict[str, Any]], utilities: List[Dict[str, Any]]) -> None:
@@ -2044,9 +2030,6 @@ def _append_utility_actions(actions: List[Dict[str, Any]], utilities: List[Dict[
         layer = _safe_str(u.get("layer"), "UTILITY")
         label = _safe_str(u.get("label"), _safe_str(u.get("utility_type"), "UTILITY").upper())
         actions.append(_polyline_action(clean_pts, layer=layer, label=label, closed=False))
-        mx = (clean_pts[0][0] + clean_pts[-1][0]) / 2.0
-        my = (clean_pts[0][1] + clean_pts[-1][1]) / 2.0
-        actions.append(_text_action(mx + 0.6, my + 0.6, label, layer=layer, h=0.8))
 
 
 def _append_grading_actions(actions: List[Dict[str, Any]], grading: Dict[str, Any], site_box: Rect, buildings: List[Dict[str, Any]], ponds: List[Dict[str, Any]]) -> None:
