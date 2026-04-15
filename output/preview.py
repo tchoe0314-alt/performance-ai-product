@@ -744,7 +744,7 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
     allow_basin = engineering_profile in {"baseline", "storm", "utilities", "complete"}
     allow_pipe = engineering_profile in {"baseline", "storm", "utilities", "complete"}
     allow_drain = engineering_profile in {"baseline", "drainage", "storm", "utilities", "complete"}
-    allow_contours = engineering_profile in {"grading", "drainage", "storm", "utilities", "complete"}
+    allow_contours = engineering_profile in {"grading", "storm", "utilities", "complete"}
     allow_flow = engineering_profile in {"drainage", "storm", "utilities", "complete"}
     rich_engineering = engineering_profile in {"baseline", "utilities", "complete"}
     basin_candidates = []
@@ -834,11 +834,14 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                 continue
             basin_candidates.append((_bounds_area(bounds), action))
         elif (
-            task in {"polyline", "polygon"}
-            and (
-                (layer in {"PIPE", "STORM"} and allow_pipe)
-                or (layer == "DRAIN" and allow_drain)
+            (
+                task in {"polyline", "polygon"}
+                and (
+                    (layer in {"PIPE", "STORM"} and allow_pipe)
+                    or (layer == "DRAIN" and allow_drain)
+                )
             )
+            or (allow_drain and layer == "DRAIN" and task in {"circle", "rectangle"})
         ):
             if _is_oversized_for_layout(action):
                 continue
@@ -849,7 +852,8 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                 )
                 if points_in_layout <= 1 and len(points) >= 2:
                     continue
-            line_candidates.append((_polyline_length(action), action))
+            line_score = _polyline_length(action) if points else max(2.0, (_bounds_area(bounds) ** 0.5))
+            line_candidates.append((line_score, action))
         elif allow_flow and layer == "DRAIN_FLOW" and task in {"polyline", "polygon"}:
             if _is_oversized_for_layout(action) and not _bounds_near_layout(bounds, layout_bounds, padding=24.0):
                 continue
