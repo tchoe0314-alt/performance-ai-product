@@ -1882,10 +1882,8 @@ def _append_building_actions(actions: List[Dict[str, Any]], buildings: List[Dict
         w = _safe_float(b.get("w"), 40.0)
         d = _safe_float(b.get("d"), 60.0)
         label = _safe_str(b.get("label"), "BLDG")
-        floors = max(1, _safe_int(b.get("floors"), 1))
         layer = _safe_str(b.get("layer"), "BUILDING")
         actions.append(_rect_action_from_obj(_rect(x, y, w, d), label, layer))
-        actions.append(_text_action(x + w / 2.0, y + d / 2.0, f"{label} ({floors}F)", layer=layer))
 
 
 def _append_parking_actions(actions: List[Dict[str, Any]], parking_areas: List[Dict[str, Any]]) -> None:

@@ -108,6 +108,13 @@ class LayoutEngineLegacyInferenceTests(unittest.TestCase):
         self.assertFalse(any(str(action.get("label") or "").upper() == "OLD PARK" for action in actions))
         self.assertFalse(any(str(action.get("text") or "").lower() == "legacy layout note" for action in actions))
         self.assertTrue(any(str(action.get("layer") or "").upper() == "PIPE" for action in actions))
+        self.assertFalse(
+            any(
+                str(action.get("layer") or "").upper() == "BUILDING"
+                and str(action.get("task") or "").lower() == "text_note"
+                for action in actions
+            )
+        )
 
     def test_simple_layout_actions_do_not_label_synthetic_circulation_as_frontage_or_access(self) -> None:
         layout = generate_smart_layout(
