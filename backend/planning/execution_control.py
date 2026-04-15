@@ -40,11 +40,18 @@ def stage_should_run(ctx: PlannerExecutionContext, stage_name: str, *, force_fir
 
 def mark_stage_skipped_clean(ctx: PlannerExecutionContext, stage_name: str) -> None:
     reasons = stage_dirty_reasons(ctx, stage_name)
+    prior = latest_stage_result(ctx, stage_name)
+    preserved_completeness = ""
+    if prior is not None:
+        preserved_completeness = safe_str(safe_dict(prior.meta).get("completeness")).strip().lower()
+        if preserved_completeness not in {"complete", "assumed"} and bool(safe_dict(prior.meta).get("resumed_from_checkpoint")) and bool(prior.success):
+            preserved_completeness = "complete"
     ctx.add_stage(
         stage_name,
         True,
         "Stage skipped because canonical state is already clean.",
         rerun_skipped=True,
+        completeness=preserved_completeness or "partial",
         dirty_reasons=deepcopy(reasons),
         declared_dependencies=declared_stage_dependencies(stage_name),
     )

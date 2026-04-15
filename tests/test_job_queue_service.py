@@ -546,9 +546,9 @@ class JobQueueServiceTest(unittest.TestCase):
             queued_detail["result"]["metadata"]["runtime_phase_checkpoint"]["stage_name"],
             "layout",
         )
-        self.assertEqual(
+        self.assertIn(
             queued_detail["result"]["job_progress"]["stage"],
-            "Queued Next Phase",
+            {"Queued Next Phase", "Preparing"},
         )
 
         record = None

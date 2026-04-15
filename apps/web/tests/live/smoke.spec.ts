@@ -68,19 +68,29 @@ test("live civora flow", async ({ page, request, baseURL }) => {
     await composer.fill(prompt);
     await page.getByRole("button", { name: "Send" }).click();
 
-    await expect(
-      page.getByText(/Engineering Review|Generated plan preview|Phase Progress|Awaiting Approval/i),
-    ).toBeVisible({ timeout: 60_000 });
+    const approvalCard = page.getByText("Awaiting Approval", { exact: true });
+    await expect(approvalCard).toBeVisible({ timeout: 60_000 });
 
-    const awaitingApproval = page.getByText(/Awaiting Approval/i).first();
-    if (await awaitingApproval.isVisible().catch(() => false)) {
-      const previewImage = page.getByAltText("Generated plan preview");
-      await previewImage.waitFor({ state: "visible", timeout: 12_000 }).catch(() => null);
-    }
+    const previewImage = page.getByAltText("Generated plan preview");
+    await previewImage.waitFor({ state: "visible", timeout: 12_000 }).catch(() => null);
 
     await page.screenshot({
       path: path.join(artifactDir, "civora-after-prompt.png"),
       fullPage: true,
     });
+
+    const approveButton = page.getByRole("button", { name: /Approve & Continue/i });
+    if (await approveButton.isVisible().catch(() => false)) {
+      await approveButton.scrollIntoViewIfNeeded();
+      await approveButton.click({ force: true });
+      await expect(
+        page.getByText(/Proposed grading surface built\.|2\/5 phases complete/i),
+      ).toBeVisible({ timeout: 60_000 });
+      await previewImage.waitFor({ state: "visible", timeout: 12_000 }).catch(() => null);
+      await page.screenshot({
+        path: path.join(artifactDir, "civora-after-approve.png"),
+        fullPage: true,
+      });
+    }
   }
 });
