@@ -381,6 +381,50 @@ class PreviewRenderTests(unittest.TestCase):
         self.assertIn("FG-NEAR", contour_polylines)
         self.assertNotIn("FG-FAR", contour_polylines)
 
+    def test_completed_layout_scene_prefers_finished_grade_over_existing_noise(self):
+        actions = [
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [120, 140], "width": 90, "height": 50},
+            {"layer": "PARKING", "task": "rectangle", "origin": [110, 90], "width": 130, "height": 45},
+            {"layer": "FG_CONTOUR", "task": "polyline", "label": "FG-1", "points": [[96, 170], [180, 162], [252, 156]]},
+            {"layer": "FG_CONTOUR", "task": "polyline", "label": "FG-2", "points": [[100, 196], [184, 190], [256, 184]]},
+            {"layer": "EG_CONTOUR", "task": "polyline", "label": "EG-1", "points": [[96, 164], [180, 158], [252, 152]]},
+            {"layer": "EG_CONTOUR", "task": "polyline", "label": "EG-2", "points": [[100, 190], [184, 184], [256, 178]]},
+            {"layer": "FG_CONTOUR", "task": "text_note", "text": "FG 101.2", "origin": [110, 168]},
+            {"layer": "EG_CONTOUR", "task": "text_note", "text": "EG 100.8", "origin": [110, 162]},
+            {"layer": "SPOT_FG", "task": "text_note", "text": "101.1", "origin": [132, 178]},
+            {"layer": "SPOT_EG", "task": "text_note", "text": "100.7", "origin": [132, 170]},
+        ]
+
+        filtered = _filtered_preview_actions(actions, rich_engineering="complete")
+        fg_contours = [
+            action for action in filtered
+            if str(action.get("layer") or "").upper() == "FG_CONTOUR"
+            and str(action.get("task") or "").lower() == "polyline"
+        ]
+        eg_contours = [
+            action for action in filtered
+            if str(action.get("layer") or "").upper() == "EG_CONTOUR"
+            and str(action.get("task") or "").lower() == "polyline"
+        ]
+        fg_spots = [
+            action for action in filtered
+            if str(action.get("layer") or "").upper() == "SPOT_FG"
+        ]
+        eg_spots = [
+            action for action in filtered
+            if str(action.get("layer") or "").upper() == "SPOT_EG"
+        ]
+        contour_texts = [
+            str(action.get("text") or "")
+            for action in filtered
+            if str(action.get("task") or "").lower() == "text_note"
+        ]
+
+        self.assertGreaterEqual(len(fg_contours), len(eg_contours))
+        self.assertGreaterEqual(len(fg_spots), len(eg_spots))
+        self.assertIn("FG 101.2", contour_texts)
+        self.assertNotIn("EG 100.8", contour_texts)
+
     def test_grading_checkpoint_keeps_contour_context_without_flow_lines(self):
         actions = [
             {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [20, 60], "width": 12, "height": 8},

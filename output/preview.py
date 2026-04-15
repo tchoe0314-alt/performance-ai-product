@@ -975,18 +975,28 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                     if points_in_layout <= 1 and len(points) >= 2 and not _bounds_near_layout(bounds, layout_bounds, padding=24.0):
                         continue
             contour_length = _polyline_length(action)
+            contour_bias = 0.0
+            if engineering_profile in {"storm", "utilities", "complete"}:
+                contour_bias = 0.35 if layer == "FG_CONTOUR" else -0.4
             contour_score = _engineering_score(
                 bounds,
-                contour_length / max(layout_span, 1.0),
+                contour_length / max(layout_span, 1.0) + contour_bias,
             )
             contour_candidates.append((contour_score, action))
         elif allow_contour_labels and layer in {"EG_CONTOUR", "FG_CONTOUR"} and task == "text_note":
+            if engineering_profile == "complete" and layer == "EG_CONTOUR":
+                continue
             padding = 240.0 if engineering_profile == "grading" else 140.0
             if not _bounds_near_layout(bounds, layout_bounds, padding=padding):
                 continue
-            score = _engineering_score(bounds, 1.0)
+            label_bias = 0.0
+            if engineering_profile == "complete":
+                label_bias = 0.35 if layer == "FG_CONTOUR" else -0.4
+            score = _engineering_score(bounds, 1.0 + label_bias)
             contour_label_candidates.append((score, action))
         elif allow_spot_grades and layer in {"SPOT_EG", "SPOT_FG"} and task in {"text_note", "point"}:
+            if engineering_profile == "complete" and layer == "SPOT_EG":
+                continue
             spot_padding = 48.0 if engineering_profile == "grading" else 36.0
             if not _bounds_near_layout(bounds, layout_bounds, padding=spot_padding):
                 continue
@@ -995,7 +1005,10 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
             cy = (y1 + y2) / 2.0
             if layout_bounds and not _point_within_layout((cx, cy), layout_bounds, padding=18.0):
                 continue
-            score = _engineering_score(bounds, 1.0)
+            spot_bias = 0.0
+            if engineering_profile == "complete":
+                spot_bias = 0.35 if layer == "SPOT_FG" else -0.4
+            score = _engineering_score(bounds, 1.0 + spot_bias)
             if task == "text_note":
                 score += max(1.0, len(safe_text(action.get("text"), "").strip())) * 0.02
             spot_grade_candidates.append((score, action))
