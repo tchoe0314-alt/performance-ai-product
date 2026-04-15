@@ -465,6 +465,16 @@ def _rect_center(bounds):
     return (min_x + max_x) / 2.0, (min_y + max_y) / 2.0
 
 
+def _distance(a, b):
+    if a is None or b is None:
+        return 0.0
+    ax, ay = a
+    bx, by = b
+    dx = safe_num(ax) - safe_num(bx)
+    dy = safe_num(ay) - safe_num(by)
+    return (dx * dx + dy * dy) ** 0.5
+
+
 def _rect_gap(a, b):
     a_min_x, a_min_y, a_max_x, a_max_y = a
     b_min_x, b_min_y, b_max_x, b_max_y = b
@@ -795,6 +805,18 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
             (layout_bounds[1] + layout_bounds[3]) / 2.0,
         )
     layout_diag = 0.0 if not layout_bounds else ((layout_bounds[2] - layout_bounds[0]) ** 2 + (layout_bounds[3] - layout_bounds[1]) ** 2) ** 0.5
+    layout_span = max(1.0, layout_diag)
+
+    def _proximity_score(bounds, *, invert=False):
+        if not bounds or layout_center is None:
+            return 0.0
+        center = _rect_center(bounds)
+        distance = _distance(center, layout_center)
+        normalized = distance / layout_span
+        return normalized if invert else -normalized
+
+    def _engineering_score(bounds, magnitude=0.0, *, favor_far=False, near_bonus=0.0):
+        return magnitude + _proximity_score(bounds, invert=favor_far) + near_bonus
 
     def _is_oversized_for_layout(action):
         if not layout_bounds:
@@ -866,7 +888,12 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
         if allow_basin and layer == "BASIN_BOUNDARY" and task in {"circle", "polygon", "rectangle", "polyline"}:
             if _is_oversized_for_layout(action):
                 continue
-            basin_candidates.append((_bounds_area(bounds), action))
+            basin_score = _engineering_score(
+                bounds,
+                (_bounds_area(bounds) ** 0.5) / max(layout_span, 1.0),
+                favor_far=engineering_profile in {"storm", "utilities", "complete"},
+            )
+            basin_candidates.append((basin_score, action))
         elif (
             (
                 task in {"polyline", "polygon"}
@@ -887,7 +914,20 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                 if points_in_layout <= 1 and len(points) >= 2:
                     continue
             line_score = _polyline_length(action) if points else max(2.0, (_bounds_area(bounds) ** 0.5))
-            line_candidates.append((line_score, action))
+            if points and layout_bounds:
+                points_in_layout = sum(
+                    1 for point in points if _point_within_layout(point, layout_bounds, padding=12.0)
+                )
+            else:
+                points_in_layout = 0
+            phase_far = engineering_profile in {"storm", "utilities", "complete"} and layer in {"PIPE", "STORM"}
+            score = _engineering_score(
+                bounds,
+                line_score / max(layout_span, 1.0),
+                favor_far=phase_far,
+                near_bonus=min(points_in_layout, 6) * 0.2,
+            )
+            line_candidates.append((score, action))
         elif allow_flow and layer == "DRAIN_FLOW" and task in {"polyline", "polygon"}:
             if _is_oversized_for_layout(action) and not _bounds_near_layout(bounds, layout_bounds, padding=24.0):
                 continue
@@ -898,11 +938,17 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                 )
                 if points_in_layout <= 1 and len(points) >= 2 and not _bounds_near_layout(bounds, layout_bounds, padding=18.0):
                     continue
-            flow_candidates.append((_polyline_length(action), action))
+            flow_score = _engineering_score(
+                bounds,
+                _polyline_length(action) / max(layout_span, 1.0),
+                near_bonus=min(points_in_layout if points else 0, 6) * 0.25,
+            )
+            flow_candidates.append((flow_score, action))
         elif allow_drain and layer == "DRAIN" and task == "text_note":
             if not _bounds_near_layout(bounds, layout_bounds, padding=96.0):
                 continue
-            drain_label_candidates.append((_bounds_area(bounds), action))
+            label_score = _engineering_score(bounds, 1.0)
+            drain_label_candidates.append((label_score, action))
         elif allow_contours and layer in {"EG_CONTOUR", "FG_CONTOUR"} and task in {"polyline", "polygon"}:
             if engineering_profile == "grading":
                 if not _bounds_near_layout(bounds, layout_bounds, padding=160.0):
@@ -917,18 +963,17 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                     )
                     if points_in_layout <= 1 and len(points) >= 2 and not _bounds_near_layout(bounds, layout_bounds, padding=24.0):
                         continue
-            contour_candidates.append((_polyline_length(action), action))
+            contour_length = _polyline_length(action)
+            contour_score = _engineering_score(
+                bounds,
+                contour_length / max(layout_span, 1.0),
+            )
+            contour_candidates.append((contour_score, action))
         elif allow_contour_labels and layer in {"EG_CONTOUR", "FG_CONTOUR"} and task == "text_note":
             padding = 240.0 if engineering_profile == "grading" else 160.0
             if not _bounds_near_layout(bounds, layout_bounds, padding=padding):
                 continue
-            score = 1.0
-            if layout_center:
-                x1, y1, x2, y2 = bounds
-                cx = (x1 + x2) / 2.0
-                cy = (y1 + y2) / 2.0
-                dist = ((cx - layout_center[0]) ** 2 + (cy - layout_center[1]) ** 2) ** 0.5
-                score = 1000.0 - dist
+            score = _engineering_score(bounds, 1.0)
             contour_label_candidates.append((score, action))
         elif allow_spot_grades and layer in {"SPOT_EG", "SPOT_FG"} and task in {"text_note", "point"}:
             if not _bounds_near_layout(bounds, layout_bounds, padding=48.0):
@@ -938,14 +983,18 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
             cy = (y1 + y2) / 2.0
             if layout_bounds and not _point_within_layout((cx, cy), layout_bounds, padding=18.0):
                 continue
-            score = 1.0
+            score = _engineering_score(bounds, 1.0)
             if task == "text_note":
-                score = max(1.0, len(safe_text(action.get("text"), "").strip()))
+                score += max(1.0, len(safe_text(action.get("text"), "").strip())) * 0.02
             spot_grade_candidates.append((score, action))
         elif (allow_drain or allow_pipe) and layer == "STRUCTURE" and task in {"circle", "rectangle"}:
             if _is_tiny_marker_circle(action):
                 continue
-            structure_candidates.append((_bounds_area(bounds), action))
+            structure_score = _engineering_score(
+                bounds,
+                (_bounds_area(bounds) ** 0.5) / max(layout_span, 1.0),
+            )
+            structure_candidates.append((structure_score, action))
         elif rich_engineering and layer in {"UTILITY", "WATER"} and task in {"polyline", "polygon"}:
             label = clean_label(action.get("label"), "").upper()
             text = safe_text(action.get("text"), "").upper()
@@ -964,7 +1013,12 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                 )
                 if points_in_layout <= 1 and len(points) >= 2:
                     continue
-            utility_candidates.append((_polyline_length(action), action))
+            utility_score = _engineering_score(
+                bounds,
+                _polyline_length(action) / max(layout_span, 1.0),
+                favor_far=engineering_profile in {"utilities", "complete"},
+            )
+            utility_candidates.append((utility_score, action))
 
     selected = []
     seen = set()
