@@ -64,6 +64,7 @@ def snapshot_coordination_state(project: Any, manager: Any) -> Dict[str, Any]:
         "storm": deepcopy(safe_dict(manager.latest_outputs.get("storm_pipe_summary", project.meta.get("storm_pipe_summary", {})))),
         "sanitary": deepcopy(safe_dict(manager.latest_outputs.get("sanitary", project.meta.get("sanitary_summary", {})))),
         "utilities": deepcopy(safe_dict(manager.latest_outputs.get("utilities", project.meta.get("utility_summary", {})))),
+        "grading": deepcopy(grading),
         "drainage_mutable": {
             "structures": deepcopy(safe_list(drainage.get("structures"))),
             "stats": deepcopy(safe_dict(drainage.get("stats"))),
@@ -89,9 +90,11 @@ def restore_coordination_state(project: Any, manager: Any, snapshot: Dict[str, A
     drainage["export_validation"] = deepcopy(safe_dict(drainage_mutable.get("export_validation")))
     manager.latest_outputs["drainage"] = drainage
     project.meta["drainage_canonical"] = drainage
-    grading = safe_dict(project.meta.get("grading_summary", manager.latest_outputs.get("grading", {})))
-    grading_mutable = safe_dict(snapshot.get("grading_mutable"))
-    grading["local_adjustments"] = deepcopy(safe_list(grading_mutable.get("local_adjustments")))
+    grading = safe_dict(snapshot.get("grading"))
+    if not grading:
+        grading = safe_dict(project.meta.get("grading_summary", manager.latest_outputs.get("grading", {})))
+        grading_mutable = safe_dict(snapshot.get("grading_mutable"))
+        grading["local_adjustments"] = deepcopy(safe_list(grading_mutable.get("local_adjustments")))
     manager.latest_outputs["grading"] = grading
     project.meta["grading_summary"] = grading
 

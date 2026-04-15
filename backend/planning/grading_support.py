@@ -271,18 +271,18 @@ def _select_low_point_spot_grades(
         edge_dy = min(abs(y - min_y), abs(max_y - y))
         return min(edge_dx / max(focus_w, 1.0), edge_dy / max(focus_h, 1.0))
 
-    ranked: List[Tuple[Tuple[float, float, float, float], Any]] = []
-    for point in low_points:
+    ranked: List[Tuple[Tuple[float, float, float, float], int, Any]] = []
+    for idx, point in enumerate(low_points):
         x = safe_float(getattr(point, "x", 0.0), 0.0)
         y = safe_float(getattr(point, "y", 0.0), 0.0)
         z = safe_float(getattr(point, "z", 0.0), 0.0)
         basin_score = safe_float(getattr(point, "local_basin_score", 0.0), 0.0)
         dist = abs(x - focus_cx) + abs(y - focus_cy)
         edge_score = _edge_penalty(x, y)
-        ranked.append(((-edge_score, dist, z, -basin_score), point))
+        ranked.append(((-edge_score, dist, z, -basin_score), idx, point))
 
     actions: List[Dict[str, Any]] = []
-    for _, point in sorted(ranked):
+    for _, _, point in sorted(ranked):
         x = safe_float(getattr(point, "x", 0.0), 0.0)
         y = safe_float(getattr(point, "y", 0.0), 0.0)
         if _too_close(x, y):
