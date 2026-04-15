@@ -504,14 +504,26 @@ def run_utility_stage(
         if field_path_is_omitted(parsed, "utility_network"):
             manager.mark_system_skipped("utility_network", "Utilities omitted by user intent.")
             ctx.record_assumption("Utilities omitted by user intent; planner preserved omission and skipped utility stage.")
-            ctx.add_stage("utility_network", True, "Utility stage skipped because source=omit.")
+            ctx.add_stage(
+                "utility_network",
+                True,
+                "Utility stage skipped because source=omit.",
+                completeness="assumed",
+                assumed=True,
+            )
             return
 
         install_rect_obstacle_compatibility()
 
         lot = safe_dict(unwrap_fields_for_execution(parsed.get("lot")))
         if not lot:
-            ctx.add_stage("utility_network", True, "Utility stage skipped because lot was unavailable.")
+            ctx.add_stage(
+                "utility_network",
+                True,
+                "Utility stage skipped because lot was unavailable.",
+                completeness="assumed",
+                assumed=True,
+            )
             return
 
         execution_payload = unwrap_fields_for_execution(parsed)
@@ -569,7 +581,13 @@ def run_utility_stage(
             )
 
         if not destinations:
-            ctx.add_stage("utility_network", True, "Utility stage skipped because no service destinations were found.")
+            ctx.add_stage(
+                "utility_network",
+                True,
+                "Utility stage skipped because no service destinations were found.",
+                completeness="assumed",
+                assumed=True,
+            )
             return
 
         route_count = 0
