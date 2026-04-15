@@ -146,6 +146,23 @@ class PreviewRenderTests(unittest.TestCase):
 
         self.assertEqual(len(kept_engineering), 0)
 
+    def test_layout_scene_keeps_drainage_overlay_geometry(self):
+        actions = [
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [20, 60], "width": 12, "height": 8},
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 2", "origin": [40, 60], "width": 12, "height": 8},
+            {"layer": "PARKING", "task": "rectangle", "origin": [16, 40], "width": 42, "height": 10},
+            {"layer": "DRAIN", "task": "polyline", "label": "SWALE-1", "points": [[24, 38], [34, 30], [48, 24]]},
+            {"layer": "PIPE", "task": "polyline", "label": "PIPE-1", "points": [[28, 36], [42, 28], [54, 24]]},
+            {"layer": "BASIN_BOUNDARY", "task": "polygon", "label": "BASIN-A", "points": [[58, 18], [68, 18], [70, 12], [56, 12], [58, 18]]},
+        ]
+
+        filtered = _filtered_preview_actions(actions)
+        kept_layers = [str(action.get("layer") or "").upper() for action in filtered]
+
+        self.assertIn("DRAIN", kept_layers)
+        self.assertIn("PIPE", kept_layers)
+        self.assertIn("BASIN_BOUNDARY", kept_layers)
+
     def test_layout_scene_suppresses_diagonal_schematic_road_and_fire_shapes(self):
         actions = [
             {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [20, 60], "width": 12, "height": 8},

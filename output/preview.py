@@ -34,6 +34,7 @@ LAYER_LINEWIDTH = {
     "SITE": 1.2,
     "SETBACK": 1.0,
     "PIPE": 2.0,
+    "DRAIN": 2.0,
     "DRAIN_FLOW": 1.5,
     "SURFACE": 1.0,
     "EG_CONTOUR": 1.0,
@@ -58,6 +59,7 @@ LAYER_COLORS = {
     "SITE": "#94a3b8",
     "SETBACK": "#d1d5db",
     "PIPE": "#1d4ed8",
+    "DRAIN": "#0f766e",
     "STORM": "#0369a1",
     "SAN": "#7c3aed",
     "UTILITY": "#6d28d9",
@@ -88,6 +90,7 @@ SUPPRESSED_AUTO_LABEL_LAYERS = {
     "WALK",
     "FIRE",
     "PIPE",
+    "DRAIN",
     "SAN",
     "EG_CONTOUR",
     "FG_CONTOUR",
@@ -105,6 +108,7 @@ PRIMARY_LAYOUT_LAYERS = {"BUILDING", "PAVEMENT", "PARKING", "WALK"}
 SECONDARY_ENGINEERING_LAYERS = {
     "ANNO",
     "BASIN_BOUNDARY",
+    "DRAIN",
     "PIPE",
     "STORM",
     "SAN",
@@ -794,7 +798,7 @@ def _engineering_overlay_actions(records):
             if _is_oversized_for_layout(action):
                 continue
             basin_candidates.append((_bounds_area(bounds), action))
-        elif layer in {"PIPE", "STORM"} and task in {"polyline", "polygon"}:
+        elif layer in {"PIPE", "STORM", "DRAIN"} and task in {"polyline", "polygon"}:
             if _is_oversized_for_layout(action):
                 continue
             points = safe_points(action)

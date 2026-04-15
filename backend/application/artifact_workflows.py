@@ -511,6 +511,7 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         blocked_exports: list[str],
         blocked_reasons: list[str],
         failed_deliverables: list[str],
+        stage_statuses: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         normalized = {
             str(name): dict(value)
@@ -519,6 +520,92 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         }
         if not normalized:
             return {}
+
+        stage_to_phase = {
+            "layout": "layout",
+            "grading": "grading",
+            "drainage": "drainage_storm",
+            "storm_pipes": "drainage_storm",
+            "sanitary": "utilities",
+            "utility_network": "utilities",
+            "coordination_resolution": "coordination_validation",
+            "qa": "coordination_validation",
+        }
+        phase_to_stages = {
+            "layout": ("layout",),
+            "grading": ("grading",),
+            "drainage_storm": ("drainage", "storm_pipes"),
+            "utilities": ("sanitary", "utility_network"),
+            "coordination_validation": ("coordination_resolution", "qa"),
+        }
+        phase_order = [
+            "layout",
+            "grading",
+            "drainage_storm",
+            "utilities",
+            "coordination_validation",
+        ]
+
+        compact_stage_statuses = {
+            str(name): str(status or "").strip().lower()
+            for name, status in dict(stage_statuses or {}).items()
+            if str(name).strip()
+        }
+
+        def _normalized_stage_state(stage_key: str) -> str:
+            raw = compact_stage_statuses.get(stage_key, "")
+            if raw in {"complete", "assumed"}:
+                return "complete"
+            if raw in {"running", "in_progress", "started"}:
+                return "running"
+            if raw == "failed":
+                return "failed"
+            return "pending"
+
+        if compact_stage_statuses:
+            running_stage = next((name for name, state in compact_stage_statuses.items() if state == "running"), "")
+            for phase_name in phase_order:
+                phase_entry = dict(normalized.get(phase_name) or {})
+                phase_states = [_normalized_stage_state(stage_key) for stage_key in phase_to_stages.get(phase_name, ())]
+                non_pending_states = [state for state in phase_states if state != "pending"]
+                if not non_pending_states:
+                    phase_status = "pending"
+                elif any(state == "failed" for state in non_pending_states):
+                    phase_status = "failed"
+                elif all(state == "complete" for state in non_pending_states):
+                    phase_status = "complete"
+                elif any(state == "running" for state in non_pending_states):
+                    phase_status = "running"
+                else:
+                    phase_status = "partial"
+                phase_entry["status"] = phase_status
+                phase_entry["ready"] = phase_status == "complete"
+                if phase_name == stage_to_phase.get(running_stage, "") and running_stage:
+                    phase_entry["current_stage"] = running_stage
+                normalized[phase_name] = phase_entry
+
+            completed_phase_count = sum(
+                1 for phase_name in phase_order if bool(dict(normalized.get(phase_name) or {}).get("ready"))
+            )
+            combined = dict(normalized.get("combined_view") or {})
+            total_phase_count = max(1, int(combined.get("total_phase_count") or 0), len(phase_order))
+            if any(state == "failed" for state in compact_stage_statuses.values()):
+                combined_status = "blocked"
+            elif completed_phase_count >= len(phase_order):
+                combined_status = "ready"
+            elif any(state == "running" for state in compact_stage_statuses.values()):
+                combined_status = "running"
+            elif completed_phase_count > 0:
+                combined_status = "partial"
+            else:
+                combined_status = "pending"
+            combined["label"] = str(combined.get("label") or "Combined View")
+            combined["status"] = combined_status
+            combined["ready"] = combined_status == "ready"
+            combined["completed_phase_count"] = completed_phase_count
+            combined["total_phase_count"] = total_phase_count
+            normalized["combined_view"] = combined
+
         if release_status == "ready" and not blocked_exports and not blocked_reasons and not failed_deliverables:
             for name, phase in normalized.items():
                 if name == "combined_view":
@@ -651,6 +738,7 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         blocked_exports=blocked_exports,
         blocked_reasons=blocked_reasons,
         failed_deliverables=failed_deliverables,
+        stage_statuses=dict(dict(final_plan.get("meta") or {}).get("stage_completeness") or {}).get("statuses"),
     )
     return {
         "trust_score": float(engineering.get("trust_score") or 0.0),

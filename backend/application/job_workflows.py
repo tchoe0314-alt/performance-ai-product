@@ -497,6 +497,13 @@ def build_orchestrate_job_runner(
             "coordination_resolution": "coordination_validation",
             "qa": "coordination_validation",
         }
+        phase_to_stages = {
+            "layout": ("layout",),
+            "grading": ("grading",),
+            "drainage_storm": ("drainage", "storm_pipes"),
+            "utilities": ("sanitary", "utility_network"),
+            "coordination_validation": ("coordination_resolution", "qa"),
+        }
         stage_statuses = dict(
             dict(
                 dict(dict(latest_result.get("final_plan") or {}).get("meta") or {})
@@ -505,6 +512,16 @@ def build_orchestrate_job_runner(
             ).get("statuses")
             or {}
         )
+        existing_phase_checkpoints = dict(
+            dict(dict(latest_result.get("final_plan") or {}).get("meta") or {}).get("phase_checkpoints")
+            or dict(dict(latest_result.get("metadata") or {}).get("run_summary") or {}).get("phase_checkpoints")
+            or {}
+        )
+        if existing_phase_checkpoints:
+            phase_checkpoints = {
+                **existing_phase_checkpoints,
+                **phase_checkpoints,
+            }
         target_phase = stage_to_phase.get(stage_name)
         for phase_name in phase_order:
             phase_entry = dict(phase_checkpoints.get(phase_name) or {})
@@ -532,13 +549,60 @@ def build_orchestrate_job_runner(
             }.get(str(status or "").strip().lower(), str(status or "").strip().lower() or "pending")
             if normalized_status:
                 stage_statuses[stage_name] = normalized_status
-        completed_phase_count = sum(1 for name in phase_order if bool(dict(phase_checkpoints.get(name) or {}).get("ready")))
+
+        def _normalized_stage_state(stage_key: str) -> str:
+            raw = str(stage_statuses.get(stage_key) or "").strip().lower()
+            if raw in {"complete", "assumed"}:
+                return "complete"
+            if raw in {"running", "in_progress", "started"}:
+                return "running"
+            if raw == "failed":
+                return "failed"
+            return "pending"
+
+        def _phase_status_from_stage_states(states: list[str]) -> str:
+            non_pending_states = [state for state in states if state != "pending"]
+            if not non_pending_states:
+                return "pending"
+            if any(state == "failed" for state in non_pending_states):
+                return "failed"
+            if all(state == "complete" for state in non_pending_states):
+                return "complete"
+            if any(state == "running" for state in non_pending_states):
+                return "running"
+            return "partial"
+
+        for phase_name in phase_order:
+            phase_entry = dict(phase_checkpoints.get(phase_name) or {})
+            phase_states = [_normalized_stage_state(stage_key) for stage_key in phase_to_stages.get(phase_name, ())]
+            phase_status = _phase_status_from_stage_states(phase_states)
+            phase_entry["status"] = phase_status
+            phase_entry["ready"] = phase_status == "complete"
+            if target_phase == phase_name:
+                phase_entry["job_progress"] = int(progress or 0)
+                messages = [str(item) for item in list(phase_entry.get("messages") or []) if str(item).strip()]
+                if detail and detail not in messages:
+                    messages.append(detail)
+                phase_entry["messages"] = messages[-3:]
+            phase_checkpoints[phase_name] = phase_entry
+
+        completed_phase_count = sum(
+            1 for name in phase_order if bool(dict(phase_checkpoints.get(name) or {}).get("ready"))
+        )
+        if any(str(stage_statuses.get(name) or "").strip().lower() == "failed" for name in stage_statuses):
+            combined_status = "blocked"
+        elif completed_phase_count >= len(phase_order):
+            combined_status = "ready"
+        elif any(str(stage_statuses.get(name) or "").strip().lower() == "running" for name in stage_statuses):
+            combined_status = "running"
+        elif completed_phase_count > 0:
+            combined_status = "partial"
+        else:
+            combined_status = "pending"
         combined_view = {
             "label": "Combined View",
-            "status": "ready"
-            if completed_phase_count == len(phase_order) and not stage_name
-            else ("blocked" if str(status or "").strip().lower() == "failed" else "running"),
-            "ready": False,
+            "status": combined_status,
+            "ready": combined_status == "ready",
             "completed_phase_count": completed_phase_count,
             "total_phase_count": len(phase_order),
             "current_stage": stage_name,

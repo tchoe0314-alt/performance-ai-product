@@ -888,6 +888,64 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertEqual(review["phase_checkpoints"]["combined_view"]["status"], "ready")
         self.assertEqual(review["phase_checkpoints"]["combined_view"]["completed_phase_count"], 5)
 
+    def test_build_preview_response_reconciles_phase_checkpoints_from_stage_statuses(self):
+        service = FakeArtifactService()
+        response = build_preview_response(
+            artifact_service=service,
+            result_data={
+                "run_summary": {
+                    "engineering_status": {"trust_score": 68.0},
+                    "reliability_summary": {"operational_state": "review", "release_ready": False},
+                    "optimization_summary": {},
+                    "convergence_summary": {
+                        "converged": False,
+                        "passes_run": 3,
+                        "unresolved_conflict_count": 0,
+                        "assumption_summary": {"count": 1, "categories": ["design"], "examples": ["Staged run."]},
+                        "fix_summary": {"autofix_actions": []},
+                        "rerun_summary": {"total_reruns": 1, "stage_counts": {"layout": 1}, "reason_counts": {}},
+                        "dominant_issue_categories": [],
+                        "unresolved_issue_categories": [],
+                        "blocked_exports": [],
+                        "blocked_reasons": [],
+                    },
+                    "requested_deliverables": ["site_plan", "grading_plan", "storm_pipe_plan"],
+                    "produced_deliverables": ["site_plan", "grading_plan", "storm_pipe_plan"],
+                    "failed_deliverables": [],
+                    "ready_deliverables": ["site_plan", "grading_plan", "storm_pipe_plan"],
+                    "extra_deliverables": [],
+                    "phase_checkpoints": {
+                        "layout": {"label": "Layout", "status": "partial", "ready": False, "has_data": True},
+                        "grading": {"label": "Grading", "status": "partial", "ready": False, "has_data": True},
+                        "drainage_storm": {"label": "Drainage and Storm", "status": "complete", "ready": True, "has_data": True},
+                        "utilities": {"label": "Utilities", "status": "pending", "ready": False, "has_data": False},
+                        "coordination_validation": {"label": "Coordination and Validation", "status": "pending", "ready": False, "has_data": False},
+                        "combined_view": {"label": "Combined View", "status": "review", "ready": False, "completed_phase_count": 1, "total_phase_count": 5},
+                    },
+                },
+                "final_plan": {
+                    "project_name": "Drainage Checkpoint",
+                    "actions": [{"layer": "BUILDING"}, {"layer": "DRAIN"}, {"layer": "PIPE"}, {"layer": "BASIN_BOUNDARY"}],
+                    "meta": {
+                        "stage_completeness": {
+                            "statuses": {
+                                "layout": "complete",
+                                "grading": "complete",
+                                "drainage": "complete",
+                                "storm_pipes": "complete",
+                            }
+                        }
+                    },
+                },
+            },
+        )
+        review = response["summary"]["review"]
+        self.assertEqual(review["phase_checkpoints"]["layout"]["status"], "complete")
+        self.assertEqual(review["phase_checkpoints"]["grading"]["status"], "complete")
+        self.assertEqual(review["phase_checkpoints"]["drainage_storm"]["status"], "complete")
+        self.assertEqual(review["phase_checkpoints"]["combined_view"]["status"], "partial")
+        self.assertEqual(review["phase_checkpoints"]["combined_view"]["completed_phase_count"], 3)
+
     def test_build_preview_response_drops_general_when_other_review_categories_exist(self):
         service = FakeArtifactService()
         response = build_preview_response(
