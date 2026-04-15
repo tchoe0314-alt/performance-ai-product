@@ -2693,6 +2693,15 @@ export default function PerformanceAIDashboard() {
     try {
       const data = await getJson<{ job: any }>(`/api/jobs/${id}`, { token });
       const job = data.job;
+      const activeTrackedProjectId =
+        String(job.project_id || "").trim() ||
+        resolvedProjectIdRef.current ||
+        projectId ||
+        currentProject?.project_id ||
+        "";
+      if (job.project_id) {
+        resolvedProjectIdRef.current = String(job.project_id);
+      }
       setJobs((current) => {
         const next = [...current];
         const existingIndex = next.findIndex((item) => item.job_id === job.job_id);
@@ -2748,9 +2757,7 @@ export default function PerformanceAIDashboard() {
         }
       }
       if (
-        job.project_id &&
-        projectId &&
-        job.project_id === projectId &&
+        activeTrackedProjectId &&
         ["queued", "running", "awaiting_approval"].includes(String(job.status || "").toLowerCase())
       ) {
         const refreshStamp =
@@ -2761,7 +2768,7 @@ export default function PerformanceAIDashboard() {
         if (refreshStamp > previousRefresh) {
           lastProjectResultRefreshRef.current[job.job_id] = refreshStamp;
           loadProjectResultInBackground({
-            project_id: job.project_id,
+            project_id: activeTrackedProjectId,
             name: currentProject?.name || siteName || "Untitled Project",
           } as ProjectRecord);
         }
@@ -2769,9 +2776,7 @@ export default function PerformanceAIDashboard() {
       if (
         job.result &&
         Object.keys(job.result).length &&
-        job.project_id &&
-        projectId &&
-        job.project_id === projectId &&
+        activeTrackedProjectId &&
         ["queued", "running", "awaiting_approval"].includes(String(job.status || "").toLowerCase())
       ) {
         const partialRefreshStamp =
@@ -2785,7 +2790,7 @@ export default function PerformanceAIDashboard() {
           applyBackendResult(job.result);
           requestPreviewInBackground(
             {
-              project_id: job.project_id || projectId || null,
+              project_id: activeTrackedProjectId || null,
               result: job.result,
               filename_stem: fileName || currentProject?.name || siteName || "civora-ai-plan",
             },
@@ -2799,7 +2804,7 @@ export default function PerformanceAIDashboard() {
         applyBackendResult(job.result);
         requestPreviewInBackground(
           {
-            project_id: job.project_id || projectId || null,
+            project_id: activeTrackedProjectId || null,
             result: job.result,
             filename_stem: fileName || siteName,
           },
@@ -2826,9 +2831,9 @@ export default function PerformanceAIDashboard() {
             updated_at: Date.now() / 1000,
           });
         }
-        if (job.project_id && projectId && job.project_id === projectId) {
+        if (activeTrackedProjectId) {
           loadProjectResultInBackground({
-            project_id: job.project_id,
+            project_id: activeTrackedProjectId,
             name: currentProject?.name || siteName || "Untitled Project",
           } as ProjectRecord);
         }
