@@ -1085,6 +1085,7 @@ export default function PerformanceAIDashboard() {
   const chatMessagesRef = useRef<ChatMessage[]>([createWelcomeMessage()]);
   const suppressProjectAutoLoadRef = useRef(false);
   const chatAutosaveTimeoutRef = useRef<number | null>(null);
+  const previewRecoveryKeyRef = useRef("");
 
   const disciplineToggles: DisciplineToggle[] = [
     {
@@ -1269,16 +1270,17 @@ export default function PerformanceAIDashboard() {
       Object.keys(backendResult).length
     ) {
       return {
+        project_id: projectId || currentProject?.project_id || null,
         result: backendResult,
         filename_stem: fileName || siteName,
       };
     }
 
     return {
-      project_id: projectId || null,
+      project_id: projectId || currentProject?.project_id || null,
       filename_stem: fileName || siteName,
     };
-  }, [backendResult, fileName, projectId, siteName]);
+  }, [backendResult, currentProject?.project_id, fileName, projectId, siteName]);
 
   const workflowRuns = useMemo<WorkflowRunSummary[]>(
     () =>
@@ -1723,6 +1725,7 @@ export default function PerformanceAIDashboard() {
       );
       await requestPreview(
         {
+          project_id: projectId || currentProject?.project_id || null,
           result: data,
           filename_stem: fileName || siteName || "civora-ai-plan",
         },
@@ -2743,6 +2746,7 @@ export default function PerformanceAIDashboard() {
           applyBackendResult(job.result);
           requestPreviewInBackground(
             {
+              project_id: job.project_id || projectId || null,
               result: job.result,
               filename_stem: fileName || currentProject?.name || siteName || "civora-ai-plan",
             },
@@ -2756,6 +2760,7 @@ export default function PerformanceAIDashboard() {
         applyBackendResult(job.result);
         requestPreviewInBackground(
           {
+            project_id: job.project_id || projectId || null,
             result: job.result,
             filename_stem: fileName || siteName,
           },
@@ -2877,6 +2882,61 @@ export default function PerformanceAIDashboard() {
       });
   };
 
+  useEffect(() => {
+    if (!token || planPreviewUrl || !backendResult) return;
+    const finalPlan =
+      backendResult?.final_plan && typeof backendResult.final_plan === "object"
+        ? backendResult.final_plan
+        : {};
+    const finalMeta =
+      finalPlan?.meta && typeof finalPlan.meta === "object" ? finalPlan.meta : {};
+    const actions = Array.isArray(finalPlan?.actions)
+      ? finalPlan.actions.filter((item: unknown) => item && typeof item === "object")
+      : [];
+    const phaseCheckpoints =
+      finalMeta?.phase_checkpoints && typeof finalMeta.phase_checkpoints === "object"
+        ? finalMeta.phase_checkpoints
+        : {};
+    const runtimeCheckpoint =
+      finalMeta?.runtime_phase_checkpoint && typeof finalMeta.runtime_phase_checkpoint === "object"
+        ? finalMeta.runtime_phase_checkpoint
+        : {};
+    const jobProgress =
+      backendResult?.job_progress && typeof backendResult.job_progress === "object"
+        ? backendResult.job_progress
+        : {};
+    const hasRecoverablePreviewState =
+      actions.length > 0 ||
+      Object.keys(phaseCheckpoints).length > 0 ||
+      Object.keys(runtimeCheckpoint).length > 0 ||
+      Boolean(jobProgress.stage);
+
+    if (!hasRecoverablePreviewState) return;
+
+    const recoveryKey = JSON.stringify({
+      projectId,
+      actionCount: actions.length,
+      phaseKeys: Object.keys(phaseCheckpoints),
+      checkpointStage: String(runtimeCheckpoint.stage_name || ""),
+      jobStage: String(jobProgress.stage || ""),
+      stem: fileName || currentProject?.name || siteName || "civora-ai-plan",
+    });
+
+    if (previewRecoveryKeyRef.current === recoveryKey) return;
+    previewRecoveryKeyRef.current = recoveryKey;
+
+    requestPreviewInBackground(
+      {
+        project_id: projectId || currentProject?.project_id || null,
+        result: backendResult,
+        filename_stem: fileName || currentProject?.name || siteName || "civora-ai-plan",
+      },
+      {
+        silentStatus: true,
+      },
+    );
+  }, [token, backendResult, planPreviewUrl, projectId, fileName, currentProject?.name, siteName]);
+
   const loadProjectResultInBackground = (project: ProjectRecord) => {
     if (!token) return;
     void getJson<{ project_id: string; latest_result: any }>(
@@ -2889,6 +2949,7 @@ export default function PerformanceAIDashboard() {
           applyBackendResult(latestResult);
           requestPreviewInBackground(
             {
+              project_id: project.project_id,
               result: latestResult,
               filename_stem: fileName || project.name || "civora-ai-plan",
             },
@@ -2908,6 +2969,35 @@ export default function PerformanceAIDashboard() {
         );
       });
   };
+
+  useEffect(() => {
+    if (!token || planPreviewUrl) return;
+    const activeStatus = String(visibleActiveJob?.status || "").toLowerCase();
+    if (activeStatus !== "awaiting_approval") return;
+    const targetProjectId =
+      visibleActiveJob?.project_id || currentProject?.project_id || projectId || "";
+    if (!targetProjectId) return;
+
+    const targetProject = {
+      project_id: targetProjectId,
+      name: currentProject?.name || siteName || "Untitled Project",
+    } as ProjectRecord;
+
+    loadProjectResultInBackground(targetProject);
+    const interval = window.setInterval(() => {
+      loadProjectResultInBackground(targetProject);
+    }, 2500);
+    return () => window.clearInterval(interval);
+  }, [
+    token,
+    planPreviewUrl,
+    visibleActiveJob?.status,
+    visibleActiveJob?.project_id,
+    currentProject?.project_id,
+    currentProject?.name,
+    projectId,
+    siteName,
+  ]);
 
   const handlePreviewPlan = async () => {
     if (!token) return;

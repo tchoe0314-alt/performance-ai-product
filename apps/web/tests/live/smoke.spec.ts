@@ -56,6 +56,12 @@ test("live civora flow", async ({ page, request, baseURL }) => {
   await expect(page.getByText("What You Need")).toBeVisible();
 
   if (prompt.trim()) {
+    const newProjectButton = page.getByRole("button", { name: "New Project" });
+    if (await newProjectButton.isVisible().catch(() => false)) {
+      await newProjectButton.click();
+      await page.waitForLoadState("networkidle");
+    }
+
     const composer = page.getByPlaceholder(
       "Message Civora AI with what you want to create or change...",
     );
@@ -63,7 +69,7 @@ test("live civora flow", async ({ page, request, baseURL }) => {
     await page.getByRole("button", { name: "Send" }).click();
 
     await expect(
-      page.getByText(/Engineering Review|Generated plan preview|Phase Progress/i),
+      page.getByText(/Engineering Review|Generated plan preview|Phase Progress|Awaiting Approval/i),
     ).toBeVisible({ timeout: 60_000 });
 
     await page.screenshot({
