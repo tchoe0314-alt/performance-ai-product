@@ -46,6 +46,9 @@ class ProjectStoreProtocol(Protocol):
     def get_project(self, *, user_id: str, project_id: str) -> Optional[Dict[str, Any]]:
         ...
 
+    def get_project_latest_result(self, *, user_id: str, project_id: str) -> Optional[Dict[str, Any]]:
+        ...
+
     def save_project(
         self,
         *,
@@ -69,8 +72,26 @@ class FinalPlanBuilderProtocol(Protocol):
         result_data: Dict[str, Any],
         *,
         enforce_export_guards: bool = True,
-    ) -> Dict[str, Any]:
+        ) -> Dict[str, Any]:
         ...
+
+
+def _load_project_latest_result(
+    *,
+    project_store: ProjectStoreProtocol,
+    user_id: str,
+    project_id: str,
+    fallback_project: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    getter = getattr(project_store, "get_project_latest_result", None)
+    if callable(getter):
+        try:
+            latest_result = getter(user_id=user_id, project_id=project_id)
+        except TypeError:
+            latest_result = None
+        if isinstance(latest_result, dict) and latest_result:
+            return dict(latest_result)
+    return dict((fallback_project or {}).get("latest_result") or {})
 
 
 def queue_orchestrate_job(
@@ -178,7 +199,12 @@ def revise_existing_job(
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found.")
 
-    latest_result = dict(project.get("latest_result") or {})
+    latest_result = _load_project_latest_result(
+        project_store=project_store,
+        user_id=user_id,
+        project_id=project_id,
+        fallback_project=project,
+    )
     final_plan = dict(latest_result.get("final_plan") or {})
     final_meta = dict(final_plan.get("meta") or {})
     result_metadata = dict(latest_result.get("metadata") or {})
@@ -463,7 +489,12 @@ def build_orchestrate_job_runner(
             return
 
         metadata = dict(existing.get("metadata") or {})
-        latest_result = dict(existing.get("latest_result") or {})
+        latest_result = _load_project_latest_result(
+            project_store=project_store,
+            user_id=user_id,
+            project_id=project_id,
+            fallback_project=existing,
+        )
         workflow = dict(metadata.get("workflow") or {})
         runs = [dict(item) for item in list(workflow.get("runs") or []) if isinstance(item, dict)]
         existing_run = next((item for item in runs if str(item.get("job_id") or "") == job_id), {})
@@ -903,7 +934,12 @@ def build_orchestrate_job_runner(
         if project_id and user_id:
             existing = project_store.get_project(user_id=user_id, project_id=project_id)
         if existing is not None:
-                existing_result = dict(existing.get("latest_result") or {})
+                existing_result = _load_project_latest_result(
+                    project_store=project_store,
+                    user_id=user_id,
+                    project_id=project_id,
+                    fallback_project=existing,
+                )
                 existing_final_plan = dict(existing_result.get("final_plan") or {})
                 existing_meta = dict(existing_final_plan.get("meta") or {})
                 stage_statuses = dict(
@@ -954,6 +990,12 @@ def build_orchestrate_job_runner(
                     progress=76,
                 )
             if existing is not None:
+                existing_result = _load_project_latest_result(
+                    project_store=project_store,
+                    user_id=user_id,
+                    project_id=project_id,
+                    fallback_project=existing,
+                )
                 project_store.save_project(
                     user_id=user_id,
                     project_id=project_id,
@@ -962,7 +1004,7 @@ def build_orchestrate_job_runner(
                     session_id=existing.get("session_id"),
                     tags=existing.get("tags", []),
                     project_input=payload,
-                    latest_result=enriched,
+                    latest_result=enriched or existing_result,
                     session_state=existing.get("session_state", {}),
                     metadata=merge_project_metadata(
                         dict(existing.get("metadata") or {}),

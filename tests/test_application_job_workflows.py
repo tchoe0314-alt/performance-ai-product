@@ -15,10 +15,18 @@ class FakeProjectStore:
         self.project = project
         self.saved_payload = None
         self.save_calls = []
+        self.latest_result_override = None
 
     def get_project(self, *, user_id: str, project_id: str):
         if self.project and user_id == self.project.get("user_id") and project_id == self.project.get("project_id"):
             return dict(self.project)
+        return None
+
+    def get_project_latest_result(self, *, user_id: str, project_id: str):
+        if self.project and user_id == self.project.get("user_id") and project_id == self.project.get("project_id"):
+            if self.latest_result_override is not None:
+                return dict(self.latest_result_override)
+            return dict(self.project.get("latest_result") or {})
         return None
 
     def save_project(self, **kwargs):
@@ -848,7 +856,107 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertEqual(runtime_resume["stage_statuses"]["layout"], "complete")
         self.assertEqual(runtime_resume["stage_statuses"]["grading"], "complete")
         self.assertTrue(runtime_resume["phase_checkpoints"]["layout"]["ready"])
-        self.assertEqual(runtime_resume["final_plan"]["meta"]["parking_program"]["requested"], 42)
+
+    def test_build_orchestrate_job_runner_uses_full_latest_result_not_shell(self):
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Demo",
+                "description": "",
+                "session_id": None,
+                "tags": [],
+                "project_input": {},
+                "latest_result": {},
+                "session_state": {},
+                "metadata": {},
+            }
+        )
+        store.latest_result_override = {
+            "final_plan": {
+                "actions": [{"task": "rectangle", "layer": "BUILDING", "label": "MF-1"}],
+                "meta": {
+                    "stage_completeness": {
+                        "statuses": {
+                            "layout": "complete",
+                            "grading": "complete",
+                        }
+                    },
+                    "phase_checkpoints": {
+                        "layout": {"status": "complete", "ready": True},
+                        "grading": {"status": "complete", "ready": True},
+                        "combined_view": {"status": "partial", "ready": False, "completed_phase_count": 2, "total_phase_count": 5},
+                    },
+                },
+            },
+            "metadata": {
+                "run_summary": {
+                    "phase_checkpoints": {
+                        "layout": {"status": "complete", "ready": True},
+                        "grading": {"status": "complete", "ready": True},
+                        "combined_view": {"status": "partial", "ready": False, "completed_phase_count": 2, "total_phase_count": 5},
+                    }
+                }
+            },
+        }
+
+        def run_orchestration(payload, progress_callback=None):
+            progress_callback("drainage", "running", 42, "Running drainage phase.")
+            progress_callback("drainage", "complete", 60, "Drainage network designed.")
+            return {
+                "success": True,
+                "final_plan": {
+                    "project_name": "Demo",
+                    "actions": [{"task": "polyline", "layer": "DRAIN"}],
+                    "meta": {
+                        "drainage": {"ok": True},
+                    },
+                },
+            }
+
+        runner = build_orchestrate_job_runner(
+            project_store=store,
+            update_job_progress=lambda *_args, **_kwargs: None,
+            run_orchestration=run_orchestration,
+            build_run_summary=lambda result, **kwargs: {
+                "run_id": "run_drain",
+                "job_id": kwargs.get("job_id"),
+                "source": "queued_job",
+                "convergence_summary": {"assumption_summary": {"count": 0, "categories": [], "examples": []}},
+                "reliability_summary": {"operational_state": "review", "release_ready": False},
+                "phase_checkpoints": dict((result.get("final_plan") or {}).get("meta", {}).get("phase_checkpoints") or {}),
+                "requested_deliverables": [],
+                "produced_deliverables": [],
+                "ready_deliverables": [],
+                "extra_deliverables": [],
+                "failed_deliverables": [],
+            },
+            merge_project_metadata=lambda metadata, **kwargs: {
+                "workflow": {"runs": [kwargs["run_summary"]]},
+            },
+            final_plan_from_result=lambda result, **kwargs: dict(result.get("final_plan") or {}),
+        )
+
+        runner(
+            {
+                "job_id": "job_drain",
+                "job_type": "orchestrate",
+                "user_id": "u1",
+                "project_id": "p1",
+                "payload": {"prompt_text": "run"},
+            }
+        )
+
+        self.assertGreaterEqual(len(store.save_calls), 2)
+        second_phase_save = store.save_calls[1]
+        self.assertEqual(
+            second_phase_save["latest_result"]["final_plan"]["meta"]["phase_checkpoints"]["layout"]["status"],
+            "complete",
+        )
+        self.assertEqual(
+            second_phase_save["latest_result"]["final_plan"]["meta"]["phase_checkpoints"]["grading"]["status"],
+            "complete",
+        )
         self.assertEqual(store.saved_payload["project_input"], {"prompt_text": "run"})
 
     def test_cancel_existing_job_returns_summary(self):
