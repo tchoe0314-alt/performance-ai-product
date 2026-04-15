@@ -217,6 +217,21 @@ class LayoutEngineLegacyInferenceTests(unittest.TestCase):
             any(str(action.get("layer") or "").upper() in {"BUILDING", "WALK"} for action in text_notes)
         )
 
+        self.assertFalse(
+            any(
+                str(action.get("layer") or "").upper() == "WALK"
+                and str(action.get("label") or "").upper().startswith("WALK-")
+                for action in actions
+            )
+        )
+
+        self.assertFalse(
+            any(
+                str(action.get("label") or "").upper().startswith("FIRE-")
+                for action in actions
+            )
+        )
+
     def test_expanded_plan_drops_redundant_network_annotation_notes(self) -> None:
         plan = _build_expanded_plan(
             {
@@ -255,6 +270,16 @@ class LayoutEngineLegacyInferenceTests(unittest.TestCase):
         self.assertFalse(
             any(str(action.get("layer") or "").upper() in {"PAVEMENT", "WALK", "PIPE", "BASIN_BOUNDARY", "WATER", "UTILITY"} for action in text_notes)
         )
+
+        generic_labels = {
+            str(action.get("label") or "").upper()
+            for action in plan["actions"]
+            if str(action.get("label") or "").strip()
+        }
+        self.assertNotIn("AISLE-1", generic_labels)
+        self.assertNotIn("PIPE-1", generic_labels)
+        self.assertNotIn("BASIN-1", generic_labels)
+        self.assertNotIn("WATER", generic_labels)
 
 
 if __name__ == "__main__":

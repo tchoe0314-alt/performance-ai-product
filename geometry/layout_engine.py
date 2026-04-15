@@ -60,6 +60,46 @@ def _safe_str(value: Any, default: str) -> str:
     return text if text else default
 
 
+def _generic_render_label(label: Any, layer: Any = None) -> Optional[str]:
+    text = _safe_str(label, "").strip()
+    if not text:
+        return None
+    upper = text.upper()
+    upper_layer = _safe_str(layer, "").upper()
+    generic_prefixes = (
+        "PARK-",
+        "AISLE-",
+        "ROAD-",
+        "FIRE-",
+        "WALK-",
+        "PIPE-",
+        "P-",
+        "POND-",
+        "BASIN-",
+        "UTILITY-",
+    )
+    generic_exact = {
+        "PARK",
+        "PARKING",
+        "AISLE",
+        "ROAD",
+        "FIRE",
+        "WALK",
+        "PIPE",
+        "POND",
+        "BASIN",
+        "UTILITY",
+        "WATER",
+        "SAN",
+        "STORM",
+    }
+    if upper.startswith(generic_prefixes) or upper in generic_exact:
+        return None
+    if upper_layer in {"PAVEMENT", "WALK", "ROAD", "FIRE"} and upper in {"ACCESS", "FRONTAGE", "DRIVE"}:
+        return None
+    return text
+
+
 def _clamp(val: float, min_val: float, max_val: float) -> float:
     return max(min_val, min(val, max_val))
 
@@ -949,7 +989,7 @@ def _generate_sidewalks(layout: Dict[str, Any], standards: Dict[str, float]) -> 
     points = [list(entry), [parking_pt[0], parking_pt[1]]]
     return [
         {
-            "label": "WALK-1",
+            "label": None,
             "points": points,
             "width": width,
             "ada_required": True,
@@ -976,7 +1016,7 @@ def _generate_fire_lane(layout: Dict[str, Any], road_standards: Dict[str, float]
         pts = [[x + width / 2.0, buildable["y"]], [x + width / 2.0, _rect_top(buildable)]]
 
     return {
-        "label": "FIRE-1",
+        "label": None,
         "points": pts,
         "width": width,
         "type": "fire_lane",
@@ -1884,10 +1924,10 @@ def _append_parking_actions(actions: List[Dict[str, Any]], parking_areas: List[D
         y = _safe_float(p.get("y"), 0.0)
         w = _safe_float(p.get("w"), 50.0)
         h = _safe_float(p.get("h"), 30.0)
-        label = _safe_str(p.get("label"), "PARK")
+        label = _generic_render_label(p.get("label"), p.get("layer"))
         stalls = _safe_int(p.get("stall_count"), 0)
         layer = _safe_str(p.get("layer"), "PARKING")
-        actions.append(_rect_action_from_obj(_rect(x, y, w, h), label, layer))
+        actions.append(_rect_action_from_obj(_rect(x, y, w, h), label or "", layer))
 
         standards = {
             "stall_width": _safe_float(p.get("stall_width"), 9.0),
@@ -1914,7 +1954,7 @@ def _append_line_network_actions(actions: List[Dict[str, Any]], items: List[Dict
         if len(clean_pts) < 2:
             continue
 
-        label = item.get("label")
+        label = _generic_render_label(item.get("label"), item.get("layer"))
         layer = _safe_str(item.get("layer"), "SITE")
         actions.append(_polyline_action(clean_pts, layer=layer, label=label, closed=False))
 
@@ -1947,8 +1987,8 @@ def _surface_rect_from_line_item(item: Dict[str, Any], *, layer: str) -> Optiona
         rect = _rect(min(x1, x2), min(y1, y2) - width / 2.0, max(dx, 1.0), width)
     else:
         rect = _rect(min(x1, x2) - width / 2.0, min(y1, y2), width, max(dy, 1.0))
-    label = _safe_str(item.get("label"), "")
-    return _rect_action_from_obj(rect, label, layer)
+    label = _generic_render_label(item.get("label"), layer)
+    return _rect_action_from_obj(rect, label or "", layer)
 
 
 def _preferred_surface_layer_for_line_item(item: Dict[str, Any], default_layer: str) -> str:
@@ -1987,7 +2027,7 @@ def _append_pipe_actions(actions: List[Dict[str, Any]], pipes: List[Dict[str, An
             [_safe_float(start[0], 0.0), _safe_float(start[1], 0.0)],
             [_safe_float(end[0], 0.0), _safe_float(end[1], 0.0)],
         ]
-        label = _safe_str(p.get("label"), "PIPE")
+        label = _generic_render_label(p.get("label"), p.get("layer"))
         layer = _safe_str(p.get("layer"), "PIPE")
         dia = _safe_float(p.get("diameter"), 18.0)
 
@@ -2000,7 +2040,7 @@ def _append_pond_actions(actions: List[Dict[str, Any]], ponds: List[Dict[str, An
         y = _safe_float(p.get("y"), 0.0)
         w = _safe_float(p.get("w"), 18.0)
         h = _safe_float(p.get("h"), 14.0)
-        label = _safe_str(p.get("label"), "POND")
+        label = _generic_render_label(p.get("label"), p.get("layer"))
         layer = _safe_str(p.get("layer"), "BASIN_BOUNDARY")
 
         poly = [
@@ -2028,7 +2068,10 @@ def _append_utility_actions(actions: List[Dict[str, Any]], utilities: List[Dict[
             continue
 
         layer = _safe_str(u.get("layer"), "UTILITY")
-        label = _safe_str(u.get("label"), _safe_str(u.get("utility_type"), "UTILITY").upper())
+        label = _generic_render_label(
+            u.get("label"),
+            layer,
+        )
         actions.append(_polyline_action(clean_pts, layer=layer, label=label, closed=False))
 
 
