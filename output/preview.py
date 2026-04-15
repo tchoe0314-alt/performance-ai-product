@@ -741,10 +741,11 @@ def _polyline_length(action):
 
 def _engineering_overlay_actions(records, *, engineering_profile="layout"):
     engineering_profile = _normalize_engineering_profile(engineering_profile)
-    allow_basin = engineering_profile in {"baseline", "drainage", "utilities", "complete"}
-    allow_lines = engineering_profile in {"baseline", "drainage", "utilities", "complete"}
-    allow_contours = engineering_profile in {"grading", "drainage", "utilities", "complete"}
-    allow_flow = engineering_profile in {"drainage", "utilities", "complete"}
+    allow_basin = engineering_profile in {"baseline", "storm", "utilities", "complete"}
+    allow_pipe = engineering_profile in {"baseline", "storm", "utilities", "complete"}
+    allow_drain = engineering_profile in {"baseline", "drainage", "storm", "utilities", "complete"}
+    allow_contours = engineering_profile in {"grading", "drainage", "storm", "utilities", "complete"}
+    allow_flow = engineering_profile in {"drainage", "storm", "utilities", "complete"}
     rich_engineering = engineering_profile in {"baseline", "utilities", "complete"}
     basin_candidates = []
     line_candidates = []
@@ -832,7 +833,13 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
             if _is_oversized_for_layout(action):
                 continue
             basin_candidates.append((_bounds_area(bounds), action))
-        elif allow_lines and layer in {"PIPE", "STORM", "DRAIN"} and task in {"polyline", "polygon"}:
+        elif (
+            task in {"polyline", "polygon"}
+            and (
+                (layer in {"PIPE", "STORM"} and allow_pipe)
+                or (layer == "DRAIN" and allow_drain)
+            )
+        ):
             if _is_oversized_for_layout(action):
                 continue
             points = safe_points(action)
@@ -865,7 +872,7 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                 if points_in_layout <= 1 and len(points) >= 2 and not _bounds_near_layout(bounds, layout_bounds, padding=24.0):
                     continue
             contour_candidates.append((_polyline_length(action), action))
-        elif allow_lines and layer == "STRUCTURE" and task in {"circle", "rectangle"}:
+        elif (allow_drain or allow_pipe) and layer == "STRUCTURE" and task in {"circle", "rectangle"}:
             if _is_tiny_marker_circle(action):
                 continue
             structure_candidates.append((_bounds_area(bounds), action))
@@ -1389,7 +1396,9 @@ def _draw_plan(ax, plan):
         engineering_profile = "complete"
     elif utilities_complete or checkpoint_stage in {"sanitary", "utility_network"}:
         engineering_profile = "utilities"
-    elif drainage_complete or checkpoint_stage in {"drainage", "storm_pipes"}:
+    elif checkpoint_stage == "storm_pipes":
+        engineering_profile = "storm"
+    elif drainage_complete or checkpoint_stage == "drainage":
         engineering_profile = "drainage"
     elif grading_complete or checkpoint_stage == "grading":
         engineering_profile = "grading"
