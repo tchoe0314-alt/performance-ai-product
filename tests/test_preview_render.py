@@ -52,6 +52,21 @@ class PreviewRenderTests(unittest.TestCase):
 
         self.assertEqual(selected, (105, 110, 275, 255))
 
+    def test_choose_view_bounds_grading_does_not_collapse_back_to_base_engineering(self):
+        drawn_items = [
+            ("SITE", "rectangle", (0, 0, 780, 780)),
+            ("BUILDING", "rectangle", (165, 440, 615, 572)),
+            ("PARKING", "rectangle", (180, 430, 626, 560)),
+            ("FG_CONTOUR", "polyline", (0, 390, 780, 650)),
+            ("EG_CONTOUR", "polyline", (0, 390, 780, 650)),
+            ("DRAIN", "circle", (300, 470, 305, 475)),
+            ("PIPE", "polyline", (305, 475, 360, 500)),
+        ]
+
+        selected = _choose_view_bounds(drawn_items, engineering_profile="grading")
+
+        self.assertEqual(selected, (0, 390, 780, 650))
+
     def test_choose_view_bounds_grading_includes_spot_grade_cluster(self):
         drawn_items = [
             ("SITE", "rectangle", (0, 0, 500, 380)),
