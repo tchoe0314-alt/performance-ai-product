@@ -1081,6 +1081,7 @@ export default function PerformanceAIDashboard() {
   const draftProjectPromiseRef = useRef<Promise<ProjectRecord | null> | null>(null);
   const resolvedProjectIdRef = useRef("");
   const projectLoadRequestRef = useRef(0);
+  const projectResultLoadRequestRef = useRef(0);
   const lastJobStatusRef = useRef<Record<string, string>>({});
   const lastStaleJobWarningRef = useRef<Record<string, boolean>>({});
   const lastProjectResultRefreshRef = useRef<Record<string, number>>({});
@@ -2983,11 +2984,16 @@ export default function PerformanceAIDashboard() {
 
   const loadProjectResultInBackground = (project: ProjectRecord) => {
     if (!token) return;
+    const requestId = projectResultLoadRequestRef.current + 1;
+    projectResultLoadRequestRef.current = requestId;
     void getJson<{ project_id: string; latest_result: any }>(
       `/api/projects/${project.project_id}/result`,
       { token },
     )
       .then((data) => {
+        if (projectResultLoadRequestRef.current !== requestId) {
+          return;
+        }
         const latestResult = data.latest_result ?? {};
         if (latestResult && Object.keys(latestResult).length) {
           applyBackendResult(latestResult);
@@ -3002,6 +3008,15 @@ export default function PerformanceAIDashboard() {
             },
           );
         } else {
+          const activeProjectForPreview =
+            visibleActiveJob?.project_id ||
+            resolvedProjectIdRef.current ||
+            projectId ||
+            currentProject?.project_id ||
+            "";
+          if (activeProjectForPreview && activeProjectForPreview !== project.project_id) {
+            return;
+          }
           setBackendResult(null);
           setPlanPreviewUrl("");
           setPlanPreviewSummary(null);
