@@ -1393,6 +1393,24 @@ def _choose_view_bounds(drawn_items, *, rich_engineering=False):
     return focus_bounds or preferred_bounds or all_bounds
 
 
+def _preview_draw_priority(action):
+    layer = (action.get("layer") or "").upper()
+    task = str(action.get("task") or "").lower()
+    if task in {"text_note", "point", "north_arrow"}:
+        return 6
+    if layer in {"DRAIN", "PIPE", "STORM", "SAN", "STRUCTURE", "UTILITY", "WATER", "BASIN_BOUNDARY", "DRAIN_FLOW", "EG_CONTOUR", "FG_CONTOUR"}:
+        return 5
+    if layer == "WALK":
+        return 4
+    if layer == "BUILDING":
+        return 3
+    if layer in {"PARKING", "PAVEMENT", "FIRE", "ROAD"}:
+        return 2
+    if layer in {"PAD", "SETBACK"}:
+        return 1
+    return 0
+
+
 def _draw_plan(ax, plan):
     meta = plan.get("meta") or {}
     phase_checkpoints = meta.get("phase_checkpoints") or {}
@@ -1429,7 +1447,7 @@ def _draw_plan(ax, plan):
 
     drawn_items = []
 
-    for action in actions:
+    for action in sorted(actions, key=_preview_draw_priority):
         task = action.get("task")
 
         if task == "rectangle":

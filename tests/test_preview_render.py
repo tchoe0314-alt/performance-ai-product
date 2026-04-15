@@ -1,9 +1,17 @@
 import unittest
 
-from output.preview import _choose_view_bounds, _filtered_preview_actions
+from output.preview import _choose_view_bounds, _filtered_preview_actions, _preview_draw_priority
 
 
 class PreviewRenderTests(unittest.TestCase):
+    def test_preview_draw_priority_renders_engineering_over_pavement(self):
+        pavement = {"layer": "PAVEMENT", "task": "rectangle"}
+        drain = {"layer": "DRAIN", "task": "circle"}
+        label = {"layer": "DRAIN", "task": "text_note"}
+
+        self.assertLess(_preview_draw_priority(pavement), _preview_draw_priority(drain))
+        self.assertLess(_preview_draw_priority(drain), _preview_draw_priority(label))
+
     def test_choose_view_bounds_prefers_primary_layout_cluster(self):
         drawn_items = [
             ("SITE", "rectangle", (0, 0, 400, 300)),
