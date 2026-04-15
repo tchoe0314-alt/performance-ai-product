@@ -83,6 +83,32 @@ class LayoutEngineLegacyInferenceTests(unittest.TestCase):
         self.assertFalse(any(str(action.get("layer") or "").upper() == "FIRE" and str(action.get("task") or "").lower() == "circle" for action in actions))
         self.assertTrue(any(str(action.get("layer") or "").upper() == "PIPE" for action in actions))
 
+    def test_expanded_multi_building_plan_drops_raw_layout_duplicates(self) -> None:
+        plan = _build_expanded_plan(
+            {
+                "project_type": "mixed_use",
+                "lot": {"w": 620.0, "h": 980.0},
+                "buildings": [
+                    {"name": "MF-1", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "MF-2", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "MF-3", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "Retail", "type": "retail", "width": 70, "depth": 45},
+                ],
+                "actions": [
+                    {"task": "rectangle", "layer": "BUILDING", "origin": [10, 10], "width": 80, "height": 50, "label": "OLD BLDG"},
+                    {"task": "rectangle", "layer": "PARKING", "origin": [12, 70], "width": 120, "height": 60, "label": "OLD PARK"},
+                    {"task": "text_note", "layer": "ANNO", "origin": [15, 15], "text": "legacy layout note"},
+                    {"task": "polyline", "layer": "PIPE", "points": [[220, 520], [310, 430], [410, 380]]},
+                ],
+            }
+        )
+
+        actions = plan["actions"]
+        self.assertFalse(any(str(action.get("label") or "").upper() == "OLD BLDG" for action in actions))
+        self.assertFalse(any(str(action.get("label") or "").upper() == "OLD PARK" for action in actions))
+        self.assertFalse(any(str(action.get("text") or "").lower() == "legacy layout note" for action in actions))
+        self.assertTrue(any(str(action.get("layer") or "").upper() == "PIPE" for action in actions))
+
     def test_simple_layout_actions_do_not_label_synthetic_circulation_as_frontage_or_access(self) -> None:
         layout = generate_smart_layout(
             lot={"x": 0.0, "y": 0.0, "w": 120.0, "h": 100.0},

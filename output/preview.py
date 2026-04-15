@@ -836,25 +836,25 @@ def _engineering_overlay_actions(records):
     selected = []
     seen = set()
 
-    for _, action in sorted(basin_candidates, key=lambda item: item[0], reverse=True)[:1]:
+    for _, action in sorted(basin_candidates, key=lambda item: item[0], reverse=True)[:2]:
         key = repr(action)
         if key not in seen:
             seen.add(key)
             selected.append(action)
 
-    for _, action in sorted(line_candidates, key=lambda item: item[0], reverse=True)[:2]:
+    for _, action in sorted(line_candidates, key=lambda item: item[0], reverse=True)[:4]:
         key = repr(action)
         if key not in seen:
             seen.add(key)
             selected.append(action)
 
-    for _, action in sorted(structure_candidates, key=lambda item: item[0], reverse=True)[:4]:
+    for _, action in sorted(structure_candidates, key=lambda item: item[0], reverse=True)[:6]:
         key = repr(action)
         if key not in seen:
             seen.add(key)
             selected.append(action)
 
-    for _, action in sorted(utility_candidates, key=lambda item: item[0], reverse=True)[:1]:
+    for _, action in sorted(utility_candidates, key=lambda item: item[0], reverse=True)[:2]:
         key = repr(action)
         if key not in seen:
             seen.add(key)

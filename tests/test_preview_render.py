@@ -163,6 +163,28 @@ class PreviewRenderTests(unittest.TestCase):
         self.assertIn("PIPE", kept_layers)
         self.assertIn("BASIN_BOUNDARY", kept_layers)
 
+    def test_layout_scene_keeps_multiple_drainage_lines_when_they_are_on_site(self):
+        actions = [
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [20, 60], "width": 12, "height": 8},
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 2", "origin": [40, 60], "width": 12, "height": 8},
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 3", "origin": [60, 60], "width": 12, "height": 8},
+            {"layer": "PARKING", "task": "rectangle", "origin": [16, 40], "width": 58, "height": 10},
+            {"layer": "DRAIN", "task": "polyline", "label": "SWALE-1", "points": [[18, 42], [28, 34], [40, 28]]},
+            {"layer": "DRAIN", "task": "polyline", "label": "SWALE-2", "points": [[42, 40], [50, 32], [58, 28]]},
+            {"layer": "PIPE", "task": "polyline", "label": "P-1", "points": [[30, 36], [42, 28], [54, 22]]},
+            {"layer": "PIPE", "task": "polyline", "label": "P-2", "points": [[54, 36], [60, 30], [68, 22]]},
+            {"layer": "BASIN_BOUNDARY", "task": "polygon", "label": "BASIN-A", "points": [[70, 18], [80, 18], [82, 10], [68, 10], [70, 18]]},
+        ]
+
+        filtered = _filtered_preview_actions(actions)
+        kept_engineering = [
+            action
+            for action in filtered
+            if str(action.get("layer") or "").upper() in {"DRAIN", "PIPE", "BASIN_BOUNDARY"}
+        ]
+
+        self.assertGreaterEqual(len(kept_engineering), 5)
+
     def test_layout_scene_suppresses_diagonal_schematic_road_and_fire_shapes(self):
         actions = [
             {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [20, 60], "width": 12, "height": 8},

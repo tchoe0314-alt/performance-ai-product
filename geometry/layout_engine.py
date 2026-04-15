@@ -1717,6 +1717,18 @@ def _is_schematic_layout_action(action: Any) -> bool:
     return False
 
 
+def _is_layout_display_action(action: Any) -> bool:
+    if not isinstance(action, dict):
+        return False
+    layer = _safe_str(action.get("layer"), "").upper()
+    task = _safe_str(action.get("task"), "").lower()
+    if layer in {"BUILDING", "PARKING", "PAVEMENT", "ROAD", "FIRE", "WALK", "SITE", "SETBACK", "PAD"}:
+        return True
+    if layer == "ANNO" and task == "text_note":
+        return True
+    return False
+
+
 def _infer_sidewalks_from_legacy(buildings: List[Dict[str, Any]], parking_areas: List[Dict[str, Any]], parsed: Dict[str, Any]) -> List[Dict[str, Any]]:
     if not buildings:
         return []
@@ -2191,7 +2203,11 @@ def _build_expanded_plan(parsed: Dict[str, Any]) -> Dict[str, Any]:
     if parsed.get("actions"):
         extra_actions = _nonempty_list(parsed.get("actions"))
         if is_multi_building_program:
-            extra_actions = [action for action in extra_actions if not _is_schematic_layout_action(action)]
+            extra_actions = [
+                action
+                for action in extra_actions
+                if not _is_schematic_layout_action(action) and not _is_layout_display_action(action)
+            ]
         actions.extend(extra_actions)
 
     assumptions = list(parsed.get("assumptions") or [])
