@@ -11,6 +11,34 @@ const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ||
   "https://api.civoraai.com";
 
+async function waitForComposer(page: Parameters<typeof test>[0]["page"]) {
+  const composer = page.getByPlaceholder(
+    "Message Civora AI with what you want to create or change...",
+  );
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await page.waitForLoadState("networkidle").catch(() => null);
+    if (await composer.isVisible().catch(() => false)) {
+      return composer;
+    }
+
+    const loadError = page.getByText("This page couldn’t load");
+    if (await loadError.isVisible().catch(() => false)) {
+      const reloadButton = page.getByRole("button", { name: "Reload" });
+      if (await reloadButton.isVisible().catch(() => false)) {
+        await reloadButton.click({ force: true });
+      } else {
+        await page.reload({ waitUntil: "domcontentloaded" });
+      }
+    } else {
+      await page.reload({ waitUntil: "domcontentloaded" });
+    }
+  }
+
+  await expect(composer).toBeVisible({ timeout: 15_000 });
+  return composer;
+}
+
 async function ensureArtifactDir(): Promise<string> {
   const dir = path.resolve(process.cwd(), "playwright-artifacts");
   await fs.mkdir(dir, { recursive: true });
@@ -43,10 +71,7 @@ test("live civora flow", async ({ page, request, baseURL }) => {
   );
 
   await page.goto(baseURL!, { waitUntil: "domcontentloaded" });
-  await page.waitForLoadState("networkidle");
-  await expect(
-    page.getByPlaceholder("Message Civora AI with what you want to create or change..."),
-  ).toBeVisible();
+  await waitForComposer(page);
 
   await page.screenshot({
     path: path.join(artifactDir, "civora-app-shell.png"),
@@ -62,9 +87,7 @@ test("live civora flow", async ({ page, request, baseURL }) => {
       await page.waitForLoadState("networkidle");
     }
 
-    const composer = page.getByPlaceholder(
-      "Message Civora AI with what you want to create or change...",
-    );
+    const composer = await waitForComposer(page);
     await composer.fill(prompt);
     await page.getByRole("button", { name: "Send" }).click();
 
