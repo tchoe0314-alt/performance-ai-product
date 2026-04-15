@@ -349,6 +349,38 @@ class PreviewRenderTests(unittest.TestCase):
         self.assertIn("DRAIN_FLOW", kept_layers)
         self.assertIn("FG_CONTOUR", kept_layers)
 
+    def test_completed_layout_scene_limits_far_grading_noise(self):
+        actions = [
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [120, 140], "width": 90, "height": 50},
+            {"layer": "PARKING", "task": "rectangle", "origin": [110, 90], "width": 130, "height": 45},
+            {"layer": "DRAIN", "task": "polyline", "label": "SWALE-1", "points": [[130, 120], [165, 108], [205, 98]]},
+            {"layer": "PIPE", "task": "polyline", "label": "P-1", "points": [[170, 100], [220, 84], [270, 72]]},
+            {"layer": "DRAIN_FLOW", "task": "polyline", "label": "FLOW-1", "points": [[140, 145], [170, 130], [210, 108]]},
+            {"layer": "FG_CONTOUR", "task": "polyline", "label": "FG-NEAR", "points": [[96, 170], [180, 162], [252, 156]]},
+            {"layer": "FG_CONTOUR", "task": "polyline", "label": "FG-FAR", "points": [[0, 360], [400, 350], [780, 340]]},
+            {"layer": "FG_CONTOUR", "task": "text_note", "text": "FG 101.2", "origin": [110, 168]},
+            {"layer": "FG_CONTOUR", "task": "text_note", "text": "FG 105.9", "origin": [20, 356]},
+        ]
+
+        filtered = _filtered_preview_actions(actions, rich_engineering="complete")
+        contour_labels = [
+            str(action.get("text") or "")
+            for action in filtered
+            if str(action.get("layer") or "").upper() == "FG_CONTOUR"
+            and str(action.get("task") or "").lower() == "text_note"
+        ]
+        contour_polylines = [
+            str(action.get("label") or "")
+            for action in filtered
+            if str(action.get("layer") or "").upper() == "FG_CONTOUR"
+            and str(action.get("task") or "").lower() == "polyline"
+        ]
+
+        self.assertIn("FG 101.2", contour_labels)
+        self.assertNotIn("FG 105.9", contour_labels)
+        self.assertIn("FG-NEAR", contour_polylines)
+        self.assertNotIn("FG-FAR", contour_polylines)
+
     def test_grading_checkpoint_keeps_contour_context_without_flow_lines(self):
         actions = [
             {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [20, 60], "width": 12, "height": 8},

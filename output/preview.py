@@ -782,6 +782,15 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
     allow_spot_grades = engineering_profile in {"grading", "complete"}
     allow_flow = engineering_profile in {"drainage", "storm", "utilities", "complete"}
     rich_engineering = engineering_profile in {"baseline", "utilities", "complete"}
+    overlay_limits = {
+        "layout": {"line": 0, "flow": 0, "drain_label": 0, "contour": 0, "contour_label": 0, "spot": 0, "structure": 0, "utility": 0, "basin": 0},
+        "grading": {"line": 0, "flow": 0, "drain_label": 0, "contour": 8, "contour_label": 6, "spot": 12, "structure": 0, "utility": 0, "basin": 0},
+        "drainage": {"line": 4, "flow": 4, "drain_label": 6, "contour": 0, "contour_label": 0, "spot": 0, "structure": 6, "utility": 0, "basin": 0},
+        "storm": {"line": 5, "flow": 3, "drain_label": 4, "contour": 3, "contour_label": 0, "spot": 0, "structure": 6, "utility": 0, "basin": 1},
+        "utilities": {"line": 5, "flow": 2, "drain_label": 2, "contour": 3, "contour_label": 0, "spot": 0, "structure": 6, "utility": 3, "basin": 1},
+        "complete": {"line": 5, "flow": 2, "drain_label": 3, "contour": 4, "contour_label": 4, "spot": 6, "structure": 6, "utility": 3, "basin": 2},
+        "baseline": {"line": 4, "flow": 0, "drain_label": 0, "contour": 0, "contour_label": 0, "spot": 0, "structure": 6, "utility": 2, "basin": 1},
+    }.get(engineering_profile, {})
     basin_candidates = []
     line_candidates = []
     flow_candidates = []
@@ -954,6 +963,8 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                 if not _bounds_near_layout(bounds, layout_bounds, padding=160.0):
                     continue
             else:
+                if not _bounds_near_layout(bounds, layout_bounds, padding=140.0):
+                    continue
                 if _is_oversized_for_layout(action) and not _bounds_near_layout(bounds, layout_bounds, padding=32.0):
                     continue
                 points = safe_points(action)
@@ -970,13 +981,14 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
             )
             contour_candidates.append((contour_score, action))
         elif allow_contour_labels and layer in {"EG_CONTOUR", "FG_CONTOUR"} and task == "text_note":
-            padding = 240.0 if engineering_profile == "grading" else 160.0
+            padding = 240.0 if engineering_profile == "grading" else 140.0
             if not _bounds_near_layout(bounds, layout_bounds, padding=padding):
                 continue
             score = _engineering_score(bounds, 1.0)
             contour_label_candidates.append((score, action))
         elif allow_spot_grades and layer in {"SPOT_EG", "SPOT_FG"} and task in {"text_note", "point"}:
-            if not _bounds_near_layout(bounds, layout_bounds, padding=48.0):
+            spot_padding = 48.0 if engineering_profile == "grading" else 36.0
+            if not _bounds_near_layout(bounds, layout_bounds, padding=spot_padding):
                 continue
             x1, y1, x2, y2 = bounds
             cx = (x1 + x2) / 2.0
@@ -1023,55 +1035,55 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
     selected = []
     seen = set()
 
-    for _, action in sorted(basin_candidates, key=lambda item: item[0], reverse=True)[:2]:
+    for _, action in sorted(basin_candidates, key=lambda item: item[0], reverse=True)[: int(overlay_limits.get("basin", 0))]:
         key = repr(action)
         if key not in seen:
             seen.add(key)
             selected.append(action)
 
-    for _, action in sorted(line_candidates, key=lambda item: item[0], reverse=True)[:(6 if rich_engineering else 4)]:
+    for _, action in sorted(line_candidates, key=lambda item: item[0], reverse=True)[: int(overlay_limits.get("line", 0))]:
         key = repr(action)
         if key not in seen:
             seen.add(key)
             selected.append(action)
 
-    for _, action in sorted(flow_candidates, key=lambda item: item[0], reverse=True)[:(4 if allow_flow else 0)]:
+    for _, action in sorted(flow_candidates, key=lambda item: item[0], reverse=True)[: int(overlay_limits.get("flow", 0))]:
         key = repr(action)
         if key not in seen:
             seen.add(key)
             selected.append(action)
 
-    for _, action in sorted(drain_label_candidates, key=lambda item: item[0], reverse=True)[:(6 if allow_drain else 0)]:
+    for _, action in sorted(drain_label_candidates, key=lambda item: item[0], reverse=True)[: int(overlay_limits.get("drain_label", 0))]:
         key = repr(action)
         if key not in seen:
             seen.add(key)
             selected.append(action)
 
-    for _, action in sorted(contour_candidates, key=lambda item: item[0], reverse=True)[:(8 if allow_contours else 0)]:
+    for _, action in sorted(contour_candidates, key=lambda item: item[0], reverse=True)[: int(overlay_limits.get("contour", 0))]:
         key = repr(action)
         if key not in seen:
             seen.add(key)
             selected.append(action)
 
-    for _, action in sorted(contour_label_candidates, key=lambda item: item[0], reverse=True)[:(6 if allow_contour_labels else 0)]:
+    for _, action in sorted(contour_label_candidates, key=lambda item: item[0], reverse=True)[: int(overlay_limits.get("contour_label", 0))]:
         key = repr(action)
         if key not in seen:
             seen.add(key)
             selected.append(action)
 
-    for _, action in sorted(spot_grade_candidates, key=lambda item: item[0], reverse=True)[:(12 if allow_spot_grades else 0)]:
+    for _, action in sorted(spot_grade_candidates, key=lambda item: item[0], reverse=True)[: int(overlay_limits.get("spot", 0))]:
         key = repr(action)
         if key not in seen:
             seen.add(key)
             selected.append(action)
 
-    for _, action in sorted(structure_candidates, key=lambda item: item[0], reverse=True)[:(8 if rich_engineering else 6)]:
+    for _, action in sorted(structure_candidates, key=lambda item: item[0], reverse=True)[: int(overlay_limits.get("structure", 0))]:
         key = repr(action)
         if key not in seen:
             seen.add(key)
             selected.append(action)
 
-    for _, action in sorted(utility_candidates, key=lambda item: item[0], reverse=True)[:(3 if rich_engineering else 2)]:
+    for _, action in sorted(utility_candidates, key=lambda item: item[0], reverse=True)[: int(overlay_limits.get("utility", 0))]:
         key = repr(action)
         if key not in seen:
             seen.add(key)

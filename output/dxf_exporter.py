@@ -901,6 +901,7 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
         from output.preview import (
             _dedupe_primary_layout_records,
             _engineering_overlay_actions,
+            _normalize_engineering_profile,
             _synthesize_layout_preview_actions,
         )  # reuse layout-first synthesis for modelspace
         synthesized_actions = _synthesize_layout_preview_actions([safe_dict(action) for action in actions if isinstance(action, dict)])
@@ -912,14 +913,35 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
         total_phases = safe_float(combined_view.get("total_phase_count"), 0.0)
         engineering_status = safe_text(meta.get("engineering_status"), "").lower()
         release_status = safe_text(meta.get("release_status"), "").lower()
-        rich_engineering = (
+        runtime_checkpoint = safe_dict(meta.get("runtime_phase_checkpoint"))
+        checkpoint_stage = safe_text(runtime_checkpoint.get("stage_name"), "").lower()
+        grading_complete = bool(safe_dict(phase_checkpoints.get("grading")).get("ready"))
+        drainage_complete = bool(safe_dict(phase_checkpoints.get("drainage_storm")).get("ready"))
+        utilities_complete = bool(safe_dict(phase_checkpoints.get("utilities")).get("ready"))
+        coordination_complete = bool(safe_dict(phase_checkpoints.get("coordination_validation")).get("ready"))
+        engineering_profile = "layout"
+        if (
             (total_phases > 0 and completed_phases >= total_phases)
             or release_status == "ready"
             or engineering_status in {"complete", "ready", "release_ready"}
-        )
+            or coordination_complete
+        ):
+            engineering_profile = "complete"
+        elif utilities_complete or checkpoint_stage in {"sanitary", "utility_network"}:
+            engineering_profile = "utilities"
+        elif checkpoint_stage == "storm_pipes":
+            engineering_profile = "storm"
+        elif drainage_complete or checkpoint_stage == "drainage":
+            engineering_profile = "drainage"
+        elif grading_complete or checkpoint_stage == "grading":
+            engineering_profile = "grading"
+        engineering_profile = _normalize_engineering_profile(engineering_profile)
         curated_engineering_overlay_keys = {
             repr(action)
-            for action in _engineering_overlay_actions(synthesized_actions, rich_engineering=rich_engineering)
+            for action in _engineering_overlay_actions(
+                synthesized_actions,
+                engineering_profile=engineering_profile,
+            )
         }
     except Exception:
         synthesized_actions = [safe_dict(action) for action in actions if isinstance(action, dict)]
@@ -949,7 +971,11 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
             if not label or label in {"ROAD", "DRIVE", "FIRE", "FIRE-1", "ROAD-1"}:
                 rec["layer"] = "PAVEMENT"
                 layer = "PAVEMENT"
-        if layout_first_modelspace and layer in MODELSPACE_DETAIL_LAYERS:
+        if (
+            layout_first_modelspace
+            and layer in MODELSPACE_DETAIL_LAYERS
+            and repr(rec) not in curated_engineering_overlay_keys
+        ):
             continue
         if layout_first_modelspace and layer == "ROUTE":
             continue
