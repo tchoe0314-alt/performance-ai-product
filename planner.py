@@ -114,7 +114,12 @@ from engines.surface_engine import SurfaceEngine, GridSurface
 from engines.utility_engine import UtilityEngine, UtilityNodeSpec, UtilityRequest
 
 from geometry.layout_engine import expand_plan
-from output.dxf_exporter import save_dxf
+from output.dxf_exporter import (
+    _ensure_canonical_sheet_metadata,
+    _export_cross_sections,
+    _export_profiles,
+    save_dxf,
+)
 from output.preview import preview_plan
 
 from backend.planning.common import (
@@ -723,6 +728,9 @@ def _manual_gate_plan(ctx: PlannerExecutionContext) -> Dict[str, Any]:
     plan["meta"]["parking_program"] = deepcopy(ctx.manager.latest_outputs.get("parking_program", ctx.manager.project.meta.get("parking_program", {})))
     plan["meta"]["profiles"] = deepcopy(ctx.manager.latest_outputs.get("profiles", ctx.manager.project.meta.get("profiles", [])))
     plan["meta"]["cross_sections"] = deepcopy(ctx.manager.latest_outputs.get("cross_sections", ctx.manager.project.meta.get("cross_sections", [])))
+    wants_profile, wants_sections = _requested_profile_or_sections(ctx.parsed)
+    if (wants_profile and not safe_list(plan["meta"].get("profiles"))) or (wants_sections and not safe_list(plan["meta"].get("cross_sections"))):
+        _ensure_canonical_sheet_metadata(plan, _export_profiles(plan), _export_cross_sections(plan))
     try:
         qty = compute_plan_quantities(plan)
         plan["meta"]["quantities"] = {
@@ -7797,6 +7805,9 @@ def _run_model_first_workflow(
     plan["meta"]["parking_program"] = deepcopy(manager.latest_outputs.get("parking_program", manager.project.meta.get("parking_program", {})))
     plan["meta"]["profiles"] = deepcopy(manager.latest_outputs.get("profiles", manager.project.meta.get("profiles", [])))
     plan["meta"]["cross_sections"] = deepcopy(manager.latest_outputs.get("cross_sections", manager.project.meta.get("cross_sections", [])))
+    wants_profile, wants_sections = _requested_profile_or_sections(parsed)
+    if (wants_profile and not safe_list(plan["meta"].get("profiles"))) or (wants_sections and not safe_list(plan["meta"].get("cross_sections"))):
+        _ensure_canonical_sheet_metadata(plan, _export_profiles(plan), _export_cross_sections(plan))
 
     try:
         qty = compute_plan_quantities(plan)

@@ -2983,7 +2983,15 @@ def _export_profiles(plan: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "alignment_points": points,
                     "stations": profile_stations,
                     "source": source,
+                    "source_system": "roadway",
+                    "alignment_owner": "ROAD ALIGNMENT 1",
+                    "ownership_class": "roadway",
+                    "preferred_corridor": {},
+                    "protected_zone_context": {},
+                    "grading_context": {},
                     "vertical_exaggeration": 5.0,
+                    "structure_marks": [],
+                    "pipe_band_records": [],
                 }
             )
 
@@ -3027,7 +3035,15 @@ def _export_profiles(plan: Dict[str, Any]) -> List[Dict[str, Any]]:
                         "alignment_points": points,
                         "stations": profile_stations,
                         "source": "storm_pipe",
+                        "source_system": "storm",
+                        "alignment_owner": name,
+                        "ownership_class": "storm_main",
+                        "preferred_corridor": {},
+                        "protected_zone_context": {},
+                        "grading_context": {},
                         "vertical_exaggeration": 8.0,
+                        "structure_marks": [],
+                        "pipe_band_records": [],
                     }
                 )
 
@@ -3071,7 +3087,15 @@ def _export_profiles(plan: Dict[str, Any]) -> List[Dict[str, Any]]:
                         "alignment_points": points,
                         "stations": profile_stations,
                         "source": "sanitary_pipe",
+                        "source_system": "sanitary",
+                        "alignment_owner": name,
+                        "ownership_class": "sanitary_main",
+                        "preferred_corridor": {},
+                        "protected_zone_context": {},
+                        "grading_context": {},
                         "vertical_exaggeration": 8.0,
+                        "structure_marks": [],
+                        "pipe_band_records": [],
                     }
                 )
 
@@ -3141,6 +3165,12 @@ def _export_cross_sections(plan: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "sheet_title": "CROSS SECTIONS" if alignment_type == "roadway" else "UTILITY CROSS SECTIONS",
                     "alignment_name": safe_text(profile.get("alignment_name"), alignment_type.upper()),
                     "alignment_type": alignment_type,
+                    "source_system": safe_text(profile.get("source_system"), alignment_type),
+                    "alignment_owner": safe_text(profile.get("alignment_owner"), safe_text(profile.get("alignment_name"), alignment_type.upper())),
+                    "ownership_class": safe_text(profile.get("ownership_class"), alignment_type),
+                    "preferred_corridor": deepcopy(safe_dict(profile.get("preferred_corridor"))),
+                    "protected_zone_context": deepcopy(safe_dict(profile.get("protected_zone_context"))),
+                    "grading_context": deepcopy(safe_dict(profile.get("grading_context"))),
                     "station_ft": safe_num(station.get("station_ft")),
                     "station_text": safe_text(station.get("station_text"), _station_text(safe_num(station.get("station_ft")))),
                     "anchor_point": [round(safe_num(point[0]), 3), round(safe_num(point[1]), 3)],
@@ -3150,9 +3180,70 @@ def _export_cross_sections(plan: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "sidewalk_width_ft": sidewalk_width,
                     "curb_gutter_width_ft": curb_width,
                     "samples": sample_rows,
+                    "section_context": {
+                        "sample_count": len(sample_rows),
+                        "feature_types": sorted(
+                            {
+                                safe_text(item.get("feature_type"))
+                                for item in sample_rows
+                                if safe_text(item.get("feature_type"))
+                            }
+                        ),
+                        "feature_runs": [],
+                        "modeled_widths": {
+                            "lane_width_ft": safe_num(lane_width, 0.0),
+                            "sidewalk_total_width_ft": safe_num(sidewalk_width, 0.0),
+                            "curb_gutter_width_ft": safe_num(curb_width, 0.0),
+                        },
+                        "edge_conditions": {},
+                    },
                 }
             )
     return sections
+
+
+def _canonical_alignments_from_profiles(profiles: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    alignments: List[Dict[str, Any]] = []
+    for profile in profiles:
+        rec = safe_dict(profile)
+        points = [
+            [safe_num(pt[0]), safe_num(pt[1])]
+            for pt in safe_list(rec.get("alignment_points"))
+            if isinstance(pt, (list, tuple)) and len(pt) >= 2
+        ]
+        if len(points) < 2:
+            continue
+        alignment_name = safe_text(rec.get("alignment_name"), safe_text(rec.get("name"), "ALIGNMENT"))
+        alignments.append(
+            {
+                "name": alignment_name,
+                "alignment_type": safe_text(rec.get("alignment_type"), "roadway"),
+                "points": points,
+                "source": safe_text(rec.get("source"), "generated_profile"),
+                "source_system": safe_text(rec.get("source_system"), safe_text(rec.get("alignment_type"), "roadway")),
+                "alignment_owner": safe_text(rec.get("alignment_owner"), alignment_name),
+                "ownership_class": safe_text(rec.get("ownership_class"), safe_text(rec.get("alignment_type"), "roadway")),
+                "preferred_corridor": deepcopy(safe_dict(rec.get("preferred_corridor"))),
+                "protected_zone_context": deepcopy(safe_dict(rec.get("protected_zone_context"))),
+                "grading_context": deepcopy(safe_dict(rec.get("grading_context"))),
+                "stations": deepcopy([safe_dict(item) for item in safe_list(rec.get("stations")) if safe_dict(item)]),
+            }
+        )
+    return alignments
+
+
+def _ensure_canonical_sheet_metadata(
+    plan: Dict[str, Any],
+    profiles: Sequence[Dict[str, Any]],
+    sections: Sequence[Dict[str, Any]],
+) -> None:
+    meta = plan.setdefault("meta", {})
+    if not any(safe_dict(item) for item in safe_list(meta.get("profiles"))):
+        meta["profiles"] = [deepcopy(safe_dict(item)) for item in profiles if safe_dict(item)]
+    if not any(safe_dict(item) for item in safe_list(meta.get("cross_sections"))):
+        meta["cross_sections"] = [deepcopy(safe_dict(item)) for item in sections if safe_dict(item)]
+    if not any(safe_dict(item) for item in safe_list(meta.get("alignments"))):
+        meta["alignments"] = _canonical_alignments_from_profiles(profiles)
 
 
 def _build_sheet_registry(plan: Dict[str, Any], profiles: List[Dict[str, Any]], section_groups: List[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
@@ -3406,6 +3497,7 @@ def save_dxf(plan: Dict[str, Any], filename: str | None = None) -> str:
 
     profiles = _export_profiles(plan)
     sections = _export_cross_sections(plan)
+    _ensure_canonical_sheet_metadata(plan, profiles, sections)
     section_groups = _group_sections_for_sheets(sections)
     sheet_registry = _build_sheet_registry(plan, profiles, section_groups)
     plan.setdefault("meta", {})

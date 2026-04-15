@@ -147,6 +147,26 @@ class ApiEngineeringGuardsTest(unittest.TestCase):
             },
         )
 
+    def test_sanitize_plan_preserves_canonical_sheet_metadata(self) -> None:
+        plan = sanitize_plan(
+            {
+                "project_name": "Sheet Metadata Plan",
+                "actions": [],
+                "meta": {
+                    "profiles": [{"name": "ROAD PROFILE 1", "alignment_owner": "ROAD ALIGNMENT 1"}],
+                    "cross_sections": [{"name": "ROAD SECTION 1", "section_context": {"feature_types": ["travel_lane"]}}],
+                    "alignments": [{"name": "ROAD ALIGNMENT 1", "points": [[0.0, 0.0], [10.0, 0.0]]}],
+                    "sheet_registry": [{"layout_name": "SITE PLAN", "sheet_kind": "site_plan"}],
+                    "export_audit": {"success": True},
+                },
+            }
+        )
+        self.assertTrue(plan["meta"]["profiles"])
+        self.assertTrue(plan["meta"]["cross_sections"])
+        self.assertTrue(plan["meta"]["alignments"])
+        self.assertTrue(plan["meta"]["sheet_registry"])
+        self.assertEqual(plan["meta"]["export_audit"], {"success": True})
+
     def test_save_project_payload_keeps_omitted_latest_result_as_none(self) -> None:
         payload = SaveProjectPayload(
             name="Demo Project",
