@@ -2498,6 +2498,10 @@ export default function PerformanceAIDashboard() {
   } = {}): Promise<ProjectRecord | null> => {
     if (!token) return null;
     if (!silent) setBusy(true);
+    const effectiveProjectId =
+      projectIdOverride !== undefined
+        ? projectIdOverride
+        : resolvedProjectIdRef.current || projectId || currentProject?.project_id || null;
     const resolvedName = (nameOverride ?? siteName).trim();
     const resolvedFileName = (fileNameOverride ?? fileName).trim();
     const liveChatThread = chatMessagesRef.current;
@@ -2538,8 +2542,7 @@ export default function PerformanceAIDashboard() {
           : undefined;
     try {
       const requestBody: Record<string, unknown> = {
-        project_id:
-          projectIdOverride !== undefined ? projectIdOverride : projectId || null,
+        project_id: effectiveProjectId,
         name: resolvedName,
         project_input: projectInputToSave,
         metadata: {
@@ -2578,7 +2581,9 @@ export default function PerformanceAIDashboard() {
   };
 
   useEffect(() => {
-    if (!token || !projectId || !currentProject) return;
+    const activeProjectId =
+      resolvedProjectIdRef.current || projectId || currentProject?.project_id || "";
+    if (!token || !activeProjectId || !currentProject) return;
     const savedThread = Array.isArray(currentProject?.project_input?.meta?.chat_thread)
       ? currentProject.project_input.meta.chat_thread
       : [];
@@ -2603,7 +2608,7 @@ export default function PerformanceAIDashboard() {
       window.clearTimeout(chatAutosaveTimeoutRef.current);
     }
     chatAutosaveTimeoutRef.current = window.setTimeout(() => {
-      void saveProject({ silent: true, projectIdOverride: projectId });
+      void saveProject({ silent: true, projectIdOverride: activeProjectId });
     }, 700);
   }, [chatMessages, prompt, token, projectId, currentProject]);
 
