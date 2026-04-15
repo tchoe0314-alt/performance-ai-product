@@ -71,6 +71,23 @@ class FakeProjectStore:
         return False
 
 
+class SequentialProjectStore(FakeProjectStore):
+    def __init__(self, projects):
+        super().__init__(project=dict(projects[-1]) if projects else None)
+        self._projects = [dict(project) for project in projects]
+        self._get_project_calls = 0
+
+    def get_project(self, *, user_id: str, project_id: str):
+        if not self._projects:
+            return None
+        index = min(self._get_project_calls, len(self._projects) - 1)
+        project = self._projects[index]
+        self._get_project_calls += 1
+        if user_id == project.get("user_id") and project_id == project.get("project_id"):
+            return dict(project)
+        return None
+
+
 class ApplicationProjectWorkflowsTest(unittest.TestCase):
     def test_result_from_payload_prefers_saved_project_result(self):
         store = FakeProjectStore(
@@ -355,6 +372,67 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
             store.saved_payload["latest_result"]["final_plan"]["project_name"],
             "Saved Partial",
         )
+
+    def test_save_project_record_preserves_fresh_staged_result_from_refreshed_project(self):
+        stale_project = {
+            "user_id": "u1",
+            "project_id": "p1",
+            "name": "Test",
+            "description": "",
+            "session_id": "s1",
+            "tags": [],
+            "project_input": {},
+            "latest_result": {},
+            "session_state": {},
+            "metadata": {"source": "stale"},
+        }
+        fresh_project = {
+            "user_id": "u1",
+            "project_id": "p1",
+            "name": "Test",
+            "description": "",
+            "session_id": "s1",
+            "tags": [],
+            "project_input": {},
+            "latest_result": {
+                "final_plan": {"project_name": "Fresh Staged Result", "meta": {"phase": "layout"}}
+            },
+            "session_state": {},
+            "metadata": {
+                "workflow": {
+                    "summary": {
+                        "latest_run_id": "run_layout",
+                        "latest_operational_state": "awaiting_approval",
+                    }
+                }
+            },
+        }
+        store = SequentialProjectStore([stale_project, fresh_project])
+
+        response = save_project_record(
+            project_store=store,
+            user_id="u1",
+            payload_data={
+                "project_id": "p1",
+                "name": "Updated",
+                "description": "",
+                "session_id": "s1",
+                "tags": [],
+                "project_input": {"prompt": "demo"},
+                "latest_result": {},
+                "metadata": {"source": "autosave"},
+            },
+        )
+        self.assertTrue(response["success"])
+        self.assertEqual(
+            store.saved_payload["latest_result"]["final_plan"]["project_name"],
+            "Fresh Staged Result",
+        )
+        self.assertEqual(
+            store.saved_payload["metadata"]["workflow"]["summary"]["latest_run_id"],
+            "run_layout",
+        )
+        self.assertEqual(store.saved_payload["metadata"]["source"], "autosave")
 
     def test_delete_project_record_reports_not_found(self):
         store = FakeProjectStore()

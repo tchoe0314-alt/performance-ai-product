@@ -255,12 +255,22 @@ def save_project_record(
     existing = None
     if project_id:
         existing = project_store.get_project(user_id=user_id, project_id=project_id)
+    payload_metadata = dict(payload_data.get("metadata") or {})
     metadata = dict(existing.get("metadata") or {}) if existing else {}
-    metadata.update(dict(payload_data.get("metadata") or {}))
+    metadata.update(payload_metadata)
+    current_existing = existing
+    if project_id:
+        # Refresh just before persisting so a stale autosave cannot wipe a newer
+        # staged result or workflow checkpoint that landed after the first read.
+        refreshed_existing = project_store.get_project(user_id=user_id, project_id=project_id)
+        if refreshed_existing is not None:
+            current_existing = refreshed_existing
+            metadata = dict(current_existing.get("metadata") or {})
+            metadata.update(payload_metadata)
     latest_result_in_payload = "latest_result" in payload_data
     latest_result = dict(payload_data.get("latest_result") or {})
-    if existing and (not latest_result_in_payload or not latest_result):
-        existing_latest_result = dict(existing.get("latest_result") or {})
+    if current_existing and (not latest_result_in_payload or not latest_result):
+        existing_latest_result = dict(current_existing.get("latest_result") or {})
         if existing_latest_result:
             latest_result = existing_latest_result
     if latest_result and build_run_summary:
