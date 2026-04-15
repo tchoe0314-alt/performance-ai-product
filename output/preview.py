@@ -496,6 +496,8 @@ def _is_tiny_marker_circle(action):
     radius = safe_num(action.get("radius"))
     if task != "circle" or radius <= 0.0:
         return False
+    if layer == "DRAIN":
+        return False
     return layer in SECONDARY_ENGINEERING_LAYERS and radius <= 1.5
 
 
@@ -870,7 +872,7 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                     continue
             flow_candidates.append((_polyline_length(action), action))
         elif allow_drain and layer == "DRAIN" and task == "text_note":
-            if not _bounds_near_layout(bounds, layout_bounds, padding=24.0):
+            if not _bounds_near_layout(bounds, layout_bounds, padding=96.0):
                 continue
             drain_label_candidates.append((_bounds_area(bounds), action))
         elif allow_contours and layer in {"EG_CONTOUR", "FG_CONTOUR"} and task in {"polyline", "polygon"}:
