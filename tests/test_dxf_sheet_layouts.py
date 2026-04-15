@@ -52,6 +52,34 @@ class DxfSheetLayoutsTest(unittest.TestCase):
             self.assertNotIn("BLDG 1", texts)
             self.assertIn("RETAIL PAD", texts)
 
+    def test_modelspace_suppresses_generic_surface_labels_but_keeps_named_routes(self) -> None:
+        plan = _sheet_test_plan()
+        actions = plan.setdefault("actions", [])
+        actions.extend(
+            [
+                {"layer": "ROAD", "task": "polyline", "points": [[0, 70], [100, 70]], "label": "Loop Road"},
+                {"layer": "ROAD", "task": "polyline", "points": [[0, 80], [100, 80]], "label": "Service Spine"},
+                {"layer": "PARKING", "task": "rectangle", "origin": [8, 24], "width": 24, "height": 12, "label": "Lot A"},
+                {"layer": "PAVEMENT", "task": "rectangle", "origin": [18, 34], "width": 40, "height": 14, "label": "Lot Base"},
+            ]
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "modelspace-generic-surface-labels.dxf"
+            save_dxf(plan, filename=str(path))
+
+            doc = ezdxf.readfile(path)
+            texts = []
+            for entity in doc.modelspace():
+                if entity.dxftype() == "TEXT":
+                    texts.append(entity.dxf.text)
+                elif entity.dxftype() == "MTEXT":
+                    texts.append(entity.text)
+
+            self.assertNotIn("LOOP ROAD", texts)
+            self.assertNotIn("LOT A", texts)
+            self.assertNotIn("LOT BASE", texts)
+            self.assertIn("SERVICE SPINE", texts)
+
     def test_modelspace_prefers_layout_layers_over_detail_noise(self) -> None:
         plan = _sheet_test_plan()
         with tempfile.TemporaryDirectory() as tmpdir:

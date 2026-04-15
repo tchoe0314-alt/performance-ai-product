@@ -216,6 +216,7 @@ MODELSPACE_DEBUG_LAYERS = {"GRID", "AXIS", "VIEWPORT", "SHEET", "MATCHLINE", "HA
 MODELSPACE_DETAIL_LAYERS = {"ANNO", "DRAIN_FLOW", "LOW_POINTS", "SPOT_EG", "SPOT_FG", "EG_CONTOUR", "FG_CONTOUR"}
 MODELSPACE_PRIMARY_LAYOUT_LAYERS = {"BUILDING", "PAVEMENT", "PARKING", "WALK"}
 _GENERIC_BUILDING_LABEL_RE = re.compile(r"^(?:BLDG|BUILDING)\s*-?\s*\d+[A-Z]?$")
+_GENERIC_SURFACE_LABEL_RE = re.compile(r"^(?:LOT\s+[A-Z0-9]+|PARK(?:ING)?(?:\s+LOT)?\s*-?\s*[A-Z0-9]*|LOT\s+BASE)$")
 
 
 def _draw_label_text(layer: str, label: str) -> str:
@@ -224,6 +225,20 @@ def _draw_label_text(layer: str, label: str) -> str:
     if not cleaned:
         return ""
     if layer == "BUILDING" and _GENERIC_BUILDING_LABEL_RE.fullmatch(upper):
+        return ""
+    if layer in {"ROAD", "FIRE", "PAVEMENT"} and upper in {
+        "DRIVE",
+        "ROAD",
+        "LOOP ROAD",
+        "FRONTAGE",
+        "ACCESS",
+        "FIRE",
+        "FIRE ACCESS",
+        "ROAD-1",
+        "FIRE-1",
+    }:
+        return ""
+    if layer in {"PARKING", "PAVEMENT"} and _GENERIC_SURFACE_LABEL_RE.fullmatch(upper):
         return ""
     return cleaned
 

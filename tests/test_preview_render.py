@@ -13,6 +13,12 @@ class PreviewRenderTests(unittest.TestCase):
         self.assertEqual(preview_label({"layer": "BUILDING", "task": "rectangle", "label": "Building-2"}), "")
         self.assertEqual(preview_label({"layer": "BUILDING", "task": "rectangle", "label": "Retail Pad"}), "RETAIL PAD")
 
+    def test_preview_label_suppresses_generic_surface_names_but_keeps_meaningful_labels(self):
+        self.assertEqual(preview_label({"layer": "ROAD", "task": "polyline", "label": "Loop Road"}), "")
+        self.assertEqual(preview_label({"layer": "PARKING", "task": "rectangle", "label": "Lot A"}), "")
+        self.assertEqual(preview_label({"layer": "PAVEMENT", "task": "rectangle", "label": "Lot Base"}), "")
+        self.assertEqual(preview_label({"layer": "ROAD", "task": "polyline", "label": "Service Spine"}), "SERVICE SPINE")
+
     def test_preview_draw_priority_renders_engineering_over_pavement(self):
         pavement = {"layer": "PAVEMENT", "task": "rectangle"}
         drain = {"layer": "DRAIN", "task": "circle"}

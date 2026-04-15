@@ -416,11 +416,26 @@ def get_linestyle(action):
 
 
 _GENERIC_BUILDING_LABEL_RE = re.compile(r"^(?:BLDG|BUILDING)\s*-?\s*\d+[A-Z]?$")
+_GENERIC_SURFACE_LABEL_RE = re.compile(r"^(?:LOT\s+[A-Z0-9]+|PARK(?:ING)?(?:\s+LOT)?\s*-?\s*[A-Z0-9]*|LOT\s+BASE)$")
 
 
 def _is_generic_default_label(layer: str, label: str) -> bool:
     upper = label.upper().strip()
     if layer == "BUILDING" and _GENERIC_BUILDING_LABEL_RE.fullmatch(upper):
+        return True
+    if layer in {"ROAD", "FIRE", "PAVEMENT"} and upper in {
+        "DRIVE",
+        "ROAD",
+        "LOOP ROAD",
+        "FRONTAGE",
+        "ACCESS",
+        "FIRE",
+        "FIRE ACCESS",
+        "ROAD-1",
+        "FIRE-1",
+    }:
+        return True
+    if layer in {"PARKING", "PAVEMENT"} and _GENERIC_SURFACE_LABEL_RE.fullmatch(upper):
         return True
     return False
 
