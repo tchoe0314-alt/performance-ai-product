@@ -3696,35 +3696,75 @@ export default function PerformanceAIDashboard() {
     );
   }
 
-  const previewReview = planPreviewSummary?.review;
+  const previewReview = useMemo<Record<string, any> | null>(() => {
+    const resultReleaseReview =
+      currentPlanMeta?.release_review && typeof currentPlanMeta.release_review === "object"
+        ? currentPlanMeta.release_review
+        : null;
+    const resultPhaseCheckpoints =
+      currentPlanMeta?.phase_checkpoints && typeof currentPlanMeta.phase_checkpoints === "object"
+        ? currentPlanMeta.phase_checkpoints
+        : null;
+    const summaryReview =
+      planPreviewSummary?.review && typeof planPreviewSummary.review === "object"
+        ? planPreviewSummary.review
+        : null;
+
+    const hasResultReviewSignal = Boolean(
+      resultReleaseReview &&
+        (Object.keys(resultReleaseReview).length ||
+          Object.keys(resultPhaseCheckpoints || {}).length ||
+          currentPlanMeta?.release_status),
+    );
+
+    if (!hasResultReviewSignal) {
+      return summaryReview;
+    }
+
+    return {
+      ...(summaryReview || {}),
+      ...(resultReleaseReview || {}),
+      phase_checkpoints:
+        resultReleaseReview?.phase_checkpoints && typeof resultReleaseReview.phase_checkpoints === "object"
+          ? resultReleaseReview.phase_checkpoints
+          : resultPhaseCheckpoints || summaryReview?.phase_checkpoints || {},
+      release_status:
+        String(resultReleaseReview?.release_status || currentPlanMeta?.release_status || "").trim() ||
+        summaryReview?.release_status ||
+        "review",
+      release_note:
+        String(resultReleaseReview?.release_note || "").trim() ||
+        String(currentPlanMeta?.release_note || "").trim() ||
+        summaryReview?.release_note ||
+        "",
+    };
+  }, [currentPlanMeta, planPreviewSummary]);
   const previewAssumptionCategories = (previewReview?.assumption_categories ?? [])
-    .map((item) => toReadableLabel(String(item || "")))
+    .map((item: unknown) => toReadableLabel(String(item || "")))
     .filter(Boolean);
   const previewFixActions = (previewReview?.autofix_actions ?? [])
-    .map((item) => toReadableLabel(String(item || "")))
+    .map((item: unknown) => toReadableLabel(String(item || "")))
     .filter(Boolean);
   const previewFixTargets = (previewReview?.dominant_fix_targets ?? [])
-    .map((item) => toReadableLabel(String(item || "")))
+    .map((item: unknown) => toReadableLabel(String(item || "")))
     .filter(Boolean);
   const previewReviewCategories = (previewReview?.review_categories ?? [])
-    .map((item) => toReadableLabel(String(item || "")))
-    .filter(
-      (item) =>
-        Boolean(item) &&
-        item.toLowerCase() !== "uncategorized" &&
-        item.toLowerCase() !== "general",
-    );
+    .map((item: unknown) => toReadableLabel(String(item || "")))
+    .filter((item: string | null | undefined) => {
+      const normalized = String(item || "").toLowerCase();
+      return Boolean(item) && normalized !== "uncategorized" && normalized !== "general";
+    });
   const previewBlockedReasons = (previewReview?.blocked_reasons ?? [])
-    .map((item) => toReadableLabel(String(item || "")))
+    .map((item: unknown) => toReadableLabel(String(item || "")))
     .filter(Boolean);
   const previewFailedDeliverables = (previewReview?.failed_deliverables ?? [])
-    .map((item) => toReadableLabel(String(item || "")))
+    .map((item: unknown) => toReadableLabel(String(item || "")))
     .filter(Boolean);
   const previewExtraDeliverables = (previewReview?.extra_deliverables ?? [])
-    .map((item) => toReadableLabel(String(item || "")))
+    .map((item: unknown) => toReadableLabel(String(item || "")))
     .filter(Boolean);
   const previewReadyDeliverables = (previewReview?.ready_deliverables ?? [])
-    .map((item) => toReadableLabel(String(item || "")))
+    .map((item: unknown) => toReadableLabel(String(item || "")))
     .filter(Boolean);
   const previewPhaseEntries = (
     [
@@ -3744,16 +3784,16 @@ export default function PerformanceAIDashboard() {
       const label = toReadableLabel(String(phase.label || key || "")) || "Phase";
       const status = String(phase.status || (phase.ready ? "ready" : "review") || "review");
       const deliverables = (phase.deliverables ?? [])
-        .map((item) => toReadableLabel(String(item || "")))
+        .map((item: unknown) => toReadableLabel(String(item || "")))
         .filter(Boolean);
       const blockers = [
         ...(phase.blockers ?? []),
         ...(phase.blocked_reasons ?? []),
       ]
-        .map((item) => toReadableLabel(String(item || "")))
+        .map((item: unknown) => toReadableLabel(String(item || "")))
         .filter(Boolean);
       const messages = (phase.messages ?? [])
-        .map((item) => String(item || "").trim())
+        .map((item: unknown) => String(item || "").trim())
         .filter(Boolean);
       const note = String(phase.note || "").trim();
       const currentStage = toReadableLabel(String(phase.current_stage || ""));
@@ -3877,8 +3917,12 @@ export default function PerformanceAIDashboard() {
         ? `${previewCompletedPhaseCount}/${previewTotalPhaseCount} phases complete`
         : "";
   const previewRerunSignals = [
-    ...(previewReview?.rerun_stages ?? []).map((item) => toReadableLabel(String(item || ""))),
-    ...(previewReview?.rerun_reasons ?? []).map((item) => toReadableLabel(String(item || ""))),
+    ...(previewReview?.rerun_stages ?? []).map((item: unknown) =>
+      toReadableLabel(String(item || "")),
+    ),
+    ...(previewReview?.rerun_reasons ?? []).map((item: unknown) =>
+      toReadableLabel(String(item || "")),
+    ),
   ].filter(Boolean);
   const whatYouNeedSummary = (() => {
     const manualFields =
@@ -3897,7 +3941,9 @@ export default function PerformanceAIDashboard() {
     const buildingWidthValue = readPositiveNumber(manualFields.building_width ?? buildingWidth);
     const buildingDepthValue = readPositiveNumber(manualFields.building_depth ?? buildingDepth);
     const requestedDeliverables = new Set(
-      (previewReview?.requested_deliverables ?? []).map((item) => String(item || "").trim()).filter(Boolean),
+      (previewReview?.requested_deliverables ?? [])
+        .map((item: unknown) => String(item || "").trim())
+        .filter(Boolean),
     );
     const disciplineSet = new Set(
       [
@@ -3907,7 +3953,7 @@ export default function PerformanceAIDashboard() {
         drainage ? "drainage" : null,
         utilities ? "utility" : null,
       ]
-        .map((item) => String(item || "").trim().toLowerCase())
+        .map((item: unknown) => String(item || "").trim().toLowerCase())
         .filter(Boolean),
     );
     const neededNow: string[] = [];
