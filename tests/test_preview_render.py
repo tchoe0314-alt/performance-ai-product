@@ -273,6 +273,7 @@ class PreviewRenderTests(unittest.TestCase):
             {"layer": "PARKING", "task": "rectangle", "origin": [16, 40], "width": 58, "height": 10},
             {"layer": "DRAIN", "task": "circle", "label": "INLET-1", "center": [28, 34], "radius": 2},
             {"layer": "DRAIN", "task": "polyline", "label": "SWALE-1", "points": [[18, 42], [28, 34], [40, 28]]},
+            {"layer": "DRAIN", "task": "text_note", "text": "INLET-1", "origin": [30, 36]},
             {"layer": "PIPE", "task": "polyline", "label": "P-1", "points": [[30, 36], [42, 28], [54, 22]]},
             {"layer": "BASIN_BOUNDARY", "task": "polygon", "label": "BASIN-A", "points": [[70, 18], [80, 18], [82, 10], [68, 10], [70, 18]]},
             {"layer": "DRAIN_FLOW", "task": "polyline", "label": "FLOW-1", "points": [[26, 54], [34, 44], [44, 34]]},
@@ -281,12 +282,19 @@ class PreviewRenderTests(unittest.TestCase):
 
         filtered = _filtered_preview_actions(actions, rich_engineering="drainage")
         kept_layers = [str(action.get("layer") or "").upper() for action in filtered]
+        drain_texts = [
+            str(action.get("text") or "")
+            for action in filtered
+            if str(action.get("layer") or "").upper() == "DRAIN"
+            and str(action.get("task") or "").lower() == "text_note"
+        ]
 
         self.assertIn("DRAIN", kept_layers)
         self.assertIn("DRAIN_FLOW", kept_layers)
         self.assertNotIn("PIPE", kept_layers)
         self.assertNotIn("BASIN_BOUNDARY", kept_layers)
         self.assertNotIn("FG_CONTOUR", kept_layers)
+        self.assertIn("INLET-1", drain_texts)
 
     def test_storm_pipe_checkpoint_keeps_pipe_and_basin_context(self):
         actions = [

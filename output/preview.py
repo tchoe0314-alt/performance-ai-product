@@ -163,6 +163,9 @@ def _action_bounds(action):
             return None
         cx, cy = center
         return (cx - radius, cy - radius, cx + radius, cy + radius)
+    if task in {"text_note", "point"}:
+        x, y = safe_origin(action)
+        return (x, y, x, y)
     return None
 
 
@@ -753,6 +756,7 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
     contour_candidates = []
     structure_candidates = []
     utility_candidates = []
+    drain_label_candidates = []
     layout_bounds = _merge_bounds(
         [
             _action_bounds(action)
@@ -865,6 +869,10 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                 if points_in_layout <= 1 and len(points) >= 2 and not _bounds_near_layout(bounds, layout_bounds, padding=18.0):
                     continue
             flow_candidates.append((_polyline_length(action), action))
+        elif allow_drain and layer == "DRAIN" and task == "text_note":
+            if not _bounds_near_layout(bounds, layout_bounds, padding=24.0):
+                continue
+            drain_label_candidates.append((_bounds_area(bounds), action))
         elif allow_contours and layer in {"EG_CONTOUR", "FG_CONTOUR"} and task in {"polyline", "polygon"}:
             if _is_oversized_for_layout(action) and not _bounds_near_layout(bounds, layout_bounds, padding=32.0):
                 continue
@@ -916,6 +924,12 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
             selected.append(action)
 
     for _, action in sorted(flow_candidates, key=lambda item: item[0], reverse=True)[:(4 if allow_flow else 0)]:
+        key = repr(action)
+        if key not in seen:
+            seen.add(key)
+            selected.append(action)
+
+    for _, action in sorted(drain_label_candidates, key=lambda item: item[0], reverse=True)[:(6 if allow_drain else 0)]:
         key = repr(action)
         if key not in seen:
             seen.add(key)
@@ -1204,10 +1218,13 @@ def draw_polyline(ax, action):
 def draw_circle(ax, action):
     cx, cy = safe_center(action)
     r = safe_num(action.get("radius"))
-    label = clean_label(action.get("label"), "")
+    layer = (action.get("layer") or "").upper()
 
     if r <= 0:
         return None
+
+    if layer == "DRAIN":
+        r = max(r, 2.5)
 
     circle = Circle(
         (cx, cy),
