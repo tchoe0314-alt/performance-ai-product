@@ -101,7 +101,7 @@ SUPPRESSED_AUTO_LABEL_LAYERS = {
     "WATER",
     "STORM",
 }
-SUPPRESSED_TEXT_LAYERS = {"EG_CONTOUR", "FG_CONTOUR", "DRAIN_FLOW", "LOW_POINTS", "UTILITY", "WATER"}
+SUPPRESSED_TEXT_LAYERS = {"DRAIN_FLOW", "LOW_POINTS", "UTILITY", "WATER"}
 FOCUS_EXCLUDED_LAYERS = {"ANNO", "SYMBOL", "SITE", "PAD", "SETBACK", "UTILITY", "WATER", "DRAIN_FLOW", "EG_CONTOUR", "FG_CONTOUR", "LOW_POINTS"}
 SUPPRESSED_LABEL_TOKENS = ("BUILDABLE_AREA", "GENERIC_UTILITY", "SERVICE_TIE", "SOURCE_SERVICE", "BUILDING_SERVICE", "UTILITY-")
 PRIMARY_LAYOUT_LAYERS = {"BUILDING", "PAVEMENT", "PARKING", "WALK"}
@@ -760,6 +760,7 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
     allow_pipe = engineering_profile in {"baseline", "storm", "utilities", "complete"}
     allow_drain = engineering_profile in {"baseline", "drainage", "storm", "utilities", "complete"}
     allow_contours = engineering_profile in {"grading", "storm", "utilities", "complete"}
+    allow_contour_labels = engineering_profile in {"grading", "complete"}
     allow_spot_grades = engineering_profile in {"grading", "complete"}
     allow_flow = engineering_profile in {"drainage", "storm", "utilities", "complete"}
     rich_engineering = engineering_profile in {"baseline", "utilities", "complete"}
@@ -767,6 +768,7 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
     line_candidates = []
     flow_candidates = []
     contour_candidates = []
+    contour_label_candidates = []
     spot_grade_candidates = []
     structure_candidates = []
     utility_candidates = []
@@ -888,16 +890,24 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                 continue
             drain_label_candidates.append((_bounds_area(bounds), action))
         elif allow_contours and layer in {"EG_CONTOUR", "FG_CONTOUR"} and task in {"polyline", "polygon"}:
-            if _is_oversized_for_layout(action) and not _bounds_near_layout(bounds, layout_bounds, padding=32.0):
-                continue
-            points = safe_points(action)
-            if points:
-                points_in_layout = sum(
-                    1 for point in points if _point_within_layout(point, layout_bounds, padding=16.0)
-                )
-                if points_in_layout <= 1 and len(points) >= 2 and not _bounds_near_layout(bounds, layout_bounds, padding=24.0):
+            if engineering_profile == "grading":
+                if not _bounds_near_layout(bounds, layout_bounds, padding=160.0):
                     continue
+            else:
+                if _is_oversized_for_layout(action) and not _bounds_near_layout(bounds, layout_bounds, padding=32.0):
+                    continue
+                points = safe_points(action)
+                if points:
+                    points_in_layout = sum(
+                        1 for point in points if _point_within_layout(point, layout_bounds, padding=16.0)
+                    )
+                    if points_in_layout <= 1 and len(points) >= 2 and not _bounds_near_layout(bounds, layout_bounds, padding=24.0):
+                        continue
             contour_candidates.append((_polyline_length(action), action))
+        elif allow_contour_labels and layer in {"EG_CONTOUR", "FG_CONTOUR"} and task == "text_note":
+            if not _bounds_near_layout(bounds, layout_bounds, padding=160.0):
+                continue
+            contour_label_candidates.append((1.0, action))
         elif allow_spot_grades and layer in {"SPOT_EG", "SPOT_FG"} and task in {"text_note", "point"}:
             if not _bounds_near_layout(bounds, layout_bounds, padding=48.0):
                 continue
@@ -962,6 +972,12 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
             selected.append(action)
 
     for _, action in sorted(contour_candidates, key=lambda item: item[0], reverse=True)[:(8 if allow_contours else 0)]:
+        key = repr(action)
+        if key not in seen:
+            seen.add(key)
+            selected.append(action)
+
+    for _, action in sorted(contour_label_candidates, key=lambda item: item[0], reverse=True)[:(6 if allow_contour_labels else 0)]:
         key = repr(action)
         if key not in seen:
             seen.add(key)
