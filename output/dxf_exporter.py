@@ -990,6 +990,8 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
             and repr(rec) not in curated_engineering_overlay_keys
         ):
             continue
+        if engineering_profile in {"storm", "utilities", "complete"} and layer in {"EG_CONTOUR", "SPOT_EG"}:
+            continue
         if layout_first_modelspace and _is_wrapper_layout_shape(rec, building_bounds):
             continue
         if layout_first_modelspace and _is_schematic_access_shape(rec, building_bounds):

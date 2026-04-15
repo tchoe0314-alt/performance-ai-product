@@ -786,9 +786,9 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
         "layout": {"line": 0, "flow": 0, "drain_label": 0, "contour": 0, "contour_label": 0, "spot": 0, "structure": 0, "utility": 0, "basin": 0},
         "grading": {"line": 0, "flow": 0, "drain_label": 0, "contour": 8, "contour_label": 6, "spot": 12, "structure": 0, "utility": 0, "basin": 0},
         "drainage": {"line": 4, "flow": 4, "drain_label": 6, "contour": 0, "contour_label": 0, "spot": 0, "structure": 6, "utility": 0, "basin": 0},
-        "storm": {"line": 5, "flow": 3, "drain_label": 4, "contour": 3, "contour_label": 0, "spot": 0, "structure": 6, "utility": 0, "basin": 1},
-        "utilities": {"line": 5, "flow": 2, "drain_label": 2, "contour": 3, "contour_label": 0, "spot": 0, "structure": 6, "utility": 3, "basin": 1},
-        "complete": {"line": 5, "flow": 2, "drain_label": 3, "contour": 4, "contour_label": 4, "spot": 6, "structure": 6, "utility": 3, "basin": 2},
+        "storm": {"line": 5, "flow": 3, "drain_label": 3, "contour": 3, "contour_label": 0, "spot": 0, "structure": 6, "utility": 0, "basin": 1},
+        "utilities": {"line": 5, "flow": 2, "drain_label": 0, "contour": 3, "contour_label": 0, "spot": 0, "structure": 6, "utility": 3, "basin": 1},
+        "complete": {"line": 5, "flow": 2, "drain_label": 0, "contour": 4, "contour_label": 4, "spot": 6, "structure": 6, "utility": 3, "basin": 2},
         "baseline": {"line": 4, "flow": 0, "drain_label": 0, "contour": 0, "contour_label": 0, "spot": 0, "structure": 6, "utility": 2, "basin": 1},
     }.get(engineering_profile, {})
     basin_candidates = []

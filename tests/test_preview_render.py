@@ -427,6 +427,28 @@ class PreviewRenderTests(unittest.TestCase):
         self.assertIn("FG 101.2", contour_texts)
         self.assertNotIn("EG 100.8", contour_texts)
 
+    def test_completed_layout_scene_drops_drain_labels_but_keeps_drain_geometry(self):
+        actions = [
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [120, 140], "width": 90, "height": 50},
+            {"layer": "PARKING", "task": "rectangle", "origin": [110, 90], "width": 130, "height": 45},
+            {"layer": "DRAIN", "task": "circle", "center": [144, 116], "radius": 1.0},
+            {"layer": "DRAIN", "task": "text_note", "text": "INLET-1", "origin": [146, 118]},
+            {"layer": "DRAIN_FLOW", "task": "polyline", "points": [[144, 116], [176, 98]]},
+        ]
+
+        filtered = _filtered_preview_actions(actions, rich_engineering="complete")
+        kept_layers = [str(action.get("layer") or "").upper() for action in filtered]
+        drain_texts = [
+            str(action.get("text") or "").upper()
+            for action in filtered
+            if str(action.get("layer") or "").upper() == "DRAIN"
+            and str(action.get("task") or "").lower() == "text_note"
+        ]
+
+        self.assertIn("DRAIN", kept_layers)
+        self.assertIn("DRAIN_FLOW", kept_layers)
+        self.assertFalse(drain_texts)
+
     def test_grading_checkpoint_keeps_contour_context_without_flow_lines(self):
         actions = [
             {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [20, 60], "width": 12, "height": 8},

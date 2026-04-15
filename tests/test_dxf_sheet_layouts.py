@@ -138,6 +138,7 @@ class DxfSheetLayoutsTest(unittest.TestCase):
 
             self.assertIn("FG_CONTOUR", modelspace_layers)
             self.assertNotIn("EG_CONTOUR", modelspace_layers)
+            self.assertNotIn("SPOT_EG", modelspace_layers)
 
     def test_modelspace_suppresses_route_and_point_noise_in_layout_scene(self) -> None:
         plan = _sheet_test_plan()
