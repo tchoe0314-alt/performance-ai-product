@@ -28,6 +28,30 @@ def _sheet_test_plan():
 
 
 class DxfSheetLayoutsTest(unittest.TestCase):
+    def test_modelspace_suppresses_generic_building_labels_but_keeps_named_buildings(self) -> None:
+        plan = _sheet_test_plan()
+        actions = plan.setdefault("actions", [])
+        actions.extend(
+            [
+                {"layer": "BUILDING", "task": "rectangle", "origin": [12, 22], "width": 18, "height": 12, "label": "BLDG 1"},
+                {"layer": "BUILDING", "task": "rectangle", "origin": [42, 22], "width": 18, "height": 12, "label": "Retail Pad"},
+            ]
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "modelspace-generic-building-labels.dxf"
+            save_dxf(plan, filename=str(path))
+
+            doc = ezdxf.readfile(path)
+            texts = []
+            for entity in doc.modelspace():
+                if entity.dxftype() == "TEXT":
+                    texts.append(entity.dxf.text)
+                elif entity.dxftype() == "MTEXT":
+                    texts.append(entity.text)
+
+            self.assertNotIn("BLDG 1", texts)
+            self.assertIn("RETAIL PAD", texts)
+
     def test_modelspace_prefers_layout_layers_over_detail_noise(self) -> None:
         plan = _sheet_test_plan()
         with tempfile.TemporaryDirectory() as tmpdir:

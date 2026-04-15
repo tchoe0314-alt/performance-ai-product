@@ -215,6 +215,17 @@ SUPPRESSED_TEXT_LAYERS = {"EG_CONTOUR", "FG_CONTOUR", "DRAIN_FLOW", "LOW_POINTS"
 MODELSPACE_DEBUG_LAYERS = {"GRID", "AXIS", "VIEWPORT", "SHEET", "MATCHLINE", "HATCH"}
 MODELSPACE_DETAIL_LAYERS = {"ANNO", "DRAIN_FLOW", "LOW_POINTS", "SPOT_EG", "SPOT_FG", "EG_CONTOUR", "FG_CONTOUR"}
 MODELSPACE_PRIMARY_LAYOUT_LAYERS = {"BUILDING", "PAVEMENT", "PARKING", "WALK"}
+_GENERIC_BUILDING_LABEL_RE = re.compile(r"^(?:BLDG|BUILDING)\s*-?\s*\d+[A-Z]?$")
+
+
+def _draw_label_text(layer: str, label: str) -> str:
+    cleaned = clean_label(label, "")
+    upper = cleaned.upper().strip()
+    if not cleaned:
+        return ""
+    if layer == "BUILDING" and _GENERIC_BUILDING_LABEL_RE.fullmatch(upper):
+        return ""
+    return cleaned
 
 
 def get_layer(action: Dict[str, Any], fallback: str) -> str:
@@ -645,7 +656,7 @@ def _draw_rectangle(msp, action: Dict[str, Any], layer: str) -> None:
     x, y = safe_origin(action)
     w = safe_num(action.get("width"))
     h = safe_num(action.get("height"))
-    label = clean_label(action.get("label"), "")
+    label = _draw_label_text(layer, safe_text(action.get("label"), ""))
     if w <= 0 or h <= 0:
         return
     pts = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
@@ -656,7 +667,7 @@ def _draw_rectangle(msp, action: Dict[str, Any], layer: str) -> None:
 
 def _draw_polyline(msp, action: Dict[str, Any], layer: str) -> None:
     pts = _dedupe_consecutive_points(_normalize_points(safe_points(action)))
-    label = clean_label(action.get("label"), "")
+    label = _draw_label_text(layer, safe_text(action.get("label"), ""))
     closed = _safe_closed(action, False)
     if len(pts) < 2:
         return
@@ -668,7 +679,7 @@ def _draw_polyline(msp, action: Dict[str, Any], layer: str) -> None:
 
 def _draw_polygon(msp, action: Dict[str, Any], layer: str) -> None:
     pts = _dedupe_consecutive_points(_normalize_points(safe_points(action)))
-    label = clean_label(action.get("label"), "")
+    label = _draw_label_text(layer, safe_text(action.get("label"), ""))
     if len(pts) < 3:
         return
     msp.add_lwpolyline(pts, close=True, dxfattribs={"layer": layer})
@@ -680,7 +691,7 @@ def _draw_polygon(msp, action: Dict[str, Any], layer: str) -> None:
 def _draw_circle(msp, action: Dict[str, Any], layer: str) -> None:
     cx, cy = safe_center(action)
     r = safe_num(action.get("radius"))
-    label = clean_label(action.get("label"), "")
+    label = _draw_label_text(layer, safe_text(action.get("label"), ""))
     if r <= 0:
         return
     msp.add_circle((cx, cy), r, dxfattribs={"layer": layer})
@@ -693,7 +704,7 @@ def _draw_arc(msp, action: Dict[str, Any], layer: str) -> None:
     r = safe_num(action.get("radius"))
     a1 = safe_num(action.get("start_angle"))
     a2 = safe_num(action.get("end_angle"))
-    label = clean_label(action.get("label"), "")
+    label = _draw_label_text(layer, safe_text(action.get("label"), ""))
     if r <= 0:
         return
     msp.add_arc(center=(cx, cy), radius=r, start_angle=a1, end_angle=a2, dxfattribs={"layer": layer})

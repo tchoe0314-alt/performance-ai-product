@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+import re
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -414,6 +415,16 @@ def get_linestyle(action):
     return LAYER_LINESTYLE.get(layer, "-")
 
 
+_GENERIC_BUILDING_LABEL_RE = re.compile(r"^(?:BLDG|BUILDING)\s*-?\s*\d+[A-Z]?$")
+
+
+def _is_generic_default_label(layer: str, label: str) -> bool:
+    upper = label.upper().strip()
+    if layer == "BUILDING" and _GENERIC_BUILDING_LABEL_RE.fullmatch(upper):
+        return True
+    return False
+
+
 def preview_label(action):
     layer = (action.get("layer") or "").upper()
     label = clean_label(action.get("label"), "")
@@ -423,6 +434,8 @@ def preview_label(action):
         return ""
     upper = label.upper()
     if any(token in upper for token in SUPPRESSED_LABEL_TOKENS):
+        return ""
+    if _is_generic_default_label(layer, label):
         return ""
     return label.replace("_", " ").strip()
 
