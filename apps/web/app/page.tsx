@@ -3351,6 +3351,8 @@ export default function PerformanceAIDashboard() {
 
   useEffect(() => {
     if (!token || !activeJobId) return;
+    void loadJob(activeJobId);
+    void refreshJobs(token, { suppressError: true, force: true });
     const interval = window.setInterval(() => {
       void loadJob(activeJobId);
       void refreshJobs(token, { suppressError: true, force: true });
