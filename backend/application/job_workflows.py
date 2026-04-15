@@ -732,6 +732,7 @@ def build_orchestrate_job_runner(
         user_id: Optional[str],
     ) -> Dict[str, Any]:
         enriched = dict(result)
+        runtime_checkpoint = dict(dict(enriched.get("metadata") or {}).get("runtime_phase_checkpoint") or {})
         try:
             enriched["final_plan"] = final_plan_from_result(
                 enriched,
@@ -818,6 +819,29 @@ def build_orchestrate_job_runner(
                 blocked_reasons=blocked_reasons,
                 failed_deliverables=failed_deliverables,
             )
+            combined_checkpoint = dict(normalized_phase_checkpoints.get("combined_view") or {})
+            total_phase_count = int(combined_checkpoint.get("total_phase_count") or 0)
+            completed_phase_count = int(combined_checkpoint.get("completed_phase_count") or 0)
+            completion_implies_ready = (
+                not blocked_reasons
+                and not blocked_exports
+                and not failed_deliverables
+                and not bool(runtime_checkpoint.get("yielded"))
+                and total_phase_count > 0
+                and completed_phase_count >= total_phase_count
+            )
+            if completion_implies_ready and release_status != "ready":
+                reliability["release_ready"] = True
+                release_status = "ready"
+                release_note = "Release-ready engineering state."
+                normalized_phase_checkpoints = _normalize_completed_phase_checkpoints(
+                    dict(run_summary.get("phase_checkpoints") or {}),
+                    release_status=release_status,
+                    release_ready=True,
+                    blocked_exports=blocked_exports,
+                    blocked_reasons=blocked_reasons,
+                    failed_deliverables=failed_deliverables,
+                )
             if normalized_phase_checkpoints:
                 run_summary["phase_checkpoints"] = normalized_phase_checkpoints
                 run_summary["combined_view"] = dict(normalized_phase_checkpoints.get("combined_view") or {})
