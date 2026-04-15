@@ -1,9 +1,13 @@
 import unittest
 
-from output.preview import _choose_view_bounds, _filtered_preview_actions, _preview_draw_priority
+from output.preview import _choose_view_bounds, _filtered_preview_actions, _preview_draw_priority, preview_label
 
 
 class PreviewRenderTests(unittest.TestCase):
+    def test_preview_label_suppresses_generic_aisle_names(self):
+        action = {"layer": "PAVEMENT", "task": "rectangle", "label": "AISLE-1"}
+        self.assertEqual(preview_label(action), "")
+
     def test_preview_draw_priority_renders_engineering_over_pavement(self):
         pavement = {"layer": "PAVEMENT", "task": "rectangle"}
         drain = {"layer": "DRAIN", "task": "circle"}
@@ -109,6 +113,24 @@ class PreviewRenderTests(unittest.TestCase):
         selected = _choose_view_bounds(drawn_items, engineering_profile="drainage")
 
         self.assertEqual(selected, (120, 118, 260, 240))
+
+    def test_grading_preview_keeps_nearby_contour_labels_outside_layout_band(self):
+        actions = [
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [165, 440], "width": 110, "height": 58},
+            {"layer": "PARKING", "task": "rectangle", "origin": [180, 430], "width": 446, "height": 130},
+            {"layer": "FG_CONTOUR", "task": "polyline", "points": [[0, 390], [780, 390]]},
+            {"layer": "FG_CONTOUR", "task": "text_note", "origin": [0, 390], "text": "FG 102.06"},
+        ]
+
+        filtered = _filtered_preview_actions(actions, rich_engineering="grading")
+        contour_texts = [
+            str(action.get("text") or "")
+            for action in filtered
+            if str(action.get("layer") or "").upper() == "FG_CONTOUR"
+            and str(action.get("task") or "").lower() == "text_note"
+        ]
+
+        self.assertIn("FG 102.06", contour_texts)
 
     def test_layout_scene_suppresses_engineering_overlay_noise(self):
         actions = [

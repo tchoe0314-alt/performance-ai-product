@@ -103,7 +103,15 @@ SUPPRESSED_AUTO_LABEL_LAYERS = {
 }
 SUPPRESSED_TEXT_LAYERS = {"DRAIN_FLOW", "LOW_POINTS", "UTILITY", "WATER"}
 FOCUS_EXCLUDED_LAYERS = {"ANNO", "SYMBOL", "SITE", "PAD", "SETBACK", "UTILITY", "WATER", "DRAIN_FLOW", "EG_CONTOUR", "FG_CONTOUR", "LOW_POINTS"}
-SUPPRESSED_LABEL_TOKENS = ("BUILDABLE_AREA", "GENERIC_UTILITY", "SERVICE_TIE", "SOURCE_SERVICE", "BUILDING_SERVICE", "UTILITY-")
+SUPPRESSED_LABEL_TOKENS = (
+    "AISLE-",
+    "BUILDABLE_AREA",
+    "GENERIC_UTILITY",
+    "SERVICE_TIE",
+    "SOURCE_SERVICE",
+    "BUILDING_SERVICE",
+    "UTILITY-",
+)
 PRIMARY_LAYOUT_LAYERS = {"BUILDING", "PAVEMENT", "PARKING", "WALK"}
 PRIMARY_VIEW_LAYERS = {"BUILDING", "PAVEMENT", "PARKING", "WALK", "PAD"}
 KEY_ENGINEERING_VIEW_LAYERS = {"BASIN_BOUNDARY", "DRAIN", "PIPE", "STORM", "SAN", "UTILITY", "WATER", "STRUCTURE"}
@@ -780,6 +788,12 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
             if str(action.get("layer") or "").upper() in {"BUILDING", "PARKING", "PAVEMENT", "WALK"}
         ]
     )
+    layout_center = None
+    if layout_bounds:
+        layout_center = (
+            (layout_bounds[0] + layout_bounds[2]) / 2.0,
+            (layout_bounds[1] + layout_bounds[3]) / 2.0,
+        )
     layout_diag = 0.0 if not layout_bounds else ((layout_bounds[2] - layout_bounds[0]) ** 2 + (layout_bounds[3] - layout_bounds[1]) ** 2) ** 0.5
 
     def _is_oversized_for_layout(action):
@@ -905,9 +919,17 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                         continue
             contour_candidates.append((_polyline_length(action), action))
         elif allow_contour_labels and layer in {"EG_CONTOUR", "FG_CONTOUR"} and task == "text_note":
-            if not _bounds_near_layout(bounds, layout_bounds, padding=160.0):
+            padding = 240.0 if engineering_profile == "grading" else 160.0
+            if not _bounds_near_layout(bounds, layout_bounds, padding=padding):
                 continue
-            contour_label_candidates.append((1.0, action))
+            score = 1.0
+            if layout_center:
+                x1, y1, x2, y2 = bounds
+                cx = (x1 + x2) / 2.0
+                cy = (y1 + y2) / 2.0
+                dist = ((cx - layout_center[0]) ** 2 + (cy - layout_center[1]) ** 2) ** 0.5
+                score = 1000.0 - dist
+            contour_label_candidates.append((score, action))
         elif allow_spot_grades and layer in {"SPOT_EG", "SPOT_FG"} and task in {"text_note", "point"}:
             if not _bounds_near_layout(bounds, layout_bounds, padding=48.0):
                 continue
