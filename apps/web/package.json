@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:live": "playwright test --config=playwright.config.ts",
+    "test:live:staged": "playwright test --config=playwright.config.ts tests/live/staged-regression.spec.ts",
     "test:live:headed": "playwright test --config=playwright.config.ts --headed"
   },
   "dependencies": {
