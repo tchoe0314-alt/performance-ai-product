@@ -2956,7 +2956,7 @@ export default function PerformanceAIDashboard() {
   };
 
   useEffect(() => {
-    if (!token || planPreviewUrl || !backendResult) return;
+    if (!token || !backendResult) return;
     const finalPlan =
       backendResult?.final_plan && typeof backendResult.final_plan === "object"
         ? backendResult.final_plan
@@ -3008,7 +3008,7 @@ export default function PerformanceAIDashboard() {
         silentStatus: true,
       },
     );
-  }, [token, backendResult, planPreviewUrl, projectId, fileName, currentProject?.name, siteName]);
+  }, [token, backendResult, projectId, fileName, currentProject?.name, siteName]);
 
   const loadProjectResultInBackground = (project: ProjectRecord) => {
     if (!token) return;
@@ -3068,7 +3068,7 @@ export default function PerformanceAIDashboard() {
   };
 
   useEffect(() => {
-    if (!token || planPreviewUrl) return;
+    if (!token) return;
     const activeStatus = String(visibleActiveJob?.status || "").toLowerCase();
     if (activeStatus !== "awaiting_approval") return;
     const targetProjectId =
