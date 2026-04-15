@@ -204,6 +204,23 @@ class PreviewRenderTests(unittest.TestCase):
 
         self.assertEqual(len(kept_buildings), 2)
 
+    def test_completed_layout_scene_keeps_richer_engineering_context(self):
+        actions = [
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [20, 60], "width": 12, "height": 8},
+            {"layer": "PARKING", "task": "rectangle", "origin": [16, 40], "width": 58, "height": 10},
+            {"layer": "DRAIN", "task": "polyline", "label": "SWALE-1", "points": [[18, 42], [28, 34], [40, 28]]},
+            {"layer": "PIPE", "task": "polyline", "label": "P-1", "points": [[30, 36], [42, 28], [54, 22]]},
+            {"layer": "DRAIN_FLOW", "task": "polyline", "label": "FLOW-1", "points": [[26, 54], [34, 44], [44, 34]]},
+            {"layer": "FG_CONTOUR", "task": "polyline", "label": "FG-1", "points": [[14, 72], [40, 70], [78, 68]]},
+            {"layer": "BASIN_BOUNDARY", "task": "polygon", "label": "BASIN-A", "points": [[70, 18], [80, 18], [82, 10], [68, 10], [70, 18]]},
+        ]
+
+        filtered = _filtered_preview_actions(actions, rich_engineering=True)
+        kept_layers = [str(action.get("layer") or "").upper() for action in filtered]
+
+        self.assertIn("DRAIN_FLOW", kept_layers)
+        self.assertIn("FG_CONTOUR", kept_layers)
+
     def test_layout_scene_suppresses_diagonal_schematic_road_and_fire_shapes(self):
         actions = [
             {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [20, 60], "width": 12, "height": 8},

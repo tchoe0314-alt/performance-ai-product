@@ -713,9 +713,11 @@ def _polyline_length(action):
     return length
 
 
-def _engineering_overlay_actions(records):
+def _engineering_overlay_actions(records, *, rich_engineering=False):
     basin_candidates = []
     line_candidates = []
+    flow_candidates = []
+    contour_candidates = []
     structure_candidates = []
     utility_candidates = []
     layout_bounds = _merge_bounds(
@@ -809,6 +811,28 @@ def _engineering_overlay_actions(records):
                 if points_in_layout <= 1 and len(points) >= 2:
                     continue
             line_candidates.append((_polyline_length(action), action))
+        elif rich_engineering and layer == "DRAIN_FLOW" and task in {"polyline", "polygon"}:
+            if _is_oversized_for_layout(action):
+                continue
+            points = safe_points(action)
+            if points:
+                points_in_layout = sum(
+                    1 for point in points if _point_within_layout(point, layout_bounds, padding=12.0)
+                )
+                if points_in_layout <= 1 and len(points) >= 2:
+                    continue
+            flow_candidates.append((_polyline_length(action), action))
+        elif rich_engineering and layer in {"EG_CONTOUR", "FG_CONTOUR"} and task in {"polyline", "polygon"}:
+            if _is_oversized_for_layout(action):
+                continue
+            points = safe_points(action)
+            if points:
+                points_in_layout = sum(
+                    1 for point in points if _point_within_layout(point, layout_bounds, padding=16.0)
+                )
+                if points_in_layout <= 1 and len(points) >= 2:
+                    continue
+            contour_candidates.append((_polyline_length(action), action))
         elif layer == "STRUCTURE" and task in {"circle", "rectangle"}:
             if _is_tiny_marker_circle(action):
                 continue
@@ -842,19 +866,31 @@ def _engineering_overlay_actions(records):
             seen.add(key)
             selected.append(action)
 
-    for _, action in sorted(line_candidates, key=lambda item: item[0], reverse=True)[:4]:
+    for _, action in sorted(line_candidates, key=lambda item: item[0], reverse=True)[:(6 if rich_engineering else 4)]:
         key = repr(action)
         if key not in seen:
             seen.add(key)
             selected.append(action)
 
-    for _, action in sorted(structure_candidates, key=lambda item: item[0], reverse=True)[:6]:
+    for _, action in sorted(flow_candidates, key=lambda item: item[0], reverse=True)[:(4 if rich_engineering else 0)]:
         key = repr(action)
         if key not in seen:
             seen.add(key)
             selected.append(action)
 
-    for _, action in sorted(utility_candidates, key=lambda item: item[0], reverse=True)[:2]:
+    for _, action in sorted(contour_candidates, key=lambda item: item[0], reverse=True)[:(8 if rich_engineering else 0)]:
+        key = repr(action)
+        if key not in seen:
+            seen.add(key)
+            selected.append(action)
+
+    for _, action in sorted(structure_candidates, key=lambda item: item[0], reverse=True)[:(8 if rich_engineering else 6)]:
+        key = repr(action)
+        if key not in seen:
+            seen.add(key)
+            selected.append(action)
+
+    for _, action in sorted(utility_candidates, key=lambda item: item[0], reverse=True)[:(3 if rich_engineering else 2)]:
         key = repr(action)
         if key not in seen:
             seen.add(key)
@@ -919,7 +955,7 @@ def _dedupe_primary_layout_records(records):
     return deduped
 
 
-def _filtered_preview_actions(actions):
+def _filtered_preview_actions(actions, *, rich_engineering=False):
     records = [action for action in actions if isinstance(action, dict)]
     records = _synthesize_layout_preview_actions(records)
     records = _dedupe_primary_layout_records(records)
@@ -927,7 +963,7 @@ def _filtered_preview_actions(actions):
     has_layout_scene = _has_layout_scene(records)
     engineering_overlay_keys = {
         repr(action)
-        for action in (_engineering_overlay_actions(records) if has_layout_scene else [])
+        for action in (_engineering_overlay_actions(records, rich_engineering=rich_engineering) if has_layout_scene else [])
     }
     building_bounds = [
         {"action": action, "bounds": _action_bounds(action)}
@@ -1247,7 +1283,19 @@ def _expand_bounds(bounds, pad_ratio=0.08, min_pad=8.0):
 
 
 def _draw_plan(ax, plan):
-    actions = _filtered_preview_actions(plan.get("actions", []))
+    meta = plan.get("meta") or {}
+    phase_checkpoints = meta.get("phase_checkpoints") or {}
+    combined_view = phase_checkpoints.get("combined_view") or {}
+    completed_phases = safe_num(combined_view.get("completed_phase_count"))
+    total_phases = safe_num(combined_view.get("total_phase_count"))
+    engineering_status = safe_text(meta.get("engineering_status"), "").lower()
+    release_status = safe_text(meta.get("release_status"), "").lower()
+    rich_engineering = (
+        (total_phases > 0 and completed_phases >= total_phases)
+        or release_status == "ready"
+        or engineering_status in {"complete", "ready", "release_ready"}
+    )
+    actions = _filtered_preview_actions(plan.get("actions", []), rich_engineering=rich_engineering)
     if not actions:
         return False
 

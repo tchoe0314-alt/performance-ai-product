@@ -905,9 +905,21 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
         )  # reuse layout-first synthesis for modelspace
         synthesized_actions = _synthesize_layout_preview_actions([safe_dict(action) for action in actions if isinstance(action, dict)])
         synthesized_actions = _dedupe_primary_layout_records(synthesized_actions)
+        meta = safe_dict(plan.get("meta"))
+        phase_checkpoints = safe_dict(meta.get("phase_checkpoints"))
+        combined_view = safe_dict(phase_checkpoints.get("combined_view"))
+        completed_phases = safe_float(combined_view.get("completed_phase_count"), 0.0)
+        total_phases = safe_float(combined_view.get("total_phase_count"), 0.0)
+        engineering_status = safe_text(meta.get("engineering_status"), "").lower()
+        release_status = safe_text(meta.get("release_status"), "").lower()
+        rich_engineering = (
+            (total_phases > 0 and completed_phases >= total_phases)
+            or release_status == "ready"
+            or engineering_status in {"complete", "ready", "release_ready"}
+        )
         curated_engineering_overlay_keys = {
             repr(action)
-            for action in _engineering_overlay_actions(synthesized_actions)
+            for action in _engineering_overlay_actions(synthesized_actions, rich_engineering=rich_engineering)
         }
     except Exception:
         synthesized_actions = [safe_dict(action) for action in actions if isinstance(action, dict)]
