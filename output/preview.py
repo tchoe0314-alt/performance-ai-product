@@ -863,9 +863,66 @@ def _engineering_overlay_actions(records):
     return selected
 
 
+def _bounds_overlap_ratio(a, b):
+    if not a or not b:
+        return 0.0
+    ix1 = max(safe_num(a[0]), safe_num(b[0]))
+    iy1 = max(safe_num(a[1]), safe_num(b[1]))
+    ix2 = min(safe_num(a[2]), safe_num(b[2]))
+    iy2 = min(safe_num(a[3]), safe_num(b[3]))
+    if ix2 <= ix1 or iy2 <= iy1:
+        return 0.0
+    intersection = (ix2 - ix1) * (iy2 - iy1)
+    return intersection / max(min(_bounds_area(a), _bounds_area(b)), 1e-6)
+
+
+def _dedupe_primary_layout_records(records):
+    deduped = []
+    primary_layers = {"BUILDING", "PARKING", "PAVEMENT", "WALK"}
+    for action in records:
+        layer = str(action.get("layer") or "").upper()
+        task = str(action.get("task") or "").lower()
+        if layer not in primary_layers or task not in {"rectangle", "polygon"}:
+            deduped.append(action)
+            continue
+        bounds = _action_bounds(action)
+        if not bounds:
+            deduped.append(action)
+            continue
+        label = clean_label(action.get("label"), "").upper()
+        duplicate_idx = None
+        for idx, existing in enumerate(deduped):
+            existing_layer = str(existing.get("layer") or "").upper()
+            existing_task = str(existing.get("task") or "").lower()
+            if existing_layer != layer or existing_task not in {"rectangle", "polygon"}:
+                continue
+            existing_bounds = _action_bounds(existing)
+            if not existing_bounds:
+                continue
+            existing_label = clean_label(existing.get("label"), "").upper()
+            labels_match = bool(label and existing_label and label == existing_label)
+            if not labels_match and _bounds_overlap_ratio(bounds, existing_bounds) < 0.92:
+                continue
+            existing_is_canonical = bool(existing.get("canonical_source_id"))
+            current_is_canonical = bool(action.get("canonical_source_id"))
+            if current_is_canonical and not existing_is_canonical:
+                duplicate_idx = idx
+            elif current_is_canonical == existing_is_canonical and _bounds_area(bounds) > _bounds_area(existing_bounds):
+                duplicate_idx = idx
+            else:
+                duplicate_idx = -1
+            break
+        if duplicate_idx is None:
+            deduped.append(action)
+        elif duplicate_idx >= 0:
+            deduped[duplicate_idx] = action
+    return deduped
+
+
 def _filtered_preview_actions(actions):
     records = [action for action in actions if isinstance(action, dict)]
     records = _synthesize_layout_preview_actions(records)
+    records = _dedupe_primary_layout_records(records)
     has_primary_site_geometry = _has_primary_site_geometry(records)
     has_layout_scene = _has_layout_scene(records)
     engineering_overlay_keys = {

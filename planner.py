@@ -2909,11 +2909,17 @@ def _filter_base_preview_actions_for_expanded_plan(
     expanded_actions: Sequence[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     has_primary = _has_primary_preview_geometry(expanded_actions)
+    primary_layers = {"BUILDING", "PARKING", "PAVEMENT", "ROAD", "FIRE", "WALK"}
     has_building_shapes = any(
         safe_str(safe_dict(action).get("layer")).upper() == "BUILDING"
         and lower_text(safe_dict(action).get("task")) in {"rectangle", "polygon"}
         for action in safe_list(expanded_actions)
     )
+    expanded_primary_layers = {
+        safe_str(safe_dict(action).get("layer")).upper()
+        for action in safe_list(expanded_actions)
+        if lower_text(safe_dict(action).get("task")) in {"rectangle", "polygon", "polyline", "circle"}
+    }
     filtered: List[Dict[str, Any]] = []
     for action in safe_list(base_actions):
         rec = safe_dict(action)
@@ -2925,6 +2931,10 @@ def _filter_base_preview_actions_for_expanded_plan(
         if has_primary and layer == "SITE":
             continue
         if has_primary and layer == "PAD" and label in {"BUILDABLE_AREA", "SITE", "LOT"}:
+            continue
+        if has_primary and layer in primary_layers and task in {"rectangle", "polygon", "polyline", "circle"}:
+            continue
+        if has_primary and layer in primary_layers and task == "text_note" and layer in expanded_primary_layers:
             continue
         if has_building_shapes and layer == "BUILDING" and task == "text_note":
             continue

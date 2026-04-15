@@ -99,13 +99,14 @@ class PreviewRenderTests(unittest.TestCase):
                 for action in road_rectangles
             )
         )
-        pavement_rectangles = [
-            action
-            for action in filtered
-            if str(action.get("layer") or "").upper() == "PAVEMENT"
-            and str(action.get("task") or "").lower() == "rectangle"
-        ]
-        self.assertGreaterEqual(len(pavement_rectangles), 1)
+        self.assertFalse(
+            any(
+                str(action.get("layer") or "").upper() == "PAVEMENT"
+                and str(action.get("task") or "").lower() == "rectangle"
+                and action.get("origin") == [10, 20]
+                for action in filtered
+            )
+        )
 
     def test_layout_scene_suppresses_thin_fire_bars_near_buildings(self):
         actions = [
@@ -184,6 +185,24 @@ class PreviewRenderTests(unittest.TestCase):
         ]
 
         self.assertGreaterEqual(len(kept_engineering), 5)
+
+    def test_layout_scene_dedupes_overlapping_primary_building_shapes(self):
+        actions = [
+            {"layer": "BUILDING", "task": "polygon", "label": "BLDG 1", "points": [[20, 60], [32, 60], [32, 68], [20, 68], [20, 60]]},
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [20, 60], "width": 12, "height": 8},
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 2", "origin": [40, 60], "width": 12, "height": 8},
+            {"layer": "PARKING", "task": "rectangle", "origin": [16, 40], "width": 58, "height": 10},
+        ]
+
+        filtered = _filtered_preview_actions(actions)
+        kept_buildings = [
+            action
+            for action in filtered
+            if str(action.get("layer") or "").upper() == "BUILDING"
+            and str(action.get("task") or "").lower() in {"rectangle", "polygon"}
+        ]
+
+        self.assertEqual(len(kept_buildings), 2)
 
     def test_layout_scene_suppresses_diagonal_schematic_road_and_fire_shapes(self):
         actions = [

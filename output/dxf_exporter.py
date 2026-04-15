@@ -899,10 +899,12 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
     prepared: List[Dict[str, Any]] = []
     try:
         from output.preview import (
+            _dedupe_primary_layout_records,
             _engineering_overlay_actions,
             _synthesize_layout_preview_actions,
         )  # reuse layout-first synthesis for modelspace
         synthesized_actions = _synthesize_layout_preview_actions([safe_dict(action) for action in actions if isinstance(action, dict)])
+        synthesized_actions = _dedupe_primary_layout_records(synthesized_actions)
         curated_engineering_overlay_keys = {
             repr(action)
             for action in _engineering_overlay_actions(synthesized_actions)

@@ -222,6 +222,40 @@ class ExportPackagingRichnessTest(unittest.TestCase):
             2,
         )
 
+    def test_project_model_plan_drops_base_layout_duplicates_when_expanded_geometry_exists(self) -> None:
+        project = planner.ProjectModel(name="Expanded Merge Test", units="ft")
+        project.add_zone(planner.rect_zone(0.0, 0.0, 240.0, 180.0, zone_type=planner.ZoneType.SITE, name="SITE"))
+        project.add_zone(planner.rect_zone(20.0, 20.0, 70.0, 40.0, zone_type=planner.ZoneType.BUILDING, name="BLDG-1"))
+        project.add_zone(planner.rect_zone(110.0, 20.0, 70.0, 40.0, zone_type=planner.ZoneType.BUILDING, name="BLDG-2"))
+        project.meta["_expanded_plan"] = {
+            "project_name": "Expanded Layout Preview",
+            "units": "ft",
+            "actions": [
+                {"task": "rectangle", "layer": "BUILDING", "origin": [20.0, 30.0], "width": 50.0, "height": 30.0, "label": "BUILDING 1"},
+                {"task": "rectangle", "layer": "BUILDING", "origin": [90.0, 30.0], "width": 50.0, "height": 30.0, "label": "BUILDING 2"},
+                {"task": "rectangle", "layer": "PARKING", "origin": [18.0, 65.0], "width": 124.0, "height": 32.0},
+                {"task": "rectangle", "layer": "PAVEMENT", "origin": [18.0, 105.0], "width": 124.0, "height": 18.0},
+            ],
+        }
+
+        plan = planner.project_model_to_plan(project, "Expanded Merge Test")
+        actions = plan.get("actions") or []
+
+        building_shapes = [
+            action
+            for action in actions
+            if str(action.get("layer") or "").upper() == "BUILDING"
+            and str(action.get("task") or "").lower() in {"rectangle", "polygon"}
+        ]
+        self.assertEqual(len(building_shapes), 2)
+        self.assertFalse(
+            any(
+                str(action.get("layer") or "").upper() == "BUILDING"
+                and str(action.get("task") or "").lower() == "text_note"
+                for action in actions
+            )
+        )
+
     def test_manual_mode_packages_canonical_engineering_layers_for_export(self) -> None:
         plan = build_plan(
             {
