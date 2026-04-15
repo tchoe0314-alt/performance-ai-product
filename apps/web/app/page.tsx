@@ -1710,6 +1710,46 @@ export default function PerformanceAIDashboard() {
           ? "Civora AI is starting the improvement run."
           : "Civora AI is starting the engineering run.",
     );
+    const shouldQueueStagedRun = Boolean(requestPayload?.full_design_mode && token);
+    if (shouldQueueStagedRun) {
+      try {
+        const queued = await postJson<{ job: JobSummary }>(
+          "/api/jobs/orchestrate",
+          {
+            project_id:
+              resolvedProjectId !== undefined
+                ? resolvedProjectId
+                : ((requestPayload?.project_id ?? projectId) || null),
+            request: requestPayload,
+          },
+          { token },
+        );
+        setActiveJobId(queued.job.job_id);
+        appendChatMessage(
+          "assistant",
+          [
+            assistantPrefix,
+            `I queued the full staged design workflow as ${queued.job.job_id} so each phase can save, pause for approval, and continue on the same project.`,
+          ]
+            .filter(Boolean)
+            .join(" "),
+          "status",
+        );
+        setStatusMessage(`Queued staged run ${queued.job.job_id}.`);
+        if (clearPromptOnSuccess) {
+          setPrompt("");
+        }
+        return;
+      } catch (queueError) {
+        const queueMessage =
+          queueError instanceof Error ? queueError.message : "Job queue failed.";
+        appendChatMessage("assistant", queueMessage, "status");
+        setStatusMessage(queueMessage);
+        return;
+      } finally {
+        setBusy(false);
+      }
+    }
     const liveRunController = new AbortController();
     const liveRunTimeoutMs = 12_000;
     let timedOut = false;
