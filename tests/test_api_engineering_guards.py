@@ -59,6 +59,21 @@ class ApiEngineeringGuardsTest(unittest.TestCase):
             "Design a mixed-use site from the prompt alias.",
         )
 
+    def test_queue_request_payload_preserves_full_design_mode(self) -> None:
+        project_id, request_payload = _queue_request_payload_with_project(
+            QueueOrchestratePayload(
+                project_id="p_outer",
+                request=OrchestratePayload(
+                    project_id="p_nested",
+                    full_design_mode=True,
+                    input_mode="assisted",
+                    prompt_text="Run the full staged design.",
+                ),
+            )
+        )
+        self.assertEqual(project_id, "p_outer")
+        self.assertTrue(request_payload["full_design_mode"])
+
     def test_manual_orchestration_asks_for_clarification_when_prompt_is_underspecified(self) -> None:
         result = _run_orchestration(
             {

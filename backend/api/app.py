@@ -120,6 +120,7 @@ class LoginPayload(BaseModel):
 
 class OrchestratePayload(BaseModel):
     project_id: Optional[str] = None
+    full_design_mode: bool = False
     input_mode: str = "assisted"
     strict_mode: bool = False
     prompt_text: Optional[str] = None
