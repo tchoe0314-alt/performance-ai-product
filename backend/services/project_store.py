@@ -228,10 +228,16 @@ class ProjectStore:
                     description = excluded.description,
                     updated_at = excluded.updated_at,
                     session_id = excluded.session_id,
-                    has_result = excluded.has_result,
+                    has_result = CASE
+                        WHEN excluded.has_result = 0 AND projects.has_result = 1 THEN projects.has_result
+                        ELSE excluded.has_result
+                    END,
                     tags_json = excluded.tags_json,
                     project_input_json = excluded.project_input_json,
-                    latest_result_json = excluded.latest_result_json,
+                    latest_result_json = CASE
+                        WHEN excluded.latest_result_json = '{}' AND projects.latest_result_json IS NOT NULL AND projects.latest_result_json != '{}' THEN projects.latest_result_json
+                        ELSE excluded.latest_result_json
+                    END,
                     session_state_json = excluded.session_state_json,
                     metadata_json = excluded.metadata_json
                 """,
