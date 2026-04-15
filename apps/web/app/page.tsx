@@ -1082,6 +1082,7 @@ export default function PerformanceAIDashboard() {
   const resolvedProjectIdRef = useRef("");
   const projectLoadRequestRef = useRef(0);
   const projectResultLoadRequestRef = useRef(0);
+  const activeJobProjectSyncRef = useRef("");
   const lastJobStatusRef = useRef<Record<string, string>>({});
   const lastJobPhaseSignatureRef = useRef<Record<string, string>>({});
   const lastStaleJobWarningRef = useRef<Record<string, boolean>>({});
@@ -2691,14 +2692,83 @@ export default function PerformanceAIDashboard() {
     try {
       const data = await getJson<{ job: any }>(`/api/jobs/${id}`, { token });
       const job = data.job;
+      const jobProjectId = String(job.project_id || "").trim();
+      const activeJobProjectSignature = `${job.job_id}:${jobProjectId}`;
       const activeTrackedProjectId =
-        String(job.project_id || "").trim() ||
+        jobProjectId ||
         resolvedProjectIdRef.current ||
         projectId ||
         currentProject?.project_id ||
         "";
-      if (job.project_id) {
-        resolvedProjectIdRef.current = String(job.project_id);
+      if (jobProjectId) {
+        resolvedProjectIdRef.current = jobProjectId;
+        upsertProjectSummary({
+          project_id: jobProjectId,
+          name: currentProject?.project_id === jobProjectId
+            ? currentProject.name || siteName || "Untitled Project"
+            : siteName || "Untitled Project",
+          description:
+            currentProject?.project_id === jobProjectId
+              ? currentProject.description ?? ""
+              : "",
+          has_result:
+            Boolean(job.result && Object.keys(job.result).length) ||
+            ["awaiting_approval", "completed"].includes(
+              String(job.status || "").toLowerCase(),
+            ),
+          updated_at:
+            typeof job.updated_at === "number" && Number.isFinite(job.updated_at)
+              ? job.updated_at
+              : Date.now() / 1000,
+        });
+        if (projectId !== jobProjectId) {
+          setProjectId(jobProjectId);
+        }
+        if (!currentProject || currentProject.project_id !== jobProjectId) {
+          setCurrentProject((existing) => {
+            if (existing?.project_id === jobProjectId) {
+              return existing;
+            }
+            return {
+              project_id: jobProjectId,
+              name: existing?.name || siteName || "Untitled Project",
+              description: existing?.description ?? "",
+              has_result: true,
+            } as ProjectRecord;
+          });
+        }
+        const shouldSyncActiveJobProject =
+          (currentProject?.project_id !== jobProjectId ||
+            projectId !== jobProjectId) &&
+          activeJobProjectSyncRef.current !== activeJobProjectSignature;
+        if (shouldSyncActiveJobProject) {
+          activeJobProjectSyncRef.current = activeJobProjectSignature;
+          const requestId = projectLoadRequestRef.current + 1;
+          projectLoadRequestRef.current = requestId;
+          void getJson<{ project: ProjectRecord }>(`/api/projects/${jobProjectId}`, {
+            token,
+          })
+            .then((projectData) => {
+              if (projectLoadRequestRef.current !== requestId) {
+                return;
+              }
+              const syncedProject = projectData.project;
+              resolvedProjectIdRef.current = syncedProject.project_id;
+              setCurrentProject(syncedProject);
+              setProjectId(syncedProject.project_id);
+              setSiteName(syncedProject.name ?? "");
+              applyProjectInput(syncedProject.project_input ?? {});
+              upsertProjectSummary(syncedProject);
+              loadProjectResultInBackground(syncedProject);
+            })
+            .catch((error) => {
+              setStatusMessage(
+                error instanceof Error
+                  ? error.message
+                  : "Project sync from active job failed.",
+              );
+            });
+        }
       }
       setJobs((current) => {
         const next = [...current];
@@ -2851,9 +2921,9 @@ export default function PerformanceAIDashboard() {
           "message",
         );
         setActiveJobId("");
-        if (job.project_id) {
+        if (jobProjectId) {
           upsertProjectSummary({
-            project_id: job.project_id,
+            project_id: jobProjectId,
             name: currentProject?.name || siteName || "Untitled Project",
             description: currentProject?.description ?? "",
             has_result: true,
