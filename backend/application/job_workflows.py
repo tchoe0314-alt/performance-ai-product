@@ -732,7 +732,8 @@ def build_orchestrate_job_runner(
         user_id: Optional[str],
     ) -> Dict[str, Any]:
         enriched = dict(result)
-        runtime_checkpoint = dict(dict(enriched.get("metadata") or {}).get("runtime_phase_checkpoint") or {})
+        metadata = dict(enriched.get("metadata") or {})
+        runtime_checkpoint = dict(metadata.get("runtime_phase_checkpoint") or {})
         try:
             enriched["final_plan"] = final_plan_from_result(
                 enriched,
@@ -740,6 +741,13 @@ def build_orchestrate_job_runner(
             )
         except Exception:
             pass
+        final_plan = dict(enriched.get("final_plan") or {})
+        final_meta = dict(final_plan.get("meta") or {})
+        if not runtime_checkpoint:
+            runtime_checkpoint = dict(final_meta.get("runtime_phase_checkpoint") or {})
+        runtime_should_continue = metadata.get("runtime_should_continue")
+        if runtime_should_continue is None:
+            runtime_should_continue = bool(runtime_checkpoint.get("yielded"))
 
         run_summary = build_run_summary(
             enriched,
@@ -885,6 +893,9 @@ def build_orchestrate_job_runner(
             enriched["final_plan"] = final_plan
 
         metadata = dict(enriched.get("metadata") or {})
+        if runtime_checkpoint:
+            metadata["runtime_phase_checkpoint"] = runtime_checkpoint
+        metadata["runtime_should_continue"] = bool(runtime_should_continue)
         metadata["run_summary"] = run_summary
         metadata["job_context"] = {
             "job_id": job_id,

@@ -711,6 +711,96 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
             {"layout": "complete"},
         )
 
+    def test_build_orchestrate_job_runner_restores_runtime_continue_from_final_plan_checkpoint(self):
+        yielded_final_plan = {
+            "project_name": "Demo",
+            "actions": [{"layer": "BUILDING", "kind": "rectangle", "x": 0, "y": 0, "w": 10, "h": 10}],
+            "meta": {
+                "runtime_phase_checkpoint": {
+                    "stage_name": "layout",
+                    "status": "complete",
+                    "message": "Layout stage completed.",
+                    "yielded": True,
+                },
+            },
+        }
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Demo",
+                "description": "",
+                "session_id": None,
+                "tags": [],
+                "project_input": {},
+                "latest_result": {},
+                "session_state": {},
+                "metadata": {},
+            }
+        )
+
+        def run_orchestration(payload, progress_callback=None):
+            return {
+                "success": True,
+                "final_plan": yielded_final_plan,
+                "metadata": {},
+            }
+
+        runner = build_orchestrate_job_runner(
+            project_store=store,
+            update_job_progress=lambda *_args, **_kwargs: None,
+            run_orchestration=run_orchestration,
+            build_run_summary=lambda result, **kwargs: {
+                "run_id": "run_layout",
+                "job_id": kwargs.get("job_id"),
+                "source": "queued_job",
+                "convergence_summary": {
+                    "assumption_summary": {"count": 0, "categories": [], "examples": []},
+                    "unresolved_issue_categories": [],
+                    "blocked_reasons": [],
+                    "blocked_exports": [],
+                },
+                "reliability_summary": {
+                    "operational_state": "review",
+                    "release_ready": False,
+                },
+                "phase_checkpoints": {
+                    "layout": {"status": "complete", "ready": True},
+                    "grading": {"status": "pending", "ready": False},
+                    "drainage_storm": {"status": "pending", "ready": False},
+                    "utilities": {"status": "pending", "ready": False},
+                    "coordination_validation": {"status": "pending", "ready": False},
+                    "combined_view": {"status": "review", "ready": False},
+                },
+                "requested_deliverables": [],
+                "produced_deliverables": [],
+                "ready_deliverables": [],
+                "extra_deliverables": [],
+                "failed_deliverables": [],
+            },
+            merge_project_metadata=lambda metadata, **kwargs: metadata,
+            final_plan_from_result=lambda result, **kwargs: result.get("final_plan") or yielded_final_plan,
+        )
+
+        result = runner(
+            {
+                "job_id": "job_layout",
+                "job_type": "orchestrate",
+                "user_id": "u1",
+                "project_id": "p1",
+                "payload": {"prompt_text": "run"},
+            }
+        )
+
+        self.assertTrue(result["metadata"]["runtime_should_continue"])
+        self.assertEqual(
+            dict(result["metadata"]["runtime_phase_checkpoint"]).get("stage_name"),
+            "layout",
+        )
+        self.assertTrue(
+            dict(result["metadata"]["runtime_phase_checkpoint"]).get("yielded")
+        )
+
     def test_build_orchestrate_job_runner_finishes_after_coordination_checkpoint(self):
         store = FakeProjectStore(
             {
