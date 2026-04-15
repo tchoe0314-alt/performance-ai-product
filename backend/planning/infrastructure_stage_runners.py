@@ -49,7 +49,13 @@ def run_sanitary_stage(
     try:
         if not sanitary_requested(parsed):
             manager.mark_system_skipped("sanitary", "Sanitary stage skipped because sanitary was not requested.")
-            ctx.add_stage("sanitary", True, "Sanitary stage skipped because sanitary was not requested.")
+            ctx.add_stage(
+                "sanitary",
+                True,
+                "Sanitary stage skipped because sanitary was not requested.",
+                completeness="assumed",
+                assumed=True,
+            )
             return
 
         manager.mark_system_running("sanitary", "Running sanitary stage.")
@@ -88,7 +94,13 @@ def run_sanitary_stage(
                 )
                 return
             manager.mark_system_skipped("sanitary", "No sanitary service destinations were found.")
-            ctx.add_stage("sanitary", True, "Sanitary stage skipped because no sanitary service destinations were found.")
+            ctx.add_stage(
+                "sanitary",
+                True,
+                "Sanitary stage skipped because no sanitary service destinations were found.",
+                completeness="assumed",
+                assumed=True,
+            )
             return
 
         storm_summary = safe_dict(manager.latest_outputs.get("storm_pipe_summary", project.meta.get("storm_pipe_summary", {})))
