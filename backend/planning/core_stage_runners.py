@@ -879,7 +879,12 @@ def run_grading_stage(
         net_volume = safe_float(getattr(result, "net_volume", 0.0), 0.0)
         success = bool(getattr(result, "success", True))
         message = safe_str(getattr(result, "message", "Grading stage completed."))
-        grade_actions, grading_action_stats = grading_surface_actions(result, existing_surface, proposed_surface)
+        grade_actions, grading_action_stats = grading_surface_actions(
+            result,
+            existing_surface,
+            proposed_surface,
+            grade_elements=grade_elements,
+        )
         merge_actions_into_expanded_plan(project, grade_actions, grading_surface_export=True)
         grading_payload = canonical_grading_payload(
             existing_surface=existing_surface,

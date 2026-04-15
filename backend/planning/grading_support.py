@@ -123,9 +123,11 @@ def surface_actions_from_grid(surface: Optional[GridSurface], *, layer: str, not
             "start_angle": None,
             "end_angle": None,
         })
+        label_idx = len(pts) // 2
+        label_pt = pts[label_idx]
         actions.append({
             "task": "text_note",
-            "origin": [pts[0][0], pts[0][1]],
+            "origin": [label_pt[0], label_pt[1]],
             "points": None,
             "closed": None,
             "width": None,
@@ -142,34 +144,205 @@ def surface_actions_from_grid(surface: Optional[GridSurface], *, layer: str, not
     return actions
 
 
-def grading_surface_actions(result: Any, existing_surface: Optional[GridSurface], proposed_surface: Optional[GridSurface]) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
-    actions: List[Dict[str, Any]] = []
-    existing_actions = surface_actions_from_grid(existing_surface, layer="EG_CONTOUR", note_prefix="EG")
-    proposed_actions = surface_actions_from_grid(proposed_surface, layer="FG_CONTOUR", note_prefix="FG")
-    actions.extend(existing_actions)
-    actions.extend(proposed_actions)
+def _sample_surface_nearest(surface: Optional[GridSurface], x: float, y: float, default: float = DEFAULT_PAD_ELEV) -> float:
+    if surface is None or not getattr(surface, "values", None):
+        return float(default)
+    cell = max(1.0, safe_float(getattr(surface, "cell_size", 0.0), 0.0))
+    col = int(round((x - safe_float(getattr(surface, "x_min", 0.0), 0.0)) / cell))
+    row = int(round((y - safe_float(getattr(surface, "y_min", 0.0), 0.0)) / cell))
+    ncols = max(1, safe_int(getattr(surface, "ncols", 1), 1))
+    nrows = max(1, safe_int(getattr(surface, "nrows", 1), 1))
+    col = max(0, min(ncols - 1, col))
+    row = max(0, min(nrows - 1, row))
+    try:
+        return safe_float(surface.values[row][col], default)
+    except Exception:
+        return float(default)
 
-    low_points = safe_list(getattr(result, "low_points", []))
-    for index, point in enumerate(low_points[:25], start=1):
-        x = safe_float(getattr(point, "x", 0.0), 0.0)
-        y = safe_float(getattr(point, "y", 0.0), 0.0)
-        z = safe_float(getattr(point, "z", 0.0), 0.0)
+
+def _control_spot_grade_actions(
+    grade_elements: Optional[List[GradeElement]],
+    proposed_surface: Optional[GridSurface],
+    *,
+    limit: int = 12,
+) -> List[Dict[str, Any]]:
+    if not grade_elements or proposed_surface is None:
+        return []
+    actions: List[Dict[str, Any]] = []
+    seen: List[Tuple[float, float]] = []
+
+    def _too_close(x: float, y: float) -> bool:
+        return any(abs(px - x) <= 18.0 and abs(py - y) <= 18.0 for px, py in seen)
+
+    priority_kinds = {"pad": 0, "parking": 1, "road": 2, "pond": 3, "basin": 3}
+    filtered = []
+    for elem in grade_elements:
+        kind = safe_str(getattr(elem, "kind", ""), "").lower()
+        name = safe_str(getattr(elem, "name", ""), "")
+        if kind not in priority_kinds:
+            continue
+        upper_name = name.upper()
+        if upper_name in {"BUILDABLE_AREA", "SITE", "LOT"} or "BUILDABLE" in upper_name:
+            continue
+        filtered.append((priority_kinds[kind], -safe_float(getattr(elem, "width", 0.0), 0.0) * safe_float(getattr(elem, "depth", 0.0), 0.0), elem))
+
+    for _, _, elem in sorted(filtered):
+        x = safe_float(getattr(elem, "x", 0.0), 0.0) + safe_float(getattr(elem, "width", 0.0), 0.0) / 2.0
+        y = safe_float(getattr(elem, "y", 0.0), 0.0) + safe_float(getattr(elem, "depth", 0.0), 0.0) / 2.0
+        if _too_close(x, y):
+            continue
+        z = _sample_surface_nearest(proposed_surface, x, y, DEFAULT_PAD_ELEV)
         actions.append({
             "task": "text_note",
-            "origin": [x, y],
+            "origin": [round(x, 3), round(y, 3)],
             "points": None,
             "closed": None,
             "width": None,
             "height": None,
             "label": None,
             "layer": "SPOT_FG",
-            "text": f"FG {z:.2f} LOW-{index}",
+            "text": f"FG {z:.2f}",
             "text_height": TEXT_HEIGHT_SMALL,
             "center": None,
             "radius": None,
             "start_angle": None,
             "end_angle": None,
         })
+        seen.append((x, y))
+        if len(actions) >= limit:
+            break
+    return actions
+
+
+def _focus_bounds_from_grade_elements(
+    grade_elements: Optional[List[GradeElement]],
+    proposed_surface: Optional[GridSurface],
+) -> Tuple[float, float, float, float]:
+    coords: List[Tuple[float, float]] = []
+    for elem in grade_elements or []:
+        kind = safe_str(getattr(elem, "kind", ""), "").lower()
+        if kind not in {"pad", "parking", "road", "pond", "basin"}:
+            continue
+        name = safe_str(getattr(elem, "name", ""), "").upper()
+        if name in {"BUILDABLE_AREA", "SITE", "LOT"} or "BUILDABLE" in name:
+            continue
+        x = safe_float(getattr(elem, "x", 0.0), 0.0)
+        y = safe_float(getattr(elem, "y", 0.0), 0.0)
+        w = safe_float(getattr(elem, "width", 0.0), 0.0)
+        d = safe_float(getattr(elem, "depth", 0.0), 0.0)
+        coords.append((x, y))
+        coords.append((x + w, y + d))
+
+    if coords:
+        xs = [pt[0] for pt in coords]
+        ys = [pt[1] for pt in coords]
+        return min(xs), min(ys), max(xs), max(ys)
+
+    if proposed_surface is None:
+        return 0.0, 0.0, DEFAULT_LOT_WIDTH, DEFAULT_LOT_HEIGHT
+
+    return (
+        safe_float(getattr(proposed_surface, "x_min", 0.0), 0.0),
+        safe_float(getattr(proposed_surface, "y_min", 0.0), 0.0),
+        safe_float(getattr(proposed_surface, "x_max", DEFAULT_LOT_WIDTH), DEFAULT_LOT_WIDTH),
+        safe_float(getattr(proposed_surface, "y_max", DEFAULT_LOT_HEIGHT), DEFAULT_LOT_HEIGHT),
+    )
+
+
+def _select_low_point_spot_grades(
+    low_points: Sequence[Any],
+    *,
+    focus_bounds: Tuple[float, float, float, float],
+    existing_origins: Sequence[Tuple[float, float]],
+    limit: int,
+) -> List[Dict[str, Any]]:
+    min_x, min_y, max_x, max_y = focus_bounds
+    focus_cx = (min_x + max_x) / 2.0
+    focus_cy = (min_y + max_y) / 2.0
+    focus_w = max(max_x - min_x, 1.0)
+    focus_h = max(max_y - min_y, 1.0)
+    seen: List[Tuple[float, float]] = list(existing_origins)
+
+    def _too_close(x: float, y: float) -> bool:
+        return any(abs(px - x) <= 18.0 and abs(py - y) <= 18.0 for px, py in seen)
+
+    def _edge_penalty(x: float, y: float) -> float:
+        edge_dx = min(abs(x - min_x), abs(max_x - x))
+        edge_dy = min(abs(y - min_y), abs(max_y - y))
+        return min(edge_dx / max(focus_w, 1.0), edge_dy / max(focus_h, 1.0))
+
+    ranked: List[Tuple[Tuple[float, float, float, float], Any]] = []
+    for point in low_points:
+        x = safe_float(getattr(point, "x", 0.0), 0.0)
+        y = safe_float(getattr(point, "y", 0.0), 0.0)
+        z = safe_float(getattr(point, "z", 0.0), 0.0)
+        basin_score = safe_float(getattr(point, "local_basin_score", 0.0), 0.0)
+        dist = abs(x - focus_cx) + abs(y - focus_cy)
+        edge_score = _edge_penalty(x, y)
+        ranked.append(((-edge_score, dist, z, -basin_score), point))
+
+    actions: List[Dict[str, Any]] = []
+    for _, point in sorted(ranked):
+        x = safe_float(getattr(point, "x", 0.0), 0.0)
+        y = safe_float(getattr(point, "y", 0.0), 0.0)
+        if _too_close(x, y):
+            continue
+        z = safe_float(getattr(point, "z", 0.0), 0.0)
+        actions.append(
+            {
+                "task": "text_note",
+                "origin": [round(x, 3), round(y, 3)],
+                "points": None,
+                "closed": None,
+                "width": None,
+                "height": None,
+                "label": None,
+                "layer": "SPOT_FG",
+                "text": f"FG {z:.2f}",
+                "text_height": TEXT_HEIGHT_SMALL,
+                "center": None,
+                "radius": None,
+                "start_angle": None,
+                "end_angle": None,
+            }
+        )
+        seen.append((x, y))
+        if len(actions) >= limit:
+            break
+    return actions
+
+
+def grading_surface_actions(
+    result: Any,
+    existing_surface: Optional[GridSurface],
+    proposed_surface: Optional[GridSurface],
+    *,
+    grade_elements: Optional[List[GradeElement]] = None,
+) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    actions: List[Dict[str, Any]] = []
+    existing_actions = surface_actions_from_grid(existing_surface, layer="EG_CONTOUR", note_prefix="EG")
+    proposed_actions = surface_actions_from_grid(proposed_surface, layer="FG_CONTOUR", note_prefix="FG")
+    actions.extend(existing_actions)
+    actions.extend(proposed_actions)
+
+    control_spot_actions = _control_spot_grade_actions(grade_elements, proposed_surface, limit=12)
+    actions.extend(control_spot_actions)
+    control_spot_origins = {
+        tuple(action.get("origin") or [])
+        for action in control_spot_actions
+        if isinstance(action.get("origin"), list)
+    }
+
+    low_points = safe_list(getattr(result, "low_points", []))
+    focus_bounds = _focus_bounds_from_grade_elements(grade_elements, proposed_surface)
+    remaining_spot_budget = max(0, 16 - len(control_spot_actions))
+    low_point_actions = _select_low_point_spot_grades(
+        low_points,
+        focus_bounds=focus_bounds,
+        existing_origins=list(control_spot_origins),
+        limit=remaining_spot_budget,
+    )
+    actions.extend(low_point_actions)
 
     flow_samples = sorted(
         safe_list(getattr(result, "flow_samples", [])),
@@ -205,7 +378,7 @@ def grading_surface_actions(result: Any, existing_surface: Optional[GridSurface]
     stats = {
         "existing_contour_count": sum(1 for action in existing_actions if safe_str(action.get("task")) == "polyline"),
         "proposed_contour_count": sum(1 for action in proposed_actions if safe_str(action.get("task")) == "polyline"),
-        "spot_grade_count": min(len(low_points), 25),
+        "spot_grade_count": len(control_spot_actions) + len(low_point_actions),
         "flow_arrow_count": min(len(flow_samples), 16),
     }
     return actions, stats

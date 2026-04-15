@@ -3011,8 +3011,19 @@ def _surface_actions_from_grid(surface: Optional[GridSurface], *, layer: str, no
     )
 
 
-def _grading_surface_actions(result: Any, existing_surface: Optional[GridSurface], proposed_surface: Optional[GridSurface]) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
-    return _grading_surface_actions_impl(result, existing_surface, proposed_surface)
+def _grading_surface_actions(
+    result: Any,
+    existing_surface: Optional[GridSurface],
+    proposed_surface: Optional[GridSurface],
+    *,
+    grade_elements: Optional[List[GradeElement]] = None,
+) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    return _grading_surface_actions_impl(
+        result,
+        existing_surface,
+        proposed_surface,
+        grade_elements=grade_elements,
+    )
 
 
 def _canonical_grading_payload(

@@ -231,7 +231,26 @@ _CONVERGENCE_KEYS = {
 }
 
 _DISCIPLINE_KEYS = {
-    "grading": {"existing_surface", "proposed_surface", "checks", "surface_controls", "export_validation"},
+    "grading": {
+        "schema_version",
+        "source",
+        "success",
+        "message",
+        "warnings",
+        "existing_surface",
+        "proposed_surface",
+        "earthwork",
+        "checks",
+        "low_points",
+        "flow_samples",
+        "surface_controls",
+        "drainage_hints",
+        "explain",
+        "optimize_hooks",
+        "conflict_hooks",
+        "stats",
+        "export_validation",
+    },
     "drainage": {"structures", "basins", "stats", "surface_guidance", "export_validation"},
     "storm_pipes": {"segments", "stats", "max_capacity_ratio", "selected_outfall_name", "selected_basin_name", "selected_basin_adequacy_status"},
     "sanitary": {"segments", "manholes", "total_length_ft", "manhole_count", "service_count"},
