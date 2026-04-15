@@ -132,7 +132,9 @@ SECONDARY_ENGINEERING_LAYERS = {
 def _normalize_engineering_profile(profile):
     if profile is True:
         return "complete"
-    if profile in (False, None, ""):
+    if profile is False:
+        return "baseline"
+    if profile in (None, ""):
         return "layout"
     normalized = str(profile).strip().lower()
     return normalized or "layout"
@@ -739,9 +741,11 @@ def _polyline_length(action):
 
 def _engineering_overlay_actions(records, *, engineering_profile="layout"):
     engineering_profile = _normalize_engineering_profile(engineering_profile)
+    allow_basin = engineering_profile in {"baseline", "drainage", "utilities", "complete"}
+    allow_lines = engineering_profile in {"baseline", "drainage", "utilities", "complete"}
     allow_contours = engineering_profile in {"grading", "drainage", "utilities", "complete"}
     allow_flow = engineering_profile in {"drainage", "utilities", "complete"}
-    rich_engineering = engineering_profile in {"utilities", "complete"}
+    rich_engineering = engineering_profile in {"baseline", "utilities", "complete"}
     basin_candidates = []
     line_candidates = []
     flow_candidates = []
@@ -824,11 +828,11 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
         bounds = _action_bounds(action)
         if not bounds:
             continue
-        if layer == "BASIN_BOUNDARY" and task in {"circle", "polygon", "rectangle", "polyline"}:
+        if allow_basin and layer == "BASIN_BOUNDARY" and task in {"circle", "polygon", "rectangle", "polyline"}:
             if _is_oversized_for_layout(action):
                 continue
             basin_candidates.append((_bounds_area(bounds), action))
-        elif layer in {"PIPE", "STORM", "DRAIN"} and task in {"polyline", "polygon"}:
+        elif allow_lines and layer in {"PIPE", "STORM", "DRAIN"} and task in {"polyline", "polygon"}:
             if _is_oversized_for_layout(action):
                 continue
             points = safe_points(action)
@@ -861,11 +865,11 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                 if points_in_layout <= 1 and len(points) >= 2 and not _bounds_near_layout(bounds, layout_bounds, padding=24.0):
                     continue
             contour_candidates.append((_polyline_length(action), action))
-        elif layer == "STRUCTURE" and task in {"circle", "rectangle"}:
+        elif allow_lines and layer == "STRUCTURE" and task in {"circle", "rectangle"}:
             if _is_tiny_marker_circle(action):
                 continue
             structure_candidates.append((_bounds_area(bounds), action))
-        elif layer in {"UTILITY", "WATER"} and task in {"polyline", "polygon"}:
+        elif rich_engineering and layer in {"UTILITY", "WATER"} and task in {"polyline", "polygon"}:
             label = clean_label(action.get("label"), "").upper()
             text = safe_text(action.get("text"), "").upper()
             canonical_source_type = str(action.get("canonical_source_type") or "").upper()
