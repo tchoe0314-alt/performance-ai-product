@@ -1079,6 +1079,7 @@ export default function PerformanceAIDashboard() {
   const runSubmissionRef = useRef(false);
   const directRunAbortRef = useRef<AbortController | null>(null);
   const draftProjectPromiseRef = useRef<Promise<ProjectRecord | null> | null>(null);
+  const projectLoadRequestRef = useRef(0);
   const lastJobStatusRef = useRef<Record<string, string>>({});
   const lastStaleJobWarningRef = useRef<Record<string, boolean>>({});
   const lastProjectResultRefreshRef = useRef<Record<string, number>>({});
@@ -2597,12 +2598,17 @@ export default function PerformanceAIDashboard() {
 
   const loadProject = async (id: string) => {
     if (!token) return;
+    const requestId = projectLoadRequestRef.current + 1;
+    projectLoadRequestRef.current = requestId;
     try {
       setStatusMessage("Loading project...");
       const data = await getJson<{ project: ProjectRecord }>(
         `/api/projects/${id}`,
         { token },
       );
+      if (projectLoadRequestRef.current !== requestId) {
+        return;
+      }
       const project = data.project;
       setCurrentProject(project);
       setProjectId(project.project_id);
@@ -3085,6 +3091,7 @@ export default function PerformanceAIDashboard() {
   };
 
   const handleNewProject = async () => {
+    projectLoadRequestRef.current += 1;
     suppressProjectAutoLoadRef.current = true;
     draftProjectPromiseRef.current = null;
     setProjectId("");
