@@ -861,13 +861,18 @@ def _surface_contour_polylines(surface: Dict[str, Any], max_levels: int = 6) -> 
     return [poly for poly in contours if _polyline_length(poly) >= max(cell * 1.25, 2.0)]
 
 
-def _surface_contour_actions(plan: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _surface_contour_actions(plan: Dict[str, Any], *, engineering_profile: str = "layout") -> List[Dict[str, Any]]:
     grading = safe_dict(safe_dict(plan.get("meta")).get("grading"))
     actions: List[Dict[str, Any]] = []
-    for surface_key, layer, source_type in (
+    surface_specs = [
         ("existing_surface", "EG_CONTOUR", "grading_existing_surface"),
         ("proposed_surface", "FG_CONTOUR", "grading_proposed_surface"),
-    ):
+    ]
+    if safe_text(engineering_profile, "").lower() in {"storm", "utilities", "complete"}:
+        surface_specs = [
+            ("proposed_surface", "FG_CONTOUR", "grading_proposed_surface"),
+        ]
+    for surface_key, layer, source_type in surface_specs:
         polylines = _surface_contour_polylines(safe_dict(grading.get(surface_key)))
         for idx, poly in enumerate(polylines, start=1):
             actions.append(
@@ -897,6 +902,7 @@ def _surface_contour_actions(plan: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     prepared: List[Dict[str, Any]] = []
+    engineering_profile = "layout"
     try:
         from output.preview import (
             _dedupe_primary_layout_records,
@@ -909,8 +915,8 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
         meta = safe_dict(plan.get("meta"))
         phase_checkpoints = safe_dict(meta.get("phase_checkpoints"))
         combined_view = safe_dict(phase_checkpoints.get("combined_view"))
-        completed_phases = safe_float(combined_view.get("completed_phase_count"), 0.0)
-        total_phases = safe_float(combined_view.get("total_phase_count"), 0.0)
+        completed_phases = safe_num(combined_view.get("completed_phase_count"), 0.0)
+        total_phases = safe_num(combined_view.get("total_phase_count"), 0.0)
         engineering_status = safe_text(meta.get("engineering_status"), "").lower()
         release_status = safe_text(meta.get("release_status"), "").lower()
         runtime_checkpoint = safe_dict(meta.get("runtime_phase_checkpoint"))
@@ -919,7 +925,6 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
         drainage_complete = bool(safe_dict(phase_checkpoints.get("drainage_storm")).get("ready"))
         utilities_complete = bool(safe_dict(phase_checkpoints.get("utilities")).get("ready"))
         coordination_complete = bool(safe_dict(phase_checkpoints.get("coordination_validation")).get("ready"))
-        engineering_profile = "layout"
         if (
             (total_phases > 0 and completed_phases >= total_phases)
             or release_status == "ready"
@@ -1003,7 +1008,7 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
             continue
         prepared.append(rec)
     if use_surface_contours:
-        prepared.extend(_surface_contour_actions(plan))
+        prepared.extend(_surface_contour_actions(plan, engineering_profile=engineering_profile))
     seen: set[str] = set()
     deduped: List[Dict[str, Any]] = []
     for rec in prepared:

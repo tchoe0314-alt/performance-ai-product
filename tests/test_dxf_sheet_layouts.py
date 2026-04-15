@@ -66,6 +66,12 @@ class DxfSheetLayoutsTest(unittest.TestCase):
 
     def test_modelspace_keeps_curated_storm_context_in_layout_scene(self) -> None:
         plan = _sheet_test_plan()
+        meta = plan.setdefault("meta", {})
+        meta["phase_checkpoints"] = {
+            "grading": {"ready": True},
+            "drainage_storm": {"ready": True},
+        }
+        meta["runtime_phase_checkpoint"] = {"stage_name": "storm_pipes"}
         actions = plan.setdefault("actions", [])
         actions.extend(
             [
@@ -87,8 +93,51 @@ class DxfSheetLayoutsTest(unittest.TestCase):
             self.assertIn("PIPE", modelspace_layers)
             self.assertIn("STRUCTURE", modelspace_layers)
             self.assertIn("BASIN_BOUNDARY", modelspace_layers)
-            self.assertIn("WATER", modelspace_layers)
+            self.assertIn("DRAIN_FLOW", modelspace_layers)
+            self.assertNotIn("WATER", modelspace_layers)
             self.assertNotIn("UTILITY", modelspace_layers)
+
+    def test_modelspace_prefers_finished_surface_in_completed_scene(self) -> None:
+        plan = _sheet_test_plan()
+        meta = plan.setdefault("meta", {})
+        meta["release_status"] = "ready"
+        meta["phase_checkpoints"] = {
+            "grading": {"ready": True},
+            "drainage_storm": {"ready": True},
+            "utilities": {"ready": True},
+            "coordination_validation": {"ready": True},
+            "combined_view": {"completed_phase_count": 5, "total_phase_count": 5},
+        }
+        meta["engineering_status"] = "complete"
+        meta["grading"] = {
+            "existing_surface": {
+                "origin": [0.0, 0.0],
+                "cell_size": 10.0,
+                "values": [
+                    [100.0, 101.0, 102.0],
+                    [101.0, 102.0, 103.0],
+                    [102.0, 103.0, 104.0],
+                ],
+            },
+            "proposed_surface": {
+                "origin": [0.0, 0.0],
+                "cell_size": 10.0,
+                "values": [
+                    [101.0, 102.0, 103.0],
+                    [102.0, 103.0, 104.0],
+                    [103.0, 104.0, 105.0],
+                ],
+            },
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "modelspace-complete-fg-only-test.dxf"
+            save_dxf(plan, filename=str(path))
+
+            doc = ezdxf.readfile(path)
+            modelspace_layers = {entity.dxf.layer for entity in doc.modelspace()}
+
+            self.assertIn("FG_CONTOUR", modelspace_layers)
+            self.assertNotIn("EG_CONTOUR", modelspace_layers)
 
     def test_modelspace_suppresses_route_and_point_noise_in_layout_scene(self) -> None:
         plan = _sheet_test_plan()
