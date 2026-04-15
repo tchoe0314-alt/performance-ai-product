@@ -2536,11 +2536,7 @@ export default function PerformanceAIDashboard() {
           },
         };
     const latestResultToSave =
-      latestResultOverride !== undefined
-        ? latestResultOverride
-        : backendResult && Object.keys(backendResult).length > 0
-          ? backendResult
-          : undefined;
+      latestResultOverride !== undefined ? latestResultOverride : undefined;
     try {
       const requestBody: Record<string, unknown> = {
         project_id: effectiveProjectId,
