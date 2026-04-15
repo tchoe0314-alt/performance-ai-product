@@ -144,7 +144,7 @@ class SaveProjectPayload(BaseModel):
     session_id: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
     project_input: Dict[str, Any] = Field(default_factory=dict)
-    latest_result: Dict[str, Any] = Field(default_factory=dict)
+    latest_result: Optional[Dict[str, Any]] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 

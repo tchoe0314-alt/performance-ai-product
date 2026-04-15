@@ -5,7 +5,9 @@ from fastapi import HTTPException
 from backend.api.app import (
     OrchestratePayload,
     QueueOrchestratePayload,
+    SaveProjectPayload,
     _final_plan_from_result,
+    _model_to_dict,
     _queue_request_payload_with_project,
     _run_orchestration,
 )
@@ -144,6 +146,15 @@ class ApiEngineeringGuardsTest(unittest.TestCase):
                 "yielded": True,
             },
         )
+
+    def test_save_project_payload_keeps_omitted_latest_result_as_none(self) -> None:
+        payload = SaveProjectPayload(
+            name="Demo Project",
+            project_input={"prompt_text": "keep the staged checkpoint"},
+        )
+        data = _model_to_dict(payload)
+        self.assertIn("latest_result", data)
+        self.assertIsNone(data["latest_result"])
 
 
 if __name__ == "__main__":
