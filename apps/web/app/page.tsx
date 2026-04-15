@@ -1083,6 +1083,7 @@ export default function PerformanceAIDashboard() {
   const projectLoadRequestRef = useRef(0);
   const projectResultLoadRequestRef = useRef(0);
   const lastJobStatusRef = useRef<Record<string, string>>({});
+  const lastJobPhaseSignatureRef = useRef<Record<string, string>>({});
   const lastStaleJobWarningRef = useRef<Record<string, boolean>>({});
   const lastProjectResultRefreshRef = useRef<Record<string, number>>({});
   const lastJobPartialResultRefreshRef = useRef<Record<string, number>>({});
@@ -2711,6 +2712,10 @@ export default function PerformanceAIDashboard() {
       });
       setActiveJobId(job.job_id);
       const previousStatus = lastJobStatusRef.current[job.job_id];
+      const normalizedStatus = String(job.status || "").toLowerCase();
+      const stageLabel = String(job.stage || "").trim() || "Engineering Run";
+      const stageDetail = String(job.stage_detail || "").trim();
+      const phaseSignature = `${normalizedStatus}|${stageLabel}|${stageDetail}`;
       if (previousStatus !== job.status) {
         lastJobStatusRef.current[job.job_id] = job.status;
         if (job.status === "queued") {
@@ -2736,19 +2741,46 @@ export default function PerformanceAIDashboard() {
         } else if (job.status === "running") {
           appendChatMessage(
             "assistant",
-            `Job ${job.job_id} is running in the background now.`,
+            stageDetail
+              ? `Job ${job.job_id} is working on ${stageLabel}. ${stageDetail}`
+              : `Job ${job.job_id} is working on ${stageLabel}.`,
             "status",
           );
         } else if (job.status === "awaiting_approval") {
           appendChatMessage(
             "assistant",
-            `Job ${job.job_id} is waiting for your approval to continue to the next phase.`,
+            stageDetail
+              ? `Job ${job.job_id} is waiting for your approval. ${stageDetail}`
+              : `Job ${job.job_id} is waiting for your approval to continue to the next phase.`,
             "status",
           );
         } else if (job.status === "cancelling") {
           appendChatMessage(
             "assistant",
             `Job ${job.job_id} is cancelling now.`,
+            "status",
+          );
+        }
+        lastJobPhaseSignatureRef.current[job.job_id] = phaseSignature;
+      } else if (
+        ["running", "awaiting_approval", "queued"].includes(normalizedStatus) &&
+        lastJobPhaseSignatureRef.current[job.job_id] !== phaseSignature
+      ) {
+        lastJobPhaseSignatureRef.current[job.job_id] = phaseSignature;
+        if (normalizedStatus === "running") {
+          appendChatMessage(
+            "assistant",
+            stageDetail
+              ? `Job ${job.job_id} moved to ${stageLabel}. ${stageDetail}`
+              : `Job ${job.job_id} moved to ${stageLabel}.`,
+            "status",
+          );
+        } else if (normalizedStatus === "awaiting_approval") {
+          appendChatMessage(
+            "assistant",
+            stageDetail
+              ? `Job ${job.job_id} paused for approval after ${stageLabel}. ${stageDetail}`
+              : `Job ${job.job_id} paused for approval after ${stageLabel}.`,
             "status",
           );
         }
@@ -4286,6 +4318,20 @@ export default function PerformanceAIDashboard() {
                       </div>
                     </div>
                   )}
+                  {previewTotalPhaseCount > 0 && previewCompletedPhaseCount < previewTotalPhaseCount ? (
+                    <div className="inline-flex max-w-3xl items-start rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                      <div>
+                        <p className="font-semibold">Preview shows completed phases only.</p>
+                        <p className="mt-1 text-xs">
+                          {previewRunningPhase
+                            ? `${previewRunningPhase.label} is the current active phase. Systems like drainage, storm, and utilities appear after their phases finish.`
+                            : previewNextPendingPhase
+                              ? `${previewNextPendingPhase.label} is still pending. Systems like drainage, storm, and utilities appear after their phases finish.`
+                              : "Additional systems appear as later phases complete."}
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
