@@ -285,6 +285,77 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertEqual(store.saved_payload["metadata"]["workflow"]["summary"]["latest_run_id"], "run_1")
         self.assertIn("operational_summary", response["project"])
 
+    def test_save_project_record_preserves_existing_latest_result_when_payload_omits_it(self):
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Test",
+                "description": "",
+                "session_id": "s1",
+                "tags": [],
+                "project_input": {},
+                "latest_result": {"final_plan": {"project_name": "Saved Partial"}},
+                "session_state": {},
+                "metadata": {},
+            }
+        )
+
+        response = save_project_record(
+            project_store=store,
+            user_id="u1",
+            payload_data={
+                "project_id": "p1",
+                "name": "Updated",
+                "description": "",
+                "session_id": "s1",
+                "tags": [],
+                "project_input": {"prompt": "demo"},
+                "metadata": {"source": "autosave"},
+            },
+        )
+        self.assertTrue(response["success"])
+        self.assertEqual(
+            store.saved_payload["latest_result"]["final_plan"]["project_name"],
+            "Saved Partial",
+        )
+
+    def test_save_project_record_preserves_existing_latest_result_when_payload_is_empty(self):
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Test",
+                "description": "",
+                "session_id": "s1",
+                "tags": [],
+                "project_input": {},
+                "latest_result": {"final_plan": {"project_name": "Saved Partial"}},
+                "session_state": {},
+                "metadata": {},
+            }
+        )
+
+        response = save_project_record(
+            project_store=store,
+            user_id="u1",
+            payload_data={
+                "project_id": "p1",
+                "name": "Updated",
+                "description": "",
+                "session_id": "s1",
+                "tags": [],
+                "project_input": {"prompt": "demo"},
+                "latest_result": {},
+                "metadata": {"source": "autosave"},
+            },
+        )
+        self.assertTrue(response["success"])
+        self.assertEqual(
+            store.saved_payload["latest_result"]["final_plan"]["project_name"],
+            "Saved Partial",
+        )
+
     def test_delete_project_record_reports_not_found(self):
         store = FakeProjectStore()
         with self.assertRaises(HTTPException) as ctx:

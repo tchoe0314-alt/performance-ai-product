@@ -257,7 +257,12 @@ def save_project_record(
         existing = project_store.get_project(user_id=user_id, project_id=project_id)
     metadata = dict(existing.get("metadata") or {}) if existing else {}
     metadata.update(dict(payload_data.get("metadata") or {}))
+    latest_result_in_payload = "latest_result" in payload_data
     latest_result = dict(payload_data.get("latest_result") or {})
+    if existing and (not latest_result_in_payload or not latest_result):
+        existing_latest_result = dict(existing.get("latest_result") or {})
+        if existing_latest_result:
+            latest_result = existing_latest_result
     if latest_result and build_run_summary:
         metadata = merge_project_metadata(
             metadata,

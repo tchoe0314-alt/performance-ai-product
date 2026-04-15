@@ -1079,6 +1079,7 @@ export default function PerformanceAIDashboard() {
   const runSubmissionRef = useRef(false);
   const directRunAbortRef = useRef<AbortController | null>(null);
   const draftProjectPromiseRef = useRef<Promise<ProjectRecord | null> | null>(null);
+  const resolvedProjectIdRef = useRef("");
   const projectLoadRequestRef = useRef(0);
   const lastJobStatusRef = useRef<Record<string, string>>({});
   const lastStaleJobWarningRef = useRef<Record<string, boolean>>({});
@@ -2529,22 +2530,32 @@ export default function PerformanceAIDashboard() {
             auto_file_named: autoFileNamedOverride ?? fileNameAuto,
           },
         };
+    const latestResultToSave =
+      latestResultOverride !== undefined
+        ? latestResultOverride
+        : backendResult && Object.keys(backendResult).length > 0
+          ? backendResult
+          : undefined;
     try {
+      const requestBody: Record<string, unknown> = {
+        project_id:
+          projectIdOverride !== undefined ? projectIdOverride : projectId || null,
+        name: resolvedName,
+        project_input: projectInputToSave,
+        metadata: {
+          auto_named: autoNamedOverride ?? siteNameAuto,
+          auto_file_named: autoFileNamedOverride ?? fileNameAuto,
+        },
+      };
+      if (latestResultToSave !== undefined) {
+        requestBody.latest_result = latestResultToSave;
+      }
       const data = await postJson<{ project: ProjectRecord }>(
         "/api/projects",
-        {
-          project_id:
-            projectIdOverride !== undefined ? projectIdOverride : projectId || null,
-          name: resolvedName,
-          project_input: projectInputToSave,
-          latest_result: latestResultOverride ?? backendResult ?? {},
-          metadata: {
-            auto_named: autoNamedOverride ?? siteNameAuto,
-            auto_file_named: autoFileNamedOverride ?? fileNameAuto,
-          },
-        },
+        requestBody,
         { token },
       );
+      resolvedProjectIdRef.current = data.project.project_id;
       setProjectId(data.project.project_id);
       setCurrentProject(data.project);
       upsertProjectSummary(data.project);
@@ -2610,6 +2621,7 @@ export default function PerformanceAIDashboard() {
         return;
       }
       const project = data.project;
+      resolvedProjectIdRef.current = project.project_id;
       setCurrentProject(project);
       setProjectId(project.project_id);
       setSiteName(project.name ?? "");
@@ -2631,6 +2643,7 @@ export default function PerformanceAIDashboard() {
 
   const ensureProjectDraft = async (initialPrompt?: string): Promise<string | null> => {
     if (!token) return null;
+    if (resolvedProjectIdRef.current) return resolvedProjectIdRef.current;
     if (projectId) return projectId;
     if (currentProject?.project_id) return currentProject.project_id;
     if (draftProjectPromiseRef.current) {
@@ -3094,6 +3107,7 @@ export default function PerformanceAIDashboard() {
     projectLoadRequestRef.current += 1;
     suppressProjectAutoLoadRef.current = true;
     draftProjectPromiseRef.current = null;
+    resolvedProjectIdRef.current = "";
     setProjectId("");
     setCurrentProject(null);
     setSelectedRunId("");
@@ -3165,6 +3179,7 @@ export default function PerformanceAIDashboard() {
         });
         const createdProject = await draftProjectPromiseRef.current;
         if (createdProject?.project_id) {
+          resolvedProjectIdRef.current = createdProject.project_id;
           setProjectId(createdProject.project_id);
         }
       }
