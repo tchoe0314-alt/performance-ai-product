@@ -20,7 +20,7 @@ class PreviewRenderTests(unittest.TestCase):
             ("WALK", "rectangle", (160, 135, 170, 160)),
         ]
 
-        selected = _choose_view_bounds(drawn_items, rich_engineering=False)
+        selected = _choose_view_bounds(drawn_items, engineering_profile="layout")
 
         self.assertEqual(selected, (110, 90, 240, 210))
 
@@ -34,9 +34,39 @@ class PreviewRenderTests(unittest.TestCase):
             ("FG_CONTOUR", "polyline", (40, 30, 360, 240)),
         ]
 
-        selected = _choose_view_bounds(drawn_items, rich_engineering=True)
+        selected = _choose_view_bounds(drawn_items, engineering_profile="complete")
 
         self.assertEqual(selected, (110, 40, 320, 210))
+
+    def test_choose_view_bounds_grading_keeps_contours_tight_to_layout(self):
+        drawn_items = [
+            ("SITE", "rectangle", (0, 0, 500, 380)),
+            ("BUILDING", "rectangle", (140, 170, 230, 240)),
+            ("PARKING", "rectangle", (120, 120, 260, 165)),
+            ("FG_CONTOUR", "polyline", (105, 110, 275, 255)),
+            ("EG_CONTOUR", "polyline", (110, 118, 268, 248)),
+            ("DRAIN_FLOW", "polyline", (70, 50, 430, 320)),
+        ]
+
+        selected = _choose_view_bounds(drawn_items, engineering_profile="grading")
+
+        self.assertEqual(selected, (105, 110, 275, 255))
+
+    def test_choose_view_bounds_drainage_prefers_on_site_drain_network(self):
+        drawn_items = [
+            ("SITE", "rectangle", (0, 0, 500, 380)),
+            ("BUILDING", "rectangle", (140, 170, 230, 240)),
+            ("PARKING", "rectangle", (120, 120, 260, 165)),
+            ("DRAIN", "circle", (150, 135, 155, 140)),
+            ("DRAIN", "polyline", (132, 118, 235, 176)),
+            ("DRAIN_FLOW", "polyline", (126, 124, 240, 188)),
+            ("PIPE", "polyline", (235, 150, 430, 96)),
+            ("BASIN_BOUNDARY", "polygon", (380, 70, 470, 150)),
+        ]
+
+        selected = _choose_view_bounds(drawn_items, engineering_profile="drainage")
+
+        self.assertEqual(selected, (120, 118, 260, 240))
 
     def test_layout_scene_suppresses_engineering_overlay_noise(self):
         actions = [

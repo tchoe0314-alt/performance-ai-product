@@ -128,6 +128,16 @@ SECONDARY_ENGINEERING_LAYERS = {
     "ROUTE",
 }
 
+PHASE_ENGINEERING_FOCUS_LAYERS = {
+    "layout": set(),
+    "grading": {"FG_CONTOUR", "EG_CONTOUR", "PAD"},
+    "drainage": {"DRAIN", "DRAIN_FLOW", "STRUCTURE"},
+    "storm": {"DRAIN", "PIPE", "STORM", "BASIN_BOUNDARY", "STRUCTURE", "DRAIN_FLOW"},
+    "utilities": {"DRAIN", "PIPE", "STORM", "SAN", "UTILITY", "WATER", "BASIN_BOUNDARY", "STRUCTURE", "DRAIN_FLOW"},
+    "complete": {"DRAIN", "PIPE", "STORM", "SAN", "UTILITY", "WATER", "BASIN_BOUNDARY", "STRUCTURE", "DRAIN_FLOW", "FG_CONTOUR", "EG_CONTOUR"},
+    "baseline": {"DRAIN", "PIPE", "STORM", "SAN", "UTILITY", "WATER", "BASIN_BOUNDARY", "STRUCTURE"},
+}
+
 
 def _normalize_engineering_profile(profile):
     if profile is True:
@@ -1358,11 +1368,18 @@ def _update_bounds(current, bounds):
     )
 
 
-def _choose_view_bounds(drawn_items, *, rich_engineering=False):
+def _choose_view_bounds(drawn_items, *, engineering_profile="layout"):
+    engineering_profile = _normalize_engineering_profile(engineering_profile)
+    rich_engineering = engineering_profile != "layout"
+    phase_focus_layers = PHASE_ENGINEERING_FOCUS_LAYERS.get(
+        engineering_profile,
+        PHASE_ENGINEERING_FOCUS_LAYERS["layout"],
+    )
     all_bounds = None
     focus_bounds = None
     primary_bounds = None
     engineering_bounds = None
+    phase_engineering_bounds = None
 
     for layer, task, bounds in drawn_items:
         if not bounds:
@@ -1375,13 +1392,24 @@ def _choose_view_bounds(drawn_items, *, rich_engineering=False):
             primary_bounds = _update_bounds(primary_bounds, bounds)
         elif layer in KEY_ENGINEERING_VIEW_LAYERS:
             engineering_bounds = _update_bounds(engineering_bounds, bounds)
+        if layer in phase_focus_layers:
+            phase_engineering_bounds = _update_bounds(phase_engineering_bounds, bounds)
 
     if all_bounds is None:
         return None
 
     preferred_bounds = primary_bounds or focus_bounds or all_bounds
+    if primary_bounds and phase_engineering_bounds:
+        preferred_bounds = (
+            _merge_bounds([primary_bounds, phase_engineering_bounds]) or preferred_bounds
+        )
     if rich_engineering and primary_bounds and engineering_bounds:
-        preferred_bounds = _merge_bounds([primary_bounds, engineering_bounds]) or preferred_bounds
+        merged_rich_bounds = _merge_bounds([primary_bounds, engineering_bounds])
+        if merged_rich_bounds:
+            current_area = _bounds_area(preferred_bounds)
+            merged_area = _bounds_area(merged_rich_bounds)
+            if current_area <= 0 or merged_area <= current_area * 1.75:
+                preferred_bounds = merged_rich_bounds
 
     preferred_width = max(preferred_bounds[2] - preferred_bounds[0], 1.0)
     preferred_height = max(preferred_bounds[3] - preferred_bounds[1], 1.0)
@@ -1479,7 +1507,7 @@ def _draw_plan(ax, plan):
 
     selected_bounds = _choose_view_bounds(
         drawn_items,
-        rich_engineering=engineering_profile != "layout",
+        engineering_profile=engineering_profile,
     )
     if selected_bounds is None:
         return False
