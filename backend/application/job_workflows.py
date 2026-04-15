@@ -980,7 +980,17 @@ def build_orchestrate_job_runner(
             job_id=job_id,
             user_id=user_id,
         )
-        runtime_should_continue = bool(dict(enriched.get("metadata") or {}).get("runtime_should_continue"))
+        enriched_metadata = dict(enriched.get("metadata") or {})
+        runtime_checkpoint = dict(enriched_metadata.get("runtime_phase_checkpoint") or {})
+        stage_name = str(runtime_checkpoint.get("stage_name") or "")
+        runtime_should_continue = bool(enriched_metadata.get("runtime_should_continue"))
+        if stage_name in {"coordination_resolution", "earthwork", "sheets", "qa"}:
+            runtime_should_continue = False
+            enriched_metadata["runtime_should_continue"] = False
+            if runtime_checkpoint:
+                runtime_checkpoint["yielded"] = False
+                enriched_metadata["runtime_phase_checkpoint"] = runtime_checkpoint
+            enriched["metadata"] = enriched_metadata
         if project_id and user_id:
             if job_id:
                 update_job_progress(
@@ -1012,9 +1022,6 @@ def build_orchestrate_job_runner(
                     ),
                 )
         if runtime_should_continue and job_id:
-            stage_name = str(
-                dict(dict(enriched.get("metadata") or {}).get("runtime_phase_checkpoint") or {}).get("stage_name") or ""
-            )
             update_job_progress(
                 job_id,
                 stage="Awaiting Approval",
