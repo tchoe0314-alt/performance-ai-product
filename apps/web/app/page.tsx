@@ -2145,6 +2145,7 @@ export default function PerformanceAIDashboard() {
         );
         await saveProject({
           silent: true,
+          projectIdOverride: resolvedProjectId,
           nameOverride: generatedTitle || undefined,
           fileNameOverride: generatedFileName || undefined,
           autoNamedOverride: shouldAutoName,
@@ -2189,6 +2190,7 @@ export default function PerformanceAIDashboard() {
         });
         await saveProject({
           silent: true,
+          projectIdOverride: resolvedProjectId,
           nameOverride: generatedTitle || undefined,
           fileNameOverride: generatedFileName || undefined,
           autoNamedOverride: shouldAutoName,
@@ -2209,6 +2211,7 @@ export default function PerformanceAIDashboard() {
         );
         await saveProject({
           silent: true,
+          projectIdOverride: resolvedProjectId,
           nameOverride: generatedTitle || undefined,
           fileNameOverride: generatedFileName || undefined,
           autoNamedOverride: shouldAutoName,
@@ -2244,6 +2247,7 @@ export default function PerformanceAIDashboard() {
       });
       await saveProject({
         silent: true,
+        projectIdOverride: resolvedProjectId,
         nameOverride: generatedTitle || undefined,
         fileNameOverride: generatedFileName || undefined,
         autoNamedOverride: shouldAutoName,
