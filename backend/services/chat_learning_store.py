@@ -19,3 +19,15 @@ def append_chat_learning_event(payload: Dict[str, Any]) -> None:
     except Exception:
         # Learning log failures should never break the user flow.
         return
+
+
+def append_chat_training_example(example: Dict[str, Any]) -> None:
+    try:
+        _LEARNING_PATH.parent.mkdir(parents=True, exist_ok=True)
+        record = dict(example)
+        record["ts"] = time.time()
+        record["event_type"] = "training_example"
+        with _LEARNING_PATH.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:
+        return

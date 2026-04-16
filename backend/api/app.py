@@ -472,7 +472,10 @@ def chat_feedback(
     payload: ChatFeedbackPayload,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    from backend.services.chat_learning_store import append_chat_learning_event
+    from backend.services.chat_learning_store import (
+        append_chat_learning_event,
+        append_chat_training_example,
+    )
 
     data = _model_to_dict(payload)
     feedback = str(data.get("feedback") or "").strip().lower()
@@ -519,6 +522,18 @@ def chat_feedback(
             "assistant_message": data.get("assistant_message"),
         }
     )
+
+    if feedback in {"up", "down"}:
+        append_chat_training_example(
+            {
+                "user_id": current_user["user_id"],
+                "project_id": project_id,
+                "message_id": data.get("message_id"),
+                "feedback": feedback,
+                "input": data.get("message"),
+                "output": data.get("assistant_message"),
+            }
+        )
     return {"success": True}
 
 

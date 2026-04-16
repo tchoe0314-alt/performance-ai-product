@@ -2029,18 +2029,19 @@ def _design_readiness_check(message: str, context: Dict[str, Any]) -> Optional[D
     if not missing:
         return None
 
-    if broad_engineering_scope or len(message.split()) >= 25 or requires_surface_context:
-        return {
-            "needs_clarification": True,
-            "assistant_message": _build_design_readiness_reply(
-                context=context,
-                inferred_project_type=inferred_project_type,
-                missing=missing,
-            ),
-            "missing_requirements": missing,
-            "reason": "Minimum engineering design context is incomplete",
-        }
+    # Always ask focused follow-up questions when key requirements are missing.
+    return {
+        "needs_clarification": True,
+        "assistant_message": _structured_clarification_reply(
+            context=context,
+            missing=missing,
+            inferred_project_type=inferred_project_type,
+        ),
+        "missing_requirements": missing,
+        "reason": "Missing core design inputs",
+    }
 
+    # Unreachable fallback for clarity.
     return None
 
 
