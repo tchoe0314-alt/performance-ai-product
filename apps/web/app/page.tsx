@@ -81,6 +81,7 @@ type JobSummary = {
   project_id?: string | null;
   updated_at?: number;
   error?: string | null;
+  result?: PlanResponse | null;
   stage?: string;
   stage_detail?: string;
   progress?: number;
@@ -218,9 +219,15 @@ type PlanMeta = {
   failed_deliverables?: string[];
   release_review?: PreviewReview;
   release_status?: string;
+  release_note?: string;
   phase_checkpoints?: Record<string, PhaseCheckpoint>;
   runtime_phase_checkpoint?: {
     stage_name?: string;
+  };
+  engineering_status?: {
+    success?: boolean;
+    status?: string;
+    trust_score?: number;
   };
   manager_export?: {
     metrics?: ManagerMetrics;
@@ -622,6 +629,10 @@ function toArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
 
+function toMetricValue(value: number | null | undefined): number | null {
+  return value ?? null;
+}
+
 function readPositiveNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value) && value > 0) {
     return value;
@@ -929,9 +940,11 @@ function summarizePlanResponse(
     };
     const formatted = assumptions
       .map((assumption) => {
-        const field = String(
-          assumption?.field_name || assumption?.field || "an input",
-        )
+        const fallbackField =
+          "field_name" in assumption
+            ? assumption.field_name
+            : (assumption as BackendAssumption | null)?.field;
+        const field = String(fallbackField || "an input")
           .replace(/_/g, " ")
           .trim();
         const reason = String(assumption?.reason || "").trim();
@@ -1028,9 +1041,13 @@ function summarizePlanResponse(
     .map((issue) => String(issue?.message || "").trim())
     .filter(Boolean);
 
+  const assumptionList = assumptionExamples.filter(
+    (item): item is string => Boolean(item),
+  );
+
   const notes = [
-    assumptionExamples.length
-      ? `I used assisted assumptions for ${joinNatural(assumptionExamples)}.`
+    assumptionList.length
+      ? `I used assisted assumptions for ${joinNatural(assumptionList)}.`
       : "I did not need to record any explicit assisted assumptions on this run.",
     readableAutofixActions.length || readableFixTargets.length
       ? `I applied fixes around ${joinNatural(
@@ -1619,7 +1636,7 @@ export default function PerformanceAIDashboard() {
         nextGrading ? "grading" : null,
         nextDrainage ? "drainage" : null,
         nextUtilities ? "utility" : null,
-      ].filter(Boolean),
+      ].filter((item): item is string => Boolean(item)),
     };
 
     if (lotWidthValue !== null && lotHeightValue !== null) {
@@ -1928,7 +1945,7 @@ export default function PerformanceAIDashboard() {
     null;
   const cutFillNet =
     readMetricValue(managerMetrics.earthwork_net_cf) ??
-    readMetricValue(gradingSummary?.earthwork?.net_cf) ??
+    readMetricValue((gradingSummary as { earthwork?: { net_cf?: number } })?.earthwork?.net_cf) ??
     null;
   const basinSize =
     (Array.isArray(drainageSummary?.basins) && drainageSummary.basins[0]?.area_sf) ||
@@ -2013,11 +2030,15 @@ export default function PerformanceAIDashboard() {
     const items: Preview3DItem[] = [];
     for (const action of actions) {
       if (!action || typeof action !== "object") continue;
-      if (String(action.task || "").toLowerCase() !== "rectangle") continue;
+      const geometry =
+        (action as PlanAction).geometry ?? (action as Record<string, unknown>);
+      if (!geometry || typeof geometry !== "object") continue;
       const layer = String(action.layer || "").toUpperCase();
-      const width = Number(action.width || 0);
-      const height = Number(action.height || 0);
-      const origin = Array.isArray(action.origin) ? action.origin : [];
+      const width = Number((geometry as { width?: number }).width || 0);
+      const height = Number((geometry as { height?: number }).height || 0);
+      const origin = Array.isArray((geometry as { origin?: unknown }).origin)
+        ? (geometry as { origin?: number[] }).origin || []
+        : [];
       if (!width || !height || origin.length < 2) continue;
       const x = Number(origin[0] || 0);
       const y = Number(origin[1] || 0);
@@ -2211,18 +2232,21 @@ export default function PerformanceAIDashboard() {
     }
 
     const manualFields = projectInput.manual_fields ?? {};
-    const lot = manualFields.lot ?? {};
-    const sitePlan = manualFields.site_plan ?? {};
-    const gradingFields = manualFields.grading ?? {};
-    const drainageFields = manualFields.drainage ?? {};
-    const disciplines = Array.isArray(manualFields.disciplines)
-      ? manualFields.disciplines
-      : [];
+    const lot = (manualFields.lot ?? {}) as { w?: number; h?: number };
+    const sitePlan = (manualFields.site_plan ?? {}) as { parking_count?: number };
+    const gradingFields = (manualFields.grading ?? {}) as {
+      min_slope_pct?: number;
+      max_parking_slope_pct?: number;
+      max_road_grade_pct?: number;
+      max_ada_cross_slope_pct?: number;
+    };
+    const drainageFields = (manualFields.drainage ?? {}) as { min_pipe_slope_pct?: number };
+    const disciplines = toArray(manualFields.disciplines);
     const buildingsList = Array.isArray(manualFields.buildings) ? manualFields.buildings : [];
-    const restoredThread = Array.isArray(projectInput.meta?.chat_thread)
+    const restoredThread: ChatMessage[] = Array.isArray(projectInput.meta?.chat_thread)
       ? projectInput.meta.chat_thread
           .filter((message) => message && typeof message.content === "string")
-          .map((message) => ({
+          .map((message): ChatMessage => ({
             id:
               typeof message.id === "string"
                 ? message.id
@@ -4246,7 +4270,6 @@ export default function PerformanceAIDashboard() {
         .join(" "),
       "explanation",
     );
-    setSelectedPlanToolPanel("explain");
     setStatusMessage("Added the latest plan explanation to the conversation.");
   };
 
@@ -4730,35 +4753,54 @@ export default function PerformanceAIDashboard() {
     ),
   ].filter(Boolean);
   const phaseStats = useMemo<PhaseStats>(() => {
-    const layoutStats = [
-      { label: "Buildings", value: quantityTotals.building_count, unit: "ea", format: "count" },
-      { label: "Building area", value: quantityTotals.building_area_sf, unit: "sf" },
-      { label: "Parking stalls", value: quantityTotals.estimated_parking_stalls, unit: "stalls", format: "count" },
-      { label: "Parking area", value: quantityTotals.parking_area_sf, unit: "sf" },
+    const layoutStats: PhaseMetric[] = [
+      { label: "Buildings", value: toMetricValue(quantityTotals.building_count), unit: "ea", format: "count" as const },
+      { label: "Building area", value: toMetricValue(quantityTotals.building_area_sf), unit: "sf" },
+      {
+        label: "Parking stalls",
+        value: toMetricValue(quantityTotals.estimated_parking_stalls),
+        unit: "stalls",
+        format: "count" as const,
+      },
+      { label: "Parking area", value: toMetricValue(quantityTotals.parking_area_sf), unit: "sf" },
     ];
-    const gradingStats = [
+    const gradingStats: PhaseMetric[] = [
       { label: "Cut volume", value: readMetricValue(managerMetrics.earthwork_cut_cf), unit: "cf" },
       { label: "Fill volume", value: readMetricValue(managerMetrics.earthwork_fill_cf), unit: "cf" },
       { label: "Net earthwork", value: readMetricValue(managerMetrics.earthwork_net_cf), unit: "cf" },
-      { label: "FG contours", value: quantityTotals.fg_contour_count, unit: "ea", format: "count" },
+      { label: "FG contours", value: toMetricValue(quantityTotals.fg_contour_count), unit: "ea", format: "count" as const },
     ];
-    const drainageStats = [
+    const drainageStats: PhaseMetric[] = [
       { label: "Pipe length", value: totalPipeLength, unit: "ft" },
       { label: "Min slope", value: minSlope, unit: "%" },
       { label: "Max slope", value: maxSlope, unit: "%" },
-      { label: "Ponds", value: quantityTotals.pond_count, unit: "ea", format: "count" },
+      { label: "Ponds", value: toMetricValue(quantityTotals.pond_count), unit: "ea", format: "count" as const },
     ];
-    const utilityStats = [
-      { label: "Utility length", value: readMetricValue(managerMetrics.utility_total_length_ft) ?? quantityTotals.utility_length_ft, unit: "ft" },
-      { label: "Sanitary length", value: readMetricValue(managerMetrics.sanitary_total_length_ft) ?? quantityTotals.sanitary_length_ft, unit: "ft" },
-      { label: "Sanitary manholes", value: quantityTotals.sanitary_manhole_count, unit: "ea", format: "count" },
-      { label: "Sanitary services", value: quantityTotals.sanitary_service_count, unit: "ea", format: "count" },
+    const utilityStats: PhaseMetric[] = [
+      {
+        label: "Utility length",
+        value: toMetricValue(
+          readMetricValue(managerMetrics.utility_total_length_ft) ??
+            quantityTotals.utility_length_ft,
+        ),
+        unit: "ft",
+      },
+      {
+        label: "Sanitary length",
+        value: toMetricValue(
+          readMetricValue(managerMetrics.sanitary_total_length_ft) ??
+            quantityTotals.sanitary_length_ft,
+        ),
+        unit: "ft",
+      },
+      { label: "Sanitary manholes", value: toMetricValue(quantityTotals.sanitary_manhole_count), unit: "ea", format: "count" as const },
+      { label: "Sanitary services", value: toMetricValue(quantityTotals.sanitary_service_count), unit: "ea", format: "count" as const },
     ];
-    const coordinationStats = [
-      { label: "Unresolved conflicts", value: previewReview?.unresolved_conflict_count ?? null, unit: "ea", format: "count" },
-      { label: "QA errors", value: readMetricValue(managerMetrics.qa_error_count), unit: "ea", format: "count" },
-      { label: "QA warnings", value: readMetricValue(managerMetrics.qa_warning_count), unit: "ea", format: "count" },
-      { label: "Reruns", value: previewReview?.rerun_total ?? null, unit: "ea", format: "count" },
+    const coordinationStats: PhaseMetric[] = [
+      { label: "Unresolved conflicts", value: toMetricValue(previewReview?.unresolved_conflict_count), unit: "ea", format: "count" as const },
+      { label: "QA errors", value: readMetricValue(managerMetrics.qa_error_count), unit: "ea", format: "count" as const },
+      { label: "QA warnings", value: readMetricValue(managerMetrics.qa_warning_count), unit: "ea", format: "count" as const },
+      { label: "Reruns", value: toMetricValue(previewReview?.rerun_total), unit: "ea", format: "count" as const },
     ];
     return {
       layout: layoutStats,
@@ -4780,9 +4822,14 @@ export default function PerformanceAIDashboard() {
       currentProject?.project_input?.manual_fields && typeof currentProject.project_input.manual_fields === "object"
         ? currentProject.project_input.manual_fields
         : {};
-    const lot = manualFields.lot && typeof manualFields.lot === "object" ? manualFields.lot : {};
+    const lot = (manualFields.lot && typeof manualFields.lot === "object" ? manualFields.lot : {}) as {
+      w?: number;
+      h?: number;
+    };
     const sitePlan =
-      manualFields.site_plan && typeof manualFields.site_plan === "object" ? manualFields.site_plan : {};
+      (manualFields.site_plan && typeof manualFields.site_plan === "object"
+        ? manualFields.site_plan
+        : {}) as { parking_count?: number };
     const projectTypeValue = String(
       manualFields.project_type || projectType || "",
     ).trim();
@@ -6426,9 +6473,11 @@ export default function PerformanceAIDashboard() {
                         ) : null}
                         {mapAnalysis?.success ? (
                           <p className="text-xs text-slate-500">
-                            Map analysis captured {mapAnalysis?.counts?.zones ?? 0} zones,{" "}
-                            {mapAnalysis?.counts?.objects ?? 0} objects,{" "}
-                            {mapAnalysis?.counts?.centerlines ?? 0} centerlines.
+                            Map analysis captured{" "}
+                            {(mapAnalysis?.counts as { zones?: number } | undefined)?.zones ?? 0} zones,{" "}
+                            {(mapAnalysis?.counts as { objects?: number } | undefined)?.objects ?? 0} objects,{" "}
+                            {(mapAnalysis?.counts as { centerlines?: number } | undefined)?.centerlines ?? 0}{" "}
+                            centerlines.
                           </p>
                         ) : null}
                         {surveySlopeEstimate?.slope_percent ? (
