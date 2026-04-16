@@ -178,8 +178,8 @@ class PreviewRenderTests(unittest.TestCase):
         )
 
         points = contour["points"]
-        self.assertEqual(points[0], [117.0, 390.0])
-        self.assertEqual(points[-1], [674.0, 390.0])
+        self.assertEqual(points[0], [137.34, 390.0])
+        self.assertEqual(points[-1], [653.66, 390.0])
 
     def test_layout_scene_suppresses_engineering_overlay_noise(self):
         actions = [

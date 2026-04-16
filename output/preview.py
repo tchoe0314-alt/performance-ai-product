@@ -600,11 +600,15 @@ def _clip_grading_contour_action(action, layout_bounds):
         return action
 
     min_x, min_y, max_x, max_y = layout_bounds
+    layout_w = max(max_x - min_x, 1.0)
+    layout_h = max(max_y - min_y, 1.0)
+    x_pad = min(max(20.0, layout_w * 0.06), 32.0)
+    y_pad = min(max(24.0, layout_h * 0.28), 44.0)
     clip_rect = (
-        min_x - 48.0,
-        min_y - 68.0,
-        max_x + 48.0,
-        max_y + 68.0,
+        min_x - x_pad,
+        min_y - y_pad,
+        max_x + x_pad,
+        max_y + y_pad,
     )
     clipped_points = _clip_polyline_points(safe_points(action), clip_rect)
     if len(clipped_points) < 2:
