@@ -1461,7 +1461,13 @@ def draw_rectangle(ax, action):
         fill_alpha = 0.10
         facecolor = get_color(action)
     elif layer == "PARKING":
-        fill_alpha = 0.08
+        parking_area = w * h
+        if w >= 180.0 or h >= 40.0 or parking_area >= 7000.0:
+            fill_alpha = 0.035
+        elif w >= 120.0 or parking_area >= 4000.0:
+            fill_alpha = 0.05
+        else:
+            fill_alpha = 0.07
         facecolor = get_color(action)
     elif layer == "WALK":
         fill_alpha = 0.10
@@ -1486,11 +1492,15 @@ def draw_rectangle(ax, action):
     if layer == "PARKING" and w >= 24 and h >= 10:
         if w >= 220.0:
             stripe_spacing = max(28.0, min(36.0, w / 8.0))
-            stripe_alpha = 0.16
+            stripe_alpha = 0.08
             stripe_gap = max(52.0, min(104.0, w * 0.24))
+        elif w >= 160.0 or h >= 40.0:
+            stripe_spacing = max(24.0, min(32.0, w / 7.0))
+            stripe_alpha = 0.12
+            stripe_gap = max(32.0, min(72.0, w * 0.16))
         else:
             stripe_spacing = max(18.0, min(24.0, w / 5.0))
-            stripe_alpha = 0.38
+            stripe_alpha = 0.22
             stripe_gap = 0.0
         stripe_x = x + stripe_spacing
         stripe_y1 = y + max(1.5, h * 0.12)
