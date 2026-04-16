@@ -145,6 +145,12 @@ class ExportPackagingRichnessTest(unittest.TestCase):
         self.assertAlmostEqual(float(labels["MF-3"]["height"]), 58.0)
         self.assertAlmostEqual(float(labels["Retail"]["width"]), 70.0)
         self.assertAlmostEqual(float(labels["Retail"]["height"]), 45.0)
+        mf_center_y = sum(
+            float(labels[name]["origin"][1]) + float(labels[name]["height"]) / 2.0
+            for name in ("MF-1", "MF-2", "MF-3")
+        ) / 3.0
+        retail_center_y = float(labels["Retail"]["origin"][1]) + float(labels["Retail"]["height"]) / 2.0
+        self.assertLess(abs(mf_center_y - retail_center_y), 260.0)
 
     def test_project_model_plan_keeps_site_geometry_when_expanded_plan_is_engineering_heavy(self) -> None:
         project = planner.ProjectModel(name="Preview Context Test", units="ft")

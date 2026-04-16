@@ -123,6 +123,32 @@ class LayoutEngineLegacyInferenceTests(unittest.TestCase):
             )
         )
 
+    def test_expanded_mixed_use_plan_keeps_retail_clustered_with_primary_buildings(self) -> None:
+        plan = _build_expanded_plan(
+            {
+                "project_type": "mixed_use",
+                "lot": {"w": 620.0, "h": 980.0},
+                "buildings": [
+                    {"name": "MF-1", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "MF-2", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "MF-3", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "Retail", "type": "retail", "width": 70, "depth": 45},
+                ],
+            }
+        )
+
+        buildings = [
+            action
+            for action in plan["actions"]
+            if str(action.get("layer") or "").upper() == "BUILDING"
+            and str(action.get("task") or "").lower() == "rectangle"
+        ]
+        multifamily = [action for action in buildings if "RETAIL" not in str(action.get("label") or "").upper()]
+        retail = next(action for action in buildings if "RETAIL" in str(action.get("label") or "").upper())
+        mf_center_y = sum(float(action["origin"][1]) + float(action["height"]) / 2.0 for action in multifamily) / len(multifamily)
+        retail_center_y = float(retail["origin"][1]) + float(retail["height"]) / 2.0
+        self.assertLess(abs(mf_center_y - retail_center_y), 260.0)
+
     def test_simple_layout_actions_do_not_label_synthetic_circulation_as_frontage_or_access(self) -> None:
         layout = generate_smart_layout(
             lot={"x": 0.0, "y": 0.0, "w": 120.0, "h": 100.0},

@@ -115,10 +115,40 @@ def _synthesized_program_layout(
     placements: List[Dict[str, Any]] = []
     vertical_span = max(max_y - min_y, 1.0)
     frontage_on_bottom = lower_text(street_edge) != "top"
-    top_row_y = min_y + vertical_span * (0.58 if frontage else 0.45)
-    top_row_h = max_y - top_row_y
-    bottom_row_y = min_y
-    bottom_row_h = max(top_row_y - min_y - max(lot_h * 0.04, 20.0), vertical_span * 0.22)
+
+    def _fit_row_bands(
+        upper_h: float,
+        lower_h: float,
+        gap: float,
+    ) -> Tuple[float, float, float, float]:
+        total_h = upper_h + lower_h + gap
+        if total_h > vertical_span:
+            scale = max(0.6, vertical_span / max(total_h, 1.0))
+            upper_h *= scale
+            lower_h *= scale
+            gap *= scale
+        cluster_center = min_y + vertical_span * 0.5
+        lower_y = cluster_center - (gap / 2.0) - lower_h
+        upper_y = cluster_center + (gap / 2.0)
+        shift = 0.0
+        if lower_y < min_y:
+            shift = min_y - lower_y
+        elif upper_y + upper_h > max_y:
+            shift = max_y - (upper_y + upper_h)
+        lower_y += shift
+        upper_y += shift
+        return upper_y, upper_h, lower_y, lower_h
+
+    if frontage:
+        upper_h = max(max(safe_float(spec.get("d"), 20.0) for spec in primary) + 42.0, min(vertical_span * 0.22, 150.0))
+        lower_h = max(max(safe_float(spec.get("d"), 20.0) for spec in frontage) + 34.0, min(vertical_span * 0.16, 120.0))
+        gap = max(26.0, min(vertical_span * 0.08, 72.0))
+        top_row_y, top_row_h, bottom_row_y, bottom_row_h = _fit_row_bands(upper_h, lower_h, gap)
+    else:
+        top_row_h = max(max(safe_float(spec.get("d"), 20.0) for spec in primary) + 48.0, min(vertical_span * 0.24, 180.0))
+        top_row_y = min_y + max((vertical_span - top_row_h) / 2.0, 0.0)
+        bottom_row_y = min_y
+        bottom_row_h = max(vertical_span * 0.22, 40.0)
 
     if len(primary) > 3:
         split = (len(primary) + 1) // 2

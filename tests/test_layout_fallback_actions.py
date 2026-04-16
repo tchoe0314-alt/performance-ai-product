@@ -1,9 +1,36 @@
 import unittest
 
-from backend.planning.core_stage_runners import _layout_fallback_actions, _synthesize_layout_semantics
+from backend.planning.core_stage_runners import (
+    _layout_fallback_actions,
+    _synthesize_layout_semantics,
+    _synthesized_program_layout,
+)
 
 
 class LayoutFallbackActionsTests(unittest.TestCase):
+    def test_synthesized_program_layout_keeps_frontage_row_clustered(self) -> None:
+        placements = _synthesized_program_layout(
+            lot_x=0.0,
+            lot_y=0.0,
+            lot_w=620.0,
+            lot_h=980.0,
+            street_edge="bottom",
+            specs=[
+                {"name": "MF-1", "use": "multifamily", "w": 110.0, "d": 58.0},
+                {"name": "MF-2", "use": "multifamily", "w": 110.0, "d": 58.0},
+                {"name": "MF-3", "use": "multifamily", "w": 110.0, "d": 58.0},
+                {"name": "Retail", "use": "retail", "w": 70.0, "d": 45.0},
+            ],
+        )
+
+        multifamily = [item for item in placements if str(item.get("use") or "").lower() == "multifamily"]
+        retail = next(item for item in placements if str(item.get("use") or "").lower() == "retail")
+        mf_center_y = sum(float(item["y"]) + float(item["d"]) / 2.0 for item in multifamily) / len(multifamily)
+        retail_center_y = float(retail["y"]) + float(retail["d"]) / 2.0
+
+        self.assertEqual(len(placements), 4)
+        self.assertLess(abs(mf_center_y - retail_center_y), 260.0)
+
     def test_layout_fallback_emits_parking_walk_and_pavement_layers(self) -> None:
         actions = _layout_fallback_actions(
             [{"name": "BLDG 1", "x": 100.0, "y": 200.0, "w": 120.0, "d": 60.0}],
