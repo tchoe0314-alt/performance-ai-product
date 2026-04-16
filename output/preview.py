@@ -1311,7 +1311,12 @@ def draw_rectangle(ax, action):
     ax.add_patch(rect)
 
     if layer == "PARKING" and w >= 24 and h >= 10:
-        stripe_spacing = max(18.0, min(24.0, w / 5.0))
+        if w >= 220.0:
+            stripe_spacing = max(28.0, min(36.0, w / 8.0))
+            stripe_alpha = 0.26
+        else:
+            stripe_spacing = max(18.0, min(24.0, w / 5.0))
+            stripe_alpha = 0.38
         stripe_x = x + stripe_spacing
         stripe_y1 = y + max(1.5, h * 0.12)
         stripe_y2 = y + h - max(1.5, h * 0.12)
@@ -1321,7 +1326,7 @@ def draw_rectangle(ax, action):
                 [stripe_y1, stripe_y2],
                 linewidth=0.7,
                 color="#ffffff",
-                alpha=0.38,
+                alpha=stripe_alpha,
             )
             stripe_x += stripe_spacing
 

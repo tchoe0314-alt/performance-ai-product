@@ -968,13 +968,15 @@ def _parking_connection_point(parking: Rect, building: Rect) -> Point:
     px, py = _rect_center(parking)
 
     if parking["w"] >= parking["h"]:
+        target_x = _clamp(bx, parking["x"] + 4.0, _rect_right(parking) - 4.0)
         if py < by:
-            return (px, _rect_top(parking))
-        return (px, parking["y"])
+            return (target_x, _rect_top(parking))
+        return (target_x, parking["y"])
     else:
+        target_y = _clamp(by, parking["y"] + 4.0, _rect_top(parking) - 4.0)
         if px < bx:
-            return (_rect_right(parking), py)
-        return (parking["x"], py)
+            return (_rect_right(parking), target_y)
+        return (parking["x"], target_y)
 
 
 def _generate_sidewalks(layout: Dict[str, Any], standards: Dict[str, float]) -> List[Dict[str, Any]]:

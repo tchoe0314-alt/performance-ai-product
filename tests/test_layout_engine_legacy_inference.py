@@ -175,6 +175,40 @@ class LayoutEngineLegacyInferenceTests(unittest.TestCase):
         self.assertEqual(sum(1 for label in labels if label.startswith("RES-PARK-")), 2)
         self.assertEqual(sum(1 for label in labels if "RETAIL-PARK" in label), 1)
 
+    def test_shared_residential_courts_keep_walks_aligned_to_buildings(self) -> None:
+        plan = _build_expanded_plan(
+            {
+                "project_type": "mixed_use",
+                "lot": {"w": 620.0, "h": 980.0},
+                "buildings": [
+                    {"name": "MF-1", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "MF-2", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "MF-3", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "Retail", "type": "retail", "width": 70, "depth": 45},
+                ],
+            }
+        )
+
+        buildings = [
+            action
+            for action in plan["actions"]
+            if str(action.get("layer") or "").upper() == "BUILDING"
+            and str(action.get("task") or "").lower() == "rectangle"
+        ]
+        building_centers = sorted(
+            float(action["origin"][0]) + float(action["width"]) / 2.0 for action in buildings if "RETAIL" not in str(action.get("label") or "").upper()
+        )
+        walks = [
+            action
+            for action in plan["actions"]
+            if str(action.get("layer") or "").upper() == "WALK"
+            and str(action.get("task") or "").lower() == "polyline"
+        ]
+        walk_xs = sorted({round(float(action["points"][0][0]), 3) for action in walks[:3]})
+        self.assertEqual(len(walk_xs), 3)
+        for walk_x, building_x in zip(walk_xs, building_centers):
+            self.assertAlmostEqual(walk_x, round(building_x, 3), delta=0.5)
+
     def test_simple_layout_actions_do_not_label_synthetic_circulation_as_frontage_or_access(self) -> None:
         layout = generate_smart_layout(
             lot={"x": 0.0, "y": 0.0, "w": 120.0, "h": 100.0},
