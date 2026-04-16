@@ -1452,7 +1452,7 @@ def draw_rectangle(ax, action):
     fill_alpha = 0.0
     facecolor = "none"
     if layer == "BUILDING":
-        fill_alpha = 0.14
+        fill_alpha = 0.18
         facecolor = get_color(action)
     elif layer == "ROAD":
         fill_alpha = 0.06
@@ -1463,11 +1463,11 @@ def draw_rectangle(ax, action):
     elif layer == "PARKING":
         parking_area = w * h
         if w >= 180.0 or h >= 40.0 or parking_area >= 7000.0:
-            fill_alpha = 0.035
+            fill_alpha = 0.018
         elif w >= 120.0 or parking_area >= 4000.0:
-            fill_alpha = 0.05
+            fill_alpha = 0.032
         else:
-            fill_alpha = 0.07
+            fill_alpha = 0.05
         facecolor = get_color(action)
     elif layer == "WALK":
         fill_alpha = 0.06
@@ -1480,11 +1480,11 @@ def draw_rectangle(ax, action):
     if layer == "PARKING":
         parking_area = w * h
         if w >= 180.0 or h >= 40.0 or parking_area >= 7000.0:
-            edge_alpha = 0.28
+            edge_alpha = 0.14
         elif w >= 120.0 or parking_area >= 4000.0:
-            edge_alpha = 0.45
+            edge_alpha = 0.24
         else:
-            edge_alpha = 0.7
+            edge_alpha = 0.45
 
     rect = Rectangle(
         (x, y),
@@ -1505,9 +1505,9 @@ def draw_rectangle(ax, action):
 
     if layer == "PARKING" and w >= 24 and h >= 10:
         if w >= 180.0 or h >= 40.0:
-            stripe_spacing = max(34.0, min(46.0, w / 6.5))
-            stripe_alpha = 0.045
-            stripe_gap = max(82.0, min(136.0, w * 0.34))
+            stripe_spacing = max(42.0, min(56.0, w / 5.8))
+            stripe_alpha = 0.0
+            stripe_gap = max(120.0, min(220.0, w * 0.56))
         elif w >= 220.0:
             stripe_spacing = max(28.0, min(36.0, w / 8.0))
             stripe_alpha = 0.08
@@ -1525,7 +1525,7 @@ def draw_rectangle(ax, action):
         stripe_y2 = y + h - max(1.5, h * 0.12)
         gap_x1 = x + (w - stripe_gap) / 2.0 if stripe_gap > 0.0 else None
         gap_x2 = gap_x1 + stripe_gap if gap_x1 is not None else None
-        while stripe_x < x + w - stripe_spacing * 0.35:
+        while stripe_alpha > 0.0 and stripe_x < x + w - stripe_spacing * 0.35:
             if gap_x1 is not None and gap_x1 <= stripe_x <= gap_x2:
                 stripe_x += stripe_spacing
                 continue
