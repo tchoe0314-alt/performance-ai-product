@@ -54,7 +54,7 @@ class ExportPackagingRichnessTest(unittest.TestCase):
         ]
 
         self.assertGreaterEqual(len(building_rectangles), 4)
-        self.assertGreaterEqual(len(parking_rectangles), 4)
+        self.assertGreaterEqual(len(parking_rectangles), 3)
         self.assertGreaterEqual(len(walk_actions), 4)
         self.assertFalse(road_polylines)
 

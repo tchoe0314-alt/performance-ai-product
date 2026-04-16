@@ -71,13 +71,15 @@ class LayoutFallbackActionsTests(unittest.TestCase):
             if str(action.get("layer", "")).upper() == "PARKING"
             and str(action.get("task", "")).lower() == "rectangle"
         ]
-        self.assertEqual(len(parking_rects), 4)
+        self.assertEqual(len(parking_rects), 3)
         multifamily_parking = [action for action in parking_rects if float(action.get("width", 0.0)) >= 120.0]
         retail_parking = [action for action in parking_rects if float(action.get("width", 0.0)) < 120.0]
+        self.assertEqual(len(multifamily_parking), 2)
+        self.assertEqual(len(retail_parking), 1)
 
         self.assertTrue(all(float(action.get("height", 0.0)) <= 54.0 for action in multifamily_parking))
         self.assertTrue(all(float(action.get("height", 0.0)) <= 42.0 for action in retail_parking))
-        self.assertTrue(all(float(action.get("width", 0.0)) <= 134.0 for action in multifamily_parking))
+        self.assertTrue(all(float(action.get("width", 0.0)) <= 270.0 for action in multifamily_parking))
         self.assertTrue(all(float(action.get("width", 0.0)) <= 92.0 for action in retail_parking))
 
         multifamily_parking = sorted(multifamily_parking, key=lambda action: float(action.get("origin", [0])[0]))
@@ -87,7 +89,7 @@ class LayoutFallbackActionsTests(unittest.TestCase):
             left_w = float(left.get("width", 0.0))
             right_x = float(right.get("origin", [0])[0])
             gaps.append(right_x - (left_x + left_w))
-        self.assertTrue(all(gap >= 18.0 for gap in gaps))
+        self.assertTrue(all(gap >= 20.0 for gap in gaps))
 
     def test_layout_fallback_avoids_loop_and_culdesac_schematic_shapes(self) -> None:
         actions = _layout_fallback_actions(

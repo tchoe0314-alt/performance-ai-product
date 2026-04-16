@@ -184,7 +184,7 @@ def _layout_fallback_actions(
         return []
     actions: List[Dict[str, Any]] = []
     frontage_on_bottom = lower_text(street_edge) != "top"
-    parking_rects: List[Tuple[float, float, float, float]] = []
+    parking_entries: List[Dict[str, Any]] = []
     for placement in placements:
         px = safe_float(placement.get("x"), 0.0)
         py = safe_float(placement.get("y"), 0.0)
@@ -201,16 +201,13 @@ def _layout_fallback_actions(
         park_y = round(pavement_y, 3)
         park_w = round(min(lot_w - 30.0, pw + side_buffer * 2.0), 3)
         park_h = round(lot_depth, 3)
-        actions.append(
+        parking_entries.append(
             {
-                "task": "rectangle",
-                "layer": "PARKING",
-                "origin": [park_x, park_y],
-                "width": park_w,
-                "height": park_h,
+                "use": lower_text(placement.get("use")),
+                "frontage": frontage_use,
+                "rect": (park_x, park_y, park_w, park_h),
             }
         )
-        parking_rects.append((park_x, park_y, park_w, park_h))
         walk_width = round(max(6.0, min(10.0, pw * 0.12)), 3)
         walk_x = round(px + (pw - walk_width) / 2.0, 3)
         if frontage_on_bottom:
@@ -229,31 +226,66 @@ def _layout_fallback_actions(
             }
         )
 
+    def _merge_courts(rects: Sequence[Tuple[float, float, float, float]]) -> Optional[Tuple[float, float, float, float]]:
+        if not rects:
+            return None
+        min_x = min(x for x, _, _, _ in rects)
+        min_y = min(y for _, y, _, _ in rects)
+        max_x = max(x + w for x, _, w, _ in rects)
+        max_y = max(y + h for _, y, _, h in rects)
+        return (
+            round(min_x, 3),
+            round(min_y, 3),
+            round(max_x - min_x, 3),
+            round(max_y - min_y, 3),
+        )
+
+    residential_rects = [
+        entry["rect"]
+        for entry in parking_entries
+        if not bool(entry.get("frontage")) and entry.get("rect")
+    ]
+    frontage_rects = [
+        entry["rect"]
+        for entry in parking_entries
+        if bool(entry.get("frontage")) and entry.get("rect")
+    ]
+
+    parking_rects: List[Tuple[float, float, float, float]] = []
+    if len(residential_rects) >= 3:
+        residential_rects = sorted(residential_rects, key=lambda rect: rect[0] + rect[2] / 2.0)
+        split = (len(residential_rects) + 1) // 2
+        for group in (residential_rects[:split], residential_rects[split:]):
+            merged = _merge_courts(group)
+            if merged:
+                parking_rects.append(merged)
+    else:
+        parking_rects.extend(residential_rects)
+    parking_rects.extend(frontage_rects)
+
     if not parking_rects:
         return actions
 
-    parking_centers_y = [py + ph / 2.0 for _, py, _, ph in parking_rects]
-    split_y = (max(parking_centers_y) + min(parking_centers_y)) / 2.0
-    upper_row = [rect for rect in parking_rects if rect[1] + rect[3] / 2.0 >= split_y]
-    lower_row = [rect for rect in parking_rects if rect[1] + rect[3] / 2.0 < split_y]
-    if not upper_row:
-        upper_row = list(parking_rects)
+    for park_x, park_y, park_w, park_h in parking_rects:
+        actions.append(
+            {
+                "task": "rectangle",
+                "layer": "PARKING",
+                "origin": [park_x, park_y],
+                "width": park_w,
+                "height": park_h,
+            }
+        )
 
-    def _collector_for_row(row: Sequence[Tuple[float, float, float, float]]) -> Optional[Tuple[float, float, float, float]]:
-        if not row:
+    def _collector_for_rect(rect: Tuple[float, float, float, float]) -> Optional[Tuple[float, float, float, float]]:
+        x, y, w, h = rect
+        if w <= 0 or h <= 0:
             return None
-        row_min_x = min(x for x, _, _, _ in row)
-        row_max_x = max(x + w for x, _, w, _ in row)
-        row_min_y = min(y for _, y, _, _ in row)
-        parking_h = max(h for _, _, _, h in row)
-        collector_h = round(max(8.0, min(12.0, parking_h * 0.16)), 3)
-        collector_y = round(max(lot_y + 12.0, row_min_y - collector_h - 5.0), 3)
-        collector_x = round(max(lot_x + 12.0, row_min_x + 2.0), 3)
-        collector_w = round(min(lot_w - 24.0, max(24.0, (row_max_x - row_min_x) - 4.0)), 3)
+        collector_h = round(max(8.0, min(12.0, h * 0.22)), 3)
+        collector_y = round(max(lot_y + 12.0, y - collector_h - 5.0), 3)
+        collector_w = round(max(24.0, min(w - 8.0, w * 0.9)), 3)
+        collector_x = round(min(max(lot_x + 12.0, x + (w - collector_w) / 2.0), lot_x + lot_w - collector_w - 12.0), 3)
         return (collector_x, collector_y, collector_w, collector_h)
-
-    upper_collector = _collector_for_row(upper_row)
-    lower_collector = _collector_for_row(lower_row) if lower_row else None
 
     def _append_surface(rect: Optional[Tuple[float, float, float, float]], *, layer: str) -> None:
         if not rect:
@@ -271,10 +303,16 @@ def _layout_fallback_actions(
             }
         )
 
-    _append_surface(upper_collector, layer="PAVEMENT")
-    _append_surface(lower_collector, layer="PAVEMENT")
+    residential_collectors = [_collector_for_rect(rect) for rect in parking_rects[: len(parking_rects) - len(frontage_rects)]]
+    frontage_collectors = [_collector_for_rect(rect) for rect in frontage_rects]
+    residential_collectors = [rect for rect in residential_collectors if rect]
+    frontage_collectors = [rect for rect in frontage_collectors if rect]
 
-    access_targets = [rect for rect in (upper_collector, lower_collector) if rect]
+    for collector in residential_collectors + frontage_collectors:
+        _append_surface(collector, layer="PAVEMENT")
+
+    residential_access_target = _merge_courts(residential_collectors)
+    access_targets = [rect for rect in [residential_access_target, *frontage_collectors] if rect]
     for idx, target in enumerate(access_targets):
         ax, ay, aw, ah = target
         access_w = round(max(14.0, min(20.0, aw * 0.12)), 3)
