@@ -88,6 +88,37 @@ class PlannerOrchestratorRoutingTests(unittest.TestCase):
         self.assertGreaterEqual(int(parsed["site_plan"]["parking_count"]), 140)
         self.assertGreaterEqual(len(parsed.get("buildings") or []), 4)
 
+    def test_exact_live_mixed_use_prompt_keeps_retail_building_in_fast_parse(self):
+        req = PlannerOrchestratorRequest(
+            input_mode="assisted",
+            prompt_text=(
+                "Design a fully engineered civil site plan for a 14-acre mixed-use development on a mostly rectangular site with mild slope "
+                "falling from the northwest corner (108.0 ft) to the southeast corner (101.5 ft). "
+                "Include 3 multifamily buildings, each 110 ft x 58 ft, 3 stories, 20 units each, "
+                "1 retail building 70 ft x 45 ft, "
+                "1 internal loop road with one main entrance from the south edge, "
+                "1 emergency access connection on the east edge, "
+                "two parking courts serving the residential buildings, one parking field serving the retail building, "
+                "ADA pedestrian paths connecting all buildings to parking and the main entrance, "
+                "and a detention basin near the southeast corner. "
+                "Keep the layout logical, readable, and buildable. "
+                "Generate grading with spot elevations and 2-ft contours. Drain away from buildings. "
+                "Design storm drainage with inlets, pipes, and outfall to the basin. "
+                "Design sanitary and water systems with no obvious conflicts."
+            ),
+        )
+        with patch("planner_orchestrator.command_mode", side_effect=AssertionError("AI parser should not be called")):
+            parsed = _parse_from_prompt(req)
+        buildings = parsed.get("buildings") or []
+        self.assertTrue(parsed["meta"]["fast_prompt_parse"])
+        self.assertEqual(parsed["project_type"], "mixed_use")
+        self.assertEqual(len(buildings), 4)
+        self.assertEqual(sum(1 for b in buildings if b.get("use") == "multifamily"), 3)
+        self.assertEqual(sum(1 for b in buildings if b.get("use") == "retail"), 1)
+        retail = next(b for b in buildings if b.get("use") == "retail")
+        self.assertAlmostEqual(float(retail["w"]), 70.0)
+        self.assertAlmostEqual(float(retail["d"]), 45.0)
+
     def test_zero_placeholder_manual_fields_do_not_override_fast_parsed_site_geometry(self):
         req = PlannerOrchestratorRequest(
             input_mode="assisted",

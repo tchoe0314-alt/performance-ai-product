@@ -682,24 +682,52 @@ def _extract_buildings_from_prompt(prompt_text: str, project_type: str) -> List[
                 }
             )
 
-    retail_match = re.search(
-        r"(\d+)\s+commercial(?:\s+retail)?\s+pad[^.\n]*?(\d+(?:\.\d+)?)\s*ft\s*x\s*(\d+(?:\.\d+)?)\s*ft",
-        prompt_text,
-        flags=re.IGNORECASE,
+    retail_patterns = (
+        (
+            r"(\d+)\s+(?:commercial\s+)?retail\s+(?:pad|building)s?[^.\n]*?(\d+(?:\.\d+)?)\s*ft\s*x\s*(\d+(?:\.\d+)?)\s*ft",
+            "Retail",
+        ),
+        (
+            r"(\d+)\s+commercial\s+building[s]?[^.\n]*?(\d+(?:\.\d+)?)\s*ft\s*x\s*(\d+(?:\.\d+)?)\s*ft",
+            "Commercial Building",
+        ),
+        (
+            r"(\d+)\s+office\s+building[s]?[^.\n]*?(\d+(?:\.\d+)?)\s*ft\s*x\s*(\d+(?:\.\d+)?)\s*ft",
+            "Office Building",
+        ),
+        (
+            r"(\d+)\s+industrial\s+building[s]?[^.\n]*?(\d+(?:\.\d+)?)\s*ft\s*x\s*(\d+(?:\.\d+)?)\s*ft",
+            "Industrial Building",
+        ),
     )
-    if retail_match:
-        count = max(1, _safe_int(retail_match.group(1), 1))
-        width = _safe_float(retail_match.group(2))
-        depth = _safe_float(retail_match.group(3))
+    for pattern, base_name in retail_patterns:
+        match = re.search(pattern, prompt_text, flags=re.IGNORECASE)
+        if not match:
+            continue
+        count = max(1, _safe_int(match.group(1), 1))
+        width = _safe_float(match.group(2))
+        depth = _safe_float(match.group(3))
+        use = "retail"
+        if "office" in base_name.lower():
+            use = "office"
+        elif "industrial" in base_name.lower():
+            use = "industrial"
+        elif "commercial" in base_name.lower() and base_name != "Retail":
+            use = "generic"
         for idx in range(count):
+            if count == 1:
+                name = base_name
+            else:
+                name = f"{base_name} {idx + 1}"
             buildings.append(
                 {
-                    "name": "Retail Pad" if count == 1 else f"Retail Pad {idx + 1}",
-                    "use": "retail",
+                    "name": name,
+                    "use": use,
                     "w": width,
                     "d": depth,
                 }
             )
+        break
 
     if buildings:
         return buildings
