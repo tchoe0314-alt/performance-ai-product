@@ -37,7 +37,7 @@ class PreviewRenderTests(unittest.TestCase):
 
         selected = _choose_view_bounds(drawn_items, engineering_profile="layout")
 
-        self.assertEqual(selected, (110, 90, 240, 210))
+        self.assertEqual(selected, (120, 135, 210, 210))
 
     def test_choose_view_bounds_keeps_key_engineering_with_completed_runs(self):
         drawn_items = [

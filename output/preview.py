@@ -1545,6 +1545,10 @@ def _choose_view_bounds(drawn_items, *, engineering_profile="layout"):
     all_bounds = None
     focus_bounds = None
     primary_bounds = None
+    building_bounds = None
+    walk_bounds = None
+    pad_bounds = None
+    parking_items = []
     engineering_bounds = None
     phase_engineering_bounds = None
 
@@ -1557,6 +1561,14 @@ def _choose_view_bounds(drawn_items, *, engineering_profile="layout"):
             focus_bounds = _update_bounds(focus_bounds, bounds)
         if layer in PRIMARY_VIEW_LAYERS:
             primary_bounds = _update_bounds(primary_bounds, bounds)
+        if layer == "BUILDING":
+            building_bounds = _update_bounds(building_bounds, bounds)
+        elif layer == "WALK":
+            walk_bounds = _update_bounds(walk_bounds, bounds)
+        elif layer == "PAD":
+            pad_bounds = _update_bounds(pad_bounds, bounds)
+        elif layer == "PARKING":
+            parking_items.append(bounds)
         elif layer in KEY_ENGINEERING_VIEW_LAYERS:
             engineering_bounds = _update_bounds(engineering_bounds, bounds)
         if layer in phase_focus_layers:
@@ -1565,7 +1577,24 @@ def _choose_view_bounds(drawn_items, *, engineering_profile="layout"):
     if all_bounds is None:
         return None
 
-    preferred_bounds = primary_bounds or focus_bounds or all_bounds
+    clustered_primary_bounds = primary_bounds
+    if building_bounds:
+        clustered_primary_bounds = _merge_bounds([building_bounds, walk_bounds, pad_bounds]) or building_bounds
+        for bounds in parking_items:
+            merged_cluster = _merge_bounds([clustered_primary_bounds, bounds])
+            if not merged_cluster:
+                continue
+            cluster_area = _bounds_area(clustered_primary_bounds)
+            merged_area = _bounds_area(merged_cluster)
+            if cluster_area <= 0:
+                clustered_primary_bounds = merged_cluster
+                continue
+            width_gain = max(merged_cluster[2] - merged_cluster[0], 1.0) / max(clustered_primary_bounds[2] - clustered_primary_bounds[0], 1.0)
+            height_gain = max(merged_cluster[3] - merged_cluster[1], 1.0) / max(clustered_primary_bounds[3] - clustered_primary_bounds[1], 1.0)
+            if merged_area <= cluster_area * 1.6 and width_gain <= 1.18 and height_gain <= 1.45:
+                clustered_primary_bounds = merged_cluster
+
+    preferred_bounds = clustered_primary_bounds or primary_bounds or focus_bounds or all_bounds
     if primary_bounds and phase_engineering_bounds:
         preferred_bounds = (
             _merge_bounds([primary_bounds, phase_engineering_bounds]) or preferred_bounds
