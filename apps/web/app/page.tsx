@@ -1086,6 +1086,12 @@ export default function PerformanceAIDashboard() {
     useState<PreviewResponse["summary"] | null>(null);
   const [planPreviewAnnotations, setPlanPreviewAnnotations] =
     useState<PreviewResponse["preview_annotations"] | null>(null);
+  const [previewMode, setPreviewMode] = useState<"2d" | "3d">("2d");
+  const [previewInteraction, setPreviewInteraction] = useState<"static" | "interactive">("interactive");
+  const [previewQuality, setPreviewQuality] = useState<"standard" | "high">("standard");
+  const [showMeasurements, setShowMeasurements] = useState(false);
+  const [showCalculations, setShowCalculations] = useState(false);
+  const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
   const [previewFullscreenOpen, setPreviewFullscreenOpen] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -4642,13 +4648,98 @@ export default function PerformanceAIDashboard() {
               </div>
 
               {planPreviewUrl ? (
-                <div className="flex min-h-[560px] items-center justify-center overflow-hidden rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top,#f8fafc_0%,#eef2f7_100%)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
-                  <img
-                    src={planPreviewUrl}
-                    alt="Generated plan preview"
-                    className="max-h-[520px] w-full cursor-zoom-in rounded-[20px] bg-white object-contain shadow-sm"
-                    onClick={() => setPreviewFullscreenOpen(true)}
-                  />
+                <div className="rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top,#f8fafc_0%,#eef2f7_100%)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      <span>Preview Mode</span>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewMode("2d")}
+                        className={`rounded-full border px-2.5 py-1 ${
+                          previewMode === "2d"
+                            ? "border-slate-900 bg-slate-950 text-white"
+                            : "border-slate-200 bg-white text-slate-600"
+                        }`}
+                      >
+                        2D
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewMode("3d")}
+                        className={`rounded-full border px-2.5 py-1 ${
+                          previewMode === "3d"
+                            ? "border-slate-900 bg-slate-950 text-white"
+                            : "border-slate-200 bg-white text-slate-600"
+                        }`}
+                      >
+                        3D
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      <span>Interaction</span>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewInteraction("static")}
+                        className={`rounded-full border px-2.5 py-1 ${
+                          previewInteraction === "static"
+                            ? "border-slate-900 bg-slate-950 text-white"
+                            : "border-slate-200 bg-white text-slate-600"
+                        }`}
+                      >
+                        Static
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewInteraction("interactive")}
+                        className={`rounded-full border px-2.5 py-1 ${
+                          previewInteraction === "interactive"
+                            ? "border-slate-900 bg-slate-950 text-white"
+                            : "border-slate-200 bg-white text-slate-600"
+                        }`}
+                      >
+                        Interactive
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      <span>Quality</span>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewQuality("standard")}
+                        className={`rounded-full border px-2.5 py-1 ${
+                          previewQuality === "standard"
+                            ? "border-slate-900 bg-slate-950 text-white"
+                            : "border-slate-200 bg-white text-slate-600"
+                        }`}
+                      >
+                        Standard
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewQuality("high")}
+                        className={`rounded-full border px-2.5 py-1 ${
+                          previewQuality === "high"
+                            ? "border-slate-900 bg-slate-950 text-white"
+                            : "border-slate-200 bg-white text-slate-600"
+                        }`}
+                      >
+                        High
+                      </button>
+                    </div>
+                  </div>
+                  {previewMode === "3d" ? (
+                    <div className="flex min-h-[520px] items-center justify-center rounded-[20px] border border-dashed border-slate-200 bg-white text-center text-sm text-slate-500">
+                      3D interactive preview is coming soon. You can still use the 2D view today.
+                    </div>
+                  ) : (
+                    <div className="flex min-h-[520px] items-center justify-center overflow-hidden rounded-[20px] bg-white">
+                      <img
+                        src={planPreviewUrl}
+                        alt="Generated plan preview"
+                        className="max-h-[520px] w-full cursor-zoom-in object-contain shadow-sm"
+                        onClick={() => setPreviewFullscreenOpen(true)}
+                      />
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="flex min-h-[360px] items-center justify-center rounded-[28px] border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
@@ -4943,6 +5034,127 @@ export default function PerformanceAIDashboard() {
                           ? joinNatural(previewRerunSignals, 4)
                           : "No repeated reruns were recorded in the latest pass."}
                       </p>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="rounded-[24px] border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Issue Navigator
+                      </p>
+                      <p className="mt-2 text-sm font-medium text-slate-900">
+                        Click an issue to highlight in preview (coming soon).
+                      </p>
+                      <div className="mt-3 space-y-2 text-sm text-slate-600">
+                        {(issues.length ? issues : defaultIssues).map((issue, idx) => (
+                          <button
+                            key={`${issue.message}-${idx}`}
+                            type="button"
+                            onClick={() => setSelectedIssueId(`${issue.message}-${idx}`)}
+                            className={`flex w-full items-start justify-between gap-3 rounded-2xl border px-3 py-2 text-left transition ${
+                              selectedIssueId === `${issue.message}-${idx}`
+                                ? "border-slate-900 bg-slate-950 text-white"
+                                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                            }`}
+                          >
+                            <span className="font-medium">{issue.message}</span>
+                            <span className="text-xs uppercase tracking-[0.14em] opacity-60">
+                              {issue.severity}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-[24px] border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Engineering Metrics
+                      </p>
+                      <div className="mt-3 grid gap-2 text-sm text-slate-700">
+                        <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
+                          <span>Total pipe length</span>
+                          <span className="font-semibold">Pending</span>
+                        </div>
+                        <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
+                          <span>Max slope</span>
+                          <span className="font-semibold">Pending</span>
+                        </div>
+                        <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
+                          <span>Min slope</span>
+                          <span className="font-semibold">Pending</span>
+                        </div>
+                        <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
+                          <span>Flow (CFS)</span>
+                          <span className="font-semibold">Pending</span>
+                        </div>
+                        <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
+                          <span>Cut / Fill</span>
+                          <span className="font-semibold">Pending</span>
+                        </div>
+                        <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
+                          <span>Pond size</span>
+                          <span className="font-semibold">Pending</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[24px] border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Overlays
+                      </p>
+                      <div className="mt-3 space-y-2 text-sm text-slate-700">
+                        <button
+                          type="button"
+                          onClick={() => setShowMeasurements((prev) => !prev)}
+                          className={`flex w-full items-center justify-between rounded-2xl border px-3 py-2 ${
+                            showMeasurements
+                              ? "border-slate-900 bg-slate-950 text-white"
+                              : "border-slate-200 bg-white text-slate-700"
+                          }`}
+                        >
+                          <span>Measurements overlay</span>
+                          <span className="text-xs uppercase tracking-[0.14em]">
+                            {showMeasurements ? "On" : "Off"}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowCalculations((prev) => !prev)}
+                          className={`flex w-full items-center justify-between rounded-2xl border px-3 py-2 ${
+                            showCalculations
+                              ? "border-slate-900 bg-slate-950 text-white"
+                              : "border-slate-200 bg-white text-slate-700"
+                          }`}
+                        >
+                          <span>Calculations overlay</span>
+                          <span className="text-xs uppercase tracking-[0.14em]">
+                            {showCalculations ? "On" : "Off"}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[24px] border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Phase Stats
+                      </p>
+                      <div className="mt-3 grid gap-2 text-sm text-slate-700">
+                        {previewPhaseEntries.map((phase) => (
+                          <div
+                            key={phase.key}
+                            className="rounded-2xl border border-slate-200 px-3 py-2"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium">{phase.label}</span>
+                              <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
+                                {phase.status}
+                              </span>
+                            </div>
+                            <p className="mt-2 text-xs text-slate-500">
+                              Stats for this phase will appear here.
+                            </p>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
