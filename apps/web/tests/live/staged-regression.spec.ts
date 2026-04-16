@@ -73,19 +73,26 @@ async function apiJson<T>(
   let lastBody = "";
 
   for (let attempt = 0; attempt < 4; attempt += 1) {
-    const response =
-      method === "POST"
-        ? await request.post(requestUrl, {
-            data: options?.data,
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          })
-        : await request.get(requestUrl, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          });
+    let response;
+    try {
+      response =
+        method === "POST"
+          ? await request.post(requestUrl, {
+              data: options?.data,
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            })
+          : await request.get(requestUrl, {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            });
+    } catch (error) {
+      lastBody = String((error as Error)?.message || error || "");
+      await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+      continue;
+    }
 
     if (response.ok()) {
       return (await response.json()) as T;
