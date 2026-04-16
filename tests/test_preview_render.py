@@ -146,7 +146,7 @@ class PreviewRenderTests(unittest.TestCase):
 
         self.assertEqual(selected, (120, 118, 260, 240))
 
-    def test_grading_preview_keeps_nearby_contour_labels_outside_layout_band(self):
+    def test_grading_preview_drops_contour_labels_in_favor_of_spot_grades(self):
         actions = [
             {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [165, 440], "width": 110, "height": 58},
             {"layer": "PARKING", "task": "rectangle", "origin": [180, 430], "width": 446, "height": 130},
@@ -161,8 +161,7 @@ class PreviewRenderTests(unittest.TestCase):
             if str(action.get("layer") or "").upper() == "FG_CONTOUR"
             and str(action.get("task") or "").lower() == "text_note"
         ]
-
-        self.assertIn("FG 102.06", contour_texts)
+        self.assertFalse(contour_texts)
 
     def test_grading_preview_clips_remote_contour_segments_to_site_focus(self):
         actions = [
@@ -210,7 +209,8 @@ class PreviewRenderTests(unittest.TestCase):
         self.assertEqual(color, "#f59e0b")
         self.assertEqual(linestyle, "-.")
         self.assertLess(linewidth, 1.2)
-        self.assertLess(alpha, 1.0)
+        self.assertLess(linewidth, 1.0)
+        self.assertLess(alpha, 0.4)
 
     def test_layout_scene_suppresses_engineering_overlay_noise(self):
         actions = [
@@ -552,20 +552,11 @@ class PreviewRenderTests(unittest.TestCase):
             for action in filtered
             if str(action.get("layer") or "").upper() == "SPOT_FG"
         ]
-        contour_texts = [
-            str(action.get("text") or "")
-            for action in filtered
-            if str(action.get("layer") or "").upper() in {"FG_CONTOUR", "EG_CONTOUR"}
-            and str(action.get("task") or "").lower() == "text_note"
-        ]
-
         self.assertIn("FG_CONTOUR", kept_layers)
         self.assertIn("SPOT_FG", kept_layers)
-        self.assertGreaterEqual(kept_layers.count("FG_CONTOUR"), 3)
+        self.assertGreaterEqual(kept_layers.count("FG_CONTOUR"), 2)
         self.assertIn("101.2", spot_texts)
-        self.assertIn("FG 101.5", contour_texts)
         self.assertNotIn("EG_CONTOUR", kept_layers)
-        self.assertNotIn("EG 100.9", contour_texts)
         self.assertNotIn("DRAIN_FLOW", kept_layers)
         self.assertNotIn("PIPE", kept_layers)
         self.assertNotIn("BASIN_BOUNDARY", kept_layers)
@@ -613,9 +604,7 @@ class PreviewRenderTests(unittest.TestCase):
             and str(action.get("task") or "").lower() == "text_note"
         ]
 
-        self.assertIn("FG 102.06", contour_texts)
-        self.assertIn("FG 102.03", contour_texts)
-        self.assertNotIn("FG 102.10", contour_texts)
+        self.assertFalse(contour_texts)
 
     def test_grading_checkpoint_drops_remote_contour_lines(self):
         actions = [

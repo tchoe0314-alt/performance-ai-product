@@ -424,8 +424,8 @@ def _polyline_style(action):
 
     preview_profile = _normalize_engineering_profile(action.get("_preview_profile"))
     if preview_profile == "grading" and layer in {"FG_CONTOUR", "EG_CONTOUR"}:
-        alpha = 0.42 if layer == "FG_CONTOUR" else 0.24
-        linewidth = max(0.7, linewidth * (0.78 if layer == "FG_CONTOUR" else 0.7))
+        alpha = 0.28 if layer == "FG_CONTOUR" else 0.18
+        linewidth = max(0.6, linewidth * (0.68 if layer == "FG_CONTOUR" else 0.62))
 
     return linewidth, color, linestyle, alpha
 
@@ -947,7 +947,7 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
     rich_engineering = engineering_profile in {"baseline", "utilities", "complete"}
     overlay_limits = {
         "layout": {"line": 0, "flow": 0, "drain_label": 0, "contour": 0, "contour_label": 0, "spot": 0, "structure": 0, "utility": 0, "basin": 0},
-        "grading": {"line": 0, "flow": 0, "drain_label": 0, "contour": 4, "contour_label": 3, "spot": 6, "structure": 0, "utility": 0, "basin": 0},
+        "grading": {"line": 0, "flow": 0, "drain_label": 0, "contour": 4, "contour_label": 0, "spot": 6, "structure": 0, "utility": 0, "basin": 0},
         "drainage": {"line": 4, "flow": 4, "drain_label": 6, "contour": 0, "contour_label": 0, "spot": 0, "structure": 6, "utility": 0, "basin": 0},
         "storm": {"line": 5, "flow": 3, "drain_label": 3, "contour": 3, "contour_label": 0, "spot": 0, "structure": 6, "utility": 0, "basin": 1},
         "utilities": {"line": 5, "flow": 2, "drain_label": 0, "contour": 3, "contour_label": 0, "spot": 0, "structure": 6, "utility": 3, "basin": 1},
