@@ -3152,10 +3152,12 @@ export default function PerformanceAIDashboard() {
       });
       appendChatMessage(
         "assistant",
-        `Saved your changes and requeued ${data.job.job_id} to revise the current phase.`,
+        `Saved your changes and requeued ${data.job.job_id} to revise ${toReadableLabel(revisePhaseTarget)}.`,
         "status",
       );
-      setStatusMessage(`Saved your changes. Requeued ${data.job.job_id} to revise this phase.`);
+      setStatusMessage(
+        `Saved your changes. Requeued ${data.job.job_id} to revise ${toReadableLabel(revisePhaseTarget)}.`,
+      );
       if (data.job.job_id) {
         setActiveJobId(data.job.job_id);
       }
@@ -3761,6 +3763,7 @@ export default function PerformanceAIDashboard() {
       });
       const storedFilename = data.stored_filename || file.name;
       setSurveyFileName(storedFilename);
+      setSurveyUploadUrl(data.survey_url || "");
       const currentInput = currentProject?.project_input ?? payloadPreview;
       const nextSiteInputs = {
         ...(currentInput?.meta?.site_inputs ?? {}),
@@ -4751,12 +4754,14 @@ export default function PerformanceAIDashboard() {
   useEffect(() => {
     const status = String(visibleActiveJob?.status || "").toLowerCase();
     if (status !== "awaiting_approval") return;
-    if (previewRunningPhase?.key) {
-      setRevisePhaseTarget(
-        previewRunningPhase.key as typeof revisePhaseTarget,
-      );
+    const nextKey =
+      previewRunningPhase?.key ||
+      previewNextPendingPhase?.key ||
+      revisePhaseTarget;
+    if (nextKey) {
+      setRevisePhaseTarget(nextKey as typeof revisePhaseTarget);
     }
-  }, [visibleActiveJob?.status, previewRunningPhase?.key]);
+  }, [visibleActiveJob?.status, previewRunningPhase?.key, previewNextPendingPhase?.key, revisePhaseTarget]);
   const previewPhaseProgressPercent = (() => {
     if (!previewTotalPhaseCount) return 0;
     const explicitJobProgress = Number(

@@ -781,7 +781,7 @@ def continue_job(job_id: str, current_user: Dict[str, Any] = Depends(get_current
 @app.post("/api/jobs/{job_id}/revise")
 def revise_job(
     job_id: str,
-    payload: ReviseJobPayload,
+    payload: ReviseJobPayload = ReviseJobPayload(),
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
     return application_revise_existing_job(
