@@ -1540,8 +1540,16 @@ def _expand_bounds(bounds, pad_ratio=0.08, min_pad=8.0):
     min_x, min_y, max_x, max_y = bounds
     width = max(max_x - min_x, 1.0)
     height = max(max_y - min_y, 1.0)
-    pad_x = max(width * pad_ratio, min_pad)
-    pad_y = max(height * pad_ratio, min_pad)
+    aspect = width / height if height > 0 else 1.0
+    if aspect >= 1.8:
+        pad_x = max(width * min(pad_ratio, 0.06), max(6.0, min_pad * 0.75))
+        pad_y = max(height * min(pad_ratio * 0.5, 0.04), max(4.0, min_pad * 0.5))
+    elif aspect >= 1.35:
+        pad_x = max(width * min(pad_ratio, 0.07), max(7.0, min_pad * 0.85))
+        pad_y = max(height * min(pad_ratio * 0.7, 0.056), max(5.0, min_pad * 0.65))
+    else:
+        pad_x = max(width * pad_ratio, min_pad)
+        pad_y = max(height * pad_ratio, min_pad)
     return min_x - pad_x, min_y - pad_y, max_x + pad_x, max_y + pad_y
 
 
