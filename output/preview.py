@@ -947,6 +947,14 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
     def _engineering_score(bounds, magnitude=0.0, *, favor_far=False, near_bonus=0.0):
         return magnitude + _proximity_score(bounds, invert=favor_far) + near_bonus
 
+    def _grading_vertical_bias(bounds):
+        if not bounds or layout_center is None:
+            return 0.0
+        _, cy = _rect_center(bounds)
+        _, layout_cy = layout_center
+        vertical_distance = abs(cy - layout_cy) / max(layout_span, 1.0)
+        return -vertical_distance * 1.75
+
     def _is_oversized_for_layout(action):
         if not layout_bounds:
             return False
@@ -1108,6 +1116,8 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                         continue
             contour_length = _polyline_length(action)
             contour_bias = 0.0
+            if engineering_profile == "grading":
+                contour_bias += _grading_vertical_bias(bounds)
             if engineering_profile in {"storm", "utilities", "complete"}:
                 contour_bias = 0.35 if layer == "FG_CONTOUR" else -0.4
             contour_score = _engineering_score(
@@ -1138,6 +1148,8 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                 if not horizontal_band:
                     continue
             label_bias = 0.0
+            if engineering_profile == "grading":
+                label_bias += _grading_vertical_bias(bounds)
             if engineering_profile == "complete":
                 label_bias = 0.35 if layer == "FG_CONTOUR" else -0.4
             score = _engineering_score(bounds, 1.0 + label_bias)
