@@ -50,6 +50,7 @@ type BackendIssue = {
 
 type BackendAssumption = {
   field_name?: string;
+  field?: string;
   assumed_value?: unknown;
   reason?: string;
 };
