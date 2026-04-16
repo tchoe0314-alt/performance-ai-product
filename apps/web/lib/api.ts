@@ -5,17 +5,23 @@ function normalizeApiBaseUrl(value: string): string {
 }
 
 function resolveApiBaseUrl(): string {
-  if (ENV_API_BASE_URL) {
-    return normalizeApiBaseUrl(ENV_API_BASE_URL);
-  }
-
   if (typeof window === "undefined") {
     return "http://127.0.0.1:8002";
   }
 
   const { hostname } = window.location;
   if (hostname === "localhost" || hostname === "127.0.0.1") {
+    if (ENV_API_BASE_URL) {
+      return normalizeApiBaseUrl(ENV_API_BASE_URL);
+    }
     return "http://127.0.0.1:8002";
+  }
+
+  if (ENV_API_BASE_URL) {
+    const normalized = normalizeApiBaseUrl(ENV_API_BASE_URL);
+    if (!/localhost|127\\.0\\.0\\.1/.test(normalized)) {
+      return normalized;
+    }
   }
 
   return "https://api.civoraai.com";
