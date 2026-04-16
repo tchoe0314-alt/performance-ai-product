@@ -149,7 +149,7 @@ class LayoutEngineLegacyInferenceTests(unittest.TestCase):
         retail_center_y = float(retail["origin"][1]) + float(retail["height"]) / 2.0
         avg_center_y = sum(float(action["origin"][1]) + float(action["height"]) / 2.0 for action in buildings) / len(buildings)
         self.assertLess(abs(mf_center_y - retail_center_y), 90.0)
-        self.assertLess(avg_center_y, 405.0)
+        self.assertLess(avg_center_y, 345.0)
 
     def test_expanded_mixed_use_plan_uses_shared_residential_courts(self) -> None:
         plan = _build_expanded_plan(
