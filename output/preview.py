@@ -1452,7 +1452,7 @@ def draw_rectangle(ax, action):
     fill_alpha = 0.0
     facecolor = "none"
     if layer == "BUILDING":
-        fill_alpha = 0.08
+        fill_alpha = 0.14
         facecolor = get_color(action)
     elif layer == "ROAD":
         fill_alpha = 0.06
@@ -1470,7 +1470,7 @@ def draw_rectangle(ax, action):
             fill_alpha = 0.07
         facecolor = get_color(action)
     elif layer == "WALK":
-        fill_alpha = 0.10
+        fill_alpha = 0.06
         facecolor = get_color(action)
     elif layer == "FIRE":
         fill_alpha = 0.0
@@ -1483,7 +1483,7 @@ def draw_rectangle(ax, action):
         fill=fill_alpha > 0.0,
         facecolor=facecolor,
         alpha=fill_alpha if fill_alpha > 0.0 else 1.0,
-        linewidth=get_linewidth(action),
+        linewidth=get_linewidth(action) + (0.3 if layer == "BUILDING" else 0.0),
         edgecolor=get_color(action),
         linestyle=get_linestyle(action),
     )
@@ -1528,7 +1528,7 @@ def draw_rectangle(ax, action):
             preview_text,
             ha="center",
             va="center",
-            fontsize=9,
+            fontsize=9 if layer != "BUILDING" else 10,
             fontweight="semibold",
             color="#0f172a",
         )
