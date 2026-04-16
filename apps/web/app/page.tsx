@@ -4287,6 +4287,12 @@ export default function PerformanceAIDashboard() {
               </h1>
             </div>
             <div className="flex flex-wrap gap-2">
+              <a
+                href="/upgrades"
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              >
+                Upgrades
+              </a>
               <button
                 type="button"
                 onClick={() => void handleRefreshWorkspace()}
@@ -5166,6 +5172,15 @@ export default function PerformanceAIDashboard() {
                           </button>
                         ))}
                       </div>
+                      <div className="mt-3 flex items-center justify-between gap-2 text-xs text-slate-500">
+                        <span>Allow override</span>
+                        <button
+                          type="button"
+                          className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600"
+                        >
+                          Override
+                        </button>
+                      </div>
                     </div>
 
                     <div className="rounded-[24px] border border-slate-200 bg-white p-4">
@@ -5245,6 +5260,87 @@ export default function PerformanceAIDashboard() {
                             {showCalculations ? "On" : "Off"}
                           </span>
                         </button>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[24px] border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Site Inputs
+                      </p>
+                      <div className="mt-3 space-y-2 text-sm text-slate-700">
+                        <button
+                          type="button"
+                          className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2"
+                        >
+                          <span>Upload map snapshot</span>
+                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
+                            Coming
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2"
+                        >
+                          <span>Import survey file</span>
+                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
+                            Coming
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2"
+                        >
+                          <span>Estimate slope automatically</span>
+                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
+                            Coming
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[24px] border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Materials &amp; Quantities
+                      </p>
+                      <p className="mt-2 text-sm text-slate-600">
+                        Material takeoffs will appear here once you enable them.
+                      </p>
+                      <div className="mt-3 flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2 text-sm">
+                        <span>Enable quantity rollups</span>
+                        <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
+                          Coming
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[24px] border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Coverage Scope
+                      </p>
+                      <div className="mt-3 grid gap-2 text-sm text-slate-700">
+                        {[
+                          "Roads",
+                          "Bridges / structural support",
+                          "Recreational swimming pools",
+                          "Subdivisions",
+                          "Drainage / storm",
+                          "Utilities",
+                          "Geotechnical support",
+                          "Environmental / regulatory",
+                          "Erosion & sediment",
+                          "Construction workflows",
+                          "Inspection / operations",
+                        ].map((item) => (
+                          <div
+                            key={item}
+                            className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2"
+                          >
+                            <span>{item}</span>
+                            <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
+                              Concept
+                            </span>
+                          </div>
+                        ))}
                       </div>
                     </div>
 
