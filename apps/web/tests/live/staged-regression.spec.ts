@@ -39,7 +39,18 @@ type JobDetailResponse = {
 type ProjectResultResponse = {
   success?: boolean;
   project_id?: string;
-  latest_result?: any;
+  latest_result?: PlanResult;
+};
+
+type PlanResult = {
+  final_plan?: {
+    actions?: unknown[];
+    meta?: {
+      runtime_phase_checkpoint?: {
+        stage_name?: string;
+      };
+    };
+  };
 };
 
 type PreviewResponse = {
@@ -163,8 +174,8 @@ async function waitForApprovalCheckpoint(
     );
 
     const job = jobPayload.job || {};
-    const latestResult = resultPayload.latest_result || {};
-    const finalPlan = latestResult.final_plan || {};
+  const latestResult = resultPayload.latest_result ?? {};
+  const finalPlan = latestResult.final_plan ?? {};
     const actions = Array.isArray(finalPlan.actions) ? finalPlan.actions : [];
     const checkpoint = (finalPlan.meta || {}).runtime_phase_checkpoint || {};
 
@@ -191,7 +202,7 @@ async function savePreviewArtifact(
   token: string,
   artifactDir: string,
   projectId: string,
-  result: any,
+  result: PlanResult,
   phaseName: string,
 ) {
   const previewPayload = await apiJson<PreviewResponse>(request, token, "/api/preview", {

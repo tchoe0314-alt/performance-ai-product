@@ -74,9 +74,9 @@ type ProjectRecord = {
   name: string;
   description?: string;
   updated_at?: number;
-  project_input?: any;
-  latest_result?: any;
-  metadata?: any;
+  project_input?: ProjectInput;
+  latest_result?: PlanResponse;
+  metadata?: ProjectMetadata;
   has_result?: boolean;
 };
 
@@ -136,6 +136,249 @@ type WorkflowArtifact = {
   filename?: string;
   created_at?: number;
   download_path?: string;
+};
+
+type ManualFailure = {
+  code?: string;
+  message?: string;
+  system?: string;
+  rule?: string;
+  location?: string;
+  reason?: string;
+};
+
+type IterationRecord = Record<string, unknown> & {
+  stage?: string;
+  status?: string;
+  phase?: string;
+};
+
+type MetricValue = number | { value?: number } | null;
+type ManagerMetrics = Record<string, MetricValue>;
+type QuantityTotals = Record<string, number | null | undefined>;
+
+type PipeSegment = {
+  length_ft?: number;
+  slope_pct?: number;
+  slope_ft_ft?: number;
+};
+
+type StormSummary = {
+  segments?: PipeSegment[];
+  pipe_segments?: PipeSegment[];
+  storm_pipe_segments?: PipeSegment[];
+  total_system_flow_cfs?: number;
+  total_system_capacity_cfs?: number;
+};
+
+type PlanExplanation = {
+  summary?: string;
+  overview?: string;
+  why?: string;
+  reasoning?: string;
+};
+
+type ConvergenceSummary = {
+  assumption_summary?: {
+    examples?: string[];
+  };
+  fix_summary?: {
+    autofix_actions?: string[];
+  };
+  blocked_reasons?: string[];
+  blocked_exports?: string[];
+  unresolved_issue_categories?: string[];
+  dominant_issue_categories?: string[];
+  unresolved_conflict_count?: number;
+};
+
+type PhaseCheckpoint = {
+  label?: string;
+  status?: string;
+  ready?: boolean;
+  deliverables?: string[];
+  messages?: string[];
+  blockers?: string[];
+  has_data?: boolean;
+  stages?: string[];
+  completed_phase_count?: number;
+  total_phase_count?: number;
+  blocked_exports?: string[];
+  blocked_reasons?: string[];
+  deliverables_ready?: string[];
+  deliverables_extra?: string[];
+  note?: string;
+  current_stage?: string;
+  current_status?: string;
+  job_progress?: number;
+};
+
+type PlanMeta = {
+  explanation?: PlanExplanation;
+  convergence_summary?: ConvergenceSummary;
+  deliverables?: {
+    produced?: string[];
+    failed?: string[];
+  };
+  produced_deliverables?: string[];
+  failed_deliverables?: string[];
+  release_review?: PreviewReview;
+  release_status?: string;
+  phase_checkpoints?: Record<string, PhaseCheckpoint>;
+  runtime_phase_checkpoint?: {
+    stage_name?: string;
+  };
+  manager_export?: {
+    metrics?: ManagerMetrics;
+  };
+  quantities?: {
+    totals?: QuantityTotals;
+  };
+  storm_pipes?: StormSummary;
+  drainage?: Record<string, unknown>;
+  grading?: Record<string, unknown>;
+  utilities?: Record<string, unknown>;
+  truth_audit?: {
+    success?: boolean;
+  };
+  manual_validation?: {
+    failures?: ManualFailure[];
+  };
+  coordination?: Record<string, unknown>;
+  iterations?: IterationRecord[];
+};
+
+type PlanAction = {
+  geometry?: {
+    origin?: [number, number];
+    width?: number;
+    height?: number;
+  };
+  label?: string;
+  layer?: string;
+};
+
+type PlanResponse = {
+  final_plan?: {
+    meta?: PlanMeta;
+    actions?: PlanAction[];
+  };
+  assumptions?: BackendAssumption[];
+  issues?: BackendIssue[];
+  message?: string;
+  metadata?: {
+    iterations?: IterationRecord[];
+  };
+  job_progress?: {
+    stage?: string;
+    [key: string]: unknown;
+  };
+};
+
+type SurveyFileInput = {
+  filename?: string;
+  stored_filename?: string;
+  survey_url?: string;
+};
+
+type MapSnapshotInput = {
+  filename?: string;
+  stored_filename?: string;
+  image_path?: string;
+  image_url?: string;
+};
+
+type MapAnalysis = Record<string, unknown>;
+
+type SiteInputs = {
+  map_snapshot?: MapSnapshotInput;
+  map_analysis?: MapAnalysis;
+  survey_file?: SurveyFileInput;
+  slope_estimate?: SurveySlopeResponse | null;
+};
+
+type ProjectInputMeta = Record<string, unknown> & {
+  site_inputs?: SiteInputs;
+  chat_thread?: ChatMessage[];
+  auto_named?: boolean;
+  auto_file_named?: boolean;
+};
+
+type ManualFields = {
+  project_name?: string;
+  file_name?: string;
+  units?: string;
+  project_type?: string;
+  lot?: { x: number; y: number; w: number; h: number };
+  setback?: number;
+  building_width?: number;
+  building_depth?: number;
+  buildings?: Array<{ name: string; w?: number; d?: number }>;
+  site_plan?: { parking_count?: number };
+  grading?: {
+    min_slope_pct?: number;
+    max_parking_slope_pct?: number;
+    max_road_grade_pct?: number;
+    max_ada_cross_slope_pct?: number;
+  };
+  drainage?: {
+    min_pipe_slope_pct?: number;
+  };
+  disciplines?: string[];
+  terrain?: string;
+};
+
+type ProjectInput = {
+  project_id?: string | null;
+  full_design_mode?: boolean;
+  input_mode?: StrategyMode;
+  strict_mode?: boolean;
+  prompt_text?: string | null;
+  image_path?: string | null;
+  manual_fields?: ManualFields;
+  allow_ai_fill_for_blanks?: boolean;
+  meta?: ProjectInputMeta;
+};
+
+type ProjectMetadata = Record<string, unknown> & {
+  workflow?: {
+    runs?: WorkflowRunSummary[];
+    artifacts?: WorkflowArtifact[];
+  };
+};
+
+type PlanRequestPayload = Record<string, unknown> & {
+  project_id?: string | null;
+  full_design_mode?: boolean;
+  input_mode?: StrategyMode;
+  strict_mode?: boolean;
+  prompt_text?: string | null;
+  image_path?: string | null;
+  manual_fields?: ManualFields;
+  allow_ai_fill_for_blanks?: boolean;
+  optimize_goal?: string | null;
+  meta?: ProjectInputMeta;
+};
+
+type PreviewRequestPayload = Record<string, unknown> & {
+  project_id?: string | null;
+  result?: PlanResponse;
+  filename_stem?: string;
+};
+
+type PhaseMetric = {
+  label: string;
+  value: number | null;
+  unit: string;
+  format?: "count";
+};
+
+type PhaseStats = {
+  layout: PhaseMetric[];
+  grading: PhaseMetric[];
+  drainage_storm: PhaseMetric[];
+  utilities: PhaseMetric[];
+  coordination_validation: PhaseMetric[];
 };
 
 type AuthStatus = {
@@ -217,6 +460,8 @@ type PreviewResponse = {
   };
 };
 
+type PreviewReview = NonNullable<PreviewResponse["summary"]>["review"];
+
 type UploadImageResponse = {
   success: boolean;
   image_path?: string;
@@ -253,18 +498,18 @@ type ControlOverrides = Partial<{
   utilities: boolean;
   siteName: string;
   fileName: string;
-  lotWidth: string;
-  lotHeight: string;
-  buildingWidth: string;
-  buildingDepth: string;
-  buildingCount: string;
-  setback: string;
-  parkingCount: string;
-  minSlopePct: string;
-  pipeMinSlopePct: string;
-  maxParkingSlopePct: string;
-  maxRoadGradePct: string;
-  maxAdaCrossSlopePct: string;
+  lotWidth: string | number;
+  lotHeight: string | number;
+  buildingWidth: string | number;
+  buildingDepth: string | number;
+  buildingCount: string | number;
+  setback: string | number;
+  parkingCount: string | number;
+  minSlopePct: string | number;
+  pipeMinSlopePct: string | number;
+  maxParkingSlopePct: string | number;
+  maxRoadGradePct: string | number;
+  maxAdaCrossSlopePct: string | number;
 }>;
 type ChatDecisionIntent =
   | "conversation"
@@ -492,10 +737,12 @@ function computeLearningScore(thread: ChatMessage[]): { score: number; total: nu
   return { score: Math.round((up / total) * 100), total };
 }
 
-function readMetricValue(value: any): number | null {
+function readMetricValue(value: MetricValue | undefined): number | null {
   if (value == null) return null;
   if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value?.value === "number" && Number.isFinite(value.value)) return value.value;
+  if (typeof value === "object" && typeof value.value === "number" && Number.isFinite(value.value)) {
+    return value.value;
+  }
   return null;
 }
 
@@ -572,8 +819,8 @@ function Preview3DCanvas({
       const cy = y - (minY + spanY / 2);
       const cosZ = Math.cos(rotation.z);
       const sinZ = Math.sin(rotation.z);
-      let rx = cx * cosZ - cy * sinZ;
-      let ry = cx * sinZ + cy * cosZ;
+      const rx = cx * cosZ - cy * sinZ;
+      const ry = cx * sinZ + cy * cosZ;
       const cosX = Math.cos(rotation.x);
       const sinX = Math.sin(rotation.x);
       const ry2 = ry * cosX - z * sinX;
@@ -663,7 +910,7 @@ function Preview3DCanvas({
 }
 
 function summarizePlanResponse(
-  data: any,
+  data: PlanResponse,
   mode: PlanToolMode,
 ): string {
   const plan = data?.final_plan ?? {};
@@ -680,11 +927,14 @@ function summarizePlanResponse(
     ? meta.deliverables.failed
     : Array.isArray(meta?.failed_deliverables)
       ? meta.failed_deliverables
-    : [];
+      : [];
   const assumptions = Array.isArray(data?.assumptions)
     ? data.assumptions
     : Array.isArray(assumptionSummary?.examples)
-      ? assumptionSummary.examples.map((example: any) => ({ field_name: "assumption", reason: String(example || "") }))
+      ? assumptionSummary.examples.map((example) => ({
+          field_name: "assumption",
+          reason: String(example || ""),
+        }))
       : [];
   const issues = Array.isArray(data?.issues) ? data.issues : [];
   const assumptionExamples = (() => {
@@ -705,7 +955,7 @@ function summarizePlanResponse(
       );
     };
     const formatted = assumptions
-      .map((assumption: any) => {
+      .map((assumption) => {
         const field = String(
           assumption?.field_name || assumption?.field || "an input",
         )
@@ -733,7 +983,7 @@ function summarizePlanResponse(
     }
     const fallbackExamples = Array.isArray(assumptionSummary?.examples)
       ? assumptionSummary.examples
-          .map((example: any) => String(example || "").trim())
+          .map((example) => String(example || "").trim())
           .filter((example: string) => Boolean(example) && !isInternalAssumption(example))
       : [];
     return fallbackExamples.slice(0, 3);
@@ -775,13 +1025,13 @@ function summarizePlanResponse(
         : null;
 
   const readableAutofixActions = autofixActions
-    .map((item: any) => toReadableLabel(String(item || "")))
+    .map((item) => toReadableLabel(String(item || "")))
     .filter(Boolean);
   const readableFixTargets = dominantFixTargets
-    .map((item: any) => toReadableLabel(String(item || "")))
+    .map((item) => toReadableLabel(String(item || "")))
     .filter(Boolean);
   const readableReviewCategories = reviewCategories
-    .map((item: any) => toReadableLabel(String(item || "")))
+    .map((item) => toReadableLabel(String(item || "")))
     .filter(
       (item: string) =>
         Boolean(item) &&
@@ -789,20 +1039,20 @@ function summarizePlanResponse(
         item.toLowerCase() !== "general",
     );
   const readableBlockedReasons = blockedReasons
-    .map((item: any) => toReadableLabel(String(item || "")))
+    .map((item) => toReadableLabel(String(item || "")))
     .filter(Boolean);
   const readableBlockedExports = blockedExports
-    .map((item: any) => toReadableLabel(String(item || "")))
+    .map((item) => toReadableLabel(String(item || "")))
     .filter(Boolean);
   const readableProduced = producedDeliverables
-    .map((item: any) => toReadableLabel(String(item || "")))
+    .map((item) => toReadableLabel(String(item || "")))
     .filter(Boolean);
   const readableFailed = failedDeliverables
-    .map((item: any) => toReadableLabel(String(item || "")))
+    .map((item) => toReadableLabel(String(item || "")))
     .filter(Boolean);
   const issueMessages = issues
     .slice(0, 2)
-    .map((issue: any) => String(issue?.message || "").trim())
+    .map((issue) => String(issue?.message || "").trim())
     .filter(Boolean);
 
   const notes = [
@@ -1283,14 +1533,14 @@ export default function PerformanceAIDashboard() {
   const [assumptions, setAssumptions] =
     useState<Assumption[]>(defaultAssumptions);
   const [issues, setIssues] = useState<Issue[]>(defaultIssues);
-  const [backendResult, setBackendResult] = useState<any>(null);
+  const [backendResult, setBackendResult] = useState<PlanResponse | null>(null);
   const [uploadedImagePreviewUrl, setUploadedImagePreviewUrl] = useState("");
   const [uploadedImageApiUrl, setUploadedImageApiUrl] = useState("");
   const [surveyFileName, setSurveyFileName] = useState("");
   const [surveyUploadUrl, setSurveyUploadUrl] = useState("");
   const [surveySlopeEstimate, setSurveySlopeEstimate] = useState<SurveySlopeResponse | null>(null);
   const [mapSnapshotPath, setMapSnapshotPath] = useState("");
-  const [mapAnalysis, setMapAnalysis] = useState<any>(null);
+  const [mapAnalysis, setMapAnalysis] = useState<MapAnalysis | null>(null);
   const [planPreviewUrl, setPlanPreviewUrl] = useState("");
   const [planPreviewSummary, setPlanPreviewSummary] =
     useState<PreviewResponse["summary"] | null>(null);
@@ -1442,7 +1692,7 @@ export default function PerformanceAIDashboard() {
     const maxRoadGradeValue = parsePositiveNumber(nextMaxRoadGradePct);
     const maxAdaSlopeValue = parsePositiveNumber(nextMaxAdaCrossSlopePct);
 
-    const manualFields: Record<string, any> = {
+    const manualFields: ManualFields = {
       project_name: nextSiteName,
       file_name: nextFileName,
       units: nextUnits,
@@ -1708,19 +1958,19 @@ export default function PerformanceAIDashboard() {
     };
   }, [workflowRuns]);
 
-  const currentPlanMeta = useMemo(() => backendResult?.final_plan?.meta ?? {}, [backendResult]);
-  const managerMetrics = useMemo(
-    () => (currentPlanMeta?.manager_export?.metrics ?? {}) as Record<string, any>,
+  const currentPlanMeta = useMemo<PlanMeta>(() => backendResult?.final_plan?.meta ?? {}, [backendResult]);
+  const managerMetrics = useMemo<ManagerMetrics>(
+    () => currentPlanMeta?.manager_export?.metrics ?? {},
     [currentPlanMeta],
   );
-  const quantityTotals = useMemo(
-    () => (currentPlanMeta?.quantities?.totals ?? {}) as Record<string, any>,
+  const quantityTotals = useMemo<QuantityTotals>(
+    () => currentPlanMeta?.quantities?.totals ?? {},
     [currentPlanMeta],
   );
-  const stormSummary = useMemo(() => currentPlanMeta?.storm_pipes ?? {}, [currentPlanMeta]);
-  const drainageSummary = useMemo(() => currentPlanMeta?.drainage ?? {}, [currentPlanMeta]);
-  const gradingSummary = useMemo(() => currentPlanMeta?.grading ?? {}, [currentPlanMeta]);
-  const utilitySummary = useMemo(() => currentPlanMeta?.utilities ?? {}, [currentPlanMeta]);
+  const stormSummary = useMemo<StormSummary>(() => currentPlanMeta?.storm_pipes ?? {}, [currentPlanMeta]);
+  const drainageSummary = useMemo<Record<string, unknown>>(() => currentPlanMeta?.drainage ?? {}, [currentPlanMeta]);
+  const gradingSummary = useMemo<Record<string, unknown>>(() => currentPlanMeta?.grading ?? {}, [currentPlanMeta]);
+  const utilitySummary = useMemo<Record<string, unknown>>(() => currentPlanMeta?.utilities ?? {}, [currentPlanMeta]);
 
   const previewLabels = planPreviewAnnotations?.labels ?? [];
   const issueTargets = useMemo(() => {
@@ -1751,7 +2001,7 @@ export default function PerformanceAIDashboard() {
 
   const selectedIssueLabel = issueTargets.find((item) => item.id === selectedIssueId)?.label ?? "";
 
-  const pipeSegments = useMemo(() => {
+  const pipeSegments = useMemo<PipeSegment[]>(() => {
     const segments =
       stormSummary?.segments ||
       stormSummary?.pipe_segments ||
@@ -1763,18 +2013,18 @@ export default function PerformanceAIDashboard() {
   const totalPipeLength =
     readMetricValue(managerMetrics.storm_pipe_length_ft) ??
     (pipeSegments.length
-      ? pipeSegments.reduce((sum: number, seg: any) => sum + Number(seg.length_ft || 0), 0)
+      ? pipeSegments.reduce((sum, seg) => sum + Number(seg.length_ft || 0), 0)
       : null);
   const maxSlope = pipeSegments.length
     ? Math.max(
-        ...pipeSegments.map((seg: any) =>
+        ...pipeSegments.map((seg) =>
           Number(seg.slope_pct ?? (seg.slope_ft_ft ?? 0) * 100),
         ),
       )
     : null;
   const minSlope = pipeSegments.length
     ? Math.min(
-        ...pipeSegments.map((seg: any) =>
+        ...pipeSegments.map((seg) =>
           Number(seg.slope_pct ?? (seg.slope_ft_ft ?? 0) * 100),
         ),
       )
@@ -1917,22 +2167,22 @@ export default function PerformanceAIDashboard() {
     () => currentPlanMeta?.truth_audit ?? {},
     [currentPlanMeta],
   );
-  const currentManualFailures = useMemo(
+  const currentManualFailures = useMemo<ManualFailure[]>(
     () =>
       Array.isArray(currentPlanMeta?.manual_validation?.failures)
         ? currentPlanMeta.manual_validation.failures
         : [],
     [currentPlanMeta],
   );
-  const currentCoordination = useMemo(
+  const currentCoordination = useMemo<Record<string, unknown>>(
     () => currentPlanMeta?.coordination ?? {},
     [currentPlanMeta],
   );
-  const currentExplanation = useMemo(
+  const currentExplanation = useMemo<PlanExplanation>(
     () => currentPlanMeta?.explanation ?? {},
     [currentPlanMeta],
   );
-  const currentIterations = useMemo(
+  const currentIterations = useMemo<IterationRecord[]>(
     () =>
       Array.isArray(backendResult?.metadata?.iterations)
         ? backendResult.metadata.iterations
@@ -1943,7 +2193,7 @@ export default function PerformanceAIDashboard() {
   );
   const suggestedImproveGoal = useMemo(() => {
     const failureBlob = [
-      ...currentManualFailures.map((failure: any) =>
+      ...currentManualFailures.map((failure) =>
         [failure.code, failure.message, failure.system, failure.rule]
           .filter(Boolean)
           .join(" "),
@@ -1972,7 +2222,7 @@ export default function PerformanceAIDashboard() {
     return undefined;
   }, [currentManualFailures, issues]);
 
-  const applyBackendResult = (data: any) => {
+  const applyBackendResult = (data: PlanResponse) => {
     setBackendResult(data);
     if (Array.isArray(data?.assumptions)) {
       setAssumptions(
@@ -2076,7 +2326,7 @@ export default function PerformanceAIDashboard() {
     };
   }, []);
 
-  const applyProjectInput = (projectInput: any) => {
+  const applyProjectInput = (projectInput: ProjectInput) => {
     if (!projectInput || typeof projectInput !== "object") {
       return;
     }
@@ -2092,8 +2342,8 @@ export default function PerformanceAIDashboard() {
     const buildingsList = Array.isArray(manualFields.buildings) ? manualFields.buildings : [];
     const restoredThread = Array.isArray(projectInput.meta?.chat_thread)
       ? projectInput.meta.chat_thread
-          .filter((message: any) => message && typeof message.content === "string")
-          .map((message: any) => ({
+          .filter((message) => message && typeof message.content === "string")
+          .map((message) => ({
             id:
               typeof message.id === "string"
                 ? message.id
@@ -2271,7 +2521,7 @@ export default function PerformanceAIDashboard() {
     overrides: ControlOverrides = {},
     promptOverride?: string,
     projectIdOverride?: string | null,
-  ) => {
+  ): PlanRequestPayload => {
     const nextStrategy = overrides.strategyMode ?? strategyMode;
     const nextSiteName = overrides.siteName ?? siteName;
     const nextFileName = overrides.fileName ?? fileName;
@@ -2342,7 +2592,7 @@ export default function PerformanceAIDashboard() {
     signal,
   }: {
     mode: PlanToolMode;
-    requestPayload: any;
+    requestPayload: PlanRequestPayload;
     resolvedProjectId?: string | null;
     assistantPrefix?: string | null;
     clearPromptOnSuccess?: boolean;
@@ -2407,7 +2657,7 @@ export default function PerformanceAIDashboard() {
       liveRunController.abort();
     }, liveRunTimeoutMs);
     try {
-      const data = await postJson<any>("/api/orchestrate", requestPayload, {
+      const data = await postJson<PlanResponse>("/api/orchestrate", requestPayload, {
         token,
         signal: liveRunController.signal,
       });
@@ -2770,18 +3020,18 @@ export default function PerformanceAIDashboard() {
           "action",
         );
       }
+      const basePayload = buildPayloadFromOverrides({}, undefined, projectId || null);
       await executePlanAction({
         mode,
         requestPayload: {
-          ...buildPayloadFromOverrides({}, undefined, projectId || null),
+          ...basePayload,
           full_design_mode: true,
           optimize_goal:
             mode === "fix"
               ? suggestedImproveGoal ?? "reduce_pipe_length"
               : suggestedImproveGoal,
           meta: {
-            ...(buildPayloadFromOverrides({}, undefined, projectId || null) as any)
-              .meta,
+            ...(basePayload.meta ?? {}),
             requested_plan_tool: mode,
           },
         },
@@ -2856,21 +3106,18 @@ export default function PerformanceAIDashboard() {
             : "run";
 
       if (resolvedMode !== "run") {
+        const basePayload = buildPayloadFromOverrides(overrides, undefined, resolvedProjectId);
         await executePlanAction({
           mode: resolvedMode,
           requestPayload: {
-            ...buildPayloadFromOverrides(overrides, undefined, resolvedProjectId),
+            ...basePayload,
             full_design_mode: true,
             optimize_goal:
               resolvedMode === "fix"
                 ? suggestedImproveGoal ?? "reduce_pipe_length"
                 : suggestedImproveGoal,
             meta: {
-              ...(buildPayloadFromOverrides(
-                overrides,
-                undefined,
-                resolvedProjectId,
-              ) as any).meta,
+              ...(basePayload.meta ?? {}),
               requested_plan_tool: resolvedMode,
               chat_decision_reason: decision.reason,
             },
@@ -2914,20 +3161,17 @@ export default function PerformanceAIDashboard() {
         return;
       }
 
+      const basePayload = buildPayloadFromOverrides(
+        overrides,
+        decision.design_prompt || trimmedPrompt,
+        resolvedProjectId,
+      );
       await executePlanAction({
         mode: "run",
         requestPayload: {
-          ...buildPayloadFromOverrides(
-            overrides,
-            decision.design_prompt || trimmedPrompt,
-            resolvedProjectId,
-          ),
+          ...basePayload,
           meta: {
-            ...(buildPayloadFromOverrides(
-              overrides,
-              decision.design_prompt || trimmedPrompt,
-              resolvedProjectId,
-            ) as any).meta,
+            ...(basePayload.meta ?? {}),
             chat_decision_reason: decision.reason,
             chat_decision_confidence: decision.confidence,
           },
@@ -3206,8 +3450,8 @@ export default function PerformanceAIDashboard() {
     projectIdOverride?: string | null;
     nameOverride?: string;
     fileNameOverride?: string;
-    projectInputOverride?: any;
-    latestResultOverride?: any;
+    projectInputOverride?: ProjectInput;
+    latestResultOverride?: PlanResponse;
     autoNamedOverride?: boolean;
     autoFileNamedOverride?: boolean;
   } = {}): Promise<ProjectRecord | null> => {
@@ -3459,7 +3703,7 @@ export default function PerformanceAIDashboard() {
   const loadJob = async (id: string) => {
     if (!token) return;
     try {
-      const data = await getJson<{ job: any }>(`/api/jobs/${id}`, { token });
+      const data = await getJson<{ job: JobSummary }>(`/api/jobs/${id}`, { token });
       const job = data.job;
       const jobProjectId = String(job.project_id || "").trim();
       const activeJobProjectSignature = `${job.job_id}:${jobProjectId}`;
@@ -3864,7 +4108,7 @@ export default function PerformanceAIDashboard() {
   const analyzeMapSnapshot = async () => {
     if (!token || !mapSnapshotPath) return;
     try {
-      const data = await postJson<any>(
+      const data = await postJson<MapAnalysis>(
         "/api/image/analyze",
         {
           image_path: mapSnapshotPath,
@@ -3898,7 +4142,7 @@ export default function PerformanceAIDashboard() {
   };
 
   const requestPreview = async (
-    payload: any,
+    payload: PreviewRequestPayload,
     options?: { silent?: boolean },
   ) => {
     if (!token) return;
@@ -3920,7 +4164,7 @@ export default function PerformanceAIDashboard() {
   };
 
   const requestPreviewInBackground = (
-    payload: any,
+    payload: PreviewRequestPayload,
     options?: { loadingMessage?: string; successMessage?: string; silentStatus?: boolean },
   ) => {
     if (!token) return;
@@ -4006,7 +4250,7 @@ export default function PerformanceAIDashboard() {
     if (!token) return;
     const requestId = projectResultLoadRequestRef.current + 1;
     projectResultLoadRequestRef.current = requestId;
-    void getJson<{ project_id: string; latest_result: any }>(
+    void getJson<{ project_id: string; latest_result: PlanResponse }>(
       `/api/projects/${project.project_id}/result`,
       { token },
     )
@@ -4120,7 +4364,7 @@ export default function PerformanceAIDashboard() {
       currentManualFailures.length
         ? `Current blockers: ${currentManualFailures
             .slice(0, 3)
-            .map((failure: any) => failure.code || failure.message || "manual validation issue")
+            .map((failure) => failure.code || failure.message || "manual validation issue")
             .join(", ")}.`
         : null,
       issues.length
@@ -4420,175 +4664,7 @@ export default function PerformanceAIDashboard() {
     void loadProject(preferredProject.project_id);
   }, [token, projectId, projects]);
 
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)] p-6">
-        <div className="mx-auto grid min-h-[90vh] max-w-6xl items-center gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="space-y-6"
-          >
-            <div className="space-y-4">
-              <Pill>Beta Control Room</Pill>
-              <h1 className="max-w-2xl text-5xl font-semibold tracking-tight text-slate-950">
-                Civora AI — Autonomous Civil Engineering Design
-              </h1>
-              <p className="max-w-2xl text-lg leading-8 text-slate-600">
-                Sign in to run civil site concepts, review clear engineering
-                outcomes, and export readable plans from one clean workflow.
-              </p>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <Card className="rounded-2xl">
-                <CardContent className="p-5">
-                  <FolderOpen className="h-5 w-5 text-slate-900" />
-                  <p className="mt-3 text-sm font-medium text-slate-900">Projects</p>
-                  <p className="mt-1 text-sm text-slate-500">Open, rerun, and review real project history.</p>
-                </CardContent>
-              </Card>
-              <Card className="rounded-2xl">
-                <CardContent className="p-5">
-                  <Clock3 className="h-5 w-5 text-slate-900" />
-                  <p className="mt-3 text-sm font-medium text-slate-900">Runs</p>
-                  <p className="mt-1 text-sm text-slate-500">See what passed, what failed, and why it matters.</p>
-                </CardContent>
-              </Card>
-              <Card className="rounded-2xl">
-                <CardContent className="p-5">
-                  <Map className="h-5 w-5 text-slate-900" />
-                  <p className="mt-3 text-sm font-medium text-slate-900">Deliverables</p>
-                  <p className="mt-1 text-sm text-slate-500">Preview, download, and share readable civil outputs.</p>
-                </CardContent>
-              </Card>
-            </div>
-          </motion.div>
-
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-            <Card className="rounded-[28px]">
-              <CardHeader>
-                <SectionTitle
-                  icon={Sparkles}
-                  title={authMode === "register" ? "Create Account" : "Sign In"}
-                  desc="Auth is now user-scoped so projects and jobs are private per beta tester."
-                />
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="inline-flex rounded-2xl border border-black/10 bg-slate-100 p-1">
-                  <button
-                    type="button"
-                    onClick={() => setAuthMode("login")}
-                    className={`rounded-2xl px-4 py-2 text-sm font-medium transition ${
-                      authMode === "login" ? "bg-white shadow-sm text-slate-900" : "text-slate-600"
-                    }`}
-                  >
-                    Sign In
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAuthMode("register")}
-                    className={`rounded-2xl px-4 py-2 text-sm font-medium transition ${
-                      authMode === "register" ? "bg-white shadow-sm text-slate-900" : "text-slate-600"
-                    }`}
-                  >
-                    Create Account
-                  </button>
-                </div>
-                <div className="rounded-2xl border border-black/10 bg-slate-50 p-4 text-sm text-slate-600">
-                  {authStatus ? (
-                    authStatus.user_count > 0 ? (
-                      <span>
-                        {authStatus.user_count} Civora AI beta account
-                        {authStatus.user_count === 1 ? "" : "s"} already exist in this
-                        workspace. Use <strong>Sign In</strong> if you made one before,
-                        or create another account.
-                      </span>
-                    ) : (
-                      <span>No Civora AI beta accounts exist yet. Create the first one here.</span>
-                    )
-                  ) : (
-                    <span>Account status will appear here once the Civora AI backend responds.</span>
-                  )}
-                </div>
-                {authStatusError ? (
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                    {authStatusError}
-                  </div>
-                ) : null}
-                {authMode === "register" ? (
-                  <Field label="Name">
-                    <TextInput
-                      value={authName}
-                      onChange={(e) => setAuthName(e.target.value)}
-                      placeholder="Jane Engineer"
-                    />
-                  </Field>
-                ) : null}
-                <Field label="Email">
-                  <TextInput
-                    value={authEmail}
-                    onChange={(e) => setAuthEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    autoComplete="email"
-                  />
-                </Field>
-                <Field label="Password">
-                  <div className="relative">
-                    <TextInput
-                      type={showPassword ? "text" : "password"}
-                      value={authPassword}
-                      onChange={(e) => setAuthPassword(e.target.value)}
-                      placeholder="At least 8 characters"
-                      autoComplete={
-                        authMode === "register" ? "new-password" : "current-password"
-                      }
-                      className="pr-12"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword((value) => !value)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
-                      aria-label={showPassword ? "Hide password" : "Show password"}
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </Field>
-                {authError ? (
-                  <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                    {authError}
-                  </div>
-                ) : null}
-                <div className="flex flex-wrap gap-3">
-                  <SmallButton onClick={handleAuth} disabled={authLoading}>
-                    <Sparkles className="mr-2 h-4 w-4" />
-                    {authLoading
-                      ? "Working..."
-                      : authMode === "register"
-                        ? "Create Account"
-                        : "Sign In"}
-                  </SmallButton>
-                  <SmallButton
-                    variant="secondary"
-                    onClick={() => {
-                      setAuthError("");
-                      setAuthMode((mode) =>
-                        mode === "register" ? "login" : "register",
-                      );
-                    }}
-                  >
-                    {authMode === "register" ? "Have an account?" : "Need an account?"}
-                  </SmallButton>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        </div>
-      </div>
-    );
-  }
-
-  const previewReview: Record<string, any> | null = (() => {
+  const previewReview: PreviewReview | null = (() => {
     const resultReleaseReview =
       currentPlanMeta?.release_review && typeof currentPlanMeta.release_review === "object"
         ? currentPlanMeta.release_review
@@ -4827,7 +4903,7 @@ export default function PerformanceAIDashboard() {
       toReadableLabel(String(item || "")),
     ),
   ].filter(Boolean);
-  const phaseStats = useMemo(() => {
+  const phaseStats = useMemo<PhaseStats>(() => {
     const layoutStats = [
       { label: "Buildings", value: quantityTotals.building_count, unit: "ea", format: "count" },
       { label: "Building area", value: quantityTotals.building_area_sf, unit: "sf" },
@@ -4958,6 +5034,174 @@ export default function PerformanceAIDashboard() {
       note,
     };
   })();
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)] p-6">
+        <div className="mx-auto grid min-h-[90vh] max-w-6xl items-center gap-8 lg:grid-cols-[1.1fr_0.9fr]">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-6"
+          >
+            <div className="space-y-4">
+              <Pill>Beta Control Room</Pill>
+              <h1 className="max-w-2xl text-5xl font-semibold tracking-tight text-slate-950">
+                Civora AI — Autonomous Civil Engineering Design
+              </h1>
+              <p className="max-w-2xl text-lg leading-8 text-slate-600">
+                Sign in to run civil site concepts, review clear engineering
+                outcomes, and export readable plans from one clean workflow.
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Card className="rounded-2xl">
+                <CardContent className="p-5">
+                  <FolderOpen className="h-5 w-5 text-slate-900" />
+                  <p className="mt-3 text-sm font-medium text-slate-900">Projects</p>
+                  <p className="mt-1 text-sm text-slate-500">Open, rerun, and review real project history.</p>
+                </CardContent>
+              </Card>
+              <Card className="rounded-2xl">
+                <CardContent className="p-5">
+                  <Clock3 className="h-5 w-5 text-slate-900" />
+                  <p className="mt-3 text-sm font-medium text-slate-900">Runs</p>
+                  <p className="mt-1 text-sm text-slate-500">See what passed, what failed, and why it matters.</p>
+                </CardContent>
+              </Card>
+              <Card className="rounded-2xl">
+                <CardContent className="p-5">
+                  <Map className="h-5 w-5 text-slate-900" />
+                  <p className="mt-3 text-sm font-medium text-slate-900">Deliverables</p>
+                  <p className="mt-1 text-sm text-slate-500">Preview, download, and share readable civil outputs.</p>
+                </CardContent>
+              </Card>
+            </div>
+          </motion.div>
+
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+            <Card className="rounded-[28px]">
+              <CardHeader>
+                <SectionTitle
+                  icon={Sparkles}
+                  title={authMode === "register" ? "Create Account" : "Sign In"}
+                  desc="Auth is now user-scoped so projects and jobs are private per beta tester."
+                />
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="inline-flex rounded-2xl border border-black/10 bg-slate-100 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setAuthMode("login")}
+                    className={`rounded-2xl px-4 py-2 text-sm font-medium transition ${
+                      authMode === "login" ? "bg-white shadow-sm text-slate-900" : "text-slate-600"
+                    }`}
+                  >
+                    Sign In
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAuthMode("register")}
+                    className={`rounded-2xl px-4 py-2 text-sm font-medium transition ${
+                      authMode === "register" ? "bg-white shadow-sm text-slate-900" : "text-slate-600"
+                    }`}
+                  >
+                    Create Account
+                  </button>
+                </div>
+                <div className="rounded-2xl border border-black/10 bg-slate-50 p-4 text-sm text-slate-600">
+                  {authStatus ? (
+                    authStatus.user_count > 0 ? (
+                      <span>
+                        {authStatus.user_count} Civora AI beta account
+                        {authStatus.user_count === 1 ? "" : "s"} already exist in this
+                        workspace. Use <strong>Sign In</strong> if you made one before,
+                        or create another account.
+                      </span>
+                    ) : (
+                      <span>No Civora AI beta accounts exist yet. Create the first one here.</span>
+                    )
+                  ) : (
+                    <span>Account status will appear here once the Civora AI backend responds.</span>
+                  )}
+                </div>
+                {authStatusError ? (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                    {authStatusError}
+                  </div>
+                ) : null}
+                {authMode === "register" ? (
+                  <Field label="Name">
+                    <TextInput
+                      value={authName}
+                      onChange={(e) => setAuthName(e.target.value)}
+                      placeholder="Jane Engineer"
+                    />
+                  </Field>
+                ) : null}
+                <Field label="Email">
+                  <TextInput
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    autoComplete="email"
+                  />
+                </Field>
+                <Field label="Password">
+                  <div className="relative">
+                    <TextInput
+                      type={showPassword ? "text" : "password"}
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      placeholder="At least 8 characters"
+                      autoComplete={
+                        authMode === "register" ? "new-password" : "current-password"
+                      }
+                      className="pr-12"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((value) => !value)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </Field>
+                {authError ? (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                    {authError}
+                  </div>
+                ) : null}
+                <div className="flex flex-wrap gap-3">
+                  <SmallButton onClick={handleAuth} disabled={authLoading}>
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    {authLoading
+                      ? "Working..."
+                      : authMode === "register"
+                        ? "Create Account"
+                        : "Sign In"}
+                  </SmallButton>
+                  <SmallButton
+                    variant="secondary"
+                    onClick={() => {
+                      setAuthError("");
+                      setAuthMode((mode) =>
+                        mode === "register" ? "login" : "register",
+                      );
+                    }}
+                  >
+                    {authMode === "register" ? "Have an account?" : "Need an account?"}
+                  </SmallButton>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#f7f7f8] text-slate-950">
@@ -6491,9 +6735,9 @@ export default function PerformanceAIDashboard() {
                             <div className="mt-2 grid gap-1 text-xs text-slate-500">
                               {(() => {
                                 const metrics =
-                                  (phaseStats as Record<string, any>)[phase.key]
-                                    ?.filter((item: any) => Number(item.value || 0) > 0)
-                                    ?.slice(0, 4) ?? [];
+                                  (phaseStats[phase.key as keyof PhaseStats] ?? [])
+                                    .filter((item) => Number(item.value || 0) > 0)
+                                    .slice(0, 4);
                                 if (!metrics.length) {
                                   return (
                                     <p className="text-xs text-slate-500">
@@ -6501,7 +6745,7 @@ export default function PerformanceAIDashboard() {
                                     </p>
                                   );
                                 }
-                                return metrics.map((item: any) => (
+                                return metrics.map((item) => (
                                   <div key={item.label} className="flex items-center justify-between">
                                     <span>{item.label}</span>
                                     <span className="font-semibold text-slate-700">
