@@ -3696,7 +3696,7 @@ export default function PerformanceAIDashboard() {
     );
   }
 
-  const previewReview = useMemo<Record<string, any> | null>(() => {
+  const previewReview: Record<string, any> | null = (() => {
     const resultReleaseReview =
       currentPlanMeta?.release_review && typeof currentPlanMeta.release_review === "object"
         ? currentPlanMeta.release_review
@@ -3738,7 +3738,7 @@ export default function PerformanceAIDashboard() {
         summaryReview?.release_note ||
         "",
     };
-  }, [currentPlanMeta, planPreviewSummary]);
+  })();
   const previewAssumptionCategories = (previewReview?.assumption_categories ?? [])
     .map((item: unknown) => toReadableLabel(String(item || "")))
     .filter(Boolean);
