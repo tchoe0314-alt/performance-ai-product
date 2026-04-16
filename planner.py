@@ -2833,6 +2833,25 @@ def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
     if isinstance(zones, dict):
         for zone in zones.values():
             boundary = getattr(zone, "boundary", None)
+            boundary_points = _boundary_points_for_preview(boundary) if boundary is not None else []
+            if len(boundary_points) >= 3:
+                actions.append({
+                    "task": "polygon",
+                    "points": boundary_points,
+                    "closed": True,
+                    "label": _zone_label_for_preview(zone),
+                    "layer": _zone_layer_for_preview(zone),
+                    "origin": None,
+                    "width": None,
+                    "height": None,
+                    "text": None,
+                    "text_height": None,
+                    "center": None,
+                    "radius": None,
+                    "start_angle": None,
+                    "end_angle": None,
+                })
+                continue
             bbox = getattr(boundary, "bbox", None)
             if bbox is None:
                 continue

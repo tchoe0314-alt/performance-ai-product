@@ -1804,6 +1804,9 @@ export default function PerformanceAIDashboard() {
       { label: "Drainage flow length", value: quantityTotals.drainage_flow_length_ft, unit: "ft" },
       { label: "Pond count", value: quantityTotals.pond_count, unit: "ea" },
       { label: "Inlet count", value: quantityTotals.inlet_count, unit: "ea" },
+      { label: "Bridge area", value: quantityTotals.bridge_area_sf, unit: "sf" },
+      { label: "Pool area", value: quantityTotals.pool_area_sf, unit: "sf" },
+      { label: "Lot count", value: quantityTotals.lot_feature_count, unit: "ea" },
     ];
     return rows.filter((row) => Number(row.value || 0) > 0);
   }, [quantityTotals]);

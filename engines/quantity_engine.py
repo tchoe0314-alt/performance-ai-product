@@ -241,6 +241,15 @@ def _classify_action(action: Dict[str, Any]) -> Dict[str, str]:
     if layer in {"BUILDING", "STRUCTURE"} or "BLDG" in label or "BUILDING" in label:
         out["discipline"] = "building"
         out["subcategory"] = "building"
+    elif layer in {"BRIDGE"} or "BRIDGE" in label:
+        out["discipline"] = "structure"
+        out["subcategory"] = "bridge"
+    elif layer in {"POOL"} or "POOL" in label:
+        out["discipline"] = "recreation"
+        out["subcategory"] = "pool"
+    elif layer in {"LOT"}:
+        out["discipline"] = "site"
+        out["subcategory"] = "lot"
     elif layer in {"PARKING"} or "PARK" in label or "STALLS" in text:
         out["discipline"] = "parking"
         out["subcategory"] = "parking"
@@ -345,6 +354,9 @@ class QuantityEngine:
             "drainage_feature_count": 0,
             "grading_feature_count": 0,
             "annotation_count": 0,
+            "bridge_feature_count": 0,
+            "pool_feature_count": 0,
+            "lot_feature_count": 0,
         }
 
         areas = {
@@ -355,6 +367,8 @@ class QuantityEngine:
             "pond_area_sf": 0.0,
             "surface_area_sf": 0.0,
             "estimated_impervious_area_sf": 0.0,
+            "bridge_area_sf": 0.0,
+            "pool_area_sf": 0.0,
         }
 
         lengths = {
@@ -551,6 +565,16 @@ class QuantityEngine:
             elif discipline == "annotation":
                 counts["annotation_count"] += 1
                 unit_counts["text_note_count"] += 1
+            elif discipline == "structure" and info["subcategory"] == "bridge":
+                counts["bridge_feature_count"] += 1
+                if area > 0:
+                    areas["bridge_area_sf"] += area
+            elif discipline == "recreation" and info["subcategory"] == "pool":
+                counts["pool_feature_count"] += 1
+                if area > 0:
+                    areas["pool_area_sf"] += area
+            elif discipline == "site" and info["subcategory"] == "lot":
+                counts["lot_feature_count"] += 1
 
         # ---------------------------------------------------------------------
         # Pass 2: fill inferred metrics
@@ -756,6 +780,8 @@ class QuantityEngine:
             {"metric": "Parking area", "value": _round(areas["parking_area_sf"]), "units": "sf"},
             {"metric": "Road area", "value": _round(areas["road_area_sf"]), "units": "sf"},
             {"metric": "Sidewalk area", "value": _round(areas["sidewalk_area_sf"]), "units": "sf"},
+            {"metric": "Bridge area", "value": _round(areas["bridge_area_sf"]), "units": "sf"},
+            {"metric": "Pool area", "value": _round(areas["pool_area_sf"]), "units": "sf"},
             {"metric": "Pipe length", "value": _round(lengths["pipe_length_ft"]), "units": "ft"},
             {"metric": "Utility length", "value": _round(lengths["utility_length_ft"]), "units": "ft"},
             {"metric": "Sanitary length", "value": _round(lengths["sanitary_length_ft"]), "units": "ft"},
@@ -774,6 +800,9 @@ class QuantityEngine:
             {"discipline": "drainage", "count": counts["drainage_feature_count"]},
             {"discipline": "grading", "count": counts["grading_feature_count"]},
             {"discipline": "annotation", "count": counts["annotation_count"]},
+            {"discipline": "bridge", "count": counts["bridge_feature_count"]},
+            {"discipline": "pool", "count": counts["pool_feature_count"]},
+            {"discipline": "lot", "count": counts["lot_feature_count"]},
         ]
 
         area_table = [
@@ -782,6 +811,8 @@ class QuantityEngine:
             {"category": "road_area_sf", "value": _round(areas["road_area_sf"]), "units": "sf"},
             {"category": "sidewalk_area_sf", "value": _round(areas["sidewalk_area_sf"]), "units": "sf"},
             {"category": "pond_area_sf", "value": _round(areas["pond_area_sf"]), "units": "sf"},
+            {"category": "bridge_area_sf", "value": _round(areas["bridge_area_sf"]), "units": "sf"},
+            {"category": "pool_area_sf", "value": _round(areas["pool_area_sf"]), "units": "sf"},
             {"category": "surface_area_sf", "value": _round(areas["surface_area_sf"]), "units": "sf"},
             {"category": "estimated_impervious_area_sf", "value": _round(areas["estimated_impervious_area_sf"]), "units": "sf"},
         ]
@@ -824,12 +855,17 @@ class QuantityEngine:
             "drainage_feature_count": counts["drainage_feature_count"],
             "grading_feature_count": counts["grading_feature_count"],
             "annotation_count": counts["annotation_count"],
+            "bridge_feature_count": counts["bridge_feature_count"],
+            "pool_feature_count": counts["pool_feature_count"],
+            "lot_feature_count": counts["lot_feature_count"],
             "lot_area_sf": _round(lot_area_sf),
             "building_area_sf": _round(areas["building_area_sf"]),
             "parking_area_sf": _round(areas["parking_area_sf"]),
             "road_area_sf": _round(areas["road_area_sf"]),
             "sidewalk_area_sf": _round(areas["sidewalk_area_sf"]),
             "pond_area_sf": _round(areas["pond_area_sf"]),
+            "bridge_area_sf": _round(areas["bridge_area_sf"]),
+            "pool_area_sf": _round(areas["pool_area_sf"]),
             "surface_area_sf": _round(areas["surface_area_sf"]),
             "estimated_impervious_area_sf": _round(areas["estimated_impervious_area_sf"]),
             "estimated_impervious_coverage_ratio": _round(impervious_ratio, 4),

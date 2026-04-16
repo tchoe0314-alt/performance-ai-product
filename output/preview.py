@@ -47,6 +47,9 @@ LAYER_LINEWIDTH = {
     "SAN": 1.8,
     "STORM": 2.0,
     "STRUCTURE": 1.6,
+    "BRIDGE": 2.2,
+    "POOL": 1.6,
+    "LOT": 1.2,
     "DEFAULT": 2.0,
 }
 
@@ -72,6 +75,9 @@ LAYER_COLORS = {
     "FG_CONTOUR": "#f59e0b",
     "BASIN_BOUNDARY": "#15803d",
     "STRUCTURE": "#dc2626",
+    "BRIDGE": "#1e40af",
+    "POOL": "#0ea5e9",
+    "LOT": "#94a3b8",
     "DEFAULT": "#334155",
 }
 
