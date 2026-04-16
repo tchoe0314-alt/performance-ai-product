@@ -68,22 +68,39 @@ async function apiJson<T>(
   options?: { method?: "GET" | "POST"; data?: unknown },
 ): Promise<T> {
   const method = options?.method || "GET";
-  const response =
-    method === "POST"
-      ? await request.post(`${API_BASE_URL.replace(/\/+$/, "")}${pathName}`, {
-          data: options?.data,
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        })
-      : await request.get(`${API_BASE_URL.replace(/\/+$/, "")}${pathName}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
+  const requestUrl = `${API_BASE_URL.replace(/\/+$/, "")}${pathName}`;
+  let lastStatus = 0;
+  let lastBody = "";
 
-  expect(response.ok(), `${pathName} should respond OK`).toBeTruthy();
-  return (await response.json()) as T;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const response =
+      method === "POST"
+        ? await request.post(requestUrl, {
+            data: options?.data,
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          })
+        : await request.get(requestUrl, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+    if (response.ok()) {
+      return (await response.json()) as T;
+    }
+
+    lastStatus = response.status();
+    lastBody = await response.text().catch(() => "");
+    await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+  }
+
+  expect(
+    false,
+    `${pathName} should respond OK (last status: ${lastStatus}, body: ${lastBody.slice(0, 240)})`,
+  ).toBeTruthy();
+  throw new Error(`${pathName} did not respond OK`);
 }
 
 async function waitForNewJob(
