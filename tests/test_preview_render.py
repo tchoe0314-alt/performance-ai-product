@@ -162,6 +162,25 @@ class PreviewRenderTests(unittest.TestCase):
 
         self.assertIn("FG 102.06", contour_texts)
 
+    def test_grading_preview_clips_remote_contour_segments_to_site_focus(self):
+        actions = [
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [165, 440], "width": 110, "height": 58},
+            {"layer": "PARKING", "task": "rectangle", "origin": [180, 430], "width": 446, "height": 130},
+            {"layer": "FG_CONTOUR", "task": "polyline", "points": [[0, 390], [780, 390]]},
+        ]
+
+        filtered = _filtered_preview_actions(actions, rich_engineering="grading")
+        contour = next(
+            action
+            for action in filtered
+            if str(action.get("layer") or "").upper() == "FG_CONTOUR"
+            and str(action.get("task") or "").lower() == "polyline"
+        )
+
+        points = contour["points"]
+        self.assertEqual(points[0], [117.0, 390.0])
+        self.assertEqual(points[-1], [674.0, 390.0])
+
     def test_layout_scene_suppresses_engineering_overlay_noise(self):
         actions = [
             {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [20, 60], "width": 12, "height": 8},

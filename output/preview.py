@@ -522,6 +522,98 @@ def _merge_bounds(bounds_list):
     return (min_x, min_y, max_x, max_y)
 
 
+def _clip_segment_to_rect(p1, p2, rect):
+    x_min, y_min, x_max, y_max = rect
+    x1, y1 = p1
+    x2, y2 = p2
+
+    INSIDE = 0
+    LEFT = 1
+    RIGHT = 2
+    BOTTOM = 4
+    TOP = 8
+
+    def _code(x, y):
+        code = INSIDE
+        if x < x_min:
+            code |= LEFT
+        elif x > x_max:
+            code |= RIGHT
+        if y < y_min:
+            code |= BOTTOM
+        elif y > y_max:
+            code |= TOP
+        return code
+
+    code1 = _code(x1, y1)
+    code2 = _code(x2, y2)
+
+    while True:
+        if not (code1 | code2):
+            return (round(x1, 3), round(y1, 3)), (round(x2, 3), round(y2, 3))
+        if code1 & code2:
+            return None
+
+        code_out = code1 or code2
+        if code_out & TOP:
+            x = x1 + (x2 - x1) * (y_max - y1) / max(y2 - y1, 1e-9)
+            y = y_max
+        elif code_out & BOTTOM:
+            x = x1 + (x2 - x1) * (y_min - y1) / max(y2 - y1, 1e-9)
+            y = y_min
+        elif code_out & RIGHT:
+            y = y1 + (y2 - y1) * (x_max - x1) / max(x2 - x1, 1e-9)
+            x = x_max
+        else:
+            y = y1 + (y2 - y1) * (x_min - x1) / max(x2 - x1, 1e-9)
+            x = x_min
+
+        if code_out == code1:
+            x1, y1 = x, y
+            code1 = _code(x1, y1)
+        else:
+            x2, y2 = x, y
+            code2 = _code(x2, y2)
+
+
+def _clip_polyline_points(points, rect):
+    if len(points) < 2:
+        return []
+
+    clipped = []
+    for start, end in zip(points, points[1:]):
+        clipped_segment = _clip_segment_to_rect(start, end, rect)
+        if not clipped_segment:
+            continue
+        seg_start, seg_end = clipped_segment
+        if not clipped or clipped[-1] != seg_start:
+            clipped.append(seg_start)
+        if clipped[-1] != seg_end:
+            clipped.append(seg_end)
+    return clipped
+
+
+def _clip_grading_contour_action(action, layout_bounds):
+    if not layout_bounds:
+        return action
+    if str(action.get("task") or "").lower() != "polyline":
+        return action
+
+    min_x, min_y, max_x, max_y = layout_bounds
+    clip_rect = (
+        min_x - 48.0,
+        min_y - 68.0,
+        max_x + 48.0,
+        max_y + 68.0,
+    )
+    clipped_points = _clip_polyline_points(safe_points(action), clip_rect)
+    if len(clipped_points) < 2:
+        return None
+    clipped = dict(action)
+    clipped["points"] = [[x, y] for x, y in clipped_points]
+    return clipped
+
+
 def _point_within_layout(point, layout_bounds, padding=0.0):
     if not point or not layout_bounds:
         return False
@@ -1244,6 +1336,13 @@ def _filtered_preview_actions(actions, *, rich_engineering=False):
         for action in records
         if (str(action.get("layer") or "").upper() == "PARKING" and _action_bounds(action))
     ]
+    layout_bounds = _merge_bounds(
+        [
+            _action_bounds(action)
+            for action in records
+            if str(action.get("layer") or "").upper() in {"BUILDING", "PARKING", "PAVEMENT", "WALK"}
+        ]
+    )
     has_building_shapes = any(
         (str(action.get("layer") or "").upper() == "BUILDING" and str(action.get("task") or "").lower() in {"rectangle", "polygon"})
         for action in records
@@ -1288,6 +1387,14 @@ def _filtered_preview_actions(actions, *, rich_engineering=False):
             continue
         if has_layout_scene and _is_isolated_pavement_shape(action, building_rects, parking_bounds):
             continue
+        if (
+            engineering_profile == "grading"
+            and layer in {"FG_CONTOUR", "EG_CONTOUR"}
+            and task == "polyline"
+        ):
+            action = _clip_grading_contour_action(action, layout_bounds)
+            if action is None:
+                continue
         filtered.append(action)
     return filtered
 
