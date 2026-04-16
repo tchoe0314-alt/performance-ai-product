@@ -641,7 +641,13 @@ def _grading_focus_bounds_from_buildings(building_rects, layout_bounds):
     width = max(max_x - min_x, 1.0)
     height = max(max_y - min_y, 1.0)
     if width > height * 1.45:
-        inset_x = min(max(18.0, width * 0.11), 42.0)
+        building_count = len(building_rects)
+        if building_count >= 4:
+            inset_x = min(max(64.0, width * 0.19), 120.0)
+        elif building_count == 3:
+            inset_x = min(max(48.0, width * 0.15), 96.0)
+        else:
+            inset_x = min(max(18.0, width * 0.11), 42.0)
         min_x += inset_x
         max_x -= inset_x
         if max_x - min_x < 80.0:

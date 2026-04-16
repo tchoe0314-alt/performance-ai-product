@@ -4,6 +4,7 @@ from output.preview import (
     _choose_view_bounds,
     _expand_bounds,
     _filtered_preview_actions,
+    _grading_focus_bounds_from_buildings,
     _polyline_style,
     _preview_figure_size,
     _preview_draw_priority,
@@ -183,6 +184,18 @@ class PreviewRenderTests(unittest.TestCase):
         self.assertEqual(points[0], [185.04, 390.0])
         self.assertEqual(points[-1], [594.96, 390.0])
         self.assertEqual(contour.get("_preview_profile"), "grading")
+
+    def test_grading_focus_bounds_inset_wide_four_building_stack(self):
+        building_rects = [
+            (80, 538, 462, 740),
+            (602, 538, 984, 740),
+            (341, 322, 723, 582),
+            (398, 134, 654, 335),
+        ]
+
+        focus = _grading_focus_bounds_from_buildings(building_rects, (80, 134, 984, 740))
+
+        self.assertEqual(focus, (200.0, 134, 864.0, 740))
 
     def test_grading_preview_quiets_contour_rendering_style(self):
         contour = {
