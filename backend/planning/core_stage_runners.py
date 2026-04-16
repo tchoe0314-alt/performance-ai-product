@@ -150,10 +150,10 @@ def _synthesized_program_layout(
         return upper_y, upper_h, lower_y, lower_h
 
     if frontage and len(primary) == 3:
-        upper_h = max(max(safe_float(spec.get("d"), 20.0) for spec in primary[:2]) + 2.0, min(vertical_span * 0.068, 60.0))
-        middle_h = max(max(safe_float(spec.get("d"), 20.0) for spec in primary[2:]) + 2.0, min(vertical_span * 0.058, 50.0))
-        lower_h = max(max(safe_float(spec.get("d"), 20.0) for spec in frontage) + 2.0, min(vertical_span * 0.05, 38.0))
-        gap = max(4.0, min(vertical_span * 0.01, 6.0))
+        upper_h = max(max(safe_float(spec.get("d"), 20.0) for spec in primary[:2]) - 10.0, min(vertical_span * 0.045, 36.0))
+        middle_h = max(max(safe_float(spec.get("d"), 20.0) for spec in primary[2:]) - 14.0, min(vertical_span * 0.04, 32.0))
+        lower_h = max(max(safe_float(spec.get("d"), 20.0) for spec in frontage) - 15.0, min(vertical_span * 0.035, 28.0))
+        gap = max(2.0, min(vertical_span * 0.004, 4.0))
         total_h = upper_h + middle_h + lower_h + gap * 2.0
         if total_h > vertical_span:
             scale = max(0.6, vertical_span / max(total_h, 1.0))
