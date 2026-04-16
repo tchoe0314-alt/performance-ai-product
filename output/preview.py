@@ -2016,9 +2016,34 @@ def _preview_engineering_profile(plan):
     return engineering_profile
 
 
+def _infer_profile_from_actions(actions, current_profile):
+    if current_profile != "layout":
+        return current_profile
+    layers = {
+        str(action.get("layer") or "").upper()
+        for action in actions
+        if isinstance(action, dict)
+    }
+    has_grading = bool(layers.intersection({"FG_CONTOUR", "EG_CONTOUR", "SPOT_FG", "SPOT_EG", "DRAIN_FLOW"}))
+    has_drainage = bool(layers.intersection({"PIPE", "DRAIN", "STRUCTURE", "BASIN_BOUNDARY"}))
+    has_utilities = bool(layers.intersection({"UTILITY", "WATER"}))
+    active = sum((has_grading, has_drainage, has_utilities))
+    if active >= 2:
+        return "complete"
+    if has_utilities:
+        return "utilities"
+    if has_drainage:
+        return "drainage"
+    if has_grading:
+        return "grading"
+    return current_profile
+
+
 def _preview_scene(plan):
     engineering_profile = _preview_engineering_profile(plan)
-    actions = _filtered_preview_actions(plan.get("actions", []), rich_engineering=engineering_profile)
+    raw_actions = list(plan.get("actions", []) or [])
+    engineering_profile = _infer_profile_from_actions(raw_actions, engineering_profile)
+    actions = _filtered_preview_actions(raw_actions, rich_engineering=engineering_profile)
     if not actions:
         return engineering_profile, actions, None
 
