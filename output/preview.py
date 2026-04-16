@@ -1562,14 +1562,17 @@ def _expand_bounds(bounds, pad_ratio=0.08, min_pad=8.0):
     aspect = width / height if height > 0 else 1.0
     if aspect >= 1.8:
         pad_x = max(width * min(pad_ratio, 0.06), max(6.0, min_pad * 0.75))
-        pad_y = max(height * min(pad_ratio * 0.5, 0.04), max(4.0, min_pad * 0.5))
+        pad_y_top = max(height * min(pad_ratio * 0.25, 0.02), max(2.5, min_pad * 0.3))
+        pad_y_bottom = max(height * min(pad_ratio * 0.7, 0.05), max(5.0, min_pad * 0.65))
     elif aspect >= 1.35:
         pad_x = max(width * min(pad_ratio, 0.07), max(7.0, min_pad * 0.85))
-        pad_y = max(height * min(pad_ratio * 0.7, 0.056), max(5.0, min_pad * 0.65))
+        pad_y_top = max(height * min(pad_ratio * 0.4, 0.032), max(3.0, min_pad * 0.4))
+        pad_y_bottom = max(height * min(pad_ratio * 0.8, 0.06), max(5.0, min_pad * 0.7))
     else:
         pad_x = max(width * pad_ratio, min_pad)
-        pad_y = max(height * pad_ratio, min_pad)
-    return min_x - pad_x, min_y - pad_y, max_x + pad_x, max_y + pad_y
+        pad_y_top = max(height * pad_ratio * 0.75, min_pad * 0.75)
+        pad_y_bottom = max(height * pad_ratio, min_pad)
+    return min_x - pad_x, min_y - pad_y_bottom, max_x + pad_x, max_y + pad_y_top
 
 
 def _update_bounds(current, bounds):
@@ -1798,13 +1801,6 @@ def _draw_plan(ax, plan, *, actions=None, selected_bounds=None):
     for spine in ax.spines.values():
         spine.set_visible(False)
 
-    ax.set_title(
-        plan.get("project_name", "Plan Preview"),
-        fontsize=13,
-        fontweight="semibold",
-        color="#0f172a",
-        pad=12,
-    )
     return True
 
 

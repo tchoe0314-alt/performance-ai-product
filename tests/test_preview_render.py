@@ -13,11 +13,11 @@ from output.preview import (
 class PreviewRenderTests(unittest.TestCase):
     def test_expand_bounds_reduces_vertical_padding_for_wide_layouts(self):
         expanded = _expand_bounds((0, 0, 260, 80))
-        self.assertEqual(expanded, (-15.6, -4.0, 275.6, 84.0))
+        self.assertEqual(expanded, (-15.6, -5.2, 275.6, 82.5))
 
     def test_expand_bounds_keeps_default_padding_for_taller_bounds(self):
         expanded = _expand_bounds((0, 0, 100, 100))
-        self.assertEqual(expanded, (-8.0, -8.0, 108.0, 108.0))
+        self.assertEqual(expanded, (-8.0, -8.0, 108.0, 106.0))
 
     def test_preview_figure_size_allows_wider_landscape_sites(self):
         size = _preview_figure_size((0, 0, 360, 100), base=7.2)
