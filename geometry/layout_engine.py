@@ -1644,6 +1644,19 @@ def _infer_parking_from_legacy(parsed: Dict[str, Any], site_box: Rect, buildings
 
     if len(buildings) > 1:
         raw_areas: List[Dict[str, Any]] = []
+        residential_buildings = [
+            building
+            for building in buildings
+            if _safe_str(building.get("use"), "").lower() == "multifamily"
+        ]
+        frontage_present = len(residential_buildings) < len(buildings)
+        residential_row_split: Optional[float] = None
+        if frontage_present and len(residential_buildings) >= 3:
+            residential_center_ys = [
+                _safe_float(building.get("y"), 0.0) + _safe_float(building.get("d"), 0.0) / 2.0
+                for building in residential_buildings
+            ]
+            residential_row_split = (max(residential_center_ys) + min(residential_center_ys)) / 2.0
         total_area = sum(max(1.0, _safe_float(b.get("w"), 0.0) * _safe_float(b.get("d"), 0.0)) for b in buildings)
         explicit_total = max(0, parking_count)
         for idx, building in enumerate(buildings, start=1):
@@ -1653,6 +1666,16 @@ def _infer_parking_from_legacy(parsed: Dict[str, Any], site_box: Rect, buildings
             bd_val = max(20.0, _safe_float(building.get("d"), 40.0))
             b_rect = _rect(bx, by, bw_val, bd_val)
             use_type = _safe_str(building.get("use"), site_type).lower()
+            center_y = by + bd_val / 2.0
+            frontage_side_residential = (
+                use_type == "multifamily"
+                and frontage_present
+                and residential_row_split is not None
+                and (
+                    (street_edge == "bottom" and center_y < residential_row_split)
+                    or (street_edge == "top" and center_y >= residential_row_split)
+                )
+            )
             if use_type == "retail":
                 lot_depth = max(30.0, min(42.0, bd_val * 0.7))
                 parking_offset = 8.0
@@ -1662,7 +1685,10 @@ def _infer_parking_from_legacy(parsed: Dict[str, Any], site_box: Rect, buildings
             park_w = max(36.0, min(buildable["w"] * 0.36, bw_val + 34.0))
             if street_edge in {"bottom", "top"}:
                 park_x = _clamp(bx + (bw_val - park_w) / 2.0, buildable["x"], _rect_right(buildable) - park_w)
-                if street_edge == "bottom":
+                park_below_building = street_edge == "bottom"
+                if frontage_side_residential:
+                    park_below_building = not park_below_building
+                if park_below_building:
                     park_y = _clamp(by - lot_depth - parking_offset, buildable["y"], _rect_top(buildable) - lot_depth)
                 else:
                     park_y = _clamp(by + bd_val + parking_offset, buildable["y"], _rect_top(buildable) - lot_depth)

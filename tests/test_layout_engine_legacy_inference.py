@@ -195,6 +195,17 @@ class LayoutEngineLegacyInferenceTests(unittest.TestCase):
             if str(action.get("label") or "").upper().startswith("RES-PARK-")
         ]
         self.assertTrue(all(height <= 80.0 for height in residential_heights))
+        retail_top = max(
+            float(action.get("origin")[1])
+            for action in parking
+            if "RETAIL-PARK" in str(action.get("label") or "").upper()
+        )
+        residential_bottom = min(
+            float(action.get("origin")[1])
+            for action in parking
+            if str(action.get("label") or "").upper().startswith("RES-PARK-")
+        )
+        self.assertLess(retail_top, residential_bottom)
 
     def test_shared_residential_courts_keep_walks_aligned_to_buildings(self) -> None:
         plan = _build_expanded_plan(

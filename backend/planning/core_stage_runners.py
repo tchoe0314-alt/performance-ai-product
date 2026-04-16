@@ -232,6 +232,19 @@ def _layout_fallback_actions(
         return []
     actions: List[Dict[str, Any]] = []
     frontage_on_bottom = lower_text(street_edge) != "top"
+    residential_placements = [
+        placement
+        for placement in placements
+        if lower_text(placement.get("use")) not in {"retail", "commercial", "pad"}
+    ]
+    frontage_present = len(residential_placements) < len(placements)
+    residential_row_split: Optional[float] = None
+    if frontage_present and len(residential_placements) >= 3:
+        residential_center_ys = [
+            safe_float(placement.get("y"), 0.0) + safe_float(placement.get("d"), 0.0) / 2.0
+            for placement in residential_placements
+        ]
+        residential_row_split = (max(residential_center_ys) + min(residential_center_ys)) / 2.0
     parking_entries: List[Dict[str, Any]] = []
     for placement in placements:
         px = safe_float(placement.get("x"), 0.0)
@@ -239,12 +252,28 @@ def _layout_fallback_actions(
         pw = safe_float(placement.get("w"), 20.0)
         pd = safe_float(placement.get("d"), 20.0)
         frontage_use = lower_text(placement.get("use")) in {"retail", "commercial", "pad"}
+        center_y = py + pd / 2.0
+        frontage_side_residential = (
+            not frontage_use
+            and frontage_present
+            and residential_row_split is not None
+            and (
+                (frontage_on_bottom and center_y < residential_row_split)
+                or ((not frontage_on_bottom) and center_y >= residential_row_split)
+            )
+        )
         if frontage_use:
             lot_depth = max(20.0, min(30.0, pd * 0.42))
         else:
             lot_depth = max(24.0, min(34.0, pd * 0.5))
         setback_gap = 10.0 if frontage_use else 12.0
-        pavement_y = max(lot_y + 15.0, py - lot_depth - setback_gap) if frontage_on_bottom else min(lot_y + lot_h - lot_depth - 15.0, py + pd + setback_gap)
+        park_below_building = frontage_on_bottom
+        if frontage_side_residential:
+            park_below_building = not park_below_building
+        if park_below_building:
+            pavement_y = max(lot_y + 15.0, py - lot_depth - setback_gap)
+        else:
+            pavement_y = min(lot_y + lot_h - lot_depth - 15.0, py + pd + setback_gap)
         side_buffer = 8.0 if frontage_use else 6.0
         park_x = round(max(lot_x + 15.0, px - side_buffer), 3)
         park_y = round(pavement_y, 3)
@@ -259,7 +288,7 @@ def _layout_fallback_actions(
         )
         walk_width = round(max(6.0, min(10.0, pw * 0.12)), 3)
         walk_x = round(px + (pw - walk_width) / 2.0, 3)
-        if frontage_on_bottom:
+        if park_below_building:
             walk_y = round(park_y + park_h, 3)
             walk_h = round(max(6.0, py - walk_y), 3)
         else:

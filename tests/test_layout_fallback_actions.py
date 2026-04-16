@@ -91,6 +91,10 @@ class LayoutFallbackActionsTests(unittest.TestCase):
         self.assertTrue(all(float(action.get("height", 0.0)) <= 42.0 for action in retail_parking))
         self.assertTrue(all(float(action.get("width", 0.0)) <= 210.0 for action in multifamily_parking))
         self.assertTrue(all(float(action.get("width", 0.0)) <= 92.0 for action in retail_parking))
+        self.assertLess(
+            max(float(action.get("origin", [0.0, 0.0])[1]) for action in retail_parking),
+            min(float(action.get("origin", [0.0, 0.0])[1]) for action in multifamily_parking),
+        )
 
         multifamily_parking = sorted(multifamily_parking, key=lambda action: float(action.get("origin", [0])[0]))
         gaps = []
