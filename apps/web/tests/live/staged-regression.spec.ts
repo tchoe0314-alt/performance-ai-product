@@ -104,6 +104,7 @@ async function apiJson<T>(
 }
 
 async function waitForNewJob(
+  page: Parameters<typeof test>[0]["page"],
   request: Parameters<typeof test>[0]["request"],
   token: string,
   knownJobIds: Set<string>,
@@ -117,6 +118,21 @@ async function waitForNewJob(
       .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))[0];
     if (newest?.job_id && newest.project_id) {
       return newest;
+    }
+    const bodyText = (await page.locator("body").innerText().catch(() => "")) || "";
+    const jobMatch = bodyText.match(/job_[a-z0-9]+/i);
+    if (jobMatch?.[0] && !knownJobIds.has(jobMatch[0])) {
+      const detailPayload = await apiJson<JobDetailResponse>(request, token, `/api/jobs/${jobMatch[0]}`);
+      const job = detailPayload.job;
+      if (job?.job_id && job.project_id) {
+        return {
+          job_id: job.job_id,
+          status: job.status,
+          stage: job.stage,
+          stage_detail: job.stage_detail,
+          project_id: job.project_id,
+        };
+      }
     }
     await new Promise((resolve) => setTimeout(resolve, 1500));
   }
@@ -248,7 +264,7 @@ test("staged regression flow", async ({ page, request, baseURL }) => {
   await composer.fill(prompt);
   await page.getByRole("button", { name: "Send" }).click();
 
-  const newJob = await waitForNewJob(request, token, knownJobIds);
+  const newJob = await waitForNewJob(page, request, token, knownJobIds);
   const jobId = String(newJob.job_id);
   const projectId = String(newJob.project_id);
 
