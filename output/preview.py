@@ -904,7 +904,7 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
     rich_engineering = engineering_profile in {"baseline", "utilities", "complete"}
     overlay_limits = {
         "layout": {"line": 0, "flow": 0, "drain_label": 0, "contour": 0, "contour_label": 0, "spot": 0, "structure": 0, "utility": 0, "basin": 0},
-        "grading": {"line": 0, "flow": 0, "drain_label": 0, "contour": 8, "contour_label": 6, "spot": 12, "structure": 0, "utility": 0, "basin": 0},
+        "grading": {"line": 0, "flow": 0, "drain_label": 0, "contour": 4, "contour_label": 3, "spot": 12, "structure": 0, "utility": 0, "basin": 0},
         "drainage": {"line": 4, "flow": 4, "drain_label": 6, "contour": 0, "contour_label": 0, "spot": 0, "structure": 6, "utility": 0, "basin": 0},
         "storm": {"line": 5, "flow": 3, "drain_label": 3, "contour": 3, "contour_label": 0, "spot": 0, "structure": 6, "utility": 0, "basin": 1},
         "utilities": {"line": 5, "flow": 2, "drain_label": 0, "contour": 3, "contour_label": 0, "spot": 0, "structure": 6, "utility": 3, "basin": 1},
@@ -1088,7 +1088,7 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                     x1, y1, x2, y2 = bounds
                     _, ly1, _, ly2 = layout_bounds
                     cy = (y1 + y2) / 2.0
-                    if not (ly1 - 80.0 <= cy <= ly2 + 80.0):
+                    if not (ly1 - 56.0 <= cy <= ly2 + 56.0):
                         continue
                 if _is_oversized_for_layout(action) and not _bounds_near_layout(bounds, layout_bounds, padding=40.0):
                     continue
@@ -1124,7 +1124,7 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                 lx1, ly1, lx2, ly2 = layout_bounds
                 cx = (x1 + x2) / 2.0
                 cy = (y1 + y2) / 2.0
-                horizontal_band = ly1 - 72.0 <= cy <= ly2 + 72.0
+                horizontal_band = ly1 - 48.0 <= cy <= ly2 + 48.0
                 if not horizontal_band:
                     continue
             elif engineering_profile == "grading" and layout_bounds:
@@ -1132,7 +1132,7 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                 lx1, ly1, lx2, ly2 = layout_bounds
                 cx = (x1 + x2) / 2.0
                 cy = (y1 + y2) / 2.0
-                horizontal_band = ly1 - 56.0 <= cy <= ly2 + 56.0
+                horizontal_band = ly1 - 42.0 <= cy <= ly2 + 42.0
                 if not horizontal_band:
                     continue
             label_bias = 0.0
@@ -1230,11 +1230,22 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
             seen.add(key)
             selected.append(action)
 
-    for _, action in sorted(contour_label_candidates, key=lambda item: item[0], reverse=True)[: int(overlay_limits.get("contour_label", 0))]:
+    contour_label_limit = int(overlay_limits.get("contour_label", 0))
+    kept_contour_texts = set()
+    kept_contour_labels = 0
+    for _, action in sorted(contour_label_candidates, key=lambda item: item[0], reverse=True):
+        if kept_contour_labels >= contour_label_limit:
+            break
+        label_text = safe_text(action.get("text"), "").strip().upper()
+        if engineering_profile == "grading" and label_text:
+            if label_text in kept_contour_texts:
+                continue
+            kept_contour_texts.add(label_text)
         key = repr(action)
         if key not in seen:
             seen.add(key)
             selected.append(action)
+            kept_contour_labels += 1
 
     for _, action in sorted(spot_grade_candidates, key=lambda item: item[0], reverse=True)[: int(overlay_limits.get("spot", 0))]:
         key = repr(action)
