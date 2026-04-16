@@ -226,18 +226,29 @@ def _layout_fallback_actions(
             }
         )
 
-    def _merge_courts(rects: Sequence[Tuple[float, float, float, float]]) -> Optional[Tuple[float, float, float, float]]:
+    def _merge_courts(
+        rects: Sequence[Tuple[float, float, float, float]],
+        *,
+        shared: bool = False,
+    ) -> Optional[Tuple[float, float, float, float]]:
         if not rects:
             return None
         min_x = min(x for x, _, _, _ in rects)
         min_y = min(y for _, y, _, _ in rects)
         max_x = max(x + w for x, _, w, _ in rects)
         max_y = max(y + h for _, y, _, h in rects)
+        width = max_x - min_x
+        height = max_y - min_y
+        if shared and width > 0:
+            side_inset = min(max(14.0, width * 0.08), 32.0)
+            min_x += side_inset
+            max_x -= side_inset
+            width = max(max_x - min_x, 48.0)
         return (
             round(min_x, 3),
             round(min_y, 3),
-            round(max_x - min_x, 3),
-            round(max_y - min_y, 3),
+            round(width, 3),
+            round(height, 3),
         )
 
     residential_rects = [
@@ -256,7 +267,7 @@ def _layout_fallback_actions(
         residential_rects = sorted(residential_rects, key=lambda rect: rect[0] + rect[2] / 2.0)
         split = (len(residential_rects) + 1) // 2
         for group in (residential_rects[:split], residential_rects[split:]):
-            merged = _merge_courts(group)
+            merged = _merge_courts(group, shared=len(group) > 1)
             if merged:
                 parking_rects.append(merged)
     else:
