@@ -1563,6 +1563,8 @@ def _filtered_preview_actions(actions, *, rich_engineering=False):
             continue
         if has_layout_scene and _is_tiny_marker_circle(action):
             continue
+        if engineering_profile == "layout" and layer == "BASIN_BOUNDARY":
+            continue
         if has_layout_scene and layer in SECONDARY_ENGINEERING_LAYERS and repr(action) not in engineering_overlay_keys:
             continue
         if has_layout_scene and task == "point":
@@ -2025,7 +2027,7 @@ def _infer_profile_from_actions(actions, current_profile):
         if isinstance(action, dict)
     }
     has_grading = bool(layers.intersection({"FG_CONTOUR", "EG_CONTOUR", "SPOT_FG", "SPOT_EG", "DRAIN_FLOW"}))
-    has_drainage = bool(layers.intersection({"PIPE", "DRAIN", "STRUCTURE", "BASIN_BOUNDARY"}))
+    has_drainage = bool(layers.intersection({"PIPE", "DRAIN", "STRUCTURE"}))
     has_utilities = bool(layers.intersection({"UTILITY", "WATER"}))
     active = sum((has_grading, has_drainage, has_utilities))
     if active >= 2:
