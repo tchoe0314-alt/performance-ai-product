@@ -1639,7 +1639,7 @@ def _preview_draw_priority(action):
     return 0
 
 
-def _draw_plan(ax, plan):
+def _preview_engineering_profile(plan):
     meta = plan.get("meta") or {}
     phase_checkpoints = meta.get("phase_checkpoints") or {}
     combined_view = phase_checkpoints.get("combined_view") or {}
@@ -1669,11 +1669,45 @@ def _draw_plan(ax, plan):
         engineering_profile = "drainage"
     elif grading_complete or checkpoint_stage == "grading":
         engineering_profile = "grading"
+    return engineering_profile
+
+
+def _preview_scene(plan):
+    engineering_profile = _preview_engineering_profile(plan)
     actions = _filtered_preview_actions(plan.get("actions", []), rich_engineering=engineering_profile)
     if not actions:
-        return False
+        return engineering_profile, actions, None
 
     drawn_items = []
+    for action in actions:
+        bounds = _action_bounds(action)
+        if bounds is None:
+            continue
+        layer = (action.get("layer") or "").upper()
+        drawn_items.append((layer, str(action.get("task") or "").lower(), bounds))
+
+    selected_bounds = _choose_view_bounds(
+        drawn_items,
+        engineering_profile=engineering_profile,
+    )
+    return engineering_profile, actions, selected_bounds
+
+
+def _preview_figure_size(selected_bounds, *, base=7.2):
+    if not selected_bounds:
+        return (base, base)
+    min_x, min_y, max_x, max_y = selected_bounds
+    width = max(max_x - min_x, 1.0)
+    height = max(max_y - min_y, 1.0)
+    ratio = max(1.0, min(1.8, width / height))
+    return (round(base * ratio, 3), base)
+
+
+def _draw_plan(ax, plan, *, actions=None, selected_bounds=None):
+    if actions is None or selected_bounds is None:
+        _, actions, selected_bounds = _preview_scene(plan)
+    if not actions or selected_bounds is None:
+        return False
 
     for action in sorted(actions, key=_preview_draw_priority):
         task = action.get("task")
@@ -1701,15 +1735,6 @@ def _draw_plan(ax, plan):
             continue
 
         layer = (action.get("layer") or "").upper()
-        drawn_items.append((layer, str(task or "").lower(), bounds))
-
-    selected_bounds = _choose_view_bounds(
-        drawn_items,
-        engineering_profile=engineering_profile,
-    )
-    if selected_bounds is None:
-        return False
-
     min_x, min_y, max_x, max_y = _expand_bounds(selected_bounds)
 
     ax.set_xlim(min_x, max_x)
@@ -1739,15 +1764,18 @@ def render_plan_preview_png(plan, *, figsize=(8, 8), dpi: int = 160) -> bytes:
         for action in list(plan.get("actions") or [])
         if isinstance(action, dict)
     ]
+    _, preview_actions, selected_bounds = _preview_scene({"actions": actions, **{k: v for k, v in plan.items() if k != "actions"}})
     if len(actions) >= 60:
-        figsize = (7.2, 7.2)
+        figsize = _preview_figure_size(selected_bounds, base=7.2)
         dpi = min(dpi, 120)
+    elif selected_bounds:
+        figsize = _preview_figure_size(selected_bounds, base=min(figsize[1], 8.0))
     fig = Figure(figsize=figsize, dpi=dpi)
     fig.patch.set_facecolor("#f8fafc")
     FigureCanvasAgg(fig)
     ax = fig.subplots()
 
-    if not _draw_plan(ax, plan):
+    if not _draw_plan(ax, plan, actions=preview_actions, selected_bounds=selected_bounds):
         raise ValueError("No drawable actions found in plan.")
 
     fig.tight_layout()
@@ -1763,9 +1791,10 @@ def preview_plan(plan):
         print("No actions to preview.")
         return
 
-    fig, ax = plt.subplots(figsize=(8, 8))
+    _, actions, selected_bounds = _preview_scene(plan)
+    fig, ax = plt.subplots(figsize=_preview_figure_size(selected_bounds, base=8.0))
 
-    if not _draw_plan(ax, plan):
+    if not _draw_plan(ax, plan, actions=actions, selected_bounds=selected_bounds):
         print("Nothing drawable found.")
         return
 
