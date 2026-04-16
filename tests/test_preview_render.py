@@ -163,7 +163,7 @@ class PreviewRenderTests(unittest.TestCase):
         ]
         self.assertFalse(contour_texts)
 
-    def test_grading_preview_clips_remote_contour_segments_to_site_focus(self):
+    def test_grading_preview_drops_remote_contour_segments_outside_site_focus(self):
         actions = [
             {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [165, 440], "width": 110, "height": 58},
             {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 2", "origin": [505, 440], "width": 110, "height": 58},
@@ -172,17 +172,14 @@ class PreviewRenderTests(unittest.TestCase):
         ]
 
         filtered = _filtered_preview_actions(actions, rich_engineering="grading")
-        contour = next(
+        contours = [
             action
             for action in filtered
             if str(action.get("layer") or "").upper() == "FG_CONTOUR"
             and str(action.get("task") or "").lower() == "polyline"
-        )
+        ]
 
-        points = contour["points"]
-        self.assertEqual(points[0], [185.04, 390.0])
-        self.assertEqual(points[-1], [594.96, 390.0])
-        self.assertEqual(contour.get("_preview_profile"), "grading")
+        self.assertFalse(contours)
 
     def test_grading_focus_bounds_inset_wide_four_building_stack(self):
         building_rects = [
@@ -194,7 +191,7 @@ class PreviewRenderTests(unittest.TestCase):
 
         focus = _grading_focus_bounds_from_buildings(building_rects, (80, 134, 984, 740))
 
-        self.assertEqual(focus, (200.0, 134, 864.0, 740))
+        self.assertEqual(focus, (240.0, 134, 824.0, 740))
 
     def test_grading_preview_quiets_contour_rendering_style(self):
         contour = {
@@ -206,11 +203,11 @@ class PreviewRenderTests(unittest.TestCase):
 
         linewidth, color, linestyle, alpha = _polyline_style(contour)
 
-        self.assertEqual(color, "#f59e0b")
+        self.assertEqual(color, "#fbbf24")
         self.assertEqual(linestyle, "-.")
         self.assertLess(linewidth, 1.2)
         self.assertLess(linewidth, 1.0)
-        self.assertLess(alpha, 0.4)
+        self.assertLess(alpha, 0.25)
 
     def test_layout_scene_suppresses_engineering_overlay_noise(self):
         actions = [
@@ -624,7 +621,7 @@ class PreviewRenderTests(unittest.TestCase):
             and str(action.get("task") or "").lower() == "polyline"
         ]
 
-        self.assertIn(((183.1, 260.0), (386.9, 260.0)), contour_bounds)
+        self.assertIn(((191.1, 260.0), (378.9, 260.0)), contour_bounds)
         self.assertNotIn(((150, 60), (420, 60)), contour_bounds)
 
     def test_drainage_checkpoint_keeps_flow_context(self):

@@ -424,8 +424,9 @@ def _polyline_style(action):
 
     preview_profile = _normalize_engineering_profile(action.get("_preview_profile"))
     if preview_profile == "grading" and layer in {"FG_CONTOUR", "EG_CONTOUR"}:
-        alpha = 0.28 if layer == "FG_CONTOUR" else 0.18
-        linewidth = max(0.6, linewidth * (0.68 if layer == "FG_CONTOUR" else 0.62))
+        color = "#fbbf24" if layer == "FG_CONTOUR" else "#dbe4ef"
+        alpha = 0.2 if layer == "FG_CONTOUR" else 0.12
+        linewidth = max(0.5, linewidth * (0.58 if layer == "FG_CONTOUR" else 0.55))
 
     return linewidth, color, linestyle, alpha
 
@@ -617,8 +618,8 @@ def _clip_grading_contour_action(action, layout_bounds):
     min_x, min_y, max_x, max_y = layout_bounds
     layout_w = max(max_x - min_x, 1.0)
     layout_h = max(max_y - min_y, 1.0)
-    x_pad = min(max(20.0, layout_w * 0.06), 32.0)
-    y_pad = min(max(52.0, layout_h * 0.55), 72.0)
+    x_pad = min(max(12.0, layout_w * 0.025), 20.0)
+    y_pad = min(max(40.0, layout_h * 0.42), 60.0)
     clip_rect = (
         min_x - x_pad,
         min_y - y_pad,
@@ -643,9 +644,9 @@ def _grading_focus_bounds_from_buildings(building_rects, layout_bounds):
     if width > height * 1.45:
         building_count = len(building_rects)
         if building_count >= 4:
-            inset_x = min(max(64.0, width * 0.19), 120.0)
+            inset_x = min(max(96.0, width * 0.24), 160.0)
         elif building_count == 3:
-            inset_x = min(max(48.0, width * 0.15), 96.0)
+            inset_x = min(max(60.0, width * 0.18), 112.0)
         else:
             inset_x = min(max(18.0, width * 0.11), 42.0)
         min_x += inset_x
