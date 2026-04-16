@@ -25,11 +25,21 @@ async function ensureAppUrl(page: Parameters<typeof test>[0]["page"]) {
   }
   const vercelLogin = page.getByRole("heading", { name: "Log in to Vercel" });
   const emailLogin = page.getByRole("button", { name: "Continue with Email" });
+  const deploymentProtection = page.getByText("Deployment Protection", { exact: false });
+  const authRequired = page.getByText("Authentication Required", { exact: false });
   if (await vercelLogin.isVisible().catch(() => false)) {
     await page.goto(FALLBACK_BASE_URL, { waitUntil: "domcontentloaded" }).catch(() => null);
     return true;
   }
   if (await emailLogin.isVisible().catch(() => false)) {
+    await page.goto(FALLBACK_BASE_URL, { waitUntil: "domcontentloaded" }).catch(() => null);
+    return true;
+  }
+  if (await deploymentProtection.isVisible().catch(() => false)) {
+    await page.goto(FALLBACK_BASE_URL, { waitUntil: "domcontentloaded" }).catch(() => null);
+    return true;
+  }
+  if (await authRequired.isVisible().catch(() => false)) {
     await page.goto(FALLBACK_BASE_URL, { waitUntil: "domcontentloaded" }).catch(() => null);
     return true;
   }
