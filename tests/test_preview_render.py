@@ -539,6 +539,30 @@ class PreviewRenderTests(unittest.TestCase):
         self.assertIn("FG 102.03", spot_texts)
         self.assertNotIn("FG 102.10", spot_texts)
 
+    def test_grading_checkpoint_drops_remote_contour_label_outliers(self):
+        actions = [
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [180, 180], "width": 90, "height": 50},
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 2", "origin": [300, 180], "width": 90, "height": 50},
+            {"layer": "PARKING", "task": "rectangle", "origin": [170, 130], "width": 240, "height": 40},
+            {"layer": "FG_CONTOUR", "task": "polyline", "points": [[150, 120], [420, 120]]},
+            {"layer": "FG_CONTOUR", "task": "polyline", "points": [[150, 260], [420, 260]]},
+            {"layer": "FG_CONTOUR", "task": "text_note", "text": "FG 102.06", "origin": [305, 122]},
+            {"layer": "FG_CONTOUR", "task": "text_note", "text": "FG 102.03", "origin": [308, 258]},
+            {"layer": "FG_CONTOUR", "task": "text_note", "text": "FG 102.10", "origin": [310, 60]},
+        ]
+
+        filtered = _filtered_preview_actions(actions, rich_engineering="grading")
+        contour_texts = [
+            str(action.get("text") or "")
+            for action in filtered
+            if str(action.get("layer") or "").upper() == "FG_CONTOUR"
+            and str(action.get("task") or "").lower() == "text_note"
+        ]
+
+        self.assertIn("FG 102.06", contour_texts)
+        self.assertIn("FG 102.03", contour_texts)
+        self.assertNotIn("FG 102.10", contour_texts)
+
     def test_drainage_checkpoint_keeps_flow_context(self):
         actions = [
             {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [20, 60], "width": 12, "height": 8},

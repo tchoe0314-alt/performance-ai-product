@@ -1027,8 +1027,15 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                 cx = (x1 + x2) / 2.0
                 cy = (y1 + y2) / 2.0
                 horizontal_band = ly1 - 72.0 <= cy <= ly2 + 72.0
-                vertical_band = lx1 - 72.0 <= cx <= lx2 + 72.0
-                if not (horizontal_band or vertical_band):
+                if not horizontal_band:
+                    continue
+            elif engineering_profile == "grading" and layout_bounds:
+                x1, y1, x2, y2 = bounds
+                lx1, ly1, lx2, ly2 = layout_bounds
+                cx = (x1 + x2) / 2.0
+                cy = (y1 + y2) / 2.0
+                horizontal_band = ly1 - 56.0 <= cy <= ly2 + 56.0
+                if not horizontal_band:
                     continue
             label_bias = 0.0
             if engineering_profile == "complete":
