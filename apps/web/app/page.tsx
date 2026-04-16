@@ -1,24 +1,17 @@
 "use client";
+/* eslint-disable react-hooks/exhaustive-deps */
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  AlertTriangle,
-  CheckCircle2,
   Clock3,
-  Download,
   Eye,
   EyeOff,
   FileImage,
-  FileText,
   FolderOpen,
-  History,
-  LogOut,
   Map,
   Maximize2,
   MessageSquarePlus,
-  RefreshCw,
-  Save,
   Sparkles,
   Trash2,
   X,
@@ -582,36 +575,6 @@ function createWelcomeMessage(): ChatMessage {
   );
 }
 
-function guessProjectTitle(prompt: string): string {
-  const cleaned = prompt
-    .replace(/\s+/g, " ")
-    .replace(/^[^a-zA-Z0-9]+/, "")
-    .trim();
-  if (!cleaned) return "New Project";
-
-  const normalized = cleaned
-    .replace(/^(please|can you|could you|help me|i want to|let's|lets)\s+/i, "")
-    .replace(/^(create|design|generate|make|build|update|change|move|add)\s+/i, "")
-    .trim();
-
-  const words = normalized.split(" ").filter(Boolean).slice(0, 6);
-  const title = words
-    .join(" ")
-    .replace(/[.?!,:;]+$/g, "")
-    .trim();
-
-  if (!title) return "New Project";
-  return title.charAt(0).toUpperCase() + title.slice(1);
-}
-
-function slugifyFileName(value: string): string {
-  const slug = value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return slug || "civora-ai-plan";
-}
-
 function formatChatTimestamp(value: number) {
   try {
     return new Date(value).toLocaleTimeString([], {
@@ -669,6 +632,11 @@ function readPositiveNumber(value: unknown): number | null {
     }
   }
   return null;
+}
+
+function parsePositiveNumber(value: string | number | null | undefined): number | null {
+  const numeric = Number(value ?? 0);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
 }
 
 function extractDesignMemory(thread: ChatMessage[]): {
@@ -1222,54 +1190,6 @@ function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   );
 }
 
-function SelectField({
-  value,
-  onChange,
-  options,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  options: { value: string; label: string }[];
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70"
-    >
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
-  );
-}
-
-function Toggle({
-  checked,
-  onChange,
-}: {
-  checked: boolean;
-  onChange: (value: boolean) => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      className={`relative h-7 w-12 rounded-full transition ${
-        checked ? "bg-slate-900" : "bg-slate-300/90"
-      }`}
-    >
-      <span
-        className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-[0_4px_12px_rgba(15,23,42,0.22)] transition ${
-          checked ? "left-6" : "left-1"
-        }`}
-      />
-    </button>
-  );
-}
-
 const TOKEN_KEY = "civora-ai-token";
 const LEGACY_TOKEN_KEY = "performance-ai-token";
 
@@ -1537,7 +1457,6 @@ export default function PerformanceAIDashboard() {
   const [uploadedImagePreviewUrl, setUploadedImagePreviewUrl] = useState("");
   const [uploadedImageApiUrl, setUploadedImageApiUrl] = useState("");
   const [surveyFileName, setSurveyFileName] = useState("");
-  const [surveyUploadUrl, setSurveyUploadUrl] = useState("");
   const [surveySlopeEstimate, setSurveySlopeEstimate] = useState<SurveySlopeResponse | null>(null);
   const [mapSnapshotPath, setMapSnapshotPath] = useState("");
   const [mapAnalysis, setMapAnalysis] = useState<MapAnalysis | null>(null);
@@ -1576,8 +1495,6 @@ export default function PerformanceAIDashboard() {
   const [statusMessage, setStatusMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [activePlanTool, setActivePlanTool] = useState<PlanToolMode>("run");
-  const [selectedPlanToolPanel, setSelectedPlanToolPanel] =
-    useState<"explain" | "fix" | "improve">("explain");
   const [jobClockMs, setJobClockMs] = useState(() => Date.now());
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const mapSnapshotInputRef = useRef<HTMLInputElement | null>(null);
@@ -1629,12 +1546,7 @@ export default function PerformanceAIDashboard() {
     },
   ];
 
-  const parsePositiveNumber = (value: string | number | null | undefined) => {
-    const numeric = Number(value ?? 0);
-    return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
-  };
-
-  const buildManualFields = ({
+  const buildManualFields = useCallback(({
     strategy,
     nextSiteName,
     nextFileName,
@@ -1786,7 +1698,7 @@ export default function PerformanceAIDashboard() {
     }
 
     return manualFields;
-  };
+  }, []);
 
   const payloadPreview = useMemo(
     () => ({
@@ -1851,7 +1763,7 @@ export default function PerformanceAIDashboard() {
       drainage,
       utilities,
       currentProject,
-      chatMessages,
+      buildManualFields,
     ],
   );
 
@@ -1878,14 +1790,6 @@ export default function PerformanceAIDashboard() {
     () =>
       Array.isArray(currentProject?.metadata?.workflow?.runs)
         ? currentProject?.metadata?.workflow?.runs
-        : [],
-    [currentProject],
-  );
-
-  const workflowArtifacts = useMemo<WorkflowArtifact[]>(
-    () =>
-      Array.isArray(currentProject?.metadata?.workflow?.artifacts)
-        ? currentProject?.metadata?.workflow?.artifacts
         : [],
     [currentProject],
   );
@@ -1939,25 +1843,6 @@ export default function PerformanceAIDashboard() {
       }),
     [busy, visibleActiveJob?.status, visibleActiveJob?.stage, visibleActiveJob?.stage_detail, visibleActiveJob?.progress, visibleActiveJob?.updated_at, visibleActiveJob?.queue_position, visibleActiveJob?.queued_count, visibleActiveJob?.running_count, visibleActiveJobStale, activePlanTool, statusMessage],
   );
-  const latestRunComparison = useMemo(() => {
-    if (workflowRuns.length < 2) return null;
-    const current = workflowRuns[0];
-    const previous = workflowRuns[1];
-    return {
-      current,
-      previous,
-      trustDelta:
-        (current.engineering_status?.trust_score ?? 0) -
-        (previous.engineering_status?.trust_score ?? 0),
-      unresolvedDelta:
-        (current.coordination_summary?.unresolved_conflicts ?? 0) -
-        (previous.coordination_summary?.unresolved_conflicts ?? 0),
-      producedDelta:
-        (current.produced_deliverables?.length ?? 0) -
-        (previous.produced_deliverables?.length ?? 0),
-    };
-  }, [workflowRuns]);
-
   const currentPlanMeta = useMemo<PlanMeta>(() => backendResult?.final_plan?.meta ?? {}, [backendResult]);
   const managerMetrics = useMemo<ManagerMetrics>(
     () => currentPlanMeta?.manager_export?.metrics ?? {},
@@ -1970,9 +1855,11 @@ export default function PerformanceAIDashboard() {
   const stormSummary = useMemo<StormSummary>(() => currentPlanMeta?.storm_pipes ?? {}, [currentPlanMeta]);
   const drainageSummary = useMemo<Record<string, unknown>>(() => currentPlanMeta?.drainage ?? {}, [currentPlanMeta]);
   const gradingSummary = useMemo<Record<string, unknown>>(() => currentPlanMeta?.grading ?? {}, [currentPlanMeta]);
-  const utilitySummary = useMemo<Record<string, unknown>>(() => currentPlanMeta?.utilities ?? {}, [currentPlanMeta]);
 
-  const previewLabels = planPreviewAnnotations?.labels ?? [];
+  const previewLabels = useMemo(
+    () => planPreviewAnnotations?.labels ?? [],
+    [planPreviewAnnotations],
+  );
   const issueTargets = useMemo(() => {
     const keywordMap = [
       { key: "pipe", token: "PIPE" },
@@ -2174,22 +2061,9 @@ export default function PerformanceAIDashboard() {
         : [],
     [currentPlanMeta],
   );
-  const currentCoordination = useMemo<Record<string, unknown>>(
-    () => currentPlanMeta?.coordination ?? {},
-    [currentPlanMeta],
-  );
   const currentExplanation = useMemo<PlanExplanation>(
     () => currentPlanMeta?.explanation ?? {},
     [currentPlanMeta],
-  );
-  const currentIterations = useMemo<IterationRecord[]>(
-    () =>
-      Array.isArray(backendResult?.metadata?.iterations)
-        ? backendResult.metadata.iterations
-        : Array.isArray(currentPlanMeta?.iterations)
-          ? currentPlanMeta.iterations
-          : [],
-    [backendResult, currentPlanMeta],
   );
   const suggestedImproveGoal = useMemo(() => {
     const failureBlob = [
@@ -3050,7 +2924,7 @@ export default function PerformanceAIDashboard() {
     setStatusMessage("Civora AI is reviewing your request and starting the design run.");
     try {
       const resolvedProjectId =
-        ((await ensureProjectDraft(trimmedPrompt)) ?? projectId) || null;
+        ((await ensureProjectDraft()) ?? projectId) || null;
       const decision = await postJson<ChatDecisionResponse>(
         "/api/chat/decide",
         {
@@ -3207,7 +3081,7 @@ export default function PerformanceAIDashboard() {
       if (token && isConnectivityFailureMessage(errorMessage)) {
         try {
           const resolvedProjectId =
-            projectId || (await ensureProjectDraft(trimmedPrompt)) || null;
+            projectId || (await ensureProjectDraft()) || null;
           const fallbackPayload = buildPayloadFromOverrides(
             {},
             trimmedPrompt,
@@ -3256,35 +3130,6 @@ export default function PerformanceAIDashboard() {
     } finally {
       runSubmissionRef.current = false;
       directRunAbortRef.current = null;
-    }
-  };
-
-  const queueJob = async () => {
-    if (!token) return;
-    setBusy(true);
-    try {
-      const resolvedProjectId =
-        projectId || (await ensureProjectDraft(prompt.trim())) || null;
-      const data = await postJson<{ job: JobSummary }>(
-        "/api/jobs/orchestrate",
-        {
-          project_id: resolvedProjectId,
-          request: {
-            ...payloadPreview,
-            project_id: resolvedProjectId,
-          },
-        },
-        { token },
-      );
-      setActiveJobId(data.job.job_id);
-      setStatusMessage(`Queued job ${data.job.job_id}.`);
-      await refreshJobs();
-    } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : "Job queue failed.",
-      );
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -3614,7 +3459,6 @@ export default function PerformanceAIDashboard() {
     const surveyFile = siteInputs?.survey_file ?? {};
     const slopeEstimate = siteInputs?.slope_estimate ?? null;
     setSurveyFileName(String(surveyFile?.stored_filename || ""));
-    setSurveyUploadUrl(String(surveyFile?.survey_url || ""));
     setSurveySlopeEstimate(slopeEstimate || null);
     const mapUrl = String(mapSnapshot?.image_url || "");
     if (mapUrl) {
@@ -3658,7 +3502,7 @@ export default function PerformanceAIDashboard() {
     }
   };
 
-  const ensureProjectDraft = async (initialPrompt?: string): Promise<string | null> => {
+  const ensureProjectDraft = async (): Promise<string | null> => {
     if (!token) return null;
     if (resolvedProjectIdRef.current) return resolvedProjectIdRef.current;
     if (projectId) return projectId;
@@ -4031,7 +3875,6 @@ export default function PerformanceAIDashboard() {
       });
       const storedFilename = data.stored_filename || file.name;
       setSurveyFileName(storedFilename);
-      setSurveyUploadUrl(data.survey_url || "");
       const currentInput = currentProject?.project_input ?? payloadPreview;
       const nextSiteInputs = {
         ...(currentInput?.meta?.site_inputs ?? {}),
@@ -4509,28 +4352,6 @@ export default function PerformanceAIDashboard() {
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  const downloadSavedArtifact = async (artifact: WorkflowArtifact) => {
-    if (!token || !artifact.download_path) return;
-    try {
-      const response = await fetch(toApiUrl(artifact.download_path), {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      if (!response.ok) {
-        throw new Error(`Artifact download failed with status ${response.status}`);
-      }
-      const blob = await response.blob();
-      downloadBlob(blob, artifact.filename || "artifact");
-      setStatusMessage(`Downloaded ${artifact.filename || "artifact"}.`);
-    } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : "Artifact download failed.",
-      );
-    }
-  };
-
   const handleExportDxf = async () => {
     if (!token) return;
     if (!backendResult && !projectId) {
@@ -4621,7 +4442,7 @@ export default function PerformanceAIDashboard() {
       setJobClockMs(Date.now());
     }, 5000);
     return () => window.clearInterval(interval);
-  }, [visibleActiveJob?.job_id]);
+  }, [visibleActiveJob]);
 
   useEffect(() => {
     if (!visibleActiveJob?.job_id) return;
@@ -5890,6 +5711,7 @@ export default function PerformanceAIDashboard() {
                     <Preview3DCanvas items={preview3DItems} interactive={previewInteraction === "interactive"} />
                   ) : (
                     <div className="flex min-h-[520px] items-center justify-center overflow-hidden rounded-[20px] bg-white">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={planPreviewUrl}
                         alt="Generated plan preview"
@@ -5934,6 +5756,7 @@ export default function PerformanceAIDashboard() {
                     </div>
                     <div className="flex min-h-0 flex-1 items-center justify-center p-4">
                       <div className="relative max-h-full w-full">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={planPreviewUrl}
                           alt="Generated plan preview fullscreen"
