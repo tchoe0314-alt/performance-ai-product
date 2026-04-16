@@ -149,6 +149,32 @@ class LayoutEngineLegacyInferenceTests(unittest.TestCase):
         retail_center_y = float(retail["origin"][1]) + float(retail["height"]) / 2.0
         self.assertLess(abs(mf_center_y - retail_center_y), 130.0)
 
+    def test_expanded_mixed_use_plan_uses_shared_residential_courts(self) -> None:
+        plan = _build_expanded_plan(
+            {
+                "project_type": "mixed_use",
+                "lot": {"w": 620.0, "h": 980.0},
+                "buildings": [
+                    {"name": "MF-1", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "MF-2", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "MF-3", "type": "multifamily", "width": 110, "depth": 58},
+                    {"name": "Retail", "type": "retail", "width": 70, "depth": 45},
+                ],
+            }
+        )
+
+        parking = [
+            action
+            for action in plan["actions"]
+            if str(action.get("layer") or "").upper() == "PARKING"
+            and str(action.get("task") or "").lower() == "rectangle"
+        ]
+        labels = [str(action.get("label") or "").upper() for action in parking]
+
+        self.assertEqual(len(parking), 3)
+        self.assertEqual(sum(1 for label in labels if label.startswith("RES-PARK-")), 2)
+        self.assertEqual(sum(1 for label in labels if "RETAIL-PARK" in label), 1)
+
     def test_simple_layout_actions_do_not_label_synthetic_circulation_as_frontage_or_access(self) -> None:
         layout = generate_smart_layout(
             lot={"x": 0.0, "y": 0.0, "w": 120.0, "h": 100.0},

@@ -1593,7 +1593,7 @@ def _infer_parking_from_legacy(parsed: Dict[str, Any], site_box: Rect, buildings
     layout_strategy = _normalize_layout_strategy(_safe_str(parsed.get("layout_strategy"), "front_parking"))
 
     if len(buildings) > 1:
-        areas: List[Dict[str, Any]] = []
+        raw_areas: List[Dict[str, Any]] = []
         total_area = sum(max(1.0, _safe_float(b.get("w"), 0.0) * _safe_float(b.get("d"), 0.0)) for b in buildings)
         explicit_total = max(0, parking_count)
         for idx, building in enumerate(buildings, start=1):
@@ -1618,13 +1618,13 @@ def _infer_parking_from_legacy(parsed: Dict[str, Any], site_box: Rect, buildings
                     park_x = _clamp(bx - park_w - 14.0, buildable["x"], _rect_right(buildable) - park_w)
             parking_rect = _rect(park_x, park_y, park_w, lot_depth)
             capacity = _estimate_parking_capacity(parking_rect, standards)
+            use_type = _safe_str(building.get("use"), site_type).lower()
             if explicit_total > 0 and total_area > 0:
                 share = max(1, int(round(explicit_total * ((bw_val * bd_val) / total_area))))
             else:
-                use_type = _safe_str(building.get("use"), site_type).lower()
                 program_site_type = "multifamily_site" if use_type == "multifamily" else "commercial_pad" if use_type == "retail" else site_type
                 share = _parking_count_from_program(b_rect, program_site_type, intensity, None)
-            areas.append(
+            raw_areas.append(
                 {
                     "label": f"PARK-{idx}",
                     "x": round(parking_rect["x"], 3),
@@ -1637,9 +1637,65 @@ def _infer_parking_from_legacy(parsed: Dict[str, Any], site_box: Rect, buildings
                     "aisle_width": standards["aisle_width"],
                     "layout": _parking_orientation(parking_rect, standards),
                     "layer": "PARKING",
+                    "use": use_type,
                 }
             )
-        return areas
+        multifamily_areas = [area for area in raw_areas if _safe_str(area.get("use"), "").lower() == "multifamily"]
+        frontage_areas = [area for area in raw_areas if _safe_str(area.get("use"), "").lower() != "multifamily"]
+        if len(multifamily_areas) >= 3 and frontage_areas:
+            multifamily_areas = sorted(multifamily_areas, key=lambda area: _safe_float(area.get("x"), 0.0) + _safe_float(area.get("w"), 0.0) / 2.0)
+            split = (len(multifamily_areas) + 1) // 2
+            grouped_residential = [multifamily_areas[:split], multifamily_areas[split:]]
+            merged_areas: List[Dict[str, Any]] = []
+            for court_idx, group in enumerate(grouped_residential, start=1):
+                if not group:
+                    continue
+                min_x = min(_safe_float(area.get("x"), 0.0) for area in group)
+                min_y = min(_safe_float(area.get("y"), 0.0) for area in group)
+                max_x = max(_safe_float(area.get("x"), 0.0) + _safe_float(area.get("w"), 0.0) for area in group)
+                max_y = max(_safe_float(area.get("y"), 0.0) + _safe_float(area.get("h"), 0.0) for area in group)
+                merged_rect = _rect(min_x, min_y, max_x - min_x, max_y - min_y)
+                merged_areas.append(
+                    {
+                        "label": f"RES-PARK-{court_idx}",
+                        "x": round(merged_rect["x"], 3),
+                        "y": round(merged_rect["y"], 3),
+                        "w": round(merged_rect["w"], 3),
+                        "h": round(merged_rect["h"], 3),
+                        "stall_count": sum(_safe_int(area.get("stall_count"), 0) for area in group),
+                        "stall_width": standards["stall_width"],
+                        "stall_depth": standards["stall_depth"],
+                        "aisle_width": standards["aisle_width"],
+                        "layout": _parking_orientation(merged_rect, standards),
+                        "layer": "PARKING",
+                    }
+                )
+            for idx, area in enumerate(frontage_areas, start=1):
+                frontage_rect = _rect(
+                    _safe_float(area.get("x"), 0.0),
+                    _safe_float(area.get("y"), 0.0),
+                    _safe_float(area.get("w"), 0.0),
+                    _safe_float(area.get("h"), 0.0),
+                )
+                merged_areas.append(
+                    {
+                        "label": "RETAIL-PARK" if len(frontage_areas) == 1 else f"FRONTAGE-PARK-{idx}",
+                        "x": round(frontage_rect["x"], 3),
+                        "y": round(frontage_rect["y"], 3),
+                        "w": round(frontage_rect["w"], 3),
+                        "h": round(frontage_rect["h"], 3),
+                        "stall_count": _safe_int(area.get("stall_count"), 0),
+                        "stall_width": standards["stall_width"],
+                        "stall_depth": standards["stall_depth"],
+                        "aisle_width": standards["aisle_width"],
+                        "layout": _parking_orientation(frontage_rect, standards),
+                        "layer": "PARKING",
+                    }
+                )
+            return merged_areas
+        for area in raw_areas:
+            area.pop("use", None)
+        return raw_areas
 
     if buildings:
         primary = buildings[0]
