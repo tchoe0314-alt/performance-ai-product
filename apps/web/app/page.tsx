@@ -444,6 +444,21 @@ function extractDesignMemory(thread: ChatMessage[]): {
   };
 }
 
+function computeLearningScore(thread: ChatMessage[]): { score: number; total: number } {
+  let up = 0;
+  let down = 0;
+  for (const message of thread) {
+    if (message.role !== "assistant") continue;
+    if (message.feedback === "up") up += 1;
+    if (message.feedback === "down") down += 1;
+  }
+  const total = up + down;
+  if (total === 0) {
+    return { score: 0, total: 0 };
+  }
+  return { score: Math.round((up / total) * 100), total };
+}
+
 function summarizePlanResponse(
   data: any,
   mode: PlanToolMode,
@@ -4282,6 +4297,20 @@ export default function PerformanceAIDashboard() {
             </div>
 
             <div className="rounded-[28px] border border-slate-200 bg-white">
+              {(() => {
+                const learning = computeLearningScore(chatMessages);
+                if (!learning.total) return null;
+                return (
+                  <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 text-xs text-slate-500 md:px-6">
+                    <span className="font-semibold uppercase tracking-[0.14em]">
+                      Learning Score
+                    </span>
+                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700">
+                      {learning.score}% helpful ({learning.total})
+                    </span>
+                  </div>
+                );
+              })()}
               <div
                 ref={chatScrollRef}
                 className="max-h-[420px] space-y-4 overflow-y-auto p-4 md:p-6"
