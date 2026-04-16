@@ -1459,7 +1459,11 @@ def _infer_buildings_from_legacy(parsed: Dict[str, Any], site_box: Rect) -> List
                 upper_h *= scale
                 lower_h *= scale
                 gap *= scale
-            cluster_center = min_y + vertical_span * 0.5
+            frontage_shift = min(vertical_span * 0.08, 54.0)
+            if frontage_on_bottom:
+                cluster_center = min_y + vertical_span * 0.5 - frontage_shift
+            else:
+                cluster_center = min_y + vertical_span * 0.5 + frontage_shift
             lower_y = cluster_center - (gap / 2.0) - lower_h
             upper_y = cluster_center + (gap / 2.0)
             shift = 0.0
