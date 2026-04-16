@@ -10,6 +10,9 @@ const API_BASE_URL =
   process.env.PLAYWRIGHT_API_BASE_URL ||
   process.env.NEXT_PUBLIC_API_BASE_URL ||
   "https://api.civoraai.com";
+const APP_BASE_URL =
+  process.env.PLAYWRIGHT_BASE_URL ||
+  "https://civoraai.com";
 
 async function waitForComposer(page: Parameters<typeof test>[0]["page"]) {
   const composer = page.getByPlaceholder(
@@ -24,12 +27,7 @@ async function waitForComposer(page: Parameters<typeof test>[0]["page"]) {
 
     const loadError = page.getByText("This page couldn’t load");
     if (await loadError.isVisible().catch(() => false)) {
-      const reloadButton = page.getByRole("button", { name: "Reload" });
-      if (await reloadButton.isVisible().catch(() => false)) {
-        await reloadButton.click({ force: true });
-      } else {
-        await page.reload({ waitUntil: "domcontentloaded" });
-      }
+      await page.goto(APP_BASE_URL, { waitUntil: "domcontentloaded" }).catch(() => null);
     } else {
       await page.reload({ waitUntil: "domcontentloaded" });
     }
