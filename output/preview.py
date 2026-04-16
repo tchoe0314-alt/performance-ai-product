@@ -1599,7 +1599,7 @@ def _filtered_preview_actions(actions, *, rich_engineering=False):
 # Draw functions
 # ----------------------------------------
 
-def draw_rectangle(ax, action):
+def draw_rectangle(ax, action, *, render_labels: bool = True):
     x, y = safe_origin(action)
     w = safe_num(action.get("width"))
     h = safe_num(action.get("height"))
@@ -1657,7 +1657,7 @@ def draw_rectangle(ax, action):
             stripe_x += stripe_spacing
 
     preview_text = preview_label(action)
-    if preview_text:
+    if render_labels and preview_text:
         ax.text(
             x + w / 2,
             y + h / 2,
@@ -1672,7 +1672,7 @@ def draw_rectangle(ax, action):
     return x, y, x + w, y + h
 
 
-def draw_polygon(ax, action):
+def draw_polygon(ax, action, *, render_labels: bool = True):
     pts = safe_points(action)
     if len(pts) < 3:
         return None
@@ -1692,7 +1692,7 @@ def draw_polygon(ax, action):
     )
 
     label = preview_label(action)
-    if label:
+    if render_labels and label:
         cx = sum(xs) / len(xs)
         cy = sum(ys) / len(ys)
         ax.text(cx, cy, label, ha="center", va="center", fontsize=8, color=get_color(action))
@@ -1700,7 +1700,7 @@ def draw_polygon(ax, action):
     return min(xs_closed), min(ys_closed), max(xs_closed), max(ys_closed)
 
 
-def draw_polyline(ax, action):
+def draw_polyline(ax, action, *, render_labels: bool = True):
     pts = safe_points(action)
     if len(pts) < 2:
         return None
@@ -1719,7 +1719,7 @@ def draw_polyline(ax, action):
     )
 
     label = preview_label(action)
-    if label:
+    if render_labels and label:
         cx = sum(xs) / len(xs)
         cy = sum(ys) / len(ys)
         ax.text(cx, cy, label, ha="center", va="center", fontsize=8, color=get_color(action))
@@ -1727,7 +1727,7 @@ def draw_polyline(ax, action):
     return min(xs), min(ys), max(xs), max(ys)
 
 
-def draw_circle(ax, action):
+def draw_circle(ax, action, *, render_labels: bool = True):
     cx, cy = safe_center(action)
     r = safe_num(action.get("radius"))
     layer = (action.get("layer") or "").upper()
@@ -1749,13 +1749,13 @@ def draw_circle(ax, action):
     ax.add_patch(circle)
 
     preview_text = preview_label(action)
-    if preview_text:
+    if render_labels and preview_text:
         ax.text(cx, cy, preview_text, ha="center", va="center", fontsize=8, color=get_color(action))
 
     return cx - r, cy - r, cx + r, cy + r
 
 
-def draw_arc(ax, action):
+def draw_arc(ax, action, *, render_labels: bool = True):
     cx, cy = safe_center(action)
     r = safe_num(action.get("radius"))
     a1 = safe_num(action.get("start_angle"))
@@ -1779,18 +1779,18 @@ def draw_arc(ax, action):
     ax.add_patch(arc)
 
     preview_text = preview_label(action)
-    if preview_text:
+    if render_labels and preview_text:
         ax.text(cx, cy, preview_text, ha="center", va="center", fontsize=8, color=get_color(action))
 
     return cx - r, cy - r, cx + r, cy + r
 
 
-def draw_text(ax, action):
+def draw_text(ax, action, *, render_labels: bool = True):
     x, y = safe_origin(action)
     txt = safe_text(action.get("text"), "")
     h = max(safe_num(action.get("text_height"), 1.0), 0.5)
 
-    if not _should_draw_text_note(action):
+    if not render_labels or not _should_draw_text_note(action):
         return None
 
     alpha, fontsize_adjust, bbox_alpha = _text_style(action)
@@ -1809,7 +1809,7 @@ def draw_text(ax, action):
     return x - 2, y - 2, x + 4, y + 2
 
 
-def draw_point(ax, action):
+def draw_point(ax, action, *, render_labels: bool = True):
     x, y = safe_origin(action)
     label = clean_label(action.get("label"), "")
     size = max(safe_num(action.get("radius"), 0.75), 0.25)
@@ -1818,7 +1818,7 @@ def draw_point(ax, action):
     ax.plot([x, x], [y - size, y + size], linewidth=get_linewidth(action), color=get_color(action))
 
     preview_text = preview_label(action)
-    if preview_text:
+    if render_labels and preview_text:
         ax.text(
             x + size + 0.2,
             y + size + 0.2,
@@ -1832,7 +1832,7 @@ def draw_point(ax, action):
     return x - size, y - size, x + size, y + size
 
 
-def draw_north_arrow(ax, action):
+def draw_north_arrow(ax, action, *, render_labels: bool = True):
     x, y = safe_origin(action)
 
     ax.plot([x, x], [y, y + 8], linewidth=2)
@@ -2074,7 +2074,7 @@ def _preview_figure_size(selected_bounds, *, base=7.2):
     return (round(base * ratio, 3), base)
 
 
-def _draw_plan(ax, plan, *, actions=None, selected_bounds=None):
+def _draw_plan(ax, plan, *, actions=None, selected_bounds=None, render_labels: bool = True):
     if actions is None or selected_bounds is None:
         _, actions, selected_bounds = _preview_scene(plan)
     if not actions or selected_bounds is None:
@@ -2084,21 +2084,21 @@ def _draw_plan(ax, plan, *, actions=None, selected_bounds=None):
         task = action.get("task")
 
         if task == "rectangle":
-            bounds = draw_rectangle(ax, action)
+            bounds = draw_rectangle(ax, action, render_labels=render_labels)
         elif task == "polygon":
-            bounds = draw_polygon(ax, action)
+            bounds = draw_polygon(ax, action, render_labels=render_labels)
         elif task == "polyline":
-            bounds = draw_polyline(ax, action)
+            bounds = draw_polyline(ax, action, render_labels=render_labels)
         elif task == "circle":
-            bounds = draw_circle(ax, action)
+            bounds = draw_circle(ax, action, render_labels=render_labels)
         elif task == "arc":
-            bounds = draw_arc(ax, action)
+            bounds = draw_arc(ax, action, render_labels=render_labels)
         elif task == "text_note":
-            bounds = draw_text(ax, action)
+            bounds = draw_text(ax, action, render_labels=render_labels)
         elif task == "point":
-            bounds = draw_point(ax, action)
+            bounds = draw_point(ax, action, render_labels=render_labels)
         elif task == "north_arrow":
-            bounds = draw_north_arrow(ax, action)
+            bounds = draw_north_arrow(ax, action, render_labels=render_labels)
         else:
             continue
 
@@ -2122,7 +2122,7 @@ def _draw_plan(ax, plan, *, actions=None, selected_bounds=None):
     return True
 
 
-def render_plan_preview_png(plan, *, figsize=(8, 8), dpi: int = 160) -> bytes:
+def render_plan_preview_png(plan, *, figsize=(8, 8), dpi: int = 160, render_labels: bool = True) -> bytes:
     actions = [
         action
         for action in list(plan.get("actions") or [])
@@ -2139,7 +2139,13 @@ def render_plan_preview_png(plan, *, figsize=(8, 8), dpi: int = 160) -> bytes:
     FigureCanvasAgg(fig)
     ax = fig.subplots()
 
-    if not _draw_plan(ax, plan, actions=preview_actions, selected_bounds=selected_bounds):
+    if not _draw_plan(
+        ax,
+        plan,
+        actions=preview_actions,
+        selected_bounds=selected_bounds,
+        render_labels=render_labels,
+    ):
         raise ValueError("No drawable actions found in plan.")
 
     fig.tight_layout()
@@ -2147,6 +2153,59 @@ def render_plan_preview_png(plan, *, figsize=(8, 8), dpi: int = 160) -> bytes:
     fig.savefig(buffer, format="png", dpi=dpi)
     fig.clear()
     return buffer.getvalue()
+
+
+def build_preview_annotations(plan) -> Dict[str, Any]:
+    actions = [
+        action
+        for action in list(plan.get("actions") or [])
+        if isinstance(action, dict)
+    ]
+    engineering_profile, preview_actions, selected_bounds = _preview_scene(
+        {"actions": actions, **{k: v for k, v in plan.items() if k != "actions"}}
+    )
+    if not preview_actions or not selected_bounds:
+        return {"profile": engineering_profile, "labels": []}
+    min_x, min_y, max_x, max_y = selected_bounds
+    span_x = max(max_x - min_x, 1e-6)
+    span_y = max(max_y - min_y, 1e-6)
+    allowed_layers = {
+        "BUILDING",
+        "PARKING",
+        "ROAD",
+        "PAVEMENT",
+        "WALK",
+        "DRAIN",
+        "PIPE",
+        "STORM",
+        "SAN",
+        "UTILITY",
+        "WATER",
+        "STRUCTURE",
+        "BASIN_BOUNDARY",
+    }
+    labels: List[Dict[str, Any]] = []
+    for action in preview_actions:
+        layer = str(action.get("layer") or "").upper()
+        if layer not in allowed_layers:
+            continue
+        label = preview_label(action)
+        if not label:
+            continue
+        bounds = _action_bounds(action)
+        if not bounds:
+            continue
+        cx = (bounds[0] + bounds[2]) / 2.0
+        cy = (bounds[1] + bounds[3]) / 2.0
+        labels.append(
+            {
+                "label": label,
+                "layer": layer,
+                "x": (cx - min_x) / span_x,
+                "y": (cy - min_y) / span_y,
+            }
+        )
+    return {"profile": engineering_profile, "labels": labels}
 
 
 def preview_plan(plan):

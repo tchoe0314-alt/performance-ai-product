@@ -153,6 +153,10 @@ type DisciplineToggle = {
 type PreviewResponse = {
   success: boolean;
   preview_image_data_url: string;
+  preview_annotations?: {
+    profile?: string;
+    labels?: { label: string; layer: string; x: number; y: number }[];
+  };
   summary?: {
     project_name?: string;
     units?: string;
@@ -1080,6 +1084,8 @@ export default function PerformanceAIDashboard() {
   const [planPreviewUrl, setPlanPreviewUrl] = useState("");
   const [planPreviewSummary, setPlanPreviewSummary] =
     useState<PreviewResponse["summary"] | null>(null);
+  const [planPreviewAnnotations, setPlanPreviewAnnotations] =
+    useState<PreviewResponse["preview_annotations"] | null>(null);
   const [previewFullscreenOpen, setPreviewFullscreenOpen] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -3101,6 +3107,7 @@ export default function PerformanceAIDashboard() {
     });
     setPlanPreviewUrl(data.preview_image_data_url);
     setPlanPreviewSummary(data.summary ?? null);
+    setPlanPreviewAnnotations(data.preview_annotations ?? null);
     if (!options?.silent) {
       setStatusMessage("Plan preview generated.");
     }
@@ -4671,11 +4678,33 @@ export default function PerformanceAIDashboard() {
                       </button>
                     </div>
                     <div className="flex min-h-0 flex-1 items-center justify-center p-4">
-                      <img
-                        src={planPreviewUrl}
-                        alt="Generated plan preview fullscreen"
-                        className="max-h-full w-full rounded-[20px] bg-white object-contain shadow-2xl"
-                      />
+                      <div className="relative max-h-full w-full">
+                        <img
+                          src={planPreviewUrl}
+                          alt="Generated plan preview fullscreen"
+                          className="max-h-full w-full rounded-[20px] bg-white object-contain shadow-2xl"
+                        />
+                        {planPreviewAnnotations?.labels?.length ? (
+                          <div className="pointer-events-none absolute inset-0">
+                            {planPreviewAnnotations.labels.map((item, idx) => (
+                              <div
+                                key={`${item.label}-${idx}`}
+                                className="group pointer-events-auto absolute"
+                                style={{
+                                  left: `${Math.min(Math.max(item.x * 100, 0), 100)}%`,
+                                  top: `${Math.min(Math.max(item.y * 100, 0), 100)}%`,
+                                  transform: "translate(-50%, -50%)",
+                                }}
+                              >
+                                <div className="h-2 w-2 rounded-full bg-slate-900/30 opacity-0 transition group-hover:opacity-100" />
+                                <div className="pointer-events-none absolute left-1/2 top-0 z-10 hidden -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm group-hover:block">
+                                  {item.label}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                 </div>

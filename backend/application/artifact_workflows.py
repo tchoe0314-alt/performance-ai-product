@@ -9,10 +9,11 @@ from fastapi import HTTPException
 from backend.application.design_workflows import build_run_summary, final_plan_from_result
 from backend.application.project_workflows import artifact_summary, save_project_workflow_update
 from geometry.layout_engine import _build_expanded_plan
+from output.preview import build_preview_annotations
 
 
 class ArtifactServiceProtocol(Protocol):
-    def build_preview_png(self, final_plan: Dict[str, Any]) -> bytes:
+    def build_preview_png(self, final_plan: Dict[str, Any], *, render_labels: bool = True) -> bytes:
         ...
 
     def export_dxf(self, *, user_id: str, final_plan: Dict[str, Any], stem: Optional[str] = None) -> Path:
@@ -797,10 +798,12 @@ def build_preview_response(
         project_id=project_id,
     )
     final_plan = _display_plan_from_result(result_data, enforce_export_guards=False)
-    png_bytes = artifact_service.build_preview_png(final_plan)
+    png_bytes = artifact_service.build_preview_png(final_plan, render_labels=False)
+    preview_annotations = build_preview_annotations(final_plan)
     return {
         "success": True,
         "preview_image_data_url": f"data:image/png;base64,{b64encode(png_bytes).decode('ascii')}",
+        "preview_annotations": preview_annotations,
         "summary": {
             "project_name": final_plan.get("project_name", "Generated Plan"),
             "units": final_plan.get("units", "ft"),

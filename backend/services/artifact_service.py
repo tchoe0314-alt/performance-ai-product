@@ -51,11 +51,11 @@ class ArtifactService:
         )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
-    def build_preview_png(self, final_plan: Dict[str, Any]) -> bytes:
+    def build_preview_png(self, final_plan: Dict[str, Any], *, render_labels: bool = True) -> bytes:
         cache_path = self.preview_cache_dir / f"{self._preview_cache_key(final_plan)}.png"
         if cache_path.exists():
             return cache_path.read_bytes()
-        png_bytes = render_plan_preview_png(final_plan)
+        png_bytes = render_plan_preview_png(final_plan, render_labels=render_labels)
         try:
             cache_path.write_bytes(png_bytes)
         except Exception:
