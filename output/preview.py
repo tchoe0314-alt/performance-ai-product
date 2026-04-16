@@ -431,6 +431,21 @@ def _polyline_style(action):
     return linewidth, color, linestyle, alpha
 
 
+def _text_style(action):
+    layer = (action.get("layer") or "").upper()
+    preview_profile = _normalize_engineering_profile(action.get("_preview_profile"))
+    alpha = 0.8
+    fontsize_adjust = 0.0
+    bbox_alpha = 0.8
+
+    if preview_profile == "grading" and layer == "SPOT_FG":
+        alpha = 0.5
+        fontsize_adjust = -1.0
+        bbox_alpha = 0.55
+
+    return alpha, fontsize_adjust, bbox_alpha
+
+
 _GENERIC_BUILDING_LABEL_RE = re.compile(r"^(?:BLDG|BUILDING)\s*-?\s*\d+[A-Z]?$")
 _GENERIC_SURFACE_LABEL_RE = re.compile(r"^(?:LOT\s+[A-Z0-9]+|PARK(?:ING)?(?:\s+LOT)?\s*-?\s*[A-Z0-9]*|LOT\s+BASE)$")
 
@@ -1478,6 +1493,9 @@ def _filtered_preview_actions(actions, *, rich_engineering=False):
                 continue
             action = dict(action)
             action["_preview_profile"] = engineering_profile
+        elif engineering_profile == "grading" and layer == "SPOT_FG" and task == "text_note":
+            action = dict(action)
+            action["_preview_profile"] = engineering_profile
         filtered.append(action)
     return filtered
 
@@ -1733,15 +1751,17 @@ def draw_text(ax, action):
     if not _should_draw_text_note(action):
         return None
 
+    alpha, fontsize_adjust, bbox_alpha = _text_style(action)
     ax.text(
         x,
         y,
         txt,
-        fontsize=min(5 + h, 12),
+        fontsize=max(4.0, min(5 + h + fontsize_adjust, 12)),
         color=get_color(action),
+        alpha=alpha,
         ha="left",
         va="bottom",
-        bbox={"boxstyle": "round,pad=0.18", "facecolor": "white", "edgecolor": "none", "alpha": 0.8},
+        bbox={"boxstyle": "round,pad=0.18", "facecolor": "white", "edgecolor": "none", "alpha": bbox_alpha},
     )
 
     return x - 2, y - 2, x + 4, y + 2

@@ -6,6 +6,7 @@ from output.preview import (
     _filtered_preview_actions,
     _grading_focus_bounds_from_buildings,
     _polyline_style,
+    _text_style,
     _preview_figure_size,
     _preview_draw_priority,
     preview_label,
@@ -208,6 +209,20 @@ class PreviewRenderTests(unittest.TestCase):
         self.assertLess(linewidth, 1.2)
         self.assertLess(linewidth, 1.0)
         self.assertLess(alpha, 0.25)
+
+    def test_grading_preview_quiets_spot_grade_text_style(self):
+        spot = {
+            "layer": "SPOT_FG",
+            "task": "text_note",
+            "text": "FG 102.00",
+            "_preview_profile": "grading",
+        }
+
+        alpha, fontsize_adjust, bbox_alpha = _text_style(spot)
+
+        self.assertLess(alpha, 0.8)
+        self.assertLess(fontsize_adjust, 0.0)
+        self.assertLess(bbox_alpha, 0.8)
 
     def test_layout_scene_suppresses_engineering_overlay_noise(self):
         actions = [
@@ -553,6 +568,11 @@ class PreviewRenderTests(unittest.TestCase):
         self.assertIn("SPOT_FG", kept_layers)
         self.assertGreaterEqual(kept_layers.count("FG_CONTOUR"), 2)
         self.assertIn("101.2", spot_texts)
+        spot_actions = [
+            action for action in filtered
+            if str(action.get("layer") or "").upper() == "SPOT_FG"
+        ]
+        self.assertTrue(all(action.get("_preview_profile") == "grading" for action in spot_actions))
         self.assertNotIn("EG_CONTOUR", kept_layers)
         self.assertNotIn("DRAIN_FLOW", kept_layers)
         self.assertNotIn("PIPE", kept_layers)
