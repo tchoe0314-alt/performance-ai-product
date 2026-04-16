@@ -415,6 +415,21 @@ def get_linestyle(action):
     return LAYER_LINESTYLE.get(layer, "-")
 
 
+def _polyline_style(action):
+    layer = (action.get("layer") or "").upper()
+    linewidth = get_linewidth(action)
+    color = get_color(action)
+    linestyle = get_linestyle(action)
+    alpha = 1.0
+
+    preview_profile = _normalize_engineering_profile(action.get("_preview_profile"))
+    if preview_profile == "grading" and layer in {"FG_CONTOUR", "EG_CONTOUR"}:
+        alpha = 0.42 if layer == "FG_CONTOUR" else 0.24
+        linewidth = max(0.7, linewidth * (0.78 if layer == "FG_CONTOUR" else 0.7))
+
+    return linewidth, color, linestyle, alpha
+
+
 _GENERIC_BUILDING_LABEL_RE = re.compile(r"^(?:BLDG|BUILDING)\s*-?\s*\d+[A-Z]?$")
 _GENERIC_SURFACE_LABEL_RE = re.compile(r"^(?:LOT\s+[A-Z0-9]+|PARK(?:ING)?(?:\s+LOT)?\s*-?\s*[A-Z0-9]*|LOT\s+BASE)$")
 
@@ -1454,6 +1469,8 @@ def _filtered_preview_actions(actions, *, rich_engineering=False):
             action = _clip_grading_contour_action(action, grading_focus_bounds)
             if action is None:
                 continue
+            action = dict(action)
+            action["_preview_profile"] = engineering_profile
         filtered.append(action)
     return filtered
 
@@ -1623,13 +1640,15 @@ def draw_polyline(ax, action):
 
     xs = [p[0] for p in pts]
     ys = [p[1] for p in pts]
+    linewidth, color, linestyle, alpha = _polyline_style(action)
 
     ax.plot(
         xs,
         ys,
-        linewidth=get_linewidth(action),
-        color=get_color(action),
-        linestyle=get_linestyle(action),
+        linewidth=linewidth,
+        color=color,
+        linestyle=linestyle,
+        alpha=alpha,
     )
 
     label = preview_label(action)

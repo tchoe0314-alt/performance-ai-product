@@ -4,6 +4,7 @@ from output.preview import (
     _choose_view_bounds,
     _expand_bounds,
     _filtered_preview_actions,
+    _polyline_style,
     _preview_figure_size,
     _preview_draw_priority,
     preview_label,
@@ -181,6 +182,22 @@ class PreviewRenderTests(unittest.TestCase):
         points = contour["points"]
         self.assertEqual(points[0], [185.04, 390.0])
         self.assertEqual(points[-1], [594.96, 390.0])
+        self.assertEqual(contour.get("_preview_profile"), "grading")
+
+    def test_grading_preview_quiets_contour_rendering_style(self):
+        contour = {
+            "layer": "FG_CONTOUR",
+            "task": "polyline",
+            "points": [[185.04, 390.0], [594.96, 390.0]],
+            "_preview_profile": "grading",
+        }
+
+        linewidth, color, linestyle, alpha = _polyline_style(contour)
+
+        self.assertEqual(color, "#f59e0b")
+        self.assertEqual(linestyle, "-.")
+        self.assertLess(linewidth, 1.2)
+        self.assertLess(alpha, 1.0)
 
     def test_layout_scene_suppresses_engineering_overlay_noise(self):
         actions = [
