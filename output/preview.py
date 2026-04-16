@@ -1324,8 +1324,8 @@ def draw_rectangle(ax, action):
     if layer == "PARKING" and w >= 24 and h >= 10:
         if w >= 220.0:
             stripe_spacing = max(28.0, min(36.0, w / 8.0))
-            stripe_alpha = 0.2
-            stripe_gap = max(40.0, min(84.0, w * 0.18))
+            stripe_alpha = 0.16
+            stripe_gap = max(52.0, min(104.0, w * 0.24))
         else:
             stripe_spacing = max(18.0, min(24.0, w / 5.0))
             stripe_alpha = 0.38

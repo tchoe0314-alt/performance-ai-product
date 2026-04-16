@@ -240,7 +240,7 @@ def _layout_fallback_actions(
         width = max_x - min_x
         height = max_y - min_y
         if shared and width > 0:
-            side_inset = min(max(14.0, width * 0.08), 32.0)
+            side_inset = min(max(26.0, width * 0.14), 50.0)
             min_x += side_inset
             max_x -= side_inset
             width = max(max_x - min_x, 48.0)

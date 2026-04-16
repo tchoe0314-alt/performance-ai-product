@@ -1658,7 +1658,7 @@ def _infer_parking_from_legacy(parsed: Dict[str, Any], site_box: Rect, buildings
                 max_y = max(_safe_float(area.get("y"), 0.0) + _safe_float(area.get("h"), 0.0) for area in group)
                 merged_w = max_x - min_x
                 if merged_w > 0.0:
-                    side_inset = min(max(14.0, merged_w * 0.08), 32.0)
+                    side_inset = min(max(26.0, merged_w * 0.14), 50.0)
                     min_x += side_inset
                     max_x -= side_inset
                     merged_w = max(max_x - min_x, 48.0)
