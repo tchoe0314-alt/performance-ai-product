@@ -1749,7 +1749,7 @@ def _preview_figure_size(selected_bounds, *, base=7.2):
     min_x, min_y, max_x, max_y = selected_bounds
     width = max(max_x - min_x, 1.0)
     height = max(max_y - min_y, 1.0)
-    ratio = max(1.0, min(2.6, width / height))
+    ratio = max(1.0, min(3.6, width / height))
     return (round(base * ratio, 3), base)
 
 

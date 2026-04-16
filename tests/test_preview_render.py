@@ -4,6 +4,7 @@ from output.preview import (
     _choose_view_bounds,
     _expand_bounds,
     _filtered_preview_actions,
+    _preview_figure_size,
     _preview_draw_priority,
     preview_label,
 )
@@ -17,6 +18,10 @@ class PreviewRenderTests(unittest.TestCase):
     def test_expand_bounds_keeps_default_padding_for_taller_bounds(self):
         expanded = _expand_bounds((0, 0, 100, 100))
         self.assertEqual(expanded, (-8.0, -8.0, 108.0, 108.0))
+
+    def test_preview_figure_size_allows_wider_landscape_sites(self):
+        size = _preview_figure_size((0, 0, 360, 100), base=7.2)
+        self.assertEqual(size, (25.92, 7.2))
 
     def test_preview_label_suppresses_generic_aisle_names(self):
         action = {"layer": "PAVEMENT", "task": "rectangle", "label": "AISLE-1"}
