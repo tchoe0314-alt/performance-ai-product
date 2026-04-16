@@ -99,18 +99,20 @@ def _synthesized_program_layout(
 ) -> List[Dict[str, Any]]:
     if not specs:
         return []
-    margin_x = max(35.0, lot_w * 0.06)
-    margin_y = max(35.0, lot_h * 0.06)
-    min_x = lot_x + margin_x
-    max_x = lot_x + lot_w - margin_x
-    min_y = lot_y + margin_y
-    max_y = lot_y + lot_h - margin_y
-
     frontage_uses = {"retail", "commercial", "pad"}
     frontage = [spec for spec in specs if (lower_text(spec.get("use")) or "generic") in frontage_uses]
     primary = [spec for spec in specs if spec not in frontage]
     if not primary:
         primary, frontage = frontage, []
+
+    margin_x = max(35.0, lot_w * 0.06)
+    margin_y = max(35.0, lot_h * 0.06)
+    if frontage and len(primary) == 3:
+        margin_y = max(24.0, lot_h * 0.04)
+    min_x = lot_x + margin_x
+    max_x = lot_x + lot_w - margin_x
+    min_y = lot_y + margin_y
+    max_y = lot_y + lot_h - margin_y
 
     placements: List[Dict[str, Any]] = []
     frontage_on_bottom = lower_text(street_edge) != "top"
@@ -150,10 +152,10 @@ def _synthesized_program_layout(
         return upper_y, upper_h, lower_y, lower_h
 
     if frontage and len(primary) == 3:
-        upper_h = max(max(safe_float(spec.get("d"), 20.0) for spec in primary[:2]) - 10.0, min(vertical_span * 0.045, 36.0))
-        middle_h = max(max(safe_float(spec.get("d"), 20.0) for spec in primary[2:]) - 14.0, min(vertical_span * 0.04, 32.0))
-        lower_h = max(max(safe_float(spec.get("d"), 20.0) for spec in frontage) - 15.0, min(vertical_span * 0.035, 28.0))
-        gap = max(2.0, min(vertical_span * 0.004, 4.0))
+        upper_h = max(max(safe_float(spec.get("d"), 20.0) for spec in primary[:2]) + 2.0, min(vertical_span * 0.045, 36.0))
+        middle_h = max(max(safe_float(spec.get("d"), 20.0) for spec in primary[2:]) + 2.0, min(vertical_span * 0.04, 32.0))
+        lower_h = max(max(safe_float(spec.get("d"), 20.0) for spec in frontage) + 2.0, min(vertical_span * 0.035, 28.0))
+        gap = max(2.0, min(vertical_span * 0.006, 8.0))
         total_h = upper_h + middle_h + lower_h + gap * 2.0
         if total_h > vertical_span:
             scale = max(0.6, vertical_span / max(total_h, 1.0))

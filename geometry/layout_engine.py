@@ -1445,6 +1445,8 @@ def _infer_buildings_from_legacy(parsed: Dict[str, Any], site_box: Rect) -> List
 
         margin_x = max(24.0, buildable["w"] * 0.05)
         margin_y = max(24.0, buildable["h"] * 0.05)
+        if frontage_specs and len(primary_specs) == 3:
+            margin_y = max(16.0, buildable["h"] * 0.035)
         min_x = buildable["x"] + margin_x
         max_x = _rect_right(buildable) - margin_x
         min_y = buildable["y"] + margin_y
@@ -1482,10 +1484,10 @@ def _infer_buildings_from_legacy(parsed: Dict[str, Any], site_box: Rect) -> List
             return upper_y, upper_h, lower_y, lower_h
 
         if frontage_specs and len(primary_specs) == 3:
-            upper_h = max(max(_safe_float(spec.get("d"), fallback_depth) for spec in primary_specs[:2]) - 10.0, min(vertical_span * 0.045, 36.0))
-            middle_h = max(max(_safe_float(spec.get("d"), fallback_depth) for spec in primary_specs[2:]) - 14.0, min(vertical_span * 0.04, 32.0))
-            lower_h = max(max(_safe_float(spec.get("d"), fallback_depth) for spec in frontage_specs) - 15.0, min(vertical_span * 0.035, 28.0))
-            gap = max(2.0, min(vertical_span * 0.004, 4.0))
+            upper_h = max(max(_safe_float(spec.get("d"), fallback_depth) for spec in primary_specs[:2]) + 2.0, min(vertical_span * 0.045, 36.0))
+            middle_h = max(max(_safe_float(spec.get("d"), fallback_depth) for spec in primary_specs[2:]) + 2.0, min(vertical_span * 0.04, 32.0))
+            lower_h = max(max(_safe_float(spec.get("d"), fallback_depth) for spec in frontage_specs) + 2.0, min(vertical_span * 0.035, 28.0))
+            gap = max(2.0, min(vertical_span * 0.006, 8.0))
         elif frontage_specs:
             upper_h = max(max(_safe_float(spec.get("d"), fallback_depth) for spec in primary_specs) + 10.0, min(vertical_span * 0.11, 82.0))
             lower_h = max(max(_safe_float(spec.get("d"), fallback_depth) for spec in frontage_specs) + 8.0, min(vertical_span * 0.08, 56.0))
