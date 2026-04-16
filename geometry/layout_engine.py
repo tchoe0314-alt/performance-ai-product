@@ -1656,7 +1656,13 @@ def _infer_parking_from_legacy(parsed: Dict[str, Any], site_box: Rect, buildings
                 min_y = min(_safe_float(area.get("y"), 0.0) for area in group)
                 max_x = max(_safe_float(area.get("x"), 0.0) + _safe_float(area.get("w"), 0.0) for area in group)
                 max_y = max(_safe_float(area.get("y"), 0.0) + _safe_float(area.get("h"), 0.0) for area in group)
-                merged_rect = _rect(min_x, min_y, max_x - min_x, max_y - min_y)
+                merged_w = max_x - min_x
+                if merged_w > 0.0:
+                    side_inset = min(max(14.0, merged_w * 0.08), 32.0)
+                    min_x += side_inset
+                    max_x -= side_inset
+                    merged_w = max(max_x - min_x, 48.0)
+                merged_rect = _rect(min_x, min_y, merged_w, max_y - min_y)
                 merged_areas.append(
                     {
                         "label": f"RES-PARK-{court_idx}",

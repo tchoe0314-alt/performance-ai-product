@@ -170,10 +170,16 @@ class LayoutEngineLegacyInferenceTests(unittest.TestCase):
             and str(action.get("task") or "").lower() == "rectangle"
         ]
         labels = [str(action.get("label") or "").upper() for action in parking]
+        residential_widths = [
+            float(action.get("width") or 0.0)
+            for action in parking
+            if str(action.get("label") or "").upper().startswith("RES-PARK-")
+        ]
 
         self.assertEqual(len(parking), 3)
         self.assertEqual(sum(1 for label in labels if label.startswith("RES-PARK-")), 2)
         self.assertEqual(sum(1 for label in labels if "RETAIL-PARK" in label), 1)
+        self.assertTrue(all(width <= 250.0 for width in residential_widths))
 
     def test_shared_residential_courts_keep_walks_aligned_to_buildings(self) -> None:
         plan = _build_expanded_plan(
