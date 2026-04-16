@@ -29,7 +29,7 @@ class LayoutFallbackActionsTests(unittest.TestCase):
         retail_center_y = float(retail["y"]) + float(retail["d"]) / 2.0
 
         self.assertEqual(len(placements), 4)
-        self.assertLess(abs(mf_center_y - retail_center_y), 180.0)
+        self.assertLess(abs(mf_center_y - retail_center_y), 130.0)
 
     def test_layout_fallback_emits_parking_walk_and_pavement_layers(self) -> None:
         actions = _layout_fallback_actions(

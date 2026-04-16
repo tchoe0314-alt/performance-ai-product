@@ -1470,9 +1470,9 @@ def _infer_buildings_from_legacy(parsed: Dict[str, Any], site_box: Rect) -> List
             return upper_y, upper_h, lower_y, lower_h
 
         if frontage_specs:
-            upper_h = max(max(_safe_float(spec.get("d"), fallback_depth) for spec in primary_specs) + 26.0, min(vertical_span * 0.18, 118.0))
-            lower_h = max(max(_safe_float(spec.get("d"), fallback_depth) for spec in frontage_specs) + 20.0, min(vertical_span * 0.12, 84.0))
-            gap = max(18.0, min(vertical_span * 0.05, 40.0))
+            upper_h = max(max(_safe_float(spec.get("d"), fallback_depth) for spec in primary_specs) + 18.0, min(vertical_span * 0.15, 96.0))
+            lower_h = max(max(_safe_float(spec.get("d"), fallback_depth) for spec in frontage_specs) + 14.0, min(vertical_span * 0.10, 68.0))
+            gap = max(12.0, min(vertical_span * 0.03, 24.0))
             top_row_y, top_row_h, bottom_row_y, bottom_row_h = _fit_row_bands(upper_h, lower_h, gap)
         else:
             top_row_h = max(max(_safe_float(spec.get("d"), fallback_depth) for spec in primary_specs) + 34.0, min(vertical_span * 0.2, 140.0))
