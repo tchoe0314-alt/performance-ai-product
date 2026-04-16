@@ -618,6 +618,10 @@ function joinNatural(items: string[], limit = 3): string {
   return `${filtered.slice(0, -1).join(", ")}, and ${filtered[filtered.length - 1]}`;
 }
 
+function toArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
 function readPositiveNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value) && value > 0) {
     return value;
@@ -4529,31 +4533,31 @@ export default function PerformanceAIDashboard() {
         "",
     };
   })();
-  const previewAssumptionCategories = (previewReview?.assumption_categories ?? [])
+  const previewAssumptionCategories = toArray(previewReview?.assumption_categories)
     .map((item: unknown) => toReadableLabel(String(item || "")))
     .filter(Boolean);
-  const previewFixActions = (previewReview?.autofix_actions ?? [])
+  const previewFixActions = toArray(previewReview?.autofix_actions)
     .map((item: unknown) => toReadableLabel(String(item || "")))
     .filter(Boolean);
-  const previewFixTargets = (previewReview?.dominant_fix_targets ?? [])
+  const previewFixTargets = toArray(previewReview?.dominant_fix_targets)
     .map((item: unknown) => toReadableLabel(String(item || "")))
     .filter(Boolean);
-  const previewReviewCategories = (previewReview?.review_categories ?? [])
+  const previewReviewCategories = toArray(previewReview?.review_categories)
     .map((item: unknown) => toReadableLabel(String(item || "")))
     .filter((item: string | null | undefined) => {
       const normalized = String(item || "").toLowerCase();
       return Boolean(item) && normalized !== "uncategorized" && normalized !== "general";
     });
-  const previewBlockedReasons = (previewReview?.blocked_reasons ?? [])
+  const previewBlockedReasons = toArray(previewReview?.blocked_reasons)
     .map((item: unknown) => toReadableLabel(String(item || "")))
     .filter(Boolean);
-  const previewFailedDeliverables = (previewReview?.failed_deliverables ?? [])
+  const previewFailedDeliverables = toArray(previewReview?.failed_deliverables)
     .map((item: unknown) => toReadableLabel(String(item || "")))
     .filter(Boolean);
-  const previewExtraDeliverables = (previewReview?.extra_deliverables ?? [])
+  const previewExtraDeliverables = toArray(previewReview?.extra_deliverables)
     .map((item: unknown) => toReadableLabel(String(item || "")))
     .filter(Boolean);
-  const previewReadyDeliverables = (previewReview?.ready_deliverables ?? [])
+  const previewReadyDeliverables = toArray(previewReview?.ready_deliverables)
     .map((item: unknown) => toReadableLabel(String(item || "")))
     .filter(Boolean);
   const previewPhaseEntries = (
@@ -4573,16 +4577,16 @@ export default function PerformanceAIDashboard() {
       }
       const label = toReadableLabel(String(phase.label || key || "")) || "Phase";
       const status = String(phase.status || (phase.ready ? "ready" : "review") || "review");
-      const deliverables = (phase.deliverables ?? [])
+      const deliverables = toArray(phase.deliverables)
         .map((item: unknown) => toReadableLabel(String(item || "")))
         .filter(Boolean);
       const blockers = [
-        ...(phase.blockers ?? []),
-        ...(phase.blocked_reasons ?? []),
+        ...toArray(phase.blockers),
+        ...toArray(phase.blocked_reasons),
       ]
         .map((item: unknown) => toReadableLabel(String(item || "")))
         .filter(Boolean);
-      const messages = (phase.messages ?? [])
+      const messages = toArray(phase.messages)
         .map((item: unknown) => String(item || "").trim())
         .filter(Boolean);
       const note = String(phase.note || "").trim();
@@ -4635,8 +4639,8 @@ export default function PerformanceAIDashboard() {
     null;
   const effectivePreviewUnresolvedCount =
     previewReview?.release_status === "ready" &&
-    !(previewReview?.blocked_reasons ?? []).length &&
-    !(previewReview?.failed_deliverables ?? []).length
+    !toArray(previewReview?.blocked_reasons).length &&
+    !toArray(previewReview?.failed_deliverables).length
       ? 0
       : previewReview?.unresolved_conflict_count ?? 0;
   const combinedPreviewPhase =
