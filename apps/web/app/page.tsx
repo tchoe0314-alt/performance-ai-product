@@ -4722,10 +4722,10 @@ export default function PerformanceAIDashboard() {
         ? `${previewCompletedPhaseCount}/${previewTotalPhaseCount} phases complete`
         : "";
   const previewRerunSignals = [
-    ...(previewReview?.rerun_stages ?? []).map((item: unknown) =>
+    ...toArray(previewReview?.rerun_stages).map((item: unknown) =>
       toReadableLabel(String(item || "")),
     ),
-    ...(previewReview?.rerun_reasons ?? []).map((item: unknown) =>
+    ...toArray(previewReview?.rerun_reasons).map((item: unknown) =>
       toReadableLabel(String(item || "")),
     ),
   ].filter(Boolean);
@@ -4792,13 +4792,13 @@ export default function PerformanceAIDashboard() {
     const buildingWidthValue = readPositiveNumber(manualFields.building_width ?? buildingWidth);
     const buildingDepthValue = readPositiveNumber(manualFields.building_depth ?? buildingDepth);
     const requestedDeliverables = new Set(
-      (previewReview?.requested_deliverables ?? [])
+      toArray(previewReview?.requested_deliverables)
         .map((item: unknown) => String(item || "").trim())
         .filter(Boolean),
     );
     const disciplineSet = new Set(
       [
-        ...(Array.isArray(manualFields.disciplines) ? manualFields.disciplines : []),
+        ...toArray(manualFields.disciplines),
         roads ? "corridor" : null,
         grading ? "grading" : null,
         drainage ? "drainage" : null,
