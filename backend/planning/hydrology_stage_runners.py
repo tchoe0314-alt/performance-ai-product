@@ -67,6 +67,7 @@ def _synthesize_storm_pipe_summary(
     storm_basins: Sequence[Any],
     outfalls: Sequence[Any],
     selected_target_name: str,
+    min_pipe_slope: float = PIPE_MIN_SLOPE,
     validate_network_graph: Callable[[Dict[str, Any], str], Dict[str, Any]],
     validate_storm_hydraulics: Callable[[Dict[str, Any]], Dict[str, Any]],
 ) -> Dict[str, Any]:
@@ -120,10 +121,10 @@ def _synthesize_storm_pipe_summary(
         contributing_area_sf = max(1.0, safe_float(getattr(inlet, "contributing_area_sf", 0.0), 0.0))
         path = [[round(start_x, 3), round(start_y, 3)], [anchor["x"], anchor["y"]]]
         length_ft = max(polyline_length(path), 1.0)
-        slope_ft_ft = max(PIPE_MIN_SLOPE, abs(start_z - anchor["z"]) / length_ft)
+        slope_ft_ft = max(min_pipe_slope, abs(start_z - anchor["z"]) / length_ft)
         start_invert_ft = round(start_z - 3.5, 3)
         end_invert_ft = round(min(anchor["z"] - 1.0, start_invert_ft - slope_ft_ft * length_ft), 3)
-        slope_ft_ft = max(PIPE_MIN_SLOPE, (start_invert_ft - end_invert_ft) / max(length_ft, 1e-9))
+        slope_ft_ft = max(min_pipe_slope, (start_invert_ft - end_invert_ft) / max(length_ft, 1e-9))
         capacity_cfs = max(flow_cfs * 1.25, flow_cfs + 0.5)
         capacity_ratio = min(round(flow_cfs / max(capacity_cfs, 1e-9), 4), 1.0)
         segment_name = f"SYNTH-STORM-{index}"
@@ -254,6 +255,12 @@ def run_drainage_stage(
             return
 
         execution_payload = unwrap_fields_for_execution(parsed)
+        drainage_profile = safe_dict(execution_payload.get("drainage"))
+        min_pipe_slope_pct = safe_float(drainage_profile.get("min_pipe_slope_pct"), 0.0)
+        min_pipe_slope = max(
+            PIPE_MIN_SLOPE,
+            min_pipe_slope_pct / 100.0 if min_pipe_slope_pct > 0 else PIPE_MIN_SLOPE,
+        )
         if user_supplied_geometry_available(parsed, "drainage_structures") or user_supplied_geometry_available(parsed, "pipe_network"):
             direct_actions: List[Dict[str, Any]] = []
             direct_actions.extend(actions_from_point_features(safe_list(execution_payload.get("drainage_structures")), "DRAIN"))
@@ -334,7 +341,7 @@ def run_drainage_stage(
             hydraulic = HydraulicInputs(
                 runoff_c=safe_float(hydrology.get("runoff_c"), PIPE_RUNOFF_C),
                 intensity_in_hr=safe_float(hydrology.get("intensity_in_hr"), PIPE_INTENSITY_IN_HR),
-                min_pipe_slope=PIPE_MIN_SLOPE,
+                min_pipe_slope=min_pipe_slope,
                 min_pipe_diameter_in=12,
             )
             try:
@@ -523,7 +530,7 @@ def run_storm_pipe_stage(
                 outfalls=outfalls,
                 default_pipe_material="RCP",
                 default_mannings_n=PIPE_MANNINGS_N,
-                min_pipe_slope=PIPE_MIN_SLOPE,
+                min_pipe_slope=min_pipe_slope,
                 min_cover_ft=PIPE_MIN_COVER_FT,
                 min_diameter_in=12.0,
                 auto_route=True,
@@ -567,6 +574,7 @@ def run_storm_pipe_stage(
                     safe_dict(storm_pipe_summary.get("explain")).get("selected_outfall_name"),
                     "",
                 ),
+                min_pipe_slope=min_pipe_slope,
                 validate_network_graph=validate_network_graph,
                 validate_storm_hydraulics=validate_storm_hydraulics,
             ) or storm_pipe_summary

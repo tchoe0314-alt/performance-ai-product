@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from io import BytesIO
 import re
+from typing import Any, Dict, List, Optional
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -1496,8 +1497,9 @@ def _dedupe_primary_layout_records(records):
     return deduped
 
 
-def _filtered_preview_actions(actions, *, rich_engineering=False):
+def _filtered_preview_actions(actions, *, rich_engineering=False, include_layers: Optional[set[str]] = None):
     engineering_profile = _normalize_engineering_profile(rich_engineering)
+    include_layers = {layer.upper() for layer in include_layers} if include_layers else None
     records = [action for action in actions if isinstance(action, dict)]
     records = _synthesize_layout_preview_actions(records)
     records = _dedupe_primary_layout_records(records)
@@ -1564,11 +1566,14 @@ def _filtered_preview_actions(actions, *, rich_engineering=False):
         if has_layout_scene and _is_tiny_marker_circle(action):
             continue
         if engineering_profile == "layout" and layer == "BASIN_BOUNDARY":
-            continue
+            if not include_layers or layer not in include_layers:
+                continue
         if has_layout_scene and layer in SECONDARY_ENGINEERING_LAYERS and repr(action) not in engineering_overlay_keys:
-            continue
+            if not include_layers or layer not in include_layers:
+                continue
         if has_layout_scene and task == "point":
-            continue
+            if not include_layers or layer not in include_layers:
+                continue
         if has_layout_scene and layer == "BUILDING" and task == "text_note":
             continue
         if has_layout_scene and _is_isolated_pavement_shape(action, building_rects, parking_bounds):
@@ -2041,11 +2046,11 @@ def _infer_profile_from_actions(actions, current_profile):
     return current_profile
 
 
-def _preview_scene(plan):
+def _preview_scene(plan, *, include_layers: Optional[set[str]] = None):
     engineering_profile = _preview_engineering_profile(plan)
     raw_actions = list(plan.get("actions", []) or [])
     engineering_profile = _infer_profile_from_actions(raw_actions, engineering_profile)
-    actions = _filtered_preview_actions(raw_actions, rich_engineering=engineering_profile)
+    actions = _filtered_preview_actions(raw_actions, rich_engineering=engineering_profile, include_layers=include_layers)
     if not actions:
         return engineering_profile, actions, None
 
@@ -2122,13 +2127,40 @@ def _draw_plan(ax, plan, *, actions=None, selected_bounds=None, render_labels: b
     return True
 
 
-def render_plan_preview_png(plan, *, figsize=(8, 8), dpi: int = 160, render_labels: bool = True) -> bytes:
+def render_plan_preview_png(
+    plan,
+    *,
+    figsize=(8, 8),
+    dpi: int = 160,
+    render_labels: bool = True,
+    include_layers: Optional[set[str]] = None,
+) -> bytes:
     actions = [
         action
         for action in list(plan.get("actions") or [])
         if isinstance(action, dict)
     ]
-    _, preview_actions, selected_bounds = _preview_scene({"actions": actions, **{k: v for k, v in plan.items() if k != "actions"}})
+    if include_layers:
+        allowed = {layer.upper() for layer in include_layers}
+        always_allow = {
+            "BOUNDARY",
+            "SITE",
+            "GRID",
+            "TEXT",
+            "ANNOTATION",
+            "NORTH_ARROW",
+        }
+        actions = [
+            action
+            for action in actions
+            if str(action.get("layer") or "").upper() in allowed
+            or str(action.get("layer") or "").upper() in always_allow
+            or not str(action.get("layer") or "").strip()
+        ]
+    _, preview_actions, selected_bounds = _preview_scene(
+        {"actions": actions, **{k: v for k, v in plan.items() if k != "actions"}},
+        include_layers=allowed if include_layers else None,
+    )
     if len(actions) >= 60:
         figsize = _preview_figure_size(selected_bounds, base=7.2)
         dpi = min(dpi, 120)
@@ -2155,14 +2187,22 @@ def render_plan_preview_png(plan, *, figsize=(8, 8), dpi: int = 160, render_labe
     return buffer.getvalue()
 
 
-def build_preview_annotations(plan) -> Dict[str, Any]:
+def build_preview_annotations(plan, *, include_layers: Optional[set[str]] = None) -> Dict[str, Any]:
     actions = [
         action
         for action in list(plan.get("actions") or [])
         if isinstance(action, dict)
     ]
+    if include_layers:
+        allowed = {layer.upper() for layer in include_layers}
+        actions = [
+            action
+            for action in actions
+            if str(action.get("layer") or "").upper() in allowed or not str(action.get("layer") or "").strip()
+        ]
     engineering_profile, preview_actions, selected_bounds = _preview_scene(
-        {"actions": actions, **{k: v for k, v in plan.items() if k != "actions"}}
+        {"actions": actions, **{k: v for k, v in plan.items() if k != "actions"}},
+        include_layers=allowed if include_layers else None,
     )
     if not preview_actions or not selected_bounds:
         return {"profile": engineering_profile, "labels": []}
@@ -2183,6 +2223,9 @@ def build_preview_annotations(plan) -> Dict[str, Any]:
         "WATER",
         "STRUCTURE",
         "BASIN_BOUNDARY",
+        "BRIDGE",
+        "POOL",
+        "LOT",
     }
     labels: List[Dict[str, Any]] = []
     for action in preview_actions:
@@ -2203,6 +2246,12 @@ def build_preview_annotations(plan) -> Dict[str, Any]:
                 "layer": layer,
                 "x": (cx - min_x) / span_x,
                 "y": (cy - min_y) / span_y,
+                "bounds": {
+                    "x1": (bounds[0] - min_x) / span_x,
+                    "y1": (bounds[1] - min_y) / span_y,
+                    "x2": (bounds[2] - min_x) / span_x,
+                    "y2": (bounds[3] - min_y) / span_y,
+                },
             }
         )
     return {"profile": engineering_profile, "labels": labels}

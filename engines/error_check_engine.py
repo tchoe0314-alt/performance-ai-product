@@ -376,6 +376,24 @@ def run_plan_checks(
     Returns structured issue dicts suitable for planner / intelligence scoring.
     """
     parsed = _safe_dict(parsed)
+    grading = _safe_dict(parsed.get("grading"))
+    drainage = _safe_dict(parsed.get("drainage"))
+    override_min_site = _safe_float(grading.get("min_slope_pct"), 0.0)
+    override_max_parking = _safe_float(grading.get("max_parking_slope_pct"), 0.0)
+    override_max_ada = _safe_float(grading.get("max_ada_cross_slope_pct"), 0.0)
+    override_max_road = _safe_float(grading.get("max_road_grade_pct"), 0.0)
+    override_min_pipe = _safe_float(drainage.get("min_pipe_slope_pct"), 0.0)
+
+    if override_min_site > 0:
+        min_site_slope = max(min_site_slope, override_min_site / 100.0)
+    if override_max_parking > 0:
+        max_parking_slope = override_max_parking / 100.0
+    if override_max_ada > 0:
+        max_ada_cross_slope = override_max_ada / 100.0
+    if override_max_road > 0:
+        max_road_grade = override_max_road / 100.0
+    if override_min_pipe > 0:
+        min_pipe_slope = max(min_pipe_slope, override_min_pipe / 100.0)
     actions = [a for a in _safe_list(plan.get("actions")) if isinstance(a, dict)]
 
     issues: List[Dict[str, Any]] = []

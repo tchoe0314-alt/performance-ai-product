@@ -2802,6 +2802,10 @@ def _object_layer_for_preview(obj: Any) -> Optional[str]:
         return "PAVEMENT"
     if any(token in kind for token in ("road", "corridor", "drive")):
         return "ROAD"
+    if "bridge" in kind or "bridge" in tags:
+        return "BRIDGE"
+    if "pool" in kind or "pool" in tags:
+        return "POOL"
     if any(token in kind for token in ("detention", "pond", "basin")):
         return "BASIN_BOUNDARY"
     if any(token in kind for token in ("storm", "inlet", "drain")):

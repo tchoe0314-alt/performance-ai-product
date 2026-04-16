@@ -39,10 +39,20 @@ class ArtifactService:
         suffix = uuid.uuid4().hex[:8]
         return f"{prefix}-{timestamp}-{suffix}.{ext}"
 
-    def _preview_cache_key(self, final_plan: Dict[str, Any]) -> str:
+    def _preview_cache_key(
+        self,
+        final_plan: Dict[str, Any],
+        *,
+        render_labels: bool,
+        quality: str,
+        include_layers: Optional[list[str]] = None,
+    ) -> str:
         payload = json.dumps(
             {
                 "render_version": self.preview_cache_version,
+                "render_labels": bool(render_labels),
+                "quality": str(quality),
+                "include_layers": sorted(set(include_layers or [])),
                 "final_plan": final_plan or {},
             },
             sort_keys=True,
@@ -51,11 +61,24 @@ class ArtifactService:
         )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
-    def build_preview_png(self, final_plan: Dict[str, Any], *, render_labels: bool = True) -> bytes:
-        cache_path = self.preview_cache_dir / f"{self._preview_cache_key(final_plan)}.png"
+    def build_preview_png(
+        self,
+        final_plan: Dict[str, Any],
+        *,
+        render_labels: bool = True,
+        quality: str = "standard",
+        include_layers: Optional[list[str]] = None,
+    ) -> bytes:
+        cache_path = self.preview_cache_dir / f"{self._preview_cache_key(final_plan, render_labels=render_labels, quality=quality, include_layers=include_layers)}.png"
         if cache_path.exists():
             return cache_path.read_bytes()
-        png_bytes = render_plan_preview_png(final_plan, render_labels=render_labels)
+        dpi = 220 if str(quality).lower() == "high" else 160
+        png_bytes = render_plan_preview_png(
+            final_plan,
+            render_labels=render_labels,
+            dpi=dpi,
+            include_layers=set(include_layers or []) if include_layers else None,
+        )
         try:
             cache_path.write_bytes(png_bytes)
         except Exception:

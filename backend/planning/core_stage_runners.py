@@ -12,8 +12,10 @@ from core.config import (
     DEFAULT_PAD_ELEV,
     DEFAULT_PAD_WIDTH,
 )
-from core.geometry_core import EngineeringDomain, EngineeringObject, Point3D, ZoneType, rect_zone
+from core.geometry_core import EngineeringDomain, EngineeringObject, Point2D, Point3D, Polygon2D, ZoneType, rect_zone
 from core.project_manager import ConflictRecord, ConflictSeverity, DependencyState
+from engines.bridge_engine import BridgeEngine, BridgeRequest
+from engines.subdivision_engine import SubdivisionEngine, SubdivisionRequest
 from engines.grading_engine import GradingEngine, GradingRequest
 from engines.surface_engine import GridSurface
 
@@ -48,6 +50,46 @@ def _program_building_specs(parsed: Dict[str, Any], site_plan: Dict[str, Any]) -
     if specs:
         return specs
     return [{"name": "BUILDING", "use": "generic", "w": default_w, "d": default_d}]
+
+
+def _rectangles_overlap(a: Dict[str, float], b: Dict[str, float], *, buffer: float = 0.0) -> bool:
+    return not (
+        a["x"] + a["w"] + buffer <= b["x"]
+        or b["x"] + b["w"] + buffer <= a["x"]
+        or a["y"] + a["d"] + buffer <= b["y"]
+        or b["y"] + b["d"] + buffer <= a["y"]
+    )
+
+
+def _building_actions_viable(
+    building_actions: Sequence[Dict[str, Any]],
+    *,
+    lot_x: float,
+    lot_y: float,
+    lot_w: float,
+    lot_h: float,
+) -> bool:
+    rects: List[Dict[str, float]] = []
+    lot_max_x = lot_x + lot_w
+    lot_max_y = lot_y + lot_h
+    for action in building_actions:
+        origin = safe_list(action.get("origin"))
+        if len(origin) < 2:
+            return False
+        x = safe_float(origin[0], lot_x)
+        y = safe_float(origin[1], lot_y)
+        w = max(1.0, safe_float(action.get("width"), 0.0))
+        d = max(1.0, safe_float(action.get("height"), 0.0))
+        if w <= 1.0 or d <= 1.0:
+            return False
+        if x < lot_x - 5.0 or y < lot_y - 5.0 or x + w > lot_max_x + 5.0 or y + d > lot_max_y + 5.0:
+            return False
+        rect = {"x": x, "y": y, "w": w, "d": d}
+        for prior in rects:
+            if _rectangles_overlap(rect, prior, buffer=4.0):
+                return False
+        rects.append(rect)
+    return True
 
 
 def _place_row(
@@ -818,7 +860,17 @@ def run_layout_stage(
                 building_actions.append(action)
 
         placements: List[Dict[str, Any]] = []
-        if len(building_actions) >= len(building_specs) and building_actions:
+        if (
+            len(building_actions) >= len(building_specs)
+            and building_actions
+            and _building_actions_viable(
+                building_actions[: len(building_specs)],
+                lot_x=lot_x,
+                lot_y=lot_y,
+                lot_w=lot_w,
+                lot_h=lot_h,
+            )
+        ):
             for idx, building_action in enumerate(building_actions[: len(building_specs)]):
                 origin = safe_list(building_action.get("origin"))
                 bx = safe_float(origin[0], lot_x) if len(origin) >= 2 else lot_x
@@ -903,6 +955,121 @@ def run_layout_stage(
                 )
             )
 
+        subdivision_payload = safe_dict(execution_payload.get("subdivision"))
+        if subdivision_payload or lower_text(execution_payload.get("mode")) == "subdivision":
+            try:
+                subdivision_request = SubdivisionRequest(
+                    road_width=max(20.0, safe_float(subdivision_payload.get("road_width"), 60.0)),
+                    lot_width=max(30.0, safe_float(subdivision_payload.get("target_lot_width"), 80.0)),
+                    lot_depth=max(50.0, safe_float(subdivision_payload.get("target_lot_depth"), 140.0)),
+                    include_culdesac=bool(safe_int(subdivision_payload.get("culdesac_count"), 0) > 0),
+                    culdesac_count=max(0, safe_int(subdivision_payload.get("culdesac_count"), 0)),
+                    include_utility_corridors=bool(safe_dict(subdivision_payload).get("include_utility_corridors")),
+                    include_detention_ponds=bool(safe_int(subdivision_payload.get("detention_pond_count"), 0) > 0),
+                    detention_pond_count=max(0, safe_int(subdivision_payload.get("detention_pond_count"), 0)),
+                    street_frontage_edge=safe_str(subdivision_payload.get("street_frontage_edge"), street_edge),
+                    meta={"source": "planner"},
+                )
+                subdivision_result = SubdivisionEngine().generate(project, subdivision_request)
+                project.meta["subdivision_summary"] = {
+                    "success": subdivision_result.success,
+                    "message": subdivision_result.message,
+                    "lot_count": len(subdivision_result.lot_ids),
+                    "road_count": len(subdivision_result.road_ids),
+                    "warnings": list(subdivision_result.warnings),
+                }
+                manager.set_metric("subdivision_lot_count", len(subdivision_result.lot_ids), category="layout")
+                manager.set_metric("subdivision_road_count", len(subdivision_result.road_ids), category="layout")
+            except Exception as exc:
+                ctx.record_warning(f"Subdivision layout failed: {exc}")
+
+        bridge_payload = safe_dict(execution_payload.get("bridge"))
+        if bridge_payload or lower_text(execution_payload.get("mode")) == "bridge":
+            try:
+                road_payload = safe_dict(execution_payload.get("road"))
+                road_points = [
+                    (safe_float(pt[0], 0.0), safe_float(pt[1], 0.0))
+                    for pt in safe_list(road_payload.get("centerline_points"))
+                    if isinstance(pt, (list, tuple)) and len(pt) >= 2
+                ]
+                if not road_points:
+                    if street_edge in {"bottom", "top"}:
+                        y_mid = lot_y + lot_h * 0.5
+                        road_points = [
+                            (lot_x + lot_w * 0.1, y_mid),
+                            (lot_x + lot_w * 0.9, y_mid),
+                        ]
+                    else:
+                        x_mid = lot_x + lot_w * 0.5
+                        road_points = [
+                            (x_mid, lot_y + lot_h * 0.1),
+                            (x_mid, lot_y + lot_h * 0.9),
+                        ]
+                bridge_request = BridgeRequest(
+                    create_alignment_if_missing=True,
+                    fallback_points=road_points,
+                    deck_width=max(20.0, safe_float(bridge_payload.get("deck_width"), 36.0)),
+                    span_length=max(20.0, safe_float(bridge_payload.get("span_length"), 120.0)),
+                    max_span_length=max(30.0, safe_float(bridge_payload.get("max_span_length"), 150.0)),
+                    bridge_name=safe_str(bridge_payload.get("name"), "Bridge 1"),
+                    meta={"source": "planner"},
+                )
+                bridge_result = BridgeEngine().generate(project, bridge_request)
+                project.meta["bridge_summary"] = {
+                    "success": bridge_result.success,
+                    "message": bridge_result.message,
+                    "span_count": bridge_result.span_count,
+                    "pier_count": bridge_result.pier_count,
+                    "warnings": list(bridge_result.warnings),
+                }
+                manager.set_metric("bridge_span_count", bridge_result.span_count, category="layout")
+                manager.set_metric("bridge_pier_count", bridge_result.pier_count, category="layout")
+            except Exception as exc:
+                ctx.record_warning(f"Bridge layout failed: {exc}")
+
+        pool_payload = safe_dict(execution_payload.get("pool"))
+        if pool_payload or lower_text(execution_payload.get("mode")) == "pool":
+            try:
+                pool_length = max(20.0, safe_float(pool_payload.get("pool_length"), 60.0))
+                pool_width = max(12.0, safe_float(pool_payload.get("pool_width"), 30.0))
+                origin = safe_list(pool_payload.get("origin"))
+                if len(origin) >= 2:
+                    px = safe_float(origin[0], lot_x + lot_w * 0.6)
+                    py = safe_float(origin[1], lot_y + lot_h * 0.2)
+                else:
+                    px = lot_x + lot_w * 0.6
+                    py = lot_y + lot_h * 0.2
+                pool_polygon = Polygon2D(
+                    [
+                        Point2D(px, py),
+                        Point2D(px + pool_length, py),
+                        Point2D(px + pool_length, py + pool_width),
+                        Point2D(px, py + pool_width),
+                    ]
+                )
+                pool_obj = EngineeringObject(
+                    kind="pool",
+                    name=safe_str(pool_payload.get("name"), "Pool"),
+                    anchor=Point3D(px + pool_length / 2.0, py + pool_width / 2.0, DEFAULT_PAD_ELEV),
+                    boundary=pool_polygon,
+                    tags=["pool", "recreation"],
+                    domain=EngineeringDomain.STRUCTURE,
+                    properties={
+                        "length": pool_length,
+                        "width": pool_width,
+                        "source": "planner",
+                    },
+                )
+                project.add_object(pool_obj)
+                project.meta["pool_summary"] = {
+                    "length": pool_length,
+                    "width": pool_width,
+                    "area_sf": round(pool_length * pool_width, 2),
+                }
+                manager.set_metric("pool_area_sf", pool_length * pool_width, category="layout")
+            except Exception as exc:
+                ctx.record_warning(f"Pool layout failed: {exc}")
+
         if field_path_is_omitted(parsed, "site_plan.parking_count"):
             parking_count = 0
         else:
@@ -976,6 +1143,21 @@ def run_grading_stage(
             return
 
         execution_payload = unwrap_fields_for_execution(parsed)
+        grading_profile = safe_dict(execution_payload.get("grading"))
+        min_site_slope_pct = safe_float(grading_profile.get("min_slope_pct"), 0.0)
+        max_parking_slope_pct = safe_float(grading_profile.get("max_parking_slope_pct"), 0.0)
+        max_road_grade_pct = safe_float(grading_profile.get("max_road_grade_pct"), 0.0)
+        max_ada_cross_slope_pct = safe_float(grading_profile.get("max_ada_cross_slope_pct"), 0.0)
+        grading_request = GradingRequest(
+            create_project_objects=False,
+            create_project_zones=False,
+            min_site_slope=max(0.002, min_site_slope_pct / 100.0) if min_site_slope_pct > 0 else 0.002,
+            max_parking_slope=max(0.01, max_parking_slope_pct / 100.0)
+            if max_parking_slope_pct > 0
+            else 0.05,
+            max_road_grade=max(0.02, max_road_grade_pct / 100.0) if max_road_grade_pct > 0 else 0.10,
+            max_walk_grade=max(0.01, max_ada_cross_slope_pct / 100.0) if max_ada_cross_slope_pct > 0 else 0.05,
+        )
         existing_surface = build_existing_surface(execution_payload)
         project.meta["existing_surface"] = existing_surface
 
@@ -991,12 +1173,12 @@ def run_grading_stage(
 
         result = None
         build_kwargs = {
-            "request": GradingRequest(create_project_objects=False, create_project_zones=False),
+            "request": grading_request,
             "project": project,
         }
         for caller in (
             lambda: call_with_compatible_kwargs(engine.build, **build_kwargs),
-            lambda: call_with_compatible_kwargs(engine.build, GradingRequest(create_project_objects=False, create_project_zones=False)),
+            lambda: call_with_compatible_kwargs(engine.build, grading_request),
             lambda: call_with_compatible_kwargs(engine.build),
         ):
             try:
@@ -1009,7 +1191,7 @@ def run_grading_stage(
         if result is None and hasattr(engine, "apply_to_project"):
             result = engine.apply_to_project(
                 project,
-                GradingRequest(create_project_objects=False, create_project_zones=False),
+                grading_request,
             )
 
         if result is None:

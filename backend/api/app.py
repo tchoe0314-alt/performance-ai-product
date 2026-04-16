@@ -34,7 +34,9 @@ from backend.application.chat_workflows import decide_chat as application_decide
 from backend.application.file_workflows import (
     download_artifact_response as application_download_artifact_response,
     get_uploaded_image_response as application_get_uploaded_image_response,
+    estimate_slope_from_survey as application_estimate_slope_from_survey,
     upload_image_file as application_upload_image_file,
+    upload_survey_file as application_upload_survey_file,
 )
 from backend.application.health_workflows import health_response as application_health_response
 from backend.application.job_workflows import (
@@ -158,6 +160,9 @@ class ArtifactPayload(BaseModel):
     result: Dict[str, Any] = Field(default_factory=dict)
     final_plan: Dict[str, Any] = Field(default_factory=dict)
     filename_stem: Optional[str] = None
+    preview_quality: Optional[str] = None
+    render_labels: Optional[bool] = None
+    preview_layers: Optional[List[str]] = None
 
 
 class ChatDecisionPayload(BaseModel):
@@ -172,6 +177,21 @@ class ChatFeedbackPayload(BaseModel):
     message: str
     assistant_message: str
     context: Dict[str, Any] = Field(default_factory=dict)
+
+
+class SurveySlopePayload(BaseModel):
+    filename: str
+
+
+class ImageAnalysisPayload(BaseModel):
+    image_path: Optional[str] = None
+    detections: List[Dict[str, Any]] = Field(default_factory=list)
+    texts: List[Dict[str, Any]] = Field(default_factory=list)
+    image_width: Optional[float] = None
+    image_height: Optional[float] = None
+    source_name: Optional[str] = None
+    source_type: str = "image"
+    meta: Dict[str, Any] = Field(default_factory=dict)
 
 
 def _resolve_orchestration_project_id(
@@ -436,6 +456,62 @@ async def upload_image(
     )
 
 
+@app.post("/api/upload-survey")
+async def upload_survey(
+    file: UploadFile = File(...),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    return application_upload_survey_file(
+        upload_dir=UPLOAD_DIR,
+        file=file,
+        current_user=current_user,
+    )
+
+
+@app.post("/api/survey/estimate-slope")
+def estimate_survey_slope(
+    payload: SurveySlopePayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    return application_estimate_slope_from_survey(
+        upload_dir=UPLOAD_DIR,
+        current_user=current_user,
+        filename=payload.filename,
+    )
+
+
+@app.post("/api/image/analyze")
+def analyze_image(
+    payload: ImageAnalysisPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    try:
+        from vision.image_analysis_engine import ImageAnalysisEngine
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Image analysis unavailable: {exc}")
+
+    engine = ImageAnalysisEngine()
+    analysis_input = engine.from_detection_dict(
+        {
+            "detections": payload.detections,
+            "texts": payload.texts,
+            "image_width": payload.image_width,
+            "image_height": payload.image_height,
+            "source_name": payload.source_name or payload.image_path,
+            "source_type": payload.source_type or "image",
+            "meta": payload.meta,
+        }
+    )
+    result = engine.analyze(analysis_input)
+    return {
+        "success": result.success,
+        "message": result.message,
+        "counts": result.counts,
+        "warnings": result.warnings,
+        "meta": result.meta,
+    }
+
+
 @app.get("/api/uploads/{filename}")
 def get_uploaded_image(
     filename: str,
@@ -624,6 +700,9 @@ def build_preview(
         project_store=PROJECT_STORE,
         user_id=current_user["user_id"],
         project_id=payload.project_id,
+        preview_quality=payload.preview_quality,
+        render_labels=payload.render_labels,
+        preview_layers=payload.preview_layers,
     )
 
 

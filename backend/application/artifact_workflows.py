@@ -13,7 +13,14 @@ from output.preview import build_preview_annotations
 
 
 class ArtifactServiceProtocol(Protocol):
-    def build_preview_png(self, final_plan: Dict[str, Any], *, render_labels: bool = True) -> bytes:
+    def build_preview_png(
+        self,
+        final_plan: Dict[str, Any],
+        *,
+        render_labels: bool = True,
+        quality: str = "standard",
+        include_layers: Optional[list[str]] = None,
+    ) -> bytes:
         ...
 
     def export_dxf(self, *, user_id: str, final_plan: Dict[str, Any], stem: Optional[str] = None) -> Path:
@@ -790,6 +797,9 @@ def build_preview_response(
     project_store: Optional[ProjectStoreProtocol] = None,
     user_id: Optional[str] = None,
     project_id: Optional[str] = None,
+    preview_quality: Optional[str] = None,
+    render_labels: Optional[bool] = None,
+    preview_layers: Optional[list[str]] = None,
 ) -> Dict[str, Any]:
     result_data = _enrich_result_data_from_project(
         result_data,
@@ -798,8 +808,16 @@ def build_preview_response(
         project_id=project_id,
     )
     final_plan = _display_plan_from_result(result_data, enforce_export_guards=False)
-    png_bytes = artifact_service.build_preview_png(final_plan, render_labels=False)
-    preview_annotations = build_preview_annotations(final_plan)
+    png_bytes = artifact_service.build_preview_png(
+        final_plan,
+        render_labels=bool(render_labels),
+        quality=preview_quality or "standard",
+        include_layers=preview_layers,
+    )
+    preview_annotations = build_preview_annotations(
+        final_plan,
+        include_layers=set(preview_layers or []) if preview_layers else None,
+    )
     return {
         "success": True,
         "preview_image_data_url": f"data:image/png;base64,{b64encode(png_bytes).decode('ascii')}",

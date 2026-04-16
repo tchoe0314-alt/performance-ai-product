@@ -1,13 +1,14 @@
 export default function UpgradesPage() {
   const upgrades = [
     "Interactive 3D preview with full configuration",
+    "Preview quality controls and interaction modes",
     "Issue navigator highlights in preview",
     "Engineering metrics tied to live model outputs",
     "Materials and quantity takeoffs",
     "Survey + slope inference from imagery",
     "Map snapshot ingestion (Google Maps, GIS exports)",
     "Clickable issue detection and fix routing",
-    "Concept coverage for bridges, pools, subdivisions",
+    "Full engineering coverage for bridges, pools, subdivisions",
     "Environmental / regulatory depth",
     "Construction and inspection workflows",
     "Operations support dashboards",

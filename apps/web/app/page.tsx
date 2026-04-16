@@ -155,7 +155,13 @@ type PreviewResponse = {
   preview_image_data_url: string;
   preview_annotations?: {
     profile?: string;
-    labels?: { label: string; layer: string; x: number; y: number }[];
+    labels?: {
+      label: string;
+      layer: string;
+      x: number;
+      y: number;
+      bounds?: { x1: number; y1: number; x2: number; y2: number };
+    }[];
   };
   summary?: {
     project_name?: string;
@@ -218,6 +224,23 @@ type UploadImageResponse = {
   filename?: string;
 };
 
+type UploadSurveyResponse = {
+  success: boolean;
+  filename?: string;
+  stored_filename?: string;
+  survey_url?: string;
+};
+
+type SurveySlopeResponse = {
+  success: boolean;
+  slope_ratio?: number;
+  slope_percent?: number;
+  downhill_dx?: number;
+  downhill_dy?: number;
+  direction?: string;
+  point_count?: number;
+};
+
 type PlanToolMode = "run" | "fix" | "improve";
 type StrategyMode = "manual" | "assisted";
 type ControlOverrides = Partial<{
@@ -234,8 +257,14 @@ type ControlOverrides = Partial<{
   lotHeight: string;
   buildingWidth: string;
   buildingDepth: string;
+  buildingCount: string;
   setback: string;
   parkingCount: string;
+  minSlopePct: string;
+  pipeMinSlopePct: string;
+  maxParkingSlopePct: string;
+  maxRoadGradePct: string;
+  maxAdaCrossSlopePct: string;
 }>;
 type ChatDecisionIntent =
   | "conversation"
@@ -473,6 +502,164 @@ function readMetricValue(value: any): number | null {
 function formatMetric(value: number | null, unit: string): string {
   if (value == null || !Number.isFinite(value)) return "Pending";
   return `${value.toFixed(1)} ${unit}`;
+}
+
+function formatCount(value: number | null, unit?: string): string {
+  if (value == null || !Number.isFinite(value)) return "Pending";
+  const rounded = Math.round(value);
+  return unit ? `${rounded.toLocaleString()} ${unit}` : rounded.toLocaleString();
+}
+
+type Preview3DItem = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  height: number;
+  color: string;
+  label: string;
+  layer: string;
+};
+
+function Preview3DCanvas({
+  items,
+  interactive,
+}: {
+  items: Preview3DItem[];
+  interactive: boolean;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [rotation, setRotation] = useState({ x: 0.75, z: -0.8 });
+  const dragRef = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const parent = canvas.parentElement;
+    if (!parent) return;
+    const width = parent.clientWidth;
+    const height = parent.clientHeight;
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = width * ratio;
+    canvas.height = height * ratio;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    if (!items.length) {
+      ctx.fillStyle = "#94a3b8";
+      ctx.font = "14px ui-sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("No geometry to render yet.", width / 2, height / 2);
+      return;
+    }
+
+    const minX = Math.min(...items.map((item) => item.x));
+    const minY = Math.min(...items.map((item) => item.y));
+    const maxX = Math.max(...items.map((item) => item.x + item.w));
+    const maxY = Math.max(...items.map((item) => item.y + item.h));
+    const spanX = Math.max(maxX - minX, 1);
+    const spanY = Math.max(maxY - minY, 1);
+    const scale = Math.min(width / spanX, height / spanY) * 0.65;
+    const centerX = width / 2;
+    const centerY = height / 2 + 20;
+
+    const project = (x: number, y: number, z: number) => {
+      const cx = x - (minX + spanX / 2);
+      const cy = y - (minY + spanY / 2);
+      const cosZ = Math.cos(rotation.z);
+      const sinZ = Math.sin(rotation.z);
+      let rx = cx * cosZ - cy * sinZ;
+      let ry = cx * sinZ + cy * cosZ;
+      const cosX = Math.cos(rotation.x);
+      const sinX = Math.sin(rotation.x);
+      const ry2 = ry * cosX - z * sinX;
+      return {
+        x: centerX + rx * scale,
+        y: centerY + ry2 * scale,
+      };
+    };
+
+    ctx.fillStyle = "#eef2f7";
+    ctx.fillRect(0, 0, width, height);
+
+    const drawFace = (points: { x: number; y: number }[], color: string) => {
+      ctx.beginPath();
+      points.forEach((pt, idx) => {
+        if (idx === 0) ctx.moveTo(pt.x, pt.y);
+        else ctx.lineTo(pt.x, pt.y);
+      });
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.strokeStyle = "rgba(15,23,42,0.15)";
+      ctx.stroke();
+    };
+
+    const sorted = [...items].sort((a, b) => (a.x + a.y) - (b.x + b.y));
+    for (const item of sorted) {
+      const base = [
+        project(item.x, item.y, 0),
+        project(item.x + item.w, item.y, 0),
+        project(item.x + item.w, item.y + item.h, 0),
+        project(item.x, item.y + item.h, 0),
+      ];
+      const top = [
+        project(item.x, item.y, item.height),
+        project(item.x + item.w, item.y, item.height),
+        project(item.x + item.w, item.y + item.h, item.height),
+        project(item.x, item.y + item.h, item.height),
+      ];
+      const sideDark = item.layer === "BUILDING" ? "#94a3b8" : "#cbd5f5";
+      const sideLight = item.layer === "BUILDING" ? "#bfc7d4" : "#dbe5ff";
+      drawFace([base[0], base[1], top[1], top[0]], sideDark);
+      drawFace([base[1], base[2], top[2], top[1]], sideLight);
+      drawFace([top[0], top[1], top[2], top[3]], item.color);
+    }
+  }, [items, rotation]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !interactive) return;
+    const onPointerDown = (event: PointerEvent) => {
+      dragRef.current = { x: event.clientX, y: event.clientY };
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      if (!dragRef.current) return;
+      const dx = event.clientX - dragRef.current.x;
+      const dy = event.clientY - dragRef.current.y;
+      dragRef.current = { x: event.clientX, y: event.clientY };
+      setRotation((prev) => ({
+        x: Math.max(0.2, Math.min(1.2, prev.x + dy * 0.005)),
+        z: prev.z + dx * 0.005,
+      }));
+    };
+    const onPointerUp = () => {
+      dragRef.current = null;
+    };
+    canvas.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    return () => {
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
+  }, [interactive]);
+
+  return (
+    <div className="relative h-[520px] w-full overflow-hidden rounded-[20px] bg-white">
+      <canvas ref={canvasRef} className="h-full w-full" />
+      {interactive ? (
+        <div className="pointer-events-none absolute right-4 top-4 rounded-full bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
+          Drag to rotate
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function summarizePlanResponse(
@@ -1080,8 +1267,14 @@ export default function PerformanceAIDashboard() {
   const [lotHeight, setLotHeight] = useState("");
   const [buildingWidth, setBuildingWidth] = useState("");
   const [buildingDepth, setBuildingDepth] = useState("");
+  const [buildingCount, setBuildingCount] = useState("");
   const [setback, setSetback] = useState("");
   const [parkingCount, setParkingCount] = useState("");
+  const [minSlopePct, setMinSlopePct] = useState("");
+  const [pipeMinSlopePct, setPipeMinSlopePct] = useState("");
+  const [maxParkingSlopePct, setMaxParkingSlopePct] = useState("");
+  const [maxRoadGradePct, setMaxRoadGradePct] = useState("");
+  const [maxAdaCrossSlopePct, setMaxAdaCrossSlopePct] = useState("");
   const [roads, setRoads] = useState(true);
   const [grading, setGrading] = useState(true);
   const [drainage, setDrainage] = useState(true);
@@ -1093,6 +1286,10 @@ export default function PerformanceAIDashboard() {
   const [backendResult, setBackendResult] = useState<any>(null);
   const [uploadedImagePreviewUrl, setUploadedImagePreviewUrl] = useState("");
   const [uploadedImageApiUrl, setUploadedImageApiUrl] = useState("");
+  const [surveyFileName, setSurveyFileName] = useState("");
+  const [surveySlopeEstimate, setSurveySlopeEstimate] = useState<SurveySlopeResponse | null>(null);
+  const [mapSnapshotPath, setMapSnapshotPath] = useState("");
+  const [mapAnalysis, setMapAnalysis] = useState<any>(null);
   const [planPreviewUrl, setPlanPreviewUrl] = useState("");
   const [planPreviewSummary, setPlanPreviewSummary] =
     useState<PreviewResponse["summary"] | null>(null);
@@ -1103,6 +1300,17 @@ export default function PerformanceAIDashboard() {
   const [previewQuality, setPreviewQuality] = useState<"standard" | "high">("standard");
   const [showMeasurements, setShowMeasurements] = useState(false);
   const [showCalculations, setShowCalculations] = useState(false);
+  const [autoAdvancePhases, setAutoAdvancePhases] = useState(true);
+  const [previewLayers, setPreviewLayers] = useState({
+    buildings: true,
+    roads: true,
+    grading: true,
+    drainage: true,
+    utilities: true,
+    structures: true,
+    lots: false,
+  });
+  const [quantityRollupsEnabled, setQuantityRollupsEnabled] = useState(true);
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
   const [previewFullscreenOpen, setPreviewFullscreenOpen] = useState(false);
   const [projectId, setProjectId] = useState("");
@@ -1118,6 +1326,8 @@ export default function PerformanceAIDashboard() {
     useState<"explain" | "fix" | "improve">("explain");
   const [jobClockMs, setJobClockMs] = useState(() => Date.now());
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const mapSnapshotInputRef = useRef<HTMLInputElement | null>(null);
+  const surveyInputRef = useRef<HTMLInputElement | null>(null);
   const runSubmissionRef = useRef(false);
   const directRunAbortRef = useRef<AbortController | null>(null);
   const draftProjectPromiseRef = useRef<Promise<ProjectRecord | null> | null>(null);
@@ -1133,7 +1343,10 @@ export default function PerformanceAIDashboard() {
   const chatMessagesRef = useRef<ChatMessage[]>([createWelcomeMessage()]);
   const suppressProjectAutoLoadRef = useRef(false);
   const chatAutosaveTimeoutRef = useRef<number | null>(null);
+  const autoAdvanceByJobRef = useRef<Record<string, boolean>>({});
   const previewRecoveryKeyRef = useRef("");
+  const lastSiteInputProjectRef = useRef("");
+  const controlAutosaveTimeoutRef = useRef<number | null>(null);
 
   const disciplineToggles: DisciplineToggle[] = [
     {
@@ -1178,7 +1391,13 @@ export default function PerformanceAIDashboard() {
     nextSetback,
     nextBuildingWidth,
     nextBuildingDepth,
+    nextBuildingCount,
     nextParkingCount,
+    nextMinSlopePct,
+    nextPipeMinSlopePct,
+    nextMaxParkingSlopePct,
+    nextMaxRoadGradePct,
+    nextMaxAdaCrossSlopePct,
     nextRoads,
     nextGrading,
     nextDrainage,
@@ -1194,7 +1413,13 @@ export default function PerformanceAIDashboard() {
     nextSetback: string | number | null | undefined;
     nextBuildingWidth: string | number | null | undefined;
     nextBuildingDepth: string | number | null | undefined;
+    nextBuildingCount: string | number | null | undefined;
     nextParkingCount: string | number | null | undefined;
+    nextMinSlopePct: string | number | null | undefined;
+    nextPipeMinSlopePct: string | number | null | undefined;
+    nextMaxParkingSlopePct: string | number | null | undefined;
+    nextMaxRoadGradePct: string | number | null | undefined;
+    nextMaxAdaCrossSlopePct: string | number | null | undefined;
     nextRoads: boolean;
     nextGrading: boolean;
     nextDrainage: boolean;
@@ -1205,7 +1430,13 @@ export default function PerformanceAIDashboard() {
     const setbackValue = parsePositiveNumber(nextSetback);
     const buildingWidthValue = parsePositiveNumber(nextBuildingWidth);
     const buildingDepthValue = parsePositiveNumber(nextBuildingDepth);
+    const buildingCountValue = parsePositiveNumber(nextBuildingCount);
     const parkingCountValue = parsePositiveNumber(nextParkingCount);
+    const minSlopeValue = parsePositiveNumber(nextMinSlopePct);
+    const pipeMinSlopeValue = parsePositiveNumber(nextPipeMinSlopePct);
+    const maxParkingSlopeValue = parsePositiveNumber(nextMaxParkingSlopePct);
+    const maxRoadGradeValue = parsePositiveNumber(nextMaxRoadGradePct);
+    const maxAdaSlopeValue = parsePositiveNumber(nextMaxAdaCrossSlopePct);
 
     const manualFields: Record<string, any> = {
       project_name: nextSiteName,
@@ -1249,10 +1480,55 @@ export default function PerformanceAIDashboard() {
       manualFields.building_depth = 0;
     }
 
+    if (buildingCountValue !== null) {
+      manualFields.buildings = Array.from({ length: Math.max(1, Math.round(buildingCountValue)) }).map(
+        (_, idx) => ({
+          name: `Building ${idx + 1}`,
+          w: buildingWidthValue ?? undefined,
+          d: buildingDepthValue ?? undefined,
+        }),
+      );
+    }
+
     if (parkingCountValue !== null) {
       manualFields.site_plan = { parking_count: parkingCountValue };
     } else if (strategy === "manual") {
       manualFields.site_plan = { parking_count: 0 };
+    }
+
+    if (minSlopeValue !== null) {
+      manualFields.grading = {
+        ...(manualFields.grading ?? {}),
+        min_slope_pct: minSlopeValue,
+      };
+    }
+
+    if (maxParkingSlopeValue !== null) {
+      manualFields.grading = {
+        ...(manualFields.grading ?? {}),
+        max_parking_slope_pct: maxParkingSlopeValue,
+      };
+    }
+
+    if (maxRoadGradeValue !== null) {
+      manualFields.grading = {
+        ...(manualFields.grading ?? {}),
+        max_road_grade_pct: maxRoadGradeValue,
+      };
+    }
+
+    if (maxAdaSlopeValue !== null) {
+      manualFields.grading = {
+        ...(manualFields.grading ?? {}),
+        max_ada_cross_slope_pct: maxAdaSlopeValue,
+      };
+    }
+
+    if (pipeMinSlopeValue !== null) {
+      manualFields.drainage = {
+        ...(manualFields.drainage ?? {}),
+        min_pipe_slope_pct: pipeMinSlopeValue,
+      };
     }
 
     return manualFields;
@@ -1268,6 +1544,7 @@ export default function PerformanceAIDashboard() {
       image_path: imageName || null,
       meta: {
         chat_thread: chatMessagesRef.current,
+        site_inputs: currentProject?.project_input?.meta?.site_inputs ?? {},
       },
       manual_fields: buildManualFields({
         strategy: strategyMode,
@@ -1280,7 +1557,13 @@ export default function PerformanceAIDashboard() {
         nextSetback: setback,
         nextBuildingWidth: buildingWidth,
         nextBuildingDepth: buildingDepth,
+        nextBuildingCount: buildingCount,
         nextParkingCount: parkingCount,
+        nextMinSlopePct: minSlopePct,
+        nextPipeMinSlopePct: pipeMinSlopePct,
+        nextMaxParkingSlopePct: maxParkingSlopePct,
+        nextMaxRoadGradePct: maxRoadGradePct,
+        nextMaxAdaCrossSlopePct: maxAdaCrossSlopePct,
         nextRoads: roads,
         nextGrading: grading,
         nextDrainage: drainage,
@@ -1302,11 +1585,18 @@ export default function PerformanceAIDashboard() {
       setback,
       buildingWidth,
       buildingDepth,
+      buildingCount,
       parkingCount,
-      roads,
+    minSlopePct,
+    pipeMinSlopePct,
+    maxParkingSlopePct,
+    maxRoadGradePct,
+    maxAdaCrossSlopePct,
+    roads,
       grading,
       drainage,
       utilities,
+      currentProject,
       chatMessages,
     ],
   );
@@ -1419,6 +1709,10 @@ export default function PerformanceAIDashboard() {
     () => (currentPlanMeta?.manager_export?.metrics ?? {}) as Record<string, any>,
     [currentPlanMeta],
   );
+  const quantityTotals = useMemo(
+    () => (currentPlanMeta?.quantities?.totals ?? {}) as Record<string, any>,
+    [currentPlanMeta],
+  );
   const stormSummary = useMemo(() => currentPlanMeta?.storm_pipes ?? {}, [currentPlanMeta]);
   const drainageSummary = useMemo(() => currentPlanMeta?.drainage ?? {}, [currentPlanMeta]);
   const gradingSummary = useMemo(() => currentPlanMeta?.grading ?? {}, [currentPlanMeta]);
@@ -1464,8 +1758,9 @@ export default function PerformanceAIDashboard() {
 
   const totalPipeLength =
     readMetricValue(managerMetrics.storm_pipe_length_ft) ??
-    pipeSegments.reduce((sum: number, seg: any) => sum + Number(seg.length_ft || 0), 0) ||
-    null;
+    (pipeSegments.length
+      ? pipeSegments.reduce((sum: number, seg: any) => sum + Number(seg.length_ft || 0), 0)
+      : null);
   const maxSlope = pipeSegments.length
     ? Math.max(
         ...pipeSegments.map((seg: any) =>
@@ -1493,6 +1788,124 @@ export default function PerformanceAIDashboard() {
     (Array.isArray(drainageSummary?.basins) && drainageSummary.basins[0]?.area_sf) ||
     (Array.isArray(drainageSummary?.basins) && drainageSummary.basins[0]?.footprint_area_sf) ||
     null;
+  const quantityRows = useMemo(() => {
+    const rows = [
+      { label: "Lot area", value: quantityTotals.lot_area_sf, unit: "sf" },
+      { label: "Building area", value: quantityTotals.building_area_sf, unit: "sf" },
+      { label: "Parking area", value: quantityTotals.parking_area_sf, unit: "sf" },
+      { label: "Road area", value: quantityTotals.road_area_sf, unit: "sf" },
+      { label: "Impervious area", value: quantityTotals.estimated_impervious_area_sf, unit: "sf" },
+      { label: "Parking stalls", value: quantityTotals.estimated_parking_stalls, unit: "stalls" },
+      { label: "Road length", value: quantityTotals.road_length_ft, unit: "ft" },
+      { label: "Sidewalk length", value: quantityTotals.sidewalk_length_ft, unit: "ft" },
+      { label: "Pipe length", value: quantityTotals.pipe_length_ft, unit: "ft" },
+      { label: "Utility length", value: quantityTotals.utility_length_ft, unit: "ft" },
+      { label: "Sanitary length", value: quantityTotals.sanitary_length_ft, unit: "ft" },
+      { label: "Drainage flow length", value: quantityTotals.drainage_flow_length_ft, unit: "ft" },
+      { label: "Pond count", value: quantityTotals.pond_count, unit: "ea" },
+      { label: "Inlet count", value: quantityTotals.inlet_count, unit: "ea" },
+    ];
+    return rows.filter((row) => Number(row.value || 0) > 0);
+  }, [quantityTotals]);
+  const measurementOverlayStats = useMemo(
+    () => [
+      { label: "Lot area", value: quantityTotals.lot_area_sf, unit: "sf" },
+      { label: "Building area", value: quantityTotals.building_area_sf, unit: "sf" },
+      { label: "Parking area", value: quantityTotals.parking_area_sf, unit: "sf" },
+      { label: "Road length", value: quantityTotals.road_length_ft, unit: "ft" },
+      { label: "Impervious area", value: quantityTotals.estimated_impervious_area_sf, unit: "sf" },
+      { label: "Parking stalls", value: quantityTotals.estimated_parking_stalls, unit: "stalls" },
+    ],
+    [quantityTotals],
+  );
+  const calculationOverlayStats = useMemo(
+    () => [
+      { label: "Total pipe length", value: totalPipeLength, unit: "ft" },
+      { label: "Max slope", value: maxSlope, unit: "%" },
+      { label: "Min slope", value: minSlope, unit: "%" },
+      { label: "Flow (CFS)", value: flowCfs, unit: "cfs" },
+      { label: "Cut / fill net", value: cutFillNet, unit: "cf" },
+      { label: "Pond size", value: basinSize, unit: "sf" },
+    ],
+    [totalPipeLength, maxSlope, minSlope, flowCfs, cutFillNet, basinSize],
+  );
+  const previewLayerList = useMemo(() => {
+    const layers = new Set<string>();
+    if (previewLayers.buildings) {
+      ["BUILDING", "STRUCTURE", "PAD"].forEach((layer) => layers.add(layer));
+    }
+    if (previewLayers.roads) {
+      ["ROAD", "PAVEMENT", "PARKING", "WALK"].forEach((layer) => layers.add(layer));
+    }
+    if (previewLayers.grading) {
+      ["SURFACE", "FG_CONTOUR", "EG_CONTOUR", "SPOT_FG", "DRAIN_FLOW", "FLOW_ARROW"].forEach((layer) =>
+        layers.add(layer),
+      );
+    }
+    if (previewLayers.drainage) {
+      ["DRAIN", "PIPE", "STORM", "BASIN_BOUNDARY"].forEach((layer) => layers.add(layer));
+    }
+    if (previewLayers.utilities) {
+      ["UTILITY", "WATER", "SAN"].forEach((layer) => layers.add(layer));
+    }
+    if (previewLayers.structures) {
+      ["BRIDGE", "POOL", "STRUCTURE"].forEach((layer) => layers.add(layer));
+    }
+    if (previewLayers.lots) {
+      ["LOT", "OPEN_SPACE", "EASEMENT"].forEach((layer) => layers.add(layer));
+    }
+    return Array.from(layers);
+  }, [previewLayers]);
+
+  const preview3DItems = useMemo<Preview3DItem[]>(() => {
+    const actions = Array.isArray(backendResult?.final_plan?.actions)
+      ? backendResult.final_plan.actions
+      : [];
+    const items: Preview3DItem[] = [];
+    for (const action of actions) {
+      if (!action || typeof action !== "object") continue;
+      if (String(action.task || "").toLowerCase() !== "rectangle") continue;
+      const layer = String(action.layer || "").toUpperCase();
+      const width = Number(action.width || 0);
+      const height = Number(action.height || 0);
+      const origin = Array.isArray(action.origin) ? action.origin : [];
+      if (!width || !height || origin.length < 2) continue;
+      const x = Number(origin[0] || 0);
+      const y = Number(origin[1] || 0);
+      const label = String(action.label || "");
+      const isBuilding =
+        layer === "BUILDING" || label.toLowerCase().includes("build");
+      const isRoad =
+        layer === "ROAD" || layer === "PAVEMENT" || label.toLowerCase().includes("road");
+      const isParking =
+        layer === "PARKING" || label.toLowerCase().includes("park");
+      const isStructure = layer === "BRIDGE" || layer === "POOL" || layer === "STRUCTURE";
+
+      if (isBuilding && !previewLayers.buildings) continue;
+      if ((isRoad || isParking) && !previewLayers.roads) continue;
+      if (isStructure && !previewLayers.structures) continue;
+
+      const color = isBuilding
+        ? "#e2e8f0"
+        : isStructure
+          ? "#fde68a"
+          : isRoad
+            ? "#c7d2fe"
+            : "#dbeafe";
+      const heightFt = isBuilding ? 28 : isStructure ? 10 : isRoad ? 2 : 1;
+      items.push({
+        x,
+        y,
+        w: width,
+        h: height,
+        height: heightFt,
+        color,
+        label: label || layer,
+        layer: isBuilding ? "BUILDING" : isStructure ? "STRUCTURE" : isRoad ? "ROAD" : "PARKING",
+      });
+    }
+    return items;
+  }, [backendResult, previewLayers]);
   const currentTruthAudit = useMemo(
     () => currentPlanMeta?.truth_audit ?? {},
     [currentPlanMeta],
@@ -1664,9 +2077,12 @@ export default function PerformanceAIDashboard() {
     const manualFields = projectInput.manual_fields ?? {};
     const lot = manualFields.lot ?? {};
     const sitePlan = manualFields.site_plan ?? {};
+    const gradingFields = manualFields.grading ?? {};
+    const drainageFields = manualFields.drainage ?? {};
     const disciplines = Array.isArray(manualFields.disciplines)
       ? manualFields.disciplines
       : [];
+    const buildingsList = Array.isArray(manualFields.buildings) ? manualFields.buildings : [];
     const restoredThread = Array.isArray(projectInput.meta?.chat_thread)
       ? projectInput.meta.chat_thread
           .filter((message: any) => message && typeof message.content === "string")
@@ -1720,7 +2136,13 @@ export default function PerformanceAIDashboard() {
     setSetback(String(manualFields.setback ?? ""));
     setBuildingWidth(String(manualFields.building_width ?? ""));
     setBuildingDepth(String(manualFields.building_depth ?? ""));
+    setBuildingCount(buildingsList.length ? String(buildingsList.length) : "");
     setParkingCount(String(sitePlan.parking_count ?? ""));
+    setMinSlopePct(String(gradingFields.min_slope_pct ?? ""));
+    setPipeMinSlopePct(String(drainageFields.min_pipe_slope_pct ?? ""));
+    setMaxParkingSlopePct(String(gradingFields.max_parking_slope_pct ?? ""));
+    setMaxRoadGradePct(String(gradingFields.max_road_grade_pct ?? ""));
+    setMaxAdaCrossSlopePct(String(gradingFields.max_ada_cross_slope_pct ?? ""));
     setRoads(disciplines.includes("corridor"));
     setGrading(disciplines.includes("grading"));
     setDrainage(disciplines.includes("drainage"));
@@ -1746,8 +2168,14 @@ export default function PerformanceAIDashboard() {
     if (typeof overrides.lotHeight === "string") setLotHeight(overrides.lotHeight);
     if (typeof overrides.buildingWidth === "string") setBuildingWidth(overrides.buildingWidth);
     if (typeof overrides.buildingDepth === "string") setBuildingDepth(overrides.buildingDepth);
+    if (typeof overrides.buildingCount === "string") setBuildingCount(overrides.buildingCount);
     if (typeof overrides.setback === "string") setSetback(overrides.setback);
     if (typeof overrides.parkingCount === "string") setParkingCount(overrides.parkingCount);
+    if (typeof overrides.minSlopePct === "string") setMinSlopePct(overrides.minSlopePct);
+    if (typeof overrides.pipeMinSlopePct === "string") setPipeMinSlopePct(overrides.pipeMinSlopePct);
+    if (typeof overrides.maxParkingSlopePct === "string") setMaxParkingSlopePct(overrides.maxParkingSlopePct);
+    if (typeof overrides.maxRoadGradePct === "string") setMaxRoadGradePct(overrides.maxRoadGradePct);
+    if (typeof overrides.maxAdaCrossSlopePct === "string") setMaxAdaCrossSlopePct(overrides.maxAdaCrossSlopePct);
   };
 
   const buildChatDecisionContext = (
@@ -1765,7 +2193,13 @@ export default function PerformanceAIDashboard() {
       units: overrides.units ?? units,
       lot_width: overrides.lotWidth ?? lotWidth,
       lot_height: overrides.lotHeight ?? lotHeight,
+      building_count: overrides.buildingCount ?? buildingCount,
       parking_count: overrides.parkingCount ?? parkingCount,
+      min_slope_pct: overrides.minSlopePct ?? minSlopePct,
+      pipe_min_slope_pct: overrides.pipeMinSlopePct ?? pipeMinSlopePct,
+      max_parking_slope_pct: overrides.maxParkingSlopePct ?? maxParkingSlopePct,
+      max_road_grade_pct: overrides.maxRoadGradePct ?? maxRoadGradePct,
+      max_ada_cross_slope_pct: overrides.maxAdaCrossSlopePct ?? maxAdaCrossSlopePct,
       roads: overrides.roads ?? roads,
       grading: overrides.grading ?? grading,
       drainage: overrides.drainage ?? drainage,
@@ -2644,6 +3078,29 @@ export default function PerformanceAIDashboard() {
     }
   };
 
+  useEffect(() => {
+    const jobId = visibleActiveJob?.job_id;
+    if (!jobId) return;
+    const status = String(visibleActiveJob?.status || "").toLowerCase();
+    if (status !== "awaiting_approval") {
+      autoAdvanceByJobRef.current[jobId] = false;
+    }
+  }, [visibleActiveJob?.job_id, visibleActiveJob?.status]);
+
+  useEffect(() => {
+    if (!autoAdvancePhases) return;
+    const jobId = visibleActiveJob?.job_id;
+    if (!jobId) return;
+    const status = String(visibleActiveJob?.status || "").toLowerCase();
+    if (status !== "awaiting_approval") return;
+    if (autoAdvanceByJobRef.current[jobId]) return;
+    autoAdvanceByJobRef.current[jobId] = true;
+    const timeoutId = window.setTimeout(() => {
+      handleContinueActiveJob();
+    }, 1200);
+    return () => window.clearTimeout(timeoutId);
+  }, [autoAdvancePhases, visibleActiveJob?.job_id, visibleActiveJob?.status]);
+
   const handleReviseActiveJob = async () => {
     if (!visibleActiveJob?.job_id || !token) return;
     try {
@@ -2816,6 +3273,63 @@ export default function PerformanceAIDashboard() {
       void saveProject({ silent: true, projectIdOverride: activeProjectId });
     }, 700);
   }, [chatMessages, prompt, token, projectId, currentProject]);
+
+  useEffect(() => {
+    if (!token || !currentProject?.project_id) return;
+    if (controlAutosaveTimeoutRef.current !== null) {
+      window.clearTimeout(controlAutosaveTimeoutRef.current);
+    }
+    controlAutosaveTimeoutRef.current = window.setTimeout(() => {
+      void saveProject({ silent: true });
+    }, 700);
+  }, [
+    token,
+    currentProject?.project_id,
+    siteName,
+    fileName,
+    units,
+    projectType,
+    lotWidth,
+    lotHeight,
+    buildingWidth,
+    buildingDepth,
+    buildingCount,
+    setback,
+    parkingCount,
+    minSlopePct,
+    pipeMinSlopePct,
+    maxParkingSlopePct,
+    maxRoadGradePct,
+    maxAdaCrossSlopePct,
+    roads,
+    grading,
+    drainage,
+    utilities,
+  ]);
+
+  useEffect(() => {
+    if (!currentProject?.project_id) return;
+    if (lastSiteInputProjectRef.current === currentProject.project_id) return;
+    lastSiteInputProjectRef.current = currentProject.project_id;
+    const siteInputs =
+      currentProject?.project_input?.meta?.site_inputs &&
+      typeof currentProject.project_input.meta.site_inputs === "object"
+        ? currentProject.project_input.meta.site_inputs
+        : {};
+    const mapSnapshot = siteInputs?.map_snapshot ?? {};
+    const mapAnalysisResult = siteInputs?.map_analysis ?? null;
+    const surveyFile = siteInputs?.survey_file ?? {};
+    const slopeEstimate = siteInputs?.slope_estimate ?? null;
+    setSurveyFileName(String(surveyFile?.stored_filename || ""));
+    setSurveyUploadUrl(String(surveyFile?.survey_url || ""));
+    setSurveySlopeEstimate(slopeEstimate || null);
+    const mapUrl = String(mapSnapshot?.image_url || "");
+    if (mapUrl) {
+      setUploadedImageApiUrl(uploadedImageSrc(mapUrl, token));
+    }
+    setMapSnapshotPath(String(mapSnapshot?.image_path || ""));
+    setMapAnalysis(mapAnalysisResult || null);
+  }, [currentProject, token]);
 
   const loadProject = async (id: string) => {
     if (!token) return;
@@ -3184,6 +3698,27 @@ export default function PerformanceAIDashboard() {
       setUploadedImageApiUrl(
         data.image_url ? uploadedImageSrc(data.image_url, token) : "",
       );
+      setMapSnapshotPath(data.image_path || "");
+      const currentInput = currentProject?.project_input ?? payloadPreview;
+      const nextSiteInputs = {
+        ...(currentInput?.meta?.site_inputs ?? {}),
+        map_snapshot: {
+          filename: data.filename || file.name,
+          stored_filename: data.image_path || file.name,
+          image_path: data.image_path || "",
+          image_url: data.image_url || "",
+        },
+      };
+      await saveProject({
+        silent: true,
+        projectInputOverride: {
+          ...currentInput,
+          meta: {
+            ...(currentInput?.meta ?? {}),
+            site_inputs: nextSiteInputs,
+          },
+        },
+      });
       setStatusMessage("Image uploaded.");
     } catch (error) {
       setImageName(file.name);
@@ -3193,12 +3728,137 @@ export default function PerformanceAIDashboard() {
     }
   };
 
+  const uploadSurvey = async (file: File) => {
+    if (!token) return;
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const data = await postForm<UploadSurveyResponse>("/api/upload-survey", formData, {
+        token,
+      });
+      const storedFilename = data.stored_filename || file.name;
+      setSurveyFileName(storedFilename);
+      const currentInput = currentProject?.project_input ?? payloadPreview;
+      const nextSiteInputs = {
+        ...(currentInput?.meta?.site_inputs ?? {}),
+        survey_file: {
+          filename: data.filename || file.name,
+          stored_filename: storedFilename,
+          survey_url: data.survey_url || "",
+        },
+      };
+      await saveProject({
+        silent: true,
+        projectInputOverride: {
+          ...currentInput,
+          meta: {
+            ...(currentInput?.meta ?? {}),
+            site_inputs: nextSiteInputs,
+          },
+        },
+      });
+      setStatusMessage("Survey uploaded.");
+    } catch (error) {
+      setSurveyFileName(file.name);
+      setStatusMessage(
+        error instanceof Error ? error.message : "Survey upload failed.",
+      );
+    }
+  };
+
+  const estimateSurveySlope = async () => {
+    if (!token || !surveyFileName) return;
+    try {
+      const data = await postJson<SurveySlopeResponse>(
+        "/api/survey/estimate-slope",
+        { filename: surveyFileName },
+        { token },
+      );
+      setSurveySlopeEstimate(data);
+      if (data.slope_percent) {
+        setMinSlopePct(String(data.slope_percent.toFixed(2)));
+      }
+      const currentInput = currentProject?.project_input ?? payloadPreview;
+      const nextSiteInputs = {
+        ...(currentInput?.meta?.site_inputs ?? {}),
+        slope_estimate: data,
+      };
+      await saveProject({
+        silent: true,
+        projectInputOverride: {
+          ...currentInput,
+          manual_fields: {
+            ...(currentInput?.manual_fields ?? {}),
+            grading: {
+              ...(currentInput?.manual_fields?.grading ?? {}),
+              min_slope_pct: data.slope_percent ?? currentInput?.manual_fields?.grading?.min_slope_pct,
+            },
+            terrain: data.direction && data.slope_percent
+              ? `Estimated ${data.slope_percent.toFixed(2)}% slope toward ${data.direction}`
+              : currentInput?.manual_fields?.terrain,
+          },
+          meta: {
+            ...(currentInput?.meta ?? {}),
+            site_inputs: nextSiteInputs,
+          },
+        },
+      });
+      setStatusMessage("Slope estimated from survey.");
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : "Slope estimation failed.",
+      );
+    }
+  };
+
+  const analyzeMapSnapshot = async () => {
+    if (!token || !mapSnapshotPath) return;
+    try {
+      const data = await postJson<any>(
+        "/api/image/analyze",
+        {
+          image_path: mapSnapshotPath,
+          source_name: "map_snapshot",
+          source_type: "map",
+        },
+        { token },
+      );
+      setMapAnalysis(data);
+      const currentInput = currentProject?.project_input ?? payloadPreview;
+      const nextSiteInputs = {
+        ...(currentInput?.meta?.site_inputs ?? {}),
+        map_analysis: data,
+      };
+      await saveProject({
+        silent: true,
+        projectInputOverride: {
+          ...currentInput,
+          meta: {
+            ...(currentInput?.meta ?? {}),
+            site_inputs: nextSiteInputs,
+          },
+        },
+      });
+      setStatusMessage("Map snapshot analyzed.");
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : "Map snapshot analysis failed.",
+      );
+    }
+  };
+
   const requestPreview = async (
     payload: any,
     options?: { silent?: boolean },
   ) => {
     if (!token) return;
-    const data = await postJson<PreviewResponse>("/api/preview", payload, {
+    const previewPayload = {
+      ...payload,
+      preview_quality: previewQuality,
+      render_labels: false,
+      preview_layers: previewLayerList,
+    };
+    const data = await postJson<PreviewResponse>("/api/preview", previewPayload, {
       token,
     });
     setPlanPreviewUrl(data.preview_image_data_url);
@@ -3231,6 +3891,11 @@ export default function PerformanceAIDashboard() {
         }
       });
   };
+
+  useEffect(() => {
+    if (!planPreviewUrl || !token) return;
+    requestPreviewInBackground(artifactPayload, { silentStatus: true });
+  }, [previewQuality, previewLayerList, planPreviewUrl, token, artifactPayload]);
 
   useEffect(() => {
     if (!token || !backendResult) return;
@@ -3456,6 +4121,10 @@ export default function PerformanceAIDashboard() {
     setImageName("");
     setUploadedImageApiUrl("");
     setUploadedImagePreviewUrl("");
+    setSurveyFileName("");
+    setSurveySlopeEstimate(null);
+    setMapSnapshotPath("");
+    setMapAnalysis(null);
     setBackendResult(null);
     setPlanPreviewUrl("");
     setPlanPreviewSummary(null);
@@ -3471,8 +4140,14 @@ export default function PerformanceAIDashboard() {
     setLotHeight("");
     setBuildingWidth("");
     setBuildingDepth("");
+    setBuildingCount("");
     setSetback("");
     setParkingCount("");
+    setMinSlopePct("");
+    setPipeMinSlopePct("");
+    setMaxParkingSlopePct("");
+    setMaxRoadGradePct("");
+    setMaxAdaCrossSlopePct("");
     setRoads(true);
     setGrading(true);
     setDrainage(true);
@@ -4091,6 +4766,52 @@ export default function PerformanceAIDashboard() {
       toReadableLabel(String(item || "")),
     ),
   ].filter(Boolean);
+  const phaseStats = useMemo(() => {
+    const layoutStats = [
+      { label: "Buildings", value: quantityTotals.building_count, unit: "ea", format: "count" },
+      { label: "Building area", value: quantityTotals.building_area_sf, unit: "sf" },
+      { label: "Parking stalls", value: quantityTotals.estimated_parking_stalls, unit: "stalls", format: "count" },
+      { label: "Parking area", value: quantityTotals.parking_area_sf, unit: "sf" },
+    ];
+    const gradingStats = [
+      { label: "Cut volume", value: readMetricValue(managerMetrics.earthwork_cut_cf), unit: "cf" },
+      { label: "Fill volume", value: readMetricValue(managerMetrics.earthwork_fill_cf), unit: "cf" },
+      { label: "Net earthwork", value: readMetricValue(managerMetrics.earthwork_net_cf), unit: "cf" },
+      { label: "FG contours", value: quantityTotals.fg_contour_count, unit: "ea", format: "count" },
+    ];
+    const drainageStats = [
+      { label: "Pipe length", value: totalPipeLength, unit: "ft" },
+      { label: "Min slope", value: minSlope, unit: "%" },
+      { label: "Max slope", value: maxSlope, unit: "%" },
+      { label: "Ponds", value: quantityTotals.pond_count, unit: "ea", format: "count" },
+    ];
+    const utilityStats = [
+      { label: "Utility length", value: readMetricValue(managerMetrics.utility_total_length_ft) ?? quantityTotals.utility_length_ft, unit: "ft" },
+      { label: "Sanitary length", value: readMetricValue(managerMetrics.sanitary_total_length_ft) ?? quantityTotals.sanitary_length_ft, unit: "ft" },
+      { label: "Sanitary manholes", value: quantityTotals.sanitary_manhole_count, unit: "ea", format: "count" },
+      { label: "Sanitary services", value: quantityTotals.sanitary_service_count, unit: "ea", format: "count" },
+    ];
+    const coordinationStats = [
+      { label: "Unresolved conflicts", value: previewReview?.unresolved_conflict_count ?? null, unit: "ea", format: "count" },
+      { label: "QA errors", value: readMetricValue(managerMetrics.qa_error_count), unit: "ea", format: "count" },
+      { label: "QA warnings", value: readMetricValue(managerMetrics.qa_warning_count), unit: "ea", format: "count" },
+      { label: "Reruns", value: previewReview?.rerun_total ?? null, unit: "ea", format: "count" },
+    ];
+    return {
+      layout: layoutStats,
+      grading: gradingStats,
+      drainage_storm: drainageStats,
+      utilities: utilityStats,
+      coordination_validation: coordinationStats,
+    };
+  }, [
+    managerMetrics,
+    quantityTotals,
+    totalPipeLength,
+    minSlope,
+    maxSlope,
+    previewReview,
+  ]);
   const whatYouNeedSummary = (() => {
     const manualFields =
       currentProject?.project_input?.manual_fields && typeof currentProject.project_input.manual_fields === "object"
@@ -4507,6 +5228,24 @@ export default function PerformanceAIDashboard() {
                         style={{ width: `${thinkingState.progress}%` }}
                       />
                     </div>
+                    {visibleActiveJob && (
+                      <div className="mt-3 flex items-center justify-between text-xs text-slate-600">
+                        <span className="font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          Auto-advance phases
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setAutoAdvancePhases((prev) => !prev)}
+                          className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] transition ${
+                            autoAdvancePhases
+                              ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                          }`}
+                        >
+                          {autoAdvancePhases ? "On" : "Off"}
+                        </button>
+                      </div>
+                    )}
                     {(visibleActiveJob || hasDirectRunInFlight) && (
                       <div className="mt-4 flex justify-end">
                         <button
@@ -4823,16 +5562,20 @@ export default function PerformanceAIDashboard() {
                     </div>
                   </div>
                   {previewMode === "3d" ? (
-                    <div className="flex min-h-[520px] items-center justify-center rounded-[20px] border border-dashed border-slate-200 bg-white text-center text-sm text-slate-500">
-                      3D interactive preview is coming soon. You can still use the 2D view today.
-                    </div>
+                    <Preview3DCanvas items={preview3DItems} interactive={previewInteraction === "interactive"} />
                   ) : (
                     <div className="flex min-h-[520px] items-center justify-center overflow-hidden rounded-[20px] bg-white">
                       <img
                         src={planPreviewUrl}
                         alt="Generated plan preview"
-                        className="max-h-[520px] w-full cursor-zoom-in object-contain shadow-sm"
-                        onClick={() => setPreviewFullscreenOpen(true)}
+                        className={`max-h-[520px] w-full object-contain shadow-sm ${
+                          previewInteraction === "interactive" ? "cursor-zoom-in" : "cursor-default"
+                        }`}
+                        onClick={() => {
+                          if (previewInteraction === "interactive") {
+                            setPreviewFullscreenOpen(true);
+                          }
+                        }}
                       />
                     </div>
                   )}
@@ -4871,8 +5614,32 @@ export default function PerformanceAIDashboard() {
                           alt="Generated plan preview fullscreen"
                           className="max-h-full w-full rounded-[20px] bg-white object-contain shadow-2xl"
                         />
-                        {planPreviewAnnotations?.labels?.length ? (
+                        {previewInteraction === "interactive" &&
+                        planPreviewAnnotations?.labels?.length ? (
                           <div className="pointer-events-none absolute inset-0">
+                            {selectedIssueLabel ? (
+                              (() => {
+                                const target = planPreviewAnnotations.labels.find(
+                                  (item) => item.label === selectedIssueLabel && item.bounds,
+                                );
+                                if (!target?.bounds) return null;
+                                const left = Math.min(Math.max(target.bounds.x1 * 100, 0), 100);
+                                const top = Math.min(Math.max(target.bounds.y1 * 100, 0), 100);
+                                const right = Math.min(Math.max(target.bounds.x2 * 100, 0), 100);
+                                const bottom = Math.min(Math.max(target.bounds.y2 * 100, 0), 100);
+                                return (
+                                  <div
+                                    className="absolute rounded-[12px] border-2 border-rose-400/80 bg-rose-400/10 shadow-[0_0_0_6px_rgba(244,63,94,0.12)]"
+                                    style={{
+                                      left: `${left}%`,
+                                      top: `${top}%`,
+                                      width: `${Math.max(right - left, 2)}%`,
+                                      height: `${Math.max(bottom - top, 2)}%`,
+                                    }}
+                                  />
+                                );
+                              })()
+                            ) : null}
                             {planPreviewAnnotations.labels.map((item, idx) => (
                               <div
                                 key={`${item.label}-${idx}`}
@@ -4895,6 +5662,46 @@ export default function PerformanceAIDashboard() {
                                 </div>
                               </div>
                             ))}
+                          </div>
+                        ) : null}
+                        {previewInteraction === "interactive" && showMeasurements ? (
+                          <div className="pointer-events-none absolute left-6 top-6 w-[240px] rounded-2xl border border-slate-200/70 bg-white/90 p-3 text-xs text-slate-700 shadow-sm backdrop-blur">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                              Measurements
+                            </p>
+                            <div className="mt-2 space-y-1">
+                              {measurementOverlayStats
+                                .filter((item) => Number(item.value || 0) > 0)
+                                .map((item) => (
+                                  <div key={item.label} className="flex items-center justify-between gap-2">
+                                    <span>{item.label}</span>
+                                    <span className="font-semibold">
+                                      {item.unit === "stalls"
+                                        ? formatCount(Number(item.value || 0), item.unit)
+                                        : formatMetric(Number(item.value || 0), item.unit)}
+                                    </span>
+                                  </div>
+                                ))}
+                            </div>
+                          </div>
+                        ) : null}
+                        {previewInteraction === "interactive" && showCalculations ? (
+                          <div className="pointer-events-none absolute bottom-6 left-6 w-[240px] rounded-2xl border border-slate-200/70 bg-white/90 p-3 text-xs text-slate-700 shadow-sm backdrop-blur">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                              Calculations
+                            </p>
+                            <div className="mt-2 space-y-1">
+                              {calculationOverlayStats
+                                .filter((item) => Number(item.value || 0) > 0)
+                                .map((item) => (
+                                  <div key={item.label} className="flex items-center justify-between gap-2">
+                                    <span>{item.label}</span>
+                                    <span className="font-semibold">
+                                      {formatMetric(Number(item.value || 0), item.unit)}
+                                    </span>
+                                  </div>
+                                ))}
+                            </div>
                           </div>
                         ) : null}
                       </div>
@@ -5144,19 +5951,23 @@ export default function PerformanceAIDashboard() {
                         Issue Navigator
                       </p>
                       <p className="mt-2 text-sm font-medium text-slate-900">
-                        Click an issue to highlight in preview (coming soon).
+                        Click an issue to highlight the closest system in preview.
                       </p>
                       <div className="mt-3 space-y-2 text-sm text-slate-600">
                         {(issues.length ? issues : defaultIssues).map((issue, idx) => (
                           <button
                             key={`${issue.message}-${idx}`}
                             type="button"
-                            onClick={() => setSelectedIssueId(`${issue.message}-${idx}`)}
+                            onClick={() => {
+                              if (previewInteraction !== "interactive") return;
+                              setSelectedIssueId(`${issue.message}-${idx}`);
+                            }}
+                            disabled={previewInteraction !== "interactive"}
                             className={`flex w-full items-start justify-between gap-3 rounded-2xl border px-3 py-2 text-left transition ${
                               selectedIssueId === `${issue.message}-${idx}`
                                 ? "border-slate-900 bg-slate-950 text-white"
                                 : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                            }`}
+                            } ${previewInteraction !== "interactive" ? "cursor-not-allowed opacity-60" : ""}`}
                           >
                             <div className="text-left">
                               <span className="font-medium">{issue.message}</span>
@@ -5229,6 +6040,109 @@ export default function PerformanceAIDashboard() {
 
                     <div className="rounded-[24px] border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Design Controls
+                      </p>
+                      <div className="mt-3 grid gap-3 text-sm text-slate-700">
+                        <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
+                          Parking count
+                          <input
+                            type="number"
+                            min="0"
+                            value={parkingCount}
+                            onChange={(event) => setParkingCount(event.target.value)}
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                          />
+                        </label>
+                        <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
+                          Building width (ft)
+                          <input
+                            type="number"
+                            min="0"
+                            value={buildingWidth}
+                            onChange={(event) => setBuildingWidth(event.target.value)}
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                          />
+                        </label>
+                        <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
+                          Building count
+                          <input
+                            type="number"
+                            min="0"
+                            value={buildingCount}
+                            onChange={(event) => setBuildingCount(event.target.value)}
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                          />
+                        </label>
+                        <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
+                          Building depth (ft)
+                          <input
+                            type="number"
+                            min="0"
+                            value={buildingDepth}
+                            onChange={(event) => setBuildingDepth(event.target.value)}
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                          />
+                        </label>
+                        <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
+                          Min slope (%)
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            value={minSlopePct}
+                            onChange={(event) => setMinSlopePct(event.target.value)}
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                          />
+                        </label>
+                        <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
+                          Max parking slope (%)
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            value={maxParkingSlopePct}
+                            onChange={(event) => setMaxParkingSlopePct(event.target.value)}
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                          />
+                        </label>
+                        <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
+                          Max ADA cross slope (%)
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            value={maxAdaCrossSlopePct}
+                            onChange={(event) => setMaxAdaCrossSlopePct(event.target.value)}
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                          />
+                        </label>
+                        <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
+                          Max road grade (%)
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            value={maxRoadGradePct}
+                            onChange={(event) => setMaxRoadGradePct(event.target.value)}
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                          />
+                        </label>
+                        <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
+                          Pipe min slope (%)
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={pipeMinSlopePct}
+                            onChange={(event) => setPipeMinSlopePct(event.target.value)}
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[24px] border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                         Overlays
                       </p>
                       <div className="mt-3 space-y-2 text-sm text-slate-700">
@@ -5260,6 +6174,43 @@ export default function PerformanceAIDashboard() {
                             {showCalculations ? "On" : "Off"}
                           </span>
                         </button>
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 text-xs text-slate-600">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                            Preview Layers
+                          </p>
+                          <div className="mt-2 grid gap-2">
+                            {[
+                              { key: "buildings", label: "Buildings" },
+                              { key: "roads", label: "Roads + parking" },
+                              { key: "grading", label: "Grading contours" },
+                              { key: "drainage", label: "Drainage/storm" },
+                              { key: "utilities", label: "Utilities" },
+                              { key: "structures", label: "Structures + pools" },
+                              { key: "lots", label: "Lots + parcels" },
+                            ].map((item) => (
+                              <button
+                                key={item.key}
+                                type="button"
+                                onClick={() =>
+                                  setPreviewLayers((prev) => ({
+                                    ...prev,
+                                    [item.key]: !prev[item.key as keyof typeof prev],
+                                  }))
+                                }
+                                className={`flex w-full items-center justify-between rounded-2xl border px-3 py-2 text-sm ${
+                                  previewLayers[item.key as keyof typeof previewLayers]
+                                    ? "border-slate-900 bg-slate-950 text-white"
+                                    : "border-slate-200 bg-white text-slate-700"
+                                }`}
+                              >
+                                <span>{item.label}</span>
+                                <span className="text-xs uppercase tracking-[0.14em]">
+                                  {previewLayers[item.key as keyof typeof previewLayers] ? "On" : "Off"}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                       </div>
                     </div>
 
@@ -5270,32 +6221,97 @@ export default function PerformanceAIDashboard() {
                       <div className="mt-3 space-y-2 text-sm text-slate-700">
                         <button
                           type="button"
-                          className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2"
+                          onClick={() => mapSnapshotInputRef.current?.click()}
+                          className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50"
                         >
                           <span>Upload map snapshot</span>
                           <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
-                            Coming
+                            {uploadedImageApiUrl || uploadedImagePreviewUrl ? "Ready" : "Upload"}
                           </span>
                         </button>
                         <button
                           type="button"
-                          className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2"
+                          onClick={() => surveyInputRef.current?.click()}
+                          className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50"
                         >
                           <span>Import survey file</span>
                           <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
-                            Coming
+                            {surveyFileName ? "Ready" : "Upload"}
                           </span>
                         </button>
                         <button
                           type="button"
-                          className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2"
+                          onClick={estimateSurveySlope}
+                          disabled={!surveyFileName}
+                          className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           <span>Estimate slope automatically</span>
                           <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
-                            Coming
+                            {surveySlopeEstimate?.slope_percent ? "Estimated" : "Compute"}
                           </span>
                         </button>
+                        <button
+                          type="button"
+                          onClick={analyzeMapSnapshot}
+                          disabled={!mapSnapshotPath}
+                          className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <span>Analyze map snapshot</span>
+                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
+                            {mapAnalysis?.success ? "Ready" : "Analyze"}
+                          </span>
+                        </button>
+                        {surveyFileName ? (
+                          <p className="text-xs text-slate-500">
+                            Survey loaded: {surveyFileName}
+                          </p>
+                        ) : null}
+                        {uploadedImageApiUrl || uploadedImagePreviewUrl ? (
+                          <p className="text-xs text-slate-500">
+                            Map snapshot loaded and ready for interpretation.
+                          </p>
+                        ) : null}
+                        {mapAnalysis?.success ? (
+                          <p className="text-xs text-slate-500">
+                            Map analysis captured {mapAnalysis?.counts?.zones ?? 0} zones,{" "}
+                            {mapAnalysis?.counts?.objects ?? 0} objects,{" "}
+                            {mapAnalysis?.counts?.centerlines ?? 0} centerlines.
+                          </p>
+                        ) : null}
+                        {surveySlopeEstimate?.slope_percent ? (
+                          <p className="text-xs text-slate-500">
+                            Estimated {surveySlopeEstimate.slope_percent.toFixed(2)}% slope toward{" "}
+                            {surveySlopeEstimate.direction || "N/A"} from{" "}
+                            {surveySlopeEstimate.point_count ?? 0} points.
+                          </p>
+                        ) : null}
                       </div>
+                      <input
+                        ref={mapSnapshotInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (event) => {
+                          const file = event.currentTarget.files?.[0];
+                          if (file) {
+                            await uploadImage(file);
+                          }
+                          event.currentTarget.value = "";
+                        }}
+                      />
+                      <input
+                        ref={surveyInputRef}
+                        type="file"
+                        accept=".csv"
+                        className="hidden"
+                        onChange={async (event) => {
+                          const file = event.currentTarget.files?.[0];
+                          if (file) {
+                            await uploadSurvey(file);
+                          }
+                          event.currentTarget.value = "";
+                        }}
+                      />
                     </div>
 
                     <div className="rounded-[24px] border border-slate-200 bg-white p-4">
@@ -5303,14 +6319,45 @@ export default function PerformanceAIDashboard() {
                         Materials &amp; Quantities
                       </p>
                       <p className="mt-2 text-sm text-slate-600">
-                        Material takeoffs will appear here once you enable them.
+                        Live takeoffs from the current engineering run.
                       </p>
-                      <div className="mt-3 flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2 text-sm">
-                        <span>Enable quantity rollups</span>
-                        <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
-                          Coming
+                      <button
+                        type="button"
+                        onClick={() => setQuantityRollupsEnabled((prev) => !prev)}
+                        className={`mt-3 flex w-full items-center justify-between rounded-2xl border px-3 py-2 text-sm ${
+                          quantityRollupsEnabled
+                            ? "border-slate-900 bg-slate-950 text-white"
+                            : "border-slate-200 bg-white text-slate-700"
+                        }`}
+                      >
+                        <span>Quantity rollups</span>
+                        <span className="text-xs uppercase tracking-[0.14em]">
+                          {quantityRollupsEnabled ? "On" : "Off"}
                         </span>
-                      </div>
+                      </button>
+                      {quantityRollupsEnabled ? (
+                        quantityRows.length ? (
+                          <div className="mt-3 grid gap-2 text-sm text-slate-700">
+                            {quantityRows.map((row) => (
+                              <div
+                                key={row.label}
+                                className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2"
+                              >
+                                <span>{row.label}</span>
+                                <span className="font-semibold">
+                                  {row.unit === "ea" || row.unit === "stalls"
+                                    ? formatCount(Number(row.value || 0), row.unit)
+                                    : formatMetric(Number(row.value || 0), row.unit)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-3 text-sm text-slate-500">
+                            Quantities will populate once the plan has run through the engine.
+                          </p>
+                        )
+                      ) : null}
                     </div>
 
                     <div className="rounded-[24px] border border-slate-200 bg-white p-4">
@@ -5319,25 +6366,25 @@ export default function PerformanceAIDashboard() {
                       </p>
                       <div className="mt-3 grid gap-2 text-sm text-slate-700">
                         {[
-                          "Roads",
-                          "Bridges / structural support",
-                          "Recreational swimming pools",
-                          "Subdivisions",
-                          "Drainage / storm",
-                          "Utilities",
-                          "Geotechnical support",
-                          "Environmental / regulatory",
-                          "Erosion & sediment",
-                          "Construction workflows",
-                          "Inspection / operations",
+                          { label: "Roads", status: "Engineering" },
+                          { label: "Bridges / structural support", status: "Concept" },
+                          { label: "Recreational swimming pools", status: "Concept" },
+                          { label: "Subdivisions", status: "Concept" },
+                          { label: "Drainage / storm", status: "Engineering" },
+                          { label: "Utilities", status: "Engineering" },
+                          { label: "Geotechnical support", status: "Concept" },
+                          { label: "Environmental / regulatory", status: "Concept" },
+                          { label: "Erosion & sediment", status: "Concept" },
+                          { label: "Construction workflows", status: "Concept" },
+                          { label: "Inspection / operations", status: "Concept" },
                         ].map((item) => (
                           <div
-                            key={item}
+                            key={item.label}
                             className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2"
                           >
-                            <span>{item}</span>
+                            <span>{item.label}</span>
                             <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
-                              Concept
+                              {item.status}
                             </span>
                           </div>
                         ))}
@@ -5360,9 +6407,31 @@ export default function PerformanceAIDashboard() {
                                 {phase.status}
                               </span>
                             </div>
-                            <p className="mt-2 text-xs text-slate-500">
-                              Stats for this phase will appear here.
-                            </p>
+                            <div className="mt-2 grid gap-1 text-xs text-slate-500">
+                              {(() => {
+                                const metrics =
+                                  (phaseStats as Record<string, any>)[phase.key]
+                                    ?.filter((item: any) => Number(item.value || 0) > 0)
+                                    ?.slice(0, 4) ?? [];
+                                if (!metrics.length) {
+                                  return (
+                                    <p className="text-xs text-slate-500">
+                                      Metrics will populate after this phase completes.
+                                    </p>
+                                  );
+                                }
+                                return metrics.map((item: any) => (
+                                  <div key={item.label} className="flex items-center justify-between">
+                                    <span>{item.label}</span>
+                                    <span className="font-semibold text-slate-700">
+                                      {item.format === "count"
+                                        ? formatCount(Number(item.value || 0), item.unit)
+                                        : formatMetric(Number(item.value || 0), item.unit)}
+                                    </span>
+                                  </div>
+                                ));
+                              })()}
+                            </div>
                           </div>
                         ))}
                       </div>
