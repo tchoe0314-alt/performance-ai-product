@@ -13,6 +13,28 @@ const API_BASE_URL =
 const APP_BASE_URL =
   process.env.PLAYWRIGHT_BASE_URL ||
   "https://civoraai.com";
+const FALLBACK_BASE_URL =
+  process.env.PLAYWRIGHT_FALLBACK_BASE_URL ||
+  "https://civoraai.com";
+
+async function ensureAppUrl(page: Parameters<typeof test>[0]["page"]) {
+  const currentUrl = page.url();
+  if (currentUrl.includes("vercel.com/")) {
+    await page.goto(FALLBACK_BASE_URL, { waitUntil: "domcontentloaded" }).catch(() => null);
+    return true;
+  }
+  const vercelLogin = page.getByRole("heading", { name: "Log in to Vercel" });
+  const emailLogin = page.getByRole("button", { name: "Continue with Email" });
+  if (await vercelLogin.isVisible().catch(() => false)) {
+    await page.goto(FALLBACK_BASE_URL, { waitUntil: "domcontentloaded" }).catch(() => null);
+    return true;
+  }
+  if (await emailLogin.isVisible().catch(() => false)) {
+    await page.goto(FALLBACK_BASE_URL, { waitUntil: "domcontentloaded" }).catch(() => null);
+    return true;
+  }
+  return false;
+}
 
 async function waitForComposer(page: Parameters<typeof test>[0]["page"]) {
   const composer = page.getByPlaceholder(
@@ -20,9 +42,16 @@ async function waitForComposer(page: Parameters<typeof test>[0]["page"]) {
   );
 
   for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (await ensureAppUrl(page)) {
+      continue;
+    }
     await page.waitForLoadState("networkidle").catch(() => null);
     if (await composer.isVisible().catch(() => false)) {
       return composer;
+    }
+
+    if (await ensureAppUrl(page)) {
+      continue;
     }
 
     const loadError = page.getByText("This page couldn’t load");
