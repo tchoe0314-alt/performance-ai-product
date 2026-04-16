@@ -179,8 +179,8 @@ class PreviewRenderTests(unittest.TestCase):
         )
 
         points = contour["points"]
-        self.assertEqual(points[0], [138.0, 390.0])
-        self.assertEqual(points[-1], [642.0, 390.0])
+        self.assertEqual(points[0], [185.04, 390.0])
+        self.assertEqual(points[-1], [594.96, 390.0])
 
     def test_layout_scene_suppresses_engineering_overlay_noise(self):
         actions = [
@@ -605,7 +605,7 @@ class PreviewRenderTests(unittest.TestCase):
             and str(action.get("task") or "").lower() == "polyline"
         ]
 
-        self.assertIn(((160.0, 260.0), (410.0, 260.0)), contour_bounds)
+        self.assertIn(((183.1, 260.0), (386.9, 260.0)), contour_bounds)
         self.assertNotIn(((150, 60), (420, 60)), contour_bounds)
 
     def test_drainage_checkpoint_keeps_flow_context(self):

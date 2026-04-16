@@ -618,6 +618,24 @@ def _clip_grading_contour_action(action, layout_bounds):
     return clipped
 
 
+def _grading_focus_bounds_from_buildings(building_rects, layout_bounds):
+    bounds = _merge_bounds(building_rects) or layout_bounds
+    if not bounds:
+        return layout_bounds
+    min_x, min_y, max_x, max_y = bounds
+    width = max(max_x - min_x, 1.0)
+    height = max(max_y - min_y, 1.0)
+    if width > height * 1.45:
+        inset_x = min(max(18.0, width * 0.11), 42.0)
+        min_x += inset_x
+        max_x -= inset_x
+        if max_x - min_x < 80.0:
+            mid_x = (bounds[0] + bounds[2]) / 2.0
+            min_x = mid_x - 40.0
+            max_x = mid_x + 40.0
+    return (min_x, min_y, max_x, max_y)
+
+
 def _point_within_layout(point, layout_bounds, padding=0.0):
     if not point or not layout_bounds:
         return False
@@ -1383,7 +1401,7 @@ def _filtered_preview_actions(actions, *, rich_engineering=False):
             if str(action.get("layer") or "").upper() in {"BUILDING", "PARKING", "PAVEMENT", "WALK"}
         ]
     )
-    grading_focus_bounds = _merge_bounds(building_rects) or layout_bounds
+    grading_focus_bounds = _grading_focus_bounds_from_buildings(building_rects, layout_bounds)
     has_building_shapes = any(
         (str(action.get("layer") or "").upper() == "BUILDING" and str(action.get("task") or "").lower() in {"rectangle", "polygon"})
         for action in records
