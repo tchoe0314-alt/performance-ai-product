@@ -434,6 +434,73 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         )
         self.assertEqual(store.saved_payload["metadata"]["source"], "autosave")
 
+    def test_save_project_record_preserves_richer_existing_project_input(self):
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Test",
+                "description": "",
+                "session_id": "s1",
+                "tags": [],
+                "project_input": {
+                    "prompt_text": "Design a mixed-use site with 3 multifamily buildings and 1 retail pad.",
+                    "full_design_mode": True,
+                    "manual_fields": {
+                        "project_name": "Mixed Use",
+                        "building_width": 110,
+                        "building_depth": 58,
+                        "site_plan": {"parking_count": 57},
+                        "disciplines": ["corridor", "grading", "drainage", "utility"],
+                    },
+                    "request_payload": {
+                        "prompt_text": "Design a mixed-use site with 3 multifamily buildings and 1 retail pad.",
+                    },
+                },
+                "latest_result": {},
+                "session_state": {},
+                "metadata": {},
+            }
+        )
+
+        response = save_project_record(
+            project_store=store,
+            user_id="u1",
+            payload_data={
+                "project_id": "p1",
+                "name": "Updated",
+                "description": "",
+                "session_id": "s1",
+                "tags": [],
+                "project_input": {
+                    "prompt_text": "",
+                    "manual_fields": {
+                        "project_name": "",
+                        "building_width": 0,
+                        "building_depth": 0,
+                        "site_plan": {"parking_count": 0},
+                        "disciplines": ["corridor", "grading", "drainage", "utility"],
+                    },
+                },
+                "metadata": {"source": "autosave"},
+            },
+        )
+        self.assertTrue(response["success"])
+        self.assertEqual(
+            store.saved_payload["project_input"]["prompt_text"],
+            "Design a mixed-use site with 3 multifamily buildings and 1 retail pad.",
+        )
+        self.assertEqual(store.saved_payload["project_input"]["manual_fields"]["building_width"], 110)
+        self.assertEqual(store.saved_payload["project_input"]["manual_fields"]["building_depth"], 58)
+        self.assertEqual(
+            store.saved_payload["project_input"]["manual_fields"]["site_plan"]["parking_count"],
+            57,
+        )
+        self.assertEqual(
+            response["project"]["project_input"]["request_payload"]["prompt_text"],
+            "Design a mixed-use site with 3 multifamily buildings and 1 retail pad.",
+        )
+
     def test_delete_project_record_reports_not_found(self):
         store = FakeProjectStore()
         with self.assertRaises(HTTPException) as ctx:

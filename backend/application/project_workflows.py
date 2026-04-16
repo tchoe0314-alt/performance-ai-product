@@ -41,6 +41,43 @@ class ProjectStoreProtocol(Protocol):
         ...
 
 
+def _merge_project_input_value(existing: Any, incoming: Any) -> Any:
+    if incoming is None:
+        return existing
+    if isinstance(existing, dict) and isinstance(incoming, dict):
+        return _merge_project_input(existing, incoming)
+    if isinstance(existing, list) and isinstance(incoming, list):
+        return incoming if incoming else existing
+    if isinstance(existing, str) and isinstance(incoming, str):
+        return incoming if incoming.strip() else existing
+    if (
+        isinstance(existing, (int, float))
+        and isinstance(incoming, (int, float))
+        and not isinstance(existing, bool)
+        and not isinstance(incoming, bool)
+    ):
+        if incoming != 0:
+            return incoming
+        return existing if existing not in (0, 0.0) else incoming
+    return incoming
+
+
+def _merge_project_input(existing: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
+    if not existing:
+        return dict(incoming or {})
+    if not incoming:
+        return dict(existing or {})
+    merged: Dict[str, Any] = {}
+    for key in set(existing.keys()) | set(incoming.keys()):
+        if key not in incoming:
+            merged[key] = existing[key]
+        elif key not in existing:
+            merged[key] = incoming[key]
+        else:
+            merged[key] = _merge_project_input_value(existing[key], incoming[key])
+    return merged
+
+
 def result_from_payload(
     *,
     project_store: ProjectStoreProtocol,
@@ -269,10 +306,15 @@ def save_project_record(
             metadata.update(payload_metadata)
     latest_result_in_payload = "latest_result" in payload_data
     latest_result = dict(payload_data.get("latest_result") or {})
+    project_input = dict(payload_data.get("project_input") or {})
     if current_existing and (not latest_result_in_payload or not latest_result):
         existing_latest_result = dict(current_existing.get("latest_result") or {})
         if existing_latest_result:
             latest_result = existing_latest_result
+    if current_existing:
+        existing_project_input = dict(current_existing.get("project_input") or {})
+        if existing_project_input:
+            project_input = _merge_project_input(existing_project_input, project_input)
     if latest_result and build_run_summary:
         metadata = merge_project_metadata(
             metadata,
@@ -290,7 +332,7 @@ def save_project_record(
             description=str(payload_data.get("description") or ""),
             session_id=session_id,
             tags=list(payload_data.get("tags") or []),
-            project_input=dict(payload_data.get("project_input") or {}),
+            project_input=project_input,
             latest_result=latest_result,
             session_state=dict(session_export or {}),
             metadata=metadata,

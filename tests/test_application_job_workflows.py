@@ -125,20 +125,55 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 404)
 
     def test_queue_orchestrate_job_submits(self):
-        store = FakeProjectStore({"user_id": "u1", "project_id": "p1"})
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Untitled Project",
+                "description": "",
+                "session_id": None,
+                "tags": [],
+                "project_input": {
+                    "manual_fields": {
+                        "disciplines": ["corridor", "grading", "drainage", "utility"],
+                    }
+                },
+                "latest_result": {},
+                "session_state": {},
+                "metadata": {},
+            }
+        )
         queue = FakeJobQueue()
         response = queue_orchestrate_job(
             project_store=store,
             job_queue=queue,
             user_id="u1",
             project_id="p1",
-            request_payload={"prompt_text": "run"},
+            request_payload={
+                "prompt_text": "run",
+                "full_design_mode": True,
+                "manual_fields": {
+                    "building_width": 110,
+                    "building_depth": 58,
+                    "disciplines": ["corridor", "grading", "drainage", "utility"],
+                },
+            },
         )
         self.assertTrue(response["success"])
         self.assertEqual(queue.submitted["job_type"], "orchestrate")
         self.assertEqual(response["operational_summary"]["status"], "queued")
         self.assertTrue(response["operational_summary"]["project_bound"])
         self.assertEqual(response["operational_summary"]["job_id"], "job_1")
+        self.assertEqual(store.saved_payload["project_input"]["prompt_text"], "run")
+        self.assertTrue(store.saved_payload["project_input"]["full_design_mode"])
+        self.assertEqual(
+            store.saved_payload["project_input"]["request_payload"]["prompt_text"],
+            "run",
+        )
+        self.assertEqual(
+            store.saved_payload["project_input"]["manual_fields"]["building_width"],
+            110,
+        )
 
     def test_revise_existing_job_requeues_current_phase_with_saved_project_input(self):
         store = FakeProjectStore(

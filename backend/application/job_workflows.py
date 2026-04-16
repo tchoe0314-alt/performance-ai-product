@@ -108,6 +108,23 @@ def queue_orchestrate_job(
             from fastapi import HTTPException
 
             raise HTTPException(status_code=404, detail="Project not found.")
+        seeded_project_input = {
+            **dict(existing.get("project_input") or {}),
+            **dict(request_payload or {}),
+            "request_payload": dict(request_payload or {}),
+        }
+        project_store.save_project(
+            user_id=user_id,
+            project_id=project_id,
+            name=str(existing.get("name") or "Untitled Project"),
+            description=str(existing.get("description") or ""),
+            session_id=existing.get("session_id"),
+            tags=list(existing.get("tags") or []),
+            project_input=seeded_project_input,
+            latest_result=dict(existing.get("latest_result") or {}),
+            session_state=dict(existing.get("session_state") or {}),
+            metadata=dict(existing.get("metadata") or {}),
+        )
 
     job = job_queue.submit_job(
         user_id=user_id,

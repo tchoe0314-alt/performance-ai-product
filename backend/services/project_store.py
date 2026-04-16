@@ -55,6 +55,43 @@ def _json_loads(value: Any, default: Any) -> Any:
         return default
 
 
+def _merge_project_input_value(existing: Any, incoming: Any) -> Any:
+    if incoming is None:
+        return existing
+    if isinstance(existing, dict) and isinstance(incoming, dict):
+        return _merge_project_input(existing, incoming)
+    if isinstance(existing, list) and isinstance(incoming, list):
+        return incoming if incoming else existing
+    if isinstance(existing, str) and isinstance(incoming, str):
+        return incoming if incoming.strip() else existing
+    if (
+        isinstance(existing, (int, float))
+        and isinstance(incoming, (int, float))
+        and not isinstance(existing, bool)
+        and not isinstance(incoming, bool)
+    ):
+        if incoming != 0:
+            return incoming
+        return existing if existing not in (0, 0.0) else incoming
+    return incoming
+
+
+def _merge_project_input(existing: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
+    if not existing:
+        return dict(incoming or {})
+    if not incoming:
+        return dict(existing or {})
+    merged: Dict[str, Any] = {}
+    for key in set(existing.keys()) | set(incoming.keys()):
+        if key not in incoming:
+            merged[key] = existing[key]
+        elif key not in existing:
+            merged[key] = incoming[key]
+        else:
+            merged[key] = _merge_project_input_value(existing[key], incoming[key])
+    return merged
+
+
 class ProjectStore:
     def __init__(self, db: Database) -> None:
         self.db = db
@@ -193,11 +230,17 @@ class ProjectStore:
 
         existing = self.get_project(user_id=user_id, project_id=project_id) if project_id else None
         existing_latest_result = dict((existing or {}).get("latest_result") or {})
+        existing_project_input = dict((existing or {}).get("project_input") or {})
         incoming_latest_result = dict(latest_result or {})
+        incoming_project_input = dict(project_input or {})
         # Empty autosaves should never wipe a richer staged checkpoint that is
         # already persisted on the project record.
         if existing_latest_result and not incoming_latest_result:
             incoming_latest_result = existing_latest_result
+        if existing_project_input and incoming_project_input:
+            incoming_project_input = _merge_project_input(existing_project_input, incoming_project_input)
+        elif existing_project_input and not incoming_project_input:
+            incoming_project_input = existing_project_input
         record = {
             "project_id": project_id or _new_id("project"),
             "user_id": user_id,
@@ -207,7 +250,7 @@ class ProjectStore:
             "updated_at": now,
             "session_id": session_id,
             "tags": list(tags or []),
-            "project_input": dict(project_input or {}),
+            "project_input": incoming_project_input,
             "latest_result": incoming_latest_result,
             "session_state": dict(session_state or {}),
             "metadata": dict(metadata or {}),
