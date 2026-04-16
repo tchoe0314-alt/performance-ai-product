@@ -2171,18 +2171,42 @@ export default function PerformanceAIDashboard() {
     if (typeof overrides.utilities === "boolean") setUtilities(overrides.utilities);
     if (typeof overrides.siteName === "string") setSiteName(overrides.siteName);
     if (typeof overrides.fileName === "string") setFileName(overrides.fileName);
-    if (typeof overrides.lotWidth === "string") setLotWidth(overrides.lotWidth);
-    if (typeof overrides.lotHeight === "string") setLotHeight(overrides.lotHeight);
-    if (typeof overrides.buildingWidth === "string") setBuildingWidth(overrides.buildingWidth);
-    if (typeof overrides.buildingDepth === "string") setBuildingDepth(overrides.buildingDepth);
-    if (typeof overrides.buildingCount === "string") setBuildingCount(overrides.buildingCount);
-    if (typeof overrides.setback === "string") setSetback(overrides.setback);
-    if (typeof overrides.parkingCount === "string") setParkingCount(overrides.parkingCount);
-    if (typeof overrides.minSlopePct === "string") setMinSlopePct(overrides.minSlopePct);
-    if (typeof overrides.pipeMinSlopePct === "string") setPipeMinSlopePct(overrides.pipeMinSlopePct);
-    if (typeof overrides.maxParkingSlopePct === "string") setMaxParkingSlopePct(overrides.maxParkingSlopePct);
-    if (typeof overrides.maxRoadGradePct === "string") setMaxRoadGradePct(overrides.maxRoadGradePct);
-    if (typeof overrides.maxAdaCrossSlopePct === "string") setMaxAdaCrossSlopePct(overrides.maxAdaCrossSlopePct);
+    if (typeof overrides.lotWidth === "string" || typeof overrides.lotWidth === "number") {
+      setLotWidth(String(overrides.lotWidth));
+    }
+    if (typeof overrides.lotHeight === "string" || typeof overrides.lotHeight === "number") {
+      setLotHeight(String(overrides.lotHeight));
+    }
+    if (typeof overrides.buildingWidth === "string" || typeof overrides.buildingWidth === "number") {
+      setBuildingWidth(String(overrides.buildingWidth));
+    }
+    if (typeof overrides.buildingDepth === "string" || typeof overrides.buildingDepth === "number") {
+      setBuildingDepth(String(overrides.buildingDepth));
+    }
+    if (typeof overrides.buildingCount === "string" || typeof overrides.buildingCount === "number") {
+      setBuildingCount(String(overrides.buildingCount));
+    }
+    if (typeof overrides.setback === "string" || typeof overrides.setback === "number") {
+      setSetback(String(overrides.setback));
+    }
+    if (typeof overrides.parkingCount === "string" || typeof overrides.parkingCount === "number") {
+      setParkingCount(String(overrides.parkingCount));
+    }
+    if (typeof overrides.minSlopePct === "string" || typeof overrides.minSlopePct === "number") {
+      setMinSlopePct(String(overrides.minSlopePct));
+    }
+    if (typeof overrides.pipeMinSlopePct === "string" || typeof overrides.pipeMinSlopePct === "number") {
+      setPipeMinSlopePct(String(overrides.pipeMinSlopePct));
+    }
+    if (typeof overrides.maxParkingSlopePct === "string" || typeof overrides.maxParkingSlopePct === "number") {
+      setMaxParkingSlopePct(String(overrides.maxParkingSlopePct));
+    }
+    if (typeof overrides.maxRoadGradePct === "string" || typeof overrides.maxRoadGradePct === "number") {
+      setMaxRoadGradePct(String(overrides.maxRoadGradePct));
+    }
+    if (typeof overrides.maxAdaCrossSlopePct === "string" || typeof overrides.maxAdaCrossSlopePct === "number") {
+      setMaxAdaCrossSlopePct(String(overrides.maxAdaCrossSlopePct));
+    }
   };
 
   const buildChatDecisionContext = (
