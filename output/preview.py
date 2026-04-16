@@ -463,39 +463,39 @@ def _rectangle_visual_style(action, w, h):
     stripe_gap = None
 
     if layer == "BUILDING":
-        fill_alpha = 0.26 if preview_profile in {"layout", "grading"} else 0.18
+        fill_alpha = 0.34 if preview_profile in {"layout", "grading"} else 0.18
         facecolor = get_color(action)
-        linewidth_boost = 0.45 if preview_profile in {"layout", "grading"} else 0.3
+        linewidth_boost = 0.65 if preview_profile in {"layout", "grading"} else 0.3
     elif layer == "ROAD":
         fill_alpha = 0.06
         facecolor = get_color(action)
     elif layer == "PAVEMENT":
-        fill_alpha = 0.075 if preview_profile in {"layout", "grading"} else 0.10
+        fill_alpha = 0.055 if preview_profile in {"layout", "grading"} else 0.10
         facecolor = get_color(action)
     elif layer == "PARKING":
         if residential_court and (w >= 120.0 or parking_area >= 3000.0):
-            fill_alpha = 0.004 if (preview_profile == "grading" or w >= 170.0 or parking_area >= 6500.0) else 0.01
+            fill_alpha = 0.002 if (preview_profile == "grading" or w >= 170.0 or parking_area >= 6500.0) else 0.006
         elif w >= 180.0 or h >= 40.0 or parking_area >= 7000.0:
-            fill_alpha = 0.006 if preview_profile == "grading" else 0.008
+            fill_alpha = 0.004 if preview_profile == "grading" else 0.006
         elif w >= 120.0 or parking_area >= 4000.0:
-            fill_alpha = 0.012 if preview_profile == "grading" else 0.018
+            fill_alpha = 0.01 if preview_profile == "grading" else 0.014
         else:
-            fill_alpha = 0.024 if preview_profile == "grading" else 0.035
+            fill_alpha = 0.018 if preview_profile == "grading" else 0.028
         facecolor = get_color(action)
 
         if residential_court and (w >= 120.0 or parking_area >= 3000.0):
-            edge_alpha = 0.035 if (preview_profile == "grading" or w >= 170.0 or parking_area >= 6500.0) else 0.08
+            edge_alpha = 0.025 if (preview_profile == "grading" or w >= 170.0 or parking_area >= 6500.0) else 0.055
         elif w >= 180.0 or h >= 40.0 or parking_area >= 7000.0:
-            edge_alpha = 0.05 if preview_profile == "grading" else 0.08
+            edge_alpha = 0.04 if preview_profile == "grading" else 0.06
         elif w >= 120.0 or parking_area >= 4000.0:
-            edge_alpha = 0.10 if preview_profile == "grading" else 0.14
+            edge_alpha = 0.08 if preview_profile == "grading" else 0.12
         else:
-            edge_alpha = 0.2 if preview_profile == "grading" else 0.28
+            edge_alpha = 0.16 if preview_profile == "grading" else 0.22
 
         if w >= 24 and h >= 10:
             if residential_court and (w >= 120.0 or h >= 24.0):
                 stripe_spacing = max(42.0, min(60.0, w / 4.8))
-                stripe_alpha = 0.0 if (preview_profile == "grading" or w >= 170.0) else 0.02
+                stripe_alpha = 0.0 if (preview_profile == "grading" or w >= 170.0) else 0.012
                 stripe_gap = max(86.0, min(150.0, w * 0.5))
             elif w >= 180.0 or h >= 40.0:
                 stripe_spacing = max(52.0, min(68.0, w / 5.0))
@@ -503,7 +503,7 @@ def _rectangle_visual_style(action, w, h):
                 stripe_gap = max(160.0, min(320.0, w * 0.8))
             elif retail_field and (w >= 80.0 or parking_area >= 1800.0):
                 stripe_spacing = max(22.0, min(28.0, w / 4.8))
-                stripe_alpha = 0.05 if preview_profile == "grading" else 0.08
+                stripe_alpha = 0.04 if preview_profile == "grading" else 0.065
                 stripe_gap = max(24.0, min(52.0, w * 0.18))
             elif w >= 160.0 or h >= 40.0:
                 stripe_spacing = max(30.0, min(40.0, w / 6.5))
@@ -514,7 +514,7 @@ def _rectangle_visual_style(action, w, h):
                 stripe_alpha = 0.1 if preview_profile == "grading" else 0.14
                 stripe_gap = 0.0
     elif layer == "WALK":
-        fill_alpha = 0.04 if preview_profile == "grading" else 0.06
+        fill_alpha = 0.03 if preview_profile == "grading" else 0.045
         facecolor = get_color(action)
     elif layer == "FIRE":
         fill_alpha = 0.0

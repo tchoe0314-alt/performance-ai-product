@@ -242,8 +242,8 @@ class PreviewRenderTests(unittest.TestCase):
         building_style = _rectangle_visual_style(building, 110, 58)
         court_style = _rectangle_visual_style(court, 180, 42)
 
-        self.assertGreater(building_style["fill_alpha"], 0.2)
-        self.assertGreater(building_style["linewidth_boost"], 0.3)
+        self.assertGreater(building_style["fill_alpha"], 0.3)
+        self.assertGreater(building_style["linewidth_boost"], 0.6)
         self.assertLess(court_style["fill_alpha"], 0.01)
         self.assertLess(court_style["edge_alpha"], 0.05)
         self.assertEqual(court_style["stripe_alpha"], 0.0)
