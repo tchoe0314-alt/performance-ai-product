@@ -992,6 +992,12 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
             if engineering_profile == "grading":
                 if not _bounds_near_layout(bounds, layout_bounds, padding=112.0):
                     continue
+                if layout_bounds:
+                    x1, y1, x2, y2 = bounds
+                    _, ly1, _, ly2 = layout_bounds
+                    cy = (y1 + y2) / 2.0
+                    if not (ly1 - 80.0 <= cy <= ly2 + 80.0):
+                        continue
                 if _is_oversized_for_layout(action) and not _bounds_near_layout(bounds, layout_bounds, padding=40.0):
                     continue
             else:
