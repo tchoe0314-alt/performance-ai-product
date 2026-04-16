@@ -953,7 +953,7 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
         _, cy = _rect_center(bounds)
         _, layout_cy = layout_center
         vertical_distance = abs(cy - layout_cy) / max(layout_span, 1.0)
-        return -vertical_distance * 1.75
+        return -vertical_distance * 4.0
 
     def _is_oversized_for_layout(action):
         if not layout_bounds:
