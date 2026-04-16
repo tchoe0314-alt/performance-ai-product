@@ -1472,9 +1472,9 @@ def _infer_buildings_from_legacy(parsed: Dict[str, Any], site_box: Rect) -> List
             return upper_y, upper_h, lower_y, lower_h
 
         if frontage_specs:
-            upper_h = max(max(_safe_float(spec.get("d"), fallback_depth) for spec in primary_specs) + 18.0, min(vertical_span * 0.15, 96.0))
-            lower_h = max(max(_safe_float(spec.get("d"), fallback_depth) for spec in frontage_specs) + 14.0, min(vertical_span * 0.10, 68.0))
-            gap = max(12.0, min(vertical_span * 0.03, 24.0))
+            upper_h = max(max(_safe_float(spec.get("d"), fallback_depth) for spec in primary_specs) + 10.0, min(vertical_span * 0.11, 82.0))
+            lower_h = max(max(_safe_float(spec.get("d"), fallback_depth) for spec in frontage_specs) + 8.0, min(vertical_span * 0.08, 56.0))
+            gap = max(8.0, min(vertical_span * 0.02, 14.0))
             top_row_y, top_row_h, bottom_row_y, bottom_row_h = _fit_row_bands(upper_h, lower_h, gap)
         else:
             top_row_h = max(max(_safe_float(spec.get("d"), fallback_depth) for spec in primary_specs) + 34.0, min(vertical_span * 0.2, 140.0))
@@ -1604,23 +1604,28 @@ def _infer_parking_from_legacy(parsed: Dict[str, Any], site_box: Rect, buildings
             bw_val = max(20.0, _safe_float(building.get("w"), 40.0))
             bd_val = max(20.0, _safe_float(building.get("d"), 40.0))
             b_rect = _rect(bx, by, bw_val, bd_val)
-            lot_depth = max(46.0, min(72.0, bd_val * 0.9))
+            use_type = _safe_str(building.get("use"), site_type).lower()
+            if use_type == "retail":
+                lot_depth = max(30.0, min(42.0, bd_val * 0.7))
+                parking_offset = 8.0
+            else:
+                lot_depth = max(34.0, min(52.0, bd_val * 0.74))
+                parking_offset = 10.0
             park_w = max(36.0, min(buildable["w"] * 0.36, bw_val + 34.0))
             if street_edge in {"bottom", "top"}:
                 park_x = _clamp(bx + (bw_val - park_w) / 2.0, buildable["x"], _rect_right(buildable) - park_w)
                 if street_edge == "bottom":
-                    park_y = _clamp(by - lot_depth - 14.0, buildable["y"], _rect_top(buildable) - lot_depth)
+                    park_y = _clamp(by - lot_depth - parking_offset, buildable["y"], _rect_top(buildable) - lot_depth)
                 else:
-                    park_y = _clamp(by + bd_val + 14.0, buildable["y"], _rect_top(buildable) - lot_depth)
+                    park_y = _clamp(by + bd_val + parking_offset, buildable["y"], _rect_top(buildable) - lot_depth)
             else:
                 park_y = _clamp(by + (bd_val - lot_depth) / 2.0, buildable["y"], _rect_top(buildable) - lot_depth)
                 if street_edge == "left":
-                    park_x = _clamp(bx + bw_val + 14.0, buildable["x"], _rect_right(buildable) - park_w)
+                    park_x = _clamp(bx + bw_val + parking_offset, buildable["x"], _rect_right(buildable) - park_w)
                 else:
-                    park_x = _clamp(bx - park_w - 14.0, buildable["x"], _rect_right(buildable) - park_w)
+                    park_x = _clamp(bx - park_w - parking_offset, buildable["x"], _rect_right(buildable) - park_w)
             parking_rect = _rect(park_x, park_y, park_w, lot_depth)
             capacity = _estimate_parking_capacity(parking_rect, standards)
-            use_type = _safe_str(building.get("use"), site_type).lower()
             if explicit_total > 0 and total_area > 0:
                 share = max(1, int(round(explicit_total * ((bw_val * bd_val) / total_area))))
             else:

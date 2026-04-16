@@ -140,9 +140,9 @@ def _synthesized_program_layout(
         return upper_y, upper_h, lower_y, lower_h
 
     if frontage:
-        upper_h = max(max(safe_float(spec.get("d"), 20.0) for spec in primary) + 18.0, min(vertical_span * 0.15, 96.0))
-        lower_h = max(max(safe_float(spec.get("d"), 20.0) for spec in frontage) + 14.0, min(vertical_span * 0.10, 68.0))
-        gap = max(12.0, min(vertical_span * 0.03, 24.0))
+        upper_h = max(max(safe_float(spec.get("d"), 20.0) for spec in primary) + 10.0, min(vertical_span * 0.11, 82.0))
+        lower_h = max(max(safe_float(spec.get("d"), 20.0) for spec in frontage) + 8.0, min(vertical_span * 0.08, 56.0))
+        gap = max(8.0, min(vertical_span * 0.02, 14.0))
         top_row_y, top_row_h, bottom_row_y, bottom_row_h = _fit_row_bands(upper_h, lower_h, gap)
     else:
         top_row_h = max(max(safe_float(spec.get("d"), 20.0) for spec in primary) + 34.0, min(vertical_span * 0.2, 140.0))
@@ -192,10 +192,11 @@ def _layout_fallback_actions(
         pd = safe_float(placement.get("d"), 20.0)
         frontage_use = lower_text(placement.get("use")) in {"retail", "commercial", "pad"}
         if frontage_use:
-            lot_depth = max(24.0, min(36.0, pd * 0.5))
+            lot_depth = max(20.0, min(30.0, pd * 0.42))
         else:
-            lot_depth = max(30.0, min(46.0, pd * 0.64))
-        pavement_y = max(lot_y + 15.0, py - lot_depth - 18.0) if frontage_on_bottom else min(lot_y + lot_h - lot_depth - 15.0, py + pd + 18.0)
+            lot_depth = max(24.0, min(34.0, pd * 0.5))
+        setback_gap = 10.0 if frontage_use else 12.0
+        pavement_y = max(lot_y + 15.0, py - lot_depth - setback_gap) if frontage_on_bottom else min(lot_y + lot_h - lot_depth - 15.0, py + pd + setback_gap)
         side_buffer = 8.0 if frontage_use else 6.0
         park_x = round(max(lot_x + 15.0, px - side_buffer), 3)
         park_y = round(pavement_y, 3)
