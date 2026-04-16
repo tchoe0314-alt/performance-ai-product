@@ -165,6 +165,7 @@ class PreviewRenderTests(unittest.TestCase):
     def test_grading_preview_clips_remote_contour_segments_to_site_focus(self):
         actions = [
             {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 1", "origin": [165, 440], "width": 110, "height": 58},
+            {"layer": "BUILDING", "task": "rectangle", "label": "BLDG 2", "origin": [505, 440], "width": 110, "height": 58},
             {"layer": "PARKING", "task": "rectangle", "origin": [180, 430], "width": 446, "height": 130},
             {"layer": "FG_CONTOUR", "task": "polyline", "points": [[0, 390], [780, 390]]},
         ]
@@ -178,8 +179,8 @@ class PreviewRenderTests(unittest.TestCase):
         )
 
         points = contour["points"]
-        self.assertEqual(points[0], [137.34, 390.0])
-        self.assertEqual(points[-1], [653.66, 390.0])
+        self.assertEqual(points[0], [138.0, 390.0])
+        self.assertEqual(points[-1], [642.0, 390.0])
 
     def test_layout_scene_suppresses_engineering_overlay_noise(self):
         actions = [
@@ -604,8 +605,7 @@ class PreviewRenderTests(unittest.TestCase):
             and str(action.get("task") or "").lower() == "polyline"
         ]
 
-        self.assertIn(((150, 120), (420, 120)), contour_bounds)
-        self.assertIn(((150, 260), (420, 260)), contour_bounds)
+        self.assertIn(((160.0, 260.0), (410.0, 260.0)), contour_bounds)
         self.assertNotIn(((150, 60), (420, 60)), contour_bounds)
 
     def test_drainage_checkpoint_keeps_flow_context(self):

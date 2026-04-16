@@ -603,7 +603,7 @@ def _clip_grading_contour_action(action, layout_bounds):
     layout_w = max(max_x - min_x, 1.0)
     layout_h = max(max_y - min_y, 1.0)
     x_pad = min(max(20.0, layout_w * 0.06), 32.0)
-    y_pad = min(max(24.0, layout_h * 0.28), 44.0)
+    y_pad = min(max(52.0, layout_h * 0.55), 72.0)
     clip_rect = (
         min_x - x_pad,
         min_y - y_pad,
@@ -1383,6 +1383,7 @@ def _filtered_preview_actions(actions, *, rich_engineering=False):
             if str(action.get("layer") or "").upper() in {"BUILDING", "PARKING", "PAVEMENT", "WALK"}
         ]
     )
+    grading_focus_bounds = _merge_bounds(building_rects) or layout_bounds
     has_building_shapes = any(
         (str(action.get("layer") or "").upper() == "BUILDING" and str(action.get("task") or "").lower() in {"rectangle", "polygon"})
         for action in records
@@ -1432,7 +1433,7 @@ def _filtered_preview_actions(actions, *, rich_engineering=False):
             and layer in {"FG_CONTOUR", "EG_CONTOUR"}
             and task == "polyline"
         ):
-            action = _clip_grading_contour_action(action, layout_bounds)
+            action = _clip_grading_contour_action(action, grading_focus_bounds)
             if action is None:
                 continue
         filtered.append(action)
