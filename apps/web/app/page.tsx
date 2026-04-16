@@ -257,6 +257,7 @@ type ChatMessage = {
   content: string;
   createdAt: number;
   kind?: "message" | "status" | "explanation" | "action";
+  feedback?: "up" | "down";
 };
 
 const defaultAssumptions: Assumption[] = [
@@ -284,6 +285,7 @@ function createChatMessage(
   role: ChatMessage["role"],
   content: string,
   kind: ChatMessage["kind"] = "message",
+  feedback?: ChatMessage["feedback"],
 ): ChatMessage {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -291,6 +293,7 @@ function createChatMessage(
     content,
     createdAt: Date.now(),
     kind,
+    feedback,
   };
 }
 
@@ -1465,12 +1468,54 @@ export default function PerformanceAIDashboard() {
     role: ChatMessage["role"],
     content: string,
     kind: ChatMessage["kind"] = "message",
+    feedback?: ChatMessage["feedback"],
   ) => {
     setChatMessages((current) => {
-      const next = [...current, createChatMessage(role, content, kind)];
+      const next = [...current, createChatMessage(role, content, kind, feedback)];
       chatMessagesRef.current = next;
       return next;
     });
+  };
+
+  const setMessageFeedback = async (
+    messageId: string,
+    feedback: ChatMessage["feedback"],
+  ) => {
+    if (!token || !feedback) return;
+    const thread = chatMessagesRef.current;
+    const idx = thread.findIndex((message) => message.id === messageId);
+    if (idx < 0) return;
+    const target = thread[idx];
+    const prevUser = [...thread]
+      .slice(0, idx)
+      .reverse()
+      .find((message) => message.role === "user");
+    const userMessage = prevUser?.content ?? "";
+
+    setChatMessages((current) => {
+      const next = current.map((message) =>
+        message.id === messageId ? { ...message, feedback } : message,
+      );
+      chatMessagesRef.current = next;
+      return next;
+    });
+
+    try {
+      await postJson<{ success: boolean }>(
+        "/api/chat/feedback",
+        {
+          project_id: currentProject?.project_id ?? null,
+          message_id: messageId,
+          feedback,
+          message: userMessage,
+          assistant_message: target.content,
+          context: buildChatDecisionContext({}, userMessage),
+        },
+        { token },
+      );
+    } catch {
+      // Feedback logging should never block chat UX.
+    }
   };
 
   useEffect(() => {
@@ -1530,6 +1575,10 @@ export default function PerformanceAIDashboard() {
               message.kind === "action"
                 ? message.kind
                 : "message",
+            feedback:
+              message.feedback === "up" || message.feedback === "down"
+                ? message.feedback
+                : undefined,
           }))
       : [];
     const autoNamed = Boolean(projectInput.meta?.auto_named);
@@ -4266,6 +4315,33 @@ export default function PerformanceAIDashboard() {
                       <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
                         {message.content}
                       </p>
+                      {message.role === "assistant" ? (
+                        <div className="mt-3 flex items-center gap-2 text-xs">
+                          <span className="text-slate-400">Was this helpful?</span>
+                          <button
+                            type="button"
+                            onClick={() => setMessageFeedback(message.id, "up")}
+                            className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
+                              message.feedback === "up"
+                                ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                                : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                            }`}
+                          >
+                            Helpful
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setMessageFeedback(message.id, "down")}
+                            className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
+                              message.feedback === "down"
+                                ? "border-rose-500 bg-rose-50 text-rose-700"
+                                : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                            }`}
+                          >
+                            Not quite
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 ))}

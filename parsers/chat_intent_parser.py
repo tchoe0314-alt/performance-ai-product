@@ -54,11 +54,61 @@ CHAT_DECISION_SCHEMA: Dict[str, Any] = {
     ],
 }
 
+CHAT_MEMORY_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "preferences": {"type": "array", "items": {"type": "string"}},
+        "constraints": {"type": "array", "items": {"type": "string"}},
+        "open_questions": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["preferences", "constraints", "open_questions"],
+}
+
 
 def _load_chat_client() -> Any:
     from parsers.ai_parser import _get_client  # type: ignore
 
     return _get_client()
+
+
+def build_chat_memory_summary(chat_thread: Any) -> Dict[str, Any]:
+    heuristic = _extract_chat_memory(chat_thread)
+    if not isinstance(chat_thread, list) or not chat_thread:
+        return {**heuristic, "open_questions": []}
+    try:
+        client = _load_chat_client()
+        response = client.responses.create(
+            model="gpt-5",
+            input=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Summarize the user's preferences, constraints, and any open questions "
+                        "from this chat thread. Return only JSON that matches the schema."
+                    ),
+                },
+                {"role": "user", "content": json.dumps(chat_thread)},
+            ],
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "civora_chat_memory",
+                    "schema": CHAT_MEMORY_SCHEMA,
+                    "strict": True,
+                }
+            },
+        )
+        data = json.loads(response.output_text)
+        if not isinstance(data, dict):
+            raise ValueError("Chat memory response was not an object.")
+        return {
+            "preferences": list(data.get("preferences") or [])[:8],
+            "constraints": list(data.get("constraints") or [])[:8],
+            "open_questions": list(data.get("open_questions") or [])[:6],
+        }
+    except Exception:
+        return {**heuristic, "open_questions": []}
 
 
 def _trim_chat_history(value: Any, limit: int = 6) -> List[Dict[str, str]]:

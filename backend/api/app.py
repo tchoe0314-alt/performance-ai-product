@@ -165,6 +165,15 @@ class ChatDecisionPayload(BaseModel):
     context: Dict[str, Any] = Field(default_factory=dict)
 
 
+class ChatFeedbackPayload(BaseModel):
+    project_id: Optional[str] = None
+    message_id: Optional[str] = None
+    feedback: str
+    message: str
+    assistant_message: str
+    context: Dict[str, Any] = Field(default_factory=dict)
+
+
 def _resolve_orchestration_project_id(
     outer_project_id: Optional[str],
     request_payload: OrchestratePayload,
@@ -447,14 +456,70 @@ def chat_decide(
     payload: ChatDecisionPayload,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    _ = current_user
     try:
         return application_decide_chat(
             _model_to_dict(payload),
             decide_chat_message=decide_chat_message,
+            project_store=PROJECT_STORE,
+            user_id=current_user["user_id"],
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/chat/feedback")
+def chat_feedback(
+    payload: ChatFeedbackPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    from backend.services.chat_learning_store import append_chat_learning_event
+
+    data = _model_to_dict(payload)
+    feedback = str(data.get("feedback") or "").strip().lower()
+    if feedback not in {"up", "down"}:
+        raise HTTPException(status_code=400, detail="Feedback must be 'up' or 'down'.")
+    project_id = data.get("project_id")
+    if project_id:
+        record = PROJECT_STORE.get_project(user_id=current_user["user_id"], project_id=project_id)
+        if record:
+            project_input = dict(record.get("project_input") or {})
+            meta = dict(project_input.get("meta") or {})
+            history = list(meta.get("chat_feedback") or [])
+            history.append(
+                {
+                    "message_id": data.get("message_id"),
+                    "feedback": feedback,
+                    "message": data.get("message"),
+                    "assistant_message": data.get("assistant_message"),
+                }
+            )
+            meta["chat_feedback"] = history[-50:]
+            project_input["meta"] = meta
+            PROJECT_STORE.save_project(
+                user_id=current_user["user_id"],
+                project_id=record.get("project_id"),
+                name=record.get("name") or "Untitled Project",
+                description=record.get("description") or "",
+                session_id=record.get("session_id"),
+                tags=record.get("tags") or [],
+                project_input=project_input,
+                latest_result=record.get("latest_result") or {},
+                session_state=record.get("session_state") or {},
+                metadata=record.get("metadata") or {},
+            )
+
+    append_chat_learning_event(
+        {
+            "event_type": "feedback",
+            "user_id": current_user["user_id"],
+            "project_id": project_id,
+            "message_id": data.get("message_id"),
+            "feedback": feedback,
+            "message": data.get("message"),
+            "assistant_message": data.get("assistant_message"),
+        }
+    )
+    return {"success": True}
 
 
 @app.post("/api/orchestrate")
