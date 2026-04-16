@@ -194,6 +194,10 @@ class ImageAnalysisPayload(BaseModel):
     meta: Dict[str, Any] = Field(default_factory=dict)
 
 
+class ReviseJobPayload(BaseModel):
+    target_phase: Optional[str] = None
+
+
 def _resolve_orchestration_project_id(
     outer_project_id: Optional[str],
     request_payload: OrchestratePayload,
@@ -775,12 +779,17 @@ def continue_job(job_id: str, current_user: Dict[str, Any] = Depends(get_current
 
 
 @app.post("/api/jobs/{job_id}/revise")
-def revise_job(job_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+def revise_job(
+    job_id: str,
+    payload: ReviseJobPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
     return application_revise_existing_job(
         project_store=PROJECT_STORE,
         job_queue=JOB_QUEUE,
         user_id=current_user["user_id"],
         job_id=job_id,
+        target_phase=payload.target_phase,
     )
 
 

@@ -1302,6 +1302,9 @@ export default function PerformanceAIDashboard() {
   const [showMeasurements, setShowMeasurements] = useState(false);
   const [showCalculations, setShowCalculations] = useState(false);
   const [autoAdvancePhases, setAutoAdvancePhases] = useState(false);
+  const [revisePhaseTarget, setRevisePhaseTarget] = useState<
+    "layout" | "grading" | "drainage_storm" | "utilities" | "coordination_validation"
+  >("layout");
   const [previewLayers, setPreviewLayers] = useState({
     buildings: true,
     roads: true,
@@ -3134,7 +3137,7 @@ export default function PerformanceAIDashboard() {
       }
       const data = await postJson<{ job: JobSummary }>(
         `/api/jobs/${visibleActiveJob.job_id}/revise`,
-        {},
+        { target_phase: revisePhaseTarget },
         { token },
       );
       setJobs((current) => {
@@ -4745,6 +4748,15 @@ export default function PerformanceAIDashboard() {
     phaseOnlyEntries.find((phase) =>
       ["pending", "partial", "review"].includes(phase.status.toLowerCase()),
     ) ?? null;
+  useEffect(() => {
+    const status = String(visibleActiveJob?.status || "").toLowerCase();
+    if (status !== "awaiting_approval") return;
+    if (previewRunningPhase?.key) {
+      setRevisePhaseTarget(
+        previewRunningPhase.key as typeof revisePhaseTarget,
+      );
+    }
+  }, [visibleActiveJob?.status, previewRunningPhase?.key]);
   const previewPhaseProgressPercent = (() => {
     if (!previewTotalPhaseCount) return 0;
     const explicitJobProgress = Number(
@@ -5280,12 +5292,32 @@ export default function PerformanceAIDashboard() {
                         </button>
                         {String(visibleActiveJob?.status || "").toLowerCase() === "awaiting_approval" && (
                           <>
+                            <div className="ml-2 flex items-center gap-2">
+                              <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                Revise phase
+                              </label>
+                              <select
+                                value={revisePhaseTarget}
+                                onChange={(event) =>
+                                  setRevisePhaseTarget(
+                                    event.target.value as typeof revisePhaseTarget,
+                                  )
+                                }
+                                className="rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs font-semibold text-slate-700"
+                              >
+                                <option value="layout">Layout</option>
+                                <option value="grading">Grading</option>
+                                <option value="drainage_storm">Drainage/Storm</option>
+                                <option value="utilities">Utilities</option>
+                                <option value="coordination_validation">Coordination</option>
+                              </select>
+                            </div>
                             <button
                               type="button"
                               onClick={handleReviseActiveJob}
                               className="ml-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
                             >
-                              Save Changes &amp; Revise Phase
+                              Save Changes &amp; Revise
                             </button>
                             <button
                               type="button"

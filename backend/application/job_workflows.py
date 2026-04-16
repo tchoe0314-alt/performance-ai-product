@@ -203,6 +203,7 @@ def revise_existing_job(
     job_queue: JobQueueProtocol,
     user_id: str,
     job_id: str,
+    target_phase: Optional[str] = None,
 ) -> Dict[str, Any]:
     job = job_queue.get_job_detail(user_id=user_id, job_id=job_id)
     if job is None:
@@ -267,6 +268,16 @@ def revise_existing_job(
         "coordination_validation",
     ]
 
+    requested_phase = lower_text(target_phase) if target_phase else ""
+    if requested_phase in phase_order:
+        phase_to_stage = {
+            "layout": "layout",
+            "grading": "grading",
+            "drainage_storm": "drainage",
+            "utilities": "sanitary",
+            "coordination_validation": "coordination_resolution",
+        }
+        stage_name = phase_to_stage.get(requested_phase, stage_name)
     try:
         target_stage_index = stage_order.index(stage_name)
     except ValueError:
