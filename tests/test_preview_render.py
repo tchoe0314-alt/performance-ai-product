@@ -6,6 +6,7 @@ from output.preview import (
     _filtered_preview_actions,
     _grading_focus_bounds_from_buildings,
     _polyline_style,
+    _rectangle_visual_style,
     _text_style,
     _preview_figure_size,
     _preview_draw_priority,
@@ -223,6 +224,29 @@ class PreviewRenderTests(unittest.TestCase):
         self.assertLess(alpha, 0.8)
         self.assertLess(fontsize_adjust, 0.0)
         self.assertLess(bbox_alpha, 0.8)
+
+    def test_grading_preview_strengthens_buildings_and_quiets_residential_courts(self):
+        building = {
+            "layer": "BUILDING",
+            "task": "rectangle",
+            "label": "BLDG 1",
+            "_preview_profile": "grading",
+        }
+        court = {
+            "layer": "PARKING",
+            "task": "rectangle",
+            "label": "RES-PARK-1",
+            "_preview_profile": "grading",
+        }
+
+        building_style = _rectangle_visual_style(building, 110, 58)
+        court_style = _rectangle_visual_style(court, 180, 42)
+
+        self.assertGreater(building_style["fill_alpha"], 0.2)
+        self.assertGreater(building_style["linewidth_boost"], 0.3)
+        self.assertLess(court_style["fill_alpha"], 0.01)
+        self.assertLess(court_style["edge_alpha"], 0.05)
+        self.assertEqual(court_style["stripe_alpha"], 0.0)
 
     def test_layout_scene_suppresses_engineering_overlay_noise(self):
         actions = [

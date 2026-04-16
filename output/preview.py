@@ -446,6 +446,94 @@ def _text_style(action):
     return alpha, fontsize_adjust, bbox_alpha
 
 
+def _rectangle_visual_style(action, w, h):
+    layer = (action.get("layer") or "").upper()
+    preview_profile = _normalize_engineering_profile(action.get("_preview_profile"))
+    label_upper = str(action.get("label") or "").upper()
+    residential_court = layer == "PARKING" and label_upper.startswith("RES-PARK")
+    retail_field = layer == "PARKING" and "RETAIL-PARK" in label_upper
+    parking_area = w * h if layer == "PARKING" else 0.0
+
+    fill_alpha = 0.0
+    facecolor = "none"
+    edge_alpha = 1.0
+    linewidth_boost = 0.0
+    stripe_alpha = None
+    stripe_spacing = None
+    stripe_gap = None
+
+    if layer == "BUILDING":
+        fill_alpha = 0.26 if preview_profile in {"layout", "grading"} else 0.18
+        facecolor = get_color(action)
+        linewidth_boost = 0.45 if preview_profile in {"layout", "grading"} else 0.3
+    elif layer == "ROAD":
+        fill_alpha = 0.06
+        facecolor = get_color(action)
+    elif layer == "PAVEMENT":
+        fill_alpha = 0.075 if preview_profile in {"layout", "grading"} else 0.10
+        facecolor = get_color(action)
+    elif layer == "PARKING":
+        if residential_court and (w >= 120.0 or parking_area >= 3000.0):
+            fill_alpha = 0.004 if (preview_profile == "grading" or w >= 170.0 or parking_area >= 6500.0) else 0.01
+        elif w >= 180.0 or h >= 40.0 or parking_area >= 7000.0:
+            fill_alpha = 0.006 if preview_profile == "grading" else 0.008
+        elif w >= 120.0 or parking_area >= 4000.0:
+            fill_alpha = 0.012 if preview_profile == "grading" else 0.018
+        else:
+            fill_alpha = 0.024 if preview_profile == "grading" else 0.035
+        facecolor = get_color(action)
+
+        if residential_court and (w >= 120.0 or parking_area >= 3000.0):
+            edge_alpha = 0.035 if (preview_profile == "grading" or w >= 170.0 or parking_area >= 6500.0) else 0.08
+        elif w >= 180.0 or h >= 40.0 or parking_area >= 7000.0:
+            edge_alpha = 0.05 if preview_profile == "grading" else 0.08
+        elif w >= 120.0 or parking_area >= 4000.0:
+            edge_alpha = 0.10 if preview_profile == "grading" else 0.14
+        else:
+            edge_alpha = 0.2 if preview_profile == "grading" else 0.28
+
+        if w >= 24 and h >= 10:
+            if residential_court and (w >= 120.0 or h >= 24.0):
+                stripe_spacing = max(42.0, min(60.0, w / 4.8))
+                stripe_alpha = 0.0 if (preview_profile == "grading" or w >= 170.0) else 0.02
+                stripe_gap = max(86.0, min(150.0, w * 0.5))
+            elif w >= 180.0 or h >= 40.0:
+                stripe_spacing = max(52.0, min(68.0, w / 5.0))
+                stripe_alpha = 0.0
+                stripe_gap = max(160.0, min(320.0, w * 0.8))
+            elif retail_field and (w >= 80.0 or parking_area >= 1800.0):
+                stripe_spacing = max(22.0, min(28.0, w / 4.8))
+                stripe_alpha = 0.05 if preview_profile == "grading" else 0.08
+                stripe_gap = max(24.0, min(52.0, w * 0.18))
+            elif w >= 160.0 or h >= 40.0:
+                stripe_spacing = max(30.0, min(40.0, w / 6.5))
+                stripe_alpha = 0.04 if preview_profile == "grading" else 0.06
+                stripe_gap = max(70.0, min(120.0, w * 0.3))
+            else:
+                stripe_spacing = max(18.0, min(24.0, w / 5.0))
+                stripe_alpha = 0.1 if preview_profile == "grading" else 0.14
+                stripe_gap = 0.0
+    elif layer == "WALK":
+        fill_alpha = 0.04 if preview_profile == "grading" else 0.06
+        facecolor = get_color(action)
+    elif layer == "FIRE":
+        fill_alpha = 0.0
+        facecolor = "none"
+
+    return {
+        "fill_alpha": fill_alpha,
+        "facecolor": facecolor,
+        "edge_alpha": edge_alpha,
+        "linewidth_boost": linewidth_boost,
+        "stripe_alpha": stripe_alpha,
+        "stripe_spacing": stripe_spacing,
+        "stripe_gap": stripe_gap,
+        "residential_court": residential_court,
+        "retail_field": retail_field,
+        "parking_area": parking_area,
+    }
+
+
 _GENERIC_BUILDING_LABEL_RE = re.compile(r"^(?:BLDG|BUILDING)\s*-?\s*\d+[A-Z]?$")
 _GENERIC_SURFACE_LABEL_RE = re.compile(r"^(?:LOT\s+[A-Z0-9]+|PARK(?:ING)?(?:\s+LOT)?\s*-?\s*[A-Z0-9]*|LOT\s+BASE)$")
 
@@ -1483,6 +1571,9 @@ def _filtered_preview_actions(actions, *, rich_engineering=False):
             continue
         if has_layout_scene and _is_isolated_pavement_shape(action, building_rects, parking_bounds):
             continue
+        if engineering_profile in {"layout", "grading"} and layer in {"BUILDING", "PARKING", "PAVEMENT", "WALK"} and "_preview_profile" not in action:
+            action = dict(action)
+            action["_preview_profile"] = engineering_profile
         if (
             engineering_profile == "grading"
             and layer in {"FG_CONTOUR", "EG_CONTOUR"}
@@ -1491,10 +1582,12 @@ def _filtered_preview_actions(actions, *, rich_engineering=False):
             action = _clip_grading_contour_action(action, grading_focus_bounds)
             if action is None:
                 continue
-            action = dict(action)
+            if "_preview_profile" not in action:
+                action = dict(action)
             action["_preview_profile"] = engineering_profile
         elif engineering_profile == "grading" and layer == "SPOT_FG" and task == "text_note":
-            action = dict(action)
+            if "_preview_profile" not in action:
+                action = dict(action)
             action["_preview_profile"] = engineering_profile
         filtered.append(action)
     return filtered
@@ -1514,49 +1607,13 @@ def draw_rectangle(ax, action):
         return None
 
     layer = (action.get("layer") or "").upper()
-    fill_alpha = 0.0
-    facecolor = "none"
-    label_upper = str(action.get("label") or "").upper()
-    residential_court = layer == "PARKING" and label_upper.startswith("RES-PARK")
-    retail_field = layer == "PARKING" and "RETAIL-PARK" in label_upper
-    if layer == "BUILDING":
-        fill_alpha = 0.18
-        facecolor = get_color(action)
-    elif layer == "ROAD":
-        fill_alpha = 0.06
-        facecolor = get_color(action)
-    elif layer == "PAVEMENT":
-        fill_alpha = 0.10
-        facecolor = get_color(action)
-    elif layer == "PARKING":
-        parking_area = w * h
-        if residential_court and (w >= 120.0 or parking_area >= 3000.0):
-            fill_alpha = 0.006 if w >= 170.0 or parking_area >= 6500.0 else 0.012
-        elif w >= 180.0 or h >= 40.0 or parking_area >= 7000.0:
-            fill_alpha = 0.008
-        elif w >= 120.0 or parking_area >= 4000.0:
-            fill_alpha = 0.018
-        else:
-            fill_alpha = 0.035
-        facecolor = get_color(action)
-    elif layer == "WALK":
-        fill_alpha = 0.06
-        facecolor = get_color(action)
-    elif layer == "FIRE":
-        fill_alpha = 0.0
-        facecolor = "none"
-
-    edge_alpha = 1.0
-    if layer == "PARKING":
-        parking_area = w * h
-        if residential_court and (w >= 120.0 or parking_area >= 3000.0):
-            edge_alpha = 0.05 if w >= 170.0 or parking_area >= 6500.0 else 0.09
-        elif w >= 180.0 or h >= 40.0 or parking_area >= 7000.0:
-            edge_alpha = 0.08
-        elif w >= 120.0 or parking_area >= 4000.0:
-            edge_alpha = 0.14
-        else:
-            edge_alpha = 0.28
+    style = _rectangle_visual_style(action, w, h)
+    fill_alpha = style["fill_alpha"]
+    facecolor = style["facecolor"]
+    residential_court = style["residential_court"]
+    retail_field = style["retail_field"]
+    parking_area = style["parking_area"]
+    edge_alpha = style["edge_alpha"]
 
     rect = Rectangle(
         (x, y),
@@ -1565,7 +1622,7 @@ def draw_rectangle(ax, action):
         fill=fill_alpha > 0.0,
         facecolor=facecolor,
         alpha=fill_alpha if fill_alpha > 0.0 else 1.0,
-        linewidth=get_linewidth(action) + (0.3 if layer == "BUILDING" else 0.0),
+        linewidth=get_linewidth(action) + style["linewidth_boost"],
         edgecolor=get_color(action),
         linestyle=get_linestyle(action),
     )
@@ -1576,26 +1633,9 @@ def draw_rectangle(ax, action):
         rect.set_edgecolor((0.396, 0.455, 0.569, edge_alpha))
 
     if layer == "PARKING" and w >= 24 and h >= 10:
-        if residential_court and (w >= 120.0 or h >= 24.0):
-            stripe_spacing = max(42.0, min(60.0, w / 4.8))
-            stripe_alpha = 0.0 if w >= 170.0 else 0.025
-            stripe_gap = max(86.0, min(150.0, w * 0.5))
-        elif w >= 180.0 or h >= 40.0:
-            stripe_spacing = max(52.0, min(68.0, w / 5.0))
-            stripe_alpha = 0.0
-            stripe_gap = max(160.0, min(320.0, w * 0.8))
-        elif retail_field and (w >= 80.0 or parking_area >= 1800.0):
-            stripe_spacing = max(22.0, min(28.0, w / 4.8))
-            stripe_alpha = 0.08
-            stripe_gap = max(24.0, min(52.0, w * 0.18))
-        elif w >= 160.0 or h >= 40.0:
-            stripe_spacing = max(30.0, min(40.0, w / 6.5))
-            stripe_alpha = 0.06
-            stripe_gap = max(70.0, min(120.0, w * 0.3))
-        else:
-            stripe_spacing = max(18.0, min(24.0, w / 5.0))
-            stripe_alpha = 0.14
-            stripe_gap = 0.0
+        stripe_spacing = style["stripe_spacing"]
+        stripe_alpha = style["stripe_alpha"]
+        stripe_gap = style["stripe_gap"] if style["stripe_gap"] is not None else 0.0
         stripe_x = x + stripe_spacing
         stripe_y1 = y + max(1.5, h * 0.12)
         stripe_y2 = y + h - max(1.5, h * 0.12)
