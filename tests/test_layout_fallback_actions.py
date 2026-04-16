@@ -80,6 +80,15 @@ class LayoutFallbackActionsTests(unittest.TestCase):
         self.assertTrue(all(float(action.get("width", 0.0)) <= 134.0 for action in multifamily_parking))
         self.assertTrue(all(float(action.get("width", 0.0)) <= 92.0 for action in retail_parking))
 
+        multifamily_parking = sorted(multifamily_parking, key=lambda action: float(action.get("origin", [0])[0]))
+        gaps = []
+        for left, right in zip(multifamily_parking, multifamily_parking[1:]):
+            left_x = float(left.get("origin", [0])[0])
+            left_w = float(left.get("width", 0.0))
+            right_x = float(right.get("origin", [0])[0])
+            gaps.append(right_x - (left_x + left_w))
+        self.assertTrue(all(gap >= 18.0 for gap in gaps))
+
     def test_layout_fallback_avoids_loop_and_culdesac_schematic_shapes(self) -> None:
         actions = _layout_fallback_actions(
             [

@@ -192,11 +192,11 @@ def _layout_fallback_actions(
         pd = safe_float(placement.get("d"), 20.0)
         frontage_use = lower_text(placement.get("use")) in {"retail", "commercial", "pad"}
         if frontage_use:
-            lot_depth = max(28.0, min(42.0, pd * 0.6))
+            lot_depth = max(24.0, min(36.0, pd * 0.5))
         else:
-            lot_depth = max(34.0, min(54.0, pd * 0.72))
+            lot_depth = max(30.0, min(46.0, pd * 0.64))
         pavement_y = max(lot_y + 15.0, py - lot_depth - 18.0) if frontage_on_bottom else min(lot_y + lot_h - lot_depth - 15.0, py + pd + 18.0)
-        side_buffer = 10.0 if frontage_use else 12.0
+        side_buffer = 8.0 if frontage_use else 6.0
         park_x = round(max(lot_x + 15.0, px - side_buffer), 3)
         park_y = round(pavement_y, 3)
         park_w = round(min(lot_w - 30.0, pw + side_buffer * 2.0), 3)
@@ -246,10 +246,10 @@ def _layout_fallback_actions(
         row_max_x = max(x + w for x, _, w, _ in row)
         row_min_y = min(y for _, y, _, _ in row)
         parking_h = max(h for _, _, _, h in row)
-        collector_h = round(max(10.0, min(16.0, parking_h * 0.18)), 3)
-        collector_y = round(max(lot_y + 12.0, row_min_y - collector_h - 4.0), 3)
-        collector_x = round(max(lot_x + 12.0, row_min_x - 4.0), 3)
-        collector_w = round(min(lot_w - 24.0, (row_max_x - row_min_x) + 8.0), 3)
+        collector_h = round(max(8.0, min(12.0, parking_h * 0.16)), 3)
+        collector_y = round(max(lot_y + 12.0, row_min_y - collector_h - 5.0), 3)
+        collector_x = round(max(lot_x + 12.0, row_min_x + 2.0), 3)
+        collector_w = round(min(lot_w - 24.0, max(24.0, (row_max_x - row_min_x) - 4.0)), 3)
         return (collector_x, collector_y, collector_w, collector_h)
 
     upper_collector = _collector_for_row(upper_row)
