@@ -463,6 +463,18 @@ function computeLearningScore(thread: ChatMessage[]): { score: number; total: nu
   return { score: Math.round((up / total) * 100), total };
 }
 
+function readMetricValue(value: any): number | null {
+  if (value == null) return null;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value?.value === "number" && Number.isFinite(value.value)) return value.value;
+  return null;
+}
+
+function formatMetric(value: number | null, unit: string): string {
+  if (value == null || !Number.isFinite(value)) return "Pending";
+  return `${value.toFixed(1)} ${unit}`;
+}
+
 function summarizePlanResponse(
   data: any,
   mode: PlanToolMode,
@@ -1403,6 +1415,84 @@ export default function PerformanceAIDashboard() {
   }, [workflowRuns]);
 
   const currentPlanMeta = useMemo(() => backendResult?.final_plan?.meta ?? {}, [backendResult]);
+  const managerMetrics = useMemo(
+    () => (currentPlanMeta?.manager_export?.metrics ?? {}) as Record<string, any>,
+    [currentPlanMeta],
+  );
+  const stormSummary = useMemo(() => currentPlanMeta?.storm_pipes ?? {}, [currentPlanMeta]);
+  const drainageSummary = useMemo(() => currentPlanMeta?.drainage ?? {}, [currentPlanMeta]);
+  const gradingSummary = useMemo(() => currentPlanMeta?.grading ?? {}, [currentPlanMeta]);
+  const utilitySummary = useMemo(() => currentPlanMeta?.utilities ?? {}, [currentPlanMeta]);
+
+  const previewLabels = planPreviewAnnotations?.labels ?? [];
+  const issueTargets = useMemo(() => {
+    const keywordMap = [
+      { key: "pipe", token: "PIPE" },
+      { key: "drain", token: "DRAIN" },
+      { key: "storm", token: "STORM" },
+      { key: "basin", token: "BASIN" },
+      { key: "parking", token: "PARK" },
+      { key: "ada", token: "ADA" },
+      { key: "road", token: "ROAD" },
+      { key: "utility", token: "UTIL" },
+      { key: "water", token: "WATER" },
+      { key: "sanitary", token: "SAN" },
+    ];
+    return (issues.length ? issues : defaultIssues).map((issue, idx) => {
+      const lowered = issue.message.toLowerCase();
+      const matched = keywordMap.find((item) => lowered.includes(item.key));
+      const labelMatch = matched
+        ? previewLabels.find((label) => label.label.toLowerCase().includes(matched.key))
+        : null;
+      return {
+        id: `${issue.message}-${idx}`,
+        label: labelMatch?.label ?? "",
+      };
+    });
+  }, [issues, previewLabels]);
+
+  const selectedIssueLabel = issueTargets.find((item) => item.id === selectedIssueId)?.label ?? "";
+
+  const pipeSegments = useMemo(() => {
+    const segments =
+      stormSummary?.segments ||
+      stormSummary?.pipe_segments ||
+      stormSummary?.storm_pipe_segments ||
+      [];
+    return Array.isArray(segments) ? segments : [];
+  }, [stormSummary]);
+
+  const totalPipeLength =
+    readMetricValue(managerMetrics.storm_pipe_length_ft) ??
+    pipeSegments.reduce((sum: number, seg: any) => sum + Number(seg.length_ft || 0), 0) ||
+    null;
+  const maxSlope = pipeSegments.length
+    ? Math.max(
+        ...pipeSegments.map((seg: any) =>
+          Number(seg.slope_pct ?? (seg.slope_ft_ft ?? 0) * 100),
+        ),
+      )
+    : null;
+  const minSlope = pipeSegments.length
+    ? Math.min(
+        ...pipeSegments.map((seg: any) =>
+          Number(seg.slope_pct ?? (seg.slope_ft_ft ?? 0) * 100),
+        ),
+      )
+    : null;
+  const flowCfs =
+    readMetricValue(managerMetrics.pipe_capacity_total_cfs) ??
+    readMetricValue(stormSummary.total_system_flow_cfs) ??
+    readMetricValue(stormSummary.total_system_capacity_cfs) ??
+    null;
+  const cutFillNet =
+    readMetricValue(managerMetrics.earthwork_net_cf) ??
+    readMetricValue(gradingSummary?.earthwork?.net_cf) ??
+    null;
+  const basinSize =
+    (Array.isArray(drainageSummary?.basins) && drainageSummary.basins[0]?.area_sf) ||
+    (Array.isArray(drainageSummary?.basins) && drainageSummary.basins[0]?.footprint_area_sf) ||
+    null;
   const currentTruthAudit = useMemo(
     () => currentPlanMeta?.truth_audit ?? {},
     [currentPlanMeta],
@@ -4787,7 +4877,13 @@ export default function PerformanceAIDashboard() {
                                   transform: "translate(-50%, -50%)",
                                 }}
                               >
-                                <div className="h-2 w-2 rounded-full bg-slate-900/30 opacity-0 transition group-hover:opacity-100" />
+                                <div
+                                  className={`h-2 w-2 rounded-full transition ${
+                                    item.label === selectedIssueLabel
+                                      ? "bg-rose-500/80 shadow-[0_0_0_6px_rgba(244,63,94,0.15)]"
+                                      : "bg-slate-900/30 opacity-0 group-hover:opacity-100"
+                                  }`}
+                                />
                                 <div className="pointer-events-none absolute left-1/2 top-0 z-10 hidden -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm group-hover:block">
                                   {item.label}
                                 </div>
@@ -5056,7 +5152,14 @@ export default function PerformanceAIDashboard() {
                                 : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                             }`}
                           >
-                            <span className="font-medium">{issue.message}</span>
+                            <div className="text-left">
+                              <span className="font-medium">{issue.message}</span>
+                              {issueTargets[idx]?.label ? (
+                                <p className="mt-1 text-[11px] uppercase tracking-[0.12em] opacity-70">
+                                  Highlight: {issueTargets[idx]?.label}
+                                </p>
+                              ) : null}
+                            </div>
                             <span className="text-xs uppercase tracking-[0.14em] opacity-60">
                               {issue.severity}
                             </span>
@@ -5072,27 +5175,39 @@ export default function PerformanceAIDashboard() {
                       <div className="mt-3 grid gap-2 text-sm text-slate-700">
                         <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
                           <span>Total pipe length</span>
-                          <span className="font-semibold">Pending</span>
+                          <span className="font-semibold">
+                            {formatMetric(totalPipeLength, "ft")}
+                          </span>
                         </div>
                         <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
                           <span>Max slope</span>
-                          <span className="font-semibold">Pending</span>
+                          <span className="font-semibold">
+                            {formatMetric(maxSlope, "%")}
+                          </span>
                         </div>
                         <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
                           <span>Min slope</span>
-                          <span className="font-semibold">Pending</span>
+                          <span className="font-semibold">
+                            {formatMetric(minSlope, "%")}
+                          </span>
                         </div>
                         <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
                           <span>Flow (CFS)</span>
-                          <span className="font-semibold">Pending</span>
+                          <span className="font-semibold">
+                            {formatMetric(flowCfs, "cfs")}
+                          </span>
                         </div>
                         <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
                           <span>Cut / Fill</span>
-                          <span className="font-semibold">Pending</span>
+                          <span className="font-semibold">
+                            {formatMetric(cutFillNet, "cf")}
+                          </span>
                         </div>
                         <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
                           <span>Pond size</span>
-                          <span className="font-semibold">Pending</span>
+                          <span className="font-semibold">
+                            {formatMetric(basinSize, "sf")}
+                          </span>
                         </div>
                       </div>
                     </div>
