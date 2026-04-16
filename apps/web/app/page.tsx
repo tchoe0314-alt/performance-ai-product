@@ -1301,7 +1301,7 @@ export default function PerformanceAIDashboard() {
   const [previewQuality, setPreviewQuality] = useState<"standard" | "high">("standard");
   const [showMeasurements, setShowMeasurements] = useState(false);
   const [showCalculations, setShowCalculations] = useState(false);
-  const [autoAdvancePhases, setAutoAdvancePhases] = useState(true);
+  const [autoAdvancePhases, setAutoAdvancePhases] = useState(false);
   const [previewLayers, setPreviewLayers] = useState({
     buildings: true,
     roads: true,
