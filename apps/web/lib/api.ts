@@ -18,7 +18,7 @@ function resolveApiBaseUrl(): string {
     return "http://127.0.0.1:8002";
   }
 
-  return "";
+  return "https://api.civoraai.com";
 }
 
 export const API_BASE_URL = resolveApiBaseUrl();
