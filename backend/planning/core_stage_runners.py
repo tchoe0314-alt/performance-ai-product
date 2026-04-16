@@ -313,9 +313,21 @@ def _layout_fallback_actions(
 
     parking_rects: List[Tuple[float, float, float, float]] = []
     if len(residential_rects) >= 3:
-        residential_rects = sorted(residential_rects, key=lambda rect: rect[0] + rect[2] / 2.0)
-        split = (len(residential_rects) + 1) // 2
-        for group in (residential_rects[:split], residential_rects[split:]):
+        residential_rects = sorted(residential_rects, key=lambda rect: rect[1] + rect[3] / 2.0, reverse=True)
+        center_ys = [rect[1] + rect[3] / 2.0 for rect in residential_rects]
+        row_split = (max(center_ys) + min(center_ys)) / 2.0
+        upper_group = [rect for rect in residential_rects if (rect[1] + rect[3] / 2.0) >= row_split]
+        lower_group = [rect for rect in residential_rects if (rect[1] + rect[3] / 2.0) < row_split]
+        if not upper_group or not lower_group:
+            residential_rects = sorted(residential_rects, key=lambda rect: rect[0] + rect[2] / 2.0)
+            split = (len(residential_rects) + 1) // 2
+            grouped_residential = (residential_rects[:split], residential_rects[split:])
+        else:
+            grouped_residential = (
+                sorted(upper_group, key=lambda rect: rect[0] + rect[2] / 2.0),
+                sorted(lower_group, key=lambda rect: rect[0] + rect[2] / 2.0),
+            )
+        for group in grouped_residential:
             merged = _merge_courts(group, shared=len(group) > 1)
             if merged:
                 parking_rects.append(merged)
