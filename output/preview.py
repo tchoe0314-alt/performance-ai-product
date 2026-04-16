@@ -1463,11 +1463,11 @@ def draw_rectangle(ax, action):
     elif layer == "PARKING":
         parking_area = w * h
         if w >= 180.0 or h >= 40.0 or parking_area >= 7000.0:
-            fill_alpha = 0.018
+            fill_alpha = 0.008
         elif w >= 120.0 or parking_area >= 4000.0:
-            fill_alpha = 0.032
+            fill_alpha = 0.018
         else:
-            fill_alpha = 0.05
+            fill_alpha = 0.035
         facecolor = get_color(action)
     elif layer == "WALK":
         fill_alpha = 0.06
@@ -1480,11 +1480,11 @@ def draw_rectangle(ax, action):
     if layer == "PARKING":
         parking_area = w * h
         if w >= 180.0 or h >= 40.0 or parking_area >= 7000.0:
-            edge_alpha = 0.14
+            edge_alpha = 0.08
         elif w >= 120.0 or parking_area >= 4000.0:
-            edge_alpha = 0.24
+            edge_alpha = 0.14
         else:
-            edge_alpha = 0.45
+            edge_alpha = 0.28
 
     rect = Rectangle(
         (x, y),
@@ -1505,20 +1505,20 @@ def draw_rectangle(ax, action):
 
     if layer == "PARKING" and w >= 24 and h >= 10:
         if w >= 180.0 or h >= 40.0:
-            stripe_spacing = max(42.0, min(56.0, w / 5.8))
+            stripe_spacing = max(52.0, min(68.0, w / 5.0))
             stripe_alpha = 0.0
-            stripe_gap = max(120.0, min(220.0, w * 0.56))
+            stripe_gap = max(160.0, min(320.0, w * 0.8))
         elif w >= 220.0:
             stripe_spacing = max(28.0, min(36.0, w / 8.0))
-            stripe_alpha = 0.08
-            stripe_gap = max(52.0, min(104.0, w * 0.24))
+            stripe_alpha = 0.03
+            stripe_gap = max(88.0, min(160.0, w * 0.42))
         elif w >= 160.0 or h >= 40.0:
-            stripe_spacing = max(24.0, min(32.0, w / 7.0))
-            stripe_alpha = 0.12
-            stripe_gap = max(32.0, min(72.0, w * 0.16))
+            stripe_spacing = max(30.0, min(40.0, w / 6.5))
+            stripe_alpha = 0.06
+            stripe_gap = max(70.0, min(120.0, w * 0.3))
         else:
             stripe_spacing = max(18.0, min(24.0, w / 5.0))
-            stripe_alpha = 0.22
+            stripe_alpha = 0.14
             stripe_gap = 0.0
         stripe_x = x + stripe_spacing
         stripe_y1 = y + max(1.5, h * 0.12)
