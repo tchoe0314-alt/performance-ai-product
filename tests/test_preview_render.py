@@ -529,13 +529,12 @@ class PreviewRenderTests(unittest.TestCase):
         ]
 
         self.assertIn("FG_CONTOUR", kept_layers)
-        self.assertIn("EG_CONTOUR", kept_layers)
         self.assertIn("SPOT_FG", kept_layers)
         self.assertGreaterEqual(kept_layers.count("FG_CONTOUR"), 3)
         self.assertIn("101.2", spot_texts)
-        self.assertIn("100.8", spot_texts)
         self.assertIn("FG 101.5", contour_texts)
-        self.assertIn("EG 100.9", contour_texts)
+        self.assertNotIn("EG_CONTOUR", kept_layers)
+        self.assertNotIn("EG 100.9", contour_texts)
         self.assertNotIn("DRAIN_FLOW", kept_layers)
         self.assertNotIn("PIPE", kept_layers)
         self.assertNotIn("BASIN_BOUNDARY", kept_layers)

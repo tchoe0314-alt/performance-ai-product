@@ -1079,6 +1079,8 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
             label_score = _engineering_score(bounds, 1.0)
             drain_label_candidates.append((label_score, action))
         elif allow_contours and layer in {"EG_CONTOUR", "FG_CONTOUR"} and task in {"polyline", "polygon"}:
+            if engineering_profile == "grading" and layer == "EG_CONTOUR":
+                continue
             if engineering_profile in {"storm", "utilities", "complete"} and layer == "EG_CONTOUR":
                 continue
             if engineering_profile == "grading":
@@ -1114,7 +1116,7 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
             )
             contour_candidates.append((contour_score, action))
         elif allow_contour_labels and layer in {"EG_CONTOUR", "FG_CONTOUR"} and task == "text_note":
-            if engineering_profile == "complete" and layer == "EG_CONTOUR":
+            if engineering_profile in {"grading", "complete"} and layer == "EG_CONTOUR":
                 continue
             padding = 132.0 if engineering_profile == "grading" else 140.0
             if not _bounds_near_layout(bounds, layout_bounds, padding=padding):
@@ -1141,7 +1143,7 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
             score = _engineering_score(bounds, 1.0 + label_bias)
             contour_label_candidates.append((score, action))
         elif allow_spot_grades and layer in {"SPOT_EG", "SPOT_FG"} and task in {"text_note", "point"}:
-            if engineering_profile == "complete" and layer == "SPOT_EG":
+            if engineering_profile in {"grading", "complete"} and layer == "SPOT_EG":
                 continue
             spot_padding = 28.0 if engineering_profile == "grading" else 36.0
             if not _bounds_near_layout(bounds, layout_bounds, padding=spot_padding):
