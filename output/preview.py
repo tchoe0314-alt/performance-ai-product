@@ -463,7 +463,7 @@ def _rectangle_visual_style(action, w, h):
     stripe_gap = None
 
     if layer == "BUILDING":
-        fill_alpha = 0.34 if preview_profile in {"layout", "grading"} else 0.18
+        fill_alpha = 0.5 if preview_profile in {"layout", "grading"} else 0.2
         facecolor = get_color(action)
         linewidth_boost = 0.65 if preview_profile in {"layout", "grading"} else 0.3
     elif layer == "ROAD":
