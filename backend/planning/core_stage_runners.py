@@ -127,7 +127,7 @@ def _synthesized_program_layout(
             upper_h *= scale
             lower_h *= scale
             gap *= scale
-        frontage_shift = min(vertical_span * 0.12, 80.0)
+        frontage_shift = min(vertical_span * 0.18, 120.0)
         if frontage_on_bottom:
             cluster_center = min_y + vertical_span * 0.5 - frontage_shift
         else:
