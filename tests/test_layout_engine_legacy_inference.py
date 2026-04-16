@@ -147,7 +147,7 @@ class LayoutEngineLegacyInferenceTests(unittest.TestCase):
         retail = next(action for action in buildings if "RETAIL" in str(action.get("label") or "").upper())
         mf_center_y = sum(float(action["origin"][1]) + float(action["height"]) / 2.0 for action in multifamily) / len(multifamily)
         retail_center_y = float(retail["origin"][1]) + float(retail["height"]) / 2.0
-        self.assertLess(abs(mf_center_y - retail_center_y), 260.0)
+        self.assertLess(abs(mf_center_y - retail_center_y), 180.0)
 
     def test_simple_layout_actions_do_not_label_synthetic_circulation_as_frontage_or_access(self) -> None:
         layout = generate_smart_layout(
