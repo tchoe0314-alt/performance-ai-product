@@ -990,7 +990,9 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
             if engineering_profile in {"storm", "utilities", "complete"} and layer == "EG_CONTOUR":
                 continue
             if engineering_profile == "grading":
-                if not _bounds_near_layout(bounds, layout_bounds, padding=160.0):
+                if not _bounds_near_layout(bounds, layout_bounds, padding=112.0):
+                    continue
+                if _is_oversized_for_layout(action) and not _bounds_near_layout(bounds, layout_bounds, padding=40.0):
                     continue
             else:
                 if not _bounds_near_layout(bounds, layout_bounds, padding=140.0):
@@ -1016,9 +1018,18 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
         elif allow_contour_labels and layer in {"EG_CONTOUR", "FG_CONTOUR"} and task == "text_note":
             if engineering_profile == "complete" and layer == "EG_CONTOUR":
                 continue
-            padding = 240.0 if engineering_profile == "grading" else 140.0
+            padding = 132.0 if engineering_profile == "grading" else 140.0
             if not _bounds_near_layout(bounds, layout_bounds, padding=padding):
-                continue
+                if engineering_profile != "grading" or not layout_bounds:
+                    continue
+                x1, y1, x2, y2 = bounds
+                lx1, ly1, lx2, ly2 = layout_bounds
+                cx = (x1 + x2) / 2.0
+                cy = (y1 + y2) / 2.0
+                horizontal_band = ly1 - 72.0 <= cy <= ly2 + 72.0
+                vertical_band = lx1 - 72.0 <= cx <= lx2 + 72.0
+                if not (horizontal_band or vertical_band):
+                    continue
             label_bias = 0.0
             if engineering_profile == "complete":
                 label_bias = 0.35 if layer == "FG_CONTOUR" else -0.4
@@ -1313,14 +1324,21 @@ def draw_rectangle(ax, action):
     if layer == "PARKING" and w >= 24 and h >= 10:
         if w >= 220.0:
             stripe_spacing = max(28.0, min(36.0, w / 8.0))
-            stripe_alpha = 0.26
+            stripe_alpha = 0.2
+            stripe_gap = max(40.0, min(84.0, w * 0.18))
         else:
             stripe_spacing = max(18.0, min(24.0, w / 5.0))
             stripe_alpha = 0.38
+            stripe_gap = 0.0
         stripe_x = x + stripe_spacing
         stripe_y1 = y + max(1.5, h * 0.12)
         stripe_y2 = y + h - max(1.5, h * 0.12)
+        gap_x1 = x + (w - stripe_gap) / 2.0 if stripe_gap > 0.0 else None
+        gap_x2 = gap_x1 + stripe_gap if gap_x1 is not None else None
         while stripe_x < x + w - stripe_spacing * 0.35:
+            if gap_x1 is not None and gap_x1 <= stripe_x <= gap_x2:
+                stripe_x += stripe_spacing
+                continue
             ax.plot(
                 [stripe_x, stripe_x],
                 [stripe_y1, stripe_y2],
