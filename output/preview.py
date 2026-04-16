@@ -1989,6 +1989,8 @@ def _preview_draw_priority(action):
         return 4
     if layer == "BUILDING":
         return 3
+    if layer in {"BRIDGE", "POOL", "LOT"}:
+        return 3
     if layer in {"PARKING", "PAVEMENT", "FIRE", "ROAD"}:
         return 2
     if layer in {"PAD", "SETBACK"}:
