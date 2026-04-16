@@ -904,7 +904,7 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
     rich_engineering = engineering_profile in {"baseline", "utilities", "complete"}
     overlay_limits = {
         "layout": {"line": 0, "flow": 0, "drain_label": 0, "contour": 0, "contour_label": 0, "spot": 0, "structure": 0, "utility": 0, "basin": 0},
-        "grading": {"line": 0, "flow": 0, "drain_label": 0, "contour": 4, "contour_label": 3, "spot": 12, "structure": 0, "utility": 0, "basin": 0},
+        "grading": {"line": 0, "flow": 0, "drain_label": 0, "contour": 4, "contour_label": 3, "spot": 6, "structure": 0, "utility": 0, "basin": 0},
         "drainage": {"line": 4, "flow": 4, "drain_label": 6, "contour": 0, "contour_label": 0, "spot": 0, "structure": 6, "utility": 0, "basin": 0},
         "storm": {"line": 5, "flow": 3, "drain_label": 3, "contour": 3, "contour_label": 0, "spot": 0, "structure": 6, "utility": 0, "basin": 1},
         "utilities": {"line": 5, "flow": 2, "drain_label": 0, "contour": 3, "contour_label": 0, "spot": 0, "structure": 6, "utility": 3, "basin": 1},
@@ -1247,11 +1247,22 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
             selected.append(action)
             kept_contour_labels += 1
 
-    for _, action in sorted(spot_grade_candidates, key=lambda item: item[0], reverse=True)[: int(overlay_limits.get("spot", 0))]:
+    spot_limit = int(overlay_limits.get("spot", 0))
+    kept_spot_texts = set()
+    kept_spots = 0
+    for _, action in sorted(spot_grade_candidates, key=lambda item: item[0], reverse=True):
+        if kept_spots >= spot_limit:
+            break
+        spot_text = safe_text(action.get("text"), "").strip().upper()
+        if engineering_profile == "grading" and spot_text:
+            if spot_text in kept_spot_texts:
+                continue
+            kept_spot_texts.add(spot_text)
         key = repr(action)
         if key not in seen:
             seen.add(key)
             selected.append(action)
+            kept_spots += 1
 
     for _, action in sorted(structure_candidates, key=lambda item: item[0], reverse=True)[: int(overlay_limits.get("structure", 0))]:
         key = repr(action)
