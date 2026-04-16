@@ -1476,6 +1476,16 @@ def draw_rectangle(ax, action):
         fill_alpha = 0.0
         facecolor = "none"
 
+    edge_alpha = 1.0
+    if layer == "PARKING":
+        parking_area = w * h
+        if w >= 180.0 or h >= 40.0 or parking_area >= 7000.0:
+            edge_alpha = 0.28
+        elif w >= 120.0 or parking_area >= 4000.0:
+            edge_alpha = 0.45
+        else:
+            edge_alpha = 0.7
+
     rect = Rectangle(
         (x, y),
         w,
@@ -1487,10 +1497,18 @@ def draw_rectangle(ax, action):
         edgecolor=get_color(action),
         linestyle=get_linestyle(action),
     )
+    rect.set_edgecolor(get_color(action))
+    rect.set_alpha(fill_alpha if fill_alpha > 0.0 else 1.0)
     ax.add_patch(rect)
+    if layer == "PARKING":
+        rect.set_edgecolor((0.396, 0.455, 0.569, edge_alpha))
 
     if layer == "PARKING" and w >= 24 and h >= 10:
-        if w >= 220.0:
+        if w >= 180.0 or h >= 40.0:
+            stripe_spacing = max(34.0, min(46.0, w / 6.5))
+            stripe_alpha = 0.045
+            stripe_gap = max(82.0, min(136.0, w * 0.34))
+        elif w >= 220.0:
             stripe_spacing = max(28.0, min(36.0, w / 8.0))
             stripe_alpha = 0.08
             stripe_gap = max(52.0, min(104.0, w * 0.24))
