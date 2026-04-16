@@ -1451,6 +1451,9 @@ def draw_rectangle(ax, action):
     layer = (action.get("layer") or "").upper()
     fill_alpha = 0.0
     facecolor = "none"
+    label_upper = str(action.get("label") or "").upper()
+    residential_court = layer == "PARKING" and label_upper.startswith("RES-PARK")
+    retail_field = layer == "PARKING" and "RETAIL-PARK" in label_upper
     if layer == "BUILDING":
         fill_alpha = 0.18
         facecolor = get_color(action)
@@ -1462,7 +1465,9 @@ def draw_rectangle(ax, action):
         facecolor = get_color(action)
     elif layer == "PARKING":
         parking_area = w * h
-        if w >= 180.0 or h >= 40.0 or parking_area >= 7000.0:
+        if residential_court and (w >= 120.0 or parking_area >= 3000.0):
+            fill_alpha = 0.006 if w >= 170.0 or parking_area >= 6500.0 else 0.012
+        elif w >= 180.0 or h >= 40.0 or parking_area >= 7000.0:
             fill_alpha = 0.008
         elif w >= 120.0 or parking_area >= 4000.0:
             fill_alpha = 0.018
@@ -1479,7 +1484,9 @@ def draw_rectangle(ax, action):
     edge_alpha = 1.0
     if layer == "PARKING":
         parking_area = w * h
-        if w >= 180.0 or h >= 40.0 or parking_area >= 7000.0:
+        if residential_court and (w >= 120.0 or parking_area >= 3000.0):
+            edge_alpha = 0.05 if w >= 170.0 or parking_area >= 6500.0 else 0.09
+        elif w >= 180.0 or h >= 40.0 or parking_area >= 7000.0:
             edge_alpha = 0.08
         elif w >= 120.0 or parking_area >= 4000.0:
             edge_alpha = 0.14
@@ -1504,14 +1511,18 @@ def draw_rectangle(ax, action):
         rect.set_edgecolor((0.396, 0.455, 0.569, edge_alpha))
 
     if layer == "PARKING" and w >= 24 and h >= 10:
-        if w >= 180.0 or h >= 40.0:
+        if residential_court and (w >= 120.0 or h >= 24.0):
+            stripe_spacing = max(42.0, min(60.0, w / 4.8))
+            stripe_alpha = 0.0 if w >= 170.0 else 0.025
+            stripe_gap = max(86.0, min(150.0, w * 0.5))
+        elif w >= 180.0 or h >= 40.0:
             stripe_spacing = max(52.0, min(68.0, w / 5.0))
             stripe_alpha = 0.0
             stripe_gap = max(160.0, min(320.0, w * 0.8))
-        elif w >= 220.0:
-            stripe_spacing = max(28.0, min(36.0, w / 8.0))
-            stripe_alpha = 0.03
-            stripe_gap = max(88.0, min(160.0, w * 0.42))
+        elif retail_field and (w >= 80.0 or parking_area >= 1800.0):
+            stripe_spacing = max(22.0, min(28.0, w / 4.8))
+            stripe_alpha = 0.08
+            stripe_gap = max(24.0, min(52.0, w * 0.18))
         elif w >= 160.0 or h >= 40.0:
             stripe_spacing = max(30.0, min(40.0, w / 6.5))
             stripe_alpha = 0.06
