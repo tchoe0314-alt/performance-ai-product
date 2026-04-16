@@ -1449,8 +1449,14 @@ def _infer_buildings_from_legacy(parsed: Dict[str, Any], site_box: Rect) -> List
         max_x = _rect_right(buildable) - margin_x
         min_y = buildable["y"] + margin_y
         max_y = _rect_top(buildable) - margin_y
-        vertical_span = max(max_y - min_y, 1.0)
         frontage_on_bottom = street_edge != "top"
+        if frontage_on_bottom:
+            core_ceiling_ratio = 0.54 if frontage_specs else 0.6
+            max_y = min(max_y, buildable["y"] + buildable["h"] * core_ceiling_ratio)
+        else:
+            core_floor_ratio = 0.46 if frontage_specs else 0.4
+            min_y = max(min_y, buildable["y"] + buildable["h"] * core_floor_ratio)
+        vertical_span = max(max_y - min_y, 1.0)
 
         def _fit_row_bands(upper_h: float, lower_h: float, gap: float) -> Tuple[float, float, float, float]:
             total_h = upper_h + lower_h + gap

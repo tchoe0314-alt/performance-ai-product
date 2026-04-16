@@ -113,8 +113,14 @@ def _synthesized_program_layout(
         primary, frontage = frontage, []
 
     placements: List[Dict[str, Any]] = []
-    vertical_span = max(max_y - min_y, 1.0)
     frontage_on_bottom = lower_text(street_edge) != "top"
+    if frontage_on_bottom:
+        core_ceiling_ratio = 0.54 if frontage else 0.6
+        max_y = min(max_y, lot_y + lot_h * core_ceiling_ratio)
+    else:
+        core_floor_ratio = 0.46 if frontage else 0.4
+        min_y = max(min_y, lot_y + lot_h * core_floor_ratio)
+    vertical_span = max(max_y - min_y, 1.0)
 
     def _fit_row_bands(
         upper_h: float,
