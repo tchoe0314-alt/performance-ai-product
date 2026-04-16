@@ -1038,13 +1038,19 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
         elif allow_spot_grades and layer in {"SPOT_EG", "SPOT_FG"} and task in {"text_note", "point"}:
             if engineering_profile == "complete" and layer == "SPOT_EG":
                 continue
-            spot_padding = 48.0 if engineering_profile == "grading" else 36.0
+            spot_padding = 28.0 if engineering_profile == "grading" else 36.0
             if not _bounds_near_layout(bounds, layout_bounds, padding=spot_padding):
                 continue
             x1, y1, x2, y2 = bounds
             cx = (x1 + x2) / 2.0
             cy = (y1 + y2) / 2.0
-            if layout_bounds and not _point_within_layout((cx, cy), layout_bounds, padding=18.0):
+            if engineering_profile == "grading" and layout_bounds:
+                lx1, ly1, lx2, ly2 = layout_bounds
+                horizontal_band = ly1 - 28.0 <= cy <= ly2 + 28.0
+                vertical_band = lx1 - 18.0 <= cx <= lx2 + 18.0
+                if not (horizontal_band and vertical_band):
+                    continue
+            elif layout_bounds and not _point_within_layout((cx, cy), layout_bounds, padding=18.0):
                 continue
             spot_bias = 0.0
             if engineering_profile == "complete":
