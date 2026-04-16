@@ -1698,9 +1698,38 @@ def _infer_parking_from_legacy(parsed: Dict[str, Any], site_box: Rect, buildings
         multifamily_areas = [area for area in raw_areas if _safe_str(area.get("use"), "").lower() == "multifamily"]
         frontage_areas = [area for area in raw_areas if _safe_str(area.get("use"), "").lower() != "multifamily"]
         if len(multifamily_areas) >= 3 and frontage_areas:
-            multifamily_areas = sorted(multifamily_areas, key=lambda area: _safe_float(area.get("x"), 0.0) + _safe_float(area.get("w"), 0.0) / 2.0)
-            split = (len(multifamily_areas) + 1) // 2
-            grouped_residential = [multifamily_areas[:split], multifamily_areas[split:]]
+            multifamily_areas = sorted(
+                multifamily_areas,
+                key=lambda area: _safe_float(area.get("y"), 0.0) + _safe_float(area.get("h"), 0.0) / 2.0,
+                reverse=True,
+            )
+            center_ys = [
+                _safe_float(area.get("y"), 0.0) + _safe_float(area.get("h"), 0.0) / 2.0
+                for area in multifamily_areas
+            ]
+            row_split = (max(center_ys) + min(center_ys)) / 2.0
+            upper_group = [
+                area
+                for area in multifamily_areas
+                if (_safe_float(area.get("y"), 0.0) + _safe_float(area.get("h"), 0.0) / 2.0) >= row_split
+            ]
+            lower_group = [
+                area
+                for area in multifamily_areas
+                if (_safe_float(area.get("y"), 0.0) + _safe_float(area.get("h"), 0.0) / 2.0) < row_split
+            ]
+            if not upper_group or not lower_group:
+                multifamily_areas = sorted(
+                    multifamily_areas,
+                    key=lambda area: _safe_float(area.get("x"), 0.0) + _safe_float(area.get("w"), 0.0) / 2.0,
+                )
+                split = (len(multifamily_areas) + 1) // 2
+                grouped_residential = [multifamily_areas[:split], multifamily_areas[split:]]
+            else:
+                grouped_residential = [
+                    sorted(upper_group, key=lambda area: _safe_float(area.get("x"), 0.0) + _safe_float(area.get("w"), 0.0) / 2.0),
+                    sorted(lower_group, key=lambda area: _safe_float(area.get("x"), 0.0) + _safe_float(area.get("w"), 0.0) / 2.0),
+                ]
             merged_areas: List[Dict[str, Any]] = []
             for court_idx, group in enumerate(grouped_residential, start=1):
                 if not group:
