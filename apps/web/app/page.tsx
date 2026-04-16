@@ -2196,6 +2196,9 @@ export default function PerformanceAIDashboard() {
       units: overrides.units ?? units,
       lot_width: overrides.lotWidth ?? lotWidth,
       lot_height: overrides.lotHeight ?? lotHeight,
+      building_width: overrides.buildingWidth ?? buildingWidth,
+      building_depth: overrides.buildingDepth ?? buildingDepth,
+      setback: overrides.setback ?? setback,
       building_count: overrides.buildingCount ?? buildingCount,
       parking_count: overrides.parkingCount ?? parkingCount,
       min_slope_pct: overrides.minSlopePct ?? minSlopePct,
@@ -2250,6 +2253,12 @@ export default function PerformanceAIDashboard() {
     const nextGrading = overrides.grading ?? grading;
     const nextDrainage = overrides.drainage ?? drainage;
     const nextUtilities = overrides.utilities ?? utilities;
+    const nextBuildingCount = overrides.buildingCount ?? buildingCount;
+    const nextMinSlopePct = overrides.minSlopePct ?? minSlopePct;
+    const nextPipeMinSlopePct = overrides.pipeMinSlopePct ?? pipeMinSlopePct;
+    const nextMaxParkingSlopePct = overrides.maxParkingSlopePct ?? maxParkingSlopePct;
+    const nextMaxRoadGradePct = overrides.maxRoadGradePct ?? maxRoadGradePct;
+    const nextMaxAdaCrossSlopePct = overrides.maxAdaCrossSlopePct ?? maxAdaCrossSlopePct;
 
     return {
       project_id:
@@ -2261,6 +2270,7 @@ export default function PerformanceAIDashboard() {
       image_path: imageName || null,
       meta: {
         chat_thread: chatMessagesRef.current,
+        site_inputs: currentProject?.project_input?.meta?.site_inputs ?? {},
       },
       manual_fields: buildManualFields({
         strategy: nextStrategy,
@@ -2273,7 +2283,13 @@ export default function PerformanceAIDashboard() {
         nextSetback: overrides.setback ?? setback,
         nextBuildingWidth: overrides.buildingWidth ?? buildingWidth,
         nextBuildingDepth: overrides.buildingDepth ?? buildingDepth,
+        nextBuildingCount,
         nextParkingCount: overrides.parkingCount ?? parkingCount,
+        nextMinSlopePct,
+        nextPipeMinSlopePct,
+        nextMaxParkingSlopePct,
+        nextMaxRoadGradePct,
+        nextMaxAdaCrossSlopePct,
         nextRoads,
         nextGrading,
         nextDrainage,
