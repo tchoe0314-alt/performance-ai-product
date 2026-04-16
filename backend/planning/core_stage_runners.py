@@ -190,11 +190,16 @@ def _layout_fallback_actions(
         py = safe_float(placement.get("y"), 0.0)
         pw = safe_float(placement.get("w"), 20.0)
         pd = safe_float(placement.get("d"), 20.0)
-        lot_depth = max(48.0, min(90.0, pd * 0.8))
+        frontage_use = lower_text(placement.get("use")) in {"retail", "commercial", "pad"}
+        if frontage_use:
+            lot_depth = max(28.0, min(42.0, pd * 0.6))
+        else:
+            lot_depth = max(34.0, min(54.0, pd * 0.72))
         pavement_y = max(lot_y + 15.0, py - lot_depth - 18.0) if frontage_on_bottom else min(lot_y + lot_h - lot_depth - 15.0, py + pd + 18.0)
-        park_x = round(max(lot_x + 15.0, px - 18.0), 3)
+        side_buffer = 10.0 if frontage_use else 12.0
+        park_x = round(max(lot_x + 15.0, px - side_buffer), 3)
         park_y = round(pavement_y, 3)
-        park_w = round(min(lot_w - 30.0, pw + 36.0), 3)
+        park_w = round(min(lot_w - 30.0, pw + side_buffer * 2.0), 3)
         park_h = round(lot_depth, 3)
         actions.append(
             {

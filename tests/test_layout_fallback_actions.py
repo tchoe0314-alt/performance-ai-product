@@ -50,6 +50,36 @@ class LayoutFallbackActionsTests(unittest.TestCase):
         self.assertNotIn("FIRE", layers)
         self.assertNotIn("circle", [str(action.get("task", "")).lower() for action in actions])
 
+    def test_layout_fallback_keeps_parking_modules_proportional(self) -> None:
+        actions = _layout_fallback_actions(
+            [
+                {"name": "MF-1", "use": "multifamily", "x": 112.264, "y": 540.0, "w": 110.0, "d": 58.0},
+                {"name": "MF-2", "use": "multifamily", "x": 255.0, "y": 540.0, "w": 110.0, "d": 58.0},
+                {"name": "MF-3", "use": "multifamily", "x": 397.736, "y": 540.0, "w": 110.0, "d": 58.0},
+                {"name": "Retail", "use": "retail", "x": 275.0, "y": 405.5, "w": 70.0, "d": 45.0},
+            ],
+            lot_x=0.0,
+            lot_y=0.0,
+            lot_w=620.0,
+            lot_h=980.0,
+            street_edge="bottom",
+        )
+
+        parking_rects = [
+            action
+            for action in actions
+            if str(action.get("layer", "")).upper() == "PARKING"
+            and str(action.get("task", "")).lower() == "rectangle"
+        ]
+        self.assertEqual(len(parking_rects), 4)
+        multifamily_parking = [action for action in parking_rects if float(action.get("width", 0.0)) >= 120.0]
+        retail_parking = [action for action in parking_rects if float(action.get("width", 0.0)) < 120.0]
+
+        self.assertTrue(all(float(action.get("height", 0.0)) <= 54.0 for action in multifamily_parking))
+        self.assertTrue(all(float(action.get("height", 0.0)) <= 42.0 for action in retail_parking))
+        self.assertTrue(all(float(action.get("width", 0.0)) <= 134.0 for action in multifamily_parking))
+        self.assertTrue(all(float(action.get("width", 0.0)) <= 92.0 for action in retail_parking))
+
     def test_layout_fallback_avoids_loop_and_culdesac_schematic_shapes(self) -> None:
         actions = _layout_fallback_actions(
             [
