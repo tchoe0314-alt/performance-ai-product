@@ -1481,7 +1481,12 @@ def _infer_buildings_from_legacy(parsed: Dict[str, Any], site_box: Rect) -> List
             upper_y += shift
             return upper_y, upper_h, lower_y, lower_h
 
-        if frontage_specs:
+        if frontage_specs and len(primary_specs) == 3:
+            upper_h = max(max(_safe_float(spec.get("d"), fallback_depth) for spec in primary_specs[:2]) + 10.0, min(vertical_span * 0.1, 76.0))
+            middle_h = max(max(_safe_float(spec.get("d"), fallback_depth) for spec in primary_specs[2:]) + 8.0, min(vertical_span * 0.085, 64.0))
+            lower_h = max(max(_safe_float(spec.get("d"), fallback_depth) for spec in frontage_specs) + 8.0, min(vertical_span * 0.075, 52.0))
+            gap = max(8.0, min(vertical_span * 0.018, 12.0))
+        elif frontage_specs:
             upper_h = max(max(_safe_float(spec.get("d"), fallback_depth) for spec in primary_specs) + 10.0, min(vertical_span * 0.11, 82.0))
             lower_h = max(max(_safe_float(spec.get("d"), fallback_depth) for spec in frontage_specs) + 8.0, min(vertical_span * 0.08, 56.0))
             gap = max(8.0, min(vertical_span * 0.02, 14.0))
@@ -1525,6 +1530,39 @@ def _infer_buildings_from_legacy(parsed: Dict[str, Any], site_box: Rect) -> List
             return placements
 
         placements: List[Dict[str, Any]] = []
+        if frontage_specs and len(primary_specs) == 3:
+            total_h = upper_h + middle_h + lower_h + gap * 2.0
+            if total_h > vertical_span:
+                scale = max(0.6, vertical_span / max(total_h, 1.0))
+                upper_h *= scale
+                middle_h *= scale
+                lower_h *= scale
+                gap *= scale
+            if frontage_on_bottom:
+                lower_y = min_y
+                middle_y = lower_y + lower_h + gap
+                upper_y = middle_y + middle_h + gap
+                if upper_y + upper_h > max_y:
+                    shift = max_y - (upper_y + upper_h)
+                    lower_y += shift
+                    middle_y += shift
+                    upper_y += shift
+                placements.extend(_place_row_specs(primary_specs[:2], base_y=upper_y, row_height=upper_h))
+                placements.extend(_place_row_specs(primary_specs[2:], base_y=middle_y, row_height=middle_h))
+                placements.extend(_place_row_specs(frontage_specs, base_y=lower_y, row_height=lower_h))
+            else:
+                upper_y = max_y - upper_h
+                middle_y = upper_y - gap - middle_h
+                lower_y = middle_y - gap - lower_h
+                if lower_y < min_y:
+                    shift = min_y - lower_y
+                    upper_y += shift
+                    middle_y += shift
+                    lower_y += shift
+                placements.extend(_place_row_specs(primary_specs[:2], base_y=lower_y, row_height=lower_h))
+                placements.extend(_place_row_specs(primary_specs[2:], base_y=middle_y, row_height=middle_h))
+                placements.extend(_place_row_specs(frontage_specs, base_y=upper_y, row_height=upper_h))
+            return placements
         if len(primary_specs) > 3:
             split = (len(primary_specs) + 1) // 2
             upper_specs = primary_specs[:split]

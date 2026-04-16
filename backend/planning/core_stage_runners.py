@@ -149,7 +149,43 @@ def _synthesized_program_layout(
         upper_y += shift
         return upper_y, upper_h, lower_y, lower_h
 
-    if frontage:
+    if frontage and len(primary) == 3:
+        upper_h = max(max(safe_float(spec.get("d"), 20.0) for spec in primary[:2]) + 10.0, min(vertical_span * 0.1, 76.0))
+        middle_h = max(max(safe_float(spec.get("d"), 20.0) for spec in primary[2:]) + 8.0, min(vertical_span * 0.085, 64.0))
+        lower_h = max(max(safe_float(spec.get("d"), 20.0) for spec in frontage) + 8.0, min(vertical_span * 0.075, 52.0))
+        gap = max(8.0, min(vertical_span * 0.018, 12.0))
+        total_h = upper_h + middle_h + lower_h + gap * 2.0
+        if total_h > vertical_span:
+            scale = max(0.6, vertical_span / max(total_h, 1.0))
+            upper_h *= scale
+            middle_h *= scale
+            lower_h *= scale
+            gap *= scale
+        if frontage_on_bottom:
+            lower_y = min_y
+            middle_y = lower_y + lower_h + gap
+            upper_y = middle_y + middle_h + gap
+            if upper_y + upper_h > max_y:
+                shift = max_y - (upper_y + upper_h)
+                lower_y += shift
+                middle_y += shift
+                upper_y += shift
+            placements.extend(_place_row(primary[:2], min_x=min_x, max_x=max_x, base_y=upper_y, row_height=upper_h))
+            placements.extend(_place_row(primary[2:], min_x=min_x, max_x=max_x, base_y=middle_y, row_height=middle_h))
+            placements.extend(_place_row(frontage, min_x=min_x, max_x=max_x, base_y=lower_y, row_height=lower_h))
+        else:
+            upper_y = max_y - upper_h
+            middle_y = upper_y - gap - middle_h
+            lower_y = middle_y - gap - lower_h
+            if lower_y < min_y:
+                shift = min_y - lower_y
+                upper_y += shift
+                middle_y += shift
+                lower_y += shift
+            placements.extend(_place_row(primary[:2], min_x=min_x, max_x=max_x, base_y=lower_y, row_height=lower_h))
+            placements.extend(_place_row(primary[2:], min_x=min_x, max_x=max_x, base_y=middle_y, row_height=middle_h))
+            placements.extend(_place_row(frontage, min_x=min_x, max_x=max_x, base_y=upper_y, row_height=upper_h))
+    elif frontage:
         upper_h = max(max(safe_float(spec.get("d"), 20.0) for spec in primary) + 10.0, min(vertical_span * 0.11, 82.0))
         lower_h = max(max(safe_float(spec.get("d"), 20.0) for spec in frontage) + 8.0, min(vertical_span * 0.08, 56.0))
         gap = max(8.0, min(vertical_span * 0.02, 14.0))
@@ -160,6 +196,8 @@ def _synthesized_program_layout(
         bottom_row_y = min_y
         bottom_row_h = max(vertical_span * 0.22, 40.0)
 
+    if frontage and len(primary) == 3:
+        return placements
     if len(primary) > 3:
         split = (len(primary) + 1) // 2
         upper_specs = primary[:split]

@@ -27,12 +27,19 @@ class LayoutFallbackActionsTests(unittest.TestCase):
         retail = next(item for item in placements if str(item.get("use") or "").lower() == "retail")
         mf_center_y = sum(float(item["y"]) + float(item["d"]) / 2.0 for item in multifamily) / len(multifamily)
         retail_center_y = float(retail["y"]) + float(retail["d"]) / 2.0
+        multifamily_bands = {
+            round(float(item["y"]) + float(item["d"]) / 2.0, 1) for item in multifamily
+        }
+        nearest_multifamily_y = min(
+            float(item["y"]) + float(item["d"]) / 2.0 for item in multifamily
+        )
 
         avg_center_y = sum(float(item["y"]) + float(item["d"]) / 2.0 for item in placements) / len(placements)
 
         self.assertEqual(len(placements), 4)
-        self.assertLess(abs(mf_center_y - retail_center_y), 90.0)
+        self.assertLess(abs(nearest_multifamily_y - retail_center_y), 75.0)
         self.assertLess(avg_center_y, 240.0)
+        self.assertGreaterEqual(len(multifamily_bands), 2)
 
     def test_layout_fallback_emits_parking_walk_and_pavement_layers(self) -> None:
         actions = _layout_fallback_actions(
