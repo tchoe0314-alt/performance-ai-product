@@ -1287,6 +1287,7 @@ export default function PerformanceAIDashboard() {
   const [uploadedImagePreviewUrl, setUploadedImagePreviewUrl] = useState("");
   const [uploadedImageApiUrl, setUploadedImageApiUrl] = useState("");
   const [surveyFileName, setSurveyFileName] = useState("");
+  const [surveyUploadUrl, setSurveyUploadUrl] = useState("");
   const [surveySlopeEstimate, setSurveySlopeEstimate] = useState<SurveySlopeResponse | null>(null);
   const [mapSnapshotPath, setMapSnapshotPath] = useState("");
   const [mapAnalysis, setMapAnalysis] = useState<any>(null);
