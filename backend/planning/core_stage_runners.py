@@ -992,6 +992,43 @@ def run_layout_stage(
                 continue
             if lower_text(action.get("task")) == "rectangle" and safe_str(action.get("layer")).upper() == "BUILDING":
                 building_actions.append(action)
+        raw_buildings = [
+            safe_dict(item)
+            for item in safe_list(execution_payload.get("buildings"))
+            if isinstance(item, dict)
+        ]
+        for pond in safe_list(execution_payload.get("ponds")):
+            pond_rec = safe_dict(pond)
+            if not pond_rec:
+                continue
+            if _coerce_float_optional(pond_rec.get("x")) is None or _coerce_float_optional(pond_rec.get("y")) is None:
+                continue
+            project.add_zone(
+                rect_zone(
+                    safe_float(pond_rec.get("x"), lot_x),
+                    safe_float(pond_rec.get("y"), lot_y),
+                    max(1.0, safe_float(pond_rec.get("w"), 30.0)),
+                    max(1.0, safe_float(pond_rec.get("d"), 20.0)),
+                    zone_type=ZoneType.DETENTION,
+                    name=safe_str(pond_rec.get("name"), "BASIN"),
+                )
+            )
+
+        def _coerce_float_optional(value: Any) -> float | None:
+            try:
+                if value is None:
+                    return None
+                return float(value)
+            except Exception:
+                return None
+
+        user_positioned_buildings = [
+            rec
+            for rec in raw_buildings
+            if _coerce_float_optional(rec.get("x")) is not None
+            and _coerce_float_optional(rec.get("y")) is not None
+        ]
+        user_layout_requested = bool(user_positioned_buildings)
 
         placements: List[Dict[str, Any]] = []
         if (
@@ -1020,6 +1057,22 @@ def run_layout_stage(
                     }
                 )
         else:
+            if user_layout_requested:
+                if not building_actions:
+                    message = "Layout stage blocked: user building placements were provided but no layout actions were generated."
+                else:
+                    message = "Layout stage blocked: user-placed buildings conflict with lot bounds or overlap."
+                ctx.record_warning(message)
+                manager.add_conflict(
+                    ConflictRecord(
+                        code="LAYOUT_USER_PLACEMENT",
+                        message=message,
+                        severity=ConflictSeverity.ERROR,
+                        category="layout",
+                    )
+                )
+                ctx.add_stage("layout", False, message)
+                return
             placements = _synthesized_program_layout(
                 lot_x=lot_x,
                 lot_y=lot_y,

@@ -7,6 +7,7 @@ import type {
   Preview3DItem,
   PreviewResponse,
   PreviewReview,
+  BuildingPlacement,
 } from "../types";
 import { formatCount, formatMetric } from "../utils/formatting";
 import Preview3DCanvas from "./Preview3DCanvas";
@@ -38,6 +39,13 @@ type PreviewPanelProps = {
   preview3DEffectiveItems: Preview3DItem[];
   usingAnnotation3D: boolean;
   hasGradingSurface: boolean;
+  placementMode: boolean;
+  onPlaceBuilding: (position: { x: number; y: number }) => void;
+  buildingPlacements: BuildingPlacement[];
+  lotWidth: number;
+  lotHeight: number;
+  onUpdateBuilding: (id: string, updates: Partial<BuildingPlacement>) => void;
+  onSelectBuilding: (id: string | null) => void;
   onOpenFullscreen: () => void;
   previewFullscreenOpen: boolean;
   onCloseFullscreen: () => void;
@@ -76,6 +84,13 @@ export default function PreviewPanel({
   preview3DEffectiveItems,
   usingAnnotation3D,
   hasGradingSurface,
+  placementMode,
+  onPlaceBuilding,
+  buildingPlacements,
+  lotWidth,
+  lotHeight,
+  onUpdateBuilding,
+  onSelectBuilding,
   onOpenFullscreen,
   previewFullscreenOpen,
   onCloseFullscreen,
@@ -108,6 +123,9 @@ export default function PreviewPanel({
   const [fullscreenHoverPoint, setFullscreenHoverPoint] = useState<{ x: number; y: number } | null>(null);
   const [previewImageBounds, setPreviewImageBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [fullscreenImageBounds, setFullscreenImageBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const [draggingBuildingId, setDraggingBuildingId] = useState<string | null>(null);
+  const [draggingMode, setDraggingMode] = useState<"move" | "resize" | "rotate" | null>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const previewRef = useRef<HTMLDivElement | null>(null);
   const fullscreenRef = useRef<HTMLDivElement | null>(null);
   const previewImageRef = useRef<HTMLImageElement | null>(null);
@@ -210,6 +228,94 @@ export default function PreviewPanel({
       setPoint({ x: event.clientX - rect.left, y: event.clientY - rect.top });
     },
     [hasInteractiveLabels, previewLabels, showInteractive],
+  );
+
+  const resolvePlacement = useCallback(
+    (
+      event: React.MouseEvent<HTMLDivElement>,
+      containerRef: React.RefObject<HTMLDivElement | null>,
+      imageBounds: { left: number; top: number; width: number; height: number } | null,
+    ) => {
+      if (!placementMode || !containerRef.current) {
+        return;
+      }
+      const rect = containerRef.current.getBoundingClientRect();
+      const bounds = imageBounds || { left: 0, top: 0, width: rect.width, height: rect.height };
+      const relativeX = (event.clientX - rect.left - bounds.left) / Math.max(bounds.width, 1);
+      const relativeY = (event.clientY - rect.top - bounds.top) / Math.max(bounds.height, 1);
+      if (relativeX < 0 || relativeX > 1 || relativeY < 0 || relativeY > 1) {
+        return;
+      }
+      onPlaceBuilding({ x: relativeX, y: relativeY });
+    },
+    [onPlaceBuilding, placementMode],
+  );
+
+  const clampValue = (value: number, min: number, max: number) =>
+    Math.min(Math.max(value, min), max);
+
+  const updateDraggedBuilding = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>, bounds: { left: number; top: number; width: number; height: number }) => {
+      if (!draggingBuildingId || !placementMode || !draggingMode) return;
+      const rect = event.currentTarget.getBoundingClientRect();
+      const localX = event.clientX - rect.left - bounds.left;
+      const localY = event.clientY - rect.top - bounds.top;
+      const target = buildingPlacements.find((item) => item.id === draggingBuildingId);
+      if (!target) return;
+      if (draggingMode === "move") {
+        const x = clampValue(((localX - dragOffset.x) / Math.max(bounds.width, 1)) * lotWidth, 0, Math.max(lotWidth - target.w, 0));
+        const y = clampValue(((localY - dragOffset.y) / Math.max(bounds.height, 1)) * lotHeight, 0, Math.max(lotHeight - target.d, 0));
+        onUpdateBuilding(draggingBuildingId, { x, y, placed: true });
+        return;
+      }
+      if (draggingMode === "resize") {
+        const rawW = clampValue((localX / Math.max(bounds.width, 1)) * lotWidth, 10, lotWidth);
+        const rawD = clampValue((localY / Math.max(bounds.height, 1)) * lotHeight, 10, lotHeight);
+        const nextW = Math.max(10, rawW - (target.x ?? 0));
+        const nextD = Math.max(10, rawD - (target.y ?? 0));
+        onUpdateBuilding(draggingBuildingId, { w: nextW, d: nextD });
+        return;
+      }
+      if (draggingMode === "rotate") {
+        const centerX = bounds.left + ((target.x ?? 0) + target.w / 2) / Math.max(lotWidth, 1) * bounds.width;
+        const centerY = bounds.top + ((target.y ?? 0) + target.d / 2) / Math.max(lotHeight, 1) * bounds.height;
+        const angle = Math.atan2(localY + bounds.top - centerY, localX + bounds.left - centerX);
+        const deg = (angle * 180) / Math.PI;
+        const normalized = (deg + 360) % 360;
+        const snapped = Math.round(normalized / 15) * 15;
+        onUpdateBuilding(draggingBuildingId, { rotation: snapped });
+      }
+    },
+    [
+      buildingPlacements,
+      dragOffset.x,
+      dragOffset.y,
+      draggingBuildingId,
+      draggingMode,
+      lotHeight,
+      lotWidth,
+      onUpdateBuilding,
+      placementMode,
+    ],
+  );
+
+  const handleBuildingMouseDown = useCallback(
+    (
+      event: React.MouseEvent<HTMLDivElement>,
+      building: BuildingPlacement,
+      bounds: { left: number; top: number; width: number; height: number },
+      mode: "move" | "resize" | "rotate" = "move",
+    ) => {
+      if (!placementMode) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setDraggingBuildingId(building.id);
+      setDraggingMode(mode);
+      onSelectBuilding(building.id);
+      const rect = event.currentTarget.getBoundingClientRect();
+      setDragOffset({ x: event.clientX - rect.left, y: event.clientY - rect.top });
+    },
+    [onSelectBuilding, placementMode],
   );
 
   const formatHoverValue = (value: number | null | undefined, suffix: string) => {
@@ -693,12 +799,27 @@ export default function PreviewPanel({
               className={`relative flex min-h-[640px] items-center justify-center rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] ${
                 previewInteraction === "interactive" ? "cursor-crosshair" : "cursor-default"
               }`}
-              onMouseMove={(event) => resolveHover(event, previewRef, previewImageBounds, setHoverPoint)}
+              onMouseMove={(event) => {
+                if (previewImageBounds) {
+                  updateDraggedBuilding(event, previewImageBounds);
+                }
+                resolveHover(event, previewRef, previewImageBounds, setHoverPoint);
+              }}
               onMouseLeave={() => {
                 setHoveredAnnotation(null);
                 setHoverPoint(null);
+                setDraggingBuildingId(null);
+                setDraggingMode(null);
               }}
-              onClick={() => {
+              onMouseUp={() => {
+                setDraggingBuildingId(null);
+                setDraggingMode(null);
+              }}
+              onClick={(event) => {
+                if (placementMode) {
+                  resolvePlacement(event, previewRef, previewImageBounds);
+                  return;
+                }
                 if (!showInteractive || !hoveredAnnotation) return;
                 setPinnedAnnotation((prev) =>
                   prev?.label === hoveredAnnotation.label ? null : hoveredAnnotation,
@@ -717,6 +838,78 @@ export default function PreviewPanel({
                   onLoad={() => updateImageBounds(previewRef, previewImageRef, setPreviewImageBounds)}
                   onClick={onOpenFullscreen}
                 />
+                {previewImageBounds && previewMode === "2d" ? (
+                  <div
+                    className="pointer-events-none absolute"
+                    style={{
+                      left: previewImageBounds.left,
+                      top: previewImageBounds.top,
+                      width: previewImageBounds.width,
+                      height: previewImageBounds.height,
+                    }}
+                  >
+                    {buildingPlacements
+                      .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
+                      .map((item) => {
+                        const left = ((item.x || 0) / Math.max(lotWidth, 1)) * 100;
+                        const top = ((item.y || 0) / Math.max(lotHeight, 1)) * 100;
+                        const rotated = (item.rotation ?? 0) % 180 !== 0;
+                        const displayW = rotated ? item.d : item.w;
+                        const displayD = rotated ? item.w : item.d;
+                        const width = (displayW / Math.max(lotWidth, 1)) * 100;
+                        const height = (displayD / Math.max(lotHeight, 1)) * 100;
+                        const rotation = item.rotation ?? 0;
+                        const borderColor =
+                          item.type === "basin"
+                            ? "border-emerald-500"
+                            : item.type === "entrance"
+                              ? "border-amber-500"
+                              : "border-slate-900/70";
+                        return (
+                          <div
+                            key={item.id}
+                            className="pointer-events-auto absolute"
+                            style={{
+                              left: `${left}%`,
+                              top: `${top}%`,
+                              width: `${width}%`,
+                              height: `${height}%`,
+                              transform: `rotate(${rotation}deg)`,
+                              transformOrigin: "center",
+                              cursor: placementMode ? "move" : "default",
+                            }}
+                            onMouseDown={(event) => handleBuildingMouseDown(event, item, previewImageBounds, "move")}
+                            onClick={(event) => {
+                              if (!placementMode) return;
+                              event.stopPropagation();
+                              onSelectBuilding(item.id);
+                            }}
+                          >
+                            <div
+                              className={`h-full w-full rounded-[8px] border-2 bg-slate-900/10 transition ${borderColor}`}
+                            />
+                            <button
+                              type="button"
+                              className="absolute -right-3 -top-3 h-6 w-6 rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 shadow"
+                              onMouseDown={(event) => handleBuildingMouseDown(event, item, previewImageBounds, "rotate")}
+                            >
+                              R
+                            </button>
+                            <button
+                              type="button"
+                              className="absolute -right-3 -bottom-3 h-6 w-6 rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 shadow"
+                              onMouseDown={(event) => handleBuildingMouseDown(event, item, previewImageBounds, "resize")}
+                            >
+                              Z
+                            </button>
+                            <div className="absolute -top-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 shadow">
+                              {item.label}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                ) : null}
                 {planPreviewAnnotations?.labels?.length && previewImageBounds ? (
                   <div
                     className="pointer-events-none absolute"
@@ -834,7 +1027,11 @@ export default function PreviewPanel({
                   Hover labels pending
                 </div>
               ) : null}
-              {previewInteraction === "interactive" ? (
+              {placementMode ? (
+                <div className="pointer-events-none absolute left-6 top-6 hidden rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-800 lg:block">
+                  Placement mode: click to drop a building
+                </div>
+              ) : previewInteraction === "interactive" ? (
                 <div
                   className={`pointer-events-none absolute left-6 hidden rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white lg:block ${
                     previewRenderMode !== "production" ? "top-16" : "top-6"
@@ -904,14 +1101,27 @@ export default function PreviewPanel({
               <div
                 ref={fullscreenRef}
                 className="relative max-h-full w-full"
-                onMouseMove={(event) =>
-                  resolveHover(event, fullscreenRef, fullscreenImageBounds, setFullscreenHoverPoint)
-                }
+                onMouseMove={(event) => {
+                  if (fullscreenImageBounds) {
+                    updateDraggedBuilding(event, fullscreenImageBounds);
+                  }
+                  resolveHover(event, fullscreenRef, fullscreenImageBounds, setFullscreenHoverPoint);
+                }}
                 onMouseLeave={() => {
                   setHoveredAnnotation(null);
                   setFullscreenHoverPoint(null);
+                  setDraggingBuildingId(null);
+                  setDraggingMode(null);
                 }}
-                onClick={() => {
+                onMouseUp={() => {
+                  setDraggingBuildingId(null);
+                  setDraggingMode(null);
+                }}
+                onClick={(event) => {
+                  if (placementMode) {
+                    resolvePlacement(event, fullscreenRef, fullscreenImageBounds);
+                    return;
+                  }
                   if (!showInteractive || !hoveredAnnotation) return;
                   setPinnedAnnotation((prev) =>
                     prev?.label === hoveredAnnotation.label ? null : hoveredAnnotation,
@@ -978,6 +1188,61 @@ export default function PreviewPanel({
                           </div>
                         ))
                       : null}
+                    {buildingPlacements
+                      .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
+                      .map((item) => {
+                        const left = ((item.x || 0) / Math.max(lotWidth, 1)) * 100;
+                        const top = ((item.y || 0) / Math.max(lotHeight, 1)) * 100;
+                        const rotated = (item.rotation ?? 0) % 180 !== 0;
+                        const displayW = rotated ? item.d : item.w;
+                        const displayD = rotated ? item.w : item.d;
+                        const width = (displayW / Math.max(lotWidth, 1)) * 100;
+                        const height = (displayD / Math.max(lotHeight, 1)) * 100;
+                        const rotation = item.rotation ?? 0;
+                        const borderColor =
+                          item.type === "basin"
+                            ? "border-emerald-500"
+                            : item.type === "entrance"
+                              ? "border-amber-500"
+                              : "border-slate-900/70";
+                        return (
+                          <div
+                            key={item.id}
+                            className="pointer-events-auto absolute"
+                            style={{
+                              left: `${left}%`,
+                              top: `${top}%`,
+                              width: `${width}%`,
+                              height: `${height}%`,
+                              transform: `rotate(${rotation}deg)`,
+                              transformOrigin: "center",
+                              cursor: placementMode ? "move" : "default",
+                            }}
+                            onMouseDown={(event) => handleBuildingMouseDown(event, item, fullscreenImageBounds, "move")}
+                            onClick={(event) => {
+                              if (!placementMode) return;
+                              event.stopPropagation();
+                              onSelectBuilding(item.id);
+                            }}
+                          >
+                            <div className={`h-full w-full rounded-[8px] border-2 bg-slate-900/10 transition ${borderColor}`} />
+                            <button
+                              type="button"
+                              className="absolute -right-3 -top-3 h-6 w-6 rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 shadow"
+                              onMouseDown={(event) => handleBuildingMouseDown(event, item, fullscreenImageBounds, "rotate")}
+                            >
+                              R
+                            </button>
+                            <button
+                              type="button"
+                              className="absolute -right-3 -bottom-3 h-6 w-6 rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 shadow"
+                              onMouseDown={(event) => handleBuildingMouseDown(event, item, fullscreenImageBounds, "resize")}
+                            >
+                              Z
+                            </button>
+                          </div>
+                        );
+                      })}
                   </div>
                 ) : null}
                 {showInteractive && activeAnnotation && fullscreenHoverPoint ? (

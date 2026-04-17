@@ -32,6 +32,8 @@ import type {
   PlanToolMode,
   StrategyMode,
   ControlOverrides,
+  BuildingPlacement,
+  SiteObjectType,
   ChatDecisionResponse,
   ChatMessage,
   LearningReport,
@@ -280,6 +282,11 @@ export default function PerformanceAIDashboard() {
   const [grading, setGrading] = useState(true);
   const [drainage, setDrainage] = useState(true);
   const [utilities, setUtilities] = useState(true);
+  const [buildingPlacements, setBuildingPlacements] = useState<BuildingPlacement[]>([]);
+  const [placementModeEnabled, setPlacementModeEnabled] = useState(false);
+  const [activePlacementId, setActivePlacementId] = useState<string | null>(null);
+  const [placementSuggestions, setPlacementSuggestions] = useState<BuildingPlacement[][]>([]);
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
 
   const [assumptions, setAssumptions] =
     useState<Assumption[]>(defaultAssumptions);
@@ -534,7 +541,53 @@ export default function PerformanceAIDashboard() {
       manualFields.building_depth = 0;
     }
 
-    if (buildingCountValue !== null) {
+    const placementOverrides = buildingPlacements
+      .filter((placement) => placement.placed && Number.isFinite(placement.x) && Number.isFinite(placement.y))
+      .map((placement) => ({
+        name: placement.label,
+        label: placement.label,
+        type: placement.type ?? "building",
+        x: placement.x,
+        y: placement.y,
+        w: placement.w,
+        d: placement.d,
+        rotation: placement.rotation,
+        use: placement.use,
+        locked: placement.locked,
+      }));
+    const basinOverrides = placementOverrides.filter((placement) => placement.type === "basin");
+    const entranceOverrides = placementOverrides.filter((placement) => placement.type === "entrance");
+    const buildingOverrides = placementOverrides.filter(
+      (placement) => placement.type !== "basin" && placement.type !== "entrance",
+    );
+
+    if (buildingOverrides.length) {
+      manualFields.buildings = buildingOverrides;
+    }
+    if (basinOverrides.length) {
+      manualFields.ponds = basinOverrides.map((placement) => ({
+        name: placement.label,
+        x: placement.x,
+        y: placement.y,
+        w: placement.w,
+        d: placement.d,
+        rotation: placement.rotation,
+        locked: placement.locked,
+      }));
+    }
+    if (entranceOverrides.length) {
+      manualFields.access_points = entranceOverrides.map((placement) => ({
+        name: placement.label,
+        x: placement.x,
+        y: placement.y,
+        w: placement.w,
+        d: placement.d,
+        rotation: placement.rotation,
+        locked: placement.locked,
+      }));
+    }
+
+    if (!buildingOverrides.length && buildingCountValue !== null) {
       manualFields.buildings = Array.from({ length: Math.max(1, Math.round(buildingCountValue)) }).map(
         (_, idx) => ({
           name: `Building ${idx + 1}`,
@@ -586,7 +639,7 @@ export default function PerformanceAIDashboard() {
     }
 
     return manualFields;
-  }, []);
+  }, [buildingPlacements]);
 
   const payloadPreview = useMemo(
     () => ({
@@ -641,12 +694,12 @@ export default function PerformanceAIDashboard() {
       buildingDepth,
       buildingCount,
       parkingCount,
-    minSlopePct,
-    pipeMinSlopePct,
-    maxParkingSlopePct,
-    maxRoadGradePct,
-    maxAdaCrossSlopePct,
-    roads,
+      minSlopePct,
+      pipeMinSlopePct,
+      maxParkingSlopePct,
+      maxRoadGradePct,
+      maxAdaCrossSlopePct,
+      roads,
       grading,
       drainage,
       utilities,
@@ -1140,6 +1193,43 @@ export default function PerformanceAIDashboard() {
     setBuildingWidth(String(manualFields.building_width ?? ""));
     setBuildingDepth(String(manualFields.building_depth ?? ""));
     setBuildingCount(buildingsList.length ? String(buildingsList.length) : "");
+    const parsedPlacements = buildingsList
+      .map((raw, idx) => {
+        if (!raw || typeof raw !== "object") return null;
+        const rec = raw as Record<string, unknown>;
+        const rawX = rec.x ?? rec.origin?.[0];
+        const rawY = rec.y ?? rec.origin?.[1];
+        const x = typeof rawX === "number" ? rawX : rawX !== undefined ? Number(rawX) : NaN;
+        const y = typeof rawY === "number" ? rawY : rawY !== undefined ? Number(rawY) : NaN;
+        const rawW = rec.w ?? rec.width ?? manualFields.building_width;
+        const rawD = rec.d ?? rec.depth ?? manualFields.building_depth;
+        const w = typeof rawW === "number" ? rawW : rawW !== undefined ? Number(rawW) : NaN;
+        const d = typeof rawD === "number" ? rawD : rawD !== undefined ? Number(rawD) : NaN;
+        if (!Number.isFinite(w) || !Number.isFinite(d)) return null;
+        const placed = Number.isFinite(x) && Number.isFinite(y);
+        return {
+          id: typeof rec.id === "string" ? rec.id : `building-${Date.now()}-${idx}`,
+          label:
+            typeof rec.label === "string"
+              ? rec.label
+              : typeof rec.name === "string"
+                ? rec.name
+                : `Building ${idx + 1}`,
+          type: (typeof rec.type === "string" ? rec.type : "building") as SiteObjectType,
+          x: placed ? x : undefined,
+          y: placed ? y : undefined,
+          w,
+          d,
+          rotation: typeof rec.rotation === "number" ? rec.rotation : undefined,
+          use: typeof rec.use === "string" ? rec.use : undefined,
+          locked: Boolean(rec.locked),
+          placed,
+        } as BuildingPlacement;
+      })
+      .filter(Boolean) as BuildingPlacement[];
+    setBuildingPlacements(parsedPlacements);
+    setPlacementModeEnabled(false);
+    setActivePlacementId(null);
     setParkingCount(String(sitePlan.parking_count ?? ""));
     setMinSlopePct(String(gradingFields.min_slope_pct ?? ""));
     setPipeMinSlopePct(String(drainageFields.min_pipe_slope_pct ?? ""));
@@ -1154,6 +1244,265 @@ export default function PerformanceAIDashboard() {
     chatMessagesRef.current = nextThread;
     setChatMessages(nextThread);
   };
+
+  const resolveLotBounds = useCallback(() => {
+    const width = parsePositiveNumber(lotWidth) ?? 120;
+    const height = parsePositiveNumber(lotHeight) ?? 100;
+    return { x: 0, y: 0, w: width, h: height };
+  }, [lotHeight, lotWidth]);
+
+  const resolveDefaultBuildingDims = useCallback(() => {
+    const width = parsePositiveNumber(buildingWidth) ?? 80;
+    const depth = parsePositiveNumber(buildingDepth) ?? 50;
+    return { w: width, d: depth };
+  }, [buildingDepth, buildingWidth]);
+
+  const handleAddBuilding = useCallback(() => {
+    const { w, d } = resolveDefaultBuildingDims();
+    const nextPlacement: BuildingPlacement = {
+      id: `building-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      label: `Building ${buildingPlacements.length + 1}`,
+      type: "building",
+      w,
+      d,
+      rotation: 0,
+      locked: false,
+      placed: false,
+    };
+    setBuildingPlacements((prev) => [...prev, nextPlacement]);
+  }, [buildingPlacements.length, resolveDefaultBuildingDims, resolveLotBounds]);
+
+  const handleAddObject = useCallback(
+    (type: SiteObjectType) => {
+      if (type === "building") {
+        handleAddBuilding();
+        return;
+      }
+      const defaults = type === "basin" ? { w: 80, d: 60 } : { w: 20, d: 20 };
+      const nextPlacement: BuildingPlacement = {
+        id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        label:
+          type === "basin"
+            ? `Basin ${buildingPlacements.length + 1}`
+            : `Entrance ${buildingPlacements.length + 1}`,
+        type,
+        w: defaults.w,
+        d: defaults.d,
+        rotation: 0,
+        locked: false,
+        placed: false,
+      };
+      setBuildingPlacements((prev) => [...prev, nextPlacement]);
+    },
+    [buildingPlacements.length, handleAddBuilding],
+  );
+
+  const handleUpdateBuilding = useCallback((id: string, updates: Partial<BuildingPlacement>) => {
+    const nextUpdates = { ...updates };
+    if (typeof updates.x === "number" || typeof updates.y === "number") {
+      nextUpdates.placed = true;
+    }
+    setBuildingPlacements((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, ...nextUpdates } : item)),
+    );
+  }, []);
+
+  const handleRemoveBuilding = useCallback((id: string) => {
+    setBuildingPlacements((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  const handleToggleBuildingLock = useCallback((id: string) => {
+    setBuildingPlacements((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, locked: !item.locked } : item)),
+    );
+  }, []);
+
+  const handlePlaceBuilding = useCallback(
+    (position: { x: number; y: number }) => {
+      const lot = resolveLotBounds();
+      const { w, d } = resolveDefaultBuildingDims();
+      const nextX = lot.x + position.x * lot.w - w / 2;
+      const nextY = lot.y + position.y * lot.h - d / 2;
+      if (activePlacementId) {
+        setBuildingPlacements((prev) =>
+          prev.map((item) =>
+            item.id === activePlacementId
+              ? { ...item, x: nextX, y: nextY, placed: true }
+              : item,
+          ),
+        );
+        setActivePlacementId(null);
+        return;
+      }
+      const nextPlacement: BuildingPlacement = {
+        id: `building-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        label: `Building ${buildingPlacements.length + 1}`,
+        type: "building",
+        x: nextX,
+        y: nextY,
+        w,
+        d,
+        rotation: 0,
+        locked: false,
+        placed: true,
+      };
+      setBuildingPlacements((prev) => [...prev, nextPlacement]);
+    },
+    [
+      activePlacementId,
+      buildingPlacements.length,
+      resolveDefaultBuildingDims,
+      resolveLotBounds,
+    ],
+  );
+
+  const handleTogglePlacementMode = useCallback(() => {
+    setPlacementModeEnabled((prev) => {
+      const next = !prev;
+      if (next && !activePlacementId) {
+        const firstUnplaced = buildingPlacements.find((item) => !item.placed);
+        if (firstUnplaced) {
+          setActivePlacementId(firstUnplaced.id);
+        }
+      }
+      return next;
+    });
+  }, [activePlacementId, buildingPlacements]);
+
+  const handleSelectPlacementTarget = useCallback((id: string) => {
+    setActivePlacementId(id);
+    setPlacementModeEnabled(true);
+  }, []);
+
+  const handleAutoPlaceBuildings = useCallback(() => {
+    const lot = resolveLotBounds();
+    const placed = buildingPlacements.filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y));
+    const unplaced = buildingPlacements.filter((item) => !item.placed);
+    if (!unplaced.length) return;
+
+    const spacing = 20;
+    let cursorX = lot.x + spacing;
+    let cursorY = lot.y + spacing;
+    let rowHeight = 0;
+    const placedRects = placed.map((item) => ({
+      x: item.x ?? 0,
+      y: item.y ?? 0,
+      w: item.w,
+      d: item.d,
+    }));
+
+    const next = buildingPlacements.map((item) => ({ ...item }));
+    const overlaps = (rect: { x: number; y: number; w: number; d: number }) =>
+      placedRects.some(
+        (existing) =>
+          !(
+            rect.x + rect.w + spacing <= existing.x ||
+            existing.x + existing.w + spacing <= rect.x ||
+            rect.y + rect.d + spacing <= existing.y ||
+            existing.y + existing.d + spacing <= rect.y
+          ),
+      );
+
+    for (const item of next) {
+      if (item.placed) continue;
+      let candidate = {
+        x: cursorX,
+        y: cursorY,
+        w: item.w,
+        d: item.d,
+      };
+      let attempts = 0;
+      while (overlaps(candidate) && attempts < 5) {
+        candidate.x += item.w + spacing;
+        attempts += 1;
+      }
+      if (candidate.x + item.w > lot.x + lot.w - spacing) {
+        cursorX = lot.x + spacing;
+        cursorY += rowHeight + spacing;
+        rowHeight = 0;
+        candidate = { x: cursorX, y: cursorY, w: item.w, d: item.d };
+      }
+      item.x = candidate.x;
+      item.y = candidate.y;
+      item.placed = true;
+      placedRects.push({ ...candidate });
+      cursorX += item.w + spacing;
+      rowHeight = Math.max(rowHeight, item.d);
+    }
+
+    setBuildingPlacements(next);
+    setActivePlacementId(null);
+  }, [buildingPlacements, resolveLotBounds]);
+
+  const handleRotateBuilding = useCallback((id: string, delta: number) => {
+    setBuildingPlacements((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        const current = item.rotation ?? 0;
+        const next = ((current + delta) % 360 + 360) % 360;
+        return { ...item, rotation: next };
+      }),
+    );
+  }, []);
+
+  const buildLayoutSuggestions = useCallback(() => {
+    const lot = resolveLotBounds();
+    const locked = buildingPlacements.filter((item) => item.locked && item.placed);
+    const movable = buildingPlacements.filter((item) => !(item.locked && item.placed));
+    if (!movable.length) return [];
+
+    const spacing = 24;
+    const makeSuggestion = (strategy: "grid" | "top" | "left") => {
+      let cursorX = lot.x + spacing;
+      let cursorY = lot.y + spacing;
+      let rowHeight = 0;
+      return buildingPlacements.map((item) => {
+        if (item.locked && item.placed) return { ...item };
+        if (strategy === "top") {
+          const next = { ...item, placed: true, x: cursorX, y: lot.y + spacing };
+          cursorX += item.w + spacing;
+          return next;
+        }
+        if (strategy === "left") {
+          const next = { ...item, placed: true, x: lot.x + spacing, y: cursorY };
+          cursorY += item.d + spacing;
+          return next;
+        }
+        const next = { ...item, placed: true, x: cursorX, y: cursorY };
+        cursorX += item.w + spacing;
+        rowHeight = Math.max(rowHeight, item.d);
+        if (cursorX + item.w > lot.x + lot.w - spacing) {
+          cursorX = lot.x + spacing;
+          cursorY += rowHeight + spacing;
+          rowHeight = 0;
+        }
+        return next;
+      });
+    };
+
+    return [makeSuggestion("grid"), makeSuggestion("top"), makeSuggestion("left")];
+  }, [buildingPlacements, resolveLotBounds]);
+
+  const handleSuggestLayouts = useCallback(() => {
+    const suggestions = buildLayoutSuggestions();
+    if (!suggestions.length) return;
+    setPlacementSuggestions(suggestions);
+    setActiveSuggestionIndex(0);
+    setBuildingPlacements(suggestions[0]);
+  }, [buildLayoutSuggestions]);
+
+  const handleNextSuggestion = useCallback(() => {
+    if (!placementSuggestions.length) return;
+    const nextIndex = (activeSuggestionIndex + 1) % placementSuggestions.length;
+    setActiveSuggestionIndex(nextIndex);
+    setBuildingPlacements(placementSuggestions[nextIndex]);
+  }, [activeSuggestionIndex, placementSuggestions]);
+
+  useEffect(() => {
+    if (buildingPlacements.length > 0) {
+      setBuildingCount(String(buildingPlacements.length));
+    }
+  }, [buildingPlacements.length]);
 
   const applyControlOverrides = (overrides: ControlOverrides) => {
     if (overrides.strategyMode) {
@@ -1867,6 +2216,148 @@ export default function PerformanceAIDashboard() {
     }
   };
 
+  const tryHandleObjectIntent = (message: string): boolean => {
+    const lower = message.toLowerCase();
+    const addBuildingMatch = lower.match(
+      /(add|create|place)\s+(a\s+)?building[^0-9]*?(\d+(\.\d+)?)\s*(ft|feet|')?\s*(x|by)\s*(\d+(\.\d+)?)/,
+    );
+    const plotDimsMatch = lower.match(
+      /(add|create|set)\s+(a\s+)?(lot|plot|site)[^0-9]*?(\d+(\.\d+)?)\s*(ft|feet|')?\s*(x|by)\s*(\d+(\.\d+)?)/,
+    );
+    const plotAcreMatch = lower.match(/(add|create|set)\s+(a\s+)?(\d+(\.\d+)?)\s*acre/);
+
+    if (addBuildingMatch) {
+      const width = Number(addBuildingMatch[3]);
+      const depth = Number(addBuildingMatch[7]);
+      if (!Number.isFinite(width) || !Number.isFinite(depth)) {
+        return false;
+      }
+      appendChatMessage("user", message);
+      const nextPlacement: BuildingPlacement = {
+        id: `building-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        label: `Building ${buildingPlacements.length + 1}`,
+        type: "building",
+        w: width,
+        d: depth,
+        rotation: 0,
+        locked: false,
+        placed: false,
+      };
+      setBuildingPlacements((prev) => [...prev, nextPlacement]);
+      appendChatMessage(
+        "assistant",
+        `Added a ${width} ft by ${depth} ft building to the placement tray. Use placement mode to drop it on the site or auto-place it.`,
+        "status",
+      );
+      return true;
+    }
+    const addBasinMatch = lower.match(
+      /(add|create|place)\s+(a\s+)?(basin|detention)\s*(\d+(\.\d+)?)?\s*(ft|feet|')?\s*(x|by)?\s*(\d+(\.\d+)?)?/,
+    );
+    if (addBasinMatch) {
+      const width = addBasinMatch[4] ? Number(addBasinMatch[4]) : 80;
+      const depth = addBasinMatch[8] ? Number(addBasinMatch[8]) : 60;
+      appendChatMessage("user", message);
+      const nextPlacement: BuildingPlacement = {
+        id: `basin-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        label: `Basin ${buildingPlacements.length + 1}`,
+        type: "basin",
+        w: Number.isFinite(width) ? width : 80,
+        d: Number.isFinite(depth) ? depth : 60,
+        rotation: 0,
+        locked: false,
+        placed: false,
+      };
+      setBuildingPlacements((prev) => [...prev, nextPlacement]);
+      appendChatMessage(
+        "assistant",
+        `Added a basin object to the placement tray. You can place it manually or auto-place it.`,
+        "status",
+      );
+      return true;
+    }
+    const addEntranceMatch = lower.match(/(add|create|place)\s+(an?\s+)?entrance/);
+    if (addEntranceMatch) {
+      appendChatMessage("user", message);
+      const nextPlacement: BuildingPlacement = {
+        id: `entrance-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        label: `Entrance ${buildingPlacements.length + 1}`,
+        type: "entrance",
+        w: 20,
+        d: 20,
+        rotation: 0,
+        locked: false,
+        placed: false,
+      };
+      setBuildingPlacements((prev) => [...prev, nextPlacement]);
+      appendChatMessage(
+        "assistant",
+        "Added an entrance object to the placement tray. Place it on the canvas when ready.",
+        "status",
+      );
+      return true;
+    }
+    if (
+      strategyMode === "manual" &&
+      /(add|create|place)\s+(a\s+)?building/.test(lower)
+    ) {
+      appendChatMessage("user", message);
+      appendChatMessage(
+        "assistant",
+        "Manual mode needs explicit building dimensions. Tell me the width and depth (for example: “Add a building 100 ft by 200 ft”).",
+        "status",
+      );
+      return true;
+    }
+
+    if (plotDimsMatch) {
+      const width = Number(plotDimsMatch[4]);
+      const height = Number(plotDimsMatch[8]);
+      if (!Number.isFinite(width) || !Number.isFinite(height)) {
+        return false;
+      }
+      appendChatMessage("user", message);
+      setLotWidth(String(width));
+      setLotHeight(String(height));
+      appendChatMessage(
+        "assistant",
+        `Set the site boundary to ${width} ft by ${height} ft.`,
+        "status",
+      );
+      return true;
+    }
+
+    if (plotAcreMatch) {
+      const acres = Number(plotAcreMatch[3]);
+      if (!Number.isFinite(acres)) {
+        return false;
+      }
+      appendChatMessage("user", message);
+      if (strategyMode === "manual") {
+        appendChatMessage(
+          "assistant",
+          "Manual mode needs explicit lot dimensions. Give a width and height in feet (for example: “Set lot 400 ft by 600 ft”).",
+          "status",
+        );
+        return true;
+      }
+      const area = acres * 43560;
+      const side = Math.sqrt(area);
+      const width = Math.round(side);
+      const height = Math.round(side);
+      setLotWidth(String(width));
+      setLotHeight(String(height));
+      appendChatMessage(
+        "assistant",
+        `Set the site boundary to about ${width} ft by ${height} ft to match ${acres} acres.`,
+        "status",
+      );
+      return true;
+    }
+
+    return false;
+  };
+
   const handleSendMessage = () => {
     const trimmed = prompt.trim();
     if (!trimmed && !imageName) return;
@@ -1897,6 +2388,13 @@ export default function PerformanceAIDashboard() {
       }
       setPrompt("");
       return;
+    }
+    if (trimmed) {
+      const handled = tryHandleObjectIntent(trimmed);
+      if (handled) {
+        setPrompt("");
+        return;
+      }
     }
     void runOrchestrator("run");
   };
@@ -3036,6 +3534,45 @@ export default function PerformanceAIDashboard() {
     siteName,
   ]);
 
+  const handleGenerateSystem = useCallback(
+    async (target: "roads" | "parking" | "grading" | "drainage" | "utilities" | "full") => {
+      const requestPayload = buildPayloadFromOverrides({}, null, projectId || null);
+      const omitField = { source: "omit", value: null } as const;
+      const nextManualFields = {
+        ...(requestPayload.manual_fields ?? {}),
+      } as Record<string, unknown>;
+
+      if (target === "roads" || target === "parking") {
+        nextManualFields.grading = omitField;
+        nextManualFields.drainage = omitField;
+        nextManualFields.utility_network = omitField;
+      } else if (target === "grading") {
+        nextManualFields.drainage = omitField;
+        nextManualFields.utility_network = omitField;
+      } else if (target === "drainage") {
+        nextManualFields.utility_network = omitField;
+      } else if (target === "utilities") {
+        nextManualFields.drainage = omitField;
+      }
+
+      const systemLabel = target === "full" ? "full site systems" : target;
+      await executePlanAction({
+        mode: "run",
+        requestPayload: {
+          ...requestPayload,
+          manual_fields: nextManualFields,
+          meta: {
+            ...(requestPayload.meta ?? {}),
+            requested_system: target,
+          },
+          prompt_text: null,
+        },
+        assistantPrefix: `Generating ${systemLabel} around your placed layout...`,
+      });
+    },
+    [buildPayloadFromOverrides, executePlanAction, projectId],
+  );
+
   const queuePreviewRefresh = (reason: string) => {
     if (!token) return;
     if (!backendResult && !projectId && !planPreviewUrl) {
@@ -3159,6 +3696,9 @@ export default function PerformanceAIDashboard() {
     setDrainage(true);
     setUtilities(true);
     setStrategyMode("assisted");
+    setBuildingPlacements([]);
+    setPlacementModeEnabled(false);
+    setActivePlacementId(null);
     const nextThread = [createWelcomeMessage()];
     chatMessagesRef.current = nextThread;
     setChatMessages(nextThread);
@@ -3875,6 +4415,20 @@ export default function PerformanceAIDashboard() {
             quantityRollupsEnabled={quantityRollupsEnabled}
             onToggleQuantityRollups={() => setQuantityRollupsEnabled((prev) => !prev)}
             quantityRows={quantityRows}
+            buildingPlacements={buildingPlacements}
+            placementModeEnabled={placementModeEnabled}
+            onTogglePlacementMode={handleTogglePlacementMode}
+            onAddBuilding={handleAddBuilding}
+            onUpdateBuilding={handleUpdateBuilding}
+            onRemoveBuilding={handleRemoveBuilding}
+            onToggleBuildingLock={handleToggleBuildingLock}
+            onSelectPlacementTarget={handleSelectPlacementTarget}
+            onAutoPlaceBuildings={handleAutoPlaceBuildings}
+            onRotateBuilding={handleRotateBuilding}
+            onAddObject={handleAddObject}
+            onSuggestLayouts={handleSuggestLayouts}
+            onNextSuggestion={handleNextSuggestion}
+            onGenerateSystem={handleGenerateSystem}
           />
 
           <main className="flex min-w-0 flex-1 flex-col">
@@ -3990,6 +4544,13 @@ export default function PerformanceAIDashboard() {
               previewQuality={previewQuality}
               previewLabelDensity={previewLabelDensity}
               previewRenderMode={previewRenderMode}
+              placementMode={placementModeEnabled}
+              onPlaceBuilding={handlePlaceBuilding}
+              buildingPlacements={buildingPlacements}
+              lotWidth={parsePositiveNumber(lotWidth) ?? 120}
+              lotHeight={parsePositiveNumber(lotHeight) ?? 100}
+              onUpdateBuilding={handleUpdateBuilding}
+              onSelectBuilding={setActivePlacementId}
               onSetPreviewMode={setPreviewMode}
               onSetPreviewInteraction={setPreviewInteraction}
               onSetPreviewQuality={setPreviewQuality}

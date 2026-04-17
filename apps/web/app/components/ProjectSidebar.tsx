@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, MessageSquarePlus } from "lucide-react";
 
-import type { ChatMessage, LearningReport } from "../types";
+import type { BuildingPlacement, ChatMessage, LearningReport } from "../types";
 import {
   computeLearningScore,
   formatCount,
@@ -98,6 +98,20 @@ type ProjectSidebarProps = {
   quantityRollupsEnabled: boolean;
   onToggleQuantityRollups: () => void;
   quantityRows: QuantityRow[];
+  buildingPlacements: BuildingPlacement[];
+  placementModeEnabled: boolean;
+  onTogglePlacementMode: () => void;
+  onAddBuilding: () => void;
+  onUpdateBuilding: (id: string, updates: Partial<BuildingPlacement>) => void;
+  onRemoveBuilding: (id: string) => void;
+  onToggleBuildingLock: (id: string) => void;
+  onSelectPlacementTarget: (id: string) => void;
+  onAutoPlaceBuildings: () => void;
+  onRotateBuilding: (id: string, delta: number) => void;
+  onAddObject: (type: "building" | "basin" | "entrance") => void;
+  onSuggestLayouts: () => void;
+  onNextSuggestion: () => void;
+  onGenerateSystem: (target: "roads" | "parking" | "grading" | "drainage" | "utilities" | "full") => void;
 };
 
 export default function ProjectSidebar({
@@ -152,6 +166,20 @@ export default function ProjectSidebar({
   quantityRollupsEnabled,
   onToggleQuantityRollups,
   quantityRows,
+  buildingPlacements,
+  placementModeEnabled,
+  onTogglePlacementMode,
+  onAddBuilding,
+  onUpdateBuilding,
+  onRemoveBuilding,
+  onToggleBuildingLock,
+  onSelectPlacementTarget,
+  onAutoPlaceBuildings,
+  onRotateBuilding,
+  onAddObject,
+  onSuggestLayouts,
+  onNextSuggestion,
+  onGenerateSystem,
 }: ProjectSidebarProps) {
   const [showLearningPanel, setShowLearningPanel] = useState(true);
   const [collapsed, setCollapsed] = useState(false);
@@ -169,6 +197,7 @@ export default function ProjectSidebar({
     siteInputs: false,
     materials: false,
     coverage: false,
+    placement: true,
   });
 
   const learningSummary = useMemo(() => {
@@ -226,6 +255,286 @@ export default function ProjectSidebar({
       </div>
     );
   };
+
+  const placedBuildings = buildingPlacements.filter((item) => item.placed);
+  const unplacedBuildings = buildingPlacements.filter((item) => !item.placed);
+
+  const placementPanel = renderSidebarSection(
+    "placement",
+    "Placement + Actions",
+    <div className="space-y-4 px-4 pb-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={onAddBuilding}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 transition hover:bg-slate-50"
+        >
+          Add Building
+        </button>
+        <button
+          type="button"
+          onClick={() => onAddObject("basin")}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 transition hover:bg-slate-50"
+        >
+          Add Basin
+        </button>
+        <button
+          type="button"
+          onClick={() => onAddObject("entrance")}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 transition hover:bg-slate-50"
+        >
+          Add Entrance
+        </button>
+        <button
+          type="button"
+          onClick={onAutoPlaceBuildings}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 transition hover:bg-slate-50"
+        >
+          Auto-place All
+        </button>
+        <button
+          type="button"
+          onClick={onSuggestLayouts}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 transition hover:bg-slate-50"
+        >
+          Suggest Layouts
+        </button>
+        <button
+          type="button"
+          onClick={onNextSuggestion}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 transition hover:bg-slate-50"
+        >
+          Next Suggestion
+        </button>
+        <button
+          type="button"
+          onClick={onTogglePlacementMode}
+          className={`rounded-xl border px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition ${
+            placementModeEnabled
+              ? "border-slate-900 bg-slate-950 text-white"
+              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+          }`}
+        >
+          {placementModeEnabled ? "Placement On" : "Placement Off"}
+        </button>
+      </div>
+      <div className="space-y-3">
+        {unplacedBuildings.length ? (
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Unplaced
+            </p>
+            {unplacedBuildings.map((building) => (
+              <div key={building.id} className="rounded-2xl border border-slate-200 bg-white p-3">
+                <div className="flex items-center justify-between">
+                  <input
+                    value={building.label}
+                    onChange={(event) => onUpdateBuilding(building.id, { label: event.target.value })}
+                    className="w-full rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => onRemoveBuilding(building.id)}
+                    className="ml-2 text-xs font-semibold text-rose-500"
+                  >
+                    Remove
+                  </button>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-600">
+                  <label className="flex flex-col gap-1">
+                    Width
+                    <input
+                      type="number"
+                      value={Number.isFinite(building.w) ? building.w : 0}
+                      onChange={(event) => onUpdateBuilding(building.id, { w: Number(event.target.value) })}
+                      className="rounded-lg border border-slate-200 px-2 py-1"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    Depth
+                    <input
+                      type="number"
+                      value={Number.isFinite(building.d) ? building.d : 0}
+                      onChange={(event) => onUpdateBuilding(building.id, { d: Number(event.target.value) })}
+                      className="rounded-lg border border-slate-200 px-2 py-1"
+                    />
+                  </label>
+                </div>
+                <div className="mt-2 flex items-center justify-between text-xs text-slate-600">
+                  <button
+                    type="button"
+                    onClick={() => onSelectPlacementTarget(building.id)}
+                    className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                  >
+                    Place
+                  </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => onRotateBuilding(building.id, 15)}
+                        className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                      >
+                        Rotate
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onToggleBuildingLock(building.id)}
+                        className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
+                          building.locked
+                            ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        {building.locked ? "Locked" : "Unlock"}
+                      </button>
+                    </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {placedBuildings.length ? (
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Placed
+            </p>
+            {placedBuildings.map((building) => (
+              <div key={building.id} className="rounded-2xl border border-slate-200 bg-white p-3">
+                <div className="flex items-center justify-between">
+                  <input
+                    value={building.label}
+                    onChange={(event) => onUpdateBuilding(building.id, { label: event.target.value })}
+                    className="w-full rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => onRemoveBuilding(building.id)}
+                    className="ml-2 text-xs font-semibold text-rose-500"
+                  >
+                    Remove
+                  </button>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-600">
+                  <label className="flex flex-col gap-1">
+                    X
+                    <input
+                      type="number"
+                      value={Number.isFinite(building.x) ? building.x : 0}
+                      onChange={(event) => onUpdateBuilding(building.id, { x: Number(event.target.value), placed: true })}
+                      className="rounded-lg border border-slate-200 px-2 py-1"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    Y
+                    <input
+                      type="number"
+                      value={Number.isFinite(building.y) ? building.y : 0}
+                      onChange={(event) => onUpdateBuilding(building.id, { y: Number(event.target.value), placed: true })}
+                      className="rounded-lg border border-slate-200 px-2 py-1"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    Width
+                    <input
+                      type="number"
+                      value={Number.isFinite(building.w) ? building.w : 0}
+                      onChange={(event) => onUpdateBuilding(building.id, { w: Number(event.target.value) })}
+                      className="rounded-lg border border-slate-200 px-2 py-1"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    Depth
+                    <input
+                      type="number"
+                      value={Number.isFinite(building.d) ? building.d : 0}
+                      onChange={(event) => onUpdateBuilding(building.id, { d: Number(event.target.value) })}
+                      className="rounded-lg border border-slate-200 px-2 py-1"
+                    />
+                  </label>
+                </div>
+                <div className="mt-2 flex items-center justify-between text-xs text-slate-600">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onRotateBuilding(building.id, 15)}
+                      className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                    >
+                      Rotate
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onToggleBuildingLock(building.id)}
+                      className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
+                        building.locked
+                          ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      {building.locked ? "Locked" : "Unlock"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-slate-500">
+            Add a building or enable placement mode to drop one on the plan.
+          </p>
+        )}
+      </div>
+      <div className="border-t border-slate-200 pt-3">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+          Generate Systems
+        </p>
+        <div className="mt-2 grid grid-cols-2 gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+          <button
+            type="button"
+            onClick={() => onGenerateSystem("roads")}
+            className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
+          >
+            Roads
+          </button>
+          <button
+            type="button"
+            onClick={() => onGenerateSystem("parking")}
+            className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
+          >
+            Parking
+          </button>
+          <button
+            type="button"
+            onClick={() => onGenerateSystem("grading")}
+            className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
+          >
+            Grading
+          </button>
+          <button
+            type="button"
+            onClick={() => onGenerateSystem("drainage")}
+            className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
+          >
+            Drainage
+          </button>
+          <button
+            type="button"
+            onClick={() => onGenerateSystem("utilities")}
+            className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
+          >
+            Utilities
+          </button>
+          <button
+            type="button"
+            onClick={() => onGenerateSystem("full")}
+            className="rounded-xl border border-slate-900 bg-slate-950 px-2 py-2 text-white transition hover:bg-slate-800"
+          >
+            Full Site
+          </button>
+        </div>
+      </div>
+    </div>,
+  );
 
   return (
     <aside
@@ -320,6 +629,8 @@ export default function ProjectSidebar({
             </div>
           ) : null}
         </div>
+
+        {placementPanel}
 
         {renderSidebarSection(
           "assumptions",

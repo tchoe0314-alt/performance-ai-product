@@ -506,6 +506,25 @@ export type SurveySlopeResponse = {
 };
 
 export type PlanToolMode = "run" | "fix" | "improve";
+
+export type BuildingPlacement = {
+  id: string;
+  label: string;
+  x?: number;
+  y?: number;
+  w: number;
+  d: number;
+  rotation?: number;
+  use?: string;
+  locked?: boolean;
+  placed?: boolean;
+};
+
+export type SiteObjectType = "building" | "basin" | "entrance";
+
+export type SiteObjectPlacement = BuildingPlacement & {
+  type: SiteObjectType;
+};
 export type StrategyMode = "manual" | "assisted";
 export type ControlOverrides = Partial<{
   strategyMode: StrategyMode;
