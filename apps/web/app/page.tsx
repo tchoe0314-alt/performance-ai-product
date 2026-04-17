@@ -36,8 +36,6 @@ import type {
   ChatMessage,
   LearningReport,
   DisciplineToggle,
-  PhaseStats,
-  PhaseMetric,
   Preview3DItem,
   PlanRequestPayload,
   PreviewRequestPayload,
@@ -45,7 +43,6 @@ import type {
 
 import {
   defaultAssumptions,
-  defaultIssues,
   toReadableLabel,
   joinNatural,
   toArray,
@@ -284,7 +281,7 @@ export default function PerformanceAIDashboard() {
 
   const [assumptions, setAssumptions] =
     useState<Assumption[]>(defaultAssumptions);
-  const [issues, setIssues] = useState<Issue[]>(defaultIssues);
+  const [issues, setIssues] = useState<Issue[]>([]);
   const [backendResult, setBackendResult] = useState<PlanResponse | null>(null);
   const [uploadedImagePreviewUrl, setUploadedImagePreviewUrl] = useState("");
   const [uploadedImageApiUrl, setUploadedImageApiUrl] = useState("");
@@ -756,7 +753,8 @@ export default function PerformanceAIDashboard() {
       { key: "water", token: "WATER" },
       { key: "sanitary", token: "SAN" },
     ];
-    return (issues.length ? issues : defaultIssues).map((issue, idx) => {
+    if (!issues.length) return [];
+    return issues.map((issue, idx) => {
       const lowered = issue.message.toLowerCase();
       const matched = keywordMap.find((item) => lowered.includes(item.key));
       const labelMatch = matched
@@ -927,7 +925,7 @@ export default function PerformanceAIDashboard() {
         })),
       );
     } else {
-      setIssues(defaultIssues);
+      setIssues([]);
     }
   };
 
@@ -1894,7 +1892,17 @@ export default function PerformanceAIDashboard() {
   };
 
   const handleContinueActiveJob = async () => {
-    if (!visibleActiveJob?.job_id || !token) return;
+    if (!token) return;
+    if (!visibleActiveJob?.job_id) {
+      setStatusMessage("No active job is awaiting approval.");
+      return;
+    }
+    const status = String(visibleActiveJob.status || "").toLowerCase();
+    if (status !== "awaiting_approval") {
+      setStatusMessage("There is no phase awaiting approval right now.");
+      return;
+    }
+    setBusy(true);
     try {
       const data = await postJson<{ job: JobSummary }>(
         `/api/jobs/${visibleActiveJob.job_id}/continue`,
@@ -1920,10 +1928,14 @@ export default function PerformanceAIDashboard() {
       if (data.job.job_id) {
         setActiveJobId(data.job.job_id);
       }
+      await refreshJobs(token, { suppressError: true, force: true });
+      queuePreviewRefresh("Refreshing preview after approval...");
     } catch (error) {
       setStatusMessage(
         error instanceof Error ? error.message : "Could not continue the staged run.",
       );
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -2784,7 +2796,10 @@ export default function PerformanceAIDashboard() {
     const previewPayload = {
       ...payload,
       preview_quality: previewQuality,
-      render_labels: previewInteraction === "interactive",
+      render_labels:
+        previewInteraction === "interactive" ||
+        previewRenderMode === "engineering" ||
+        previewRenderMode === "debug",
       preview_mode: previewRenderMode,
       preview_layers: previewLayerList,
     };
@@ -3073,7 +3088,7 @@ export default function PerformanceAIDashboard() {
     setPlanPreviewUrl("");
     setPlanPreviewSummary(null);
     setAssumptions(defaultAssumptions);
-    setIssues(defaultIssues);
+    setIssues([]);
     setSiteName("");
     setFileName("");
     setSiteNameAuto(false);
@@ -3353,54 +3368,113 @@ export default function PerformanceAIDashboard() {
       ? backendResult.final_plan.actions
       : [];
     const items: Preview3DItem[] = [];
+    const baseTerrain = {
+      minX: Number.POSITIVE_INFINITY,
+      minY: Number.POSITIVE_INFINITY,
+      maxX: Number.NEGATIVE_INFINITY,
+      maxY: Number.NEGATIVE_INFINITY,
+    };
+
+    const addBounds = (bounds: [number, number, number, number]) => {
+      baseTerrain.minX = Math.min(baseTerrain.minX, bounds[0]);
+      baseTerrain.minY = Math.min(baseTerrain.minY, bounds[1]);
+      baseTerrain.maxX = Math.max(baseTerrain.maxX, bounds[2]);
+      baseTerrain.maxY = Math.max(baseTerrain.maxY, bounds[3]);
+    };
+
     for (const action of actions) {
       if (!action || typeof action !== "object") continue;
-      const geometry =
-        (action as PlanAction).geometry ?? (action as Record<string, unknown>);
-      if (!geometry || typeof geometry !== "object") continue;
-      const layer = String(action.layer || "").toUpperCase();
-      const width = Number((geometry as { width?: number }).width || 0);
-      const height = Number((geometry as { height?: number }).height || 0);
-      const origin = Array.isArray((geometry as { origin?: unknown }).origin)
-        ? (geometry as { origin?: number[] }).origin || []
-        : [];
-      if (!width || !height || origin.length < 2) continue;
-      const x = Number(origin[0] || 0);
-      const y = Number(origin[1] || 0);
-      const label = String(action.label || "");
-      const isBuilding =
-        layer === "BUILDING" || label.toLowerCase().includes("build");
-      const isRoad =
-        layer === "ROAD" || layer === "PAVEMENT" || label.toLowerCase().includes("road");
-      const isParking =
-        layer === "PARKING" || label.toLowerCase().includes("park");
-      const isStructure = layer === "BRIDGE" || layer === "POOL" || layer === "STRUCTURE";
+      const actionRecord = action as Record<string, unknown>;
+      const task = String(actionRecord.task || "").toLowerCase();
+      const layerRaw = String(actionRecord.layer || "").toUpperCase();
+      const normalizedLayer = layerRaw.startsWith("C-") ? layerRaw.slice(2) : layerRaw;
+      const meta = actionRecord.meta as Record<string, unknown> | undefined;
+      const previewRole = String(meta?.preview_role || (meta?.is_final ? "final" : "overlay"));
+      if (previewRenderMode === "production" && previewRole !== "final") continue;
+      if (previewRenderMode === "engineering" && !["final", "overlay"].includes(previewRole)) continue;
+
+      let bounds: [number, number, number, number] | null = null;
+      if (task === "rectangle") {
+        const origin = Array.isArray(actionRecord.origin) ? (actionRecord.origin as number[]) : [];
+        const width = Number(actionRecord.width || 0);
+        const height = Number(actionRecord.height || 0);
+        if (origin.length >= 2 && width > 0 && height > 0) {
+          bounds = [Number(origin[0]), Number(origin[1]), Number(origin[0]) + width, Number(origin[1]) + height];
+        }
+      } else if (task === "polygon" || task === "polyline") {
+        const points = Array.isArray(actionRecord.points) ? (actionRecord.points as number[][]) : [];
+        if (points.length >= 2) {
+          const xs = points.map((pt) => Number((pt as number[])[0] || 0));
+          const ys = points.map((pt) => Number((pt as number[])[1] || 0));
+          bounds = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+        }
+      }
+      if (!bounds) continue;
+
+      addBounds(bounds);
+      const [x1, y1, x2, y2] = bounds;
+      const w = Math.max(1, x2 - x1);
+      const h = Math.max(1, y2 - y1);
+      const label = String(actionRecord.label || normalizedLayer);
+      const system = String(meta?.system || "");
+      const isBuilding = normalizedLayer === "BUILDING";
+      const isRoad = ["ROAD", "PAVEMENT", "DRIVEWAY", "WALK", "SIDEWALK"].includes(normalizedLayer) || system === "roads";
+      const isParking = normalizedLayer === "PARKING" || system === "parking";
+      const isStructure = ["BRIDGE", "POOL", "STRUCTURE"].includes(normalizedLayer);
+      const isDrainage = ["POND", "DRAIN_FLOW", "STRM-PIPE", "STRM-INLET", "STRM-MH"].includes(normalizedLayer) || system === "drainage";
+      const isUtility = ["SAN", "UTIL", "WATR", "WATER"].includes(normalizedLayer) || system === "utilities";
 
       if (isBuilding && !previewLayersEffective.buildings) continue;
       if ((isRoad || isParking) && !previewLayersEffective.roads) continue;
+      if (isDrainage && !previewLayersEffective.drainage) continue;
+      if (isUtility && !previewLayersEffective.utilities) continue;
       if (isStructure && !previewLayersEffective.structures) continue;
 
       const color = isBuilding
         ? "#e2e8f0"
         : isStructure
           ? "#fde68a"
-          : isRoad
-            ? "#c7d2fe"
-            : "#dbeafe";
-      const heightFt = isBuilding ? 28 : isStructure ? 10 : isRoad ? 2 : 1;
+          : isDrainage
+            ? "#bbf7d0"
+            : isUtility
+              ? "#fbcfe8"
+              : isRoad || isParking
+                ? "#c7d2fe"
+                : "#dbeafe";
+      const heightFt = isBuilding ? 28 : isStructure ? 10 : isDrainage ? 4 : isRoad ? 2 : isParking ? 1.5 : 1;
       items.push({
-        x,
-        y,
-        w: width,
-        h: height,
+        x: x1,
+        y: y1,
+        w,
+        h,
         height: heightFt,
         color,
-        label: label || layer,
+        label: label || normalizedLayer,
         layer: isBuilding ? "BUILDING" : isStructure ? "STRUCTURE" : isRoad ? "ROAD" : "PARKING",
       });
     }
+
+    if (
+      Number.isFinite(baseTerrain.minX) &&
+      Number.isFinite(baseTerrain.minY) &&
+      Number.isFinite(baseTerrain.maxX) &&
+      Number.isFinite(baseTerrain.maxY)
+    ) {
+      const terrainWidth = Math.max(1, baseTerrain.maxX - baseTerrain.minX);
+      const terrainHeight = Math.max(1, baseTerrain.maxY - baseTerrain.minY);
+      items.unshift({
+        x: baseTerrain.minX,
+        y: baseTerrain.minY,
+        w: terrainWidth,
+        h: terrainHeight,
+        height: 1,
+        color: "#e5e7eb",
+        label: "Terrain",
+        layer: "TERRAIN",
+      });
+    }
     return items;
-  }, [backendResult, previewLayersEffective]);
+  }, [backendResult, previewLayersEffective, previewRenderMode]);
   const preview3DAnnotationItems = useMemo<Preview3DItem[]>(() => {
     const labels = Array.isArray(planPreviewAnnotations?.labels)
       ? planPreviewAnnotations?.labels
@@ -3476,71 +3550,6 @@ export default function PerformanceAIDashboard() {
       setRevisePhaseTarget(nextKey as typeof revisePhaseTarget);
     }
   }, [visibleActiveJob?.status, previewRunningPhase?.key, previewNextPendingPhase?.key, revisePhaseTarget]);
-  const phaseStats = useMemo<PhaseStats>(() => {
-    const layoutStats: PhaseMetric[] = [
-      { label: "Buildings", value: toMetricValue(quantityTotals.building_count), unit: "ea", format: "count" as const },
-      { label: "Building area", value: toMetricValue(quantityTotals.building_area_sf), unit: "sf" },
-      {
-        label: "Parking stalls",
-        value: toMetricValue(quantityTotals.estimated_parking_stalls),
-        unit: "stalls",
-        format: "count" as const,
-      },
-      { label: "Parking area", value: toMetricValue(quantityTotals.parking_area_sf), unit: "sf" },
-    ];
-    const gradingStats: PhaseMetric[] = [
-      { label: "Cut volume", value: readMetricValue(managerMetrics.earthwork_cut_cf), unit: "cf" },
-      { label: "Fill volume", value: readMetricValue(managerMetrics.earthwork_fill_cf), unit: "cf" },
-      { label: "Net earthwork", value: readMetricValue(managerMetrics.earthwork_net_cf), unit: "cf" },
-      { label: "FG contours", value: toMetricValue(quantityTotals.fg_contour_count), unit: "ea", format: "count" as const },
-    ];
-    const drainageStats: PhaseMetric[] = [
-      { label: "Pipe length", value: totalPipeLength, unit: "ft" },
-      { label: "Min slope", value: minSlope, unit: "%" },
-      { label: "Max slope", value: maxSlope, unit: "%" },
-      { label: "Ponds", value: toMetricValue(quantityTotals.pond_count), unit: "ea", format: "count" as const },
-    ];
-    const utilityStats: PhaseMetric[] = [
-      {
-        label: "Utility length",
-        value: toMetricValue(
-          readMetricValue(managerMetrics.utility_total_length_ft) ??
-            quantityTotals.utility_length_ft,
-        ),
-        unit: "ft",
-      },
-      {
-        label: "Sanitary length",
-        value: toMetricValue(
-          readMetricValue(managerMetrics.sanitary_total_length_ft) ??
-            quantityTotals.sanitary_length_ft,
-        ),
-        unit: "ft",
-      },
-      { label: "Sanitary manholes", value: toMetricValue(quantityTotals.sanitary_manhole_count), unit: "ea", format: "count" as const },
-      { label: "Sanitary services", value: toMetricValue(quantityTotals.sanitary_service_count), unit: "ea", format: "count" as const },
-    ];
-    const coordinationStats: PhaseMetric[] = [
-      { label: "Unresolved conflicts", value: toMetricValue(previewReview?.unresolved_conflict_count), unit: "ea", format: "count" as const },
-      { label: "QA errors", value: readMetricValue(managerMetrics.qa_error_count), unit: "ea", format: "count" as const },
-      { label: "QA warnings", value: readMetricValue(managerMetrics.qa_warning_count), unit: "ea", format: "count" as const },
-      { label: "Reruns", value: toMetricValue(previewReview?.rerun_total), unit: "ea", format: "count" as const },
-    ];
-    return {
-      layout: layoutStats,
-      grading: gradingStats,
-      drainage_storm: drainageStats,
-      utilities: utilityStats,
-      coordination_validation: coordinationStats,
-    };
-  }, [
-    managerMetrics,
-    quantityTotals,
-    totalPipeLength,
-    minSlope,
-    maxSlope,
-    previewReview,
-  ]);
   const whatYouNeedSummary = (() => {
     const manualFields =
       currentProject?.project_input?.manual_fields && typeof currentProject.project_input.manual_fields === "object"
@@ -3827,15 +3836,13 @@ export default function PerformanceAIDashboard() {
               previewRefreshNote={previewRefreshNote}
                 preview3DEffectiveItems={preview3DEffectiveItems}
                 usingAnnotation3D={usingAnnotation3D}
-                onOpenFullscreen={() => setPreviewFullscreenOpen(true)}
-                previewFullscreenOpen={previewFullscreenOpen}
-                onCloseFullscreen={() => setPreviewFullscreenOpen(false)}
-                onExportDxf={handleExportDxf}
-                onExportReport={handleExportReport}
-                phaseStats={phaseStats}
-                issues={issues}
-                planPreviewAnnotations={planPreviewAnnotations}
-                selectedIssueLabel={selectedIssueLabel}
+              onOpenFullscreen={() => setPreviewFullscreenOpen(true)}
+              previewFullscreenOpen={previewFullscreenOpen}
+              onCloseFullscreen={() => setPreviewFullscreenOpen(false)}
+              onExportDxf={handleExportDxf}
+              onExportReport={handleExportReport}
+              planPreviewAnnotations={planPreviewAnnotations}
+              selectedIssueLabel={selectedIssueLabel}
                 showMeasurements={showMeasurements}
                 showCalculations={showCalculations}
                 measurementOverlayStats={measurementOverlayStats}

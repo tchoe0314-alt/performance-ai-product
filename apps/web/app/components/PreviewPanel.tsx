@@ -1,11 +1,9 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Maximize2, X } from "lucide-react";
 
 import type {
-  Issue,
-  PhaseStats,
   Preview3DItem,
   PreviewResponse,
   PreviewReview,
@@ -42,8 +40,6 @@ type PreviewPanelProps = {
   onCloseFullscreen: () => void;
   onExportDxf: () => void;
   onExportReport: () => void;
-  phaseStats: PhaseStats;
-  issues: Issue[];
   planPreviewAnnotations: PreviewResponse["preview_annotations"] | null;
   selectedIssueLabel: string;
   showMeasurements: boolean;
@@ -51,57 +47,6 @@ type PreviewPanelProps = {
   measurementOverlayStats: Array<{ label: string; value: number | null; unit: string }>;
   calculationOverlayStats: Array<{ label: string; value: number | null; unit: string }>;
 };
-
-type DragState = {
-  startX: number;
-  startY: number;
-  originX: number;
-  originY: number;
-};
-
-function useDraggableCard() {
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const dragRef = useRef<DragState | null>(null);
-  const positionRef = useRef(position);
-
-  useEffect(() => {
-    positionRef.current = position;
-  }, [position]);
-
-  const onPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
-    dragRef.current = {
-      startX: event.clientX,
-      startY: event.clientY,
-      originX: positionRef.current.x,
-      originY: positionRef.current.y,
-    };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  }, []);
-
-  useEffect(() => {
-    const handleMove = (event: PointerEvent) => {
-      if (!dragRef.current) return;
-      const dx = event.clientX - dragRef.current.startX;
-      const dy = event.clientY - dragRef.current.startY;
-      setPosition({
-        x: dragRef.current.originX + dx,
-        y: dragRef.current.originY + dy,
-      });
-    };
-    const handleUp = () => {
-      dragRef.current = null;
-    };
-    window.addEventListener("pointermove", handleMove);
-    window.addEventListener("pointerup", handleUp);
-    return () => {
-      window.removeEventListener("pointermove", handleMove);
-      window.removeEventListener("pointerup", handleUp);
-    };
-  }, []);
-
-  return { position, onPointerDown };
-}
 
 export default function PreviewPanel({
   previewReview,
@@ -130,8 +75,6 @@ export default function PreviewPanel({
   onCloseFullscreen,
   onExportDxf,
   onExportReport,
-  phaseStats,
-  issues,
   planPreviewAnnotations,
   selectedIssueLabel,
   showMeasurements,
@@ -139,9 +82,79 @@ export default function PreviewPanel({
   measurementOverlayStats,
   calculationOverlayStats,
 }: PreviewPanelProps) {
-  const drainageCard = useDraggableCard();
-  const issuesCard = useDraggableCard();
   const previewAudit = planPreviewAnnotations?.audit;
+  const previewLabels = useMemo(
+    () => (Array.isArray(planPreviewAnnotations?.labels) ? planPreviewAnnotations?.labels : []),
+    [planPreviewAnnotations],
+  );
+  const [hoveredAnnotation, setHoveredAnnotation] = useState<(typeof previewLabels)[number] | null>(null);
+  const [pinnedAnnotation, setPinnedAnnotation] = useState<(typeof previewLabels)[number] | null>(null);
+  const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number } | null>(null);
+  const [fullscreenHoverPoint, setFullscreenHoverPoint] = useState<{ x: number; y: number } | null>(null);
+  const previewRef = useRef<HTMLDivElement | null>(null);
+  const fullscreenRef = useRef<HTMLDivElement | null>(null);
+  const activeAnnotation = pinnedAnnotation ?? hoveredAnnotation;
+  const hasInteractiveLabels = previewLabels.length > 0;
+  const showInteractive = previewInteraction === "interactive";
+  const resolveHover = useCallback(
+    (
+      event: React.MouseEvent<HTMLDivElement>,
+      containerRef: React.RefObject<HTMLDivElement | null>,
+      setPoint: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>,
+    ) => {
+      if (!showInteractive || !containerRef.current || !hasInteractiveLabels) {
+        setHoveredAnnotation(null);
+        setPoint(null);
+        return;
+      }
+      const rect = containerRef.current.getBoundingClientRect();
+      const x = (event.clientX - rect.left) / Math.max(rect.width, 1);
+      const y = (event.clientY - rect.top) / Math.max(rect.height, 1);
+      const matches = previewLabels
+        .filter((label) => {
+          const bounds = label.bounds;
+          if (!bounds) return false;
+          return x >= bounds.x1 && x <= bounds.x2 && y >= bounds.y1 && y <= bounds.y2;
+        })
+        .sort((a, b) => {
+          const aBounds = a.bounds;
+          const bBounds = b.bounds;
+          if (!aBounds || !bBounds) return 0;
+          const aArea = Math.max(0, aBounds.x2 - aBounds.x1) * Math.max(0, aBounds.y2 - aBounds.y1);
+          const bArea = Math.max(0, bBounds.x2 - bBounds.x1) * Math.max(0, bBounds.y2 - bBounds.y1);
+          return aArea - bArea;
+        });
+      const next = matches[0] ?? null;
+      setHoveredAnnotation(next);
+      setPoint({ x: event.clientX - rect.left, y: event.clientY - rect.top });
+    },
+    [hasInteractiveLabels, previewLabels, showInteractive],
+  );
+
+  const formatHoverValue = (value: number | null | undefined, suffix: string) => {
+    if (value === null || value === undefined || Number.isNaN(value)) return null;
+    return `${value.toFixed(2)}${suffix}`;
+  };
+  const hoverDetails = useMemo(() => {
+    if (!activeAnnotation?.meta) return [];
+    const meta = activeAnnotation.meta;
+    const entries = [
+      { label: "System", value: meta.system },
+      { label: "Layer", value: activeAnnotation.layer },
+      { label: "Type", value: meta.entity_type },
+      { label: "Length", value: formatHoverValue(meta.length_ft ?? null, " ft") },
+      { label: "Width", value: formatHoverValue(meta.width_ft ?? null, " ft") },
+      { label: "Height", value: formatHoverValue(meta.height_ft ?? null, " ft") },
+      { label: "Area", value: formatHoverValue(meta.area_sf ?? null, " sf") },
+      { label: "Slope", value: formatHoverValue(meta.slope_pct ?? null, "%") },
+      { label: "Diameter", value: formatHoverValue(meta.diameter_in ?? null, " in") },
+      { label: "Flow", value: formatHoverValue(meta.flow_cfs ?? null, " cfs") },
+      { label: "Elevation", value: formatHoverValue(meta.elevation_ft ?? null, " ft") },
+      { label: "Invert Start", value: formatHoverValue(meta.invert_start_ft ?? null, " ft") },
+      { label: "Invert End", value: formatHoverValue(meta.invert_end_ft ?? null, " ft") },
+    ];
+    return entries.filter((entry) => entry.value);
+  }, [activeAnnotation, formatHoverValue]);
   return (
     <div className="rounded-[28px] border border-slate-200 bg-white/90 p-4 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.4)] backdrop-blur md:p-6">
       <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -431,8 +444,17 @@ export default function PreviewPanel({
                   interactive={previewInteraction === "interactive"}
                   onOpenFullscreen={onOpenFullscreen}
                 />
-                {usingAnnotation3D ? (
+                {previewRenderMode !== "production" ? (
                   <div className="pointer-events-none absolute left-4 top-4 rounded-full border border-white/40 bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm">
+                    {previewRenderMode === "debug" ? "Debug mode" : "Engineering overlays"}
+                  </div>
+                ) : null}
+                {usingAnnotation3D ? (
+                  <div
+                    className={`pointer-events-none absolute left-4 rounded-full border border-white/40 bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm ${
+                      previewRenderMode !== "production" ? "top-14" : "top-4"
+                    }`}
+                  >
                     Approximate 3D
                   </div>
                 ) : null}
@@ -459,87 +481,72 @@ export default function PreviewPanel({
               </div>
             )
           ) : (
-            <div className="relative flex min-h-[560px] items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)]">
+            <div
+              ref={previewRef}
+              className="relative flex min-h-[560px] items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)]"
+              onMouseMove={(event) => resolveHover(event, previewRef, setHoverPoint)}
+              onMouseLeave={() => {
+                setHoveredAnnotation(null);
+                setHoverPoint(null);
+              }}
+              onClick={() => {
+                if (!showInteractive || !hoveredAnnotation) return;
+                setPinnedAnnotation((prev) =>
+                  prev?.label === hoveredAnnotation.label ? null : hoveredAnnotation,
+                );
+              }}
+            >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={planPreviewUrl}
                 alt="Generated plan preview"
                 className={`max-h-[560px] w-full object-contain ${
-                  previewInteraction === "interactive" ? "cursor-zoom-in" : "cursor-default"
+                  previewInteraction === "interactive" ? "cursor-crosshair" : "cursor-default"
                 }`}
                 onClick={onOpenFullscreen}
               />
-              <div
-                className="pointer-events-auto absolute right-6 top-6 hidden min-h-[160px] w-[260px] min-w-[220px] rounded-[22px] border border-white/20 bg-slate-900/80 p-4 text-xs text-white shadow-[0_20px_50px_-30px_rgba(15,23,42,0.8)] backdrop-blur lg:block"
-                style={{
-                  transform: `translate(${drainageCard.position.x}px, ${drainageCard.position.y}px)`,
-                  resize: "both",
-                  overflow: "auto",
-                }}
-              >
+              {showInteractive && activeAnnotation && hoverPoint ? (
                 <div
-                  onPointerDown={drainageCard.onPointerDown}
-                  className="flex cursor-move items-center justify-between text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70"
+                  className="pointer-events-none absolute z-20 min-w-[220px] max-w-[280px] rounded-2xl border border-slate-200 bg-white/95 p-3 text-xs text-slate-700 shadow-lg"
+                  style={{
+                    left: Math.min(Math.max(hoverPoint.x + 16, 16), 520),
+                    top: Math.min(Math.max(hoverPoint.y + 16, 16), 420),
+                  }}
                 >
-                  <span>Drainage Stats</span>
-                  <span className="text-[10px] text-white/50">Drag</span>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    {activeAnnotation.label}
+                  </p>
+                  <div className="mt-2 space-y-1">
+                    {hoverDetails.length ? (
+                      hoverDetails.map((detail) => (
+                        <div key={detail.label} className="flex items-center justify-between gap-2">
+                          <span className="text-slate-500">{detail.label}</span>
+                          <span className="font-semibold text-slate-900">{detail.value}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <span className="text-slate-500">No engineering metadata.</span>
+                    )}
+                  </div>
                 </div>
-                <div className="mt-3 space-y-2">
-                  {phaseStats.drainage_storm.length ? (
-                    phaseStats.drainage_storm.map((item) => (
-                      <div key={item.label} className="flex items-center justify-between gap-2">
-                        <span className="text-white/70">{item.label}</span>
-                        <span className="font-semibold text-white">
-                          {item.unit === "ea" || item.format === "count"
-                            ? formatCount(item.value, item.unit)
-                            : formatMetric(item.value, item.unit)}
-                        </span>
-                      </div>
-                    ))
-                  ) : (
-                    <span className="text-white/70">Drainage not generated yet.</span>
-                  )}
-                </div>
-              </div>
-              <div
-                className="pointer-events-auto absolute right-6 top-[250px] hidden min-h-[160px] w-[260px] min-w-[220px] rounded-[22px] border border-white/20 bg-slate-900/80 p-4 text-xs text-white shadow-[0_20px_50px_-30px_rgba(15,23,42,0.8)] backdrop-blur lg:block"
-                style={{
-                  transform: `translate(${issuesCard.position.x}px, ${issuesCard.position.y}px)`,
-                  resize: "both",
-                  overflow: "auto",
-                }}
-              >
-                <div
-                  onPointerDown={issuesCard.onPointerDown}
-                  className="flex cursor-move items-center justify-between text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70"
-                >
-                  <span>Issues Found</span>
-                  <span className="text-[10px] text-white/50">Drag</span>
-                </div>
-                <div className="mt-3 space-y-2">
-                  {issues.slice(0, 4).map((issue, index) => (
-                    <div key={`${issue.message}-${index}`} className="flex items-start gap-2">
-                      <span className="mt-1 h-1.5 w-1.5 rounded-full bg-amber-400" />
-                      <span className="text-white/80">{issue.message}</span>
-                    </div>
-                  ))}
-                  {issues.length === 0 ? (
-                    <span className="text-white/60">
-                      {previewReview?.release_status === "ready"
-                        ? "No issues flagged."
-                        : "Issues pending until engineering completes."}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
+              ) : null}
               <div className="pointer-events-none absolute bottom-6 left-6 hidden rounded-[18px] border border-white/20 bg-white/70 px-4 py-3 text-xs text-slate-700 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.6)] backdrop-blur lg:block">
                 <span className="font-semibold uppercase tracking-[0.18em] text-slate-500">
                   AI Layout + Generation
                 </span>
               </div>
-              {previewInteraction === "interactive" ? (
+              {previewRenderMode !== "production" ? (
                 <div className="pointer-events-none absolute left-6 top-6 hidden rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white lg:block">
-                  Open fullscreen to hover labels
+                  {previewRenderMode === "debug" ? "Debug mode" : "Engineering overlays"}
+                </div>
+              ) : null}
+              {previewInteraction === "interactive" ? (
+                <div
+                  className={`pointer-events-none absolute left-6 hidden rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white lg:block ${
+                    previewRenderMode !== "production" ? "top-16" : "top-6"
+                  }`}
+                >
+                  Hover geometry for details
                 </div>
               ) : null}
             </div>
@@ -573,7 +580,21 @@ export default function PreviewPanel({
               </button>
             </div>
             <div className="flex min-h-0 flex-1 items-center justify-center p-4">
-              <div className="relative max-h-full w-full">
+              <div
+                ref={fullscreenRef}
+                className="relative max-h-full w-full"
+                onMouseMove={(event) => resolveHover(event, fullscreenRef, setFullscreenHoverPoint)}
+                onMouseLeave={() => {
+                  setHoveredAnnotation(null);
+                  setFullscreenHoverPoint(null);
+                }}
+                onClick={() => {
+                  if (!showInteractive || !hoveredAnnotation) return;
+                  setPinnedAnnotation((prev) =>
+                    prev?.label === hoveredAnnotation.label ? null : hoveredAnnotation,
+                  );
+                }}
+              >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={planPreviewUrl}
@@ -634,6 +655,31 @@ export default function PreviewPanel({
                         </div>
                       </div>
                     ))}
+                  </div>
+                ) : null}
+                {showInteractive && activeAnnotation && fullscreenHoverPoint ? (
+                  <div
+                    className="pointer-events-none absolute z-20 min-w-[220px] max-w-[280px] rounded-2xl border border-slate-200 bg-white/95 p-3 text-xs text-slate-700 shadow-lg"
+                    style={{
+                      left: Math.min(Math.max(fullscreenHoverPoint.x + 16, 16), 620),
+                      top: Math.min(Math.max(fullscreenHoverPoint.y + 16, 16), 520),
+                    }}
+                  >
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      {activeAnnotation.label}
+                    </p>
+                    <div className="mt-2 space-y-1">
+                      {hoverDetails.length ? (
+                        hoverDetails.map((detail) => (
+                          <div key={detail.label} className="flex items-center justify-between gap-2">
+                            <span className="text-slate-500">{detail.label}</span>
+                            <span className="font-semibold text-slate-900">{detail.value}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <span className="text-slate-500">No engineering metadata.</span>
+                      )}
+                    </div>
                   </div>
                 ) : null}
                 {previewInteraction === "interactive" && showMeasurements ? (

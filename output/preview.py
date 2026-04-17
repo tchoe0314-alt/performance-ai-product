@@ -603,6 +603,17 @@ def _bounds_area(bounds):
     return max(0.0, max_x - min_x) * max(0.0, max_y - min_y)
 
 
+def _polyline_length(points: List[List[float]]) -> float:
+    if len(points) < 2:
+        return 0.0
+    total = 0.0
+    for idx in range(1, len(points)):
+        x1, y1 = points[idx - 1]
+        x2, y2 = points[idx]
+        total += ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+    return total
+
+
 def _contains_bounds(outer, inner, *, tolerance=0.0):
     if not outer or not inner:
         return False
@@ -1926,6 +1937,10 @@ def _filtered_preview_actions(
     include_layers = _normalize_include_layers(include_layers)
     preview_mode = _normalize_preview_mode(preview_mode)
     profile_layers = PROFILE_LAYER_VISIBILITY.get(engineering_profile, FINAL_GEOMETRY_LAYERS)
+    if preview_mode == "engineering":
+        profile_layers = set(profile_layers).union(SECONDARY_ENGINEERING_LAYERS)
+    elif preview_mode == "debug":
+        profile_layers = set(STANDARD_LAYERS)
     records = [action for action in actions if isinstance(action, dict)]
     if allow_synthesis:
         records = _synthesize_layout_preview_actions(records)
@@ -2735,10 +2750,31 @@ def build_preview_annotations(plan, *, include_layers: Optional[set[str]] = None
             continue
         label = preview_label(action)
         if not label:
-            continue
+            label = safe_text(action.get("label"), "") or safe_text(action.get("canonical_source_type"), "") or layer
         bounds = _action_bounds(action)
         if not bounds:
             continue
+        task = str(action.get("task") or "").lower()
+        meta = safe_dict(action.get("meta"))
+        points = safe_points(action) if task in {"polyline", "polygon"} else []
+        length_ft = _polyline_length(points) if task == "polyline" else None
+        width_ft = None
+        height_ft = None
+        area_sf = None
+        if bounds:
+            width_ft = max(0.0, bounds[2] - bounds[0])
+            height_ft = max(0.0, bounds[3] - bounds[1])
+            if task in {"rectangle", "polygon"}:
+                area_sf = width_ft * height_ft
+        slope_ft_ft = safe_num(meta.get("slope_ft_ft")) if meta.get("slope_ft_ft") is not None else None
+        slope_pct = safe_num(meta.get("slope_pct")) if meta.get("slope_pct") is not None else None
+        if slope_pct is None and slope_ft_ft is not None:
+            slope_pct = slope_ft_ft * 100.0
+        diameter_in = safe_num(meta.get("diameter_in")) if meta.get("diameter_in") is not None else None
+        flow_cfs = safe_num(meta.get("flow_cfs")) if meta.get("flow_cfs") is not None else None
+        elevation_ft = safe_num(meta.get("elevation_ft")) if meta.get("elevation_ft") is not None else None
+        invert_start_ft = safe_num(meta.get("invert_start_ft")) if meta.get("invert_start_ft") is not None else None
+        invert_end_ft = safe_num(meta.get("invert_end_ft")) if meta.get("invert_end_ft") is not None else None
         cx = (bounds[0] + bounds[2]) / 2.0
         cy = (bounds[1] + bounds[3]) / 2.0
         labels.append(
@@ -2752,6 +2788,23 @@ def build_preview_annotations(plan, *, include_layers: Optional[set[str]] = None
                     "y1": (bounds[1] - min_y) / span_y,
                     "x2": (bounds[2] - min_x) / span_x,
                     "y2": (bounds[3] - min_y) / span_y,
+                },
+                "meta": {
+                    "system": safe_text(meta.get("system"), ""),
+                    "preview_role": safe_text(meta.get("preview_role"), ""),
+                    "entity_type": task,
+                    "canonical_source_type": safe_text(action.get("canonical_source_type"), ""),
+                    "length_ft": length_ft,
+                    "width_ft": width_ft,
+                    "height_ft": height_ft,
+                    "area_sf": area_sf,
+                    "diameter_in": diameter_in,
+                    "slope_pct": slope_pct,
+                    "slope_ft_ft": slope_ft_ft,
+                    "flow_cfs": flow_cfs,
+                    "elevation_ft": elevation_ft,
+                    "invert_start_ft": invert_start_ft,
+                    "invert_end_ft": invert_end_ft,
                 },
             }
         )

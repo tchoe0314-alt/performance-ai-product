@@ -383,6 +383,23 @@ export type PreviewResponse = {
       x: number;
       y: number;
       bounds?: { x1: number; y1: number; x2: number; y2: number };
+      meta?: {
+        system?: string;
+        preview_role?: string;
+        entity_type?: string;
+        canonical_source_type?: string;
+        length_ft?: number | null;
+        width_ft?: number | null;
+        height_ft?: number | null;
+        area_sf?: number | null;
+        diameter_in?: number | null;
+        slope_pct?: number | null;
+        slope_ft_ft?: number | null;
+        flow_cfs?: number | null;
+        elevation_ft?: number | null;
+        invert_start_ft?: number | null;
+        invert_end_ft?: number | null;
+      };
     }[];
   };
   summary?: {

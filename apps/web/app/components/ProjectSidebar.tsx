@@ -6,7 +6,6 @@ import { ChevronDown, ChevronLeft, ChevronRight, MessageSquarePlus } from "lucid
 import type { ChatMessage, LearningReport } from "../types";
 import {
   computeLearningScore,
-  defaultIssues,
   formatCount,
   formatMetric,
   joinNatural,
@@ -182,6 +181,13 @@ export default function ProjectSidebar({
       : null;
     return { sessionLearning, reportScore, reportTotal, datasetCount, lastRun };
   }, [chatMessages, learningReport, learningReportUpdatedAt]);
+  const hasDrainageMetrics =
+    Number(totalPipeLength || 0) > 0 ||
+    Number(maxSlope || 0) > 0 ||
+    Number(minSlope || 0) > 0 ||
+    Number(flowCfs || 0) > 0 ||
+    Number(cutFillNet || 0) !== 0 ||
+    Number(basinSize || 0) > 0;
 
   const toggleSidebarSection = (key: string) => {
     setSidebarSections((prev) => ({
@@ -444,41 +450,47 @@ export default function ProjectSidebar({
 
         {renderSidebarSection(
           "issueNavigator",
-          "Issue Navigator",
+          "Issues Found",
           <div className="space-y-3 text-sm text-slate-600">
             <p className="text-sm font-medium text-slate-900">
-              Click an issue to highlight the closest system in preview.
+              {issues.length ? "Click an issue to highlight it in preview." : "Issues pending."}
             </p>
-            <div className="space-y-2">
-              {(issues.length ? issues : defaultIssues).map((issue, idx) => (
-                <button
-                  key={`${issue.message}-${idx}`}
-                  type="button"
-                  onClick={() => {
-                    if (previewInteraction !== "interactive") return;
-                    onSelectIssue(`${issue.message}-${idx}`);
-                  }}
-                  disabled={previewInteraction !== "interactive"}
-                  className={`flex w-full items-start justify-between gap-3 rounded-2xl border px-3 py-2 text-left transition ${
-                    selectedIssueId === `${issue.message}-${idx}`
-                      ? "border-slate-900 bg-slate-950 text-white"
-                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                  } ${previewInteraction !== "interactive" ? "cursor-not-allowed opacity-60" : ""}`}
-                >
-                  <div className="text-left">
-                    <span className="font-medium">{issue.message}</span>
-                    {issueTargets[idx]?.label ? (
-                      <p className="mt-1 text-[11px] uppercase tracking-[0.12em] opacity-70">
-                        Highlight: {issueTargets[idx]?.label}
-                      </p>
-                    ) : null}
-                  </div>
-                  <span className="text-xs uppercase tracking-[0.14em] opacity-60">
-                    {issue.severity}
-                  </span>
-                </button>
-              ))}
-            </div>
+            {issues.length ? (
+              <div className="space-y-2">
+                {issues.map((issue, idx) => (
+                  <button
+                    key={`${issue.message}-${idx}`}
+                    type="button"
+                    onClick={() => {
+                      if (previewInteraction !== "interactive") return;
+                      onSelectIssue(`${issue.message}-${idx}`);
+                    }}
+                    disabled={previewInteraction !== "interactive"}
+                    className={`flex w-full items-start justify-between gap-3 rounded-2xl border px-3 py-2 text-left transition ${
+                      selectedIssueId === `${issue.message}-${idx}`
+                        ? "border-slate-900 bg-slate-950 text-white"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    } ${previewInteraction !== "interactive" ? "cursor-not-allowed opacity-60" : ""}`}
+                  >
+                    <div className="text-left">
+                      <span className="font-medium">{issue.message}</span>
+                      {issueTargets[idx]?.label ? (
+                        <p className="mt-1 text-[11px] uppercase tracking-[0.12em] opacity-70">
+                          Highlight: {issueTargets[idx]?.label}
+                        </p>
+                      ) : null}
+                    </div>
+                    <span className="text-xs uppercase tracking-[0.14em] opacity-60">
+                      {issue.severity}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">
+                Issues pending.
+              </div>
+            )}
             <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
               <span>Allow override</span>
               <button
@@ -493,33 +505,37 @@ export default function ProjectSidebar({
 
         {renderSidebarSection(
           "engineeringMetrics",
-          "Engineering Metrics",
-          <div className="grid gap-2 text-sm text-slate-700">
-            <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
-              <span>Total pipe length</span>
-              <span className="font-semibold">{formatMetric(totalPipeLength, "ft")}</span>
+          "Drainage Stats",
+          hasDrainageMetrics ? (
+            <div className="grid gap-2 text-sm text-slate-700">
+              <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
+                <span>Total pipe length</span>
+                <span className="font-semibold">{formatMetric(totalPipeLength, "ft")}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
+                <span>Max slope</span>
+                <span className="font-semibold">{formatMetric(maxSlope, "%")}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
+                <span>Min slope</span>
+                <span className="font-semibold">{formatMetric(minSlope, "%")}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
+                <span>Flow (CFS)</span>
+                <span className="font-semibold">{formatMetric(flowCfs, "cfs")}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
+                <span>Cut / Fill</span>
+                <span className="font-semibold">{formatMetric(cutFillNet, "cf")}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
+                <span>Pond size</span>
+                <span className="font-semibold">{formatMetric(basinSize, "sf")}</span>
+              </div>
             </div>
-            <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
-              <span>Max slope</span>
-              <span className="font-semibold">{formatMetric(maxSlope, "%")}</span>
-            </div>
-            <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
-              <span>Min slope</span>
-              <span className="font-semibold">{formatMetric(minSlope, "%")}</span>
-            </div>
-            <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
-              <span>Flow (CFS)</span>
-              <span className="font-semibold">{formatMetric(flowCfs, "cfs")}</span>
-            </div>
-            <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
-              <span>Cut / Fill</span>
-              <span className="font-semibold">{formatMetric(cutFillNet, "cf")}</span>
-            </div>
-            <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
-              <span>Pond size</span>
-              <span className="font-semibold">{formatMetric(basinSize, "sf")}</span>
-            </div>
-          </div>,
+          ) : (
+            <p className="text-sm text-slate-600">Drainage not generated yet.</p>
+          ),
         )}
 
         {renderSidebarSection(
