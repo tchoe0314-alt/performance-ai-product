@@ -1553,7 +1553,6 @@ export default function PerformanceAIDashboard() {
   const suppressProjectAutoLoadRef = useRef(false);
   const chatAutosaveTimeoutRef = useRef<number | null>(null);
   const autosaveSuspendRef = useRef(false);
-  const lastProjectNameSignatureRef = useRef<string>("");
   const autoAdvanceByJobRef = useRef<Record<string, boolean>>({});
   const previewRecoveryKeyRef = useRef("");
   const lastSiteInputProjectRef = useRef("");
@@ -2181,31 +2180,6 @@ export default function PerformanceAIDashboard() {
     if (!token) return;
     void refreshLearningReport();
   }, [token]);
-
-  useEffect(() => {
-    if (autosaveSuspendRef.current) return;
-    const signature = `${siteName}::${fileName}`;
-    if (!lastProjectNameSignatureRef.current) {
-      lastProjectNameSignatureRef.current = signature;
-      return;
-    }
-    if (signature === lastProjectNameSignatureRef.current) return;
-    lastProjectNameSignatureRef.current = signature;
-    if (prompt.trim()) {
-      if (directRunAbortRef.current) {
-        directRunAbortRef.current.abort();
-        directRunAbortRef.current = null;
-        runSubmissionRef.current = false;
-        setBusy(false);
-      }
-      setPrompt("");
-      appendChatMessage(
-        "assistant",
-        "I cleared the draft prompt because the project name changed. Paste it back if you still want to run it.",
-        "status",
-      );
-    }
-  }, [siteName, fileName, prompt]);
 
   const applyProjectInput = (projectInput: ProjectInput) => {
     if (!projectInput || typeof projectInput !== "object") {
