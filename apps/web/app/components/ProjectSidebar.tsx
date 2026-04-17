@@ -169,7 +169,6 @@ export default function ProjectSidebar({
     siteInputs: false,
     materials: false,
     coverage: false,
-    placement: false,
   });
 
   const learningSummary = useMemo(() => {
@@ -321,8 +320,6 @@ export default function ProjectSidebar({
             </div>
           ) : null}
         </div>
-
-        {placementPanel}
 
         {renderSidebarSection(
           "assumptions",

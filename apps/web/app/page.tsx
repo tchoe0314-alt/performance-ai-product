@@ -258,7 +258,6 @@ export default function PerformanceAIDashboard() {
   ]);
   const [learningReport, setLearningReport] = useState<LearningReport | null>(null);
   const [learningReportUpdatedAt, setLearningReportUpdatedAt] = useState<number | null>(null);
-  const [, setQueuedPhaseNotes] = useState<string[]>([]);
   const [imageName, setImageName] = useState("");
   const [siteName, setSiteName] = useState("");
   const [fileName, setFileName] = useState("");
@@ -315,10 +314,6 @@ export default function PerformanceAIDashboard() {
   const [approvalPendingJobId, setApprovalPendingJobId] = useState<string | null>(null);
   const [showMeasurements, setShowMeasurements] = useState(false);
   const [showCalculations, setShowCalculations] = useState(false);
-  const [autoAdvancePhases, setAutoAdvancePhases] = useState(false);
-  const [revisePhaseTarget, setRevisePhaseTarget] = useState<
-    "layout" | "grading" | "drainage_storm" | "utilities" | "coordination_validation"
-  >("layout");
   const [previewLayers, setPreviewLayers] = useState({
     buildings: true,
     roads: true,
@@ -360,9 +355,6 @@ export default function PerformanceAIDashboard() {
   const chatAutosaveTimeoutRef = useRef<number | null>(null);
   const autosaveSuspendRef = useRef(false);
   const currentPhaseLabelRef = useRef<string>("");
-  const queuedPhaseNotesRef = useRef<string[]>([]);
-  const queuedNotesApplyingRef = useRef(false);
-  const autoAdvanceByJobRef = useRef<Record<string, boolean>>({});
   const previewRecoveryKeyRef = useRef("");
   const lastSiteInputProjectRef = useRef("");
   const controlAutosaveTimeoutRef = useRef<number | null>(null);
@@ -2392,19 +2384,15 @@ export default function PerformanceAIDashboard() {
       return;
     }
     if (busy || visibleActiveJob) {
-      appendChatMessage("user", trimmed || "Uploaded an image.");
-      if (trimmed) {
-        setQueuedPhaseNotes((current) => {
-          const next = [...current, trimmed];
-          queuedPhaseNotesRef.current = next;
-          return next;
-        });
-        if (normalizedStatus === "awaiting_approval") {
-          void applyQueuedPhaseNotes();
-        } else {
-          setStatusMessage("Queued your note to apply after the current phase finishes.");
-        }
+      if (trimmed || imageName) {
+        appendChatMessage("user", trimmed || "Uploaded an image.");
+        appendChatMessage(
+          "assistant",
+          "A run is already in progress. Please wait for it to finish before sending a new request.",
+          "status",
+        );
       }
+      setStatusMessage("A run is already in progress. Please wait for it to finish.");
       setPrompt("");
       return;
     }
@@ -2473,9 +2461,7 @@ export default function PerformanceAIDashboard() {
       return;
     }
     const nextPhaseLabel =
-      previewNextPendingPhase?.label ||
-      previewRunningPhase?.label ||
-      toReadableLabel(revisePhaseTarget);
+      previewNextPendingPhase?.label || previewRunningPhase?.label || "Next phase";
     setApprovalError(null);
     setApprovalPhaseLabel(nextPhaseLabel);
     setApprovalInFlight(true);
@@ -2516,148 +2502,6 @@ export default function PerformanceAIDashboard() {
     } finally {
       setBusy(false);
       setApprovalInFlight(false);
-    }
-  };
-
-  const applyQueuedPhaseNotes = async () => {
-    if (!visibleActiveJob?.job_id || !token) return;
-    const queued = queuedPhaseNotesRef.current;
-    if (!queued.length) return;
-    if (queuedNotesApplyingRef.current) return;
-    queuedNotesApplyingRef.current = true;
-    const combinedNotes = queued.map((note) => `- ${note}`).join("\n");
-    appendChatMessage(
-      "assistant",
-      `Applying queued notes to the next phase:\n${combinedNotes}`,
-      "status",
-    );
-    const targetProjectId =
-      projectId || visibleActiveJob.project_id || currentProject?.project_id || null;
-    if (targetProjectId) {
-      const baseInput = currentProject?.project_input ?? payloadPreview;
-      const nextThread = [
-        ...chatMessagesRef.current,
-        createChatMessage("user", combinedNotes),
-      ];
-      await saveProject({
-        silent: true,
-        projectIdOverride: targetProjectId,
-        projectInputOverride: {
-          ...baseInput,
-          prompt_text: combinedNotes,
-          meta: {
-            ...(baseInput.meta ?? {}),
-            chat_thread: nextThread,
-          },
-        },
-      });
-    }
-    try {
-      const data = await postJson<{ job: JobSummary }>(
-        `/api/jobs/${visibleActiveJob.job_id}/revise`,
-        { target_phase: revisePhaseTarget },
-        { token },
-      );
-      setJobs((current) => {
-        const next = [...current];
-        const index = next.findIndex((job) => job.job_id === data.job.job_id);
-        if (index >= 0) {
-          next[index] = { ...next[index], ...data.job };
-        } else {
-          next.unshift(data.job);
-        }
-        return next;
-      });
-      setActiveJobId(data.job.job_id);
-      setQueuedPhaseNotes([]);
-      queuedPhaseNotesRef.current = [];
-      appendChatMessage(
-        "assistant",
-        `Queued notes applied. Requeued ${data.job.job_id} to revise ${toReadableLabel(revisePhaseTarget)}.`,
-        "status",
-      );
-    } catch (error) {
-      appendChatMessage(
-        "assistant",
-        error instanceof Error ? error.message : "Could not apply queued notes.",
-        "status",
-      );
-    } finally {
-      queuedNotesApplyingRef.current = false;
-    }
-  };
-
-  useEffect(() => {
-    const jobId = visibleActiveJob?.job_id;
-    if (!jobId) return;
-    const status = String(visibleActiveJob?.status || "").toLowerCase();
-    if (status !== "awaiting_approval") {
-      autoAdvanceByJobRef.current[jobId] = false;
-    }
-  }, [visibleActiveJob?.job_id, visibleActiveJob?.status]);
-
-  useEffect(() => {
-    const status = String(visibleActiveJob?.status || "").toLowerCase();
-    if (status !== "awaiting_approval") return;
-    if (!queuedPhaseNotesRef.current.length) return;
-    void applyQueuedPhaseNotes();
-  }, [visibleActiveJob?.status, visibleActiveJob?.job_id]);
-
-  useEffect(() => {
-    if (!autoAdvancePhases) return;
-    const jobId = visibleActiveJob?.job_id;
-    if (!jobId) return;
-    const status = String(visibleActiveJob?.status || "").toLowerCase();
-    if (status !== "awaiting_approval") return;
-    if (autoAdvanceByJobRef.current[jobId]) return;
-    autoAdvanceByJobRef.current[jobId] = true;
-    const timeoutId = window.setTimeout(() => {
-      handleContinueActiveJob();
-    }, 1200);
-    return () => window.clearTimeout(timeoutId);
-  }, [autoAdvancePhases, visibleActiveJob?.job_id, visibleActiveJob?.status]);
-
-  const handleReviseActiveJob = async () => {
-    if (!visibleActiveJob?.job_id || !token) return;
-    try {
-      const targetProjectId =
-        projectId || visibleActiveJob.project_id || currentProject?.project_id || null;
-      if (targetProjectId) {
-        await saveProject({
-          silent: true,
-          projectIdOverride: targetProjectId,
-        });
-      }
-      const data = await postJson<{ job: JobSummary }>(
-        `/api/jobs/${visibleActiveJob.job_id}/revise`,
-        { target_phase: revisePhaseTarget },
-        { token },
-      );
-      setJobs((current) => {
-        const next = [...current];
-        const index = next.findIndex((job) => job.job_id === data.job.job_id);
-        if (index >= 0) {
-          next[index] = { ...next[index], ...data.job };
-        } else {
-          next.unshift(data.job);
-        }
-        return next;
-      });
-      appendChatMessage(
-        "assistant",
-        `Saved your changes and requeued ${data.job.job_id} to revise ${toReadableLabel(revisePhaseTarget)}.`,
-        "status",
-      );
-      setStatusMessage(
-        `Saved your changes. Requeued ${data.job.job_id} to revise ${toReadableLabel(revisePhaseTarget)}.`,
-      );
-      if (data.job.job_id) {
-        setActiveJobId(data.job.job_id);
-      }
-    } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : "Could not revise the current phase.",
-      );
     }
   };
 
@@ -3210,6 +3054,9 @@ export default function PerformanceAIDashboard() {
         silent: true,
         projectInputOverride: {
           ...currentInput,
+          input_mode: "user",
+          strict_mode: false,
+          allow_ai_fill_for_blanks: false,
           meta: {
             ...(currentInput?.meta ?? {}),
             site_inputs: nextSiteInputs,
@@ -3248,6 +3095,9 @@ export default function PerformanceAIDashboard() {
         silent: true,
         projectInputOverride: {
           ...currentInput,
+          input_mode: "user",
+          strict_mode: false,
+          allow_ai_fill_for_blanks: false,
           meta: {
             ...(currentInput?.meta ?? {}),
             site_inputs: nextSiteInputs,
@@ -3284,6 +3134,9 @@ export default function PerformanceAIDashboard() {
         silent: true,
         projectInputOverride: {
           ...currentInput,
+          input_mode: "user",
+          strict_mode: false,
+          allow_ai_fill_for_blanks: false,
           manual_fields: {
             ...(currentInput?.manual_fields ?? {}),
             grading: {
@@ -3330,6 +3183,9 @@ export default function PerformanceAIDashboard() {
         silent: true,
         projectInputOverride: {
           ...currentInput,
+          input_mode: "user",
+          strict_mode: false,
+          allow_ai_fill_for_blanks: false,
           meta: {
             ...(currentInput?.meta ?? {}),
             site_inputs: nextSiteInputs,
@@ -3911,9 +3767,8 @@ export default function PerformanceAIDashboard() {
     return { modeLabel, phaseLabel, stateLabel, stateDetail };
   }, [previewNextPendingPhase?.label, previewReview?.release_note, previewReview?.release_status, previewRunningPhase?.label, visibleActiveJob?.stage, visibleActiveJob?.stage_detail, visibleActiveJob?.status]);
   const gatingPhaseKey =
-    !autoAdvancePhases &&
     String(visibleActiveJob?.status || "").toLowerCase() === "awaiting_approval"
-      ? previewRunningPhase?.key || previewNextPendingPhase?.key || revisePhaseTarget
+      ? previewRunningPhase?.key || previewNextPendingPhase?.key
       : null;
 
   useEffect(() => {
@@ -4230,17 +4085,6 @@ export default function PerformanceAIDashboard() {
     : preview3DAnnotationItems;
   const usingAnnotation3D =
     preview3DItems.length === 0 && preview3DAnnotationItems.length > 0;
-  useEffect(() => {
-    const status = String(visibleActiveJob?.status || "").toLowerCase();
-    if (status !== "awaiting_approval") return;
-    const nextKey =
-      previewRunningPhase?.key ||
-      previewNextPendingPhase?.key ||
-      revisePhaseTarget;
-    if (nextKey) {
-      setRevisePhaseTarget(nextKey as typeof revisePhaseTarget);
-    }
-  }, [visibleActiveJob?.status, previewRunningPhase?.key, previewNextPendingPhase?.key, revisePhaseTarget]);
   const whatYouNeedSummary = (() => {
     const manualFields =
       currentProject?.project_input?.manual_fields && typeof currentProject.project_input.manual_fields === "object"
@@ -4494,12 +4338,7 @@ export default function PerformanceAIDashboard() {
                 activePlanTool={activePlanTool}
                 visibleActiveJobStatus={visibleActiveJob?.status ?? ""}
                 hasDirectRunInFlight={hasDirectRunInFlight}
-                autoAdvancePhases={autoAdvancePhases}
-                onToggleAutoAdvance={() => setAutoAdvancePhases((prev) => !prev)}
-                revisePhaseTarget={revisePhaseTarget}
-                onRevisePhaseTargetChange={setRevisePhaseTarget}
                 onCancelJob={handleCancelActiveJob}
-                onReviseJob={handleReviseActiveJob}
                 onContinueJob={handleContinueActiveJob}
                 prompt={prompt}
                 imageName={imageName}

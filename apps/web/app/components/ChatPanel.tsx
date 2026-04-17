@@ -22,12 +22,7 @@ type ChatPanelProps = {
   activePlanTool: PlanToolMode;
   visibleActiveJobStatus: string;
   hasDirectRunInFlight: boolean;
-  autoAdvancePhases: boolean;
-  onToggleAutoAdvance: () => void;
-  revisePhaseTarget: "layout" | "grading" | "drainage_storm" | "utilities" | "coordination_validation";
-  onRevisePhaseTargetChange: (value: ChatPanelProps["revisePhaseTarget"]) => void;
   onCancelJob: () => void;
-  onReviseJob: () => void;
   onContinueJob: () => void;
   prompt: string;
   imageName: string;
@@ -56,12 +51,7 @@ export default function ChatPanel({
   activePlanTool,
   visibleActiveJobStatus,
   hasDirectRunInFlight,
-  autoAdvancePhases,
-  onToggleAutoAdvance,
-  revisePhaseTarget,
-  onRevisePhaseTargetChange,
   onCancelJob,
-  onReviseJob,
   onContinueJob,
   prompt,
   imageName,
@@ -187,24 +177,6 @@ export default function ChatPanel({
                   : "Phase ready for review. Approve to continue or send changes."}
               </div>
             ) : null}
-            {hasVisibleActiveJob && (
-              <div className="mt-3 flex items-center justify-between text-xs text-slate-600">
-                <span className="font-semibold uppercase tracking-[0.12em] text-slate-500">
-                  Auto-advance phases
-                </span>
-                <button
-                  type="button"
-                  onClick={onToggleAutoAdvance}
-                  className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] transition ${
-                    autoAdvancePhases
-                      ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  {autoAdvancePhases ? "On" : "Off"}
-                </button>
-              </div>
-            )}
             {(hasVisibleActiveJob || hasDirectRunInFlight) && (
               <div className="mt-4 flex justify-end">
                 <button
@@ -222,33 +194,6 @@ export default function ChatPanel({
                         {approvalError}
                       </div>
                     ) : null}
-                    <div className="ml-2 flex items-center gap-2">
-                      <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                        Revise phase
-                      </label>
-                      <select
-                        value={revisePhaseTarget}
-                        onChange={(event) =>
-                          onRevisePhaseTargetChange(
-                            event.target.value as ChatPanelProps["revisePhaseTarget"],
-                          )
-                        }
-                        className="rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs font-semibold text-slate-700"
-                      >
-                        <option value="layout">Layout</option>
-                        <option value="grading">Grading</option>
-                        <option value="drainage_storm">Drainage/Storm</option>
-                        <option value="utilities">Utilities</option>
-                        <option value="coordination_validation">Coordination</option>
-                      </select>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={onReviseJob}
-                      className="ml-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                    >
-                      Save Changes &amp; Revise
-                    </button>
                     <button
                       type="button"
                       onClick={onContinueJob}
@@ -330,7 +275,7 @@ export default function ChatPanel({
               <button
                 type="button"
                 onClick={onSendMessage}
-                disabled={busy && !prompt.trim() && !imageName}
+                disabled={busy || hasVisibleActiveJob || (!prompt.trim() && !imageName)}
                 className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy && activePlanTool === "run"
