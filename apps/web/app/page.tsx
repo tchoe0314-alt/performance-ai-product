@@ -1397,10 +1397,12 @@ export default function PerformanceAIDashboard() {
     setBuildingPlacements((prev) =>
       prev.map((item) => (item.id === id ? { ...item, ...nextUpdates } : item)),
     );
+    setStatusMessage("Object updated. Regenerate systems to reflect the new layout.");
   }, []);
 
   const handleRemoveBuilding = useCallback((id: string) => {
     setBuildingPlacements((prev) => prev.filter((item) => item.id !== id));
+    setStatusMessage("Object removed. Regenerate systems to reflect the new layout.");
   }, []);
 
   const handleToggleBuildingLock = useCallback((id: string) => {
@@ -1428,6 +1430,7 @@ export default function PerformanceAIDashboard() {
           ),
         );
         setActivePlacementId(null);
+        setStatusMessage("Object placed. Regenerate systems to reflect the new layout.");
         return;
       }
       const nextPlacement: BuildingPlacement = {
@@ -1443,6 +1446,7 @@ export default function PerformanceAIDashboard() {
         placed: true,
       };
       setBuildingPlacements((prev) => [...prev, nextPlacement]);
+      setStatusMessage("Object placed. Regenerate systems to reflect the new layout.");
     },
     [
       activePlacementId,
@@ -1467,6 +1471,7 @@ export default function PerformanceAIDashboard() {
           return { ...item, x, y, placed: true };
         }),
       );
+      setStatusMessage("Object placed. Regenerate systems to reflect the new layout.");
     },
     [resolveLotBounds],
   );
@@ -4723,17 +4728,19 @@ export default function PerformanceAIDashboard() {
                 planPreviewUrl={planPreviewUrl}
                 previewMode={previewMode}
                 previewInteraction={previewInteraction}
-                previewQuality={previewQuality}
-                previewLabelDensity={previewLabelDensity}
-                previewRenderMode={previewRenderMode}
-                placementMode={placementModeEnabled || Boolean(activePlacementId)}
-                onPlaceBuilding={handlePlaceBuilding}
-                onPlaceObject={handlePlaceObject}
-                buildingPlacements={buildingPlacements}
-                lotWidth={parsePositiveNumber(lotWidth) ?? 0}
-                lotHeight={parsePositiveNumber(lotHeight) ?? 0}
-                onUpdateBuilding={handleUpdateBuilding}
-                onSelectBuilding={setActivePlacementId}
+              previewQuality={previewQuality}
+              previewLabelDensity={previewLabelDensity}
+              previewRenderMode={previewRenderMode}
+              placementMode={placementModeEnabled || Boolean(activePlacementId)}
+              onPlaceBuilding={handlePlaceBuilding}
+              onPlaceObject={handlePlaceObject}
+              buildingPlacements={buildingPlacements}
+              selectedBuildingId={activePlacementId}
+              lotWidth={parsePositiveNumber(lotWidth) ?? 0}
+              lotHeight={parsePositiveNumber(lotHeight) ?? 0}
+              onUpdateBuilding={handleUpdateBuilding}
+              onRemoveBuilding={handleRemoveBuilding}
+              onSelectBuilding={setActivePlacementId}
                 onSetPreviewMode={setPreviewMode}
                 onSetPreviewInteraction={setPreviewInteraction}
                 onSetPreviewQuality={setPreviewQuality}

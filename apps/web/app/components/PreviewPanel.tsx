@@ -43,9 +43,11 @@ type PreviewPanelProps = {
   onPlaceBuilding: (position: { x: number; y: number }) => void;
   onPlaceObject: (id: string, position: { x: number; y: number }) => void;
   buildingPlacements: BuildingPlacement[];
+  selectedBuildingId: string | null;
   lotWidth: number;
   lotHeight: number;
   onUpdateBuilding: (id: string, updates: Partial<BuildingPlacement>) => void;
+  onRemoveBuilding: (id: string) => void;
   onSelectBuilding: (id: string | null) => void;
   onOpenFullscreen: () => void;
   previewFullscreenOpen: boolean;
@@ -89,9 +91,11 @@ export default function PreviewPanel({
   onPlaceBuilding,
   onPlaceObject,
   buildingPlacements,
+  selectedBuildingId,
   lotWidth,
   lotHeight,
   onUpdateBuilding,
+  onRemoveBuilding,
   onSelectBuilding,
   onOpenFullscreen,
   previewFullscreenOpen,
@@ -256,6 +260,62 @@ export default function PreviewPanel({
   const clampValue = (value: number, min: number, max: number) =>
     Math.min(Math.max(value, min), max);
 
+  const getEditCapabilities = (item: BuildingPlacement) => {
+    const type = item.type ?? "building";
+    const editableTypes = new Set([
+      "building",
+      "retail_building",
+      "multifamily_building",
+      "industrial_building",
+      "office_building",
+      "pad",
+      "pool",
+      "basin",
+      "entrance",
+      "amenity",
+      "open_space",
+      "no_build_zone",
+      "setback_zone",
+      "parking",
+      "road",
+      "sidewalk",
+    ]);
+    const resizableTypes = new Set([
+      "building",
+      "retail_building",
+      "multifamily_building",
+      "industrial_building",
+      "office_building",
+      "pad",
+      "pool",
+      "basin",
+      "amenity",
+      "open_space",
+      "no_build_zone",
+      "setback_zone",
+      "parking",
+    ]);
+    const rotatableTypes = new Set([
+      "building",
+      "retail_building",
+      "multifamily_building",
+      "industrial_building",
+      "office_building",
+      "pad",
+      "pool",
+      "basin",
+      "amenity",
+      "open_space",
+      "parking",
+    ]);
+    const deletableTypes = new Set([...editableTypes].filter((t) => t !== "site"));
+    const movable = editableTypes.has(type) && !item.locked;
+    const resizable = resizableTypes.has(type) && !item.locked;
+    const rotatable = rotatableTypes.has(type) && !item.locked;
+    const deletable = deletableTypes.has(type) && !item.locked;
+    return { movable, resizable, rotatable, deletable };
+  };
+
   const snapValue = (value: number, step: number) => {
     if (!step) return value;
     return Math.round(value / step) * step;
@@ -263,12 +323,17 @@ export default function PreviewPanel({
 
   const updateDraggedBuilding = useCallback(
     (event: React.MouseEvent<HTMLDivElement>, bounds: { left: number; top: number; width: number; height: number }) => {
-      if (!draggingBuildingId || !placementMode || !draggingMode) return;
+      if (!draggingBuildingId || !draggingMode) return;
+      if (!placementMode && previewInteraction !== "interactive") return;
       const rect = event.currentTarget.getBoundingClientRect();
       const localX = event.clientX - rect.left - bounds.left;
       const localY = event.clientY - rect.top - bounds.top;
       const target = buildingPlacements.find((item) => item.id === draggingBuildingId);
       if (!target) return;
+      const caps = getEditCapabilities(target);
+      if (draggingMode === "move" && !caps.movable) return;
+      if (draggingMode === "resize" && !caps.resizable) return;
+      if (draggingMode === "rotate" && !caps.rotatable) return;
       if (draggingMode === "move") {
         const x = snapValue(
           clampValue(((localX - dragOffset.x) / Math.max(bounds.width, 1)) * lotWidth, 0, Math.max(lotWidth - target.w, 0)),
@@ -318,7 +383,11 @@ export default function PreviewPanel({
       building: BuildingPlacement,
       mode: "move" | "resize" | "rotate" = "move",
     ) => {
-      if (!placementMode) return;
+      if (!placementMode && previewInteraction !== "interactive") return;
+      const caps = getEditCapabilities(building);
+      if (mode === "move" && !caps.movable) return;
+      if (mode === "resize" && !caps.resizable) return;
+      if (mode === "rotate" && !caps.rotatable) return;
       event.preventDefault();
       event.stopPropagation();
       setDraggingBuildingId(building.id);
@@ -327,7 +396,7 @@ export default function PreviewPanel({
       const rect = event.currentTarget.getBoundingClientRect();
       setDragOffset({ x: event.clientX - rect.left, y: event.clientY - rect.top });
     },
-    [onSelectBuilding, placementMode],
+    [getEditCapabilities, onSelectBuilding, placementMode, previewInteraction],
   );
 
   const formatHoverValue = (value: number | null | undefined, suffix: string) => {
@@ -723,6 +792,8 @@ export default function PreviewPanel({
                     {buildingPlacements
                       .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
                       .map((item) => {
+                        const caps = getEditCapabilities(item);
+                        const isSelected = selectedBuildingId === item.id;
                         const left = ((item.x || 0) / Math.max(lotWidth, 1)) * 100;
                         const top = ((item.y || 0) / Math.max(lotHeight, 1)) * 100;
                         const rotated = (item.rotation ?? 0) % 180 !== 0;
@@ -756,35 +827,57 @@ export default function PreviewPanel({
                               height: `${height}%`,
                               transform: `rotate(${rotation}deg)`,
                               transformOrigin: "center",
-                              cursor: placementMode ? "move" : "default",
+                              cursor:
+                                (placementMode || previewInteraction === "interactive") && caps.movable
+                                  ? "move"
+                                  : "default",
                             }}
                             onMouseDown={(event) => handleBuildingMouseDown(event, item, "move")}
                             onClick={(event) => {
-                              if (!placementMode) return;
                               event.stopPropagation();
                               onSelectBuilding(item.id);
                             }}
                           >
                             <div
-                              className={`h-full w-full rounded-[8px] border-2 bg-slate-900/10 transition ${borderColor}`}
+                              className={`h-full w-full rounded-[8px] border-2 bg-slate-900/10 transition ${borderColor} ${
+                                isSelected ? "ring-2 ring-amber-300" : ""
+                              }`}
                             />
-                            <button
-                              type="button"
-                              className="absolute -right-3 -top-3 h-6 w-6 rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 shadow"
-                              onMouseDown={(event) => handleBuildingMouseDown(event, item, "rotate")}
-                            >
-                              R
-                            </button>
-                            <button
-                              type="button"
-                              className="absolute -right-3 -bottom-3 h-6 w-6 rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 shadow"
-                              onMouseDown={(event) => handleBuildingMouseDown(event, item, "resize")}
-                            >
-                              Z
-                            </button>
-                            <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow">
-                              Snap 5ft
-                            </div>
+                            {isSelected && caps.rotatable ? (
+                              <button
+                                type="button"
+                                className="absolute -right-3 -top-3 h-6 w-6 rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 shadow"
+                                onMouseDown={(event) => handleBuildingMouseDown(event, item, "rotate")}
+                              >
+                                R
+                              </button>
+                            ) : null}
+                            {isSelected && caps.resizable ? (
+                              <button
+                                type="button"
+                                className="absolute -right-3 -bottom-3 h-6 w-6 rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 shadow"
+                                onMouseDown={(event) => handleBuildingMouseDown(event, item, "resize")}
+                              >
+                                Z
+                              </button>
+                            ) : null}
+                            {isSelected && caps.deletable ? (
+                              <button
+                                type="button"
+                                className="absolute -left-3 -top-3 h-6 w-6 rounded-full border border-rose-200 bg-white text-[10px] font-semibold text-rose-600 shadow"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  onRemoveBuilding(item.id);
+                                }}
+                              >
+                                ×
+                              </button>
+                            ) : null}
+                            {isSelected && caps.movable ? (
+                              <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow">
+                                Snap 5ft
+                              </div>
+                            ) : null}
                             <div className="absolute -top-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 shadow">
                               {item.label}
                             </div>
