@@ -1,4 +1,4 @@
-import { toApiUrl } from "../lib/api";
+import { toApiUrl } from "../../lib/api";
 
 const TOKEN_KEY = "civora-ai-token";
 const LEGACY_TOKEN_KEY = "performance-ai-token";
