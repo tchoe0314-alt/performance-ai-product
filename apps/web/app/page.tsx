@@ -10,6 +10,7 @@ import type {
   Issue,
   BackendAssumption,
   BackendIssue,
+  ManualFields,
   ProjectRecord,
   ProjectInput,
   JobSummary,
