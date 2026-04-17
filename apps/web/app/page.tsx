@@ -2483,6 +2483,135 @@ export default function PerformanceAIDashboard() {
     return false;
   };
 
+  const tryHandleActionIntent = (message: string): boolean => {
+    const normalized = message.toLowerCase();
+    const tokens = normalized.split(/\s+/);
+    const placed = buildingPlacements.filter((item) => item.placed);
+    const allObjects = buildingPlacements;
+
+    const findByLabel = (label: string) =>
+      allObjects.find((item) => item.label.toLowerCase() === label.toLowerCase());
+    const matchByKeyword = (keyword: string) =>
+      allObjects.filter((item) =>
+        item.label.toLowerCase().includes(keyword) ||
+        (item.type ?? "").toLowerCase() === keyword,
+      );
+
+    const numberMatch = normalized.match(/(?:building|basin|entrance)\s*(\d+)/i);
+    const keywordMatch = tokens.find((token) =>
+      ["building", "basin", "entrance", "site", "road", "parking"].includes(token),
+    );
+    const selected = activePlacementId
+      ? allObjects.find((item) => item.id === activePlacementId)
+      : null;
+
+    const targetFromNumber = numberMatch
+      ? findByLabel(`${numberMatch[0].charAt(0).toUpperCase()}${numberMatch[0].slice(1)}`)
+      : null;
+    const targetFromKeyword = keywordMatch
+      ? matchByKeyword(keywordMatch).filter((item) => item.placed)
+      : [];
+
+    const resolveTarget = () => {
+      if (targetFromNumber) return targetFromNumber;
+      if (selected) return selected;
+      if (targetFromKeyword.length === 1) return targetFromKeyword[0];
+      return null;
+    };
+
+    if (normalized.startsWith("select ")) {
+      const label = message.replace(/^select\s+/i, "").trim();
+      const target =
+        findByLabel(label) ||
+        allObjects.find((item) => item.label.toLowerCase().includes(label.toLowerCase()));
+      if (target) {
+        setActivePlacementId(target.id);
+        setStatusMessage(`Selected ${target.label}.`);
+        appendChatMessage("assistant", `Selected ${target.label}.`, "status");
+        return true;
+      }
+      appendChatMessage("assistant", "I couldn't find that object. Try 'select Building 1' or 'select basin 1'.", "status");
+      return true;
+    }
+
+    if (/(delete|remove)\b/.test(normalized)) {
+      const target = resolveTarget();
+      if (target) {
+        handleRemoveBuilding(target.id);
+        appendChatMessage("assistant", `Removed ${target.label}.`, "status");
+        return true;
+      }
+      appendChatMessage("assistant", "Which object should I remove? You can say 'remove Building 1'.", "status");
+      return true;
+    }
+
+    if (/(place|re-?place|move)\b/.test(normalized)) {
+      const target = resolveTarget();
+      if (target) {
+        handleSelectPlacementTarget(target.id);
+        return true;
+      }
+      if (allObjects.length === 0) {
+        appendChatMessage("assistant", "There are no objects to place yet. Add a building first.", "status");
+        return true;
+      }
+      appendChatMessage("assistant", "Which object should I place? For example, 'place Building 1'.", "status");
+      return true;
+    }
+
+    if (/(bigger|smaller|resize|scale|shrink|grow)\b/.test(normalized)) {
+      const target = resolveTarget();
+      if (!target) {
+        appendChatMessage("assistant", "Which object should I resize? For example, 'make Building 1 bigger'.", "status");
+        return true;
+      }
+      appendChatMessage(
+        "assistant",
+        `How should I resize ${target.label}? Give me a size like "set to 120 ft by 60 ft".`,
+        "status",
+      );
+      return true;
+    }
+
+    if (/(generate|run)\b/.test(normalized)) {
+      if (/roads|circulation/.test(normalized)) {
+        void handleGenerateSystem("roads");
+        return true;
+      }
+      if (/parking/.test(normalized)) {
+        void handleGenerateSystem("parking");
+        return true;
+      }
+      if (/grading|contours/.test(normalized)) {
+        void handleGenerateSystem("grading");
+        return true;
+      }
+      if (/drainage|storm/.test(normalized)) {
+        void handleGenerateSystem("drainage");
+        return true;
+      }
+      if (/utilities|utility/.test(normalized)) {
+        void handleGenerateSystem("utilities");
+        return true;
+      }
+      if (/full|all|everything/.test(normalized)) {
+        void handleGenerateSystem("full");
+        return true;
+      }
+    }
+
+    if (/(fix|improve)\b/.test(normalized)) {
+      appendChatMessage(
+        "assistant",
+        "What should I fix? You can say 'fix layout overlaps', 'fix drainage', or 'improve parking'.",
+        "status",
+      );
+      return true;
+    }
+
+    return false;
+  };
+
   const handleSendMessage = () => {
     const trimmed = prompt.trim();
     if (!trimmed && !imageName) return;
@@ -2513,6 +2642,11 @@ export default function PerformanceAIDashboard() {
     if (trimmed) {
       const handledInfo = tryHandleInfoIntent(trimmed);
       if (handledInfo) {
+        setPrompt("");
+        return;
+      }
+      const handledAction = tryHandleActionIntent(trimmed);
+      if (handledAction) {
         setPrompt("");
         return;
       }
