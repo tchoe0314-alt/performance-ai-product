@@ -82,6 +82,10 @@ UPLOAD_DIR = STORAGE_DIR / "uploads"
 DATA_DIR = STORAGE_DIR
 DB_PATH = DATA_DIR / "performance_ai.db"
 ARTIFACT_DIR = DATA_DIR / "artifacts"
+CHAT_LEARNING_PATH = DATA_DIR / "chat_learning.jsonl"
+CHAT_TRAINING_PATH = DATA_DIR / "chat_training.jsonl"
+CHAT_LEARNING_REPORT_PATH = DATA_DIR / "chat_learning_report.json"
+CRON_SECRET = str(os.getenv("CIVORA_CRON_SECRET") or "").strip()
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -137,6 +141,13 @@ class OrchestratePayload(BaseModel):
     allow_ai_fill_for_blanks: bool = True
     persist_trace_metadata: bool = True
     meta: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ChatLearningCronPayload(BaseModel):
+    max_examples: int = 500
+    max_synthetic: int = 60
+    max_unrated: int = 300
+    exclude_unrated: bool = False
 
 
 class SaveProjectPayload(BaseModel):
@@ -615,6 +626,27 @@ def chat_feedback(
             }
         )
     return {"success": True}
+
+
+@app.post("/api/cron/chat-learning")
+def chat_learning_cron(
+    payload: ChatLearningCronPayload,
+    x_cron_secret: Optional[str] = Header(default=None),
+) -> Dict[str, Any]:
+    if CRON_SECRET and str(x_cron_secret or "").strip() != CRON_SECRET:
+        raise HTTPException(status_code=401, detail="Invalid cron secret.")
+    from backend.services.chat_learning_pipeline import run_chat_learning_pipeline
+
+    result = run_chat_learning_pipeline(
+        input_path=CHAT_LEARNING_PATH,
+        output_path=CHAT_TRAINING_PATH,
+        report_path=CHAT_LEARNING_REPORT_PATH,
+        max_examples=payload.max_examples,
+        max_synthetic=payload.max_synthetic,
+        max_unrated=payload.max_unrated,
+        exclude_unrated=payload.exclude_unrated,
+    )
+    return {"success": True, "result": result}
 
 
 @app.post("/api/orchestrate")

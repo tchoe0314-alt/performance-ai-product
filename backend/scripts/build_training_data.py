@@ -4,8 +4,9 @@ import argparse
 import json
 import os
 import random
+import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Set
 
 from parsers.ai_parser import _get_client
 
@@ -35,6 +36,69 @@ def _write_jsonl(path: Path, rows: Iterable[Dict[str, Any]]) -> None:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+_LOW_SIGNAL_USER_PHRASES = {
+    "ok",
+    "okay",
+    "k",
+    "kk",
+    "sure",
+    "thanks",
+    "thank you",
+    "cool",
+    "nice",
+    "yep",
+    "yup",
+    "yes",
+    "no",
+    "go",
+    "done",
+}
+
+_LOW_SIGNAL_ASSISTANT_PREFIXES = (
+    "i’m updating the current design",
+    "i am updating the current design",
+    "i have enough context to start the design",
+    "i can start the design",
+)
+
+
+def _normalize_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text.strip().lower())
+
+
+def _is_low_signal_text(text: str, *, min_chars: int) -> bool:
+    normalized = _normalize_text(text)
+    if len(normalized) < min_chars:
+        return True
+    if normalized in _LOW_SIGNAL_USER_PHRASES:
+        return True
+    if len(normalized.split()) <= 2 and normalized in _LOW_SIGNAL_USER_PHRASES:
+        return True
+    return False
+
+
+def _is_low_signal_assistant(text: str, *, min_chars: int) -> bool:
+    normalized = _normalize_text(text)
+    if len(normalized) < min_chars:
+        return True
+    return normalized.startswith(_LOW_SIGNAL_ASSISTANT_PREFIXES)
+
+
+def _is_high_signal_interaction(
+    event: Dict[str, Any],
+    *,
+    min_user_chars: int = 18,
+    min_assistant_chars: int = 30,
+) -> bool:
+    message = str(event.get("message") or "")
+    assistant_message = str(event.get("assistant_message") or "")
+    if _is_low_signal_text(message, min_chars=min_user_chars):
+        return False
+    if _is_low_signal_assistant(assistant_message, min_chars=min_assistant_chars):
+        return False
+    return True
+
+
 def _training_examples(events: List[Dict[str, Any]], max_examples: int) -> List[Dict[str, Any]]:
     examples = [
         {
@@ -59,7 +123,7 @@ def _interaction_examples(
     events: List[Dict[str, Any]],
     max_examples: int,
     *,
-    exclude_message_ids: Optional[set] = None,
+    exclude_message_ids: Optional[Set[str]] = None,
 ) -> List[Dict[str, Any]]:
     exclude_message_ids = exclude_message_ids or set()
     examples = [
@@ -76,6 +140,7 @@ def _interaction_examples(
         and event.get("message")
         and event.get("assistant_message")
         and (event.get("message_id") not in exclude_message_ids)
+        and _is_high_signal_interaction(event)
     ]
     if len(examples) > max_examples:
         examples = random.sample(examples, max_examples)
