@@ -21,12 +21,13 @@ from core.utils import (
 )
 
 
-ALLOWED_LAYERS = {
+LEGACY_LAYERS = {
     "SITE",
     "SETBACK",
     "BUILDING",
     "PAVEMENT",
     "PARKING",
+    "LABEL",
     "ANNO",
     "SYMBOL",
     "STRUCTURE",
@@ -73,6 +74,36 @@ ALLOWED_LAYERS = {
     "HATCH",
 }
 
+STANDARD_LAYERS = {
+    "C-BOUNDARY",
+    "C-SETBACK",
+    "C-CENTERLINE",
+    "C-BUILDING",
+    "C-PAVEMENT",
+    "C-PARKING",
+    "C-DRIVEWAY",
+    "C-ROAD",
+    "C-SIDEWALK",
+    "C-CONTOUR",
+    "C-SPOT-ELEV",
+    "C-GRADING",
+    "C-CUT",
+    "C-FILL",
+    "C-STRM-PIPE",
+    "C-STRM-INLET",
+    "C-STRM-MH",
+    "C-DRAIN-FLOW",
+    "C-LOW-POINT",
+    "C-POND",
+    "C-WATR",
+    "C-SAN",
+    "C-UTIL",
+    "C-HYDRANT",
+    "C-TEXT",
+    "C-DIMS",
+    "C-LABEL",
+}
+
 
 LAYER_ALIASES = {
     "PARK": "PARKING",
@@ -82,112 +113,95 @@ LAYER_ALIASES = {
     "BASIN": "BASIN_BOUNDARY",
     "STAIRS": "SYMBOL",
     "ELEVATOR": "SYMBOL",
+    "LABEL": "LABEL",
+    "C-BOUNDARY": "SITE",
+    "C-SETBACK": "SETBACK",
+    "C-CENTERLINE": "ROUTE",
+    "C-BUILDING": "BUILDING",
+    "C-PAVEMENT": "PAVEMENT",
+    "C-PARKING": "PARKING",
+    "C-DRIVEWAY": "ROAD",
+    "C-ROAD": "ROAD",
+    "C-SIDEWALK": "WALK",
+    "C-CONTOUR": "FG_CONTOUR",
+    "C-SPOT-ELEV": "SPOT_FG",
+    "C-GRADING": "SURFACE",
+    "C-CUT": "SURFACE",
+    "C-FILL": "SURFACE",
+    "C-STRM-PIPE": "PIPE",
+    "C-STRM-INLET": "DRAIN",
+    "C-STRM-MH": "STRUCTURE",
+    "C-DRAIN-FLOW": "DRAIN_FLOW",
+    "C-LOW-POINT": "LOW_POINTS",
+    "C-POND": "BASIN_BOUNDARY",
+    "C-WATR": "WATER",
+    "C-SAN": "SAN",
+    "C-UTIL": "UTILITY",
+    "C-HYDRANT": "FIRE",
+    "C-TEXT": "ANNO",
+    "C-DIMS": "DIM",
+    "C-LABEL": "LABEL",
 }
 
 
-LAYER_COLORS = {
-    "SITE": 7,
-    "SETBACK": 8,
-    "BUILDING": 2,
-    "PAVEMENT": 6,
-    "PARKING": 30,
-    "ANNO": 7,
-    "SYMBOL": 3,
-    "STRUCTURE": 1,
-    "WATER": 5,
-    "ROAD": 4,
-    "FIRE": 1,
-    "LOT": 7,
-    "SURFACE": 8,
-    "EG_CONTOUR": 8,
-    "FG_CONTOUR": 3,
-    "DRAIN_FLOW": 5,
-    "LOW_POINTS": 1,
-    "SPOT_EG": 8,
-    "SPOT_FG": 2,
-    "PIPE": 4,
-    "BASIN_BOUNDARY": 6,
-    "UTILITY": 5,
-    "SAN": 1,
-    "STORM": 4,
-    "DRAIN": 6,
-    "ROUTE": 3,
-    "SKETCH_ZONE": 8,
-    "SKETCH_OBS": 1,
-    "SKETCH_LINE": 5,
-    "SKETCH_PTS": 2,
-    "SKETCH_BLDG": 2,
-    "SKETCH_PARK": 6,
-    "SKETCH_ROAD": 4,
-    "SKETCH_DRAIN": 6,
-    "SKETCH_UTIL": 5,
-    "SKETCH_PAD": 3,
-    "SKETCH_BLDG_PTS": 2,
-    "SKETCH_DRAIN_PTS": 6,
-    "SKETCH_UTIL_PTS": 5,
-    "SKETCH_ROAD_PTS": 4,
-    "WALK": 3,
-    "SHEET": 8,
-    "TITLE": 7,
-    "GRID": 8,
-    "AXIS": 7,
-    "VIEWPORT": 9,
-    "DIM": 2,
-    "MATCHLINE": 6,
-    "HATCH": 8,
+STANDARD_LAYER_COLORS = {
+    "C-BOUNDARY": 7,
+    "C-SETBACK": 8,
+    "C-CENTERLINE": 4,
+    "C-BUILDING": 2,
+    "C-PAVEMENT": 6,
+    "C-PARKING": 30,
+    "C-DRIVEWAY": 4,
+    "C-ROAD": 4,
+    "C-SIDEWALK": 3,
+    "C-CONTOUR": 8,
+    "C-SPOT-ELEV": 2,
+    "C-GRADING": 8,
+    "C-CUT": 1,
+    "C-FILL": 3,
+    "C-STRM-PIPE": 4,
+    "C-STRM-INLET": 6,
+    "C-STRM-MH": 1,
+    "C-DRAIN-FLOW": 5,
+    "C-LOW-POINT": 1,
+    "C-POND": 6,
+    "C-WATR": 5,
+    "C-SAN": 1,
+    "C-UTIL": 5,
+    "C-HYDRANT": 1,
+    "C-TEXT": 7,
+    "C-DIMS": 2,
+    "C-LABEL": 7,
 }
 
-
-LAYER_LINEWEIGHTS = {
-    "SITE": 35,
-    "SETBACK": 18,
-    "BUILDING": 40,
-    "PAVEMENT": 30,
-    "PARKING": 25,
-    "ANNO": 18,
-    "SYMBOL": 20,
-    "STRUCTURE": 40,
-    "WATER": 25,
-    "ROAD": 35,
-    "FIRE": 25,
-    "LOT": 25,
-    "SURFACE": 13,
-    "EG_CONTOUR": 13,
-    "FG_CONTOUR": 18,
-    "DRAIN_FLOW": 15,
-    "LOW_POINTS": 20,
-    "SPOT_EG": 13,
-    "SPOT_FG": 13,
-    "PIPE": 30,
-    "BASIN_BOUNDARY": 25,
-    "UTILITY": 25,
-    "SAN": 30,
-    "STORM": 30,
-    "DRAIN": 25,
-    "ROUTE": 25,
-    "SKETCH_ZONE": 13,
-    "SKETCH_OBS": 25,
-    "SKETCH_LINE": 18,
-    "SKETCH_PTS": 18,
-    "SKETCH_BLDG": 25,
-    "SKETCH_PARK": 25,
-    "SKETCH_ROAD": 25,
-    "SKETCH_DRAIN": 20,
-    "SKETCH_UTIL": 20,
-    "SKETCH_PAD": 20,
-    "SKETCH_BLDG_PTS": 18,
-    "SKETCH_DRAIN_PTS": 18,
-    "SKETCH_UTIL_PTS": 18,
-    "SKETCH_ROAD_PTS": 18,
-    "WALK": 20,
-    "SHEET": 20,
-    "TITLE": 25,
-    "GRID": 9,
-    "AXIS": 18,
-    "VIEWPORT": 13,
-    "DIM": 18,
-    "MATCHLINE": 25,
-    "HATCH": 9,
+STANDARD_LAYER_LINEWEIGHTS = {
+    "C-BOUNDARY": 35,
+    "C-SETBACK": 18,
+    "C-CENTERLINE": 18,
+    "C-BUILDING": 40,
+    "C-PAVEMENT": 30,
+    "C-PARKING": 25,
+    "C-DRIVEWAY": 30,
+    "C-ROAD": 35,
+    "C-SIDEWALK": 20,
+    "C-CONTOUR": 13,
+    "C-SPOT-ELEV": 13,
+    "C-GRADING": 13,
+    "C-CUT": 18,
+    "C-FILL": 18,
+    "C-STRM-PIPE": 30,
+    "C-STRM-INLET": 25,
+    "C-STRM-MH": 30,
+    "C-DRAIN-FLOW": 15,
+    "C-LOW-POINT": 20,
+    "C-POND": 25,
+    "C-WATR": 25,
+    "C-SAN": 30,
+    "C-UTIL": 25,
+    "C-HYDRANT": 25,
+    "C-TEXT": 18,
+    "C-DIMS": 18,
+    "C-LABEL": 18,
 }
 
 
@@ -197,10 +211,10 @@ PAGE_MARGIN_MM = 8.0
 TITLE_BLOCK_HEIGHT_MM = 24.0
 STANDARD_ENGINEERING_SCALES_FT_PER_IN = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 80.0, 100.0, 150.0, 200.0]
 LABEL_STYLES = {
-    "structure": {"height": 1.8, "layer": "ANNO", "prefix": ""},
-    "pipe": {"height": 1.7, "layer": "ANNO", "prefix": ""},
-    "slope": {"height": 1.7, "layer": "ANNO", "prefix": ""},
-    "elevation": {"height": 1.7, "layer": "ANNO", "prefix": ""},
+    "structure": {"height": 1.8, "layer": "LABEL", "prefix": ""},
+    "pipe": {"height": 1.7, "layer": "LABEL", "prefix": ""},
+    "slope": {"height": 1.7, "layer": "LABEL", "prefix": ""},
+    "elevation": {"height": 1.7, "layer": "LABEL", "prefix": ""},
 }
 DEFAULT_REVISION = "BETA"
 CAD_BLOCKS = {
@@ -246,16 +260,116 @@ def _draw_label_text(layer: str, label: str) -> str:
 def get_layer(action: Dict[str, Any], fallback: str) -> str:
     raw = safe_text(action.get("layer"), fallback).upper().strip()
     raw = LAYER_ALIASES.get(raw, raw)
-    return raw if raw in ALLOWED_LAYERS else fallback
+    return raw if raw in LEGACY_LAYERS else fallback
+
+
+def _legacy_to_standard_layer(layer: str, action: Optional[Dict[str, Any]] = None) -> str:
+    layer = safe_text(layer, "SITE").upper().strip()
+    action = safe_dict(action or {})
+    label = clean_label(action.get("label"), "").upper()
+    text = safe_text(action.get("text"), "").upper()
+    task = safe_text(action.get("task"), "").lower()
+    canonical_type = safe_text(action.get("canonical_source_type"), "").lower()
+
+    if layer in {"LABEL"}:
+        return "C-LABEL"
+    if layer in {"ANNO", "TITLE", "SHEET"}:
+        return "C-TEXT"
+    if layer in {"DIM", "GRID", "AXIS", "MATCHLINE", "VIEWPORT", "HATCH"}:
+        return "C-DIMS"
+    if layer in {"SPOT_EG", "SPOT_FG"}:
+        return "C-SPOT-ELEV"
+    if layer == "EG_CONTOUR" or layer == "FG_CONTOUR":
+        return "C-CONTOUR"
+    if layer == "LOW_POINTS":
+        return "C-LOW-POINT"
+    if layer == "DRAIN_FLOW":
+        return "C-DRAIN-FLOW"
+    if layer == "BASIN_BOUNDARY":
+        return "C-POND"
+    if layer == "PIPE" or layer == "STORM":
+        return "C-STRM-PIPE"
+    if layer == "SAN":
+        return "C-SAN"
+    if layer == "WATER":
+        return "C-WATR"
+    if layer == "UTILITY":
+        return "C-UTIL"
+    if layer == "ROUTE":
+        return "C-CENTERLINE"
+    if layer == "SETBACK":
+        return "C-SETBACK"
+    if layer == "SITE" or layer == "LOT":
+        return "C-BOUNDARY"
+    if layer == "BUILDING":
+        return "C-BUILDING"
+    if layer == "PAVEMENT":
+        return "C-PAVEMENT"
+    if layer == "PARKING":
+        return "C-PARKING"
+    if layer == "WALK":
+        return "C-SIDEWALK"
+    if layer == "ROAD":
+        return "C-ROAD"
+    if layer == "FIRE":
+        return "C-ROAD"
+
+    if layer == "DRAIN":
+        return "C-STRM-INLET"
+
+    if layer == "STRUCTURE":
+        if "HYDRANT" in label or "HYDRANT" in text:
+            return "C-HYDRANT"
+        if "INLET" in label or "INLET" in text or "CATCH" in label or "CB" in label:
+            return "C-STRM-INLET"
+        if "MANHOLE" in label or "MH" in label or "MANHOLE" in text or "MH" in text:
+            return "C-STRM-MH"
+        if "OUTFALL" in label or "OUTFALL" in text:
+            return "C-STRM-MH"
+        if "POOL" in label or "POOL" in text:
+            return "C-POND"
+        if "BRIDGE" in label or "BRIDGE" in text:
+            return "C-ROAD"
+        if canonical_type in {"drainage_structure", "storm_structure"}:
+            return "C-STRM-MH"
+        if canonical_type in {"storm_pipe_segment"}:
+            return "C-STRM-PIPE"
+        if canonical_type in {"utility_segment"}:
+            return "C-UTIL"
+        return "C-STRM-MH"
+
+    if layer.startswith("SKETCH_"):
+        sketch_map = {
+            "SKETCH_BLDG": "C-BUILDING",
+            "SKETCH_PARK": "C-PARKING",
+            "SKETCH_ROAD": "C-ROAD",
+            "SKETCH_DRAIN": "C-STRM-PIPE",
+            "SKETCH_UTIL": "C-UTIL",
+            "SKETCH_PAD": "C-PAVEMENT",
+            "SKETCH_BLDG_PTS": "C-LABEL",
+            "SKETCH_DRAIN_PTS": "C-LABEL",
+            "SKETCH_UTIL_PTS": "C-LABEL",
+            "SKETCH_ROAD_PTS": "C-LABEL",
+            "SKETCH_LINE": "C-LABEL",
+            "SKETCH_PTS": "C-LABEL",
+            "SKETCH_ZONE": "C-LABEL",
+            "SKETCH_OBS": "C-LABEL",
+        }
+        return sketch_map.get(layer, "C-LABEL")
+
+    if layer == "SURFACE":
+        return "C-GRADING"
+
+    return "C-TEXT"
 
 
 def ensure_layers(doc) -> None:
-    for layer_name in sorted(ALLOWED_LAYERS):
+    for layer_name in sorted(STANDARD_LAYERS):
         if layer_name not in doc.layers:
             doc.layers.add(
                 name=layer_name,
-                color=LAYER_COLORS.get(layer_name, 7),
-                lineweight=LAYER_LINEWEIGHTS.get(layer_name, 18),
+                color=STANDARD_LAYER_COLORS.get(layer_name, 7),
+                lineweight=STANDARD_LAYER_LINEWEIGHTS.get(layer_name, 18),
             )
 
 
@@ -301,11 +415,12 @@ def ensure_blocks(doc) -> None:
 
 def _insert_block(space, block_name: str, x: float, y: float, layer: str = "SYMBOL", scale: float = 1.0, rotation: float = 0.0) -> None:
     try:
+        export_layer = _legacy_to_standard_layer(layer, {"label": block_name, "layer": layer, "task": "point"})
         space.add_blockref(
             block_name,
             (x, y),
             dxfattribs={
-                "layer": layer,
+                "layer": export_layer,
                 "xscale": scale,
                 "yscale": scale,
                 "rotation": rotation,
@@ -329,11 +444,12 @@ def add_text(
     if not text:
         return
 
+    export_layer = _legacy_to_standard_layer(layer, {"task": "text_note", "text": text, "layer": layer})
     txt = space.add_text(
         text,
         dxfattribs={
             "height": max(height, 0.35),
-            "layer": layer,
+            "layer": export_layer,
             "rotation": rotation,
             "style": style,
         },
@@ -675,9 +791,9 @@ def _draw_rectangle(msp, action: Dict[str, Any], layer: str) -> None:
     if w <= 0 or h <= 0:
         return
     pts = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
-    msp.add_lwpolyline(pts, close=True, dxfattribs={"layer": layer})
+    msp.add_lwpolyline(pts, close=True, dxfattribs={"layer": _legacy_to_standard_layer(layer, action)})
     if label and layer not in SUPPRESSED_AUTO_LABEL_LAYERS:
-        add_text(msp, label, x + w / 2.0, y + h / 2.0, 1.4, "ANNO")
+        add_text(msp, label, x + w / 2.0, y + h / 2.0, 1.4, "LABEL")
 
 
 def _draw_polyline(msp, action: Dict[str, Any], layer: str) -> None:
@@ -686,10 +802,10 @@ def _draw_polyline(msp, action: Dict[str, Any], layer: str) -> None:
     closed = _safe_closed(action, False)
     if len(pts) < 2:
         return
-    msp.add_lwpolyline(pts, close=closed, dxfattribs={"layer": layer})
+    msp.add_lwpolyline(pts, close=closed, dxfattribs={"layer": _legacy_to_standard_layer(layer, action)})
     if label and layer not in SUPPRESSED_AUTO_LABEL_LAYERS:
         cx, cy = _polyline_center(pts)
-        add_text(msp, label, cx, cy, 1.0, "ANNO")
+        add_text(msp, label, cx, cy, 1.0, "LABEL")
 
 
 def _draw_polygon(msp, action: Dict[str, Any], layer: str) -> None:
@@ -697,10 +813,10 @@ def _draw_polygon(msp, action: Dict[str, Any], layer: str) -> None:
     label = _draw_label_text(layer, safe_text(action.get("label"), ""))
     if len(pts) < 3:
         return
-    msp.add_lwpolyline(pts, close=True, dxfattribs={"layer": layer})
+    msp.add_lwpolyline(pts, close=True, dxfattribs={"layer": _legacy_to_standard_layer(layer, action)})
     if label and layer not in SUPPRESSED_AUTO_LABEL_LAYERS:
         cx, cy = _polyline_center(pts)
-        add_text(msp, label, cx, cy, 1.0, "ANNO")
+        add_text(msp, label, cx, cy, 1.0, "LABEL")
 
 
 def _draw_circle(msp, action: Dict[str, Any], layer: str) -> None:
@@ -709,9 +825,9 @@ def _draw_circle(msp, action: Dict[str, Any], layer: str) -> None:
     label = _draw_label_text(layer, safe_text(action.get("label"), ""))
     if r <= 0:
         return
-    msp.add_circle((cx, cy), r, dxfattribs={"layer": layer})
+    msp.add_circle((cx, cy), r, dxfattribs={"layer": _legacy_to_standard_layer(layer, action)})
     if label and layer not in SUPPRESSED_AUTO_LABEL_LAYERS:
-        add_text(msp, label, cx, cy, 1.0, "ANNO")
+        add_text(msp, label, cx, cy, 1.0, "LABEL")
 
 
 def _draw_arc(msp, action: Dict[str, Any], layer: str) -> None:
@@ -722,9 +838,9 @@ def _draw_arc(msp, action: Dict[str, Any], layer: str) -> None:
     label = _draw_label_text(layer, safe_text(action.get("label"), ""))
     if r <= 0:
         return
-    msp.add_arc(center=(cx, cy), radius=r, start_angle=a1, end_angle=a2, dxfattribs={"layer": layer})
+    msp.add_arc(center=(cx, cy), radius=r, start_angle=a1, end_angle=a2, dxfattribs={"layer": _legacy_to_standard_layer(layer, action)})
     if label and layer not in SUPPRESSED_AUTO_LABEL_LAYERS:
-        add_text(msp, label, cx, cy, 1.0, "ANNO")
+        add_text(msp, label, cx, cy, 1.0, "LABEL")
 
 
 def _draw_text_note(msp, action: Dict[str, Any], layer: str) -> None:
@@ -740,20 +856,21 @@ def _draw_text_note(msp, action: Dict[str, Any], layer: str) -> None:
 
 def _draw_north_arrow(msp, action: Dict[str, Any]) -> None:
     x, y = safe_origin(action)
-    msp.add_line((x, y), (x, y + 8), dxfattribs={"layer": "SYMBOL"})
-    msp.add_line((x, y + 8), (x - 1, y + 6.5), dxfattribs={"layer": "SYMBOL"})
-    msp.add_line((x, y + 8), (x + 1, y + 6.5), dxfattribs={"layer": "SYMBOL"})
-    add_text(msp, "N", x, y + 9, 2.5, "ANNO")
+    msp.add_line((x, y), (x, y + 8), dxfattribs={"layer": _legacy_to_standard_layer("SYMBOL", action)})
+    msp.add_line((x, y + 8), (x - 1, y + 6.5), dxfattribs={"layer": _legacy_to_standard_layer("SYMBOL", action)})
+    msp.add_line((x, y + 8), (x + 1, y + 6.5), dxfattribs={"layer": _legacy_to_standard_layer("SYMBOL", action)})
+    add_text(msp, "N", x, y + 9, 2.5, "LABEL")
 
 
 def _draw_point_marker(msp, action: Dict[str, Any], layer: str) -> None:
     x, y = safe_origin(action)
     label = clean_label(action.get("label"), "")
     size = max(safe_num(action.get("radius"), 0.75), 0.2)
-    msp.add_line((x - size, y), (x + size, y), dxfattribs={"layer": layer})
-    msp.add_line((x, y - size), (x, y + size), dxfattribs={"layer": layer})
+    export_layer = _legacy_to_standard_layer(layer, action)
+    msp.add_line((x - size, y), (x + size, y), dxfattribs={"layer": export_layer})
+    msp.add_line((x, y - size), (x, y + size), dxfattribs={"layer": export_layer})
     if label:
-        add_text(msp, label, x + size + 0.2, y + size + 0.2, 0.9, "ANNO")
+        add_text(msp, label, x + size + 0.2, y + size + 0.2, 0.9, "LABEL")
 
 
 def _is_debug_action(action: Dict[str, Any]) -> bool:
@@ -996,12 +1113,14 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
         layer = get_layer(rec, "SITE")
         task = safe_text(rec.get("task"), "").lower()
         label = clean_label(rec.get("label"), "").upper()
+        # TODO: Upstream normalization should tag access pavement vs. road so we don't reinterpret here.
         if layout_first_modelspace and layer in {"ROAD", "FIRE"} and task in {"rectangle", "polygon", "polyline"}:
             if task in {"circle", "polyline"} and (not label or label in {"ROAD", "DRIVE", "FIRE", "FIRE-1", "ROAD-1"}):
                 continue
             if not label or label in {"ROAD", "DRIVE", "FIRE", "FIRE-1", "ROAD-1"}:
                 rec["layer"] = "PAVEMENT"
                 layer = "PAVEMENT"
+        # TODO: Reduce exporter-side filtering by tagging phase visibility upstream.
         if (
             layout_first_modelspace
             and layer in MODELSPACE_DETAIL_LAYERS
@@ -1018,8 +1137,10 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
             continue
         if engineering_profile in {"storm", "utilities", "complete"} and layer in {"EG_CONTOUR", "SPOT_EG"}:
             continue
+        # TODO: Identify wrapper parcels upstream instead of heuristic bounding.
         if layout_first_modelspace and _is_wrapper_layout_shape(rec, building_bounds):
             continue
+        # TODO: Mark access schematics upstream so exporter doesn't guess.
         if layout_first_modelspace and _is_schematic_access_shape(rec, building_bounds):
             continue
         if layout_first_modelspace and layer == "SITE" and safe_text(rec.get("task"), "").lower() in {"rectangle", "polygon"}:
@@ -1127,7 +1248,7 @@ def _draw_plan_pipe_annotations(msp, plan: Dict[str, Any]) -> None:
                 continue
             label = _pipe_plan_label(rec, f"{prefix}-{idx}")
             x, y, rotation = _place_plan_label(points, label, occupied, node_points, height=1.7)
-            add_text(msp, label, x, y, 1.7, "ANNO", rotation=rotation, style="CIVIL-NARROW")
+            add_text(msp, label, x, y, 1.7, "LABEL", rotation=rotation, style="CIVIL-NARROW")
 
 
 def _draw_basin_annotations(msp, plan: Dict[str, Any]) -> None:
@@ -1141,7 +1262,7 @@ def _draw_basin_annotations(msp, plan: Dict[str, Any]) -> None:
         x = safe_num(centroid[0])
         y = safe_num(centroid[1])
         label = "DETENTION BASIN"
-        add_text(msp, label, x - 8.0, y - 2.0, 1.9, "ANNO", style="CIVIL-BOLD")
+        add_text(msp, label, x - 8.0, y - 2.0, 1.9, "LABEL", style="CIVIL-BOLD")
         nearest = None
         nearest_distance = float("inf")
         for structure in structures:
@@ -1162,7 +1283,7 @@ def _draw_basin_annotations(msp, plan: Dict[str, Any]) -> None:
             msp.add_line(start, end, dxfattribs={"layer": "DRAIN_FLOW"})
             msp.add_line((end[0], end[1]), (end[0] - dy / norm * 1.2 - dx / norm * 1.8, end[1] + dx / norm * 1.2 - dy / norm * 1.8), dxfattribs={"layer": "DRAIN_FLOW"})
             msp.add_line((end[0], end[1]), (end[0] + dy / norm * 1.2 - dx / norm * 1.8, end[1] - dx / norm * 1.2 - dy / norm * 1.8), dxfattribs={"layer": "DRAIN_FLOW"})
-            add_text(msp, "TO OUTLET", start[0] + 1.5, start[1] + 1.5, 1.3, "ANNO", style="CIVIL-NARROW")
+            add_text(msp, "TO OUTLET", start[0] + 1.5, start[1] + 1.5, 1.3, "LABEL", style="CIVIL-NARROW")
 
 
 def _write_summary_block(msp, plan: Dict[str, Any], actions: List[Dict[str, Any]]) -> None:
@@ -2004,18 +2125,19 @@ def _site_plan_drainage_guidance_notes(plan: Dict[str, Any]) -> List[str]:
 
 
 def _legend_items(plan: Dict[str, Any], actions: List[Dict[str, Any]]) -> List[Tuple[str, str, str]]:
-    used_layers = {get_layer(safe_dict(action), "SITE") for action in actions}
+    used_layers = {
+        _legacy_to_standard_layer(get_layer(safe_dict(action), "SITE"), safe_dict(action))
+        for action in actions
+    }
     items: List[Tuple[str, str, str]] = []
-    if "FG_CONTOUR" in used_layers:
-        items.append(("line", "FG_CONTOUR", "FG / proposed"))
-    if "EG_CONTOUR" in used_layers:
-        items.append(("line", "EG_CONTOUR", "EG / existing"))
-    if "PIPE" in used_layers:
-        items.append(("line", "PIPE", "Storm pipe"))
-    if "SAN" in used_layers:
-        items.append(("line", "SAN", "Sanitary pipe"))
-    if "UTILITY" in used_layers:
-        items.append(("line", "UTILITY", "Water / utility"))
+    if "C-CONTOUR" in used_layers:
+        items.append(("line", "C-CONTOUR", "Contours"))
+    if "C-STRM-PIPE" in used_layers:
+        items.append(("line", "C-STRM-PIPE", "Storm pipe"))
+    if "C-SAN" in used_layers:
+        items.append(("line", "C-SAN", "Sanitary pipe"))
+    if "C-UTIL" in used_layers or "C-WATR" in used_layers:
+        items.append(("line", "C-WATR" if "C-WATR" in used_layers else "C-UTIL", "Water / utility"))
     kinds = {safe_text(item.get("kind"), "") for item in _collect_structure_callouts(plan)}
     if any("inlet" in kind for kind in kinds):
         items.append(("block", "CIVIL_INLET", "Inlet structure"))
@@ -3496,6 +3618,31 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
     }
 
 
+def _remap_doc_layers(doc) -> None:
+    def remap_entity(entity) -> None:
+        try:
+            layer = safe_text(entity.dxf.layer, "").upper()
+        except Exception:
+            return
+        if not layer:
+            return
+        if layer in STANDARD_LAYERS:
+            return
+        mapped = _legacy_to_standard_layer(layer)
+        try:
+            entity.dxf.layer = mapped
+        except Exception:
+            return
+
+    for entity in doc.modelspace():
+        remap_entity(entity)
+    for layout in doc.layouts:
+        if layout.name == "Model":
+            continue
+        for entity in layout:
+            remap_entity(entity)
+
+
 def save_dxf(plan: Dict[str, Any], filename: str | None = None) -> str:
     actions = safe_list(plan.get("actions"))
     if not actions:
@@ -3537,6 +3684,7 @@ def save_dxf(plan: Dict[str, Any], filename: str | None = None) -> str:
     _add_cross_section_layouts(doc, plan, section_groups, sheet_registry)
     _prune_default_layouts(doc)
     plan["meta"]["export_audit"] = _build_export_audit(doc, plan, modelspace_actions, profiles, section_groups, sheet_registry)
+    _remap_doc_layers(doc)
 
     doc.saveas(filename)
     return filename
