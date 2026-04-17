@@ -254,6 +254,11 @@ export default function PreviewPanel({
   const clampValue = (value: number, min: number, max: number) =>
     Math.min(Math.max(value, min), max);
 
+  const snapValue = (value: number, step: number) => {
+    if (!step) return value;
+    return Math.round(value / step) * step;
+  };
+
   const updateDraggedBuilding = useCallback(
     (event: React.MouseEvent<HTMLDivElement>, bounds: { left: number; top: number; width: number; height: number }) => {
       if (!draggingBuildingId || !placementMode || !draggingMode) return;
@@ -263,16 +268,22 @@ export default function PreviewPanel({
       const target = buildingPlacements.find((item) => item.id === draggingBuildingId);
       if (!target) return;
       if (draggingMode === "move") {
-        const x = clampValue(((localX - dragOffset.x) / Math.max(bounds.width, 1)) * lotWidth, 0, Math.max(lotWidth - target.w, 0));
-        const y = clampValue(((localY - dragOffset.y) / Math.max(bounds.height, 1)) * lotHeight, 0, Math.max(lotHeight - target.d, 0));
+        const x = snapValue(
+          clampValue(((localX - dragOffset.x) / Math.max(bounds.width, 1)) * lotWidth, 0, Math.max(lotWidth - target.w, 0)),
+          5,
+        );
+        const y = snapValue(
+          clampValue(((localY - dragOffset.y) / Math.max(bounds.height, 1)) * lotHeight, 0, Math.max(lotHeight - target.d, 0)),
+          5,
+        );
         onUpdateBuilding(draggingBuildingId, { x, y, placed: true });
         return;
       }
       if (draggingMode === "resize") {
         const rawW = clampValue((localX / Math.max(bounds.width, 1)) * lotWidth, 10, lotWidth);
         const rawD = clampValue((localY / Math.max(bounds.height, 1)) * lotHeight, 10, lotHeight);
-        const nextW = Math.max(10, rawW - (target.x ?? 0));
-        const nextD = Math.max(10, rawD - (target.y ?? 0));
+        const nextW = Math.max(10, snapValue(rawW - (target.x ?? 0), 5));
+        const nextD = Math.max(10, snapValue(rawD - (target.y ?? 0), 5));
         onUpdateBuilding(draggingBuildingId, { w: nextW, d: nextD });
         return;
       }
@@ -282,7 +293,7 @@ export default function PreviewPanel({
         const angle = Math.atan2(localY + bounds.top - centerY, localX + bounds.left - centerX);
         const deg = (angle * 180) / Math.PI;
         const normalized = (deg + 360) % 360;
-        const snapped = Math.round(normalized / 15) * 15;
+        const snapped = snapValue(normalized, 15);
         onUpdateBuilding(draggingBuildingId, { rotation: snapped });
       }
     },
@@ -902,6 +913,9 @@ export default function PreviewPanel({
                             >
                               Z
                             </button>
+                            <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow">
+                              Snap 5ft
+                            </div>
                             <div className="absolute -top-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 shadow">
                               {item.label}
                             </div>
@@ -1240,6 +1254,9 @@ export default function PreviewPanel({
                             >
                               Z
                             </button>
+                            <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow">
+                              Snap 5ft
+                            </div>
                           </div>
                         );
                       })}
