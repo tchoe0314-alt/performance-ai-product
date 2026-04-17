@@ -23,6 +23,7 @@ export default function useChatPersistence({
   currentProjectId,
 }: UseChatPersistenceOptions) {
   useEffect(() => {
+    // Chat panel is mounted lazily; guard until the scroll container exists.
     const node = chatScrollRef.current;
     if (!node) return;
     node.scrollTo({
