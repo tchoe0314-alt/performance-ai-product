@@ -2386,10 +2386,7 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
     if not message:
         raise ValueError("Chat message is required.")
     context = _chat_context_summary(dict(payload_data.get("context") or {}))
-
     local = _local_chat_decision(payload_data)
-    if local["intent"] != "conversation" or local["needs_clarification"] or local["confidence"] >= 0.9:
-        return local
 
     system_prompt = (
         "You are Civora AI, an AI-powered civil engineering design assistant. "
@@ -2410,11 +2407,18 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         "Return concise, helpful assistant wording with a calm professional personality. "
         "If the user message includes settings changes plus a design request, keep intent as design and include the setting overrides too. "
         "Do not invent unsupported fields. "
+        "You may receive a heuristic_suggestion with a draft intent and run_mode; use it when it makes sense, but correct it if the user message clearly indicates otherwise. "
         "Always return valid JSON matching the schema."
     )
     user_payload = {
         "message": message,
         "context": context,
+        "heuristic_suggestion": {
+            "intent": local.get("intent"),
+            "run_mode": local.get("run_mode"),
+            "needs_clarification": local.get("needs_clarification"),
+            "reason": local.get("reason"),
+        },
     }
 
     try:
@@ -2444,10 +2448,23 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         if str(data.get("intent") or "") == "design":
             readiness_issue = _design_readiness_check(message, context)
             if readiness_issue:
+                clarification_message = _structured_clarification_reply(
+                    context=context,
+                    missing=readiness_issue.get("missing_requirements") or [],
+                    inferred_project_type=context.get("project_type"),
+                )
+                try:
+                    clarification_message = _openai_chat_clarification(
+                        context=context,
+                        missing=readiness_issue.get("missing_requirements") or [],
+                        inferred_project_type=context.get("project_type"),
+                    )
+                except Exception:
+                    pass
                 data.update(
                     {
                         "intent": "conversation",
-                        "assistant_message": readiness_issue["assistant_message"],
+                        "assistant_message": clarification_message,
                         "run_mode": "none",
                         "design_prompt": "",
                         "needs_clarification": True,
@@ -2475,3 +2492,34 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         return data
     except Exception:
         return local
+
+
+def _openai_chat_clarification(
+    *,
+    context: Dict[str, Any],
+    missing: List[str],
+    inferred_project_type: Optional[str],
+) -> str:
+    client = _load_chat_client()
+    system_prompt = (
+        "You are Civora AI. The user asked for a design, but required inputs are missing. "
+        "Write a short, friendly clarification question that asks only for the missing details. "
+        "Keep it to 1-3 sentences, and do not invent site details. "
+        "Return plain text only."
+    )
+    payload = {
+        "missing_requirements": missing,
+        "inferred_project_type": inferred_project_type,
+        "memory_summary": context.get("memory_summary"),
+    }
+    response = client.responses.create(
+        model="gpt-5",
+        input=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": json.dumps(payload)},
+        ],
+    )
+    message = str(response.output_text or "").strip()
+    if not message:
+        raise ValueError("Empty clarification response.")
+    return message
