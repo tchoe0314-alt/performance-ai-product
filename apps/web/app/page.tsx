@@ -86,6 +86,8 @@ import useChatPersistence from "./hooks/useChatPersistence";
 import usePreviewReview from "./hooks/usePreviewReview";
 import useJobPolling from "./hooks/useJobPolling";
 import useAuthState from "./hooks/useAuthState";
+import useProjectsState from "./hooks/useProjectsState";
+import useJobsState from "./hooks/useJobsState";
 
 function formatTimestamp(value?: number): string {
   if (!value) return "Unknown time";
@@ -331,8 +333,6 @@ export default function PerformanceAIDashboard() {
   const [previewFullscreenOpen, setPreviewFullscreenOpen] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
-  const [projects, setProjects] = useState<ProjectSummary[]>([]);
-  const [jobs, setJobs] = useState<JobSummary[]>([]);
   const [currentProject, setCurrentProject] = useState<ProjectRecord | null>(null);
   const [selectedRunId, setSelectedRunId] = useState("");
   const [activeJobId, setActiveJobId] = useState("");
@@ -368,52 +368,19 @@ export default function PerformanceAIDashboard() {
   const lastSiteInputProjectRef = useRef("");
   const controlAutosaveTimeoutRef = useRef<number | null>(null);
 
-  const hasTrackedJobs = useMemo(
-    () =>
-      Boolean(activeJobId) ||
-      jobs.some((job) =>
-        ["queued", "running", "awaiting_approval", "cancelling"].includes(
-          String(job.status || "").toLowerCase(),
-        ),
-      ),
-    [activeJobId, jobs],
-  );
+  const {
+    projects,
+    setProjects,
+    refreshProjects,
+    upsertProjectSummary,
+    removeProjectSummary,
+  } = useProjectsState();
 
-  const refreshProjects = useCallback(async (authToken: string) => {
-    if (!authToken) return;
-    const data = await getJson<{ projects: ProjectSummary[] }>("/api/projects", {
-      token: authToken,
-    });
-    const nextProjects = Array.isArray(data.projects) ? data.projects : [];
-    nextProjects.sort((a, b) => {
-      const aSaved = a.has_result ? 1 : 0;
-      const bSaved = b.has_result ? 1 : 0;
-      if (aSaved !== bSaved) return bSaved - aSaved;
-      return (b.updated_at ?? 0) - (a.updated_at ?? 0);
-    });
-    setProjects(nextProjects);
-  }, []);
-
-  const refreshJobs = useCallback(async (
-    authToken: string,
-    {
-      suppressError = false,
-      force = false,
-    }: { suppressError?: boolean; force?: boolean } = {},
-  ) => {
-    if (!authToken) return;
-    if (!force && !hasTrackedJobs) return;
-    try {
-      const data = await getJson<{ jobs: JobSummary[] }>("/api/jobs", {
-        token: authToken,
-      });
-      setJobs(Array.isArray(data.jobs) ? data.jobs : []);
-    } catch (error) {
-      if (!suppressError) {
-        throw error;
-      }
-    }
-  }, [hasTrackedJobs]);
+  const {
+    jobs,
+    setJobs,
+    refreshJobs,
+  } = useJobsState({ activeJobId });
 
   const {
     token,
@@ -1571,37 +1538,6 @@ export default function PerformanceAIDashboard() {
       setActivePlanTool("run");
       directRunAbortRef.current = null;
     }
-  };
-
-  const upsertProjectSummary = (project: ProjectRecord | ProjectSummary) => {
-    const summary: ProjectSummary = {
-      project_id: project.project_id,
-      name: project.name || "Untitled Project",
-      description: project.description ?? "",
-      has_result:
-        typeof project.has_result === "boolean"
-          ? project.has_result
-          : Boolean((project as ProjectRecord).latest_result),
-      updated_at: project.updated_at,
-    };
-    setProjects((current) => {
-      const existingIndex = current.findIndex(
-        (item) => item.project_id === summary.project_id,
-      );
-      if (existingIndex < 0) {
-        return [summary, ...current];
-      }
-      const next = [...current];
-      next[existingIndex] = { ...next[existingIndex], ...summary };
-      next.sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0));
-      return next;
-    });
-  };
-
-  const removeProjectSummary = (projectIdToRemove: string) => {
-    setProjects((current) =>
-      current.filter((item) => item.project_id !== projectIdToRemove),
-    );
   };
 
   const handleRefreshWorkspace = async () => {
