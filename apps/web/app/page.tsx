@@ -5951,7 +5951,7 @@ export default function PerformanceAIDashboard() {
               </div>
             </div>
 
-            <div className="rounded-[28px] border border-slate-200 bg-white p-4 md:p-6">
+            <div className="rounded-[28px] border border-slate-200 bg-white/90 p-4 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.4)] backdrop-blur md:p-6">
               <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
@@ -6059,7 +6059,7 @@ export default function PerformanceAIDashboard() {
               </div>
 
               {planPreviewUrl ? (
-                <div className="rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top,#f8fafc_0%,#eef2f7_100%)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+                <div className="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#edf2f7_100%)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
                   <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                     <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
                       <span>Preview Mode</span>
@@ -6140,12 +6140,12 @@ export default function PerformanceAIDashboard() {
                   {previewMode === "3d" ? (
                     <Preview3DCanvas items={preview3DItems} interactive={previewInteraction === "interactive"} />
                   ) : (
-                    <div className="flex min-h-[520px] items-center justify-center overflow-hidden rounded-[20px] bg-white">
+                    <div className="relative flex min-h-[560px] items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)]">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={planPreviewUrl}
                         alt="Generated plan preview"
-                        className={`max-h-[520px] w-full object-contain shadow-sm ${
+                        className={`max-h-[560px] w-full object-contain ${
                           previewInteraction === "interactive" ? "cursor-zoom-in" : "cursor-default"
                         }`}
                         onClick={() => {
@@ -6154,6 +6154,44 @@ export default function PerformanceAIDashboard() {
                           }
                         }}
                       />
+                      <div className="pointer-events-none absolute right-6 top-6 hidden w-[260px] rounded-[22px] border border-white/20 bg-slate-900/80 p-4 text-xs text-white shadow-[0_20px_50px_-30px_rgba(15,23,42,0.8)] backdrop-blur lg:block">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70">
+                          Drainage Stats
+                        </p>
+                        <div className="mt-3 space-y-2">
+                          {phaseStats.drainage_storm.map((item) => (
+                            <div key={item.label} className="flex items-center justify-between gap-2">
+                              <span className="text-white/70">{item.label}</span>
+                              <span className="font-semibold text-white">
+                                {item.unit === "ea" || item.format === "count"
+                                  ? formatCount(item.value, item.unit)
+                                  : formatMetric(item.value, item.unit)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="pointer-events-none absolute right-6 top-[250px] hidden w-[260px] rounded-[22px] border border-white/20 bg-slate-900/80 p-4 text-xs text-white shadow-[0_20px_50px_-30px_rgba(15,23,42,0.8)] backdrop-blur lg:block">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70">
+                          Issues Found
+                        </p>
+                        <div className="mt-3 space-y-2">
+                          {issues.slice(0, 4).map((issue, index) => (
+                            <div key={`${issue.message}-${index}`} className="flex items-start gap-2">
+                              <span className="mt-1 h-1.5 w-1.5 rounded-full bg-amber-400" />
+                              <span className="text-white/80">{issue.message}</span>
+                            </div>
+                          ))}
+                          {issues.length === 0 ? (
+                            <span className="text-white/60">No issues flagged.</span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="pointer-events-none absolute bottom-6 left-6 hidden rounded-[18px] border border-white/20 bg-white/70 px-4 py-3 text-xs text-slate-700 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.6)] backdrop-blur lg:block">
+                        <span className="font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          AI Layout + Generation
+                        </span>
+                      </div>
                     </div>
                   )}
                 </div>
