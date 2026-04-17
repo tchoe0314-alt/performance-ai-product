@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from core.config import (
     CELL_SIZE,
+    CONTOUR_INTERVAL,
     DEFAULT_LOT_HEIGHT,
     DEFAULT_LOT_WIDTH,
     DEFAULT_LOT_X,
@@ -19,6 +20,7 @@ from core.config import (
     TEXT_HEIGHT_SMALL,
 )
 from core.geometry_core import Point3D, ProjectModel, ZoneType
+from engines.contour_engine import contour_segments
 from engines.grading_engine import GradeElement
 from engines.surface_engine import GridSurface
 
@@ -90,55 +92,53 @@ def surface_range(surface: Optional[GridSurface]) -> Tuple[float, float]:
 def surface_actions_from_grid(surface: Optional[GridSurface], *, layer: str, note_prefix: str, sample_lines: int = 6) -> List[Dict[str, Any]]:
     if surface is None or not all(hasattr(surface, attr) for attr in ("nrows", "ncols", "x_at", "y_at", "values")):
         return []
-    actions: List[Dict[str, Any]] = []
     nrows = max(0, safe_int(getattr(surface, "nrows", 0), 0))
     ncols = max(0, safe_int(getattr(surface, "ncols", 0), 0))
     if nrows <= 1 or ncols <= 1:
-        return actions
-    step = max(1, nrows // max(1, sample_lines))
-    for row in range(0, nrows, step):
-        pts: List[List[float]] = []
-        z_vals: List[float] = []
-        for col in range(ncols):
-            pts.append([float(surface.x_at(col)), float(surface.y_at(row))])
-            z_vals.append(safe_float(surface.values[row][col], 0.0))
-        if len(pts) < 2:
+        return []
+    interval = max(0.5, safe_float(CONTOUR_INTERVAL, 2.0))
+    segs_by_level = contour_segments(surface, interval=interval)
+    actions: List[Dict[str, Any]] = []
+    for level, segs in segs_by_level.items():
+        if not segs:
             continue
-        avg_z = sum(z_vals) / max(len(z_vals), 1)
-        actions.append({
-            "task": "polyline",
-            "origin": None,
-            "points": pts,
-            "closed": False,
-            "width": None,
-            "height": None,
-            "label": None,
-            "layer": layer,
-            "text": None,
-            "text_height": None,
-            "center": None,
-            "radius": None,
-            "start_angle": None,
-            "end_angle": None,
-        })
-        label_idx = len(pts) // 2
-        label_pt = pts[label_idx]
-        actions.append({
-            "task": "text_note",
-            "origin": [label_pt[0], label_pt[1]],
-            "points": None,
-            "closed": None,
-            "width": None,
-            "height": None,
-            "label": None,
-            "layer": layer,
-            "text": f"{note_prefix} {avg_z:.2f}",
-            "text_height": TEXT_HEIGHT_SMALL,
-            "center": None,
-            "radius": None,
-            "start_angle": None,
-            "end_angle": None,
-        })
+        for p1, p2 in segs:
+            actions.append({
+                "task": "polyline",
+                "origin": None,
+                "points": [[float(p1[0]), float(p1[1])], [float(p2[0]), float(p2[1])]],
+                "closed": False,
+                "width": None,
+                "height": None,
+                "label": None,
+                "layer": layer,
+                "text": None,
+                "text_height": None,
+                "center": None,
+                "radius": None,
+                "start_angle": None,
+                "end_angle": None,
+            })
+        if note_prefix:
+            p1, p2 = segs[0]
+            mx = (p1[0] + p2[0]) / 2.0
+            my = (p1[1] + p2[1]) / 2.0
+            actions.append({
+                "task": "text_note",
+                "origin": [float(mx), float(my)],
+                "points": None,
+                "closed": None,
+                "width": None,
+                "height": None,
+                "label": None,
+                "layer": layer,
+                "text": f"{note_prefix} {float(level):.2f}",
+                "text_height": TEXT_HEIGHT_SMALL,
+                "center": None,
+                "radius": None,
+                "start_angle": None,
+                "end_angle": None,
+            })
     return actions
 
 
