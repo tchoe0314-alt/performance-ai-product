@@ -25,16 +25,21 @@ type PreviewPanelProps = {
   previewMode: "2d" | "3d";
   previewInteraction: "static" | "interactive";
   previewQuality: "standard" | "high";
+  previewStyle: "default" | "contrast" | "engineering_dark" | "soft";
+  previewLabelDensity: "low" | "standard" | "high";
   previewRenderMode: "production" | "engineering" | "debug";
   onSetPreviewMode: (value: "2d" | "3d") => void;
   onSetPreviewInteraction: (value: "static" | "interactive") => void;
   onSetPreviewQuality: (value: "standard" | "high") => void;
+  onSetPreviewStyle: (value: "default" | "contrast" | "engineering_dark" | "soft") => void;
+  onSetPreviewLabelDensity: (value: "low" | "standard" | "high") => void;
   onSetPreviewRenderMode: (value: "production" | "engineering" | "debug") => void;
   onQueuePreviewRefresh: (reason: string) => void;
   previewRefreshing: boolean;
   previewRefreshNote: string | null;
   preview3DEffectiveItems: Preview3DItem[];
   usingAnnotation3D: boolean;
+  hasGradingSurface: boolean;
   onOpenFullscreen: () => void;
   previewFullscreenOpen: boolean;
   onCloseFullscreen: () => void;
@@ -60,16 +65,21 @@ export default function PreviewPanel({
   previewMode,
   previewInteraction,
   previewQuality,
+  previewStyle,
+  previewLabelDensity,
   previewRenderMode,
   onSetPreviewMode,
   onSetPreviewInteraction,
   onSetPreviewQuality,
+  onSetPreviewStyle,
+  onSetPreviewLabelDensity,
   onSetPreviewRenderMode,
   onQueuePreviewRefresh,
   previewRefreshing,
   previewRefreshNote,
   preview3DEffectiveItems,
   usingAnnotation3D,
+  hasGradingSurface,
   onOpenFullscreen,
   previewFullscreenOpen,
   onCloseFullscreen,
@@ -100,15 +110,90 @@ export default function PreviewPanel({
   const [pinnedAnnotation, setPinnedAnnotation] = useState<(typeof previewLabels)[number] | null>(null);
   const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number } | null>(null);
   const [fullscreenHoverPoint, setFullscreenHoverPoint] = useState<{ x: number; y: number } | null>(null);
+  const [previewImageBounds, setPreviewImageBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const [fullscreenImageBounds, setFullscreenImageBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
   const fullscreenRef = useRef<HTMLDivElement | null>(null);
+  const previewImageRef = useRef<HTMLImageElement | null>(null);
+  const fullscreenImageRef = useRef<HTMLImageElement | null>(null);
   const activeAnnotation = pinnedAnnotation ?? hoveredAnnotation;
   const hasInteractiveLabels = previewLabels.length > 0;
   const showInteractive = previewInteraction === "interactive";
+  const previewModeDescription =
+    previewRenderMode === "debug"
+      ? "Debug shows helper geometry, routing guides, and audit details."
+      : previewRenderMode === "engineering"
+        ? "Engineering shows final geometry with overlays like grades, labels, and system annotations."
+        : "Production shows final, client-facing geometry only.";
+  const previewStyleLabel =
+    previewStyle === "contrast"
+      ? "High Contrast"
+      : previewStyle === "engineering_dark"
+        ? "Engineering Dark"
+        : previewStyle === "soft"
+          ? "Soft Presentation"
+          : "Default";
+  const legendPalette = useMemo(() => {
+    const palettes = {
+      default: {
+        building: "#0f172a",
+        parking: "#cbd5e1",
+        road: "#475569",
+        drainage: "#1d4ed8",
+        utilities: "#7c3aed",
+      },
+      contrast: {
+        building: "#0f172a",
+        parking: "#e2e8f0",
+        road: "#0f172a",
+        drainage: "#0f172a",
+        utilities: "#7c3aed",
+      },
+      engineering_dark: {
+        building: "#e2e8f0",
+        parking: "#334155",
+        road: "#e2e8f0",
+        drainage: "#38bdf8",
+        utilities: "#c4b5fd",
+      },
+      soft: {
+        building: "#1f2937",
+        parking: "#d6d3d1",
+        road: "#57534e",
+        drainage: "#2563eb",
+        utilities: "#a855f7",
+      },
+    } as const;
+    return palettes[previewStyle] ?? palettes.default;
+  }, [previewStyle]);
+  const updateImageBounds = useCallback(
+    (
+      containerRef: React.RefObject<HTMLDivElement | null>,
+      imageRef: React.RefObject<HTMLImageElement | null>,
+      setter: React.Dispatch<React.SetStateAction<{ left: number; top: number; width: number; height: number } | null>>,
+    ) => {
+      if (!containerRef.current || !imageRef.current) {
+        setter(null);
+        return;
+      }
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const imageRect = imageRef.current.getBoundingClientRect();
+      const width = Math.max(imageRect.width, 1);
+      const height = Math.max(imageRect.height, 1);
+      setter({
+        left: imageRect.left - containerRect.left,
+        top: imageRect.top - containerRect.top,
+        width,
+        height,
+      });
+    },
+    [],
+  );
   const resolveHover = useCallback(
     (
       event: React.MouseEvent<HTMLDivElement>,
       containerRef: React.RefObject<HTMLDivElement | null>,
+      imageBounds: { left: number; top: number; width: number; height: number } | null,
       setPoint: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>,
     ) => {
       if (!showInteractive || !containerRef.current || !hasInteractiveLabels) {
@@ -117,13 +202,24 @@ export default function PreviewPanel({
         return;
       }
       const rect = containerRef.current.getBoundingClientRect();
-      const x = (event.clientX - rect.left) / Math.max(rect.width, 1);
-      const y = (event.clientY - rect.top) / Math.max(rect.height, 1);
+      const bounds = imageBounds || { left: 0, top: 0, width: rect.width, height: rect.height };
+      const relativeX = (event.clientX - rect.left - bounds.left) / Math.max(bounds.width, 1);
+      const relativeY = (event.clientY - rect.top - bounds.top) / Math.max(bounds.height, 1);
+      if (relativeX < 0 || relativeX > 1 || relativeY < 0 || relativeY > 1) {
+        setHoveredAnnotation(null);
+        setPoint(null);
+        return;
+      }
       const matches = previewLabels
         .filter((label) => {
           const bounds = label.bounds;
           if (!bounds) return false;
-          return x >= bounds.x1 && x <= bounds.x2 && y >= bounds.y1 && y <= bounds.y2;
+          return (
+            relativeX >= bounds.x1 &&
+            relativeX <= bounds.x2 &&
+            relativeY >= bounds.y1 &&
+            relativeY <= bounds.y2
+          );
         })
         .sort((a, b) => {
           const aBounds = a.bounds;
@@ -147,10 +243,20 @@ export default function PreviewPanel({
   const hoverDetails = useMemo(() => {
     if (!activeAnnotation?.meta) return [];
     const meta = activeAnnotation.meta;
+    const sourceLabel = meta.preview_role
+      ? meta.preview_role === "final"
+        ? "Final geometry"
+        : meta.preview_role === "overlay"
+          ? "Overlay"
+          : "Debug"
+      : "Unknown";
+    const inferredLabel = meta.inferred ? "Inferred" : "";
     const entries = [
+      { label: "Entity ID", value: meta.entity_id },
       { label: "System", value: meta.system },
       { label: "Layer", value: activeAnnotation.layer },
       { label: "Type", value: meta.entity_type },
+      { label: "Source", value: inferredLabel ? `${sourceLabel} (${inferredLabel})` : sourceLabel },
       { label: "Length", value: formatHoverValue(meta.length_ft ?? null, " ft") },
       { label: "Width", value: formatHoverValue(meta.width_ft ?? null, " ft") },
       { label: "Height", value: formatHoverValue(meta.height_ft ?? null, " ft") },
@@ -164,6 +270,46 @@ export default function PreviewPanel({
     ];
     return entries.filter((entry) => entry.value);
   }, [activeAnnotation, formatHoverValue]);
+  const debugHoverDetails = useMemo(() => {
+    if (!activeAnnotation?.meta || previewRenderMode !== "debug") return [];
+    const meta = activeAnnotation.meta;
+    const entries = [
+      { label: "Entity ID", value: meta.entity_id },
+      { label: "Source stage", value: meta.source_stage },
+      { label: "Source type", value: meta.source_type },
+      { label: "Preview role", value: meta.preview_role },
+      { label: "Inferred", value: meta.inferred ? "Yes" : "No" },
+    ];
+    return entries.filter((entry) => entry.value);
+  }, [activeAnnotation, previewRenderMode]);
+
+  useEffect(() => {
+    if (!planPreviewUrl) return;
+    const handleUpdate = () => updateImageBounds(previewRef, previewImageRef, setPreviewImageBounds);
+    handleUpdate();
+    if (!previewRef.current) return;
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(handleUpdate) : null;
+    if (observer) observer.observe(previewRef.current);
+    window.addEventListener("resize", handleUpdate);
+    return () => {
+      if (observer) observer.disconnect();
+      window.removeEventListener("resize", handleUpdate);
+    };
+  }, [planPreviewUrl, previewMode, updateImageBounds]);
+
+  useEffect(() => {
+    if (!previewFullscreenOpen || !planPreviewUrl) return;
+    const handleUpdate = () => updateImageBounds(fullscreenRef, fullscreenImageRef, setFullscreenImageBounds);
+    handleUpdate();
+    if (!fullscreenRef.current) return;
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(handleUpdate) : null;
+    if (observer) observer.observe(fullscreenRef.current);
+    window.addEventListener("resize", handleUpdate);
+    return () => {
+      if (observer) observer.disconnect();
+      window.removeEventListener("resize", handleUpdate);
+    };
+  }, [planPreviewUrl, previewFullscreenOpen, updateImageBounds]);
   return (
     <div className="rounded-[28px] border border-slate-200 bg-white/90 p-4 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.4)] backdrop-blur md:p-6">
       <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -301,7 +447,7 @@ export default function PreviewPanel({
       </div>
 
       {planPreviewUrl ? (
-        <div className="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#edf2f7_100%)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+          <div className="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               <span>Preview Mode</span>
@@ -391,7 +537,55 @@ export default function PreviewPanel({
               </button>
             </div>
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-              <span>Preview Mode</span>
+              <span>Style</span>
+              {(["default", "contrast", "engineering_dark", "soft"] as const).map((style) => (
+                <button
+                  key={style}
+                  type="button"
+                  onClick={() => {
+                    if (previewStyle === style) return;
+                    onQueuePreviewRefresh("Switching preview style...");
+                    onSetPreviewStyle(style);
+                  }}
+                  className={`rounded-full border px-2.5 py-1 ${
+                    previewStyle === style
+                      ? "border-slate-900 bg-slate-950 text-white"
+                      : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                >
+                  {style === "default"
+                    ? "Default"
+                    : style === "contrast"
+                      ? "Contrast"
+                      : style === "engineering_dark"
+                        ? "Eng Dark"
+                        : "Soft"}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+              <span>Labels</span>
+              {(["low", "standard", "high"] as const).map((density) => (
+                <button
+                  key={density}
+                  type="button"
+                  onClick={() => {
+                    if (previewLabelDensity === density) return;
+                    onQueuePreviewRefresh("Updating label density...");
+                    onSetPreviewLabelDensity(density);
+                  }}
+                  className={`rounded-full border px-2.5 py-1 ${
+                    previewLabelDensity === density
+                      ? "border-slate-900 bg-slate-950 text-white"
+                      : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                >
+                  {density === "standard" ? "Standard" : density.charAt(0).toUpperCase() + density.slice(1)}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+              <span>Render Mode</span>
               <button
                 type="button"
                 onClick={() => {
@@ -439,6 +633,22 @@ export default function PreviewPanel({
               </button>
             </div>
           </div>
+          <div className="mb-3 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+            <span className="font-semibold text-slate-900">Mode:</span>
+            <span>{previewModeDescription}</span>
+            <span className="font-semibold text-slate-900">Style:</span>
+            <span>{previewStyleLabel}</span>
+            <span className="font-semibold text-slate-900">Quality:</span>
+            <span>{previewQuality === "high" ? "High" : "Standard"}</span>
+            <span className="font-semibold text-slate-900">Labels:</span>
+            <span>
+              {previewLabelDensity === "standard"
+                ? "Standard"
+                : previewLabelDensity.charAt(0).toUpperCase() + previewLabelDensity.slice(1)}
+            </span>
+            <span className="font-semibold text-slate-900">Interactive:</span>
+            <span>{previewInteraction === "interactive" ? "Hover enabled" : "Static"}</span>
+          </div>
           {(previewRefreshing || previewRefreshNote) && (
             <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
               <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
@@ -467,6 +677,15 @@ export default function PreviewPanel({
                     Approximate 3D
                   </div>
                 ) : null}
+                {!hasGradingSurface ? (
+                  <div
+                    className={`pointer-events-none absolute right-4 rounded-full border border-white/40 bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm ${
+                      previewRenderMode !== "production" || usingAnnotation3D ? "top-14" : "top-4"
+                    }`}
+                  >
+                    Grading surface missing
+                  </div>
+                ) : null}
                 <button
                   type="button"
                   onClick={onOpenFullscreen}
@@ -476,12 +695,12 @@ export default function PreviewPanel({
                 </button>
               </div>
             ) : (
-              <div className="relative flex min-h-[560px] items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)]">
+              <div className="relative flex min-h-[640px] items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)]">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={planPreviewUrl}
                   alt="Generated plan preview"
-                  className="max-h-[560px] w-full origin-center -skew-y-1 scale-[0.98] object-contain"
+                  className="max-h-[640px] w-full origin-center -skew-y-1 scale-[0.98] object-contain"
                   onClick={onOpenFullscreen}
                 />
                 <div className="pointer-events-none absolute left-6 top-6 rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600 shadow-sm">
@@ -492,8 +711,10 @@ export default function PreviewPanel({
           ) : (
             <div
               ref={previewRef}
-              className="relative flex min-h-[560px] items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)]"
-              onMouseMove={(event) => resolveHover(event, previewRef, setHoverPoint)}
+              className={`relative flex min-h-[640px] items-center justify-center rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] ${
+                previewInteraction === "interactive" ? "cursor-crosshair" : "cursor-default"
+              }`}
+              onMouseMove={(event) => resolveHover(event, previewRef, previewImageBounds, setHoverPoint)}
               onMouseLeave={() => {
                 setHoveredAnnotation(null);
                 setHoverPoint(null);
@@ -505,62 +726,74 @@ export default function PreviewPanel({
                 );
               }}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={planPreviewUrl}
-                alt="Generated plan preview"
-                className={`max-h-[560px] w-full object-contain ${
-                  previewInteraction === "interactive" ? "cursor-crosshair" : "cursor-default"
-                }`}
-                onClick={onOpenFullscreen}
-              />
-              {planPreviewAnnotations?.labels?.length ? (
-                <div className="pointer-events-none absolute inset-0">
-                  {issueHighlightBounds ? (
-                    <div
-                      className="absolute rounded-[12px] border-2 border-rose-400/80 bg-rose-400/10 shadow-[0_0_0_6px_rgba(244,63,94,0.12)]"
-                      style={{
-                        left: `${Math.min(Math.max(issueHighlightBounds.x1 * 100, 0), 100)}%`,
-                        top: `${Math.min(Math.max(issueHighlightBounds.y1 * 100, 0), 100)}%`,
-                        width: `${Math.max(
-                          Math.min(Math.max(issueHighlightBounds.x2 * 100, 0), 100) -
-                            Math.min(Math.max(issueHighlightBounds.x1 * 100, 0), 100),
-                          2,
-                        )}%`,
-                        height: `${Math.max(
-                          Math.min(Math.max(issueHighlightBounds.y2 * 100, 0), 100) -
-                            Math.min(Math.max(issueHighlightBounds.y1 * 100, 0), 100),
-                          2,
-                        )}%`,
-                      }}
-                    />
-                  ) : null}
-                  {previewInteraction === "interactive"
-                    ? planPreviewAnnotations.labels.map((item, idx) => (
-                        <div
-                          key={`${item.label}-${idx}`}
-                          className="group pointer-events-auto absolute"
-                          style={{
-                            left: `${Math.min(Math.max(item.x * 100, 0), 100)}%`,
-                            top: `${Math.min(Math.max(item.y * 100, 0), 100)}%`,
-                            transform: "translate(-50%, -50%)",
-                          }}
-                        >
+              <div className="relative flex h-full w-full items-center justify-center overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  ref={previewImageRef}
+                  src={planPreviewUrl}
+                  alt="Generated plan preview"
+                  className={`max-h-[640px] w-full object-contain ${
+                    previewInteraction === "interactive" ? "cursor-crosshair" : "cursor-default"
+                  }`}
+                  onLoad={() => updateImageBounds(previewRef, previewImageRef, setPreviewImageBounds)}
+                  onClick={onOpenFullscreen}
+                />
+                {planPreviewAnnotations?.labels?.length && previewImageBounds ? (
+                  <div
+                    className="pointer-events-none absolute"
+                    style={{
+                      left: previewImageBounds.left,
+                      top: previewImageBounds.top,
+                      width: previewImageBounds.width,
+                      height: previewImageBounds.height,
+                    }}
+                  >
+                    {issueHighlightBounds ? (
+                      <div
+                        className="absolute rounded-[12px] border-2 border-rose-400/80 bg-rose-400/10 shadow-[0_0_0_6px_rgba(244,63,94,0.12)]"
+                        style={{
+                          left: `${Math.min(Math.max(issueHighlightBounds.x1 * 100, 0), 100)}%`,
+                          top: `${Math.min(Math.max(issueHighlightBounds.y1 * 100, 0), 100)}%`,
+                          width: `${Math.max(
+                            Math.min(Math.max(issueHighlightBounds.x2 * 100, 0), 100) -
+                              Math.min(Math.max(issueHighlightBounds.x1 * 100, 0), 100),
+                            2,
+                          )}%`,
+                          height: `${Math.max(
+                            Math.min(Math.max(issueHighlightBounds.y2 * 100, 0), 100) -
+                              Math.min(Math.max(issueHighlightBounds.y1 * 100, 0), 100),
+                            2,
+                          )}%`,
+                        }}
+                      />
+                    ) : null}
+                    {previewInteraction === "interactive"
+                      ? planPreviewAnnotations.labels.map((item, idx) => (
                           <div
-                            className={`h-2 w-2 rounded-full transition ${
-                              item.label === selectedIssueLabel
-                                ? "bg-rose-500/80 shadow-[0_0_0_6px_rgba(244,63,94,0.15)]"
-                                : "bg-slate-900/30 opacity-0 group-hover:opacity-100"
-                            }`}
-                          />
-                          <div className="pointer-events-none absolute left-1/2 top-0 z-10 hidden -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm group-hover:block">
-                            {item.label}
+                            key={`${item.label}-${idx}`}
+                            className="group pointer-events-auto absolute"
+                            style={{
+                              left: `${Math.min(Math.max(item.x * 100, 0), 100)}%`,
+                              top: `${Math.min(Math.max(item.y * 100, 0), 100)}%`,
+                              transform: "translate(-50%, -50%)",
+                            }}
+                          >
+                            <div
+                              className={`h-2 w-2 rounded-full transition ${
+                                item.label === selectedIssueLabel
+                                  ? "bg-rose-500/80 shadow-[0_0_0_6px_rgba(244,63,94,0.15)]"
+                                  : "bg-slate-900/30 opacity-0 group-hover:opacity-100"
+                              }`}
+                            />
+                            <div className="pointer-events-none absolute left-1/2 top-0 z-10 hidden -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm group-hover:block">
+                              {item.label}
+                            </div>
                           </div>
-                        </div>
-                      ))
-                    : null}
-                </div>
-              ) : null}
+                        ))
+                      : null}
+                  </div>
+                ) : null}
+              </div>
               {showInteractive && activeAnnotation && hoverPoint ? (
                 <div
                   className="pointer-events-none absolute z-20 min-w-[220px] max-w-[280px] rounded-2xl border border-slate-200 bg-white/95 p-3 text-xs text-slate-700 shadow-lg"
@@ -581,8 +814,36 @@ export default function PreviewPanel({
                         </div>
                       ))
                     ) : (
-                      <span className="text-slate-500">No engineering metadata.</span>
+                      <div className="space-y-1 text-slate-500">
+                        <div className="flex items-center justify-between gap-2">
+                          <span>Layer</span>
+                          <span className="font-semibold text-slate-900">
+                            {activeAnnotation.layer || "Unknown"}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span>Type</span>
+                          <span className="font-semibold text-slate-900">
+                            {activeAnnotation.meta?.entity_type || "Shape"}
+                          </span>
+                        </div>
+                      </div>
                     )}
+                    {debugHoverDetails.length ? (
+                      <div className="mt-3 border-t border-slate-100 pt-2 text-[11px]">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          Debug
+                        </p>
+                        <div className="mt-2 space-y-1">
+                          {debugHoverDetails.map((detail) => (
+                            <div key={detail.label} className="flex items-center justify-between gap-2">
+                              <span className="text-slate-500">{detail.label}</span>
+                              <span className="font-semibold text-slate-900">{detail.value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ) : null}
@@ -596,6 +857,11 @@ export default function PreviewPanel({
                   {previewRenderMode === "debug" ? "Debug mode" : "Engineering overlays"}
                 </div>
               ) : null}
+              {previewInteraction === "interactive" && !planPreviewAnnotations?.labels?.length ? (
+                <div className="pointer-events-none absolute right-6 top-6 hidden rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white lg:block">
+                  Hover labels pending
+                </div>
+              ) : null}
               {previewInteraction === "interactive" ? (
                 <div
                   className={`pointer-events-none absolute left-6 hidden rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white lg:block ${
@@ -605,6 +871,33 @@ export default function PreviewPanel({
                   Hover geometry for details
                 </div>
               ) : null}
+              <div className="pointer-events-none absolute bottom-6 right-6 hidden rounded-2xl border border-white/40 bg-white/85 px-3 py-2 text-[11px] text-slate-700 shadow-sm backdrop-blur lg:block">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Legend
+                </p>
+                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full" style={{ background: legendPalette.building }} />
+                    <span>Buildings</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full" style={{ background: legendPalette.parking }} />
+                    <span>Parking</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full" style={{ background: legendPalette.road }} />
+                    <span>Roads</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full" style={{ background: legendPalette.drainage }} />
+                    <span>Drainage</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full" style={{ background: legendPalette.utilities }} />
+                    <span>Utilities</span>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -639,7 +932,9 @@ export default function PreviewPanel({
               <div
                 ref={fullscreenRef}
                 className="relative max-h-full w-full"
-                onMouseMove={(event) => resolveHover(event, fullscreenRef, setFullscreenHoverPoint)}
+                onMouseMove={(event) =>
+                  resolveHover(event, fullscreenRef, fullscreenImageBounds, setFullscreenHoverPoint)
+                }
                 onMouseLeave={() => {
                   setHoveredAnnotation(null);
                   setFullscreenHoverPoint(null);
@@ -653,9 +948,11 @@ export default function PreviewPanel({
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
+                  ref={fullscreenImageRef}
                   src={planPreviewUrl}
                   alt="Generated plan preview fullscreen"
                   className="max-h-full w-full rounded-[20px] bg-white object-contain shadow-2xl"
+                  onLoad={() => updateImageBounds(fullscreenRef, fullscreenImageRef, setFullscreenImageBounds)}
                 />
                 {previewInteraction === "interactive" &&
                 !planPreviewAnnotations?.labels?.length ? (
@@ -663,8 +960,16 @@ export default function PreviewPanel({
                     No hover labels yet. Refresh the preview to generate them.
                   </div>
                 ) : null}
-                {planPreviewAnnotations?.labels?.length ? (
-                  <div className="pointer-events-none absolute inset-0">
+                {planPreviewAnnotations?.labels?.length && fullscreenImageBounds ? (
+                  <div
+                    className="pointer-events-none absolute"
+                    style={{
+                      left: fullscreenImageBounds.left,
+                      top: fullscreenImageBounds.top,
+                      width: fullscreenImageBounds.width,
+                      height: fullscreenImageBounds.height,
+                    }}
+                  >
                     {issueHighlightBounds ? (
                       <div
                         className="absolute rounded-[12px] border-2 border-rose-400/80 bg-rose-400/10 shadow-[0_0_0_6px_rgba(244,63,94,0.12)]"
@@ -722,19 +1027,47 @@ export default function PreviewPanel({
                       {activeAnnotation.label}
                     </p>
                     <div className="mt-2 space-y-1">
-                      {hoverDetails.length ? (
-                        hoverDetails.map((detail) => (
-                          <div key={detail.label} className="flex items-center justify-between gap-2">
-                            <span className="text-slate-500">{detail.label}</span>
-                            <span className="font-semibold text-slate-900">{detail.value}</span>
-                          </div>
-                        ))
-                      ) : (
-                        <span className="text-slate-500">No engineering metadata.</span>
-                      )}
-                    </div>
+                    {hoverDetails.length ? (
+                      hoverDetails.map((detail) => (
+                        <div key={detail.label} className="flex items-center justify-between gap-2">
+                          <span className="text-slate-500">{detail.label}</span>
+                          <span className="font-semibold text-slate-900">{detail.value}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="space-y-1 text-slate-500">
+                        <div className="flex items-center justify-between gap-2">
+                          <span>Layer</span>
+                          <span className="font-semibold text-slate-900">
+                            {activeAnnotation.layer || "Unknown"}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span>Type</span>
+                          <span className="font-semibold text-slate-900">
+                            {activeAnnotation.meta?.entity_type || "Shape"}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    {debugHoverDetails.length ? (
+                      <div className="mt-3 border-t border-slate-100 pt-2 text-[11px]">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          Debug
+                        </p>
+                        <div className="mt-2 space-y-1">
+                          {debugHoverDetails.map((detail) => (
+                            <div key={detail.label} className="flex items-center justify-between gap-2">
+                              <span className="text-slate-500">{detail.label}</span>
+                              <span className="font-semibold text-slate-900">{detail.value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
+                </div>
+              ) : null}
                 {previewInteraction === "interactive" && showMeasurements ? (
                   <div className="pointer-events-none absolute left-6 top-6 w-[240px] rounded-2xl border border-slate-200/70 bg-white/90 p-3 text-xs text-slate-700 shadow-sm backdrop-blur">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">

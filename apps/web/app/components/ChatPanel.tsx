@@ -42,6 +42,9 @@ type ChatPanelProps = {
   canExplain: boolean;
   statusMessage: string;
   hasVisibleActiveJob: boolean;
+  approvalState: "idle" | "approving" | "starting";
+  approvalPhaseLabel: string | null;
+  approvalError: string | null;
 };
 
 export default function ChatPanel({
@@ -73,10 +76,15 @@ export default function ChatPanel({
   canExplain,
   statusMessage,
   hasVisibleActiveJob,
+  approvalState,
+  approvalPhaseLabel,
+  approvalError,
 }: ChatPanelProps) {
   const normalizedStatus = String(visibleActiveJobStatus || "").toLowerCase();
   const isCancelling = normalizedStatus === "cancelling";
   const isAwaitingApproval = normalizedStatus === "awaiting_approval";
+  const isApprovalBusy = approvalState !== "idle";
+  const approvalLabel = approvalPhaseLabel ? `Starting ${approvalPhaseLabel}...` : "Starting next phase...";
 
   return (
     <div className="rounded-[28px] border border-slate-200 bg-white">
@@ -172,6 +180,13 @@ export default function ChatPanel({
                 style={{ width: `${thinkingState.progress}%` }}
               />
             </div>
+            {isAwaitingApproval ? (
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
+                {approvalState === "starting"
+                  ? approvalLabel
+                  : "Phase ready for review. Approve to continue or send changes."}
+              </div>
+            ) : null}
             {hasVisibleActiveJob && (
               <div className="mt-3 flex items-center justify-between text-xs text-slate-600">
                 <span className="font-semibold uppercase tracking-[0.12em] text-slate-500">
@@ -202,6 +217,11 @@ export default function ChatPanel({
                 </button>
                 {isAwaitingApproval && (
                   <>
+                    {approvalError ? (
+                      <div className="ml-3 flex items-center rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+                        {approvalError}
+                      </div>
+                    ) : null}
                     <div className="ml-2 flex items-center gap-2">
                       <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
                         Revise phase
@@ -232,9 +252,14 @@ export default function ChatPanel({
                     <button
                       type="button"
                       onClick={onContinueJob}
+                      disabled={isApprovalBusy || isCancelling}
                       className="ml-2 rounded-xl border border-slate-900 bg-slate-950 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
                     >
-                      Approve &amp; Continue
+                      {approvalState === "approving"
+                        ? "Approving..."
+                        : approvalState === "starting"
+                          ? approvalLabel
+                          : "Approve & Continue"}
                     </button>
                   </>
                 )}

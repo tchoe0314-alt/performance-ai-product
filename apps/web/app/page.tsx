@@ -297,9 +297,16 @@ export default function PerformanceAIDashboard() {
   const [previewMode, setPreviewMode] = useState<"2d" | "3d">("2d");
   const [previewInteraction, setPreviewInteraction] = useState<"static" | "interactive">("interactive");
   const [previewQuality, setPreviewQuality] = useState<"standard" | "high">("standard");
+  const [previewStyle, setPreviewStyle] = useState<"default" | "contrast" | "engineering_dark" | "soft">("default");
+  const [previewLabelDensity, setPreviewLabelDensity] = useState<"low" | "standard" | "high">("standard");
+  const [previewLabelDensityTouched, setPreviewLabelDensityTouched] = useState(false);
   const [previewRenderMode, setPreviewRenderMode] = useState<"production" | "engineering" | "debug">("production");
   const [previewRefreshing, setPreviewRefreshing] = useState(false);
   const [previewRefreshNote, setPreviewRefreshNote] = useState<string | null>(null);
+  const [approvalInFlight, setApprovalInFlight] = useState(false);
+  const [approvalPhaseLabel, setApprovalPhaseLabel] = useState<string | null>(null);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [approvalPendingJobId, setApprovalPendingJobId] = useState<string | null>(null);
   const [showMeasurements, setShowMeasurements] = useState(false);
   const [showCalculations, setShowCalculations] = useState(false);
   const [autoAdvancePhases, setAutoAdvancePhases] = useState(false);
@@ -723,6 +730,72 @@ export default function PerformanceAIDashboard() {
       }),
     [busy, visibleActiveJob?.status, visibleActiveJob?.stage, visibleActiveJob?.stage_detail, visibleActiveJob?.progress, visibleActiveJob?.updated_at, visibleActiveJob?.queue_position, visibleActiveJob?.queued_count, visibleActiveJob?.running_count, visibleActiveJobStale, activePlanTool, statusMessage],
   );
+  const workflowStatus = useMemo(() => {
+    const modeLabel = strategyMode === "manual" ? "Manual" : "Assisted";
+    const normalizedStatus = String(visibleActiveJob?.status || "").toLowerCase();
+    const phaseLabel =
+      previewRunningPhase?.label ||
+      previewNextPendingPhase?.label ||
+      String(visibleActiveJob?.stage || "").trim() ||
+      "Awaiting input";
+    let stateLabel = "Waiting for input";
+    let stateDetail = "Ready for a new request.";
+    if (normalizedStatus === "queued") {
+      stateLabel = "Queued";
+      stateDetail = "Waiting for a worker to start the next phase.";
+    } else if (normalizedStatus === "running") {
+      stateLabel = "Running";
+      stateDetail = String(visibleActiveJob?.stage_detail || "Engineering in progress.");
+    } else if (normalizedStatus === "awaiting_approval") {
+      stateLabel = "Waiting for approval";
+      stateDetail = "Review the current phase and approve to continue.";
+    } else if (normalizedStatus === "cancelling") {
+      stateLabel = "Cancelling";
+      stateDetail = "Stopping the current run.";
+    } else if (normalizedStatus === "completed") {
+      stateLabel = "Complete";
+      stateDetail = "All requested phases are finished.";
+    } else if (previewReview?.release_status === "blocked") {
+      stateLabel = "Blocked";
+      stateDetail = previewReview.release_note || "Review issues before continuing.";
+    }
+    return { modeLabel, phaseLabel, stateLabel, stateDetail };
+  }, [previewNextPendingPhase?.label, previewReview?.release_note, previewReview?.release_status, previewRunningPhase?.label, strategyMode, visibleActiveJob?.stage, visibleActiveJob?.stage_detail, visibleActiveJob?.status]);
+
+  const approvalStatus = useMemo(() => {
+    if (approvalInFlight) {
+      return { state: "approving", label: approvalPhaseLabel };
+    }
+    if (
+      approvalPendingJobId &&
+      visibleActiveJob?.job_id === approvalPendingJobId &&
+      String(visibleActiveJob?.status || "").toLowerCase() !== "awaiting_approval"
+    ) {
+      return { state: "starting", label: approvalPhaseLabel };
+    }
+    return { state: "idle", label: approvalPhaseLabel };
+  }, [approvalInFlight, approvalPendingJobId, approvalPhaseLabel, visibleActiveJob?.job_id, visibleActiveJob?.status]);
+
+  useEffect(() => {
+    if (!approvalPendingJobId) return;
+    if (visibleActiveJob?.job_id !== approvalPendingJobId) {
+      setApprovalPendingJobId(null);
+      setApprovalPhaseLabel(null);
+      return;
+    }
+    const status = String(visibleActiveJob?.status || "").toLowerCase();
+    if (["awaiting_approval", "completed", "failed", "cancelled"].includes(status)) {
+      setApprovalPendingJobId(null);
+      setApprovalPhaseLabel(null);
+    }
+  }, [approvalPendingJobId, visibleActiveJob?.job_id, visibleActiveJob?.status]);
+
+  useEffect(() => {
+    const status = String(visibleActiveJob?.status || "").toLowerCase();
+    if (status !== "awaiting_approval") {
+      setApprovalError(null);
+    }
+  }, [visibleActiveJob?.status]);
   const currentPlanMeta = useMemo<PlanMeta>(() => backendResult?.final_plan?.meta ?? {}, [backendResult]);
   const managerMetrics = useMemo<ManagerMetrics>(
     () => currentPlanMeta?.manager_export?.metrics ?? {},
@@ -1828,6 +1901,17 @@ export default function PerformanceAIDashboard() {
   const handleSendMessage = () => {
     const trimmed = prompt.trim();
     if (!trimmed && !imageName) return;
+    const normalizedStatus = String(visibleActiveJob?.status || "").toLowerCase();
+    const approvalCommand = Boolean(
+      trimmed &&
+        /^(ok(ay)?|approve|continue|yes|y|go ahead|start next|proceed)$/i.test(trimmed.trim()),
+    );
+    if (normalizedStatus === "awaiting_approval" && approvalCommand) {
+      appendChatMessage("user", trimmed);
+      setPrompt("");
+      handleContinueActiveJob();
+      return;
+    }
     if (busy || visibleActiveJob) {
       appendChatMessage("user", trimmed || "Uploaded an image.");
       if (trimmed) {
@@ -1836,12 +1920,12 @@ export default function PerformanceAIDashboard() {
           queuedPhaseNotesRef.current = next;
           return next;
         });
+        if (normalizedStatus === "awaiting_approval") {
+          void applyQueuedPhaseNotes();
+        } else {
+          setStatusMessage("Queued your note to apply after the current phase finishes.");
+        }
       }
-      appendChatMessage(
-        "assistant",
-        "Got it. I queued that note and will apply it right after the current phase finishes.",
-        "status",
-      );
       setPrompt("");
       return;
     }
@@ -1902,6 +1986,13 @@ export default function PerformanceAIDashboard() {
       setStatusMessage("There is no phase awaiting approval right now.");
       return;
     }
+    const nextPhaseLabel =
+      previewNextPendingPhase?.label ||
+      previewRunningPhase?.label ||
+      toReadableLabel(revisePhaseTarget);
+    setApprovalError(null);
+    setApprovalPhaseLabel(nextPhaseLabel);
+    setApprovalInFlight(true);
     setBusy(true);
     try {
       const data = await postJson<{ job: JobSummary }>(
@@ -1921,21 +2012,24 @@ export default function PerformanceAIDashboard() {
       });
       appendChatMessage(
         "assistant",
-        `Approved job ${data.job.job_id}. Civora queued the next phase.`,
+        `Approved the current phase. Starting ${nextPhaseLabel}.`,
         "status",
       );
-      setStatusMessage(`Approved ${data.job.job_id}. Continuing with the next phase.`);
+      setStatusMessage(`Approved ${data.job.job_id}. Starting ${nextPhaseLabel}.`);
       if (data.job.job_id) {
         setActiveJobId(data.job.job_id);
+        setApprovalPendingJobId(data.job.job_id);
       }
       await refreshJobs(token, { suppressError: true, force: true });
       queuePreviewRefresh("Refreshing preview after approval...");
     } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : "Could not continue the staged run.",
-      );
+      const message =
+        error instanceof Error ? error.message : "Could not continue the staged run.";
+      setApprovalError(message);
+      setStatusMessage(message);
     } finally {
       setBusy(false);
+      setApprovalInFlight(false);
     }
   };
 
@@ -2465,20 +2559,11 @@ export default function PerformanceAIDashboard() {
               : `Job ${job.job_id} is queued and waiting to run in the background.`,
             "status",
           );
-        } else if (job.status === "running") {
-          appendChatMessage(
-            "assistant",
-            stageDetail
-              ? `Job ${job.job_id} is working on ${stageLabel}. ${stageDetail}`
-              : `Job ${job.job_id} is working on ${stageLabel}.`,
-            "status",
-          );
         } else if (job.status === "awaiting_approval") {
+          const modeLabel = strategyMode === "manual" ? "Manual mode" : "Assisted mode";
           appendChatMessage(
             "assistant",
-            stageDetail
-              ? `Job ${job.job_id} is waiting for your approval. ${stageDetail}`
-              : `Job ${job.job_id} is waiting for your approval to continue to the next phase.`,
+            `${toReadableLabel(stageLabel)} stage complete. Waiting for your approval. ${modeLabel}.`,
             "status",
           );
         } else if (job.status === "cancelling") {
@@ -2494,20 +2579,11 @@ export default function PerformanceAIDashboard() {
         lastJobPhaseSignatureRef.current[job.job_id] !== phaseSignature
       ) {
         lastJobPhaseSignatureRef.current[job.job_id] = phaseSignature;
-        if (normalizedStatus === "running") {
+        if (normalizedStatus === "awaiting_approval") {
+          const modeLabel = strategyMode === "manual" ? "Manual mode" : "Assisted mode";
           appendChatMessage(
             "assistant",
-            stageDetail
-              ? `Job ${job.job_id} moved to ${stageLabel}. ${stageDetail}`
-              : `Job ${job.job_id} moved to ${stageLabel}.`,
-            "status",
-          );
-        } else if (normalizedStatus === "awaiting_approval") {
-          appendChatMessage(
-            "assistant",
-            stageDetail
-              ? `Job ${job.job_id} paused for approval after ${stageLabel}. ${stageDetail}`
-              : `Job ${job.job_id} paused for approval after ${stageLabel}.`,
+            `${toReadableLabel(stageLabel)} stage complete. Waiting for your approval. ${modeLabel}.`,
             "status",
           );
         }
@@ -2796,10 +2872,13 @@ export default function PerformanceAIDashboard() {
     const previewPayload = {
       ...payload,
       preview_quality: previewQuality,
+      preview_style: previewStyle,
+      label_density: previewLabelDensity,
       render_labels:
         previewInteraction === "interactive" ||
         previewRenderMode === "engineering" ||
-        previewRenderMode === "debug",
+        previewRenderMode === "debug" ||
+        previewQuality === "high",
       preview_mode: previewRenderMode,
       preview_layers: previewLayerList,
     };
@@ -3234,9 +3313,6 @@ export default function PerformanceAIDashboard() {
     currentProjectActiveJob,
     onStatusMessage: (message) => {
       setStatusMessage(message);
-      if (visibleActiveJob?.job_id) {
-        appendChatMessage("assistant", message, "status");
-      }
     },
     lastStaleJobWarningRef,
   });
@@ -3355,6 +3431,8 @@ export default function PerformanceAIDashboard() {
   }, [
     previewRenderMode,
     previewQuality,
+    previewStyle,
+    previewLabelDensity,
     previewInteraction,
     previewLayerList,
     planPreviewUrl,
@@ -3363,11 +3441,50 @@ export default function PerformanceAIDashboard() {
     backendResult,
   ]);
 
+  useEffect(() => {
+    if (previewLabelDensityTouched) return;
+    setPreviewLabelDensity(previewQuality === "high" ? "high" : "standard");
+  }, [previewLabelDensityTouched, previewQuality]);
+
+  const hasGradingSurface = useMemo(() => {
+    const gradingMeta =
+      (backendResult?.final_plan?.meta as { grading?: Record<string, unknown> } | undefined)?.grading ??
+      (backendResult?.metadata as { grading_summary?: Record<string, unknown> } | undefined)?.grading_summary ??
+      (backendResult?.metadata as { grading?: Record<string, unknown> } | undefined)?.grading ??
+      null;
+    if (!gradingMeta || typeof gradingMeta !== "object") return false;
+    const record = gradingMeta as Record<string, unknown>;
+    return Boolean(
+      record.proposed_surface ||
+        record.existing_surface ||
+        (record.surface_controls as { grade_range_ft?: number } | undefined)?.grade_range_ft,
+    );
+  }, [backendResult]);
+
   const preview3DItems = useMemo<Preview3DItem[]>(() => {
     const actions = Array.isArray(backendResult?.final_plan?.actions)
       ? backendResult.final_plan.actions
       : [];
     const items: Preview3DItem[] = [];
+    const gradingMeta =
+      (backendResult?.final_plan?.meta as { grading?: Record<string, unknown> } | undefined)?.grading ??
+      (backendResult?.metadata as { grading_summary?: Record<string, unknown> } | undefined)?.grading_summary ??
+      (backendResult?.metadata as { grading?: Record<string, unknown> } | undefined)?.grading ??
+      null;
+    const surfaceControls =
+      gradingMeta && typeof gradingMeta === "object"
+        ? ((gradingMeta as { surface_controls?: Record<string, unknown> }).surface_controls ?? {})
+        : {};
+    const surfaceGuidance =
+      gradingMeta && typeof gradingMeta === "object"
+        ? ((gradingMeta as { surface_guidance?: Record<string, unknown> }).surface_guidance ?? {})
+        : {};
+    const gradeRangeFt = Number(
+      (surfaceControls as { grade_range_ft?: number }).grade_range_ft ?? 0,
+    );
+    const downhillVector =
+      (surfaceGuidance as { downhill_vector?: { x?: number; y?: number; dx?: number; dy?: number } })
+        .downhill_vector ?? null;
     const baseTerrain = {
       minX: Number.POSITIVE_INFINITY,
       minY: Number.POSITIVE_INFINITY,
@@ -3380,6 +3497,19 @@ export default function PerformanceAIDashboard() {
       baseTerrain.minY = Math.min(baseTerrain.minY, bounds[1]);
       baseTerrain.maxX = Math.max(baseTerrain.maxX, bounds[2]);
       baseTerrain.maxY = Math.max(baseTerrain.maxY, bounds[3]);
+    };
+
+    const elevationAt = (x: number, y: number) => {
+      if (!gradeRangeFt) return 0;
+      const spanX = Math.max(baseTerrain.maxX - baseTerrain.minX, 1);
+      const spanY = Math.max(baseTerrain.maxY - baseTerrain.minY, 1);
+      const nx = (x - baseTerrain.minX) / spanX - 0.5;
+      const ny = (y - baseTerrain.minY) / spanY - 0.5;
+      const dirX = Number(downhillVector?.x ?? downhillVector?.dx ?? 0);
+      const dirY = Number(downhillVector?.y ?? downhillVector?.dy ?? -1);
+      const norm = Math.hypot(dirX, dirY) || 1;
+      const dot = (nx * dirX + ny * dirY) / norm;
+      return dot * gradeRangeFt;
     };
 
     for (const action of actions) {
@@ -3415,6 +3545,8 @@ export default function PerformanceAIDashboard() {
       const [x1, y1, x2, y2] = bounds;
       const w = Math.max(1, x2 - x1);
       const h = Math.max(1, y2 - y1);
+      const centerX = x1 + w / 2;
+      const centerY = y1 + h / 2;
       const label = String(actionRecord.label || normalizedLayer);
       const system = String(meta?.system || "");
       const isBuilding = normalizedLayer === "BUILDING";
@@ -3442,12 +3574,15 @@ export default function PerformanceAIDashboard() {
                 ? "#c7d2fe"
                 : "#dbeafe";
       const heightFt = isBuilding ? 28 : isStructure ? 10 : isDrainage ? 4 : isRoad ? 2 : isParking ? 1.5 : 1;
+      const elevationOffset = elevationAt(centerX, centerY);
+      const pondAdjustment = normalizedLayer === "POND" ? Math.max(1.5, gradeRangeFt * 0.12) : 0;
       items.push({
         x: x1,
         y: y1,
         w,
         h,
         height: heightFt,
+        z: elevationOffset - pondAdjustment,
         color,
         label: label || normalizedLayer,
         layer: isBuilding ? "BUILDING" : isStructure ? "STRUCTURE" : isRoad ? "ROAD" : "PARKING",
@@ -3462,12 +3597,14 @@ export default function PerformanceAIDashboard() {
     ) {
       const terrainWidth = Math.max(1, baseTerrain.maxX - baseTerrain.minX);
       const terrainHeight = Math.max(1, baseTerrain.maxY - baseTerrain.minY);
+      const terrainZ = gradeRangeFt ? -gradeRangeFt * 0.4 : 0;
       items.unshift({
         x: baseTerrain.minX,
         y: baseTerrain.minY,
         w: terrainWidth,
         h: terrainHeight,
         height: 1,
+        z: terrainZ,
         color: "#e5e7eb",
         label: "Terrain",
         layer: "TERRAIN",
@@ -3747,7 +3884,7 @@ export default function PerformanceAIDashboard() {
               onRefreshWorkspace={handleRefreshWorkspace}
             />
 
-            <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-6 md:px-6">
+            <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-6 md:px-6">
               <ProjectControls
                 strategyMode={strategyMode}
                 onStrategyModeChange={setStrategyMode}
@@ -3771,6 +3908,30 @@ export default function PerformanceAIDashboard() {
                   onToggle: () => item.setter(!item.checked),
                 }))}
               />
+
+              <div className="rounded-[24px] border border-slate-200 bg-white/90 p-4 shadow-[0_14px_45px_-30px_rgba(15,23,42,0.4)]">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Workflow Status
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-slate-950">
+                      {workflowStatus.stateLabel}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {workflowStatus.stateDetail}
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2 text-sm text-slate-600">
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      Mode: {workflowStatus.modeLabel}
+                    </span>
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      Phase: {workflowStatus.phaseLabel}
+                    </span>
+                  </div>
+                </div>
+              </div>
 
               <ChatPanel
                 chatMessages={chatMessages}
@@ -3812,6 +3973,9 @@ export default function PerformanceAIDashboard() {
                 canExplain={Boolean(backendResult || selectedRun)}
                 statusMessage={statusMessage}
                 hasVisibleActiveJob={Boolean(visibleActiveJob)}
+                approvalState={approvalStatus.state}
+                approvalPhaseLabel={approvalStatus.label}
+                approvalError={approvalError}
               />
 
             <PreviewPanel
@@ -3826,16 +3990,24 @@ export default function PerformanceAIDashboard() {
               previewMode={previewMode}
               previewInteraction={previewInteraction}
               previewQuality={previewQuality}
+              previewStyle={previewStyle}
+              previewLabelDensity={previewLabelDensity}
               previewRenderMode={previewRenderMode}
               onSetPreviewMode={setPreviewMode}
               onSetPreviewInteraction={setPreviewInteraction}
               onSetPreviewQuality={setPreviewQuality}
+              onSetPreviewStyle={setPreviewStyle}
+              onSetPreviewLabelDensity={(value) => {
+                setPreviewLabelDensityTouched(true);
+                setPreviewLabelDensity(value);
+              }}
               onSetPreviewRenderMode={setPreviewRenderMode}
               onQueuePreviewRefresh={queuePreviewRefresh}
               previewRefreshing={previewRefreshing}
               previewRefreshNote={previewRefreshNote}
-                preview3DEffectiveItems={preview3DEffectiveItems}
-                usingAnnotation3D={usingAnnotation3D}
+              preview3DEffectiveItems={preview3DEffectiveItems}
+              usingAnnotation3D={usingAnnotation3D}
+              hasGradingSurface={hasGradingSurface}
               onOpenFullscreen={() => setPreviewFullscreenOpen(true)}
               previewFullscreenOpen={previewFullscreenOpen}
               onCloseFullscreen={() => setPreviewFullscreenOpen(false)}

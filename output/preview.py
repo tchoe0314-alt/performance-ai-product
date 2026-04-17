@@ -290,6 +290,104 @@ STANDARD_LAYER_COLORS = {
     "C-LABEL": "#334155",
 }
 
+PREVIEW_STYLE_PRESETS = {
+    "default": {
+        "background": "#f8fafc",
+        "label_color": "#0f172a",
+        "label_bbox_alpha": 0.82,
+        "linewidth_scale": 1.0,
+        "parking_edge_boost": 1.15,
+        "parking_fill_boost": 1.1,
+        "building_fill_boost": 0.98,
+        "colors": {},
+    },
+    "contrast": {
+        "background": "#f8fafc",
+        "label_color": "#0f172a",
+        "label_bbox_alpha": 0.88,
+        "linewidth_scale": 1.15,
+        "parking_edge_boost": 1.35,
+        "parking_fill_boost": 1.4,
+        "building_fill_boost": 1.15,
+        "colors": {
+            "C-BUILDING": "#0f172a",
+            "C-PARKING": "#e2e8f0",
+            "C-ROAD": "#0f172a",
+            "C-PAVEMENT": "#64748b",
+            "C-STRM-PIPE": "#0f172a",
+            "C-WATR": "#0ea5e9",
+            "C-SAN": "#7c3aed",
+        },
+    },
+    "engineering_dark": {
+        "background": "#0f172a",
+        "label_color": "#e2e8f0",
+        "label_bbox_alpha": 0.35,
+        "linewidth_scale": 1.05,
+        "parking_edge_boost": 1.2,
+        "parking_fill_boost": 1.1,
+        "building_fill_boost": 0.9,
+        "colors": {
+            "C-BOUNDARY": "#94a3b8",
+            "C-SETBACK": "#475569",
+            "C-CENTERLINE": "#94a3b8",
+            "C-BUILDING": "#e2e8f0",
+            "C-PAVEMENT": "#94a3b8",
+            "C-PARKING": "#334155",
+            "C-DRIVEWAY": "#cbd5f5",
+            "C-ROAD": "#e2e8f0",
+            "C-SIDEWALK": "#38bdf8",
+            "C-CONTOUR": "#94a3b8",
+            "C-SPOT-ELEV": "#fbbf24",
+            "C-GRADING": "#64748b",
+            "C-STRM-PIPE": "#38bdf8",
+            "C-STRM-INLET": "#a7f3d0",
+            "C-STRM-MH": "#fb7185",
+            "C-DRAIN-FLOW": "#a7f3d0",
+            "C-POND": "#34d399",
+            "C-WATR": "#38bdf8",
+            "C-SAN": "#c4b5fd",
+            "C-UTIL": "#a78bfa",
+            "C-TEXT": "#e2e8f0",
+            "C-DIMS": "#cbd5f5",
+            "C-LABEL": "#e2e8f0",
+        },
+    },
+    "soft": {
+        "background": "#f5f5f4",
+        "label_color": "#1f2937",
+        "label_bbox_alpha": 0.65,
+        "linewidth_scale": 0.95,
+        "parking_edge_boost": 1.1,
+        "parking_fill_boost": 1.05,
+        "building_fill_boost": 0.95,
+        "colors": {
+            "C-BUILDING": "#111827",
+            "C-PARKING": "#dbeafe",
+            "C-ROAD": "#9ca3af",
+            "C-PAVEMENT": "#cbd5e1",
+            "C-STRM-PIPE": "#60a5fa",
+            "C-WATR": "#38bdf8",
+            "C-SAN": "#a78bfa",
+        },
+    },
+}
+
+_ACTIVE_STYLE = PREVIEW_STYLE_PRESETS["default"]
+
+
+def _apply_preview_style(style: Optional[str]) -> None:
+    key = str(style or "default").strip().lower()
+    if key not in PREVIEW_STYLE_PRESETS:
+        key = "default"
+    preset = PREVIEW_STYLE_PRESETS[key]
+    colors = dict(STANDARD_LAYER_COLORS)
+    colors.update(preset.get("colors", {}))
+    preset = dict(preset)
+    preset["colors"] = colors
+    global _ACTIVE_STYLE
+    _ACTIVE_STYLE = preset
+
 STANDARD_LAYER_LINEWIDTH = {
     "C-BOUNDARY": 1.2,
     "C-SETBACK": 1.0,
@@ -821,12 +919,13 @@ def _is_schematic_access_shape(action, building_bounds):
 
 def get_linewidth(action):
     layer = get_layer(action, "C-TEXT")
-    return STANDARD_LAYER_LINEWIDTH.get(layer, STANDARD_LAYER_LINEWIDTH["DEFAULT"])
+    base = STANDARD_LAYER_LINEWIDTH.get(layer, STANDARD_LAYER_LINEWIDTH["DEFAULT"])
+    return base * float(_ACTIVE_STYLE.get("linewidth_scale", 1.0))
 
 
 def get_color(action):
     layer = get_layer(action, "C-TEXT")
-    return STANDARD_LAYER_COLORS.get(layer, STANDARD_LAYER_COLORS["C-TEXT"])
+    return _ACTIVE_STYLE.get("colors", STANDARD_LAYER_COLORS).get(layer, STANDARD_LAYER_COLORS["C-TEXT"])
 
 
 def get_linestyle(action):
@@ -857,7 +956,7 @@ def _text_style(action):
     preview_profile = _normalize_engineering_profile(action.get("_preview_profile"))
     alpha = 0.8
     fontsize_adjust = 0.0
-    bbox_alpha = 0.8
+    bbox_alpha = float(_ACTIVE_STYLE.get("label_bbox_alpha", 0.8))
 
     if preview_profile == "grading" and layer == "C-SPOT-ELEV" and _layer_variant(action) == "FG":
         alpha = 0.5
@@ -884,7 +983,9 @@ def _rectangle_visual_style(action, w, h):
     stripe_gap = None
 
     if layer == "C-BUILDING":
-        fill_alpha = 0.5 if preview_profile in {"layout", "grading"} else 0.2
+        fill_alpha = (0.5 if preview_profile in {"layout", "grading"} else 0.2) * float(
+            _ACTIVE_STYLE.get("building_fill_boost", 1.0)
+        )
         facecolor = get_color(action)
         linewidth_boost = 0.65 if preview_profile in {"layout", "grading"} else 0.3
     elif layer == "C-ROAD":
@@ -903,15 +1004,17 @@ def _rectangle_visual_style(action, w, h):
         else:
             fill_alpha = 0.018 if preview_profile == "grading" else 0.028
         facecolor = get_color(action)
+        fill_alpha *= float(_ACTIVE_STYLE.get("parking_fill_boost", 1.0))
 
         if residential_court and (w >= 120.0 or parking_area >= 3000.0):
-            edge_alpha = 0.025 if (preview_profile == "grading" or w >= 170.0 or parking_area >= 6500.0) else 0.055
+            edge_alpha = 0.12 if (preview_profile == "grading" or w >= 170.0 or parking_area >= 6500.0) else 0.18
         elif w >= 180.0 or h >= 40.0 or parking_area >= 7000.0:
-            edge_alpha = 0.04 if preview_profile == "grading" else 0.06
+            edge_alpha = 0.18 if preview_profile == "grading" else 0.24
         elif w >= 120.0 or parking_area >= 4000.0:
-            edge_alpha = 0.08 if preview_profile == "grading" else 0.12
+            edge_alpha = 0.24 if preview_profile == "grading" else 0.3
         else:
-            edge_alpha = 0.16 if preview_profile == "grading" else 0.22
+            edge_alpha = 0.3 if preview_profile == "grading" else 0.38
+        edge_alpha = min(0.85, edge_alpha * float(_ACTIVE_STYLE.get("parking_edge_boost", 1.0)))
 
         if w >= 24 and h >= 10:
             if residential_court and (w >= 120.0 or h >= 24.0):
@@ -1465,7 +1568,13 @@ def _polyline_length(action):
     return length
 
 
-def _engineering_overlay_actions(records, *, engineering_profile="layout", allow_heuristics: bool = False):
+def _engineering_overlay_actions(
+    records,
+    *,
+    engineering_profile="layout",
+    allow_heuristics: bool = False,
+    label_density: Optional[str] = None,
+):
     engineering_profile = _normalize_engineering_profile(engineering_profile)
     if not allow_heuristics:
         return []
@@ -1486,6 +1595,14 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout", allow
         "complete": {"line": 5, "flow": 2, "drain_label": 0, "contour": 4, "contour_label": 4, "spot": 6, "structure": 6, "utility": 3, "basin": 2},
         "baseline": {"line": 4, "flow": 0, "drain_label": 0, "contour": 0, "contour_label": 0, "spot": 0, "structure": 6, "utility": 2, "basin": 1},
     }.get(engineering_profile, {})
+    density_key = str(label_density or "").strip().lower()
+    density_scale = 1.0
+    if density_key in {"low", "minimal"}:
+        density_scale = 0.6
+    elif density_key in {"high", "dense"}:
+        density_scale = 1.6
+    if density_scale != 1.0:
+        overlay_limits = {k: max(0, int(round(v * density_scale))) for k, v in overlay_limits.items()}
     basin_candidates = []
     line_candidates = []
     flow_candidates = []
@@ -1932,6 +2049,7 @@ def _filtered_preview_actions(
     allow_heuristics: bool = PREVIEW_ALLOW_HEURISTICS_DEFAULT,
     allow_synthesis: bool = PREVIEW_ALLOW_SYNTHESIS_DEFAULT,
     preview_mode: Optional[str] = None,
+    label_density: Optional[str] = None,
 ):
     engineering_profile = _normalize_engineering_profile(rich_engineering)
     include_layers = _normalize_include_layers(include_layers)
@@ -1954,6 +2072,7 @@ def _filtered_preview_actions(
                 records,
                 engineering_profile=engineering_profile,
                 allow_heuristics=allow_heuristics,
+                label_density=label_density,
             )
             if has_layout_scene
             else []
@@ -2340,22 +2459,22 @@ def draw_north_arrow(ax, action, *, render_labels: bool = True):
 # Main preview
 # ----------------------------------------
 
-def _expand_bounds(bounds, pad_ratio=0.08, min_pad=8.0):
+def _expand_bounds(bounds, pad_ratio=0.12, min_pad=12.0):
     min_x, min_y, max_x, max_y = bounds
     width = max(max_x - min_x, 1.0)
     height = max(max_y - min_y, 1.0)
     aspect = width / height if height > 0 else 1.0
     if aspect >= 1.8:
-        pad_x = max(width * min(pad_ratio, 0.06), max(6.0, min_pad * 0.75))
-        pad_y_top = max(height * min(pad_ratio * 0.25, 0.02), max(2.5, min_pad * 0.3))
-        pad_y_bottom = max(height * min(pad_ratio * 0.7, 0.05), max(5.0, min_pad * 0.65))
+        pad_x = max(width * min(pad_ratio, 0.08), max(8.0, min_pad * 0.85))
+        pad_y_top = max(height * min(pad_ratio * 0.35, 0.035), max(4.0, min_pad * 0.4))
+        pad_y_bottom = max(height * min(pad_ratio * 0.85, 0.08), max(8.0, min_pad * 0.85))
     elif aspect >= 1.35:
-        pad_x = max(width * min(pad_ratio, 0.07), max(7.0, min_pad * 0.85))
-        pad_y_top = max(height * min(pad_ratio * 0.4, 0.032), max(3.0, min_pad * 0.4))
-        pad_y_bottom = max(height * min(pad_ratio * 0.8, 0.06), max(5.0, min_pad * 0.7))
+        pad_x = max(width * min(pad_ratio, 0.09), max(9.0, min_pad * 0.9))
+        pad_y_top = max(height * min(pad_ratio * 0.45, 0.04), max(5.0, min_pad * 0.45))
+        pad_y_bottom = max(height * min(pad_ratio * 0.9, 0.08), max(9.0, min_pad * 0.9))
     else:
         pad_x = max(width * pad_ratio, min_pad)
-        pad_y_top = max(height * pad_ratio * 0.75, min_pad * 0.75)
+        pad_y_top = max(height * pad_ratio * 0.85, min_pad * 0.85)
         pad_y_bottom = max(height * pad_ratio, min_pad)
     return min_x - pad_x, min_y - pad_y_bottom, max_x + pad_x, max_y + pad_y_top
 
@@ -2535,7 +2654,13 @@ def _infer_profile_from_actions(actions, current_profile, *, allow_profile_infer
     return current_profile
 
 
-def _preview_scene(plan, *, include_layers: Optional[set[str]] = None, preview_mode: Optional[str] = None):
+def _preview_scene(
+    plan,
+    *,
+    include_layers: Optional[set[str]] = None,
+    preview_mode: Optional[str] = None,
+    label_density: Optional[str] = None,
+):
     preview_options = _preview_options(plan)
     resolved_preview_mode = _normalize_preview_mode(preview_mode or preview_options.get("preview_mode"))
     allow_heuristics = preview_options["allow_heuristics"]
@@ -2569,6 +2694,7 @@ def _preview_scene(plan, *, include_layers: Optional[set[str]] = None, preview_m
         allow_heuristics=allow_heuristics,
         allow_synthesis=allow_synthesis,
         preview_mode=resolved_preview_mode,
+        label_density=label_density,
     )
     if not actions:
         return engineering_profile, actions, None, audit
@@ -2635,7 +2761,7 @@ def _draw_plan(ax, plan, *, actions=None, selected_bounds=None, render_labels: b
     ax.set_ylim(min_y, max_y)
 
     ax.set_aspect("equal")
-    ax.set_facecolor("#f8fafc")
+    ax.set_facecolor(_ACTIVE_STYLE.get("background", "#f8fafc"))
     ax.grid(False)
     ax.set_xticks([])
     ax.set_yticks([])
@@ -2653,7 +2779,10 @@ def render_plan_preview_png(
     render_labels: bool = True,
     include_layers: Optional[set[str]] = None,
     preview_mode: Optional[str] = None,
+    preview_style: Optional[str] = None,
+    label_density: Optional[str] = None,
 ) -> bytes:
+    _apply_preview_style(preview_style)
     actions = [
         action
         for action in list(plan.get("actions") or [])
@@ -2674,6 +2803,7 @@ def render_plan_preview_png(
         {"actions": actions, **{k: v for k, v in plan.items() if k != "actions"}},
         include_layers=allowed if include_layers else None,
         preview_mode=preview_mode,
+        label_density=label_density,
     )
     if len(actions) >= 60:
         figsize = _preview_figure_size(selected_bounds, base=7.2)
@@ -2681,7 +2811,7 @@ def render_plan_preview_png(
     elif selected_bounds:
         figsize = _preview_figure_size(selected_bounds, base=min(figsize[1], 8.0))
     fig = Figure(figsize=figsize, dpi=dpi)
-    fig.patch.set_facecolor("#f8fafc")
+    fig.patch.set_facecolor(_ACTIVE_STYLE.get("background", "#f8fafc"))
     FigureCanvasAgg(fig)
     ax = fig.subplots()
 
@@ -2694,14 +2824,20 @@ def render_plan_preview_png(
     ):
         raise ValueError("No drawable actions found in plan.")
 
-    fig.tight_layout()
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
     buffer = BytesIO()
     fig.savefig(buffer, format="png", dpi=dpi)
     fig.clear()
     return buffer.getvalue()
 
 
-def build_preview_annotations(plan, *, include_layers: Optional[set[str]] = None, preview_mode: Optional[str] = None) -> Dict[str, Any]:
+def build_preview_annotations(
+    plan,
+    *,
+    include_layers: Optional[set[str]] = None,
+    preview_mode: Optional[str] = None,
+    label_density: Optional[str] = None,
+) -> Dict[str, Any]:
     actions = [
         action
         for action in list(plan.get("actions") or [])
@@ -2719,6 +2855,7 @@ def build_preview_annotations(plan, *, include_layers: Optional[set[str]] = None
         {"actions": actions, **{k: v for k, v in plan.items() if k != "actions"}},
         include_layers=allowed if include_layers else None,
         preview_mode=preview_mode,
+        label_density=label_density,
     )
     if not preview_actions or not selected_bounds:
         return {"profile": engineering_profile, "labels": [], "audit": audit}
@@ -2743,6 +2880,18 @@ def build_preview_annotations(plan, *, include_layers: Optional[set[str]] = None
         "POOL",
         "LOT",
     }
+    area_layers = {
+        "C-BUILDING",
+        "C-PARKING",
+        "C-ROAD",
+        "C-PAVEMENT",
+        "C-SIDEWALK",
+        "C-DRIVEWAY",
+        "C-POND",
+        "BRIDGE",
+        "POOL",
+        "LOT",
+    }
     labels: List[Dict[str, Any]] = []
     for action in preview_actions:
         layer = get_layer(action, "C-TEXT")
@@ -2756,16 +2905,22 @@ def build_preview_annotations(plan, *, include_layers: Optional[set[str]] = None
             continue
         task = str(action.get("task") or "").lower()
         meta = safe_dict(action.get("meta"))
+        entity_id = safe_text(action.get("canonical_source_id"), "") or safe_text(
+            meta.get("entity_id"), ""
+        )
+        source_stage = safe_text(action.get("canonical_source_stage"), "")
+        source_type = safe_text(action.get("canonical_source_type"), "")
+        preview_role = safe_text(meta.get("preview_role"), "")
+        inferred = bool(meta.get("inferred") or meta.get("assumed") or meta.get("estimated"))
         points = safe_points(action) if task in {"polyline", "polygon"} else []
         length_ft = _polyline_length(points) if task == "polyline" else None
         width_ft = None
         height_ft = None
         area_sf = None
-        if bounds:
+        if bounds and task in {"rectangle", "polygon"} and layer in area_layers:
             width_ft = max(0.0, bounds[2] - bounds[0])
             height_ft = max(0.0, bounds[3] - bounds[1])
-            if task in {"rectangle", "polygon"}:
-                area_sf = width_ft * height_ft
+            area_sf = width_ft * height_ft
         slope_ft_ft = safe_num(meta.get("slope_ft_ft")) if meta.get("slope_ft_ft") is not None else None
         slope_pct = safe_num(meta.get("slope_pct")) if meta.get("slope_pct") is not None else None
         if slope_pct is None and slope_ft_ft is not None:
@@ -2791,7 +2946,11 @@ def build_preview_annotations(plan, *, include_layers: Optional[set[str]] = None
                 },
                 "meta": {
                     "system": safe_text(meta.get("system"), ""),
-                    "preview_role": safe_text(meta.get("preview_role"), ""),
+                    "preview_role": preview_role,
+                    "entity_id": entity_id,
+                    "source_stage": source_stage,
+                    "source_type": source_type,
+                    "inferred": inferred,
                     "entity_type": task,
                     "canonical_source_type": safe_text(action.get("canonical_source_type"), ""),
                     "length_ft": length_ft,

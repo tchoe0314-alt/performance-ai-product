@@ -83,17 +83,19 @@ export default function Preview3DCanvas({
 
     const sorted = [...items].sort((a, b) => a.x + a.y - (b.x + b.y));
     for (const item of sorted) {
+      const baseZ = item.z ?? 0;
+      const topZ = baseZ + item.height;
       const base = [
-        project(item.x, item.y, 0),
-        project(item.x + item.w, item.y, 0),
-        project(item.x + item.w, item.y + item.h, 0),
-        project(item.x, item.y + item.h, 0),
+        project(item.x, item.y, baseZ),
+        project(item.x + item.w, item.y, baseZ),
+        project(item.x + item.w, item.y + item.h, baseZ),
+        project(item.x, item.y + item.h, baseZ),
       ];
       const top = [
-        project(item.x, item.y, item.height),
-        project(item.x + item.w, item.y, item.height),
-        project(item.x + item.w, item.y + item.h, item.height),
-        project(item.x, item.y + item.h, item.height),
+        project(item.x, item.y, topZ),
+        project(item.x + item.w, item.y, topZ),
+        project(item.x + item.w, item.y + item.h, topZ),
+        project(item.x, item.y + item.h, topZ),
       ];
       const sideDark = item.layer === "BUILDING" ? "#94a3b8" : "#cbd5f5";
       const sideLight = item.layer === "BUILDING" ? "#bfc7d4" : "#dbe5ff";
@@ -134,7 +136,7 @@ export default function Preview3DCanvas({
 
   return (
     <div
-      className="relative h-[520px] w-full overflow-hidden rounded-[20px] bg-white"
+      className="relative h-[600px] w-full overflow-hidden rounded-[20px] bg-white"
       onDoubleClick={onOpenFullscreen}
     >
       <canvas ref={canvasRef} className="h-full w-full" />

@@ -798,6 +798,8 @@ def build_preview_response(
     user_id: Optional[str] = None,
     project_id: Optional[str] = None,
     preview_quality: Optional[str] = None,
+    preview_style: Optional[str] = None,
+    label_density: Optional[str] = None,
     render_labels: Optional[bool] = None,
     preview_layers: Optional[list[str]] = None,
     preview_mode: Optional[str] = None,
@@ -813,6 +815,8 @@ def build_preview_response(
         final_plan,
         render_labels=bool(render_labels),
         quality=preview_quality or "standard",
+        preview_style=preview_style,
+        label_density=label_density,
         include_layers=preview_layers,
         preview_mode=preview_mode,
     )
@@ -820,6 +824,7 @@ def build_preview_response(
         final_plan,
         include_layers=set(preview_layers or []) if preview_layers else None,
         preview_mode=preview_mode,
+        label_density=label_density,
     )
     return {
         "success": True,

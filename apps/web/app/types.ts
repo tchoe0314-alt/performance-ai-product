@@ -338,6 +338,8 @@ export type PreviewRequestPayload = Record<string, unknown> & {
   result?: PlanResponse;
   filename_stem?: string;
   preview_mode?: "production" | "engineering" | "debug";
+  preview_style?: string;
+  label_density?: "low" | "standard" | "high";
 };
 
 export type PhaseMetric = {
@@ -386,6 +388,10 @@ export type PreviewResponse = {
       meta?: {
         system?: string;
         preview_role?: string;
+        entity_id?: string;
+        source_stage?: string;
+        source_type?: string;
+        inferred?: boolean;
         entity_type?: string;
         canonical_source_type?: string;
         length_ft?: number | null;
@@ -559,6 +565,7 @@ export type Preview3DItem = {
   w: number;
   h: number;
   height: number;
+  z?: number;
   color: string;
   label: string;
   layer: string;

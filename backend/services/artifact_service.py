@@ -45,6 +45,8 @@ class ArtifactService:
         *,
         render_labels: bool,
         quality: str,
+        preview_style: Optional[str] = None,
+        label_density: Optional[str] = None,
         include_layers: Optional[list[str]] = None,
         preview_mode: Optional[str] = None,
     ) -> str:
@@ -53,6 +55,8 @@ class ArtifactService:
                 "render_version": self.preview_cache_version,
                 "render_labels": bool(render_labels),
                 "quality": str(quality),
+                "preview_style": str(preview_style or ""),
+                "label_density": str(label_density or ""),
                 "preview_mode": str(preview_mode or ""),
                 "include_layers": sorted(set(include_layers or [])),
                 "final_plan": final_plan or {},
@@ -69,19 +73,27 @@ class ArtifactService:
         *,
         render_labels: bool = True,
         quality: str = "standard",
+        preview_style: Optional[str] = None,
+        label_density: Optional[str] = None,
         include_layers: Optional[list[str]] = None,
         preview_mode: Optional[str] = None,
     ) -> bytes:
-        cache_path = self.preview_cache_dir / f"{self._preview_cache_key(final_plan, render_labels=render_labels, quality=quality, include_layers=include_layers, preview_mode=preview_mode)}.png"
+        cache_path = self.preview_cache_dir / f"{self._preview_cache_key(final_plan, render_labels=render_labels, quality=quality, preview_style=preview_style, label_density=label_density, include_layers=include_layers, preview_mode=preview_mode)}.png"
         if cache_path.exists():
             return cache_path.read_bytes()
-        dpi = 220 if str(quality).lower() == "high" else 160
+        quality_key = str(quality).lower()
+        dpi = 240 if quality_key == "high" else 160
+        density = label_density
+        if not density:
+            density = "high" if quality_key == "high" else "standard"
         png_bytes = render_plan_preview_png(
             final_plan,
             render_labels=render_labels,
             dpi=dpi,
             include_layers=set(include_layers or []) if include_layers else None,
             preview_mode=preview_mode,
+            preview_style=preview_style,
+            label_density=density,
         )
         try:
             cache_path.write_bytes(png_bytes)

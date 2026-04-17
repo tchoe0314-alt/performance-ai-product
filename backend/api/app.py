@@ -177,6 +177,8 @@ class ArtifactPayload(BaseModel):
     final_plan: Dict[str, Any] = Field(default_factory=dict)
     filename_stem: Optional[str] = None
     preview_quality: Optional[str] = None
+    preview_style: Optional[str] = None
+    label_density: Optional[str] = None
     render_labels: Optional[bool] = None
     preview_layers: Optional[List[str]] = None
     preview_mode: Optional[str] = None
@@ -768,6 +770,8 @@ def build_preview(
         user_id=current_user["user_id"],
         project_id=payload.project_id,
         preview_quality=payload.preview_quality,
+        preview_style=payload.preview_style,
+        label_density=payload.label_density,
         render_labels=payload.render_labels,
         preview_layers=payload.preview_layers,
         preview_mode=payload.preview_mode,
