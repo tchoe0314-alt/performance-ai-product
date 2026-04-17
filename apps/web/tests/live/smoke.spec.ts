@@ -128,8 +128,13 @@ test("live civora flow", async ({ page, request, baseURL }) => {
     await composer.fill(prompt);
     await page.getByRole("button", { name: "Send" }).click();
 
-    const approvalCard = page.getByText("Awaiting Approval", { exact: true });
-    await expect(approvalCard).toBeVisible({ timeout: 60_000 });
+    const approveButton = page.getByRole("button", { name: /Approve & Continue/i });
+    const approvalBanner = page.getByText("Phase ready for review", { exact: false });
+    try {
+      await expect(approveButton).toBeVisible({ timeout: 60_000 });
+    } catch {
+      await expect(approvalBanner).toBeVisible({ timeout: 60_000 });
+    }
 
     const previewImage = page.getByAltText("Generated plan preview");
     await previewImage.waitFor({ state: "visible", timeout: 12_000 }).catch(() => null);
@@ -139,7 +144,6 @@ test("live civora flow", async ({ page, request, baseURL }) => {
       fullPage: true,
     });
 
-    const approveButton = page.getByRole("button", { name: /Approve & Continue/i });
     if (await approveButton.isVisible().catch(() => false)) {
       await approveButton.scrollIntoViewIfNeeded();
       await approveButton.click({ force: true });

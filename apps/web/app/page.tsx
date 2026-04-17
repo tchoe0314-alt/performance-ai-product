@@ -299,7 +299,6 @@ export default function PerformanceAIDashboard() {
   const [previewMode, setPreviewMode] = useState<"2d" | "3d">("2d");
   const [previewInteraction, setPreviewInteraction] = useState<"static" | "interactive">("interactive");
   const [previewQuality, setPreviewQuality] = useState<"standard" | "high">("standard");
-  const [previewStyle, setPreviewStyle] = useState<"default" | "contrast" | "engineering_dark" | "soft">("default");
   const [previewLabelDensity, setPreviewLabelDensity] = useState<"low" | "standard" | "high">("standard");
   const [previewLabelDensityTouched, setPreviewLabelDensityTouched] = useState(false);
   const [previewRenderMode, setPreviewRenderMode] = useState<"production" | "engineering" | "debug">("production");
@@ -2842,7 +2841,6 @@ export default function PerformanceAIDashboard() {
     const previewPayload = {
       ...payload,
       preview_quality: previewQuality,
-      preview_style: previewStyle,
       label_density: previewLabelDensity,
       render_labels:
         previewInteraction === "interactive" ||
@@ -3432,7 +3430,6 @@ export default function PerformanceAIDashboard() {
   }, [
     previewRenderMode,
     previewQuality,
-    previewStyle,
     previewLabelDensity,
     previewInteraction,
     previewLayerList,
@@ -3991,13 +3988,11 @@ export default function PerformanceAIDashboard() {
               previewMode={previewMode}
               previewInteraction={previewInteraction}
               previewQuality={previewQuality}
-              previewStyle={previewStyle}
               previewLabelDensity={previewLabelDensity}
               previewRenderMode={previewRenderMode}
               onSetPreviewMode={setPreviewMode}
               onSetPreviewInteraction={setPreviewInteraction}
               onSetPreviewQuality={setPreviewQuality}
-              onSetPreviewStyle={setPreviewStyle}
               onSetPreviewLabelDensity={(value) => {
                 setPreviewLabelDensityTouched(true);
                 setPreviewLabelDensity(value);

@@ -333,7 +333,7 @@ test("staged regression flow", async ({ page, request, baseURL }) => {
     "layout",
   );
 
-  await expect(page.getByText("Awaiting Approval", { exact: true })).toBeVisible({
+  await expect(page.getByRole("button", { name: /Approve & Continue/i })).toBeVisible({
     timeout: 60_000,
   });
   await page.screenshot({
@@ -361,7 +361,7 @@ test("staged regression flow", async ({ page, request, baseURL }) => {
     "grading",
   );
 
-  await expect(page.getByText("Awaiting Approval", { exact: true })).toBeVisible({
+  await expect(page.getByRole("button", { name: /Approve & Continue/i })).toBeVisible({
     timeout: 60_000,
   });
   await page.screenshot({

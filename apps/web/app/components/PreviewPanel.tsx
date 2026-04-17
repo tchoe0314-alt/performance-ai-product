@@ -25,13 +25,11 @@ type PreviewPanelProps = {
   previewMode: "2d" | "3d";
   previewInteraction: "static" | "interactive";
   previewQuality: "standard" | "high";
-  previewStyle: "default" | "contrast" | "engineering_dark" | "soft";
   previewLabelDensity: "low" | "standard" | "high";
   previewRenderMode: "production" | "engineering" | "debug";
   onSetPreviewMode: (value: "2d" | "3d") => void;
   onSetPreviewInteraction: (value: "static" | "interactive") => void;
   onSetPreviewQuality: (value: "standard" | "high") => void;
-  onSetPreviewStyle: (value: "default" | "contrast" | "engineering_dark" | "soft") => void;
   onSetPreviewLabelDensity: (value: "low" | "standard" | "high") => void;
   onSetPreviewRenderMode: (value: "production" | "engineering" | "debug") => void;
   onQueuePreviewRefresh: (reason: string) => void;
@@ -65,13 +63,11 @@ export default function PreviewPanel({
   previewMode,
   previewInteraction,
   previewQuality,
-  previewStyle,
   previewLabelDensity,
   previewRenderMode,
   onSetPreviewMode,
   onSetPreviewInteraction,
   onSetPreviewQuality,
-  onSetPreviewStyle,
   onSetPreviewLabelDensity,
   onSetPreviewRenderMode,
   onQueuePreviewRefresh,
@@ -125,47 +121,27 @@ export default function PreviewPanel({
       : previewRenderMode === "engineering"
         ? "Engineering shows final geometry with overlays like grades, labels, and system annotations."
         : "Production shows final, client-facing geometry only.";
-  const previewStyleLabel =
-    previewStyle === "contrast"
-      ? "High Contrast"
-      : previewStyle === "engineering_dark"
-        ? "Engineering Dark"
-        : previewStyle === "soft"
-          ? "Soft Presentation"
-          : "Default";
-  const legendPalette = useMemo(() => {
-    const palettes = {
-      default: {
-        building: "#0f172a",
-        parking: "#cbd5e1",
-        road: "#475569",
-        drainage: "#1d4ed8",
-        utilities: "#7c3aed",
-      },
-      contrast: {
-        building: "#0f172a",
-        parking: "#e2e8f0",
-        road: "#0f172a",
-        drainage: "#0f172a",
-        utilities: "#7c3aed",
-      },
-      engineering_dark: {
-        building: "#e2e8f0",
-        parking: "#334155",
-        road: "#e2e8f0",
-        drainage: "#38bdf8",
-        utilities: "#c4b5fd",
-      },
-      soft: {
-        building: "#1f2937",
-        parking: "#d6d3d1",
-        road: "#57534e",
-        drainage: "#2563eb",
-        utilities: "#a855f7",
-      },
-    } as const;
-    return palettes[previewStyle] ?? palettes.default;
-  }, [previewStyle]);
+  const legendPalette = {
+    building: "#0f172a",
+    parking: "#cbd5e1",
+    road: "#475569",
+    drainage: "#1d4ed8",
+    utilities: "#7c3aed",
+  } as const;
+  const activeHighlightBounds = activeAnnotation?.bounds ?? null;
+  const clampPercent = (value: number) => Math.min(Math.max(value * 100, 0), 100);
+  const buildBoundsStyle = (bounds: { x1: number; y1: number; x2: number; y2: number }) => {
+    const left = clampPercent(bounds.x1);
+    const right = clampPercent(bounds.x2);
+    const top = clampPercent(bounds.y1);
+    const bottom = clampPercent(bounds.y2);
+    return {
+      left: `${left}%`,
+      top: `${top}%`,
+      width: `${Math.max(right - left, 1)}%`,
+      height: `${Math.max(bottom - top, 1)}%`,
+    };
+  };
   const updateImageBounds = useCallback(
     (
       containerRef: React.RefObject<HTMLDivElement | null>,
@@ -537,33 +513,6 @@ export default function PreviewPanel({
               </button>
             </div>
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-              <span>Style</span>
-              {(["default", "contrast", "engineering_dark", "soft"] as const).map((style) => (
-                <button
-                  key={style}
-                  type="button"
-                  onClick={() => {
-                    if (previewStyle === style) return;
-                    onQueuePreviewRefresh("Switching preview style...");
-                    onSetPreviewStyle(style);
-                  }}
-                  className={`rounded-full border px-2.5 py-1 ${
-                    previewStyle === style
-                      ? "border-slate-900 bg-slate-950 text-white"
-                      : "border-slate-200 bg-white text-slate-600"
-                  }`}
-                >
-                  {style === "default"
-                    ? "Default"
-                    : style === "contrast"
-                      ? "Contrast"
-                      : style === "engineering_dark"
-                        ? "Eng Dark"
-                        : "Soft"}
-                </button>
-              ))}
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               <span>Labels</span>
               {(["low", "standard", "high"] as const).map((density) => (
                 <button
@@ -636,8 +585,6 @@ export default function PreviewPanel({
           <div className="mb-3 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
             <span className="font-semibold text-slate-900">Mode:</span>
             <span>{previewModeDescription}</span>
-            <span className="font-semibold text-slate-900">Style:</span>
-            <span>{previewStyleLabel}</span>
             <span className="font-semibold text-slate-900">Quality:</span>
             <span>{previewQuality === "high" ? "High" : "Standard"}</span>
             <span className="font-semibold text-slate-900">Labels:</span>
@@ -748,23 +695,16 @@ export default function PreviewPanel({
                       height: previewImageBounds.height,
                     }}
                   >
+                    {activeHighlightBounds ? (
+                      <div
+                        className="absolute rounded-[14px] border-2 border-sky-400/90 bg-sky-400/10 shadow-[0_0_0_6px_rgba(56,189,248,0.18)]"
+                        style={buildBoundsStyle(activeHighlightBounds)}
+                      />
+                    ) : null}
                     {issueHighlightBounds ? (
                       <div
                         className="absolute rounded-[12px] border-2 border-rose-400/80 bg-rose-400/10 shadow-[0_0_0_6px_rgba(244,63,94,0.12)]"
-                        style={{
-                          left: `${Math.min(Math.max(issueHighlightBounds.x1 * 100, 0), 100)}%`,
-                          top: `${Math.min(Math.max(issueHighlightBounds.y1 * 100, 0), 100)}%`,
-                          width: `${Math.max(
-                            Math.min(Math.max(issueHighlightBounds.x2 * 100, 0), 100) -
-                              Math.min(Math.max(issueHighlightBounds.x1 * 100, 0), 100),
-                            2,
-                          )}%`,
-                          height: `${Math.max(
-                            Math.min(Math.max(issueHighlightBounds.y2 * 100, 0), 100) -
-                              Math.min(Math.max(issueHighlightBounds.y1 * 100, 0), 100),
-                            2,
-                          )}%`,
-                        }}
+                        style={buildBoundsStyle(issueHighlightBounds)}
                       />
                     ) : null}
                     {previewInteraction === "interactive"
@@ -970,23 +910,16 @@ export default function PreviewPanel({
                       height: fullscreenImageBounds.height,
                     }}
                   >
+                    {activeHighlightBounds ? (
+                      <div
+                        className="absolute rounded-[14px] border-2 border-sky-400/90 bg-sky-400/10 shadow-[0_0_0_6px_rgba(56,189,248,0.18)]"
+                        style={buildBoundsStyle(activeHighlightBounds)}
+                      />
+                    ) : null}
                     {issueHighlightBounds ? (
                       <div
                         className="absolute rounded-[12px] border-2 border-rose-400/80 bg-rose-400/10 shadow-[0_0_0_6px_rgba(244,63,94,0.12)]"
-                        style={{
-                          left: `${Math.min(Math.max(issueHighlightBounds.x1 * 100, 0), 100)}%`,
-                          top: `${Math.min(Math.max(issueHighlightBounds.y1 * 100, 0), 100)}%`,
-                          width: `${Math.max(
-                            Math.min(Math.max(issueHighlightBounds.x2 * 100, 0), 100) -
-                              Math.min(Math.max(issueHighlightBounds.x1 * 100, 0), 100),
-                            2,
-                          )}%`,
-                          height: `${Math.max(
-                            Math.min(Math.max(issueHighlightBounds.y2 * 100, 0), 100) -
-                              Math.min(Math.max(issueHighlightBounds.y1 * 100, 0), 100),
-                            2,
-                          )}%`,
-                        }}
+                        style={buildBoundsStyle(issueHighlightBounds)}
                       />
                     ) : null}
                     {previewInteraction === "interactive"
