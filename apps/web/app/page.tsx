@@ -3727,8 +3727,6 @@ export default function PerformanceAIDashboard() {
     previewFailedDeliverables,
     previewExtraDeliverables,
     previewReadyDeliverables,
-    previewPhaseEntries,
-    combinedPreviewPhase,
     previewCompletedPhaseCount,
     previewTotalPhaseCount,
     previewRunningPhase,
