@@ -13,7 +13,6 @@ import {
 } from "../lib/api";
 
 import type {
-  UserRecord,
   Assumption,
   Issue,
   BackendAssumption,
@@ -74,12 +73,7 @@ import {
   extractDesignMemory,
 } from "./utils/chat";
 
-import {
-  clearStoredToken,
-  getStoredToken,
-  setStoredToken,
-  uploadedImageSrc,
-} from "./utils/auth";
+import { uploadedImageSrc } from "./utils/auth";
 
 import AppHeader from "./components/AppHeader";
 import AuthScreen from "./components/AuthScreen";
@@ -90,6 +84,8 @@ import PreviewPanel from "./components/PreviewPanel";
 import ProjectControls from "./components/ProjectControls";
 import useChatPersistence from "./hooks/useChatPersistence";
 import usePreviewReview from "./hooks/usePreviewReview";
+import useJobPolling from "./hooks/useJobPolling";
+import useAuthState from "./hooks/useAuthState";
 
 function formatTimestamp(value?: number): string {
   if (!value) return "Unknown time";
@@ -263,18 +259,6 @@ function buildThinkingState({
 }
 
 export default function PerformanceAIDashboard() {
-  const [token, setToken] = useState("");
-  const [user, setUser] = useState<UserRecord | null>(null);
-  const [authMode, setAuthMode] = useState<"login" | "register">("register");
-  const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
-  const [authName, setAuthName] = useState("");
-  const [authEmail, setAuthEmail] = useState("");
-  const [authPassword, setAuthPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [authError, setAuthError] = useState("");
-  const [authLoading, setAuthLoading] = useState(false);
-  const [authStatusError, setAuthStatusError] = useState("");
-
   const [strategyMode, setStrategyMode] = useState<StrategyMode>("assisted");
   const [projectType, setProjectType] = useState("");
   const [units, setUnits] = useState("ft");
@@ -383,6 +367,84 @@ export default function PerformanceAIDashboard() {
   const previewRecoveryKeyRef = useRef("");
   const lastSiteInputProjectRef = useRef("");
   const controlAutosaveTimeoutRef = useRef<number | null>(null);
+
+  const hasTrackedJobs = useMemo(
+    () =>
+      Boolean(activeJobId) ||
+      jobs.some((job) =>
+        ["queued", "running", "awaiting_approval", "cancelling"].includes(
+          String(job.status || "").toLowerCase(),
+        ),
+      ),
+    [activeJobId, jobs],
+  );
+
+  const refreshProjects = useCallback(async (authToken: string) => {
+    if (!authToken) return;
+    const data = await getJson<{ projects: ProjectSummary[] }>("/api/projects", {
+      token: authToken,
+    });
+    const nextProjects = Array.isArray(data.projects) ? data.projects : [];
+    nextProjects.sort((a, b) => {
+      const aSaved = a.has_result ? 1 : 0;
+      const bSaved = b.has_result ? 1 : 0;
+      if (aSaved !== bSaved) return bSaved - aSaved;
+      return (b.updated_at ?? 0) - (a.updated_at ?? 0);
+    });
+    setProjects(nextProjects);
+  }, []);
+
+  const refreshJobs = useCallback(async (
+    authToken: string,
+    {
+      suppressError = false,
+      force = false,
+    }: { suppressError?: boolean; force?: boolean } = {},
+  ) => {
+    if (!authToken) return;
+    if (!force && !hasTrackedJobs) return;
+    try {
+      const data = await getJson<{ jobs: JobSummary[] }>("/api/jobs", {
+        token: authToken,
+      });
+      setJobs(Array.isArray(data.jobs) ? data.jobs : []);
+    } catch (error) {
+      if (!suppressError) {
+        throw error;
+      }
+    }
+  }, [hasTrackedJobs]);
+
+  const {
+    token,
+    user,
+    authMode,
+    authStatus,
+    authName,
+    authEmail,
+    authPassword,
+    showPassword,
+    authError,
+    authLoading,
+    authStatusError,
+    setAuthMode,
+    setAuthName,
+    setAuthEmail,
+    setAuthPassword,
+    setShowPassword,
+    handleAuth,
+    handleLogout,
+  } = useAuthState({
+    onRefreshProjects: refreshProjects,
+    onRefreshJobs: refreshJobs,
+    onStatusMessage: setStatusMessage,
+    onLogoutCleanup: () => {
+      setProjects([]);
+      setJobs([]);
+      setCurrentProject(null);
+      setProjectId("");
+    },
+  });
 
   const disciplineToggles: DisciplineToggle[] = [
     {
@@ -1511,46 +1573,6 @@ export default function PerformanceAIDashboard() {
     }
   };
 
-  const loadMe = async (authToken: string) => {
-    const data = await getJson<{ user: UserRecord }>("/api/auth/me", {
-      token: authToken,
-    });
-    setUser(data.user);
-  };
-
-  const loadAuthStatus = async () => {
-    try {
-      const data = await getJson<AuthStatus>("/api/auth/status");
-      setAuthStatus(data);
-      setAuthStatusError("");
-      if ((data.user_count ?? 0) > 0) {
-        setAuthMode("login");
-      }
-    } catch (error) {
-      setAuthStatus(null);
-      setAuthStatusError(
-        error instanceof Error
-          ? error.message
-          : "Civora AI could not load backend status.",
-      );
-    }
-  };
-
-  const refreshProjects = async (authToken = token) => {
-    if (!authToken) return;
-    const data = await getJson<{ projects: ProjectSummary[] }>("/api/projects", {
-      token: authToken,
-    });
-    const nextProjects = Array.isArray(data.projects) ? data.projects : [];
-    nextProjects.sort((a, b) => {
-      const aSaved = a.has_result ? 1 : 0;
-      const bSaved = b.has_result ? 1 : 0;
-      if (aSaved !== bSaved) return bSaved - aSaved;
-      return (b.updated_at ?? 0) - (a.updated_at ?? 0);
-    });
-    setProjects(nextProjects);
-  };
-
   const upsertProjectSummary = (project: ProjectRecord | ProjectSummary) => {
     const summary: ProjectSummary = {
       project_id: project.project_id,
@@ -1582,42 +1604,10 @@ export default function PerformanceAIDashboard() {
     );
   };
 
-  const hasTrackedJobs = useMemo(
-    () =>
-      Boolean(activeJobId) ||
-      jobs.some((job) =>
-        ["queued", "running", "awaiting_approval", "cancelling"].includes(
-          String(job.status || "").toLowerCase(),
-        ),
-      ),
-    [activeJobId, jobs],
-  );
-
-  const refreshJobs = async (
-    authToken = token,
-    {
-      suppressError = false,
-      force = false,
-    }: { suppressError?: boolean; force?: boolean } = {},
-  ) => {
-    if (!authToken) return;
-    if (!force && !hasTrackedJobs) return;
-    try {
-      const data = await getJson<{ jobs: JobSummary[] }>("/api/jobs", {
-        token: authToken,
-      });
-      setJobs(Array.isArray(data.jobs) ? data.jobs : []);
-    } catch (error) {
-      if (!suppressError) {
-        throw error;
-      }
-    }
-  };
-
   const handleRefreshWorkspace = async () => {
     if (!token) return;
     const results = await Promise.allSettled([
-      refreshProjects(),
+      refreshProjects(token),
       refreshJobs(token, { suppressError: true, force: true }),
     ]);
     const projectsFailed = results[0].status === "rejected";
@@ -1638,60 +1628,6 @@ export default function PerformanceAIDashboard() {
       return;
     }
     setStatusMessage("Workspace refresh failed.");
-  };
-
-  const handleAuth = async () => {
-    setAuthLoading(true);
-    setAuthError("");
-    try {
-      const path =
-        authMode === "register" ? "/api/auth/register" : "/api/auth/login";
-      const body =
-        authMode === "register"
-          ? {
-              name: authName,
-              email: authEmail,
-              password: authPassword,
-            }
-          : {
-              email: authEmail,
-              password: authPassword,
-            };
-      const data = await postJson<{ token: string; user: UserRecord }>(
-        path,
-        body,
-      );
-      setToken(data.token);
-      setStoredToken(data.token);
-      setUser(data.user);
-      await refreshProjects(data.token);
-      await refreshJobs(data.token, { suppressError: true });
-      setStatusMessage(`Signed in to Civora AI as ${data.user.name}.`);
-    } catch (error) {
-      setAuthError(
-        error instanceof Error ? error.message : "Authentication failed.",
-      );
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      if (token) {
-        await postJson("/api/auth/logout", {}, { token });
-      }
-    } catch {
-      // Ignore logout API errors and clear local state anyway.
-    }
-    clearStoredToken();
-    setToken("");
-    setUser(null);
-    setProjects([]);
-    setJobs([]);
-    setCurrentProject(null);
-    setProjectId("");
-    setStatusMessage("Signed out.");
   };
 
   const runOrchestrator = async (mode: PlanToolMode = "run") => {
@@ -3362,70 +3298,24 @@ export default function PerformanceAIDashboard() {
     }
   };
 
-  useEffect(() => {
-    void loadAuthStatus();
-    const stored = getStoredToken();
-    if (!stored) return;
-    setToken(stored);
-    void loadMe(stored)
-      .then(async () => {
-        await refreshProjects(stored);
-        await refreshJobs(stored, { suppressError: true });
-      })
-      .catch(() => {
-        clearStoredToken();
-        setToken("");
-      });
-  }, []);
-
-  useEffect(() => {
-    if (!token || !activeJobId) return;
-    void loadJob(activeJobId);
-    void refreshJobs(token, { suppressError: true, force: true });
-    const interval = window.setInterval(() => {
-      void loadJob(activeJobId);
-      void refreshJobs(token, { suppressError: true, force: true });
-    }, 3000);
-    return () => window.clearInterval(interval);
-  }, [token, activeJobId]);
-
-  useEffect(() => {
-    if (!currentProjectActiveJob) {
-      return;
-    }
-    if (!activeJobId) {
-      setActiveJobId(currentProjectActiveJob.job_id);
-    }
-  }, [activeJobId, currentProjectActiveJob]);
-
-  useEffect(() => {
-    if (!visibleActiveJob) return;
-    const interval = window.setInterval(() => {
-      setJobClockMs(Date.now());
-    }, 5000);
-    return () => window.clearInterval(interval);
-  }, [visibleActiveJob]);
-
-  useEffect(() => {
-    if (!visibleActiveJob?.job_id) return;
-    const normalizedStatus = String(visibleActiveJob.status || "").toLowerCase();
-    if (!visibleActiveJobStale || normalizedStatus !== "running") {
-      delete lastStaleJobWarningRef.current[visibleActiveJob.job_id];
-      return;
-    }
-    if (lastStaleJobWarningRef.current[visibleActiveJob.job_id]) {
-      return;
-    }
-    lastStaleJobWarningRef.current[visibleActiveJob.job_id] = true;
-    setStatusMessage(
-      `Job ${visibleActiveJob.job_id} has not reported a fresh backend update recently. It may still be running, but the status could be stalled.`,
-    );
-    appendChatMessage(
-      "assistant",
-      `Job ${visibleActiveJob.job_id} has not reported a fresh backend update recently. It may still be running, but the status may be stalled.`,
-      "status",
-    );
-  }, [visibleActiveJob?.job_id, visibleActiveJob?.status, visibleActiveJobStale]);
+  useJobPolling({
+    token,
+    activeJobId,
+    visibleActiveJob,
+    visibleActiveJobStale,
+    onLoadJob: loadJob,
+    onRefreshJobs: refreshJobs,
+    setJobClockMs,
+    setActiveJobId,
+    currentProjectActiveJob,
+    onStatusMessage: (message) => {
+      setStatusMessage(message);
+      if (visibleActiveJob?.job_id) {
+        appendChatMessage("assistant", message, "status");
+      }
+    },
+    lastStaleJobWarningRef,
+  });
 
   useEffect(() => {
     if (!workflowRuns.length) {
