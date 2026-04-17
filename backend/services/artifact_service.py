@@ -12,7 +12,7 @@ import report_builder
 from output.dxf_exporter import save_dxf
 from output.preview import render_plan_preview_png
 
-PREVIEW_RENDER_VERSION = "2026-04-08-layout-v18"
+PREVIEW_RENDER_VERSION = "2026-04-17-preview-modes-v1"
 
 
 def _slugify(value: str, default: str = "artifact") -> str:
@@ -46,12 +46,14 @@ class ArtifactService:
         render_labels: bool,
         quality: str,
         include_layers: Optional[list[str]] = None,
+        preview_mode: Optional[str] = None,
     ) -> str:
         payload = json.dumps(
             {
                 "render_version": self.preview_cache_version,
                 "render_labels": bool(render_labels),
                 "quality": str(quality),
+                "preview_mode": str(preview_mode or ""),
                 "include_layers": sorted(set(include_layers or [])),
                 "final_plan": final_plan or {},
             },
@@ -68,8 +70,9 @@ class ArtifactService:
         render_labels: bool = True,
         quality: str = "standard",
         include_layers: Optional[list[str]] = None,
+        preview_mode: Optional[str] = None,
     ) -> bytes:
-        cache_path = self.preview_cache_dir / f"{self._preview_cache_key(final_plan, render_labels=render_labels, quality=quality, include_layers=include_layers)}.png"
+        cache_path = self.preview_cache_dir / f"{self._preview_cache_key(final_plan, render_labels=render_labels, quality=quality, include_layers=include_layers, preview_mode=preview_mode)}.png"
         if cache_path.exists():
             return cache_path.read_bytes()
         dpi = 220 if str(quality).lower() == "high" else 160
@@ -78,6 +81,7 @@ class ArtifactService:
             render_labels=render_labels,
             dpi=dpi,
             include_layers=set(include_layers or []) if include_layers else None,
+            preview_mode=preview_mode,
         )
         try:
             cache_path.write_bytes(png_bytes)

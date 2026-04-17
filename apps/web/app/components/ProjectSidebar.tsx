@@ -13,16 +13,6 @@ import {
   toReadableLabel,
 } from "../utils/formatting";
 
-type PreviewPhaseEntry = {
-  key: string;
-  label: string;
-  status: string;
-  ready: boolean;
-  summary: string;
-  currentStage: string;
-  currentStatus: string;
-};
-
 type WhatYouNeedSummary = {
   note: string;
   neededNow: string[];
@@ -52,8 +42,6 @@ type ProjectSidebarProps = {
   learningReport: LearningReport | null;
   learningReportUpdatedAt: number | null;
   onRefreshLearningReport: () => void;
-  previewPhaseEntries: PreviewPhaseEntry[];
-  combinedPreviewPhase: PreviewPhaseEntry | null;
   previewAssumptionCategories: string[];
   previewFixActions: string[];
   previewFixTargets: string[];
@@ -137,8 +125,6 @@ export default function ProjectSidebar({
   learningReport,
   learningReportUpdatedAt,
   onRefreshLearningReport,
-  previewPhaseEntries,
-  combinedPreviewPhase,
   previewAssumptionCategories,
   previewFixActions,
   previewFixTargets,
@@ -206,7 +192,6 @@ export default function ProjectSidebar({
 }: ProjectSidebarProps) {
   const [showLearningPanel, setShowLearningPanel] = useState(true);
   const [sidebarSections, setSidebarSections] = useState<Record<string, boolean>>({
-    phaseProgress: true,
     assumptions: true,
     fixes: false,
     needsReview: false,
@@ -339,49 +324,6 @@ export default function ProjectSidebar({
             </div>
           ) : null}
         </div>
-
-        {renderSidebarSection(
-          "phaseProgress",
-          "Phase Progress",
-          previewPhaseEntries.length ? (
-            <div className="space-y-3">
-              {combinedPreviewPhase ? (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium">{combinedPreviewPhase.summary}</span>
-                    <span className="text-xs uppercase tracking-[0.12em] text-slate-500">
-                      {toReadableLabel(combinedPreviewPhase.status)}
-                    </span>
-                  </div>
-                </div>
-              ) : null}
-              <div className="space-y-2">
-                {previewPhaseEntries
-                  .filter((phase) => phase.key !== "combined_view")
-                  .map((phase) => (
-                    <div
-                      key={phase.key}
-                      className="rounded-xl border border-slate-200 bg-white px-3 py-2"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-medium text-slate-900">
-                          {phase.label}
-                        </span>
-                        <span className="text-xs uppercase tracking-[0.12em] text-slate-500">
-                          {toReadableLabel(phase.status)}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-xs text-slate-600">{phase.summary}</p>
-                    </div>
-                  ))}
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-slate-500">
-              Phase progress will appear after a run completes.
-            </p>
-          ),
-        )}
 
         {renderSidebarSection(
           "assumptions",

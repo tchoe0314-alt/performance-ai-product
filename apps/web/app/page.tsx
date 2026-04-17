@@ -300,6 +300,7 @@ export default function PerformanceAIDashboard() {
   const [previewMode, setPreviewMode] = useState<"2d" | "3d">("2d");
   const [previewInteraction, setPreviewInteraction] = useState<"static" | "interactive">("interactive");
   const [previewQuality, setPreviewQuality] = useState<"standard" | "high">("standard");
+  const [previewRenderMode, setPreviewRenderMode] = useState<"production" | "engineering" | "debug">("production");
   const [previewRefreshing, setPreviewRefreshing] = useState(false);
   const [previewRefreshNote, setPreviewRefreshNote] = useState<string | null>(null);
   const [showMeasurements, setShowMeasurements] = useState(false);
@@ -2785,6 +2786,7 @@ export default function PerformanceAIDashboard() {
       ...payload,
       preview_quality: previewQuality,
       render_labels: previewInteraction === "interactive",
+      preview_mode: previewRenderMode,
       preview_layers: previewLayerList,
     };
     try {
@@ -3337,6 +3339,7 @@ export default function PerformanceAIDashboard() {
     }
     requestPreviewInBackground(artifactPayload, { silentStatus: true });
   }, [
+    previewRenderMode,
     previewQuality,
     previewInteraction,
     previewLayerList,
@@ -3678,8 +3681,6 @@ export default function PerformanceAIDashboard() {
             learningReport={learningReport}
             learningReportUpdatedAt={learningReportUpdatedAt}
             onRefreshLearningReport={refreshLearningReport}
-            previewPhaseEntries={previewPhaseEntries}
-            combinedPreviewPhase={combinedPreviewPhase}
             previewAssumptionCategories={previewAssumptionCategories}
             previewFixActions={previewFixActions}
             previewFixTargets={previewFixTargets}
@@ -3831,24 +3832,26 @@ export default function PerformanceAIDashboard() {
                 hasVisibleActiveJob={Boolean(visibleActiveJob)}
               />
 
-              <PreviewPanel
-                previewReview={previewReview}
-                previewTotalPhaseCount={previewTotalPhaseCount}
-                previewCompletedPhaseCount={previewCompletedPhaseCount}
-                previewRunningPhase={previewRunningPhase}
-                previewNextPendingPhase={previewNextPendingPhase}
-                onRefreshPreview={handlePreviewPlan}
-                busy={busy}
-                planPreviewUrl={planPreviewUrl}
-                previewMode={previewMode}
-                previewInteraction={previewInteraction}
-                previewQuality={previewQuality}
-                onSetPreviewMode={setPreviewMode}
-                onSetPreviewInteraction={setPreviewInteraction}
-                onSetPreviewQuality={setPreviewQuality}
-                onQueuePreviewRefresh={queuePreviewRefresh}
-                previewRefreshing={previewRefreshing}
-                previewRefreshNote={previewRefreshNote}
+            <PreviewPanel
+              previewReview={previewReview}
+              previewTotalPhaseCount={previewTotalPhaseCount}
+              previewCompletedPhaseCount={previewCompletedPhaseCount}
+              previewRunningPhase={previewRunningPhase}
+              previewNextPendingPhase={previewNextPendingPhase}
+              onRefreshPreview={handlePreviewPlan}
+              busy={busy}
+              planPreviewUrl={planPreviewUrl}
+              previewMode={previewMode}
+              previewInteraction={previewInteraction}
+              previewQuality={previewQuality}
+              previewRenderMode={previewRenderMode}
+              onSetPreviewMode={setPreviewMode}
+              onSetPreviewInteraction={setPreviewInteraction}
+              onSetPreviewQuality={setPreviewQuality}
+              onSetPreviewRenderMode={setPreviewRenderMode}
+              onQueuePreviewRefresh={queuePreviewRefresh}
+              previewRefreshing={previewRefreshing}
+              previewRefreshNote={previewRefreshNote}
                 preview3DEffectiveItems={preview3DEffectiveItems}
                 usingAnnotation3D={usingAnnotation3D}
                 onOpenFullscreen={() => setPreviewFullscreenOpen(true)}

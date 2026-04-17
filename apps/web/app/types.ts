@@ -337,6 +337,7 @@ export type PreviewRequestPayload = Record<string, unknown> & {
   project_id?: string | null;
   result?: PlanResponse;
   filename_stem?: string;
+  preview_mode?: "production" | "engineering" | "debug";
 };
 
 export type PhaseMetric = {

@@ -179,6 +179,7 @@ class ArtifactPayload(BaseModel):
     preview_quality: Optional[str] = None
     render_labels: Optional[bool] = None
     preview_layers: Optional[List[str]] = None
+    preview_mode: Optional[str] = None
 
 
 class ChatDecisionPayload(BaseModel):
@@ -769,6 +770,7 @@ def build_preview(
         preview_quality=payload.preview_quality,
         render_labels=payload.render_labels,
         preview_layers=payload.preview_layers,
+        preview_mode=payload.preview_mode,
     )
 
 

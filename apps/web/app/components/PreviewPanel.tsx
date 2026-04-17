@@ -27,9 +27,11 @@ type PreviewPanelProps = {
   previewMode: "2d" | "3d";
   previewInteraction: "static" | "interactive";
   previewQuality: "standard" | "high";
+  previewRenderMode: "production" | "engineering" | "debug";
   onSetPreviewMode: (value: "2d" | "3d") => void;
   onSetPreviewInteraction: (value: "static" | "interactive") => void;
   onSetPreviewQuality: (value: "standard" | "high") => void;
+  onSetPreviewRenderMode: (value: "production" | "engineering" | "debug") => void;
   onQueuePreviewRefresh: (reason: string) => void;
   previewRefreshing: boolean;
   previewRefreshNote: string | null;
@@ -113,9 +115,11 @@ export default function PreviewPanel({
   previewMode,
   previewInteraction,
   previewQuality,
+  previewRenderMode,
   onSetPreviewMode,
   onSetPreviewInteraction,
   onSetPreviewQuality,
+  onSetPreviewRenderMode,
   onQueuePreviewRefresh,
   previewRefreshing,
   previewRefreshNote,
@@ -333,6 +337,54 @@ export default function PreviewPanel({
                 }`}
               >
                 High
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+              <span>Preview Mode</span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (previewRenderMode === "production") return;
+                  onQueuePreviewRefresh("Switching to production preview...");
+                  onSetPreviewRenderMode("production");
+                }}
+                className={`rounded-full border px-2.5 py-1 ${
+                  previewRenderMode === "production"
+                    ? "border-slate-900 bg-slate-950 text-white"
+                    : "border-slate-200 bg-white text-slate-600"
+                }`}
+              >
+                Production
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (previewRenderMode === "engineering") return;
+                  onQueuePreviewRefresh("Switching to engineering preview...");
+                  onSetPreviewRenderMode("engineering");
+                }}
+                className={`rounded-full border px-2.5 py-1 ${
+                  previewRenderMode === "engineering"
+                    ? "border-slate-900 bg-slate-950 text-white"
+                    : "border-slate-200 bg-white text-slate-600"
+                }`}
+              >
+                Engineering
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (previewRenderMode === "debug") return;
+                  onQueuePreviewRefresh("Switching to debug preview...");
+                  onSetPreviewRenderMode("debug");
+                }}
+                className={`rounded-full border px-2.5 py-1 ${
+                  previewRenderMode === "debug"
+                    ? "border-slate-900 bg-slate-950 text-white"
+                    : "border-slate-200 bg-white text-slate-600"
+                }`}
+              >
+                Debug
               </button>
             </div>
           </div>

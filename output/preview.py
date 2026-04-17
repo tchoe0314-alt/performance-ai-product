@@ -14,6 +14,7 @@ from matplotlib.patches import Rectangle, Circle, Arc
 from core.utils import (
     clean_label,
     safe_center,
+    safe_dict,
     safe_num,
     safe_origin,
     safe_points,
@@ -22,95 +23,203 @@ from core.utils import (
 
 
 # ----------------------------------------
-# Styling helpers (matches DXF intent)
+# Styling helpers (aligned with civil CAD layer standard)
 # ----------------------------------------
 
-LAYER_LINEWIDTH = {
-    "BUILDING": 2.5,
-    "PAD": 1.4,
-    "PAVEMENT": 2.0,
-    "ROAD": 2.0,
-    "PARKING": 1.0,
-    "WALK": 1.2,
-    "FIRE": 1.4,
-    "SITE": 1.2,
-    "SETBACK": 1.0,
-    "PIPE": 2.0,
-    "DRAIN": 2.0,
-    "DRAIN_FLOW": 1.5,
-    "SURFACE": 1.0,
-    "EG_CONTOUR": 1.0,
-    "FG_CONTOUR": 1.2,
-    "BASIN_BOUNDARY": 1.8,
-    "UTILITY": 1.8,
-    "WATER": 1.8,
-    "SAN": 1.8,
-    "STORM": 2.0,
-    "STRUCTURE": 1.6,
-    "BRIDGE": 2.2,
-    "POOL": 1.6,
-    "LOT": 1.2,
-    "DEFAULT": 2.0,
+PREVIEW_ALLOW_HEURISTICS_DEFAULT = False
+PREVIEW_ALLOW_SYNTHESIS_DEFAULT = False
+PREVIEW_ALLOW_PROFILE_INFERENCE_DEFAULT = False
+PREVIEW_MODE_DEFAULT = "production"
+
+STANDARD_LAYERS = {
+    "C-BOUNDARY",
+    "C-SETBACK",
+    "C-CENTERLINE",
+    "C-BUILDING",
+    "C-PAVEMENT",
+    "C-PARKING",
+    "C-DRIVEWAY",
+    "C-ROAD",
+    "C-SIDEWALK",
+    "C-CONTOUR",
+    "C-SPOT-ELEV",
+    "C-GRADING",
+    "C-CUT",
+    "C-FILL",
+    "C-STRM-PIPE",
+    "C-STRM-INLET",
+    "C-STRM-MH",
+    "C-DRAIN-FLOW",
+    "C-LOW-POINT",
+    "C-POND",
+    "C-WATR",
+    "C-SAN",
+    "C-UTIL",
+    "C-HYDRANT",
+    "C-TEXT",
+    "C-DIMS",
+    "C-LABEL",
 }
 
-LAYER_COLORS = {
-    "BUILDING": "#0f172a",
-    "PAD": "#94a3b8",
-    "PAVEMENT": "#64748b",
-    "ROAD": "#475569",
-    "PARKING": "#cbd5e1",
-    "WALK": "#0f766e",
-    "FIRE": "#dc2626",
-    "SITE": "#94a3b8",
-    "SETBACK": "#d1d5db",
-    "PIPE": "#1d4ed8",
-    "DRAIN": "#0f766e",
-    "STORM": "#0369a1",
-    "SAN": "#7c3aed",
-    "UTILITY": "#6d28d9",
-    "WATER": "#0ea5e9",
-    "DRAIN_FLOW": "#0f766e",
-    "SURFACE": "#94a3b8",
-    "EG_CONTOUR": "#cbd5e1",
-    "FG_CONTOUR": "#f59e0b",
-    "BASIN_BOUNDARY": "#15803d",
-    "STRUCTURE": "#dc2626",
-    "BRIDGE": "#1e40af",
-    "POOL": "#0ea5e9",
-    "LOT": "#94a3b8",
-    "DEFAULT": "#334155",
+LEGACY_LAYER_ALIASES = {
+    "PARK": "PARKING",
+    "WALKWAY": "WALK",
+    "SIDEWALK": "WALK",
+    "PAD": "SITE",
+    "BASIN": "BASIN_BOUNDARY",
+    "STAIRS": "SYMBOL",
+    "ELEVATOR": "SYMBOL",
 }
 
-LAYER_LINESTYLE = {
-    "PAD": (0, (6, 4)),
-    "SETBACK": (0, (8, 4)),
-    "EG_CONTOUR": "--",
-    "FG_CONTOUR": "-.",
-    "DRAIN_FLOW": (0, (4, 4)),
-    "SURFACE": (0, (2, 4)),
+LEGACY_TO_STANDARD_LAYER = {
+    "SITE": "C-BOUNDARY",
+    "LOT": "C-BOUNDARY",
+    "SETBACK": "C-SETBACK",
+    "ROUTE": "C-CENTERLINE",
+    "BUILDING": "C-BUILDING",
+    "PAVEMENT": "C-PAVEMENT",
+    "PARKING": "C-PARKING",
+    "ROAD": "C-ROAD",
+    "FIRE": "C-ROAD",
+    "WALK": "C-SIDEWALK",
+    "SURFACE": "C-GRADING",
+    "EG_CONTOUR": "C-CONTOUR",
+    "FG_CONTOUR": "C-CONTOUR",
+    "SPOT_EG": "C-SPOT-ELEV",
+    "SPOT_FG": "C-SPOT-ELEV",
+    "PIPE": "C-STRM-PIPE",
+    "STORM": "C-STRM-PIPE",
+    "DRAIN": "C-STRM-INLET",
+    "STRUCTURE": "C-STRM-MH",
+    "BASIN_BOUNDARY": "C-POND",
+    "DRAIN_FLOW": "C-DRAIN-FLOW",
+    "LOW_POINTS": "C-LOW-POINT",
+    "WATER": "C-WATR",
+    "SAN": "C-SAN",
+    "UTILITY": "C-UTIL",
+    "ANNO": "C-TEXT",
+    "TITLE": "C-TEXT",
+    "SHEET": "C-TEXT",
+    "DIM": "C-DIMS",
+    "GRID": "C-DIMS",
+    "AXIS": "C-DIMS",
+    "VIEWPORT": "C-DIMS",
+    "MATCHLINE": "C-DIMS",
+    "HATCH": "C-DIMS",
+    "SYMBOL": "C-LABEL",
+    "LABEL": "C-LABEL",
+    "SKETCH_ZONE": "C-LABEL",
+    "SKETCH_OBS": "C-LABEL",
+    "SKETCH_LINE": "C-LABEL",
+    "SKETCH_PTS": "C-LABEL",
+    "SKETCH_BLDG": "C-BUILDING",
+    "SKETCH_PARK": "C-PARKING",
+    "SKETCH_ROAD": "C-ROAD",
+    "SKETCH_DRAIN": "C-STRM-PIPE",
+    "SKETCH_UTIL": "C-UTIL",
+    "SKETCH_PAD": "C-PAVEMENT",
+    "SKETCH_BLDG_PTS": "C-LABEL",
+    "SKETCH_DRAIN_PTS": "C-LABEL",
+    "SKETCH_UTIL_PTS": "C-LABEL",
+    "SKETCH_ROAD_PTS": "C-LABEL",
+}
+
+STANDARD_LAYER_COLORS = {
+    "C-BOUNDARY": "#94a3b8",
+    "C-SETBACK": "#d1d5db",
+    "C-CENTERLINE": "#64748b",
+    "C-BUILDING": "#0f172a",
+    "C-PAVEMENT": "#64748b",
+    "C-PARKING": "#cbd5e1",
+    "C-DRIVEWAY": "#475569",
+    "C-ROAD": "#475569",
+    "C-SIDEWALK": "#0f766e",
+    "C-CONTOUR": "#cbd5e1",
+    "C-SPOT-ELEV": "#f59e0b",
+    "C-GRADING": "#94a3b8",
+    "C-CUT": "#dc2626",
+    "C-FILL": "#f59e0b",
+    "C-STRM-PIPE": "#1d4ed8",
+    "C-STRM-INLET": "#0f766e",
+    "C-STRM-MH": "#dc2626",
+    "C-DRAIN-FLOW": "#0f766e",
+    "C-LOW-POINT": "#1f2937",
+    "C-POND": "#15803d",
+    "C-WATR": "#0ea5e9",
+    "C-SAN": "#7c3aed",
+    "C-UTIL": "#6d28d9",
+    "C-HYDRANT": "#dc2626",
+    "C-TEXT": "#334155",
+    "C-DIMS": "#475569",
+    "C-LABEL": "#334155",
+}
+
+STANDARD_LAYER_LINEWIDTH = {
+    "C-BOUNDARY": 1.2,
+    "C-SETBACK": 1.0,
+    "C-CENTERLINE": 1.2,
+    "C-BUILDING": 2.5,
+    "C-PAVEMENT": 2.0,
+    "C-PARKING": 1.0,
+    "C-DRIVEWAY": 2.0,
+    "C-ROAD": 2.0,
+    "C-SIDEWALK": 1.2,
+    "C-CONTOUR": 1.0,
+    "C-SPOT-ELEV": 1.1,
+    "C-GRADING": 1.0,
+    "C-CUT": 1.2,
+    "C-FILL": 1.2,
+    "C-STRM-PIPE": 2.0,
+    "C-STRM-INLET": 1.8,
+    "C-STRM-MH": 1.6,
+    "C-DRAIN-FLOW": 1.5,
+    "C-LOW-POINT": 1.5,
+    "C-POND": 1.8,
+    "C-WATR": 1.8,
+    "C-SAN": 1.8,
+    "C-UTIL": 1.8,
+    "C-HYDRANT": 1.5,
+    "C-TEXT": 1.0,
+    "C-DIMS": 1.0,
+    "C-LABEL": 1.0,
+    "DEFAULT": 1.8,
+}
+
+STANDARD_LAYER_LINESTYLE = {
+    "C-SETBACK": (0, (8, 4)),
+    "C-CONTOUR": "--",
+    "C-DRAIN-FLOW": (0, (4, 4)),
+    "C-GRADING": (0, (2, 4)),
 }
 
 SUPPRESSED_AUTO_LABEL_LAYERS = {
-    "PAD",
-    "SITE",
-    "SETBACK",
-    "PARKING",
-    "WALK",
-    "FIRE",
-    "PIPE",
-    "DRAIN",
-    "SAN",
-    "EG_CONTOUR",
-    "FG_CONTOUR",
-    "DRAIN_FLOW",
-    "BASIN_BOUNDARY",
-    "STRUCTURE",
-    "UTILITY",
-    "WATER",
-    "STORM",
+    "C-BOUNDARY",
+    "C-SETBACK",
+    "C-PARKING",
+    "C-SIDEWALK",
+    "C-STRM-PIPE",
+    "C-STRM-INLET",
+    "C-STRM-MH",
+    "C-DRAIN-FLOW",
+    "C-POND",
+    "C-UTIL",
+    "C-WATR",
+    "C-SAN",
+    "C-CONTOUR",
+    "C-SPOT-ELEV",
 }
-SUPPRESSED_TEXT_LAYERS = {"DRAIN_FLOW", "LOW_POINTS", "UTILITY", "WATER"}
-FOCUS_EXCLUDED_LAYERS = {"ANNO", "SYMBOL", "SITE", "PAD", "SETBACK", "UTILITY", "WATER", "DRAIN_FLOW", "EG_CONTOUR", "FG_CONTOUR", "LOW_POINTS"}
+SUPPRESSED_TEXT_LAYERS = {"C-DRAIN-FLOW", "C-LOW-POINT", "C-UTIL", "C-WATR"}
+FOCUS_EXCLUDED_LAYERS = {
+    "C-TEXT",
+    "C-DIMS",
+    "C-BOUNDARY",
+    "C-SETBACK",
+    "C-UTIL",
+    "C-WATR",
+    "C-DRAIN-FLOW",
+    "C-CONTOUR",
+    "C-LOW-POINT",
+}
 SUPPRESSED_LABEL_TOKENS = (
     "AISLE-",
     "BUILDABLE_AREA",
@@ -120,40 +229,93 @@ SUPPRESSED_LABEL_TOKENS = (
     "BUILDING_SERVICE",
     "UTILITY-",
 )
-PRIMARY_LAYOUT_LAYERS = {"BUILDING", "PAVEMENT", "PARKING", "WALK"}
-PRIMARY_VIEW_LAYERS = {"BUILDING", "PAVEMENT", "PARKING", "WALK", "PAD"}
-KEY_ENGINEERING_VIEW_LAYERS = {"BASIN_BOUNDARY", "DRAIN", "PIPE", "STORM", "SAN", "UTILITY", "WATER", "STRUCTURE"}
+PRIMARY_LAYOUT_LAYERS = {"C-BUILDING", "C-PAVEMENT", "C-PARKING", "C-SIDEWALK"}
+PRIMARY_VIEW_LAYERS = {"C-BUILDING", "C-PAVEMENT", "C-PARKING", "C-SIDEWALK"}
+KEY_ENGINEERING_VIEW_LAYERS = {"C-POND", "C-STRM-INLET", "C-STRM-PIPE", "C-STRM-MH", "C-SAN", "C-UTIL", "C-WATR", "C-DRAIN-FLOW", "C-LOW-POINT"}
 SECONDARY_ENGINEERING_LAYERS = {
-    "ANNO",
-    "BASIN_BOUNDARY",
-    "DRAIN",
-    "PIPE",
-    "STORM",
-    "SAN",
-    "UTILITY",
-    "WATER",
-    "STRUCTURE",
-    "DRAIN_FLOW",
-    "EG_CONTOUR",
-    "FG_CONTOUR",
-    "SPOT_EG",
-    "SPOT_FG",
-    "LOW_POINTS",
-    "PAD",
-    "SURFACE",
-    "ROUTE",
+    "C-TEXT",
+    "C-POND",
+    "C-STRM-INLET",
+    "C-STRM-PIPE",
+    "C-STRM-MH",
+    "C-SAN",
+    "C-UTIL",
+    "C-WATR",
+    "C-DRAIN-FLOW",
+    "C-CONTOUR",
+    "C-SPOT-ELEV",
+    "C-LOW-POINT",
+    "C-GRADING",
+    "C-CENTERLINE",
 }
 
 PHASE_ENGINEERING_FOCUS_LAYERS = {
     "layout": set(),
-    "grading": {"FG_CONTOUR", "EG_CONTOUR", "SPOT_FG", "SPOT_EG", "PAD"},
-    "drainage": {"DRAIN", "DRAIN_FLOW", "STRUCTURE"},
-    "storm": {"DRAIN", "PIPE", "STORM", "BASIN_BOUNDARY", "STRUCTURE", "DRAIN_FLOW"},
-    "utilities": {"DRAIN", "PIPE", "STORM", "SAN", "UTILITY", "WATER", "BASIN_BOUNDARY", "STRUCTURE", "DRAIN_FLOW"},
-    "complete": {"DRAIN", "PIPE", "STORM", "SAN", "UTILITY", "WATER", "BASIN_BOUNDARY", "STRUCTURE", "DRAIN_FLOW", "FG_CONTOUR", "SPOT_FG"},
-    "baseline": {"DRAIN", "PIPE", "STORM", "SAN", "UTILITY", "WATER", "BASIN_BOUNDARY", "STRUCTURE"},
+    "grading": {"C-CONTOUR", "C-SPOT-ELEV", "C-GRADING"},
+    "drainage": {"C-STRM-INLET", "C-DRAIN-FLOW"},
+    "storm": {"C-STRM-PIPE", "C-STRM-INLET", "C-STRM-MH", "C-POND", "C-DRAIN-FLOW"},
+    "utilities": {"C-STRM-PIPE", "C-STRM-INLET", "C-STRM-MH", "C-POND", "C-DRAIN-FLOW", "C-SAN", "C-UTIL", "C-WATR"},
+    "complete": {"C-STRM-PIPE", "C-STRM-INLET", "C-STRM-MH", "C-POND", "C-DRAIN-FLOW", "C-SAN", "C-UTIL", "C-WATR", "C-CONTOUR", "C-SPOT-ELEV"},
+    "baseline": {"C-STRM-PIPE", "C-STRM-INLET", "C-STRM-MH", "C-POND", "C-SAN", "C-UTIL", "C-WATR"},
 }
 
+
+def _preview_options(plan: Dict[str, Any]) -> Dict[str, bool]:
+    meta = safe_dict(plan.get("meta"))
+    preview_options = safe_dict(meta.get("preview_options"))
+    return {
+        "preview_mode": safe_text(preview_options.get("preview_mode"), "") or PREVIEW_MODE_DEFAULT,
+        "allow_heuristics": bool(
+            preview_options.get("allow_heuristics", PREVIEW_ALLOW_HEURISTICS_DEFAULT)
+        ),
+        "allow_synthesis": bool(
+            preview_options.get("allow_synthesis", PREVIEW_ALLOW_SYNTHESIS_DEFAULT)
+        ),
+        "allow_profile_inference": bool(
+            preview_options.get("allow_profile_inference", PREVIEW_ALLOW_PROFILE_INFERENCE_DEFAULT)
+        ),
+    }
+
+
+def _normalize_layer(raw_layer: str) -> str:
+    raw = safe_text(raw_layer, "").upper().strip()
+    if raw in STANDARD_LAYERS:
+        return raw
+    raw = LEGACY_LAYER_ALIASES.get(raw, raw)
+    return LEGACY_TO_STANDARD_LAYER.get(raw, "C-TEXT")
+
+
+def get_layer(action: Dict[str, Any], fallback: str = "C-TEXT") -> str:
+    raw = safe_text(action.get("layer"), fallback).upper().strip()
+    if not raw:
+        return _normalize_layer(fallback)
+    return _normalize_layer(raw)
+
+
+def get_raw_layer(action: Dict[str, Any], fallback: str = "") -> str:
+    raw = safe_text(action.get("layer"), fallback).upper().strip()
+    raw = LEGACY_LAYER_ALIASES.get(raw, raw)
+    return raw or safe_text(fallback, "").upper().strip()
+
+
+def _layer_variant(action: Dict[str, Any]) -> str:
+    raw = get_raw_layer(action)
+    if raw in {"FG_CONTOUR", "SPOT_FG"}:
+        return "FG"
+    if raw in {"EG_CONTOUR", "SPOT_EG"}:
+        return "EG"
+    return ""
+
+
+def _normalize_include_layers(include_layers: Optional[set[str]]) -> Optional[set[str]]:
+    if not include_layers:
+        return None
+    normalized: set[str] = set()
+    for layer in include_layers:
+        if not layer:
+            continue
+        normalized.add(_normalize_layer(layer))
+    return normalized or None
 
 def _normalize_engineering_profile(profile):
     if profile is True:
@@ -164,6 +326,63 @@ def _normalize_engineering_profile(profile):
         return "layout"
     normalized = str(profile).strip().lower()
     return normalized or "layout"
+
+
+def _normalize_preview_mode(mode: Optional[str]) -> str:
+    if mode is None:
+        return PREVIEW_MODE_DEFAULT
+    normalized = str(mode).strip().lower()
+    if normalized in {"production", "engineering", "debug"}:
+        return normalized
+    return PREVIEW_MODE_DEFAULT
+
+
+def _is_helper_geometry(action: Dict[str, Any]) -> bool:
+    meta = safe_dict(action.get("meta"))
+    if meta.get("is_helper") or meta.get("helper") or meta.get("debug"):
+        return True
+    role = safe_text(meta.get("role"), "").upper()
+    if role and role in {"HELPER", "DEBUG", "ANCHOR", "CANDIDATE", "GUIDE", "TARGET"}:
+        return True
+    tags = action.get("tags")
+    if isinstance(tags, list):
+        for tag in tags:
+            tag_text = safe_text(tag, "").upper()
+            if tag_text in {"HELPER", "DEBUG", "ANCHOR", "CANDIDATE", "GUIDE", "TARGET"}:
+                return True
+    label = clean_label(action.get("label"), "").upper()
+    text = safe_text(action.get("text"), "").upper()
+    canonical_source_type = safe_text(action.get("canonical_source_type"), "").upper()
+    helper_signature = " ".join(part for part in (label, text, canonical_source_type) if part)
+    if helper_signature:
+        for token in (
+            "ANCHOR",
+            "CANDIDATE",
+            "GUIDE",
+            "RAY",
+            "DEBUG",
+            "HELPER",
+            "EVAL",
+            "EVALUATION",
+            "TARGET",
+            "CONNECTION",
+            "CONNECTOR",
+            "CONCEPT",
+            "CONCEPTUAL",
+            "BASIN_TARGET",
+            "ACCESS_RAY",
+            "FLOW_GUIDE",
+        ):
+            if token in helper_signature:
+                return True
+    raw_layer = get_raw_layer(action)
+    if raw_layer.startswith("SKETCH_"):
+        return True
+    if raw_layer in {"ROUTE", "SKETCH_LINE", "SKETCH_PTS"}:
+        return True
+    if action.get("exportable") is False:
+        return True
+    return False
 
 
 def _action_bounds(action):
@@ -216,7 +435,7 @@ def _contains_bounds(outer, inner, *, tolerance=0.0):
 
 
 def _is_wrapper_layout_shape(action, building_bounds):
-    layer = (action.get("layer") or "").upper()
+    layer = get_raw_layer(action)
     task = str(action.get("task") or "").lower()
     label = clean_label(action.get("label"), "").upper()
     text = safe_text(action.get("text"), "").upper()
@@ -263,7 +482,7 @@ def _is_wrapper_layout_shape(action, building_bounds):
 
 
 def _is_schematic_access_shape(action, building_bounds):
-    layer = (action.get("layer") or "").upper()
+    layer = get_raw_layer(action)
     task = str(action.get("task") or "").lower()
     label = clean_label(action.get("label"), "").upper()
     if layer not in {"ROAD", "FIRE"}:
@@ -408,44 +627,46 @@ def _is_schematic_access_shape(action, building_bounds):
 
 
 def get_linewidth(action):
-    layer = (action.get("layer") or "").upper()
-    return LAYER_LINEWIDTH.get(layer, LAYER_LINEWIDTH["DEFAULT"])
+    layer = get_layer(action, "C-TEXT")
+    return STANDARD_LAYER_LINEWIDTH.get(layer, STANDARD_LAYER_LINEWIDTH["DEFAULT"])
 
 
 def get_color(action):
-    layer = (action.get("layer") or "").upper()
-    return LAYER_COLORS.get(layer, LAYER_COLORS["DEFAULT"])
+    layer = get_layer(action, "C-TEXT")
+    return STANDARD_LAYER_COLORS.get(layer, STANDARD_LAYER_COLORS["C-TEXT"])
 
 
 def get_linestyle(action):
-    layer = (action.get("layer") or "").upper()
-    return LAYER_LINESTYLE.get(layer, "-")
+    layer = get_layer(action, "C-TEXT")
+    return STANDARD_LAYER_LINESTYLE.get(layer, "-")
 
 
 def _polyline_style(action):
-    layer = (action.get("layer") or "").upper()
+    layer = get_layer(action, "C-TEXT")
+    raw_layer = get_raw_layer(action)
     linewidth = get_linewidth(action)
     color = get_color(action)
     linestyle = get_linestyle(action)
     alpha = 1.0
 
     preview_profile = _normalize_engineering_profile(action.get("_preview_profile"))
-    if preview_profile == "grading" and layer in {"FG_CONTOUR", "EG_CONTOUR"}:
-        color = "#fbbf24" if layer == "FG_CONTOUR" else "#dbe4ef"
-        alpha = 0.2 if layer == "FG_CONTOUR" else 0.12
-        linewidth = max(0.5, linewidth * (0.58 if layer == "FG_CONTOUR" else 0.55))
+    if preview_profile == "grading" and layer == "C-CONTOUR":
+        variant = _layer_variant(action) or ("FG" if raw_layer == "FG_CONTOUR" else "EG")
+        color = "#fbbf24" if variant == "FG" else "#dbe4ef"
+        alpha = 0.2 if variant == "FG" else 0.12
+        linewidth = max(0.5, linewidth * (0.58 if variant == "FG" else 0.55))
 
     return linewidth, color, linestyle, alpha
 
 
 def _text_style(action):
-    layer = (action.get("layer") or "").upper()
+    layer = get_layer(action, "C-TEXT")
     preview_profile = _normalize_engineering_profile(action.get("_preview_profile"))
     alpha = 0.8
     fontsize_adjust = 0.0
     bbox_alpha = 0.8
 
-    if preview_profile == "grading" and layer == "SPOT_FG":
+    if preview_profile == "grading" and layer == "C-SPOT-ELEV" and _layer_variant(action) == "FG":
         alpha = 0.5
         fontsize_adjust = -1.0
         bbox_alpha = 0.55
@@ -454,12 +675,12 @@ def _text_style(action):
 
 
 def _rectangle_visual_style(action, w, h):
-    layer = (action.get("layer") or "").upper()
+    layer = get_layer(action, "C-TEXT")
     preview_profile = _normalize_engineering_profile(action.get("_preview_profile"))
     label_upper = str(action.get("label") or "").upper()
-    residential_court = layer == "PARKING" and label_upper.startswith("RES-PARK")
-    retail_field = layer == "PARKING" and "RETAIL-PARK" in label_upper
-    parking_area = w * h if layer == "PARKING" else 0.0
+    residential_court = layer == "C-PARKING" and label_upper.startswith("RES-PARK")
+    retail_field = layer == "C-PARKING" and "RETAIL-PARK" in label_upper
+    parking_area = w * h if layer == "C-PARKING" else 0.0
 
     fill_alpha = 0.0
     facecolor = "none"
@@ -469,17 +690,17 @@ def _rectangle_visual_style(action, w, h):
     stripe_spacing = None
     stripe_gap = None
 
-    if layer == "BUILDING":
+    if layer == "C-BUILDING":
         fill_alpha = 0.5 if preview_profile in {"layout", "grading"} else 0.2
         facecolor = get_color(action)
         linewidth_boost = 0.65 if preview_profile in {"layout", "grading"} else 0.3
-    elif layer == "ROAD":
+    elif layer == "C-ROAD":
         fill_alpha = 0.06
         facecolor = get_color(action)
-    elif layer == "PAVEMENT":
+    elif layer == "C-PAVEMENT":
         fill_alpha = 0.055 if preview_profile in {"layout", "grading"} else 0.10
         facecolor = get_color(action)
-    elif layer == "PARKING":
+    elif layer == "C-PARKING":
         if residential_court and (w >= 120.0 or parking_area >= 3000.0):
             fill_alpha = 0.002 if (preview_profile == "grading" or w >= 170.0 or parking_area >= 6500.0) else 0.006
         elif w >= 180.0 or h >= 40.0 or parking_area >= 7000.0:
@@ -520,10 +741,10 @@ def _rectangle_visual_style(action, w, h):
                 stripe_spacing = max(18.0, min(24.0, w / 5.0))
                 stripe_alpha = 0.1 if preview_profile == "grading" else 0.14
                 stripe_gap = 0.0
-    elif layer == "WALK":
+    elif layer == "C-SIDEWALK":
         fill_alpha = 0.03 if preview_profile == "grading" else 0.045
         facecolor = get_color(action)
-    elif layer == "FIRE":
+    elif get_raw_layer(action) == "FIRE":
         fill_alpha = 0.0
         facecolor = "none"
 
@@ -547,9 +768,9 @@ _GENERIC_SURFACE_LABEL_RE = re.compile(r"^(?:LOT\s+[A-Z0-9]+|PARK(?:ING)?(?:\s+L
 
 def _is_generic_default_label(layer: str, label: str) -> bool:
     upper = label.upper().strip()
-    if layer == "BUILDING" and _GENERIC_BUILDING_LABEL_RE.fullmatch(upper):
+    if layer == "C-BUILDING" and _GENERIC_BUILDING_LABEL_RE.fullmatch(upper):
         return True
-    if layer in {"ROAD", "FIRE", "PAVEMENT"} and upper in {
+    if layer in {"C-ROAD", "C-DRIVEWAY", "C-PAVEMENT"} and upper in {
         "DRIVE",
         "ROAD",
         "LOOP ROAD",
@@ -561,13 +782,13 @@ def _is_generic_default_label(layer: str, label: str) -> bool:
         "FIRE-1",
     }:
         return True
-    if layer in {"PARKING", "PAVEMENT"} and _GENERIC_SURFACE_LABEL_RE.fullmatch(upper):
+    if layer in {"C-PARKING", "C-PAVEMENT"} and _GENERIC_SURFACE_LABEL_RE.fullmatch(upper):
         return True
     return False
 
 
 def preview_label(action):
-    layer = (action.get("layer") or "").upper()
+    layer = get_layer(action, "C-TEXT")
     label = clean_label(action.get("label"), "")
     if not label:
         return ""
@@ -582,7 +803,7 @@ def preview_label(action):
 
 
 def _should_draw_text_note(action):
-    layer = (action.get("layer") or "").upper()
+    layer = get_layer(action, "C-TEXT")
     if layer in SUPPRESSED_TEXT_LAYERS:
         return False
     txt = safe_text(action.get("text"), "").strip()
@@ -598,16 +819,16 @@ def _should_draw_text_note(action):
 
 def _has_primary_site_geometry(actions):
     for action in actions:
-        layer = (action.get("layer") or "").upper()
+        layer = get_layer(action, "C-TEXT")
         task = str(action.get("task") or "").lower()
-        if layer in {"BUILDING", "PAVEMENT", "PARKING", "WALK"} and task in {"rectangle", "polygon", "polyline"}:
+        if layer in {"C-BUILDING", "C-PAVEMENT", "C-PARKING", "C-SIDEWALK"} and task in {"rectangle", "polygon", "polyline"}:
             return True
     return False
 
 
 def _has_layout_scene(actions):
     for action in actions:
-        layer = (action.get("layer") or "").upper()
+        layer = get_layer(action, "C-TEXT")
         task = str(action.get("task") or "").lower()
         if layer in PRIMARY_LAYOUT_LAYERS and task in {"rectangle", "polygon", "polyline"}:
             return True
@@ -794,19 +1015,19 @@ def _bounds_near_layout(bounds, layout_bounds, padding=0.0):
 
 def _is_tiny_marker_circle(action):
     task = str(action.get("task") or "").lower()
-    layer = str(action.get("layer") or "").upper()
+    layer = get_layer(action, "C-TEXT")
     radius = safe_num(action.get("radius"))
     if task != "circle" or radius <= 0.0:
         return False
-    if layer == "DRAIN":
+    if layer == "C-STRM-INLET":
         return False
     return layer in SECONDARY_ENGINEERING_LAYERS and radius <= 1.5
 
 
 def _is_isolated_pavement_shape(action, building_bounds, parking_bounds):
-    layer = str(action.get("layer") or "").upper()
+    layer = get_layer(action, "C-TEXT")
     task = str(action.get("task") or "").lower()
-    if layer != "PAVEMENT" or task not in {"rectangle", "polygon"}:
+    if layer != "C-PAVEMENT" or task not in {"rectangle", "polygon"}:
         return False
     bounds = _action_bounds(action)
     if not bounds:
@@ -877,7 +1098,7 @@ def _synthesize_drive_aisles(building_rects, parking_rects):
                 end_x = max(end_x, next_px1 - gap)
             aisle = {
                 "task": "rectangle",
-                "layer": "PAVEMENT",
+                "layer": "C-PAVEMENT",
                 "origin": [round(start_x, 3), aisle_y],
                 "width": round(min(max(14.0, end_x - start_x), max(120.0, (px2 - px1) + 24.0), 180.0), 3),
                 "height": aisle_height,
@@ -925,6 +1146,7 @@ def _looks_like_parking_module(
 
 
 def _synthesize_layout_preview_actions(actions):
+    # Heuristic-only preview synthesis. Disabled by default; keep for explicit opt-in.
     raw_records = [dict(action) for action in actions if isinstance(action, dict)]
     building_rects = []
     pavement_rects = []
@@ -947,31 +1169,31 @@ def _synthesize_layout_preview_actions(actions):
         return item_type in {"parking", "parking_area", "parking_module", ""}
 
     for action in raw_records:
-        layer = str(action.get("layer") or "").upper()
+        layer = get_layer(action, "C-TEXT")
         bounds = _action_bounds(action)
-        if layer == "BUILDING" and bounds:
+        if layer == "C-BUILDING" and bounds:
             building_rects.append(bounds)
 
     records = []
     for action in raw_records:
         rec = dict(action)
-        layer = str(rec.get("layer") or "").upper()
+        layer = get_layer(rec, "C-TEXT")
         task = str(rec.get("task") or "").lower()
         label = clean_label(rec.get("label"), "").upper()
-        if layer in {"ROAD", "FIRE"}:
+        if layer == "C-ROAD":
             if task in {"circle", "polyline"}:
                 if not label or label in {"ROAD", "DRIVE", "FIRE", "FIRE-1", "ROAD-1"}:
                     continue
             if task in {"rectangle", "polygon"} and (not label or label in {"ROAD", "DRIVE", "FIRE", "FIRE-1", "ROAD-1"}):
-                rec["layer"] = "PAVEMENT"
+                rec["layer"] = "C-PAVEMENT"
                 rec["semantic_surface_role"] = "circulation"
-                layer = "PAVEMENT"
+                layer = "C-PAVEMENT"
         bounds = _action_bounds(rec)
-        if layer == "PAVEMENT" and bounds:
+        if layer == "C-PAVEMENT" and bounds:
             pavement_rects.append((bounds, rec))
-        elif layer == "PARKING":
+        elif layer == "C-PARKING":
             has_parking = True
-        elif layer == "WALK":
+        elif layer == "C-SIDEWALK":
             has_walk = True
         records.append(rec)
 
@@ -987,13 +1209,17 @@ def _synthesize_layout_preview_actions(actions):
             overlaps_building_band = any(abs(center_x - _rect_center(b_bounds)[0]) <= max(bounds[2] - bounds[0], b_bounds[2] - b_bounds[0]) * 0.7 for b_bounds in building_rects)
             if nearest_gap[1] <= 120.0 and overlaps_building_band and _looks_like_parking_module(bounds, building_rects):
                 out = dict(action)
-                out["layer"] = "PARKING"
+                out["layer"] = "C-PARKING"
                 key = repr(out)
                 if key not in seen:
                     seen.add(key)
                     synthesized.append(out)
 
-    parking_rects = [_action_bounds(action) for action in synthesized if str(action.get("layer") or "").upper() == "PARKING" and _action_bounds(action)]
+    parking_rects = [
+        _action_bounds(action)
+        for action in synthesized
+        if get_layer(action, "C-TEXT") == "C-PARKING" and _action_bounds(action)
+    ]
     if building_rects and parking_rects and not has_walk:
         for building_bounds in building_rects:
             bx1, by1, bx2, by2 = building_bounds
@@ -1012,7 +1238,7 @@ def _synthesize_layout_preview_actions(actions):
                 continue
             walk_action = {
                 "task": "rectangle",
-                "layer": "WALK",
+                "layer": "C-SIDEWALK",
                 "origin": [walk_x, walk_y],
                 "width": walk_width,
                 "height": walk_h,
@@ -1046,8 +1272,10 @@ def _polyline_length(action):
     return length
 
 
-def _engineering_overlay_actions(records, *, engineering_profile="layout"):
+def _engineering_overlay_actions(records, *, engineering_profile="layout", allow_heuristics: bool = False):
     engineering_profile = _normalize_engineering_profile(engineering_profile)
+    if not allow_heuristics:
+        return []
     allow_basin = engineering_profile in {"baseline", "storm", "utilities", "complete"}
     allow_pipe = engineering_profile in {"baseline", "storm", "utilities", "complete"}
     allow_drain = engineering_profile in {"baseline", "drainage", "storm", "utilities", "complete"}
@@ -1078,7 +1306,7 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
         [
             _action_bounds(action)
             for action in records
-            if str(action.get("layer") or "").upper() in {"BUILDING", "PARKING", "PAVEMENT", "WALK"}
+            if get_layer(action, "C-TEXT") in {"C-BUILDING", "C-PARKING", "C-PAVEMENT", "C-SIDEWALK"}
         ]
     )
     layout_center = None
@@ -1171,12 +1399,13 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
         return encloses_layout or oversized_diagonal or diagonal_fanout or oversized_span or long_cross_site
 
     for action in records:
-        layer = str(action.get("layer") or "").upper()
+        layer = get_layer(action, "C-TEXT")
+        variant = _layer_variant(action)
         task = str(action.get("task") or "").lower()
         bounds = _action_bounds(action)
         if not bounds:
             continue
-        if allow_basin and layer == "BASIN_BOUNDARY" and task in {"circle", "polygon", "rectangle", "polyline"}:
+        if allow_basin and layer == "C-POND" and task in {"circle", "polygon", "rectangle", "polyline"}:
             if _is_oversized_for_layout(action):
                 continue
             basin_score = _engineering_score(
@@ -1189,11 +1418,11 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
             (
                 task in {"polyline", "polygon"}
                 and (
-                    (layer in {"PIPE", "STORM"} and allow_pipe)
-                    or (layer == "DRAIN" and allow_drain)
+                    (layer == "C-STRM-PIPE" and allow_pipe)
+                    or (layer == "C-STRM-INLET" and allow_drain)
                 )
             )
-            or (allow_drain and layer == "DRAIN" and task in {"circle", "rectangle"})
+            or (allow_drain and layer == "C-STRM-INLET" and task in {"circle", "rectangle"})
         ):
             if _is_oversized_for_layout(action):
                 continue
@@ -1211,7 +1440,7 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                 )
             else:
                 points_in_layout = 0
-            phase_far = engineering_profile in {"storm", "utilities", "complete"} and layer in {"PIPE", "STORM"}
+            phase_far = engineering_profile in {"storm", "utilities", "complete"} and layer == "C-STRM-PIPE"
             score = _engineering_score(
                 bounds,
                 line_score / max(layout_span, 1.0),
@@ -1219,7 +1448,7 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                 near_bonus=min(points_in_layout, 6) * 0.2,
             )
             line_candidates.append((score, action))
-        elif allow_flow and layer == "DRAIN_FLOW" and task in {"polyline", "polygon"}:
+        elif allow_flow and layer == "C-DRAIN-FLOW" and task in {"polyline", "polygon"}:
             if _is_oversized_for_layout(action) and not _bounds_near_layout(bounds, layout_bounds, padding=24.0):
                 continue
             points = safe_points(action)
@@ -1235,15 +1464,15 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                 near_bonus=min(points_in_layout if points else 0, 6) * 0.25,
             )
             flow_candidates.append((flow_score, action))
-        elif allow_drain and layer == "DRAIN" and task == "text_note":
+        elif allow_drain and layer == "C-STRM-INLET" and task == "text_note":
             if not _bounds_near_layout(bounds, layout_bounds, padding=96.0):
                 continue
             label_score = _engineering_score(bounds, 1.0)
             drain_label_candidates.append((label_score, action))
-        elif allow_contours and layer in {"EG_CONTOUR", "FG_CONTOUR"} and task in {"polyline", "polygon"}:
-            if engineering_profile == "grading" and layer == "EG_CONTOUR":
+        elif allow_contours and layer == "C-CONTOUR" and task in {"polyline", "polygon"}:
+            if engineering_profile == "grading" and variant == "EG":
                 continue
-            if engineering_profile in {"storm", "utilities", "complete"} and layer == "EG_CONTOUR":
+            if engineering_profile in {"storm", "utilities", "complete"} and variant == "EG":
                 continue
             if engineering_profile == "grading":
                 if not _bounds_near_layout(bounds, layout_bounds, padding=112.0):
@@ -1273,14 +1502,14 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
             if engineering_profile == "grading":
                 contour_bias += _grading_vertical_bias(bounds)
             if engineering_profile in {"storm", "utilities", "complete"}:
-                contour_bias = 0.35 if layer == "FG_CONTOUR" else -0.4
+                contour_bias = 0.35 if variant == "FG" else -0.4
             contour_score = _engineering_score(
                 bounds,
                 contour_length / max(layout_span, 1.0) + contour_bias,
             )
             contour_candidates.append((contour_score, action))
-        elif allow_contour_labels and layer in {"EG_CONTOUR", "FG_CONTOUR"} and task == "text_note":
-            if engineering_profile in {"grading", "complete"} and layer == "EG_CONTOUR":
+        elif allow_contour_labels and layer == "C-CONTOUR" and task == "text_note":
+            if engineering_profile in {"grading", "complete"} and variant == "EG":
                 continue
             padding = 132.0 if engineering_profile == "grading" else 140.0
             if not _bounds_near_layout(bounds, layout_bounds, padding=padding):
@@ -1305,11 +1534,11 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
             if engineering_profile == "grading":
                 label_bias += _grading_vertical_bias(bounds)
             if engineering_profile == "complete":
-                label_bias = 0.35 if layer == "FG_CONTOUR" else -0.4
+                label_bias = 0.35 if variant == "FG" else -0.4
             score = _engineering_score(bounds, 1.0 + label_bias)
             contour_label_candidates.append((score, action))
-        elif allow_spot_grades and layer in {"SPOT_EG", "SPOT_FG"} and task in {"text_note", "point"}:
-            if engineering_profile in {"grading", "complete"} and layer == "SPOT_EG":
+        elif allow_spot_grades and layer == "C-SPOT-ELEV" and task in {"text_note", "point"}:
+            if engineering_profile in {"grading", "complete"} and variant == "EG":
                 continue
             spot_padding = 28.0 if engineering_profile == "grading" else 36.0
             if not _bounds_near_layout(bounds, layout_bounds, padding=spot_padding):
@@ -1327,12 +1556,12 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                 continue
             spot_bias = 0.0
             if engineering_profile == "complete":
-                spot_bias = 0.35 if layer == "SPOT_FG" else -0.4
+                spot_bias = 0.35 if variant == "FG" else -0.4
             score = _engineering_score(bounds, 1.0 + spot_bias)
             if task == "text_note":
                 score += max(1.0, len(safe_text(action.get("text"), "").strip())) * 0.02
             spot_grade_candidates.append((score, action))
-        elif (allow_drain or allow_pipe) and layer == "STRUCTURE" and task in {"circle", "rectangle"}:
+        elif (allow_drain or allow_pipe) and layer == "C-STRM-MH" and task in {"circle", "rectangle"}:
             if _is_tiny_marker_circle(action):
                 continue
             structure_score = _engineering_score(
@@ -1340,7 +1569,7 @@ def _engineering_overlay_actions(records, *, engineering_profile="layout"):
                 (_bounds_area(bounds) ** 0.5) / max(layout_span, 1.0),
             )
             structure_candidates.append((structure_score, action))
-        elif rich_engineering and layer in {"UTILITY", "WATER"} and task in {"polyline", "polygon"}:
+        elif rich_engineering and layer in {"C-UTIL", "C-WATR"} and task in {"polyline", "polygon"}:
             label = clean_label(action.get("label"), "").upper()
             text = safe_text(action.get("text"), "").upper()
             canonical_source_type = str(action.get("canonical_source_type") or "").upper()
@@ -1462,11 +1691,10 @@ def _bounds_overlap_ratio(a, b):
 
 def _dedupe_primary_layout_records(records):
     deduped = []
-    primary_layers = {"BUILDING", "PARKING", "PAVEMENT", "WALK"}
     for action in records:
-        layer = str(action.get("layer") or "").upper()
+        layer = get_layer(action, "C-TEXT")
         task = str(action.get("task") or "").lower()
-        if layer not in primary_layers or task not in {"rectangle", "polygon"}:
+        if layer not in PRIMARY_LAYOUT_LAYERS or task not in {"rectangle", "polygon"}:
             deduped.append(action)
             continue
         bounds = _action_bounds(action)
@@ -1476,7 +1704,7 @@ def _dedupe_primary_layout_records(records):
         label = clean_label(action.get("label"), "").upper()
         duplicate_idx = None
         for idx, existing in enumerate(deduped):
-            existing_layer = str(existing.get("layer") or "").upper()
+            existing_layer = get_layer(existing, "C-TEXT")
             existing_task = str(existing.get("task") or "").lower()
             if existing_layer != layer or existing_task not in {"rectangle", "polygon"}:
                 continue
@@ -1503,93 +1731,127 @@ def _dedupe_primary_layout_records(records):
     return deduped
 
 
-def _filtered_preview_actions(actions, *, rich_engineering=False, include_layers: Optional[set[str]] = None):
+def _filtered_preview_actions(
+    actions,
+    *,
+    rich_engineering=False,
+    include_layers: Optional[set[str]] = None,
+    allow_heuristics: bool = PREVIEW_ALLOW_HEURISTICS_DEFAULT,
+    allow_synthesis: bool = PREVIEW_ALLOW_SYNTHESIS_DEFAULT,
+    preview_mode: Optional[str] = None,
+):
     engineering_profile = _normalize_engineering_profile(rich_engineering)
-    include_layers = {layer.upper() for layer in include_layers} if include_layers else None
+    include_layers = _normalize_include_layers(include_layers)
+    preview_mode = _normalize_preview_mode(preview_mode)
     records = [action for action in actions if isinstance(action, dict)]
-    records = _synthesize_layout_preview_actions(records)
+    if allow_synthesis:
+        records = _synthesize_layout_preview_actions(records)
     records = _dedupe_primary_layout_records(records)
     has_primary_site_geometry = _has_primary_site_geometry(records)
     has_layout_scene = _has_layout_scene(records)
     engineering_overlay_keys = {
         repr(action)
-        for action in (_engineering_overlay_actions(records, engineering_profile=engineering_profile) if has_layout_scene else [])
+        for action in (
+            _engineering_overlay_actions(
+                records,
+                engineering_profile=engineering_profile,
+                allow_heuristics=allow_heuristics,
+            )
+            if has_layout_scene
+            else []
+        )
     }
     building_bounds = [
         {"action": action, "bounds": _action_bounds(action)}
         for action in records
-        if (str(action.get("layer") or "").upper() == "BUILDING" and str(action.get("task") or "").lower() in {"rectangle", "polygon"})
+        if (
+            get_layer(action, "C-TEXT") == "C-BUILDING"
+            and str(action.get("task") or "").lower() in {"rectangle", "polygon"}
+        )
     ]
     building_bounds = [item for item in building_bounds if item["bounds"]]
     building_rects = [item["bounds"] for item in building_bounds]
     parking_bounds = [
         _action_bounds(action)
         for action in records
-        if (str(action.get("layer") or "").upper() == "PARKING" and _action_bounds(action))
+        if (get_layer(action, "C-TEXT") == "C-PARKING" and _action_bounds(action))
     ]
     layout_bounds = _merge_bounds(
         [
             _action_bounds(action)
             for action in records
-            if str(action.get("layer") or "").upper() in {"BUILDING", "PARKING", "PAVEMENT", "WALK"}
+            if get_layer(action, "C-TEXT") in {"C-BUILDING", "C-PARKING", "C-PAVEMENT", "C-SIDEWALK"}
         ]
     )
     grading_focus_bounds = _grading_focus_bounds_from_buildings(building_rects, layout_bounds)
     has_building_shapes = any(
-        (str(action.get("layer") or "").upper() == "BUILDING" and str(action.get("task") or "").lower() in {"rectangle", "polygon"})
+        (
+            get_layer(action, "C-TEXT") == "C-BUILDING"
+            and str(action.get("task") or "").lower() in {"rectangle", "polygon"}
+        )
         for action in records
     )
     filtered = []
     for action in records:
-        layer = (action.get("layer") or "").upper()
+        layer = get_layer(action, "C-TEXT")
+        raw_layer = get_raw_layer(action)
         label = clean_label(action.get("label"), "").upper()
         text = safe_text(action.get("text"), "").upper()
         task = str(action.get("task") or "").lower()
         canonical_source_type = str(action.get("canonical_source_type") or "").upper()
         helper_signature = " ".join(part for part in (label, text, canonical_source_type) if part)
-        if has_primary_site_geometry and layer == "SITE":
+        if preview_mode != "debug" and _is_helper_geometry(action):
             continue
-        if has_layout_scene and _is_wrapper_layout_shape(action, building_bounds):
-            continue
-        if has_layout_scene and _is_schematic_access_shape(action, building_bounds):
-            continue
-        if has_layout_scene and layer == "FIRE" and task == "rectangle" and not label:
-            continue
-        if has_layout_scene and layer == "SETBACK":
-            continue
-        if has_primary_site_geometry and layer == "PAD" and "BUILDABLE_AREA" in label:
-            continue
-        if has_primary_site_geometry and layer == "PAD" and task == "rectangle" and not label and not text:
-            continue
-        if has_building_shapes and layer == "BUILDING" and task == "text_note":
-            continue
-        if task == "text_note" and any(token in text for token in SUPPRESSED_LABEL_TOKENS):
-            continue
-        if layer == "UTILITY" and any(token in helper_signature for token in ("SERVICE", "TIE", "GENERIC_UTILITY")):
-            continue
-        if has_layout_scene and layer == "ROUTE":
-            continue
-        if has_layout_scene and _is_tiny_marker_circle(action):
-            continue
-        if engineering_profile == "layout" and layer == "BASIN_BOUNDARY":
+        if allow_heuristics:
+            if has_primary_site_geometry and layer == "C-BOUNDARY":
+                continue
+            if has_layout_scene and _is_wrapper_layout_shape(action, building_bounds):
+                continue
+            if has_layout_scene and _is_schematic_access_shape(action, building_bounds):
+                continue
+            if has_layout_scene and raw_layer == "FIRE" and task == "rectangle" and not label:
+                continue
+            if has_layout_scene and layer == "C-SETBACK":
+                continue
+            if has_primary_site_geometry and raw_layer == "PAD" and "BUILDABLE_AREA" in label:
+                continue
+            if has_primary_site_geometry and raw_layer == "PAD" and task == "rectangle" and not label and not text:
+                continue
+            if has_building_shapes and layer == "C-BUILDING" and task == "text_note":
+                continue
+            if task == "text_note" and any(token in text for token in SUPPRESSED_LABEL_TOKENS):
+                continue
+            if layer == "C-UTIL" and any(token in helper_signature for token in ("SERVICE", "TIE", "GENERIC_UTILITY")):
+                continue
+            if has_layout_scene and raw_layer == "ROUTE":
+                continue
+            if has_layout_scene and _is_tiny_marker_circle(action):
+                continue
+            if engineering_profile == "layout" and layer == "C-POND":
+                if not include_layers or layer not in include_layers:
+                    continue
+            if has_layout_scene and layer in SECONDARY_ENGINEERING_LAYERS and repr(action) not in engineering_overlay_keys:
+                if not include_layers or layer not in include_layers:
+                    continue
+            if has_layout_scene and task == "point":
+                if not include_layers or layer not in include_layers:
+                    continue
+            if has_layout_scene and layer == "C-BUILDING" and task == "text_note":
+                continue
+            if has_layout_scene and _is_isolated_pavement_shape(action, building_rects, parking_bounds):
+                continue
+        if preview_mode == "production" and layer in SECONDARY_ENGINEERING_LAYERS:
             if not include_layers or layer not in include_layers:
                 continue
-        if has_layout_scene and layer in SECONDARY_ENGINEERING_LAYERS and repr(action) not in engineering_overlay_keys:
-            if not include_layers or layer not in include_layers:
-                continue
-        if has_layout_scene and task == "point":
-            if not include_layers or layer not in include_layers:
-                continue
-        if has_layout_scene and layer == "BUILDING" and task == "text_note":
+        if include_layers and layer not in include_layers:
             continue
-        if has_layout_scene and _is_isolated_pavement_shape(action, building_rects, parking_bounds):
-            continue
-        if engineering_profile in {"layout", "grading"} and layer in {"BUILDING", "PARKING", "PAVEMENT", "WALK"} and "_preview_profile" not in action:
+        if engineering_profile in {"layout", "grading"} and layer in {"C-BUILDING", "C-PARKING", "C-PAVEMENT", "C-SIDEWALK"} and "_preview_profile" not in action:
             action = dict(action)
             action["_preview_profile"] = engineering_profile
         if (
-            engineering_profile == "grading"
-            and layer in {"FG_CONTOUR", "EG_CONTOUR"}
+            allow_heuristics
+            and engineering_profile == "grading"
+            and layer == "C-CONTOUR"
             and task == "polyline"
         ):
             action = _clip_grading_contour_action(action, grading_focus_bounds)
@@ -1598,7 +1860,7 @@ def _filtered_preview_actions(actions, *, rich_engineering=False, include_layers
             if "_preview_profile" not in action:
                 action = dict(action)
             action["_preview_profile"] = engineering_profile
-        elif engineering_profile == "grading" and layer == "SPOT_FG" and task == "text_note":
+        elif allow_heuristics and engineering_profile == "grading" and layer == "C-SPOT-ELEV" and task == "text_note" and _layer_variant(action) == "FG":
             if "_preview_profile" not in action:
                 action = dict(action)
             action["_preview_profile"] = engineering_profile
@@ -1619,7 +1881,7 @@ def draw_rectangle(ax, action, *, render_labels: bool = True):
     if w <= 0 or h <= 0:
         return None
 
-    layer = (action.get("layer") or "").upper()
+    layer = get_layer(action, "C-TEXT")
     style = _rectangle_visual_style(action, w, h)
     fill_alpha = style["fill_alpha"]
     facecolor = style["facecolor"]
@@ -1642,10 +1904,10 @@ def draw_rectangle(ax, action, *, render_labels: bool = True):
     rect.set_edgecolor(get_color(action))
     rect.set_alpha(fill_alpha if fill_alpha > 0.0 else 1.0)
     ax.add_patch(rect)
-    if layer == "PARKING":
+    if layer == "C-PARKING":
         rect.set_edgecolor((0.396, 0.455, 0.569, edge_alpha))
 
-    if layer == "PARKING" and w >= 24 and h >= 10:
+    if layer == "C-PARKING" and w >= 24 and h >= 10:
         stripe_spacing = style["stripe_spacing"]
         stripe_alpha = style["stripe_alpha"]
         stripe_gap = style["stripe_gap"] if style["stripe_gap"] is not None else 0.0
@@ -1675,7 +1937,7 @@ def draw_rectangle(ax, action, *, render_labels: bool = True):
             preview_text,
             ha="center",
             va="center",
-            fontsize=9 if layer != "BUILDING" else 10,
+            fontsize=9 if layer != "C-BUILDING" else 10,
             fontweight="semibold",
             color="#0f172a",
         )
@@ -1741,12 +2003,12 @@ def draw_polyline(ax, action, *, render_labels: bool = True):
 def draw_circle(ax, action, *, render_labels: bool = True):
     cx, cy = safe_center(action)
     r = safe_num(action.get("radius"))
-    layer = (action.get("layer") or "").upper()
+    layer = get_layer(action, "C-TEXT")
 
     if r <= 0:
         return None
 
-    if layer == "DRAIN":
+    if layer == "C-STRM-INLET":
         r = max(r, 2.5)
 
     circle = Circle(
@@ -1918,13 +2180,13 @@ def _choose_view_bounds(drawn_items, *, engineering_profile="layout"):
             focus_bounds = _update_bounds(focus_bounds, bounds)
         if layer in PRIMARY_VIEW_LAYERS:
             primary_bounds = _update_bounds(primary_bounds, bounds)
-        if layer == "BUILDING":
+        if layer == "C-BUILDING":
             building_bounds = _update_bounds(building_bounds, bounds)
-        elif layer == "WALK":
+        elif layer == "C-SIDEWALK":
             walk_bounds = _update_bounds(walk_bounds, bounds)
-        elif layer == "PAD":
-            pad_bounds = _update_bounds(pad_bounds, bounds)
-        elif layer == "PARKING":
+        elif layer == "C-BOUNDARY":
+            pass
+        elif layer == "C-PARKING":
             parking_items.append(bounds)
         elif layer in KEY_ENGINEERING_VIEW_LAYERS:
             engineering_bounds = _update_bounds(engineering_bounds, bounds)
@@ -1979,21 +2241,21 @@ def _choose_view_bounds(drawn_items, *, engineering_profile="layout"):
 
 
 def _preview_draw_priority(action):
-    layer = (action.get("layer") or "").upper()
+    layer = get_layer(action, "C-TEXT")
     task = str(action.get("task") or "").lower()
     if task in {"text_note", "point", "north_arrow"}:
         return 6
-    if layer in {"DRAIN", "PIPE", "STORM", "SAN", "STRUCTURE", "UTILITY", "WATER", "BASIN_BOUNDARY", "DRAIN_FLOW", "EG_CONTOUR", "FG_CONTOUR"}:
+    if layer in {"C-STRM-INLET", "C-STRM-PIPE", "C-STRM-MH", "C-SAN", "C-UTIL", "C-WATR", "C-POND", "C-DRAIN-FLOW", "C-CONTOUR", "C-SPOT-ELEV", "C-GRADING"}:
         return 5
-    if layer == "WALK":
+    if layer == "C-SIDEWALK":
         return 4
-    if layer == "BUILDING":
+    if layer == "C-BUILDING":
         return 3
     if layer in {"BRIDGE", "POOL", "LOT"}:
         return 3
-    if layer in {"PARKING", "PAVEMENT", "FIRE", "ROAD"}:
+    if layer in {"C-PARKING", "C-PAVEMENT", "C-ROAD", "C-DRIVEWAY"}:
         return 2
-    if layer in {"PAD", "SETBACK"}:
+    if layer in {"C-BOUNDARY", "C-SETBACK"}:
         return 1
     return 0
 
@@ -2031,17 +2293,17 @@ def _preview_engineering_profile(plan):
     return engineering_profile
 
 
-def _infer_profile_from_actions(actions, current_profile):
-    if current_profile != "layout":
+def _infer_profile_from_actions(actions, current_profile, *, allow_profile_inference: bool = False):
+    if not allow_profile_inference or current_profile != "layout":
         return current_profile
     layers = {
-        str(action.get("layer") or "").upper()
+        get_layer(action, "C-TEXT")
         for action in actions
         if isinstance(action, dict)
     }
-    has_grading = bool(layers.intersection({"FG_CONTOUR", "EG_CONTOUR", "SPOT_FG", "SPOT_EG", "DRAIN_FLOW"}))
-    has_drainage = bool(layers.intersection({"PIPE", "DRAIN", "STRUCTURE"}))
-    has_utilities = bool(layers.intersection({"UTILITY", "WATER"}))
+    has_grading = bool(layers.intersection({"C-CONTOUR", "C-SPOT-ELEV", "C-DRAIN-FLOW"}))
+    has_drainage = bool(layers.intersection({"C-STRM-PIPE", "C-STRM-INLET", "C-STRM-MH"}))
+    has_utilities = bool(layers.intersection({"C-UTIL", "C-WATR", "C-SAN"}))
     active = sum((has_grading, has_drainage, has_utilities))
     if active >= 2:
         return "complete"
@@ -2054,11 +2316,41 @@ def _infer_profile_from_actions(actions, current_profile):
     return current_profile
 
 
-def _preview_scene(plan, *, include_layers: Optional[set[str]] = None):
+def _preview_scene(plan, *, include_layers: Optional[set[str]] = None, preview_mode: Optional[str] = None):
+    preview_options = _preview_options(plan)
+    resolved_preview_mode = _normalize_preview_mode(preview_mode or preview_options.get("preview_mode"))
+    allow_heuristics = preview_options["allow_heuristics"]
+    allow_synthesis = preview_options["allow_synthesis"]
+    allow_profile_inference = preview_options["allow_profile_inference"]
+    if resolved_preview_mode == "production":
+        allow_heuristics = False
+        allow_synthesis = False
+        allow_profile_inference = False
+    elif resolved_preview_mode == "engineering":
+        allow_heuristics = True
+        allow_synthesis = False
+        allow_profile_inference = False
+    elif resolved_preview_mode == "debug":
+        allow_heuristics = True
+        allow_synthesis = True
+        allow_profile_inference = True
+
     engineering_profile = _preview_engineering_profile(plan)
     raw_actions = list(plan.get("actions", []) or [])
-    engineering_profile = _infer_profile_from_actions(raw_actions, engineering_profile)
-    actions = _filtered_preview_actions(raw_actions, rich_engineering=engineering_profile, include_layers=include_layers)
+    engineering_profile = _infer_profile_from_actions(
+        raw_actions,
+        engineering_profile,
+        allow_profile_inference=allow_profile_inference,
+    )
+    normalized_layers = _normalize_include_layers(include_layers)
+    actions = _filtered_preview_actions(
+        raw_actions,
+        rich_engineering=engineering_profile,
+        include_layers=normalized_layers,
+        allow_heuristics=allow_heuristics,
+        allow_synthesis=allow_synthesis,
+        preview_mode=resolved_preview_mode,
+    )
     if not actions:
         return engineering_profile, actions, None
 
@@ -2067,7 +2359,7 @@ def _preview_scene(plan, *, include_layers: Optional[set[str]] = None):
         bounds = _action_bounds(action)
         if bounds is None:
             continue
-        layer = (action.get("layer") or "").upper()
+        layer = get_layer(action, "C-TEXT")
         drawn_items.append((layer, str(action.get("task") or "").lower(), bounds))
 
     selected_bounds = _choose_view_bounds(
@@ -2118,7 +2410,6 @@ def _draw_plan(ax, plan, *, actions=None, selected_bounds=None, render_labels: b
         if bounds is None:
             continue
 
-        layer = (action.get("layer") or "").upper()
     min_x, min_y, max_x, max_y = _expand_bounds(selected_bounds)
 
     ax.set_xlim(min_x, max_x)
@@ -2142,32 +2433,28 @@ def render_plan_preview_png(
     dpi: int = 160,
     render_labels: bool = True,
     include_layers: Optional[set[str]] = None,
+    preview_mode: Optional[str] = None,
 ) -> bytes:
     actions = [
         action
         for action in list(plan.get("actions") or [])
         if isinstance(action, dict)
     ]
+    allowed = None
     if include_layers:
-        allowed = {layer.upper() for layer in include_layers}
-        always_allow = {
-            "BOUNDARY",
-            "SITE",
-            "GRID",
-            "TEXT",
-            "ANNOTATION",
-            "NORTH_ARROW",
-        }
+        allowed = _normalize_include_layers(include_layers) or set()
+        always_allow = {"C-BOUNDARY", "C-TEXT", "C-DIMS", "C-LABEL"}
         actions = [
             action
             for action in actions
-            if str(action.get("layer") or "").upper() in allowed
-            or str(action.get("layer") or "").upper() in always_allow
+            if get_layer(action, "C-TEXT") in allowed
+            or get_layer(action, "C-TEXT") in always_allow
             or not str(action.get("layer") or "").strip()
         ]
     _, preview_actions, selected_bounds = _preview_scene(
         {"actions": actions, **{k: v for k, v in plan.items() if k != "actions"}},
         include_layers=allowed if include_layers else None,
+        preview_mode=preview_mode,
     )
     if len(actions) >= 60:
         figsize = _preview_figure_size(selected_bounds, base=7.2)
@@ -2195,22 +2482,24 @@ def render_plan_preview_png(
     return buffer.getvalue()
 
 
-def build_preview_annotations(plan, *, include_layers: Optional[set[str]] = None) -> Dict[str, Any]:
+def build_preview_annotations(plan, *, include_layers: Optional[set[str]] = None, preview_mode: Optional[str] = None) -> Dict[str, Any]:
     actions = [
         action
         for action in list(plan.get("actions") or [])
         if isinstance(action, dict)
     ]
+    allowed = None
     if include_layers:
-        allowed = {layer.upper() for layer in include_layers}
+        allowed = _normalize_include_layers(include_layers) or set()
         actions = [
             action
             for action in actions
-            if str(action.get("layer") or "").upper() in allowed or not str(action.get("layer") or "").strip()
+            if get_layer(action, "C-TEXT") in allowed or not str(action.get("layer") or "").strip()
         ]
     engineering_profile, preview_actions, selected_bounds = _preview_scene(
         {"actions": actions, **{k: v for k, v in plan.items() if k != "actions"}},
         include_layers=allowed if include_layers else None,
+        preview_mode=preview_mode,
     )
     if not preview_actions or not selected_bounds:
         return {"profile": engineering_profile, "labels": []}
@@ -2218,26 +2507,26 @@ def build_preview_annotations(plan, *, include_layers: Optional[set[str]] = None
     span_x = max(max_x - min_x, 1e-6)
     span_y = max(max_y - min_y, 1e-6)
     allowed_layers = {
-        "BUILDING",
-        "PARKING",
-        "ROAD",
-        "PAVEMENT",
-        "WALK",
-        "DRAIN",
-        "PIPE",
-        "STORM",
-        "SAN",
-        "UTILITY",
-        "WATER",
-        "STRUCTURE",
-        "BASIN_BOUNDARY",
+        "C-BUILDING",
+        "C-PARKING",
+        "C-ROAD",
+        "C-PAVEMENT",
+        "C-SIDEWALK",
+        "C-DRIVEWAY",
+        "C-STRM-INLET",
+        "C-STRM-PIPE",
+        "C-STRM-MH",
+        "C-SAN",
+        "C-UTIL",
+        "C-WATR",
+        "C-POND",
         "BRIDGE",
         "POOL",
         "LOT",
     }
     labels: List[Dict[str, Any]] = []
     for action in preview_actions:
-        layer = str(action.get("layer") or "").upper()
+        layer = get_layer(action, "C-TEXT")
         if layer not in allowed_layers:
             continue
         label = preview_label(action)

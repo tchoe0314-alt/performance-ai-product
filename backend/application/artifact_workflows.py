@@ -800,6 +800,7 @@ def build_preview_response(
     preview_quality: Optional[str] = None,
     render_labels: Optional[bool] = None,
     preview_layers: Optional[list[str]] = None,
+    preview_mode: Optional[str] = None,
 ) -> Dict[str, Any]:
     result_data = _enrich_result_data_from_project(
         result_data,
@@ -813,10 +814,12 @@ def build_preview_response(
         render_labels=bool(render_labels),
         quality=preview_quality or "standard",
         include_layers=preview_layers,
+        preview_mode=preview_mode,
     )
     preview_annotations = build_preview_annotations(
         final_plan,
         include_layers=set(preview_layers or []) if preview_layers else None,
+        preview_mode=preview_mode,
     )
     return {
         "success": True,
