@@ -254,6 +254,7 @@ export default function PerformanceAIDashboard() {
     createWelcomeMessage(),
   ]);
   const [chatCollapsed, setChatCollapsed] = useState(false);
+  const [activeSidePanel, setActiveSidePanel] = useState<"projects" | "docs" | "chat" | null>(null);
   const [imageName, setImageName] = useState("");
   const [siteName, setSiteName] = useState("");
   const [fileName, setFileName] = useState("");
@@ -2612,6 +2613,15 @@ export default function PerformanceAIDashboard() {
     return false;
   };
 
+  const handlePromptKeyDown = (
+    event: React.KeyboardEvent<HTMLTextAreaElement>,
+  ) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      handleSendMessage();
+    }
+  };
+
   const handleSendMessage = () => {
     const trimmed = prompt.trim();
     if (!trimmed && !imageName) return;
@@ -3777,6 +3787,14 @@ export default function PerformanceAIDashboard() {
     setStatusMessage("Added the latest plan explanation to the conversation.");
   };
 
+  const handleRunFix = () => {
+    void runOrchestrator("fix");
+  };
+
+  const handleRunImprove = () => {
+    void runOrchestrator("improve");
+  };
+
   const handleNewProject = async () => {
     projectLoadRequestRef.current += 1;
     suppressProjectAutoLoadRef.current = true;
@@ -4297,6 +4315,10 @@ export default function PerformanceAIDashboard() {
     : preview3DAnnotationItems;
   const usingAnnotation3D =
     preview3DItems.length === 0 && preview3DAnnotationItems.length > 0;
+  const sortedProjects = useMemo(
+    () => [...projects].sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0)),
+    [projects],
+  );
 
   if (!user) {
     return (
@@ -4326,402 +4348,489 @@ export default function PerformanceAIDashboard() {
       <div className="flex min-h-screen flex-col">
         <AppHeader
           userEmail={user.email}
-          projects={projects}
-          activeProjectId={projectId}
-          onSelectProject={(nextProjectId) => {
-            void loadProject(nextProjectId);
-          }}
-          onViewDocs={async (nextProjectId) => {
-            await loadProject(nextProjectId);
-            await handlePreviewPlan();
-            setPreviewFullscreenOpen(true);
-          }}
+          onOpenProjects={() => setActiveSidePanel("projects")}
+          onOpenDocs={() => setActiveSidePanel("docs")}
+          onOpenChat={() => setActiveSidePanel("chat")}
           onLogout={handleLogout}
         />
 
         <div className="flex min-h-screen">
-          <main className="flex min-w-0 flex-1 flex-col">
-            <WorkspaceToolbar
-              onRefreshWorkspace={handleRefreshWorkspace}
-            />
-
-            <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-6 md:px-6">
-              <ChatPanel
-                chatMessages={chatMessages}
-                chatScrollRef={chatScrollRef}
-                onSetMessageFeedback={setMessageFeedback}
-                thinkingState={thinkingState}
-                busy={busy}
-                activePlanTool={activePlanTool}
-                visibleActiveJobStatus={visibleActiveJob?.status ?? ""}
-                hasDirectRunInFlight={hasDirectRunInFlight}
-                onCancelJob={handleCancelActiveJob}
-                onContinueJob={handleContinueActiveJob}
-                prompt={prompt}
-                imageName={imageName}
-                onPromptChange={setPrompt}
-                onPromptKeyDown={(event) => {
-                  if (
-                    event.key === "Enter" &&
-                    !event.shiftKey &&
-                    !(event.nativeEvent as KeyboardEvent).isComposing
-                  ) {
-                    event.preventDefault();
-                    if (prompt.trim() || imageName) {
-                      handleSendMessage();
-                    }
-                  }
-                }}
-                onSendMessage={handleSendMessage}
-                onUploadImage={uploadImage}
-                onExplainPlan={handleExplainPlan}
-                onRunFix={() => void runOrchestrator("fix")}
-                onRunImprove={() => void runOrchestrator("improve")}
-                onSaveProject={() => void saveProject()}
-                canExplain={Boolean(backendResult || selectedRun)}
-                statusMessage={statusMessage}
-                hasVisibleActiveJob={Boolean(visibleActiveJob)}
-                approvalState={approvalStatus.state}
-                approvalPhaseLabel={approvalStatus.label}
-                approvalError={approvalError}
-                collapsed={chatCollapsed}
-                onToggleCollapsed={() => setChatCollapsed((prev) => !prev)}
-                summaryText={chatSummary}
-              />
-
-              <ProjectControls
-                siteName={siteName}
-                fileName={fileName}
-                onSiteNameChange={setSiteName}
-                onFileNameChange={setFileName}
-                onSiteNameEdited={() => setSiteNameAuto(false)}
-                onFileNameEdited={() => setFileNameAuto(false)}
-                onSaveProjectNames={() =>
-                  void saveProject({
-                    nameOverride: siteName.trim(),
-                    fileNameOverride: fileName.trim(),
-                    autoNamedOverride: false,
-                    autoFileNamedOverride: false,
-                  })
-                }
-                disciplineToggles={disciplineToggles.map((item) => ({
-                  label: item.label,
-                  checked: item.checked,
-                  onToggle: () => item.setter(!item.checked),
-                }))}
-              />
-
-            <PreviewPanel
-              previewReview={previewReview}
-              previewTotalPhaseCount={previewTotalPhaseCount}
-              previewCompletedPhaseCount={previewCompletedPhaseCount}
-              previewRunningPhase={previewRunningPhase}
-              previewNextPendingPhase={previewNextPendingPhase}
-              onRefreshPreview={handlePreviewPlan}
-              busy={busy}
-              planPreviewUrl={planPreviewUrl}
-              previewMode={previewMode}
-              previewInteraction={previewInteraction}
-              previewQuality={previewQuality}
-              previewLabelDensity={previewLabelDensity}
-              previewRenderMode={previewRenderMode}
-              placementMode={placementModeEnabled || Boolean(activePlacementId)}
-              onPlaceBuilding={handlePlaceBuilding}
-              onPlaceObject={handlePlaceObject}
-              buildingPlacements={buildingPlacements}
-              lotWidth={parsePositiveNumber(lotWidth) ?? 0}
-              lotHeight={parsePositiveNumber(lotHeight) ?? 0}
-              onUpdateBuilding={handleUpdateBuilding}
-              onSelectBuilding={setActivePlacementId}
-              onSetPreviewMode={setPreviewMode}
-              onSetPreviewInteraction={setPreviewInteraction}
-              onSetPreviewQuality={setPreviewQuality}
-              onSetPreviewLabelDensity={(value) => {
-                setPreviewLabelDensityTouched(true);
-                setPreviewLabelDensity(value);
-              }}
-              onSetPreviewRenderMode={setPreviewRenderMode}
-              onQueuePreviewRefresh={queuePreviewRefresh}
-              previewRefreshing={previewRefreshing}
-              previewRefreshNote={previewRefreshNote}
-              preview3DEffectiveItems={preview3DEffectiveItems}
-              usingAnnotation3D={usingAnnotation3D}
-              hasGradingSurface={hasGradingSurface}
-              onOpenFullscreen={() => setPreviewFullscreenOpen(true)}
-              previewFullscreenOpen={previewFullscreenOpen}
-              onCloseFullscreen={() => setPreviewFullscreenOpen(false)}
-              onExportDxf={handleExportDxf}
-              onExportReport={handleExportReport}
-              planPreviewAnnotations={planPreviewAnnotations}
-              selectedIssueLabel={selectedIssueLabel}
-                showMeasurements={showMeasurements}
-                showCalculations={showCalculations}
-              measurementOverlayStats={measurementOverlayStats}
-              calculationOverlayStats={calculationOverlayStats}
-            />
-
-            <div className="rounded-[24px] border border-slate-200 bg-white/95 p-4 shadow-[0_12px_35px_-28px_rgba(15,23,42,0.45)]">
-              <div className="flex flex-wrap items-center justify-between gap-3">
+          {activeSidePanel ? (
+            <aside className="flex w-[360px] flex-col border-r border-slate-200 bg-white/95">
+              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Object Tray
+                    {activeSidePanel === "projects"
+                      ? "Projects"
+                      : activeSidePanel === "docs"
+                        ? "Docs"
+                        : "Chat"}
                   </p>
-                  <p className="mt-1 text-sm text-slate-600">
-                    Drag objects onto the site. Place the site first, then add buildings and anchors.
+                  <p className="mt-1 text-sm text-slate-700">
+                    {activeSidePanel === "projects"
+                      ? "Switch between projects."
+                      : activeSidePanel === "docs"
+                        ? "Preview docs and exports."
+                        : "Conversation and updates."}
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={handleTogglePlacementMode}
-                    className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition ${
-                      placementModeEnabled
-                        ? "border-slate-900 bg-slate-950 text-white"
-                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    {placementModeEnabled ? "Placement On" : "Placement Off"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleAddObject("building")}
-                    className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                  >
-                    Add Building
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleAddObject("basin")}
-                    className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                  >
-                    Add Basin
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleAddObject("entrance")}
-                    className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                  >
-                    Add Entrance
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleAutoPlaceBuildings}
-                    className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                  >
-                    Auto-place
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSuggestLayouts}
-                    className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                  >
-                    Suggest Layouts
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleNextSuggestion}
-                    className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                  >
-                    Next Suggestion
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveSidePanel(null)}
+                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 hover:bg-slate-50"
+                >
+                  Close
+                </button>
               </div>
-
-              <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr,2fr]">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Site</p>
-                  <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-slate-600">
-                    <label className="flex flex-col gap-1">
-                      Width (ft)
-                      <input
-                        type="number"
-                        value={lotWidth}
-                        onChange={(event) => setLotWidth(event.target.value)}
-                        className="rounded-lg border border-slate-200 px-2 py-1"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1">
-                      Height (ft)
-                      <input
-                        type="number"
-                        value={lotHeight}
-                        onChange={(event) => setLotHeight(event.target.value)}
-                        className="rounded-lg border border-slate-200 px-2 py-1"
-                      />
-                    </label>
-                  </div>
-                  <div className="mt-3 text-xs text-slate-500">
-                    Area:{" "}
-                    {(() => {
-                      const w = parsePositiveNumber(lotWidth) ?? 0;
-                      const h = parsePositiveNumber(lotHeight) ?? 0;
-                      const acres = w && h ? (w * h) / 43560 : 0;
-                      return acres ? `${acres.toFixed(2)} acres` : "Set dimensions to compute acreage";
-                    })()}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Objects</p>
-                  <div className="mt-2 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    {buildingPlacements
-                      .filter((item) => !item.placed)
-                      .map((item) => (
-                      <div
-                        key={item.id}
-                        draggable
-                        onDragStart={(event) => {
-                          event.dataTransfer?.setData("civora-object-id", item.id);
-                          setPlacementModeEnabled(true);
-                        }}
-                        className={`rounded-2xl border bg-white p-3 text-xs text-slate-600 shadow-sm ${
-                          activePlacementId === item.id
-                            ? "border-amber-400 ring-2 ring-amber-200"
-                            : "border-slate-200"
-                        }`}
-                        title={`${item.label} • ${item.w} ft x ${item.d} ft`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-slate-800">{item.label}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveBuilding(item.id)}
-                            className="text-xs font-semibold text-rose-500"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                        <div className="mt-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                          <span>{item.type ?? "building"}</span>
-                          <span>•</span>
-                          <span>{item.w} ft x {item.d} ft</span>
-                        </div>
-                        <div className="mt-2 flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleSelectPlacementTarget(item.id)}
-                            className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                          >
-                            {item.placed ? "Re-place" : "Place"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleBuildingLock(item.id)}
-                            className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
-                              item.locked
-                                ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-                                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                            }`}
-                          >
-                            {item.locked ? "Locked" : "Unlock"}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                    {buildingPlacements
-                      .filter((item) => item.placed)
-                      .map((item) => (
-                        <div
-                          key={item.id}
-                          className={`rounded-2xl border bg-slate-50 p-3 text-xs text-slate-600 shadow-sm ${
-                            activePlacementId === item.id
-                              ? "border-amber-400 ring-2 ring-amber-200"
-                              : "border-slate-200"
+              <div className="flex-1 overflow-y-auto p-4">
+                {activeSidePanel === "projects" ? (
+                  <div className="space-y-3">
+                    {sortedProjects.length ? (
+                      sortedProjects.map((projectSummary) => (
+                        <button
+                          key={projectSummary.project_id}
+                          type="button"
+                          onClick={() => {
+                            void loadProject(projectSummary.project_id);
+                            setActiveSidePanel(null);
+                          }}
+                          className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
+                            projectSummary.project_id === projectId
+                              ? "border-slate-900 bg-slate-950 text-white"
+                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                           }`}
-                          title={`${item.label} • ${item.w} ft x ${item.d} ft`}
                         >
-                          <div className="flex items-center justify-between">
-                            <span className="font-semibold text-slate-800">{item.label}</span>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveBuilding(item.id)}
-                              className="text-xs font-semibold text-rose-500"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                          <div className="mt-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                            <span>{item.type ?? "building"}</span>
-                            <span>•</span>
-                            <span>{item.w} ft x {item.d} ft</span>
-                          </div>
-                          <div className="mt-2 flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleSelectPlacementTarget(item.id)}
-                              className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                            >
-                              Re-place
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleToggleBuildingLock(item.id)}
-                              className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
-                                item.locked
-                                  ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-                                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                              }`}
-                            >
-                              {item.locked ? "Locked" : "Unlock"}
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                          <p className="text-sm font-semibold">
+                            {projectSummary.name || "Untitled Project"}
+                          </p>
+                          <p className="mt-1 text-xs uppercase tracking-[0.12em] opacity-70">
+                            {projectSummary.description ||
+                              (projectSummary.updated_at
+                                ? `Updated ${new Date(projectSummary.updated_at * 1000).toLocaleDateString()}`
+                                : "No description")}
+                          </p>
+                        </button>
+                      ))
+                    ) : (
+                      <p className="text-sm text-slate-500">No projects yet.</p>
+                    )}
                   </div>
-                </div>
-              </div>
+                ) : null}
 
-              <div className="mt-4 border-t border-slate-200 pt-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Generate Systems</p>
-                <div className="mt-2 grid grid-cols-2 gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 md:grid-cols-3">
-                  <button
-                    type="button"
-                    onClick={() => handleGenerateSystem("roads")}
-                    className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
-                  >
-                    Roads
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleGenerateSystem("parking")}
-                    className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
-                  >
-                    Parking
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleGenerateSystem("grading")}
-                    className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
-                  >
-                    Grading
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleGenerateSystem("drainage")}
-                    className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
-                  >
-                    Drainage
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleGenerateSystem("utilities")}
-                    className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
-                  >
-                    Utilities
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleGenerateSystem("full")}
-                    className="rounded-xl border border-slate-900 bg-slate-950 px-2 py-2 text-white transition hover:bg-slate-800"
-                  >
-                    Full Site
-                  </button>
-                </div>
+                {activeSidePanel === "docs" ? (
+                  <div className="space-y-3">
+                    {sortedProjects.length ? (
+                      sortedProjects.map((projectSummary) => (
+                        <div
+                          key={projectSummary.project_id}
+                          className="rounded-2xl border border-slate-200 bg-white p-4"
+                        >
+                          <p className="text-sm font-semibold text-slate-900">
+                            {projectSummary.name || "Untitled Project"}
+                          </p>
+                          <p className="mt-1 text-xs uppercase tracking-[0.12em] text-slate-500">
+                            {projectSummary.description ||
+                              (projectSummary.updated_at
+                                ? `Updated ${new Date(projectSummary.updated_at * 1000).toLocaleDateString()}`
+                                : "No description")}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await loadProject(projectSummary.project_id);
+                              await handlePreviewPlan();
+                              setPreviewFullscreenOpen(true);
+                              setActiveSidePanel(null);
+                            }}
+                            className="mt-3 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                          >
+                            View Docs
+                          </button>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-slate-500">No docs available yet.</p>
+                    )}
+                  </div>
+                ) : null}
+
+                {activeSidePanel === "chat" ? (
+                  <ChatPanel
+                    chatMessages={chatMessages}
+                    chatScrollRef={chatScrollRef}
+                    onSetMessageFeedback={setMessageFeedback}
+                    thinkingState={thinkingState}
+                    busy={busy}
+                    activePlanTool={activePlanTool}
+                    visibleActiveJobStatus={visibleActiveJob?.status ?? ""}
+                    hasDirectRunInFlight={Boolean(directRunAbortRef.current)}
+                    onCancelJob={handleCancelActiveJob}
+                    onContinueJob={handleContinueActiveJob}
+                    prompt={prompt}
+                    imageName={imageName}
+                    onPromptChange={setPrompt}
+                    onPromptKeyDown={handlePromptKeyDown}
+                    onSendMessage={handleSendMessage}
+                    onUploadImage={uploadImage}
+                    onExplainPlan={() => void handleExplainPlan()}
+                    onRunFix={() => void handleRunFix()}
+                    onRunImprove={() => void handleRunImprove()}
+                    onSaveProject={() => void saveProject()}
+                    canExplain={Boolean(planPreviewUrl)}
+                    statusMessage={statusMessage}
+                    hasVisibleActiveJob={Boolean(visibleActiveJob)}
+                    approvalState={approvalStatus.state}
+                    approvalPhaseLabel={approvalStatus.label}
+                    approvalError={approvalError}
+                    collapsed={false}
+                    onToggleCollapsed={() => setActiveSidePanel(null)}
+                    summaryText={chatSummary}
+                  />
+                ) : null}
+              </div>
+            </aside>
+          ) : null}
+          <main className="flex min-w-0 flex-1 flex-col">
+            <div className="border-b border-slate-200 bg-white/85">
+              <div className="mx-auto w-full max-w-7xl px-4 py-5 md:px-6">
+                <ProjectControls
+                  siteName={siteName}
+                  fileName={fileName}
+                  onSiteNameChange={setSiteName}
+                  onFileNameChange={setFileName}
+                  onSiteNameEdited={() => setSiteNameAuto(false)}
+                  onFileNameEdited={() => setFileNameAuto(false)}
+                  onSaveProjectNames={() =>
+                    void saveProject({
+                      nameOverride: siteName.trim(),
+                      fileNameOverride: fileName.trim(),
+                      autoNamedOverride: false,
+                      autoFileNamedOverride: false,
+                    })
+                  }
+                  disciplineToggles={disciplineToggles.map((item) => ({
+                    label: item.label,
+                    checked: item.checked,
+                    onToggle: () => item.setter(!item.checked),
+                  }))}
+                />
               </div>
             </div>
+
+            <WorkspaceToolbar onRefreshWorkspace={handleRefreshWorkspace} />
+
+            <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-6 md:px-6">
+              <PreviewPanel
+                previewReview={previewReview}
+                previewTotalPhaseCount={previewTotalPhaseCount}
+                previewCompletedPhaseCount={previewCompletedPhaseCount}
+                previewRunningPhase={previewRunningPhase}
+                previewNextPendingPhase={previewNextPendingPhase}
+                onRefreshPreview={handlePreviewPlan}
+                busy={busy}
+                planPreviewUrl={planPreviewUrl}
+                previewMode={previewMode}
+                previewInteraction={previewInteraction}
+                previewQuality={previewQuality}
+                previewLabelDensity={previewLabelDensity}
+                previewRenderMode={previewRenderMode}
+                placementMode={placementModeEnabled || Boolean(activePlacementId)}
+                onPlaceBuilding={handlePlaceBuilding}
+                onPlaceObject={handlePlaceObject}
+                buildingPlacements={buildingPlacements}
+                lotWidth={parsePositiveNumber(lotWidth) ?? 0}
+                lotHeight={parsePositiveNumber(lotHeight) ?? 0}
+                onUpdateBuilding={handleUpdateBuilding}
+                onSelectBuilding={setActivePlacementId}
+                onSetPreviewMode={setPreviewMode}
+                onSetPreviewInteraction={setPreviewInteraction}
+                onSetPreviewQuality={setPreviewQuality}
+                onSetPreviewLabelDensity={(value) => {
+                  setPreviewLabelDensityTouched(true);
+                  setPreviewLabelDensity(value);
+                }}
+                onSetPreviewRenderMode={setPreviewRenderMode}
+                onQueuePreviewRefresh={queuePreviewRefresh}
+                previewRefreshing={previewRefreshing}
+                previewRefreshNote={previewRefreshNote}
+                preview3DEffectiveItems={preview3DEffectiveItems}
+                usingAnnotation3D={usingAnnotation3D}
+                hasGradingSurface={hasGradingSurface}
+                onOpenFullscreen={() => setPreviewFullscreenOpen(true)}
+                previewFullscreenOpen={previewFullscreenOpen}
+                onCloseFullscreen={() => setPreviewFullscreenOpen(false)}
+                onExportDxf={handleExportDxf}
+                onExportReport={handleExportReport}
+                planPreviewAnnotations={planPreviewAnnotations}
+                selectedIssueLabel={selectedIssueLabel}
+                showMeasurements={showMeasurements}
+                showCalculations={showCalculations}
+                measurementOverlayStats={measurementOverlayStats}
+                calculationOverlayStats={calculationOverlayStats}
+              />
+
+              <div className="rounded-[24px] border border-slate-200 bg-white/95 p-4 shadow-[0_12px_35px_-28px_rgba(15,23,42,0.45)]">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Object Tray
+                    </p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Drag objects onto the site. Place the site first, then add buildings and anchors.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={handleTogglePlacementMode}
+                      className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition ${
+                        placementModeEnabled
+                          ? "border-slate-900 bg-slate-950 text-white"
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      {placementModeEnabled ? "Placement On" : "Placement Off"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddObject("building")}
+                      className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                    >
+                      Add Building
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddObject("basin")}
+                      className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                    >
+                      Add Basin
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddObject("entrance")}
+                      className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                    >
+                      Add Entrance
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAutoPlaceBuildings}
+                      className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                    >
+                      Auto-place
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSuggestLayouts}
+                      className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                    >
+                      Suggest Layouts
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleNextSuggestion}
+                      className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                    >
+                      Next Suggestion
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr,2fr]">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Site</p>
+                    <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-slate-600">
+                      <label className="flex flex-col gap-1">
+                        Width (ft)
+                        <input
+                          type="number"
+                          value={lotWidth}
+                          onChange={(event) => setLotWidth(event.target.value)}
+                          className="rounded-lg border border-slate-200 px-2 py-1"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1">
+                        Height (ft)
+                        <input
+                          type="number"
+                          value={lotHeight}
+                          onChange={(event) => setLotHeight(event.target.value)}
+                          className="rounded-lg border border-slate-200 px-2 py-1"
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-3 text-xs text-slate-500">
+                      Area:{" "}
+                      {(() => {
+                        const w = parsePositiveNumber(lotWidth) ?? 0;
+                        const h = parsePositiveNumber(lotHeight) ?? 0;
+                        const acres = w && h ? (w * h) / 43560 : 0;
+                        return acres ? `${acres.toFixed(2)} acres` : "Set dimensions to compute acreage";
+                      })()}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Objects</p>
+                    <div className="mt-2 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {buildingPlacements
+                        .filter((item) => !item.placed)
+                        .map((item) => (
+                          <div
+                            key={item.id}
+                            draggable
+                            onDragStart={(event) => {
+                              event.dataTransfer?.setData("civora-object-id", item.id);
+                              setPlacementModeEnabled(true);
+                            }}
+                            className={`rounded-2xl border bg-white p-3 text-xs text-slate-600 shadow-sm ${
+                              activePlacementId === item.id
+                                ? "border-amber-400 ring-2 ring-amber-200"
+                                : "border-slate-200"
+                            }`}
+                            title={`${item.label} • ${item.w} ft x ${item.d} ft`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-slate-800">{item.label}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveBuilding(item.id)}
+                                className="text-xs font-semibold text-rose-500"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                            <div className="mt-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                              <span>{item.type ?? "building"}</span>
+                              <span>•</span>
+                              <span>{item.w} ft x {item.d} ft</span>
+                            </div>
+                            <div className="mt-2 flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleSelectPlacementTarget(item.id)}
+                                className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                              >
+                                {item.placed ? "Re-place" : "Place"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleBuildingLock(item.id)}
+                                className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
+                                  item.locked
+                                    ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                                }`}
+                              >
+                                {item.locked ? "Locked" : "Unlock"}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      {buildingPlacements
+                        .filter((item) => item.placed)
+                        .map((item) => (
+                          <div
+                            key={item.id}
+                            className={`rounded-2xl border bg-slate-50 p-3 text-xs text-slate-600 shadow-sm ${
+                              activePlacementId === item.id
+                                ? "border-amber-400 ring-2 ring-amber-200"
+                                : "border-slate-200"
+                            }`}
+                            title={`${item.label} • ${item.w} ft x ${item.d} ft`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-slate-800">{item.label}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveBuilding(item.id)}
+                                className="text-xs font-semibold text-rose-500"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                            <div className="mt-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                              <span>{item.type ?? "building"}</span>
+                              <span>•</span>
+                              <span>{item.w} ft x {item.d} ft</span>
+                            </div>
+                            <div className="mt-2 flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleSelectPlacementTarget(item.id)}
+                                className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                              >
+                                Re-place
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleBuildingLock(item.id)}
+                                className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
+                                  item.locked
+                                    ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                                }`}
+                              >
+                                {item.locked ? "Locked" : "Unlock"}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 border-t border-slate-200 pt-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Generate Systems</p>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 md:grid-cols-3">
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateSystem("roads")}
+                      className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
+                    >
+                      Roads
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateSystem("parking")}
+                      className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
+                    >
+                      Parking
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateSystem("grading")}
+                      className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
+                    >
+                      Grading
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateSystem("drainage")}
+                      className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
+                    >
+                      Drainage
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateSystem("utilities")}
+                      className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
+                    >
+                      Utilities
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateSystem("full")}
+                      className="rounded-xl border border-slate-900 bg-slate-950 px-2 py-2 text-white transition hover:bg-slate-800"
+                    >
+                      Full Site
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </main>
+        </div>
       </div>
-    </div>
     </div>
   );
 }
