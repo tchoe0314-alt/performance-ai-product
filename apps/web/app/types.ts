@@ -378,6 +378,23 @@ export type PreviewResponse = {
       rendered_final_count?: number;
       filtered_helper_count?: number;
       hidden_incomplete_phase_count?: number;
+      filtered_reasons?: Record<string, number>;
+      generated_counts?: Record<string, { total?: number; final?: number; overlay?: number; helper?: number; debug?: number }>;
+      rendered_counts?: Record<string, { total?: number; final?: number; overlay?: number; helper?: number; debug?: number }>;
+      stage_diagnostics?: Record<
+        string,
+        {
+          stage?: string;
+          started?: boolean;
+          status?: string;
+          message?: string;
+          success?: boolean | null;
+          generated?: { total?: number; final?: number; overlay?: number; helper?: number; debug?: number };
+          rendered?: { total?: number; final?: number; overlay?: number; helper?: number; debug?: number };
+          export_validation?: Record<string, unknown>;
+          storm_export_validation?: Record<string, unknown>;
+        }
+      >;
     };
     labels?: {
       label: string;

@@ -31,9 +31,11 @@ from .field_contract import field_path_is_omitted
 def _preview_meta_for_action(layer: str, task: str) -> Dict[str, Any]:
     raw_layer = safe_str(layer, "").upper()
     task_lower = safe_str(task, "").lower()
-    overlay_layers = {"ANNO", "DRAIN_FLOW", "FG_CONTOUR", "EG_CONTOUR", "SURFACE", "SPOT_FG", "SPOT_EG"}
+    overlay_layers = {"ANNO", "DRAIN_FLOW", "EG_CONTOUR", "SPOT_EG"}
     helper_layers = {"DRAIN", "PIPE", "BASIN_BOUNDARY"}
-    if task_lower in {"text_note", "point", "north_arrow"}:
+    if raw_layer in {"FG_CONTOUR", "SPOT_FG", "SURFACE"}:
+        role = "final"
+    elif task_lower in {"text_note", "point", "north_arrow"}:
         role = "overlay"
     elif raw_layer in helper_layers or raw_layer in overlay_layers:
         role = "overlay"

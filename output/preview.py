@@ -15,6 +15,7 @@ from core.utils import (
     clean_label,
     safe_center,
     safe_dict,
+    safe_list,
     safe_num,
     safe_origin,
     safe_points,
@@ -39,6 +40,8 @@ HARD_BLOCK_HELPER_TOKENS = {
     "CONNECTOR",
     "DEBUG_LINK",
 }
+STAGE_DIAGNOSTIC_SYSTEMS = ("layout", "grading", "drainage", "utilities")
+
 
 FINAL_GEOMETRY_LAYERS = {
     "C-BOUNDARY",
@@ -259,6 +262,130 @@ LEGACY_TO_STANDARD_LAYER = {
     "SKETCH_UTIL_PTS": "C-LABEL",
     "SKETCH_ROAD_PTS": "C-LABEL",
 }
+
+_SYSTEM_BY_STANDARD_LAYER = {
+    "C-BOUNDARY": "layout",
+    "C-SETBACK": "layout",
+    "C-CENTERLINE": "layout",
+    "C-BUILDING": "layout",
+    "C-PAVEMENT": "layout",
+    "C-PARKING": "layout",
+    "C-DRIVEWAY": "layout",
+    "C-ROAD": "layout",
+    "C-SIDEWALK": "layout",
+    "C-CONTOUR": "grading",
+    "C-SPOT-ELEV": "grading",
+    "C-GRADING": "grading",
+    "C-CUT": "grading",
+    "C-FILL": "grading",
+    "C-STRM-PIPE": "drainage",
+    "C-STRM-INLET": "drainage",
+    "C-STRM-MH": "drainage",
+    "C-DRAIN-FLOW": "drainage",
+    "C-LOW-POINT": "drainage",
+    "C-POND": "drainage",
+    "C-WATR": "utilities",
+    "C-SAN": "utilities",
+    "C-UTIL": "utilities",
+    "C-HYDRANT": "utilities",
+}
+
+
+def _system_from_action(action: Dict[str, Any]) -> str:
+    meta = safe_dict(action.get("meta"))
+    system = safe_text(meta.get("system"), "").strip().lower()
+    if system:
+        if system in {"water", "sanitary"}:
+            return "utilities"
+        return system
+    layer = get_layer(action, "C-TEXT")
+    return _SYSTEM_BY_STANDARD_LAYER.get(layer, "layout")
+
+
+def _safe_stage_status(raw: str) -> str:
+    status = safe_text(raw, "").strip().lower()
+    if not status:
+        return "pending"
+    if status in {"complete", "assumed", "partial"}:
+        return "complete" if status in {"complete", "assumed"} else "partial"
+    if status in {"failed", "blocked"}:
+        return "failed"
+    if status in {"running", "started", "in_progress"}:
+        return "running"
+    return status
+
+
+def _system_counts(values: List[Dict[str, Any]]) -> Dict[str, Any]:
+    counts: Dict[str, Dict[str, int]] = {}
+    for action in values:
+        system = _system_from_action(action)
+        role = _action_preview_role(action)
+        bucket = counts.setdefault(system, {"total": 0, "final": 0, "overlay": 0, "helper": 0, "debug": 0})
+        bucket["total"] += 1
+        if role in bucket:
+            bucket[role] += 1
+    return counts
+
+
+def _collect_stage_diagnostics(plan: Dict[str, Any], actions: List[Dict[str, Any]], filtered: List[Dict[str, Any]]) -> Dict[str, Any]:
+    meta = safe_dict(plan.get("meta"))
+    stage_completeness = safe_dict(meta.get("stage_completeness"))
+    stage_rows = {
+        safe_text(row.get("stage_name"), "").lower(): safe_dict(row)
+        for row in safe_list(stage_completeness.get("stages"))
+        if safe_text(row.get("stage_name"), "")
+    }
+    stage_statuses = {
+        safe_text(name, "").lower(): safe_text(status, "").lower()
+        for name, status in safe_dict(stage_completeness.get("statuses")).items()
+        if safe_text(name, "")
+    }
+
+    def _stage_entry(name: str, *, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        row = stage_rows.get(name, {})
+        status = _safe_stage_status(stage_statuses.get(name) or row.get("completeness") or row.get("status"))
+        message = safe_text(row.get("message"), "")
+        entry = {
+            "stage": name,
+            "started": bool(row),
+            "status": status,
+            "message": message,
+            "success": bool(row.get("success")) if row else None,
+        }
+        if extra:
+            entry.update(extra)
+        return entry
+
+    generated_counts = _system_counts(actions)
+    rendered_counts = _system_counts(filtered)
+
+    grading_meta = safe_dict(meta.get("grading"))
+    drainage_meta = safe_dict(meta.get("drainage"))
+    storm_meta = safe_dict(meta.get("storm_pipes"))
+    utilities_meta = safe_dict(meta.get("utilities"))
+
+    return {
+        "layout": _stage_entry("layout", extra={
+            "generated": generated_counts.get("layout", {}),
+            "rendered": rendered_counts.get("layout", {}),
+        }),
+        "grading": _stage_entry("grading", extra={
+            "generated": generated_counts.get("grading", {}),
+            "rendered": rendered_counts.get("grading", {}),
+            "export_validation": safe_dict(grading_meta.get("export_validation")),
+        }),
+        "drainage": _stage_entry("drainage", extra={
+            "generated": generated_counts.get("drainage", {}),
+            "rendered": rendered_counts.get("drainage", {}),
+            "export_validation": safe_dict(drainage_meta.get("export_validation")),
+            "storm_export_validation": safe_dict(storm_meta.get("export_validation")),
+        }),
+        "utilities": _stage_entry("utilities", extra={
+            "generated": generated_counts.get("utilities", {}),
+            "rendered": rendered_counts.get("utilities", {}),
+            "export_validation": safe_dict(utilities_meta.get("export_validation")),
+        }),
+    }
 
 STANDARD_LAYER_COLORS = {
     "C-BOUNDARY": "#94a3b8",
@@ -2113,7 +2240,11 @@ def _filtered_preview_actions(
         "rendered_final_count": 0,
         "filtered_helper_count": 0,
         "hidden_incomplete_phase_count": 0,
+        "filtered_reasons": {},
+        "generated_counts": {},
+        "rendered_counts": {},
     }
+    audit["generated_counts"] = _system_counts(records)
     for action in records:
         layer = get_layer(action, "C-TEXT")
         raw_layer = get_raw_layer(action)
@@ -2125,62 +2256,87 @@ def _filtered_preview_actions(
         preview_role = _action_preview_role(action)
         if preview_mode in {"production", "engineering"} and _has_blocked_helper_token(action):
             audit["filtered_helper_count"] += 1
+            audit["filtered_reasons"]["helper_token"] = audit["filtered_reasons"].get("helper_token", 0) + 1
             continue
         if preview_mode != "debug" and _is_helper_geometry(action):
             audit["filtered_helper_count"] += 1
+            audit["filtered_reasons"]["helper_geometry"] = audit["filtered_reasons"].get("helper_geometry", 0) + 1
             continue
         if preview_mode == "production" and preview_role != "final":
+            audit["filtered_reasons"]["non_final_role"] = audit["filtered_reasons"].get("non_final_role", 0) + 1
             continue
         if preview_mode == "production" and layer not in FINAL_GEOMETRY_LAYERS:
+            audit["filtered_reasons"]["non_final_layer"] = audit["filtered_reasons"].get("non_final_layer", 0) + 1
             continue
         if preview_mode in {"production", "engineering"} and layer not in profile_layers:
             audit["hidden_incomplete_phase_count"] += 1
+            audit["filtered_reasons"]["profile_hidden"] = audit["filtered_reasons"].get("profile_hidden", 0) + 1
             continue
         if preview_mode == "engineering" and preview_role not in {"final", "overlay"}:
             audit["filtered_helper_count"] += 1
+            audit["filtered_reasons"]["non_engineering_role"] = audit["filtered_reasons"].get("non_engineering_role", 0) + 1
             continue
         if allow_heuristics:
             if has_primary_site_geometry and layer == "C-BOUNDARY":
+                audit["filtered_reasons"]["heuristic_boundary"] = audit["filtered_reasons"].get("heuristic_boundary", 0) + 1
                 continue
             if has_layout_scene and _is_wrapper_layout_shape(action, building_bounds):
+                audit["filtered_reasons"]["heuristic_wrapper_layout"] = audit["filtered_reasons"].get("heuristic_wrapper_layout", 0) + 1
                 continue
             if has_layout_scene and _is_schematic_access_shape(action, building_bounds):
+                audit["filtered_reasons"]["heuristic_access_shape"] = audit["filtered_reasons"].get("heuristic_access_shape", 0) + 1
                 continue
             if has_layout_scene and raw_layer == "FIRE" and task == "rectangle" and not label:
+                audit["filtered_reasons"]["heuristic_fire_rect"] = audit["filtered_reasons"].get("heuristic_fire_rect", 0) + 1
                 continue
             if has_layout_scene and layer == "C-SETBACK":
+                audit["filtered_reasons"]["heuristic_setback"] = audit["filtered_reasons"].get("heuristic_setback", 0) + 1
                 continue
             if has_primary_site_geometry and raw_layer == "PAD" and "BUILDABLE_AREA" in label:
+                audit["filtered_reasons"]["heuristic_buildable_area"] = audit["filtered_reasons"].get("heuristic_buildable_area", 0) + 1
                 continue
             if has_primary_site_geometry and raw_layer == "PAD" and task == "rectangle" and not label and not text:
+                audit["filtered_reasons"]["heuristic_pad_rect"] = audit["filtered_reasons"].get("heuristic_pad_rect", 0) + 1
                 continue
             if has_building_shapes and layer == "C-BUILDING" and task == "text_note":
+                audit["filtered_reasons"]["heuristic_building_label"] = audit["filtered_reasons"].get("heuristic_building_label", 0) + 1
                 continue
             if task == "text_note" and any(token in text for token in SUPPRESSED_LABEL_TOKENS):
+                audit["filtered_reasons"]["heuristic_suppressed_label"] = audit["filtered_reasons"].get("heuristic_suppressed_label", 0) + 1
                 continue
             if layer == "C-UTIL" and any(token in helper_signature for token in ("SERVICE", "TIE", "GENERIC_UTILITY")):
+                audit["filtered_reasons"]["heuristic_utility_service"] = audit["filtered_reasons"].get("heuristic_utility_service", 0) + 1
                 continue
             if has_layout_scene and raw_layer == "ROUTE":
+                audit["filtered_reasons"]["heuristic_route_layer"] = audit["filtered_reasons"].get("heuristic_route_layer", 0) + 1
                 continue
             if has_layout_scene and _is_tiny_marker_circle(action):
+                audit["filtered_reasons"]["heuristic_marker_circle"] = audit["filtered_reasons"].get("heuristic_marker_circle", 0) + 1
                 continue
             if engineering_profile == "layout" and layer == "C-POND":
                 if not include_layers or layer not in include_layers:
+                    audit["filtered_reasons"]["heuristic_layout_pond"] = audit["filtered_reasons"].get("heuristic_layout_pond", 0) + 1
                     continue
             if has_layout_scene and layer in SECONDARY_ENGINEERING_LAYERS and repr(action) not in engineering_overlay_keys:
                 if not include_layers or layer not in include_layers:
+                    audit["filtered_reasons"]["heuristic_secondary_engineering"] = audit["filtered_reasons"].get("heuristic_secondary_engineering", 0) + 1
                     continue
             if has_layout_scene and task == "point":
                 if not include_layers or layer not in include_layers:
+                    audit["filtered_reasons"]["heuristic_layout_point"] = audit["filtered_reasons"].get("heuristic_layout_point", 0) + 1
                     continue
             if has_layout_scene and layer == "C-BUILDING" and task == "text_note":
+                audit["filtered_reasons"]["heuristic_building_text_note"] = audit["filtered_reasons"].get("heuristic_building_text_note", 0) + 1
                 continue
             if has_layout_scene and _is_isolated_pavement_shape(action, building_rects, parking_bounds):
+                audit["filtered_reasons"]["heuristic_isolated_pavement"] = audit["filtered_reasons"].get("heuristic_isolated_pavement", 0) + 1
                 continue
         if preview_mode == "production" and layer in SECONDARY_ENGINEERING_LAYERS:
             if not include_layers or layer not in include_layers:
+                audit["filtered_reasons"]["secondary_engineering_layer"] = audit["filtered_reasons"].get("secondary_engineering_layer", 0) + 1
                 continue
         if include_layers and layer not in include_layers:
+            audit["filtered_reasons"]["layer_not_included"] = audit["filtered_reasons"].get("layer_not_included", 0) + 1
             continue
         if engineering_profile in {"layout", "grading"} and layer in {"C-BUILDING", "C-PARKING", "C-PAVEMENT", "C-SIDEWALK"} and "_preview_profile" not in action:
             action = dict(action)
@@ -2203,6 +2359,7 @@ def _filtered_preview_actions(
             action["_preview_profile"] = engineering_profile
         filtered.append(action)
     audit["rendered_final_count"] = sum(1 for action in filtered if _action_preview_role(action) == "final")
+    audit["rendered_counts"] = _system_counts(filtered)
     return filtered, audit
 
 
@@ -2857,6 +3014,12 @@ def build_preview_annotations(
         preview_mode=preview_mode,
         label_density=label_density,
     )
+    if isinstance(audit, dict):
+        audit["stage_diagnostics"] = _collect_stage_diagnostics(
+            {"meta": safe_dict(plan.get("meta")), "actions": actions},
+            actions,
+            preview_actions,
+        )
     if not preview_actions or not selected_bounds:
         return {"profile": engineering_profile, "labels": [], "audit": audit}
     min_x, min_y, max_x, max_y = selected_bounds

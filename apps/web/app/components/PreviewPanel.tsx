@@ -380,6 +380,38 @@ export default function PreviewPanel({
                     {formatCount(previewAudit.hidden_incomplete_phase_count ?? 0)}
                   </span>
                 </p>
+                {previewRenderMode === "debug" && previewAudit.stage_diagnostics ? (
+                  <div className="mt-3 border-t border-slate-200 pt-3 text-[11px] text-slate-600">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      Stage Diagnostics
+                    </p>
+                    {Object.values(previewAudit.stage_diagnostics).map((entry) => {
+                      if (!entry || typeof entry !== "object") return null;
+                      const stage = String((entry as any).stage || "");
+                      const status = String((entry as any).status || "");
+                      const message = String((entry as any).message || "");
+                      const generated = (entry as any).generated || {};
+                      const rendered = (entry as any).rendered || {};
+                      return (
+                        <div key={stage} className="mt-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                          <div className="flex items-center justify-between text-[11px] font-semibold text-slate-700">
+                            <span className="uppercase tracking-[0.14em] text-slate-500">{stage || "stage"}</span>
+                            <span>{status || "pending"}</span>
+                          </div>
+                          {message ? <p className="mt-1 text-[10px] text-slate-500">{message}</p> : null}
+                          <p className="mt-1 text-[10px] text-slate-500">
+                            Generated: {formatCount(generated.total ?? 0)} · Final: {formatCount(generated.final ?? 0)} · Overlay:{" "}
+                            {formatCount(generated.overlay ?? 0)}
+                          </p>
+                          <p className="mt-1 text-[10px] text-slate-500">
+                            Rendered: {formatCount(rendered.total ?? 0)} · Final: {formatCount(rendered.final ?? 0)} · Overlay:{" "}
+                            {formatCount(rendered.overlay ?? 0)}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : null}
