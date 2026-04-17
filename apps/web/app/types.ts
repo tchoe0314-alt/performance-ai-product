@@ -535,11 +535,36 @@ export type BuildingPlacement = {
   rotation?: number;
   type?: SiteObjectType;
   use?: string;
+  meta?: Record<string, unknown>;
   locked?: boolean;
   placed?: boolean;
 };
 
-export type SiteObjectType = "building" | "basin" | "entrance";
+export type SiteObjectType =
+  | "site"
+  | "setback_zone"
+  | "no_build_zone"
+  | "building"
+  | "retail_building"
+  | "multifamily_building"
+  | "industrial_building"
+  | "office_building"
+  | "pad"
+  | "pool"
+  | "amenity"
+  | "open_space"
+  | "entrance"
+  | "road"
+  | "parking"
+  | "sidewalk"
+  | "basin"
+  | "outfall"
+  | "inlet"
+  | "manhole"
+  | "hydrant"
+  | "utility_corridor"
+  | "lot_block"
+  | "bridge";
 
 export type SiteObjectPlacement = BuildingPlacement & {
   type: SiteObjectType;

@@ -886,12 +886,20 @@ export default function PreviewPanel({
                         const width = (displayW / Math.max(lotWidth, 1)) * 100;
                         const height = (displayD / Math.max(lotHeight, 1)) * 100;
                         const rotation = item.rotation ?? 0;
+                        const borderColorMap: Record<string, string> = {
+                          site: "border-slate-400",
+                          setback_zone: "border-slate-300",
+                          no_build_zone: "border-rose-400",
+                          basin: "border-emerald-500",
+                          entrance: "border-amber-500",
+                          road: "border-blue-500",
+                          parking: "border-violet-500",
+                          sidewalk: "border-teal-500",
+                          pool: "border-cyan-500",
+                          pad: "border-stone-400",
+                        };
                         const borderColor =
-                          item.type === "basin"
-                            ? "border-emerald-500"
-                            : item.type === "entrance"
-                              ? "border-amber-500"
-                              : "border-slate-900/70";
+                          (item.type && borderColorMap[item.type]) || "border-slate-900/70";
                         return (
                           <div
                             key={item.id}
@@ -1244,12 +1252,20 @@ export default function PreviewPanel({
                         const width = (displayW / Math.max(lotWidth, 1)) * 100;
                         const height = (displayD / Math.max(lotHeight, 1)) * 100;
                         const rotation = item.rotation ?? 0;
+                        const borderColorMap: Record<string, string> = {
+                          site: "border-slate-400",
+                          setback_zone: "border-slate-300",
+                          no_build_zone: "border-rose-400",
+                          basin: "border-emerald-500",
+                          entrance: "border-amber-500",
+                          road: "border-blue-500",
+                          parking: "border-violet-500",
+                          sidewalk: "border-teal-500",
+                          pool: "border-cyan-500",
+                          pad: "border-stone-400",
+                        };
                         const borderColor =
-                          item.type === "basin"
-                            ? "border-emerald-500"
-                            : item.type === "entrance"
-                              ? "border-amber-500"
-                              : "border-slate-900/70";
+                          (item.type && borderColorMap[item.type]) || "border-slate-900/70";
                         return (
                           <div
                             key={item.id}

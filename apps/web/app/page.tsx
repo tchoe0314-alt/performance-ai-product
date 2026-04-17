@@ -40,6 +40,104 @@ import type {
   PreviewRequestPayload,
 } from "./types";
 
+const ADD_MENU_SECTIONS: Array<{
+  title: string;
+  key: string;
+  items: SiteObjectType[];
+  collapsible?: boolean;
+}> = [
+  {
+    title: "Site",
+    key: "site",
+    items: ["site", "setback_zone", "no_build_zone"],
+  },
+  {
+    title: "Buildings & Program",
+    key: "buildings",
+    items: [
+      "building",
+      "retail_building",
+      "multifamily_building",
+      "industrial_building",
+      "office_building",
+      "pad",
+      "pool",
+      "amenity",
+      "open_space",
+    ],
+  },
+  {
+    title: "Access & Parking",
+    key: "access",
+    items: ["entrance", "road", "parking", "sidewalk"],
+  },
+  {
+    title: "Drainage & Water",
+    key: "drainage",
+    items: ["basin", "outfall", "inlet", "manhole", "hydrant"],
+  },
+  {
+    title: "Advanced",
+    key: "advanced",
+    items: ["utility_corridor", "lot_block", "bridge"],
+    collapsible: true,
+  },
+];
+
+const SITE_OBJECT_CATALOG: Record<
+  SiteObjectType,
+  { label: string; category: string; defaultW: number; defaultD: number; use?: string }
+> = {
+  site: { label: "Site", category: "site", defaultW: 400, defaultD: 300 },
+  setback_zone: { label: "Setback Zone", category: "site", defaultW: 200, defaultD: 120 },
+  no_build_zone: { label: "No-Build Zone", category: "site", defaultW: 160, defaultD: 120 },
+  building: { label: "Building", category: "buildings", defaultW: 80, defaultD: 50 },
+  retail_building: {
+    label: "Retail Building",
+    category: "buildings",
+    defaultW: 70,
+    defaultD: 45,
+    use: "retail",
+  },
+  multifamily_building: {
+    label: "Multifamily Building",
+    category: "buildings",
+    defaultW: 110,
+    defaultD: 58,
+    use: "multifamily",
+  },
+  industrial_building: {
+    label: "Industrial Building",
+    category: "buildings",
+    defaultW: 140,
+    defaultD: 90,
+    use: "industrial",
+  },
+  office_building: {
+    label: "Office Building",
+    category: "buildings",
+    defaultW: 100,
+    defaultD: 60,
+    use: "office",
+  },
+  pad: { label: "Pad", category: "buildings", defaultW: 60, defaultD: 40 },
+  pool: { label: "Pool", category: "buildings", defaultW: 50, defaultD: 30 },
+  amenity: { label: "Amenity Area", category: "buildings", defaultW: 80, defaultD: 40 },
+  open_space: { label: "Open Space", category: "buildings", defaultW: 120, defaultD: 80 },
+  entrance: { label: "Entrance / Access", category: "access", defaultW: 24, defaultD: 24 },
+  road: { label: "Road / Drive Aisle", category: "access", defaultW: 120, defaultD: 28 },
+  parking: { label: "Parking Field", category: "access", defaultW: 140, defaultD: 60 },
+  sidewalk: { label: "Sidewalk / Path", category: "access", defaultW: 80, defaultD: 12 },
+  basin: { label: "Basin / Detention Pond", category: "drainage", defaultW: 90, defaultD: 60 },
+  outfall: { label: "Outfall Point", category: "drainage", defaultW: 18, defaultD: 18 },
+  inlet: { label: "Inlet", category: "drainage", defaultW: 12, defaultD: 12 },
+  manhole: { label: "Manhole", category: "drainage", defaultW: 12, defaultD: 12 },
+  hydrant: { label: "Hydrant", category: "drainage", defaultW: 10, defaultD: 10 },
+  utility_corridor: { label: "Utility Corridor", category: "advanced", defaultW: 140, defaultD: 24 },
+  lot_block: { label: "Lot / Subdivision Block", category: "advanced", defaultW: 160, defaultD: 120 },
+  bridge: { label: "Bridge", category: "advanced", defaultW: 80, defaultD: 24 },
+};
+
 import {
   defaultAssumptions,
   toReadableLabel,
@@ -280,6 +378,7 @@ export default function PerformanceAIDashboard() {
   const [placementModeEnabled, setPlacementModeEnabled] = useState(false);
   const [activePlacementId, setActivePlacementId] = useState<string | null>(null);
   const [placementSuggestions, setPlacementSuggestions] = useState<BuildingPlacement[][]>([]);
+  const [advancedAddOpen, setAdvancedAddOpen] = useState(false);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
 
   const [assumptions, setAssumptions] =
@@ -1216,59 +1315,78 @@ export default function PerformanceAIDashboard() {
   }, [lotHeight, lotWidth]);
 
   const resolveDefaultBuildingDims = useCallback(() => {
-    const width = parsePositiveNumber(buildingWidth) ?? 80;
-    const depth = parsePositiveNumber(buildingDepth) ?? 50;
+    const width = parsePositiveNumber(buildingWidth) ?? SITE_OBJECT_CATALOG.building.defaultW;
+    const depth = parsePositiveNumber(buildingDepth) ?? SITE_OBJECT_CATALOG.building.defaultD;
     return { w: width, d: depth };
   }, [buildingDepth, buildingWidth]);
 
-  const handleAddBuilding = useCallback(() => {
-    const lot = resolveLotBounds();
-    if (!lot.w || !lot.h) {
-      setStatusMessage("Set the site width and height before adding buildings.");
-      return;
-    }
-    const { w, d } = resolveDefaultBuildingDims();
-    const nextPlacement: BuildingPlacement = {
-      id: `building-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      label: `Building ${buildingPlacements.length + 1}`,
-      type: "building",
-      w,
-      d,
-      rotation: 0,
-      locked: false,
-      placed: false,
-    };
-    setBuildingPlacements((prev) => [...prev, nextPlacement]);
-  }, [buildingPlacements.length, resolveDefaultBuildingDims, resolveLotBounds]);
+  const formatObjectLabel = useCallback(
+    (type: SiteObjectType, count: number) => {
+      const base = SITE_OBJECT_CATALOG[type]?.label ?? "Object";
+      return type === "site" ? base : `${base} ${count}`;
+    },
+    [],
+  );
 
   const handleAddObject = useCallback(
     (type: SiteObjectType) => {
+      const catalog = SITE_OBJECT_CATALOG[type];
+      if (!catalog) return;
+      if (type === "site") {
+        const width = parsePositiveNumber(lotWidth) ?? catalog.defaultW;
+        const height = parsePositiveNumber(lotHeight) ?? catalog.defaultD;
+        if (!parsePositiveNumber(lotWidth)) setLotWidth(String(width));
+        if (!parsePositiveNumber(lotHeight)) setLotHeight(String(height));
+        setBuildingPlacements((prev) => {
+          const filtered = prev.filter((item) => item.type !== "site");
+          const sitePlacement: BuildingPlacement = {
+            id: `site-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            label: catalog.label,
+            type: "site",
+            w: width,
+            d: height,
+            x: 0,
+            y: 0,
+            rotation: 0,
+            locked: true,
+            placed: true,
+            meta: { category: catalog.category },
+          };
+          return [sitePlacement, ...filtered];
+        });
+        return;
+      }
       const lot = resolveLotBounds();
       if (!lot.w || !lot.h) {
         setStatusMessage("Set the site width and height before adding objects.");
         return;
       }
-      if (type === "building") {
-        handleAddBuilding();
-        return;
-      }
-      const defaults = type === "basin" ? { w: 80, d: 60 } : { w: 20, d: 20 };
+      const existingCount =
+        buildingPlacements.filter((item) => item.type === type).length + 1;
+      const defaults =
+        type === "building" ? resolveDefaultBuildingDims() : { w: catalog.defaultW, d: catalog.defaultD };
       const nextPlacement: BuildingPlacement = {
         id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        label:
-          type === "basin"
-            ? `Basin ${buildingPlacements.length + 1}`
-            : `Entrance ${buildingPlacements.length + 1}`,
+        label: formatObjectLabel(type, existingCount),
         type,
+        use: catalog.use,
         w: defaults.w,
         d: defaults.d,
         rotation: 0,
         locked: false,
         placed: false,
+        meta: { category: catalog.category },
       };
       setBuildingPlacements((prev) => [...prev, nextPlacement]);
     },
-    [buildingPlacements.length, handleAddBuilding, resolveLotBounds],
+    [
+      buildingPlacements,
+      formatObjectLabel,
+      lotHeight,
+      lotWidth,
+      resolveDefaultBuildingDims,
+      resolveLotBounds,
+    ],
   );
 
   const handleUpdateBuilding = useCallback((id: string, updates: Partial<BuildingPlacement>) => {
@@ -4593,27 +4711,6 @@ export default function PerformanceAIDashboard() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleAddObject("building")}
-                      className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                    >
-                      Add Building
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleAddObject("basin")}
-                      className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                    >
-                      Add Basin
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleAddObject("entrance")}
-                      className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                    >
-                      Add Entrance
-                    </button>
-                    <button
-                      type="button"
                       onClick={handleAutoPlaceBuildings}
                       className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
                     >
@@ -4633,6 +4730,52 @@ export default function PerformanceAIDashboard() {
                     >
                       Next Suggestion
                     </button>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Add Objects
+                      </p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Choose a category to add real, scaled site objects.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAdvancedAddOpen((value) => !value)}
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                    >
+                      {advancedAddOpen ? "Hide Advanced" : "Show Advanced"}
+                    </button>
+                  </div>
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    {ADD_MENU_SECTIONS.filter(
+                      (section) => !section.collapsible || advancedAddOpen,
+                    ).map((section) => (
+                      <div key={section.key} className="rounded-2xl border border-slate-200 bg-white p-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          {section.title}
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {section.items.map((itemType) => {
+                            const label = SITE_OBJECT_CATALOG[itemType]?.label ?? "Object";
+                            return (
+                              <button
+                                key={itemType}
+                                type="button"
+                                onClick={() => handleAddObject(itemType)}
+                                className="rounded-full border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                              >
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
@@ -4672,59 +4815,68 @@ export default function PerformanceAIDashboard() {
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Objects</p>
                     <div className="mt-2 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                      {buildingPlacements
-                        .filter((item) => !item.placed)
-                        .map((item) => (
-                          <div
-                            key={item.id}
-                            draggable
-                            onDragStart={(event) => {
-                              event.dataTransfer?.setData("civora-object-id", item.id);
-                              setPlacementModeEnabled(true);
-                            }}
-                            className={`rounded-2xl border bg-white p-3 text-xs text-slate-600 shadow-sm ${
-                              activePlacementId === item.id
-                                ? "border-amber-400 ring-2 ring-amber-200"
-                                : "border-slate-200"
-                            }`}
-                            title={`${item.label} • ${item.w} ft x ${item.d} ft`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="font-semibold text-slate-800">{item.label}</span>
-                              <button
-                                type="button"
+                    {buildingPlacements
+                      .filter((item) => !item.placed)
+                      .map((item) => (
+                      <div
+                        key={item.id}
+                        draggable={!item.locked}
+                        onDragStart={(event) => {
+                          if (item.locked) return;
+                          event.dataTransfer?.setData("civora-object-id", item.id);
+                          setPlacementModeEnabled(true);
+                        }}
+                        className={`rounded-2xl border bg-white p-3 text-xs text-slate-600 shadow-sm ${
+                          activePlacementId === item.id
+                            ? "border-amber-400 ring-2 ring-amber-200"
+                            : "border-slate-200"
+                        }`}
+                        title={`${item.label} • ${item.w} ft x ${item.d} ft`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-slate-800">{item.label}</span>
+                          <button
+                            type="button"
                                 onClick={() => handleRemoveBuilding(item.id)}
                                 className="text-xs font-semibold text-rose-500"
                               >
                                 Delete
                               </button>
-                            </div>
-                            <div className="mt-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                              <span>{item.type ?? "building"}</span>
-                              <span>•</span>
-                              <span>{item.w} ft x {item.d} ft</span>
-                            </div>
-                            <div className="mt-2 flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => handleSelectPlacementTarget(item.id)}
-                                className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                              >
-                                {item.placed ? "Re-place" : "Place"}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleToggleBuildingLock(item.id)}
-                                className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
-                                  item.locked
-                                    ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-                                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                                }`}
-                              >
-                                {item.locked ? "Locked" : "Unlock"}
-                              </button>
-                            </div>
-                          </div>
+                        </div>
+                        <div className="mt-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                          <span>{SITE_OBJECT_CATALOG[item.type ?? "building"]?.label ?? "Building"}</span>
+                          <span>•</span>
+                          <span>{item.w} ft x {item.d} ft</span>
+                        </div>
+                        <div className="mt-2 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleSelectPlacementTarget(item.id)}
+                            disabled={item.type === "site"}
+                            className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                              item.type === "site"
+                                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                            }`}
+                          >
+                            {item.type === "site" ? "Configured" : item.placed ? "Re-place" : "Place"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleBuildingLock(item.id)}
+                            disabled={item.type === "site"}
+                            className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
+                              item.type === "site"
+                                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                : item.locked
+                                  ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                            }`}
+                          >
+                            {item.locked ? "Locked" : "Unlock"}
+                          </button>
+                        </div>
+                      </div>
                         ))}
                       {buildingPlacements
                         .filter((item) => item.placed)
@@ -4747,33 +4899,41 @@ export default function PerformanceAIDashboard() {
                               >
                                 Delete
                               </button>
-                            </div>
-                            <div className="mt-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                              <span>{item.type ?? "building"}</span>
-                              <span>•</span>
-                              <span>{item.w} ft x {item.d} ft</span>
-                            </div>
-                            <div className="mt-2 flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => handleSelectPlacementTarget(item.id)}
-                                className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                              >
-                                Re-place
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleToggleBuildingLock(item.id)}
-                                className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
-                                  item.locked
+                          </div>
+                          <div className="mt-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                            <span>{SITE_OBJECT_CATALOG[item.type ?? "building"]?.label ?? "Building"}</span>
+                            <span>•</span>
+                            <span>{item.w} ft x {item.d} ft</span>
+                          </div>
+                          <div className="mt-2 flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleSelectPlacementTarget(item.id)}
+                              disabled={item.type === "site"}
+                              className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                                item.type === "site"
+                                  ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                              }`}
+                            >
+                              {item.type === "site" ? "Configured" : "Re-place"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleBuildingLock(item.id)}
+                              disabled={item.type === "site"}
+                              className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
+                                item.type === "site"
+                                  ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                  : item.locked
                                     ? "border-emerald-500 bg-emerald-50 text-emerald-700"
                                     : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                                }`}
-                              >
-                                {item.locked ? "Locked" : "Unlock"}
-                              </button>
-                            </div>
+                              }`}
+                            >
+                              {item.locked ? "Locked" : "Unlock"}
+                            </button>
                           </div>
+                        </div>
                         ))}
                     </div>
                   </div>
