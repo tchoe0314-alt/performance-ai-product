@@ -537,6 +537,7 @@ type ChatMessage = {
   createdAt: number;
   kind?: "message" | "status" | "explanation" | "action";
   feedback?: "up" | "down";
+  phaseTag?: string;
 };
 type LearningReport = {
   feedback?: {
@@ -574,11 +575,18 @@ const defaultIssues: Issue[] = [
   },
 ];
 
+const CHAT_THREAD_KEY_PREFIX = "civora-chat-thread:";
+
+function getChatThreadStorageKey(projectId: string) {
+  return `${CHAT_THREAD_KEY_PREFIX}${projectId || "draft"}`;
+}
+
 function createChatMessage(
   role: ChatMessage["role"],
   content: string,
   kind: ChatMessage["kind"] = "message",
   feedback?: ChatMessage["feedback"],
+  phaseTag?: string,
 ): ChatMessage {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -587,6 +595,7 @@ function createChatMessage(
     createdAt: Date.now(),
     kind,
     feedback,
+    phaseTag,
   };
 }
 
@@ -1466,6 +1475,7 @@ export default function PerformanceAIDashboard() {
   ]);
   const [learningReport, setLearningReport] = useState<LearningReport | null>(null);
   const [learningReportUpdatedAt, setLearningReportUpdatedAt] = useState<number | null>(null);
+  const [queuedPhaseNotes, setQueuedPhaseNotes] = useState<string[]>([]);
   const [imageName, setImageName] = useState("");
   const [siteName, setSiteName] = useState("");
   const [fileName, setFileName] = useState("");
@@ -1553,6 +1563,9 @@ export default function PerformanceAIDashboard() {
   const suppressProjectAutoLoadRef = useRef(false);
   const chatAutosaveTimeoutRef = useRef<number | null>(null);
   const autosaveSuspendRef = useRef(false);
+  const currentPhaseLabelRef = useRef<string>("");
+  const queuedPhaseNotesRef = useRef<string[]>([]);
+  const queuedNotesApplyingRef = useRef(false);
   const autoAdvanceByJobRef = useRef<Record<string, boolean>>({});
   const previewRecoveryKeyRef = useRef("");
   const lastSiteInputProjectRef = useRef("");
@@ -2094,7 +2107,14 @@ export default function PerformanceAIDashboard() {
     feedback?: ChatMessage["feedback"],
   ) => {
     setChatMessages((current) => {
-      const next = [...current, createChatMessage(role, content, kind, feedback)];
+      const phaseTag =
+        role === "assistant" || role === "system"
+          ? currentPhaseLabelRef.current || undefined
+          : undefined;
+      const next = [
+        ...current,
+        createChatMessage(role, content, kind, feedback, phaseTag),
+      ];
       chatMessagesRef.current = next;
       return next;
     });
@@ -2169,6 +2189,66 @@ export default function PerformanceAIDashboard() {
   }, [chatMessages]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const key = getChatThreadStorageKey(
+      currentProject?.project_id || projectId || "draft",
+    );
+    try {
+      window.localStorage.setItem(key, JSON.stringify(chatMessagesRef.current));
+    } catch {
+      // Ignore local storage failures.
+    }
+  }, [chatMessages, currentProject?.project_id, projectId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const key = getChatThreadStorageKey(
+      currentProject?.project_id || projectId || "draft",
+    );
+    if (chatMessagesRef.current.length > 1) return;
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return;
+    try {
+      const stored = JSON.parse(raw);
+      if (!Array.isArray(stored) || !stored.length) return;
+      const restored = stored
+        .filter((message: ChatMessage) => message && typeof message.content === "string")
+        .map((message: ChatMessage): ChatMessage => ({
+          id:
+            typeof message.id === "string"
+              ? message.id
+              : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          role:
+            message.role === "user" ||
+            message.role === "assistant" ||
+            message.role === "system"
+              ? message.role
+              : "assistant",
+          content: message.content,
+          createdAt:
+            typeof message.createdAt === "number" ? message.createdAt : Date.now(),
+          kind:
+            message.kind === "status" ||
+            message.kind === "explanation" ||
+            message.kind === "action"
+              ? message.kind
+              : "message",
+          feedback:
+            message.feedback === "up" || message.feedback === "down"
+              ? message.feedback
+              : undefined,
+          phaseTag: typeof message.phaseTag === "string" ? message.phaseTag : undefined,
+        }));
+      if (restored.length) {
+        chatMessagesRef.current = restored;
+        setChatMessages(restored);
+      }
+    } catch {
+      // Ignore invalid local storage payloads.
+    }
+  }, [currentProject?.project_id, projectId]);
+
+  useEffect(() => {
     return () => {
       if (chatAutosaveTimeoutRef.current !== null) {
         window.clearTimeout(chatAutosaveTimeoutRef.current);
@@ -2227,6 +2307,7 @@ export default function PerformanceAIDashboard() {
               message.feedback === "up" || message.feedback === "down"
                 ? message.feedback
                 : undefined,
+            phaseTag: typeof message.phaseTag === "string" ? message.phaseTag : undefined,
           }))
       : [];
     const autoNamed = Boolean(projectInput.meta?.auto_named);
@@ -3141,9 +3222,16 @@ export default function PerformanceAIDashboard() {
     if (!trimmed && !imageName) return;
     if (busy || visibleActiveJob) {
       appendChatMessage("user", trimmed || "Uploaded an image.");
+      if (trimmed) {
+        setQueuedPhaseNotes((current) => {
+          const next = [...current, trimmed];
+          queuedPhaseNotesRef.current = next;
+          return next;
+        });
+      }
       appendChatMessage(
         "assistant",
-        "Got it. I saved that note and will apply it after the current phase finishes or once you approve the next phase.",
+        "Got it. I queued that note and will apply it right after the current phase finishes.",
         "status",
       );
       setPrompt("");
@@ -3229,6 +3317,74 @@ export default function PerformanceAIDashboard() {
     }
   };
 
+  const applyQueuedPhaseNotes = async () => {
+    if (!visibleActiveJob?.job_id || !token) return;
+    const queued = queuedPhaseNotesRef.current;
+    if (!queued.length) return;
+    if (queuedNotesApplyingRef.current) return;
+    queuedNotesApplyingRef.current = true;
+    const combinedNotes = queued.map((note) => `- ${note}`).join("\n");
+    appendChatMessage(
+      "assistant",
+      `Applying queued notes to the next phase:\n${combinedNotes}`,
+      "status",
+    );
+    const targetProjectId =
+      projectId || visibleActiveJob.project_id || currentProject?.project_id || null;
+    if (targetProjectId) {
+      const baseInput = currentProject?.project_input ?? payloadPreview;
+      const nextThread = [
+        ...chatMessagesRef.current,
+        createChatMessage("user", combinedNotes),
+      ];
+      await saveProject({
+        silent: true,
+        projectIdOverride: targetProjectId,
+        projectInputOverride: {
+          ...baseInput,
+          prompt_text: combinedNotes,
+          meta: {
+            ...(baseInput.meta ?? {}),
+            chat_thread: nextThread,
+          },
+        },
+      });
+    }
+    try {
+      const data = await postJson<{ job: JobSummary }>(
+        `/api/jobs/${visibleActiveJob.job_id}/revise`,
+        { target_phase: revisePhaseTarget },
+        { token },
+      );
+      setJobs((current) => {
+        const next = [...current];
+        const index = next.findIndex((job) => job.job_id === data.job.job_id);
+        if (index >= 0) {
+          next[index] = { ...next[index], ...data.job };
+        } else {
+          next.unshift(data.job);
+        }
+        return next;
+      });
+      setActiveJobId(data.job.job_id);
+      setQueuedPhaseNotes([]);
+      queuedPhaseNotesRef.current = [];
+      appendChatMessage(
+        "assistant",
+        `Queued notes applied. Requeued ${data.job.job_id} to revise ${toReadableLabel(revisePhaseTarget)}.`,
+        "status",
+      );
+    } catch (error) {
+      appendChatMessage(
+        "assistant",
+        error instanceof Error ? error.message : "Could not apply queued notes.",
+        "status",
+      );
+    } finally {
+      queuedNotesApplyingRef.current = false;
+    }
+  };
+
   useEffect(() => {
     const jobId = visibleActiveJob?.job_id;
     if (!jobId) return;
@@ -3237,6 +3393,13 @@ export default function PerformanceAIDashboard() {
       autoAdvanceByJobRef.current[jobId] = false;
     }
   }, [visibleActiveJob?.job_id, visibleActiveJob?.status]);
+
+  useEffect(() => {
+    const status = String(visibleActiveJob?.status || "").toLowerCase();
+    if (status !== "awaiting_approval") return;
+    if (!queuedPhaseNotesRef.current.length) return;
+    void applyQueuedPhaseNotes();
+  }, [visibleActiveJob?.status, visibleActiveJob?.job_id]);
 
   useEffect(() => {
     if (!autoAdvancePhases) return;
@@ -4704,6 +4867,15 @@ export default function PerformanceAIDashboard() {
       ? previewRunningPhase?.key || previewNextPendingPhase?.key || revisePhaseTarget
       : null;
 
+  useEffect(() => {
+    const phaseLabel =
+      previewRunningPhase?.label ||
+      String(visibleActiveJob?.stage || "").trim() ||
+      String((currentPlanMeta?.runtime_phase_checkpoint as { stage_name?: string } | undefined)?.stage_name || "")
+        .trim();
+    currentPhaseLabelRef.current = phaseLabel ? toReadableLabel(phaseLabel) : "";
+  }, [previewRunningPhase?.label, visibleActiveJob?.stage, currentPlanMeta]);
+
   const previewLayersEffective = useMemo(() => {
     if (!gatingPhaseKey) return previewLayers;
     switch (gatingPhaseKey) {
@@ -5486,6 +5658,11 @@ export default function PerformanceAIDashboard() {
                               ? "Action"
                               : "Civora AI"}
                         </span>
+                        {message.role === "assistant" && message.phaseTag ? (
+                          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                            {message.phaseTag}
+                          </span>
+                        ) : null}
                         <span className="text-[11px] opacity-60">
                           {formatChatTimestamp(message.createdAt)}
                         </span>
