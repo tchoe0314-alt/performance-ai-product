@@ -297,6 +297,24 @@ export type ManualFields = {
   drainage?: {
     min_pipe_slope_pct?: number;
   };
+  ponds?: Array<{
+    name?: string;
+    x?: number;
+    y?: number;
+    w?: number;
+    d?: number;
+    rotation?: number;
+    locked?: boolean;
+  }>;
+  access_points?: Array<{
+    name?: string;
+    x?: number;
+    y?: number;
+    w?: number;
+    d?: number;
+    rotation?: number;
+    locked?: boolean;
+  }>;
   disciplines?: string[];
   terrain?: string;
 };
