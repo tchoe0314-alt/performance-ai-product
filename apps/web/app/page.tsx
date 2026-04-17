@@ -3,31 +3,19 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import {
-  deleteJson,
-  getJson,
-  postBinary,
-  postForm,
-  postJson,
-  toApiUrl,
-} from "../lib/api";
+import { getJson, postBinary, postForm, postJson } from "../lib/api";
 
 import type {
   Assumption,
   Issue,
   BackendAssumption,
   BackendIssue,
-  ProjectSummary,
   ProjectRecord,
   ProjectInput,
-  ProjectMetadata,
   JobSummary,
   WorkflowRunSummary,
-  WorkflowArtifact,
   ManualFailure,
-  IterationRecord,
   ManagerMetrics,
-  MetricValue,
   QuantityTotals,
   PipeSegment,
   StormSummary,
@@ -270,7 +258,7 @@ export default function PerformanceAIDashboard() {
   ]);
   const [learningReport, setLearningReport] = useState<LearningReport | null>(null);
   const [learningReportUpdatedAt, setLearningReportUpdatedAt] = useState<number | null>(null);
-  const [queuedPhaseNotes, setQueuedPhaseNotes] = useState<string[]>([]);
+  const [, setQueuedPhaseNotes] = useState<string[]>([]);
   const [imageName, setImageName] = useState("");
   const [siteName, setSiteName] = useState("");
   const [fileName, setFileName] = useState("");
@@ -373,7 +361,6 @@ export default function PerformanceAIDashboard() {
     setProjects,
     refreshProjects,
     upsertProjectSummary,
-    removeProjectSummary,
   } = useProjectsState();
 
   const {
@@ -2339,23 +2326,6 @@ export default function PerformanceAIDashboard() {
     }
   };
 
-  const deleteProject = async (id: string) => {
-    if (!token) return;
-    try {
-      await deleteJson(`/api/projects/${id}`, { token });
-      removeProjectSummary(id);
-      if (projectId === id) {
-        setProjectId("");
-        setCurrentProject(null);
-      }
-      setStatusMessage("Project deleted.");
-    } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : "Project delete failed.",
-      );
-    }
-  };
-
   const loadJob = async (id: string) => {
     if (!token) return;
     try {
@@ -3285,27 +3255,12 @@ export default function PerformanceAIDashboard() {
     previewReadyDeliverables,
     previewPhaseEntries,
     combinedPreviewPhase,
-    phaseOnlyEntries,
     previewCompletedPhaseCount,
     previewTotalPhaseCount,
     previewRunningPhase,
     previewNextPendingPhase,
     previewRerunSignals,
   } = usePreviewReview({ currentPlanMeta, planPreviewSummary });
-  const activePreviewPhase =
-    previewPhaseEntries.find(
-      (phase) =>
-        phase.status.toLowerCase() === "running" ||
-        phase.currentStatus.toLowerCase() === "running",
-    ) ??
-    previewPhaseEntries.find((phase) => phase.key === "combined_view") ??
-    null;
-  const effectivePreviewUnresolvedCount =
-    previewReview?.release_status === "ready" &&
-    !toArray(previewReview?.blocked_reasons).length &&
-    !toArray(previewReview?.failed_deliverables).length
-      ? 0
-      : previewReview?.unresolved_conflict_count ?? 0;
   const gatingPhaseKey =
     !autoAdvancePhases &&
     String(visibleActiveJob?.status || "").toLowerCase() === "awaiting_approval"
@@ -3795,110 +3750,111 @@ export default function PerformanceAIDashboard() {
               }}
             />
 
-          <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-6 md:px-6">
-            <ProjectControls
-              strategyMode={strategyMode}
-              onStrategyModeChange={setStrategyMode}
-              siteName={siteName}
-              fileName={fileName}
-              onSiteNameChange={setSiteName}
-              onFileNameChange={setFileName}
-              onSiteNameEdited={() => setSiteNameAuto(false)}
-              onFileNameEdited={() => setFileNameAuto(false)}
-              onSaveProjectNames={() =>
-                void saveProject({
-                  nameOverride: siteName.trim(),
-                  fileNameOverride: fileName.trim(),
-                  autoNamedOverride: false,
-                  autoFileNamedOverride: false,
-                })
-              }
-              disciplineToggles={disciplineToggles.map((item) => ({
-                label: item.label,
-                checked: item.checked,
-                onToggle: () => item.setter(!item.checked),
-              }))}
-            />
-
-            <ChatPanel
-              chatMessages={chatMessages}
-              chatScrollRef={chatScrollRef}
-              onSetMessageFeedback={setMessageFeedback}
-              thinkingState={thinkingState}
-              busy={busy}
-              activePlanTool={activePlanTool}
-              visibleActiveJobStatus={visibleActiveJob?.status ?? ""}
-              hasDirectRunInFlight={hasDirectRunInFlight}
-              autoAdvancePhases={autoAdvancePhases}
-              onToggleAutoAdvance={() => setAutoAdvancePhases((prev) => !prev)}
-              revisePhaseTarget={revisePhaseTarget}
-              onRevisePhaseTargetChange={setRevisePhaseTarget}
-              onCancelJob={handleCancelActiveJob}
-              onReviseJob={handleReviseActiveJob}
-              onContinueJob={handleContinueActiveJob}
-              prompt={prompt}
-              imageName={imageName}
-              onPromptChange={setPrompt}
-              onPromptKeyDown={(event) => {
-                if (
-                  event.key === "Enter" &&
-                  !event.shiftKey &&
-                  !(event.nativeEvent as KeyboardEvent).isComposing
-                ) {
-                  event.preventDefault();
-                  if (prompt.trim() || imageName) {
-                    handleSendMessage();
-                  }
+            <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-6 md:px-6">
+              <ProjectControls
+                strategyMode={strategyMode}
+                onStrategyModeChange={setStrategyMode}
+                siteName={siteName}
+                fileName={fileName}
+                onSiteNameChange={setSiteName}
+                onFileNameChange={setFileName}
+                onSiteNameEdited={() => setSiteNameAuto(false)}
+                onFileNameEdited={() => setFileNameAuto(false)}
+                onSaveProjectNames={() =>
+                  void saveProject({
+                    nameOverride: siteName.trim(),
+                    fileNameOverride: fileName.trim(),
+                    autoNamedOverride: false,
+                    autoFileNamedOverride: false,
+                  })
                 }
-              }}
-              onSendMessage={handleSendMessage}
-              onUploadImage={uploadImage}
-              onExplainPlan={handleExplainPlan}
-              onRunFix={() => void runOrchestrator("fix")}
-              onRunImprove={() => void runOrchestrator("improve")}
-              onSaveProject={() => void saveProject()}
-              canExplain={Boolean(backendResult || selectedRun)}
-              statusMessage={statusMessage}
-              hasVisibleActiveJob={Boolean(visibleActiveJob)}
-            />
+                disciplineToggles={disciplineToggles.map((item) => ({
+                  label: item.label,
+                  checked: item.checked,
+                  onToggle: () => item.setter(!item.checked),
+                }))}
+              />
 
-            <PreviewPanel
-              previewReview={previewReview}
-              previewTotalPhaseCount={previewTotalPhaseCount}
-              previewCompletedPhaseCount={previewCompletedPhaseCount}
-              previewRunningPhase={previewRunningPhase}
-              previewNextPendingPhase={previewNextPendingPhase}
-              onRefreshPreview={handlePreviewPlan}
-              busy={busy}
-              planPreviewUrl={planPreviewUrl}
-              previewMode={previewMode}
-              previewInteraction={previewInteraction}
-              previewQuality={previewQuality}
-              onSetPreviewMode={setPreviewMode}
-              onSetPreviewInteraction={setPreviewInteraction}
-              onSetPreviewQuality={setPreviewQuality}
-              onQueuePreviewRefresh={queuePreviewRefresh}
-              previewRefreshing={previewRefreshing}
-              previewRefreshNote={previewRefreshNote}
-              preview3DEffectiveItems={preview3DEffectiveItems}
-              usingAnnotation3D={usingAnnotation3D}
-              onOpenFullscreen={() => setPreviewFullscreenOpen(true)}
-              previewFullscreenOpen={previewFullscreenOpen}
-              onCloseFullscreen={() => setPreviewFullscreenOpen(false)}
-              onExportDxf={handleExportDxf}
-              onExportReport={handleExportReport}
-              phaseStats={phaseStats}
-              issues={issues}
-              planPreviewAnnotations={planPreviewAnnotations}
-              selectedIssueLabel={selectedIssueLabel}
-              showMeasurements={showMeasurements}
-              showCalculations={showCalculations}
-              measurementOverlayStats={measurementOverlayStats}
-              calculationOverlayStats={calculationOverlayStats}
-            />
-          </div>
-        </main>
+              <ChatPanel
+                chatMessages={chatMessages}
+                chatScrollRef={chatScrollRef}
+                onSetMessageFeedback={setMessageFeedback}
+                thinkingState={thinkingState}
+                busy={busy}
+                activePlanTool={activePlanTool}
+                visibleActiveJobStatus={visibleActiveJob?.status ?? ""}
+                hasDirectRunInFlight={hasDirectRunInFlight}
+                autoAdvancePhases={autoAdvancePhases}
+                onToggleAutoAdvance={() => setAutoAdvancePhases((prev) => !prev)}
+                revisePhaseTarget={revisePhaseTarget}
+                onRevisePhaseTargetChange={setRevisePhaseTarget}
+                onCancelJob={handleCancelActiveJob}
+                onReviseJob={handleReviseActiveJob}
+                onContinueJob={handleContinueActiveJob}
+                prompt={prompt}
+                imageName={imageName}
+                onPromptChange={setPrompt}
+                onPromptKeyDown={(event) => {
+                  if (
+                    event.key === "Enter" &&
+                    !event.shiftKey &&
+                    !(event.nativeEvent as KeyboardEvent).isComposing
+                  ) {
+                    event.preventDefault();
+                    if (prompt.trim() || imageName) {
+                      handleSendMessage();
+                    }
+                  }
+                }}
+                onSendMessage={handleSendMessage}
+                onUploadImage={uploadImage}
+                onExplainPlan={handleExplainPlan}
+                onRunFix={() => void runOrchestrator("fix")}
+                onRunImprove={() => void runOrchestrator("improve")}
+                onSaveProject={() => void saveProject()}
+                canExplain={Boolean(backendResult || selectedRun)}
+                statusMessage={statusMessage}
+                hasVisibleActiveJob={Boolean(visibleActiveJob)}
+              />
+
+              <PreviewPanel
+                previewReview={previewReview}
+                previewTotalPhaseCount={previewTotalPhaseCount}
+                previewCompletedPhaseCount={previewCompletedPhaseCount}
+                previewRunningPhase={previewRunningPhase}
+                previewNextPendingPhase={previewNextPendingPhase}
+                onRefreshPreview={handlePreviewPlan}
+                busy={busy}
+                planPreviewUrl={planPreviewUrl}
+                previewMode={previewMode}
+                previewInteraction={previewInteraction}
+                previewQuality={previewQuality}
+                onSetPreviewMode={setPreviewMode}
+                onSetPreviewInteraction={setPreviewInteraction}
+                onSetPreviewQuality={setPreviewQuality}
+                onQueuePreviewRefresh={queuePreviewRefresh}
+                previewRefreshing={previewRefreshing}
+                previewRefreshNote={previewRefreshNote}
+                preview3DEffectiveItems={preview3DEffectiveItems}
+                usingAnnotation3D={usingAnnotation3D}
+                onOpenFullscreen={() => setPreviewFullscreenOpen(true)}
+                previewFullscreenOpen={previewFullscreenOpen}
+                onCloseFullscreen={() => setPreviewFullscreenOpen(false)}
+                onExportDxf={handleExportDxf}
+                onExportReport={handleExportReport}
+                phaseStats={phaseStats}
+                issues={issues}
+                planPreviewAnnotations={planPreviewAnnotations}
+                selectedIssueLabel={selectedIssueLabel}
+                showMeasurements={showMeasurements}
+                showCalculations={showCalculations}
+                measurementOverlayStats={measurementOverlayStats}
+                calculationOverlayStats={calculationOverlayStats}
+              />
+            </div>
+          </main>
       </div>
+    </div>
     </div>
   );
 }
