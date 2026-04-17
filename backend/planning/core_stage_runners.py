@@ -136,12 +136,13 @@ def _place_row(
     max_x: float,
     base_y: float,
     row_height: float,
+    min_spacing: float = 30.0,
 ) -> List[Dict[str, Any]]:
     if not specs:
         return []
     span_w = max(max_x - min_x, 1.0)
     widths = [safe_float(spec.get("w"), 20.0) for spec in specs]
-    spacing = max(30.0, min(span_w * 0.06, 90.0))
+    spacing = max(min_spacing, min(span_w * 0.08, 120.0))
     total_w = sum(widths) + spacing * max(len(widths) - 1, 0)
     if total_w > span_w and len(widths) > 1:
         spacing = max(16.0, (span_w - sum(widths)) / max(len(widths) - 1, 1))
@@ -184,10 +185,11 @@ def _synthesized_program_layout(
     if not primary:
         primary, frontage = frontage, []
 
-    margin_x = max(35.0, lot_w * 0.06)
-    margin_y = max(35.0, lot_h * 0.06)
+    building_clearance = 14.0
+    margin_x = max(40.0, lot_w * 0.07)
+    margin_y = max(40.0, lot_h * 0.07)
     if frontage and len(primary) == 3:
-        margin_y = max(24.0, lot_h * 0.04)
+        margin_y = max(30.0, lot_h * 0.05)
     min_x = lot_x + margin_x
     max_x = lot_x + lot_w - margin_x
     min_y = lot_y + margin_y
@@ -234,7 +236,7 @@ def _synthesized_program_layout(
         upper_h = max(max(safe_float(spec.get("d"), 20.0) for spec in primary[:2]) + 2.0, min(vertical_span * 0.045, 36.0))
         middle_h = max(max(safe_float(spec.get("d"), 20.0) for spec in primary[2:]) + 2.0, min(vertical_span * 0.04, 32.0))
         lower_h = max(max(safe_float(spec.get("d"), 20.0) for spec in frontage) + 2.0, min(vertical_span * 0.035, 28.0))
-        gap = max(2.0, min(vertical_span * 0.006, 8.0))
+        gap = max(8.0, min(vertical_span * 0.02, 24.0))
         total_h = upper_h + middle_h + lower_h + gap * 2.0
         if total_h > vertical_span:
             scale = max(0.6, vertical_span / max(total_h, 1.0))
@@ -251,9 +253,9 @@ def _synthesized_program_layout(
                 lower_y += shift
                 middle_y += shift
                 upper_y += shift
-            placements.extend(_place_row(primary[:2], min_x=min_x, max_x=max_x, base_y=upper_y, row_height=upper_h))
-            placements.extend(_place_row(primary[2:], min_x=min_x, max_x=max_x, base_y=middle_y, row_height=middle_h))
-            placements.extend(_place_row(frontage, min_x=min_x, max_x=max_x, base_y=lower_y, row_height=lower_h))
+            placements.extend(_place_row(primary[:2], min_x=min_x, max_x=max_x, base_y=upper_y, row_height=upper_h, min_spacing=building_clearance))
+            placements.extend(_place_row(primary[2:], min_x=min_x, max_x=max_x, base_y=middle_y, row_height=middle_h, min_spacing=building_clearance))
+            placements.extend(_place_row(frontage, min_x=min_x, max_x=max_x, base_y=lower_y, row_height=lower_h, min_spacing=building_clearance))
         else:
             upper_y = max_y - upper_h
             middle_y = upper_y - gap - middle_h
@@ -263,19 +265,19 @@ def _synthesized_program_layout(
                 upper_y += shift
                 middle_y += shift
                 lower_y += shift
-            placements.extend(_place_row(primary[:2], min_x=min_x, max_x=max_x, base_y=lower_y, row_height=lower_h))
-            placements.extend(_place_row(primary[2:], min_x=min_x, max_x=max_x, base_y=middle_y, row_height=middle_h))
-            placements.extend(_place_row(frontage, min_x=min_x, max_x=max_x, base_y=upper_y, row_height=upper_h))
+            placements.extend(_place_row(primary[:2], min_x=min_x, max_x=max_x, base_y=lower_y, row_height=lower_h, min_spacing=building_clearance))
+            placements.extend(_place_row(primary[2:], min_x=min_x, max_x=max_x, base_y=middle_y, row_height=middle_h, min_spacing=building_clearance))
+            placements.extend(_place_row(frontage, min_x=min_x, max_x=max_x, base_y=upper_y, row_height=upper_h, min_spacing=building_clearance))
     elif frontage:
         upper_h = max(max(safe_float(spec.get("d"), 20.0) for spec in primary) + 10.0, min(vertical_span * 0.11, 82.0))
         lower_h = max(max(safe_float(spec.get("d"), 20.0) for spec in frontage) + 8.0, min(vertical_span * 0.08, 56.0))
-        gap = max(8.0, min(vertical_span * 0.02, 14.0))
+        gap = max(12.0, min(vertical_span * 0.035, 26.0))
         top_row_y, top_row_h, bottom_row_y, bottom_row_h = _fit_row_bands(upper_h, lower_h, gap)
     else:
-        top_row_h = max(max(safe_float(spec.get("d"), 20.0) for spec in primary) + 34.0, min(vertical_span * 0.2, 140.0))
+        top_row_h = max(max(safe_float(spec.get("d"), 20.0) for spec in primary) + 40.0, min(vertical_span * 0.22, 150.0))
         top_row_y = min_y + max((vertical_span - top_row_h) / 2.0, 0.0)
         bottom_row_y = min_y
-        bottom_row_h = max(vertical_span * 0.22, 40.0)
+        bottom_row_h = max(vertical_span * 0.25, 50.0)
 
     if frontage and len(primary) == 3:
         return placements
@@ -284,18 +286,31 @@ def _synthesized_program_layout(
         upper_specs = primary[:split]
         lower_specs = primary[split:]
         if frontage_on_bottom:
-            placements.extend(_place_row(upper_specs, min_x=min_x, max_x=max_x, base_y=top_row_y, row_height=top_row_h))
-            placements.extend(_place_row(lower_specs, min_x=min_x, max_x=max_x, base_y=bottom_row_y + bottom_row_h * 0.35, row_height=bottom_row_h * 0.5))
+            placements.extend(_place_row(upper_specs, min_x=min_x, max_x=max_x, base_y=top_row_y, row_height=top_row_h, min_spacing=building_clearance))
+            placements.extend(_place_row(lower_specs, min_x=min_x, max_x=max_x, base_y=bottom_row_y + bottom_row_h * 0.35, row_height=bottom_row_h * 0.5, min_spacing=building_clearance))
         else:
-            placements.extend(_place_row(upper_specs, min_x=min_x, max_x=max_x, base_y=bottom_row_y + bottom_row_h * 0.35, row_height=bottom_row_h * 0.5))
-            placements.extend(_place_row(lower_specs, min_x=min_x, max_x=max_x, base_y=top_row_y, row_height=top_row_h))
+            placements.extend(_place_row(upper_specs, min_x=min_x, max_x=max_x, base_y=bottom_row_y + bottom_row_h * 0.35, row_height=bottom_row_h * 0.5, min_spacing=building_clearance))
+            placements.extend(_place_row(lower_specs, min_x=min_x, max_x=max_x, base_y=top_row_y, row_height=top_row_h, min_spacing=building_clearance))
     else:
-        placements.extend(_place_row(primary, min_x=min_x, max_x=max_x, base_y=top_row_y, row_height=top_row_h))
+        placements.extend(_place_row(primary, min_x=min_x, max_x=max_x, base_y=top_row_y, row_height=top_row_h, min_spacing=building_clearance))
 
     if frontage:
         frontage_y = bottom_row_y if frontage_on_bottom else top_row_y
         frontage_h = bottom_row_h if frontage_on_bottom else top_row_h * 0.5
-        placements.extend(_place_row(frontage, min_x=min_x, max_x=max_x, base_y=frontage_y, row_height=frontage_h))
+        placements.extend(_place_row(frontage, min_x=min_x, max_x=max_x, base_y=frontage_y, row_height=frontage_h, min_spacing=building_clearance))
+
+    if placements:
+        rects: List[Dict[str, float]] = []
+        for placement in placements:
+            rect = {
+                "x": safe_float(placement.get("x"), 0.0),
+                "y": safe_float(placement.get("y"), 0.0),
+                "w": max(1.0, safe_float(placement.get("w"), 0.0)),
+                "d": max(1.0, safe_float(placement.get("d"), 0.0)),
+            }
+            if any(_rectangles_overlap(rect, prior, buffer=building_clearance) for prior in rects):
+                return []
+            rects.append(rect)
     return placements
 
 
@@ -391,11 +406,13 @@ def _layout_fallback_actions(
         ]
         residential_row_split = (max(residential_center_ys) + min(residential_center_ys)) / 2.0
     parking_entries: List[Dict[str, Any]] = []
+    building_clearance = 12.0
     for placement in placements:
         px = safe_float(placement.get("x"), 0.0)
         py = safe_float(placement.get("y"), 0.0)
         pw = safe_float(placement.get("w"), 20.0)
         pd = safe_float(placement.get("d"), 20.0)
+        building_rect = {"x": px, "y": py, "w": pw, "d": pd}
         frontage_use = lower_text(placement.get("use")) in {"retail", "commercial", "pad"}
         center_y = py + pd / 2.0
         frontage_side_residential = (
@@ -411,7 +428,7 @@ def _layout_fallback_actions(
             lot_depth = max(20.0, min(30.0, pd * 0.42))
         else:
             lot_depth = max(24.0, min(34.0, pd * 0.5))
-        setback_gap = 10.0 if frontage_use else 12.0
+        setback_gap = 16.0 if frontage_use else 18.0
         park_below_building = frontage_on_bottom
         if frontage_side_residential:
             park_below_building = not park_below_building
@@ -419,11 +436,22 @@ def _layout_fallback_actions(
             pavement_y = max(lot_y + 15.0, py - lot_depth - setback_gap)
         else:
             pavement_y = min(lot_y + lot_h - lot_depth - 15.0, py + pd + setback_gap)
-        side_buffer = 8.0 if frontage_use else 6.0
+        side_buffer = 10.0 if frontage_use else 8.0
         park_x = round(max(lot_x + 15.0, px - side_buffer), 3)
         park_y = round(pavement_y, 3)
         park_w = round(min(lot_w - 30.0, pw + side_buffer * 2.0), 3)
         park_h = round(lot_depth, 3)
+        candidate_rect = {"x": park_x, "y": park_y, "w": park_w, "d": park_h}
+        if _rectangles_overlap(candidate_rect, building_rect, buffer=building_clearance):
+            if park_below_building:
+                park_y = round(py - lot_depth - setback_gap - building_clearance, 3)
+            else:
+                park_y = round(py + pd + setback_gap + building_clearance, 3)
+            candidate_rect = {"x": park_x, "y": park_y, "w": park_w, "d": park_h}
+        if _rectangles_overlap(candidate_rect, building_rect, buffer=building_clearance):
+            continue
+        if park_y < lot_y + 10.0 or park_y + park_h > lot_y + lot_h - 10.0:
+            continue
         parking_entries.append(
             {
                 "use": lower_text(placement.get("use")),
