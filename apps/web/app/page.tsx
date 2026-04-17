@@ -322,7 +322,6 @@ export default function PerformanceAIDashboard() {
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
   const [previewFullscreenOpen, setPreviewFullscreenOpen] = useState(false);
   const [projectId, setProjectId] = useState("");
-  const [showProjectDropdown, setShowProjectDropdown] = useState(false);
   const [currentProject, setCurrentProject] = useState<ProjectRecord | null>(null);
   const [selectedRunId, setSelectedRunId] = useState("");
   const [activeJobId, setActiveJobId] = useState("");
@@ -3737,14 +3736,6 @@ export default function PerformanceAIDashboard() {
           <main className="flex min-w-0 flex-1 flex-col">
             <WorkspaceToolbar
               onRefreshWorkspace={handleRefreshWorkspace}
-              showProjectDropdown={showProjectDropdown}
-              onToggleProjectDropdown={() => setShowProjectDropdown((value) => !value)}
-              projects={projects}
-              projectId={projectId}
-              onSelectProject={(nextProjectId) => {
-                setShowProjectDropdown(false);
-                void loadProject(nextProjectId);
-              }}
             />
 
             <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-6 md:px-6">

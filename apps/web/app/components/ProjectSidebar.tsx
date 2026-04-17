@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { ChevronDown, MessageSquarePlus } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, MessageSquarePlus } from "lucide-react";
 
 import type { ChatMessage, LearningReport } from "../types";
 import {
@@ -155,6 +155,7 @@ export default function ProjectSidebar({
   quantityRows,
 }: ProjectSidebarProps) {
   const [showLearningPanel, setShowLearningPanel] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
   const [sidebarSections, setSidebarSections] = useState<Record<string, boolean>>({
     assumptions: true,
     fixes: false,
@@ -221,19 +222,45 @@ export default function ProjectSidebar({
   };
 
   return (
-    <aside className="hidden w-[360px] shrink-0 border-r border-slate-200 bg-[#f1f2f6] lg:flex lg:flex-col">
+    <aside
+      className={`hidden shrink-0 border-r border-slate-200 bg-[#f1f2f6] lg:flex lg:flex-col ${
+        collapsed ? "w-[64px]" : "w-[360px]"
+      }`}
+    >
       <div className="border-b border-slate-200 p-4">
-        <button
-          type="button"
-          onClick={onNewProject}
-          className="flex w-full items-center justify-center rounded-2xl bg-slate-950 px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-800"
-        >
-          <MessageSquarePlus className="mr-2 h-4 w-4" />
-          New Project
-        </button>
+        <div className="flex items-center justify-between">
+          {!collapsed ? (
+            <button
+              type="button"
+              onClick={onNewProject}
+              className="flex w-full items-center justify-center rounded-2xl bg-slate-950 px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-800"
+            >
+              <MessageSquarePlus className="mr-2 h-4 w-4" />
+              New Project
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onNewProject}
+              className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950 text-white transition hover:bg-slate-800"
+              aria-label="New Project"
+            >
+              <MessageSquarePlus className="h-4 w-4" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setCollapsed((prev) => !prev)}
+            className="ml-3 inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </button>
+        </div>
       </div>
 
-      <div className="space-y-6 overflow-y-auto p-4">
+      {collapsed ? null : (
+        <div className="space-y-6 overflow-y-auto p-4">
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
@@ -738,7 +765,8 @@ export default function ProjectSidebar({
           </div>,
         )}
 
-      </div>
+        </div>
+      )}
     </aside>
   );
 }
