@@ -84,6 +84,18 @@ def build_existing_surface(
     slope_ratio = max(0.002, safe_float(profile["slope_ratio"], 0.02))
     center_x = (x_min + x_max) / 2.0
     center_y = (y_min + y_max) / 2.0
+    corner_elevations = safe_dict(profile.get("corner_elevations"))
+    use_corner_profile = corner_elevations.get("northwest") is not None and corner_elevations.get("southeast") is not None
+    if use_corner_profile:
+        nw_x, nw_y = x_min, y_max
+        se_x, se_y = x_max, y_min
+        z_nw = safe_float(corner_elevations.get("northwest"), DEFAULT_PAD_ELEV + 1.0)
+        z_se = safe_float(corner_elevations.get("southeast"), DEFAULT_PAD_ELEV - 1.0)
+        dx = se_x - nw_x
+        dy = se_y - nw_y
+        diag = max((dx * dx + dy * dy) ** 0.5, 1.0)
+        ux, uy = normalize_vector(dx, dy)
+        slope_ratio = max(0.002, abs(z_nw - z_se) / diag)
 
     values: List[List[float]] = []
     for row in range(nrows):
@@ -91,8 +103,12 @@ def build_existing_surface(
         row_vals: List[float] = []
         for col in range(ncols):
             x = x_min + col * cell
-            signed_run = (x - center_x) * ux + (y - center_y) * uy
-            z = (DEFAULT_PAD_ELEV + 1.0) - slope_ratio * signed_run
+            if use_corner_profile:
+                signed_run = (x - nw_x) * ux + (y - nw_y) * uy
+                z = z_nw - slope_ratio * signed_run
+            else:
+                signed_run = (x - center_x) * ux + (y - center_y) * uy
+                z = (DEFAULT_PAD_ELEV + 1.0) - slope_ratio * signed_run
             row_vals.append(float(z))
         values.append(row_vals)
 
@@ -665,9 +681,13 @@ def grading_drainage_coordination(parsed: Dict[str, Any], project: ProjectModel,
 
 def build_grade_elements(project: ProjectModel, parsed: Dict[str, Any]) -> List[GradeElement]:
     elems: List[GradeElement] = []
+    surface_obj = project.meta.get("existing_surface")
     for zone in project.zones.values():
         bbox = zone.boundary.bbox
         zt = zone.zone_type
+        cx = bbox.min_x + bbox.width / 2.0
+        cy = bbox.min_y + bbox.height / 2.0
+        sampled = _sample_surface_nearest(surface_obj, cx, cy, DEFAULT_PAD_ELEV)
 
         if zt in {ZoneType.BUILDING, ZoneType.BUILDING_PAD, ZoneType.PAD}:
             elems.append(
@@ -677,7 +697,7 @@ def build_grade_elements(project: ProjectModel, parsed: Dict[str, Any]) -> List[
                     y=bbox.min_y,
                     width=bbox.width,
                     depth=bbox.height,
-                    base_elev=DEFAULT_PAD_ELEV,
+                    base_elev=sampled,
                     priority=10,
                     transition_zone=15.0,
                     name=zone.name or "BUILDING_PAD",
@@ -691,7 +711,7 @@ def build_grade_elements(project: ProjectModel, parsed: Dict[str, Any]) -> List[
                     y=bbox.min_y,
                     width=bbox.width,
                     depth=bbox.height,
-                    base_elev=DEFAULT_ROAD_START_ELEV,
+                    base_elev=sampled,
                     slope_x=DEFAULT_ROAD_SLOPE_X,
                     crown=0.02,
                     priority=8,
@@ -708,7 +728,7 @@ def build_grade_elements(project: ProjectModel, parsed: Dict[str, Any]) -> List[
                     y=bbox.min_y,
                     width=bbox.width,
                     depth=bbox.height,
-                    base_elev=DEFAULT_PARK_START_ELEV,
+                    base_elev=sampled,
                     slope_y=DEFAULT_PARK_SLOPE_Y,
                     priority=6,
                     transition_zone=10.0,
@@ -723,7 +743,7 @@ def build_grade_elements(project: ProjectModel, parsed: Dict[str, Any]) -> List[
                     y=bbox.min_y,
                     width=bbox.width,
                     depth=bbox.height,
-                    base_elev=DEFAULT_PAD_ELEV - 1.0,
+                    base_elev=sampled - 1.5,
                     priority=5,
                     transition_zone=10.0,
                     name=zone.name or "POND",

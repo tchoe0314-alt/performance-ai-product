@@ -820,6 +820,16 @@ def _fast_parse_from_prompt(req: PlannerOrchestratorRequest) -> Dict[str, Any]:
     inlet_match = re.search(r"at least\s+(\d+)\s+inlets?", prompt_text, flags=re.IGNORECASE)
     trunk_match = re.search(r"one\s+trunk\s+line|1\s+trunk\s+line", lowered)
     culdesac_match = re.search(r"(\d+)\s+cul-de-sacs?", prompt_text, flags=re.IGNORECASE)
+    nw_elev_match = re.search(
+        r"northwest\s+corner\s*\((\d+(?:\.\d+)?)\s*ft\)",
+        prompt_text,
+        flags=re.IGNORECASE,
+    )
+    se_elev_match = re.search(
+        r"southeast\s+corner\s*\((\d+(?:\.\d+)?)\s*ft\)",
+        prompt_text,
+        flags=re.IGNORECASE,
+    )
 
     payload: Dict[str, Any] = {
         "project_name": "Civora Design",
@@ -850,6 +860,8 @@ def _fast_parse_from_prompt(req: PlannerOrchestratorRequest) -> Dict[str, Any]:
                 f"{acreage:g} acre site" if acreage else "",
                 "gentle slope" if "gentle slope" in lowered else "",
                 "slope falling from the northwest corner to the southeast corner" if "northwest" in lowered and "southeast" in lowered else "",
+                f"northwest corner {nw_elev_match.group(1)} ft" if nw_elev_match else "",
+                f"southeast corner {se_elev_match.group(1)} ft" if se_elev_match else "",
                 "average slope of 5%" if "5%" in lowered else "",
             )
             if part
@@ -857,6 +869,10 @@ def _fast_parse_from_prompt(req: PlannerOrchestratorRequest) -> Dict[str, Any]:
         "grading": {
             "contours_required": "contour" in lowered,
             "min_slope_pct": 1.5 if "1.5%" in lowered else 2.0,
+            "corner_elevations": {
+                "northwest": _safe_float(nw_elev_match.group(1), 0.0) if nw_elev_match else None,
+                "southeast": _safe_float(se_elev_match.group(1), 0.0) if se_elev_match else None,
+            },
         },
         "drainage": {
             "inlet_count": _safe_int(inlet_match.group(1), 2) if inlet_match else (4 if acreage and acreage >= 5 else 2),

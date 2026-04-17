@@ -27,6 +27,7 @@ from .field_contract import (
     unwrap_fields_for_execution,
 )
 from .runtime import PlannerExecutionContext, _lot_area, _mark_dependency_state, collect_plan_stats
+from .grading_support import surface_range
 
 
 def _preview_meta_for_action(layer: str, task: str) -> Dict[str, Any]:
@@ -296,6 +297,70 @@ def _synthesized_program_layout(
         frontage_h = bottom_row_h if frontage_on_bottom else top_row_h * 0.5
         placements.extend(_place_row(frontage, min_x=min_x, max_x=max_x, base_y=frontage_y, row_height=frontage_h))
     return placements
+
+
+def _rect_from_action(action: Dict[str, Any]) -> Optional[Dict[str, float]]:
+    if lower_text(action.get("task")) != "rectangle":
+        return None
+    origin = safe_list(action.get("origin"))
+    if len(origin) < 2:
+        return None
+    width = safe_float(action.get("width"), 0.0)
+    height = safe_float(action.get("height"), 0.0)
+    if width <= 0.0 or height <= 0.0:
+        return None
+    return {
+        "x": safe_float(origin[0], 0.0),
+        "y": safe_float(origin[1], 0.0),
+        "w": width,
+        "h": height,
+    }
+
+
+def _collect_rects_by_layer(actions: Sequence[Dict[str, Any]], layers: set[str]) -> List[Dict[str, float]]:
+    rects: List[Dict[str, float]] = []
+    for action in safe_list(actions):
+        if not isinstance(action, dict):
+            continue
+        if safe_str(action.get("layer")).upper() not in layers:
+            continue
+        rect = _rect_from_action(action)
+        if rect:
+            rects.append(rect)
+    return rects
+
+
+def _layout_overlap_issues(actions: Sequence[Dict[str, Any]]) -> List[str]:
+    building_rects = _collect_rects_by_layer(actions, {"BUILDING"})
+    parking_rects = _collect_rects_by_layer(actions, {"PARKING"})
+    road_rects = _collect_rects_by_layer(actions, {"ROAD", "PAVEMENT", "FIRE"})
+    issues: List[str] = []
+
+    def _check_pairs(rects_a: Sequence[Dict[str, float]], rects_b: Sequence[Dict[str, float]], buffer: float, label: str) -> None:
+        for a in rects_a:
+            for b in rects_b:
+                if a is b:
+                    continue
+                if _rectangles_overlap(a, b, buffer=buffer):
+                    issues.append(label)
+                    return
+
+    for idx, rect in enumerate(building_rects):
+        for other in building_rects[idx + 1 :]:
+            if _rectangles_overlap(rect, other, buffer=8.0):
+                issues.append("Buildings are overlapping or too tightly spaced.")
+                break
+
+    _check_pairs(building_rects, parking_rects, 6.0, "Parking overlaps or crowds building footprints.")
+    _check_pairs(parking_rects, road_rects, 4.0, "Parking areas overlap or crowd road geometry.")
+
+    for idx, rect in enumerate(parking_rects):
+        for other in parking_rects[idx + 1 :]:
+            if _rectangles_overlap(rect, other, buffer=4.0):
+                issues.append("Parking courts overlap or merge.")
+                break
+
+    return issues
 
 
 def _layout_fallback_actions(
@@ -997,6 +1062,35 @@ def run_layout_stage(
                 )
             )
 
+        expanded_actions = safe_list(safe_dict(project.meta.get("_expanded_plan")).get("actions"))
+        layout_overlap_issues = _layout_overlap_issues(expanded_actions)
+        if layout_overlap_issues:
+            message = "Layout stage blocked: spacing and overlap checks failed."
+            ctx.record_warning(message)
+            manager.add_conflict(
+                ConflictRecord(
+                    code="LAYOUT_OVERLAP",
+                    message="; ".join(layout_overlap_issues[:3]),
+                    severity=ConflictSeverity.ERROR,
+                    category="layout",
+                )
+            )
+            ctx.add_stage(
+                "layout",
+                False,
+                message,
+                overlap_issue_count=len(layout_overlap_issues),
+                overlap_issues=layout_overlap_issues[:5],
+            )
+            return
+
+        ctx.add_stage(
+            "layout",
+            True,
+            "Layout stage completed.",
+            overlap_issue_count=0,
+        )
+
         subdivision_payload = safe_dict(execution_payload.get("subdivision"))
         if subdivision_payload or lower_text(execution_payload.get("mode")) == "subdivision":
             try:
@@ -1186,10 +1280,26 @@ def run_grading_stage(
 
         execution_payload = unwrap_fields_for_execution(parsed)
         grading_profile = safe_dict(execution_payload.get("grading"))
+        terrain_text = safe_str(execution_payload.get("terrain"), "")
+        corner_elevations = safe_dict(grading_profile.get("corner_elevations"))
+        has_corner_elevations = corner_elevations.get("northwest") is not None and corner_elevations.get("southeast") is not None
         min_site_slope_pct = safe_float(grading_profile.get("min_slope_pct"), 0.0)
         max_parking_slope_pct = safe_float(grading_profile.get("max_parking_slope_pct"), 0.0)
         max_road_grade_pct = safe_float(grading_profile.get("max_road_grade_pct"), 0.0)
         max_ada_cross_slope_pct = safe_float(grading_profile.get("max_ada_cross_slope_pct"), 0.0)
+        if strict_mode and not terrain_text and not has_corner_elevations and min_site_slope_pct <= 0:
+            manager.set_metric("grading_success", 0.0, category="grading")
+            record_strict_stage_failure(
+                ctx,
+                "grading",
+                "STRICT_GRADING_INPUTS_MISSING",
+                "STRICT mode requires explicit grading inputs (terrain text or corner elevations).",
+                category="grading",
+                dependency="grading_engine",
+                computation_step="input_validation",
+            )
+            ctx.add_stage("grading", False, "Grading blocked: missing explicit grading inputs.")
+            return
         grading_request = GradingRequest(
             create_project_objects=False,
             create_project_zones=False,
@@ -1285,6 +1395,17 @@ def run_grading_stage(
             proposed_surface,
             grade_elements=grade_elements,
         )
+        proposed_min, proposed_max = surface_range(proposed_surface)
+        proposed_range = proposed_max - proposed_min
+        if proposed_range < 0.25:
+            success = False
+            message = "Grading stage failed: proposed surface is too flat to represent real grading."
+        if safe_int(grading_action_stats.get("proposed_contour_count"), 0) <= 0:
+            success = False
+            message = "Grading stage failed: no proposed contours were generated."
+        if safe_int(grading_action_stats.get("spot_grade_count"), 0) <= 0:
+            success = False
+            message = "Grading stage failed: no spot grades were generated."
         merge_actions_into_expanded_plan(project, grade_actions, grading_surface_export=True)
         grading_payload = canonical_grading_payload(
             existing_surface=existing_surface,

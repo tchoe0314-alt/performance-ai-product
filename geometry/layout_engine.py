@@ -627,7 +627,7 @@ def _score_layout(layout: Dict[str, Any], parsed: Dict[str, Any], issues: Sequen
     errors = constraint_summary["errors"]
     warnings = constraint_summary["warnings"]
     infos = constraint_summary["infos"]
-    constraint_penalty = errors * 25.0 + warnings * 8.0 + infos * 2.0
+    constraint_penalty = errors * 40.0 + warnings * 12.0 + infos * 3.0
 
     total = (
         parking_efficiency * 30.0
@@ -1516,6 +1516,8 @@ def generate_ai_guided_layout(parsed: Dict[str, Any]) -> Dict[str, Any]:
             "penalties": best.score.penalties if best.score else {},
             "constraints": best.score.constraint_summary if best.score else {},
             "candidate_key": best.key,
+            "valid": best.valid,
+            "blocked": not best.valid,
         }
         best.layout["candidate_evaluations"] = _candidate_summary(candidates)
         return best.layout

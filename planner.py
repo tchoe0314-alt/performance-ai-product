@@ -1622,6 +1622,7 @@ def _infer_surface_profile(parsed: Dict[str, Any]) -> Dict[str, Any]:
     terrain_text = safe_str(parsed.get("terrain"), "")
     grading = safe_dict(parsed.get("grading"))
     minimum_pct = safe_float(grading.get("min_slope_pct"), 2.0)
+    corner_elevations = safe_dict(grading.get("corner_elevations"))
     profile = {
         "terrain_text": terrain_text,
         "inferred": False,
@@ -1630,6 +1631,21 @@ def _infer_surface_profile(parsed: Dict[str, Any]) -> Dict[str, Any]:
         "downhill_dy": -0.3,
         "source": "default",
     }
+    if corner_elevations.get("northwest") is not None and corner_elevations.get("southeast") is not None:
+        lot = safe_dict(parsed.get("lot"))
+        lot_w = safe_float(lot.get("w"), DEFAULT_LOT_WIDTH)
+        lot_h = safe_float(lot.get("h"), DEFAULT_LOT_HEIGHT)
+        diagonal = max((lot_w ** 2 + lot_h ** 2) ** 0.5, 1.0)
+        dz = safe_float(corner_elevations.get("northwest"), 0.0) - safe_float(corner_elevations.get("southeast"), 0.0)
+        profile["slope_ratio"] = max(0.002, abs(dz) / diagonal)
+        profile["downhill_dx"], profile["downhill_dy"] = _normalize_vector(1.0, -1.0)
+        profile["corner_elevations"] = {
+            "northwest": safe_float(corner_elevations.get("northwest"), 0.0),
+            "southeast": safe_float(corner_elevations.get("southeast"), 0.0),
+        }
+        profile["inferred"] = True
+        profile["source"] = "corner_elevations"
+        return profile
     if not terrain_text:
         return profile
 
