@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import { FileImage } from "lucide-react";
 
 import type { ChatMessage, PlanToolMode } from "../types";

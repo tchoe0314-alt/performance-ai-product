@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, MessageSquarePlus } from "lucide-react";
 
 import type { ChatMessage, LearningReport } from "../types";
@@ -9,7 +9,6 @@ import {
   formatCount,
   formatMetric,
   joinNatural,
-  toReadableLabel,
 } from "../utils/formatting";
 
 type WhatYouNeedSummary = {

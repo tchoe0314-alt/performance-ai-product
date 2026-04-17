@@ -1,7 +1,7 @@
 "use client";
 /* eslint-disable react-hooks/exhaustive-deps */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getJson, postBinary, postForm, postJson } from "../lib/api";
 
@@ -23,7 +23,6 @@ import type {
   PlanExplanation,
   PlanMeta,
   PlanResponse,
-  PlanAction,
   SurveySlopeResponse,
   MapAnalysis,
   PreviewResponse,
@@ -47,7 +46,6 @@ import {
   toReadableLabel,
   joinNatural,
   toArray,
-  toMetricValue,
   readPositiveNumber,
   parsePositiveNumber,
   readMetricValue,
@@ -1447,20 +1445,8 @@ export default function PerformanceAIDashboard() {
     setActivePlacementId(null);
   }, [buildingPlacements, resolveLotBounds]);
 
-  const handleRotateBuilding = useCallback((id: string, delta: number) => {
-    setBuildingPlacements((prev) =>
-      prev.map((item) => {
-        if (item.id !== id) return item;
-        const current = item.rotation ?? 0;
-        const next = ((current + delta) % 360 + 360) % 360;
-        return { ...item, rotation: next };
-      }),
-    );
-  }, []);
-
   const buildLayoutSuggestions = useCallback(() => {
     const lot = resolveLotBounds();
-    const locked = buildingPlacements.filter((item) => item.locked && item.placed);
     const movable = buildingPlacements.filter((item) => !(item.locked && item.placed));
     if (!movable.length) return [];
 

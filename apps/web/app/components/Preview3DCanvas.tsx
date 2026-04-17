@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Preview3DItem } from "../types";
 
 export default function Preview3DCanvas({

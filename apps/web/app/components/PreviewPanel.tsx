@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Maximize2, X } from "lucide-react";
 
 import type {
@@ -316,7 +316,6 @@ export default function PreviewPanel({
     (
       event: React.MouseEvent<HTMLElement>,
       building: BuildingPlacement,
-      bounds: { left: number; top: number; width: number; height: number },
       mode: "move" | "resize" | "rotate" = "move",
     ) => {
       if (!placementMode) return;
@@ -906,7 +905,7 @@ export default function PreviewPanel({
                               transformOrigin: "center",
                               cursor: placementMode ? "move" : "default",
                             }}
-                            onMouseDown={(event) => handleBuildingMouseDown(event, item, previewImageBounds, "move")}
+                            onMouseDown={(event) => handleBuildingMouseDown(event, item, "move")}
                             onClick={(event) => {
                               if (!placementMode) return;
                               event.stopPropagation();
@@ -919,14 +918,14 @@ export default function PreviewPanel({
                             <button
                               type="button"
                               className="absolute -right-3 -top-3 h-6 w-6 rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 shadow"
-                              onMouseDown={(event) => handleBuildingMouseDown(event, item, previewImageBounds, "rotate")}
+                              onMouseDown={(event) => handleBuildingMouseDown(event, item, "rotate")}
                             >
                               R
                             </button>
                             <button
                               type="button"
                               className="absolute -right-3 -bottom-3 h-6 w-6 rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 shadow"
-                              onMouseDown={(event) => handleBuildingMouseDown(event, item, previewImageBounds, "resize")}
+                              onMouseDown={(event) => handleBuildingMouseDown(event, item, "resize")}
                             >
                               Z
                             </button>
@@ -1264,7 +1263,7 @@ export default function PreviewPanel({
                               transformOrigin: "center",
                               cursor: placementMode ? "move" : "default",
                             }}
-                            onMouseDown={(event) => handleBuildingMouseDown(event, item, fullscreenImageBounds, "move")}
+                            onMouseDown={(event) => handleBuildingMouseDown(event, item, "move")}
                             onClick={(event) => {
                               if (!placementMode) return;
                               event.stopPropagation();
@@ -1275,14 +1274,14 @@ export default function PreviewPanel({
                             <button
                               type="button"
                               className="absolute -right-3 -top-3 h-6 w-6 rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 shadow"
-                              onMouseDown={(event) => handleBuildingMouseDown(event, item, fullscreenImageBounds, "rotate")}
+                              onMouseDown={(event) => handleBuildingMouseDown(event, item, "rotate")}
                             >
                               R
                             </button>
                             <button
                               type="button"
                               className="absolute -right-3 -bottom-3 h-6 w-6 rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 shadow"
-                              onMouseDown={(event) => handleBuildingMouseDown(event, item, fullscreenImageBounds, "resize")}
+                              onMouseDown={(event) => handleBuildingMouseDown(event, item, "resize")}
                             >
                               Z
                             </button>
