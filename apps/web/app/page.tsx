@@ -98,6 +98,8 @@ function isLikelyStaleJob(job: JobSummary | null, nowMs: number): boolean {
   return nowMs - updatedAtMs > staleThresholdMs;
 }
 
+type ApprovalState = "idle" | "approving" | "starting";
+
 function buildThinkingState({
   busy,
   activePlanTool,
@@ -730,39 +732,7 @@ export default function PerformanceAIDashboard() {
       }),
     [busy, visibleActiveJob?.status, visibleActiveJob?.stage, visibleActiveJob?.stage_detail, visibleActiveJob?.progress, visibleActiveJob?.updated_at, visibleActiveJob?.queue_position, visibleActiveJob?.queued_count, visibleActiveJob?.running_count, visibleActiveJobStale, activePlanTool, statusMessage],
   );
-  const workflowStatus = useMemo(() => {
-    const modeLabel = strategyMode === "manual" ? "Manual" : "Assisted";
-    const normalizedStatus = String(visibleActiveJob?.status || "").toLowerCase();
-    const phaseLabel =
-      previewRunningPhase?.label ||
-      previewNextPendingPhase?.label ||
-      String(visibleActiveJob?.stage || "").trim() ||
-      "Awaiting input";
-    let stateLabel = "Waiting for input";
-    let stateDetail = "Ready for a new request.";
-    if (normalizedStatus === "queued") {
-      stateLabel = "Queued";
-      stateDetail = "Waiting for a worker to start the next phase.";
-    } else if (normalizedStatus === "running") {
-      stateLabel = "Running";
-      stateDetail = String(visibleActiveJob?.stage_detail || "Engineering in progress.");
-    } else if (normalizedStatus === "awaiting_approval") {
-      stateLabel = "Waiting for approval";
-      stateDetail = "Review the current phase and approve to continue.";
-    } else if (normalizedStatus === "cancelling") {
-      stateLabel = "Cancelling";
-      stateDetail = "Stopping the current run.";
-    } else if (normalizedStatus === "completed") {
-      stateLabel = "Complete";
-      stateDetail = "All requested phases are finished.";
-    } else if (previewReview?.release_status === "blocked") {
-      stateLabel = "Blocked";
-      stateDetail = previewReview.release_note || "Review issues before continuing.";
-    }
-    return { modeLabel, phaseLabel, stateLabel, stateDetail };
-  }, [previewNextPendingPhase?.label, previewReview?.release_note, previewReview?.release_status, previewRunningPhase?.label, strategyMode, visibleActiveJob?.stage, visibleActiveJob?.stage_detail, visibleActiveJob?.status]);
-
-  const approvalStatus = useMemo(() => {
+  const approvalStatus = useMemo<{ state: ApprovalState; label: string | null }>(() => {
     if (approvalInFlight) {
       return { state: "approving", label: approvalPhaseLabel };
     }
@@ -3355,6 +3325,37 @@ export default function PerformanceAIDashboard() {
     previewNextPendingPhase,
     previewRerunSignals,
   } = usePreviewReview({ currentPlanMeta, planPreviewSummary });
+  const workflowStatus = useMemo(() => {
+    const modeLabel = strategyMode === "manual" ? "Manual" : "Assisted";
+    const normalizedStatus = String(visibleActiveJob?.status || "").toLowerCase();
+    const phaseLabel =
+      previewRunningPhase?.label ||
+      previewNextPendingPhase?.label ||
+      String(visibleActiveJob?.stage || "").trim() ||
+      "Awaiting input";
+    let stateLabel = "Waiting for input";
+    let stateDetail = "Ready for a new request.";
+    if (normalizedStatus === "queued") {
+      stateLabel = "Queued";
+      stateDetail = "Waiting for a worker to start the next phase.";
+    } else if (normalizedStatus === "running") {
+      stateLabel = "Running";
+      stateDetail = String(visibleActiveJob?.stage_detail || "Engineering in progress.");
+    } else if (normalizedStatus === "awaiting_approval") {
+      stateLabel = "Waiting for approval";
+      stateDetail = "Review the current phase and approve to continue.";
+    } else if (normalizedStatus === "cancelling") {
+      stateLabel = "Cancelling";
+      stateDetail = "Stopping the current run.";
+    } else if (normalizedStatus === "completed") {
+      stateLabel = "Complete";
+      stateDetail = "All requested phases are finished.";
+    } else if (previewReview?.release_status === "blocked") {
+      stateLabel = "Blocked";
+      stateDetail = previewReview.release_note || "Review issues before continuing.";
+    }
+    return { modeLabel, phaseLabel, stateLabel, stateDetail };
+  }, [previewNextPendingPhase?.label, previewReview?.release_note, previewReview?.release_status, previewRunningPhase?.label, strategyMode, visibleActiveJob?.stage, visibleActiveJob?.stage_detail, visibleActiveJob?.status]);
   const gatingPhaseKey =
     !autoAdvancePhases &&
     String(visibleActiveJob?.status || "").toLowerCase() === "awaiting_approval"
