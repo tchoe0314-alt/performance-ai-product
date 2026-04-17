@@ -538,6 +538,20 @@ type ChatMessage = {
   kind?: "message" | "status" | "explanation" | "action";
   feedback?: "up" | "down";
 };
+type LearningReport = {
+  feedback?: {
+    up?: number;
+    down?: number;
+    total?: number;
+    score_percent?: number;
+  };
+  training_examples?: {
+    count?: number;
+    synthetic?: number;
+    feedback_based?: number;
+    interaction?: number;
+  };
+};
 
 const defaultAssumptions: Assumption[] = [
   {
@@ -1450,6 +1464,8 @@ export default function PerformanceAIDashboard() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => [
     createWelcomeMessage(),
   ]);
+  const [learningReport, setLearningReport] = useState<LearningReport | null>(null);
+  const [learningReportUpdatedAt, setLearningReportUpdatedAt] = useState<number | null>(null);
   const [imageName, setImageName] = useState("");
   const [siteName, setSiteName] = useState("");
   const [fileName, setFileName] = useState("");
@@ -2083,6 +2099,20 @@ export default function PerformanceAIDashboard() {
     });
   };
 
+  const refreshLearningReport = async () => {
+    if (!token) return;
+    try {
+      const data = await getJson<{ success: boolean; report: LearningReport | null }>(
+        "/api/chat/learning-report",
+        { token },
+      );
+      setLearningReport(data.report ?? null);
+      setLearningReportUpdatedAt(Date.now());
+    } catch {
+      // Ignore learning report failures.
+    }
+  };
+
   const setMessageFeedback = async (
     messageId: string,
     feedback: ChatMessage["feedback"],
@@ -2144,6 +2174,11 @@ export default function PerformanceAIDashboard() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    void refreshLearningReport();
+  }, [token]);
 
   const applyProjectInput = (projectInput: ProjectInput) => {
     if (!projectInput || typeof projectInput !== "object") {
@@ -5340,16 +5375,51 @@ export default function PerformanceAIDashboard() {
 
             <div className="rounded-[28px] border border-slate-200 bg-white">
               {(() => {
-                const learning = computeLearningScore(chatMessages);
-                if (!learning.total) return null;
+                const sessionLearning = computeLearningScore(chatMessages);
+                const reportScore = learningReport?.feedback?.score_percent;
+                const reportTotal = learningReport?.feedback?.total;
+                const datasetCount = learningReport?.training_examples?.count;
+                const lastRun =
+                  learningReportUpdatedAt
+                    ? new Date(learningReportUpdatedAt).toLocaleString()
+                    : null;
+                if (!sessionLearning.total && !reportTotal && !datasetCount) return null;
                 return (
-                  <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 text-xs text-slate-500 md:px-6">
-                    <span className="font-semibold uppercase tracking-[0.14em]">
-                      Learning Score
-                    </span>
-                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700">
-                      {learning.score}% helpful ({learning.total})
-                    </span>
+                  <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 text-xs text-slate-500 md:px-6">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-semibold uppercase tracking-[0.14em]">
+                        Learning Health
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void refreshLearningReport()}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
+                      >
+                        Refresh
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {sessionLearning.total ? (
+                        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700">
+                          Session helpful: {sessionLearning.score}% ({sessionLearning.total})
+                        </span>
+                      ) : null}
+                      {typeof reportScore === "number" ? (
+                        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700">
+                          Global helpful: {reportScore}% ({reportTotal ?? 0})
+                        </span>
+                      ) : null}
+                      {typeof datasetCount === "number" ? (
+                        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700">
+                          Training set: {datasetCount}
+                        </span>
+                      ) : null}
+                      {lastRun ? (
+                        <span className="text-[11px] text-slate-400">
+                          Last refresh: {lastRun}
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                 );
               })()}

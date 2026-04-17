@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import time
@@ -148,6 +149,10 @@ class ChatLearningCronPayload(BaseModel):
     max_synthetic: int = 60
     max_unrated: int = 300
     exclude_unrated: bool = False
+
+
+class ChatLearningReportPayload(BaseModel):
+    report_path: Optional[str] = None
 
 
 class SaveProjectPayload(BaseModel):
@@ -653,6 +658,25 @@ def chat_learning_cron(
         exclude_unrated=payload.exclude_unrated,
     )
     return {"success": True, "result": result}
+
+
+@app.get("/api/chat/learning-report")
+def chat_learning_report(
+    payload: ChatLearningReportPayload = Depends(),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    _ = current_user
+    report_path = Path(payload.report_path or CHAT_LEARNING_REPORT_PATH).resolve()
+    base = DATA_DIR.resolve()
+    if base not in report_path.parents and report_path != base:
+        raise HTTPException(status_code=403, detail="Invalid report path.")
+    if not report_path.exists():
+        return {"success": True, "report": None}
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except Exception:
+        report = None
+    return {"success": True, "report": report}
 
 
 @app.post("/api/orchestrate")
