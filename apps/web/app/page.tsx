@@ -3708,24 +3708,6 @@ export default function PerformanceAIDashboard() {
             flowCfs={flowCfs}
             cutFillNet={cutFillNet}
             basinSize={basinSize}
-            parkingCount={parkingCount}
-            buildingWidth={buildingWidth}
-            buildingCount={buildingCount}
-            buildingDepth={buildingDepth}
-            minSlopePct={minSlopePct}
-            maxParkingSlopePct={maxParkingSlopePct}
-            maxAdaCrossSlopePct={maxAdaCrossSlopePct}
-            maxRoadGradePct={maxRoadGradePct}
-            pipeMinSlopePct={pipeMinSlopePct}
-            onParkingCountChange={setParkingCount}
-            onBuildingWidthChange={setBuildingWidth}
-            onBuildingCountChange={setBuildingCount}
-            onBuildingDepthChange={setBuildingDepth}
-            onMinSlopePctChange={setMinSlopePct}
-            onMaxParkingSlopePctChange={setMaxParkingSlopePct}
-            onMaxAdaCrossSlopePctChange={setMaxAdaCrossSlopePct}
-            onMaxRoadGradePctChange={setMaxRoadGradePct}
-            onPipeMinSlopePctChange={setPipeMinSlopePct}
             showMeasurements={showMeasurements}
             showCalculations={showCalculations}
             onToggleMeasurements={() => setShowMeasurements((prev) => !prev)}

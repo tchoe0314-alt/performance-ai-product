@@ -66,24 +66,6 @@ type ProjectSidebarProps = {
   flowCfs: number | null;
   cutFillNet: number | null;
   basinSize: number | null;
-  parkingCount: string;
-  buildingWidth: string;
-  buildingCount: string;
-  buildingDepth: string;
-  minSlopePct: string;
-  maxParkingSlopePct: string;
-  maxAdaCrossSlopePct: string;
-  maxRoadGradePct: string;
-  pipeMinSlopePct: string;
-  onParkingCountChange: (value: string) => void;
-  onBuildingWidthChange: (value: string) => void;
-  onBuildingCountChange: (value: string) => void;
-  onBuildingDepthChange: (value: string) => void;
-  onMinSlopePctChange: (value: string) => void;
-  onMaxParkingSlopePctChange: (value: string) => void;
-  onMaxAdaCrossSlopePctChange: (value: string) => void;
-  onMaxRoadGradePctChange: (value: string) => void;
-  onPipeMinSlopePctChange: (value: string) => void;
   showMeasurements: boolean;
   showCalculations: boolean;
   onToggleMeasurements: () => void;
@@ -149,24 +131,6 @@ export default function ProjectSidebar({
   flowCfs,
   cutFillNet,
   basinSize,
-  parkingCount,
-  buildingWidth,
-  buildingCount,
-  buildingDepth,
-  minSlopePct,
-  maxParkingSlopePct,
-  maxAdaCrossSlopePct,
-  maxRoadGradePct,
-  pipeMinSlopePct,
-  onParkingCountChange,
-  onBuildingWidthChange,
-  onBuildingCountChange,
-  onBuildingDepthChange,
-  onMinSlopePctChange,
-  onMaxParkingSlopePctChange,
-  onMaxAdaCrossSlopePctChange,
-  onMaxRoadGradePctChange,
-  onPipeMinSlopePctChange,
   showMeasurements,
   showCalculations,
   onToggleMeasurements,
@@ -201,7 +165,6 @@ export default function ProjectSidebar({
     runStability: false,
     issueNavigator: true,
     engineeringMetrics: true,
-    designControls: false,
     overlays: false,
     siteInputs: false,
     materials: false,
@@ -529,108 +492,6 @@ export default function ProjectSidebar({
               <span>Pond size</span>
               <span className="font-semibold">{formatMetric(basinSize, "sf")}</span>
             </div>
-          </div>,
-        )}
-
-        {renderSidebarSection(
-          "designControls",
-          "Design Controls",
-          <div className="grid gap-3 text-sm text-slate-700">
-            <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
-              Parking count
-              <input
-                type="number"
-                min="0"
-                value={parkingCount}
-                onChange={(event) => onParkingCountChange(event.target.value)}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-              />
-            </label>
-            <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
-              Building width (ft)
-              <input
-                type="number"
-                min="0"
-                value={buildingWidth}
-                onChange={(event) => onBuildingWidthChange(event.target.value)}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-              />
-            </label>
-            <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
-              Building count
-              <input
-                type="number"
-                min="0"
-                value={buildingCount}
-                onChange={(event) => onBuildingCountChange(event.target.value)}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-              />
-            </label>
-            <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
-              Building depth (ft)
-              <input
-                type="number"
-                min="0"
-                value={buildingDepth}
-                onChange={(event) => onBuildingDepthChange(event.target.value)}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-              />
-            </label>
-            <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
-              Min slope (%)
-              <input
-                type="number"
-                min="0"
-                step="0.1"
-                value={minSlopePct}
-                onChange={(event) => onMinSlopePctChange(event.target.value)}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-              />
-            </label>
-            <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
-              Max parking slope (%)
-              <input
-                type="number"
-                min="0"
-                step="0.1"
-                value={maxParkingSlopePct}
-                onChange={(event) => onMaxParkingSlopePctChange(event.target.value)}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-              />
-            </label>
-            <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
-              Max ADA cross slope (%)
-              <input
-                type="number"
-                min="0"
-                step="0.1"
-                value={maxAdaCrossSlopePct}
-                onChange={(event) => onMaxAdaCrossSlopePctChange(event.target.value)}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-              />
-            </label>
-            <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
-              Max road grade (%)
-              <input
-                type="number"
-                min="0"
-                step="0.1"
-                value={maxRoadGradePct}
-                onChange={(event) => onMaxRoadGradePctChange(event.target.value)}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-              />
-            </label>
-            <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
-              Pipe min slope (%)
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={pipeMinSlopePct}
-                onChange={(event) => onPipeMinSlopePctChange(event.target.value)}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-              />
-            </label>
           </div>,
         )}
 
