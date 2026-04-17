@@ -544,9 +544,8 @@ export type SiteObjectType = "building" | "basin" | "entrance";
 export type SiteObjectPlacement = BuildingPlacement & {
   type: SiteObjectType;
 };
-export type StrategyMode = "manual" | "assisted";
+export type StrategyMode = "user";
 export type ControlOverrides = Partial<{
-  strategyMode: StrategyMode;
   projectType: string;
   units: string;
   roads: boolean;

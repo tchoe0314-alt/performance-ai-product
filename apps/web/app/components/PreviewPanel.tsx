@@ -41,6 +41,7 @@ type PreviewPanelProps = {
   hasGradingSurface: boolean;
   placementMode: boolean;
   onPlaceBuilding: (position: { x: number; y: number }) => void;
+  onPlaceObject: (id: string, position: { x: number; y: number }) => void;
   buildingPlacements: BuildingPlacement[];
   lotWidth: number;
   lotHeight: number;
@@ -86,6 +87,7 @@ export default function PreviewPanel({
   hasGradingSurface,
   placementMode,
   onPlaceBuilding,
+  onPlaceObject,
   buildingPlacements,
   lotWidth,
   lotHeight,
@@ -810,6 +812,18 @@ export default function PreviewPanel({
               className={`relative flex min-h-[640px] items-center justify-center rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] ${
                 previewInteraction === "interactive" ? "cursor-crosshair" : "cursor-default"
               }`}
+              onDragOver={(event) => {
+                event.preventDefault();
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                const payload = event.dataTransfer?.getData("civora-object-id");
+                if (!payload) return;
+                onPlaceObject(payload, {
+                  x: Math.min(Math.max((event.clientX - (previewImageBounds?.left ?? 0)) / Math.max(previewImageBounds?.width ?? 1, 1), 0), 1),
+                  y: Math.min(Math.max((event.clientY - (previewImageBounds?.top ?? 0)) / Math.max(previewImageBounds?.height ?? 1, 1), 0), 1),
+                });
+              }}
               onMouseMove={(event) => {
                 if (previewImageBounds) {
                   updateDraggedBuilding(event, previewImageBounds);
@@ -859,6 +873,9 @@ export default function PreviewPanel({
                       height: previewImageBounds.height,
                     }}
                   >
+                    {lotWidth > 0 && lotHeight > 0 ? (
+                      <div className="absolute inset-0 rounded-[16px] border-2 border-dashed border-slate-300/70" />
+                    ) : null}
                     {buildingPlacements
                       .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
                       .map((item) => {
@@ -1115,6 +1132,18 @@ export default function PreviewPanel({
               <div
                 ref={fullscreenRef}
                 className="relative max-h-full w-full"
+                onDragOver={(event) => {
+                  event.preventDefault();
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const payload = event.dataTransfer?.getData("civora-object-id");
+                  if (!payload) return;
+                  onPlaceObject(payload, {
+                    x: Math.min(Math.max((event.clientX - (fullscreenImageBounds?.left ?? 0)) / Math.max(fullscreenImageBounds?.width ?? 1, 1), 0), 1),
+                    y: Math.min(Math.max((event.clientY - (fullscreenImageBounds?.top ?? 0)) / Math.max(fullscreenImageBounds?.height ?? 1, 1), 0), 1),
+                  });
+                }}
                 onMouseMove={(event) => {
                   if (fullscreenImageBounds) {
                     updateDraggedBuilding(event, fullscreenImageBounds);
@@ -1166,6 +1195,9 @@ export default function PreviewPanel({
                       height: fullscreenImageBounds.height,
                     }}
                   >
+                    {lotWidth > 0 && lotHeight > 0 ? (
+                      <div className="absolute inset-0 rounded-[16px] border-2 border-dashed border-slate-300/70" />
+                    ) : null}
                     {activeHighlightBounds ? (
                       <div
                         className="absolute rounded-[14px] border-2 border-sky-400/90 bg-sky-400/10 shadow-[0_0_0_6px_rgba(56,189,248,0.18)]"

@@ -30,7 +30,6 @@ import type {
   UploadImageResponse,
   UploadSurveyResponse,
   PlanToolMode,
-  StrategyMode,
   ControlOverrides,
   BuildingPlacement,
   SiteObjectType,
@@ -251,7 +250,6 @@ function buildThinkingState({
 }
 
 export default function PerformanceAIDashboard() {
-  const [strategyMode, setStrategyMode] = useState<StrategyMode>("assisted");
   const [projectType, setProjectType] = useState("");
   const [units, setUnits] = useState("ft");
   const [prompt, setPrompt] = useState("");
@@ -442,7 +440,6 @@ export default function PerformanceAIDashboard() {
   ];
 
   const buildManualFields = useCallback(({
-    strategy,
     nextSiteName,
     nextFileName,
     nextUnits,
@@ -464,7 +461,6 @@ export default function PerformanceAIDashboard() {
     nextDrainage,
     nextUtilities,
   }: {
-    strategy: "manual" | "assisted";
     nextSiteName: string;
     nextFileName: string;
     nextUnits: string;
@@ -519,26 +515,18 @@ export default function PerformanceAIDashboard() {
         w: lotWidthValue,
         h: lotHeightValue,
       };
-    } else if (strategy === "manual") {
-      manualFields.lot = { x: 0, y: 0, w: 0, h: 0 };
     }
 
     if (setbackValue !== null) {
       manualFields.setback = setbackValue;
-    } else if (strategy === "manual") {
-      manualFields.setback = 0;
     }
 
     if (buildingWidthValue !== null) {
       manualFields.building_width = buildingWidthValue;
-    } else if (strategy === "manual") {
-      manualFields.building_width = 0;
     }
 
     if (buildingDepthValue !== null) {
       manualFields.building_depth = buildingDepthValue;
-    } else if (strategy === "manual") {
-      manualFields.building_depth = 0;
     }
 
     const placementOverrides = buildingPlacements
@@ -599,8 +587,6 @@ export default function PerformanceAIDashboard() {
 
     if (parkingCountValue !== null) {
       manualFields.site_plan = { parking_count: parkingCountValue };
-    } else if (strategy === "manual") {
-      manualFields.site_plan = { parking_count: 0 };
     }
 
     if (minSlopeValue !== null) {
@@ -645,8 +631,8 @@ export default function PerformanceAIDashboard() {
     () => ({
       project_id: projectId || null,
       full_design_mode: true,
-      input_mode: strategyMode,
-      strict_mode: strategyMode === "manual",
+      input_mode: "user",
+      strict_mode: false,
       prompt_text: prompt || null,
       image_path: imageName || null,
       meta: {
@@ -654,7 +640,6 @@ export default function PerformanceAIDashboard() {
         site_inputs: currentProject?.project_input?.meta?.site_inputs ?? {},
       },
       manual_fields: buildManualFields({
-        strategy: strategyMode,
         nextSiteName: siteName,
         nextFileName: fileName,
         nextUnits: units,
@@ -676,11 +661,10 @@ export default function PerformanceAIDashboard() {
         nextDrainage: drainage,
         nextUtilities: utilities,
       }),
-      allow_ai_fill_for_blanks: strategyMode !== "manual",
+      allow_ai_fill_for_blanks: false,
     }),
     [
       projectId,
-      strategyMode,
       prompt,
       imageName,
       siteName,
@@ -1173,8 +1157,6 @@ export default function PerformanceAIDashboard() {
     const autoNamed = Boolean(projectInput.meta?.auto_named);
     const autoFileNamed = Boolean(projectInput.meta?.auto_file_named);
 
-    const nextMode = projectInput.input_mode ?? (projectInput.strict_mode ? "manual" : "assisted");
-    setStrategyMode(nextMode === "manual" ? "manual" : "assisted");
     setPrompt(projectInput.prompt_text ?? "");
     setImageName(projectInput.image_path ?? "");
     setUploadedImageApiUrl(
@@ -1248,8 +1230,8 @@ export default function PerformanceAIDashboard() {
   };
 
   const resolveLotBounds = useCallback(() => {
-    const width = parsePositiveNumber(lotWidth) ?? 120;
-    const height = parsePositiveNumber(lotHeight) ?? 100;
+    const width = parsePositiveNumber(lotWidth) ?? 0;
+    const height = parsePositiveNumber(lotHeight) ?? 0;
     return { x: 0, y: 0, w: width, h: height };
   }, [lotHeight, lotWidth]);
 
@@ -1260,6 +1242,11 @@ export default function PerformanceAIDashboard() {
   }, [buildingDepth, buildingWidth]);
 
   const handleAddBuilding = useCallback(() => {
+    const lot = resolveLotBounds();
+    if (!lot.w || !lot.h) {
+      setStatusMessage("Set the site width and height before adding buildings.");
+      return;
+    }
     const { w, d } = resolveDefaultBuildingDims();
     const nextPlacement: BuildingPlacement = {
       id: `building-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -1276,6 +1263,11 @@ export default function PerformanceAIDashboard() {
 
   const handleAddObject = useCallback(
     (type: SiteObjectType) => {
+      const lot = resolveLotBounds();
+      if (!lot.w || !lot.h) {
+        setStatusMessage("Set the site width and height before adding objects.");
+        return;
+      }
       if (type === "building") {
         handleAddBuilding();
         return;
@@ -1296,7 +1288,7 @@ export default function PerformanceAIDashboard() {
       };
       setBuildingPlacements((prev) => [...prev, nextPlacement]);
     },
-    [buildingPlacements.length, handleAddBuilding],
+    [buildingPlacements.length, handleAddBuilding, resolveLotBounds],
   );
 
   const handleUpdateBuilding = useCallback((id: string, updates: Partial<BuildingPlacement>) => {
@@ -1322,6 +1314,10 @@ export default function PerformanceAIDashboard() {
   const handlePlaceBuilding = useCallback(
     (position: { x: number; y: number }) => {
       const lot = resolveLotBounds();
+      if (!lot.w || !lot.h) {
+        setStatusMessage("Set the site width and height before placing buildings.");
+        return;
+      }
       const { w, d } = resolveDefaultBuildingDims();
       const nextX = lot.x + position.x * lot.w - w / 2;
       const nextY = lot.y + position.y * lot.h - d / 2;
@@ -1358,6 +1354,25 @@ export default function PerformanceAIDashboard() {
     ],
   );
 
+  const handlePlaceObject = useCallback(
+    (id: string, position: { x: number; y: number }) => {
+      const lot = resolveLotBounds();
+      if (!lot.w || !lot.h) {
+        setStatusMessage("Set the site width and height before placing objects.");
+        return;
+      }
+      setBuildingPlacements((prev) =>
+        prev.map((item) => {
+          if (item.id !== id) return item;
+          const x = lot.x + position.x * lot.w - item.w / 2;
+          const y = lot.y + position.y * lot.h - item.d / 2;
+          return { ...item, x, y, placed: true };
+        }),
+      );
+    },
+    [resolveLotBounds],
+  );
+
   const handleTogglePlacementMode = useCallback(() => {
     setPlacementModeEnabled((prev) => {
       const next = !prev;
@@ -1378,6 +1393,10 @@ export default function PerformanceAIDashboard() {
 
   const handleAutoPlaceBuildings = useCallback(() => {
     const lot = resolveLotBounds();
+    if (!lot.w || !lot.h) {
+      setStatusMessage("Set the site width and height before auto-placing objects.");
+      return;
+    }
     const placed = buildingPlacements.filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y));
     const unplaced = buildingPlacements.filter((item) => !item.placed);
     if (!unplaced.length) return;
@@ -1507,9 +1526,6 @@ export default function PerformanceAIDashboard() {
   }, [buildingPlacements.length]);
 
   const applyControlOverrides = (overrides: ControlOverrides) => {
-    if (overrides.strategyMode) {
-      setStrategyMode(overrides.strategyMode);
-    }
     if (overrides.projectType) setProjectType(overrides.projectType);
     if (overrides.units) setUnits(overrides.units);
     if (typeof overrides.roads === "boolean") setRoads(overrides.roads);
@@ -1560,7 +1576,6 @@ export default function PerformanceAIDashboard() {
     overrides: ControlOverrides = {},
     message: string,
   ) => {
-    const nextStrategy = overrides.strategyMode ?? strategyMode;
     const liveThread = chatMessagesRef.current;
     const designMemory = extractDesignMemory(liveThread);
     const storedMemory =
@@ -1577,7 +1592,7 @@ export default function PerformanceAIDashboard() {
       ...designMemory.constraints,
     ].slice(-8);
     return {
-      strategy_mode: nextStrategy,
+      strategy_mode: "user",
       site_name: overrides.siteName ?? siteName,
       file_name: overrides.fileName ?? fileName,
       project_type: overrides.projectType ?? projectType,
@@ -1638,7 +1653,6 @@ export default function PerformanceAIDashboard() {
     promptOverride?: string,
     projectIdOverride?: string | null,
   ): PlanRequestPayload => {
-    const nextStrategy = overrides.strategyMode ?? strategyMode;
     const nextSiteName = overrides.siteName ?? siteName;
     const nextFileName = overrides.fileName ?? fileName;
     const nextUnits = overrides.units ?? units;
@@ -1658,8 +1672,8 @@ export default function PerformanceAIDashboard() {
       project_id:
         projectIdOverride !== undefined ? projectIdOverride : projectId || null,
       full_design_mode: true,
-      input_mode: nextStrategy,
-      strict_mode: nextStrategy === "manual",
+      input_mode: "user",
+      strict_mode: false,
       prompt_text: (promptOverride ?? prompt) || null,
       image_path: imageName || null,
       meta: {
@@ -1667,7 +1681,6 @@ export default function PerformanceAIDashboard() {
         site_inputs: currentProject?.project_input?.meta?.site_inputs ?? {},
       },
       manual_fields: buildManualFields({
-        strategy: nextStrategy,
         nextSiteName,
         nextFileName,
         nextUnits,
@@ -1689,7 +1702,7 @@ export default function PerformanceAIDashboard() {
         nextDrainage,
         nextUtilities,
       }),
-      allow_ai_fill_for_blanks: nextStrategy !== "manual",
+      allow_ai_fill_for_blanks: false,
     };
   };
 
@@ -2020,7 +2033,6 @@ export default function PerformanceAIDashboard() {
       );
       const overrides = decision.control_overrides ?? {};
       applyControlOverrides(overrides);
-      const nextStrategy = overrides.strategyMode ?? strategyMode;
       const shouldAutoName = false;
       const shouldAutoFileName = false;
       const generatedTitle = siteName.trim();
@@ -2103,9 +2115,7 @@ export default function PerformanceAIDashboard() {
           decision.assistant_message || "Tell me what you want me to design or change.",
         );
         setStatusMessage(
-          nextStrategy === "manual"
-            ? "Civora AI needs a more explicit design request before running in Manual mode."
-            : "Civora AI needs a little more direction before generating a design.",
+          "Civora AI needs a little more direction before generating a design.",
         );
         await saveProject({
           silent: true,
@@ -2220,6 +2230,7 @@ export default function PerformanceAIDashboard() {
 
   const tryHandleObjectIntent = (message: string): boolean => {
     const lower = message.toLowerCase();
+    const lot = resolveLotBounds();
     const addBuildingMatch = lower.match(
       /(add|create|place)\s+(a\s+)?building[^0-9]*?(\d+(\.\d+)?)\s*(ft|feet|')?\s*(x|by)\s*(\d+(\.\d+)?)/,
     );
@@ -2229,6 +2240,15 @@ export default function PerformanceAIDashboard() {
     const plotAcreMatch = lower.match(/(add|create|set)\s+(a\s+)?(\d+(\.\d+)?)\s*acre/);
 
     if (addBuildingMatch) {
+      if (!lot.w || !lot.h) {
+        appendChatMessage("user", message);
+        appendChatMessage(
+          "assistant",
+          "Set the site boundary first (width and height), then I can add buildings at scale.",
+          "status",
+        );
+        return true;
+      }
       const width = Number(addBuildingMatch[3]);
       const depth = Number(addBuildingMatch[7]);
       if (!Number.isFinite(width) || !Number.isFinite(depth)) {
@@ -2257,6 +2277,15 @@ export default function PerformanceAIDashboard() {
       /(add|create|place)\s+(a\s+)?(basin|detention)\s*(\d+(\.\d+)?)?\s*(ft|feet|')?\s*(x|by)?\s*(\d+(\.\d+)?)?/,
     );
     if (addBasinMatch) {
+      if (!lot.w || !lot.h) {
+        appendChatMessage("user", message);
+        appendChatMessage(
+          "assistant",
+          "Set the site boundary first (width and height), then I can add a basin at scale.",
+          "status",
+        );
+        return true;
+      }
       const width = addBasinMatch[4] ? Number(addBasinMatch[4]) : 80;
       const depth = addBasinMatch[8] ? Number(addBasinMatch[8]) : 60;
       appendChatMessage("user", message);
@@ -2280,6 +2309,15 @@ export default function PerformanceAIDashboard() {
     }
     const addEntranceMatch = lower.match(/(add|create|place)\s+(an?\s+)?entrance/);
     if (addEntranceMatch) {
+      if (!lot.w || !lot.h) {
+        appendChatMessage("user", message);
+        appendChatMessage(
+          "assistant",
+          "Set the site boundary first (width and height), then I can add an entrance anchor.",
+          "status",
+        );
+        return true;
+      }
       appendChatMessage("user", message);
       const nextPlacement: BuildingPlacement = {
         id: `entrance-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -2299,19 +2337,6 @@ export default function PerformanceAIDashboard() {
       );
       return true;
     }
-    if (
-      strategyMode === "manual" &&
-      /(add|create|place)\s+(a\s+)?building/.test(lower)
-    ) {
-      appendChatMessage("user", message);
-      appendChatMessage(
-        "assistant",
-        "Manual mode needs explicit building dimensions. Tell me the width and depth (for example: “Add a building 100 ft by 200 ft”).",
-        "status",
-      );
-      return true;
-    }
-
     if (plotDimsMatch) {
       const width = Number(plotDimsMatch[4]);
       const height = Number(plotDimsMatch[8]);
@@ -2335,14 +2360,6 @@ export default function PerformanceAIDashboard() {
         return false;
       }
       appendChatMessage("user", message);
-      if (strategyMode === "manual") {
-        appendChatMessage(
-          "assistant",
-          "Manual mode needs explicit lot dimensions. Give a width and height in feet (for example: “Set lot 400 ft by 600 ft”).",
-          "status",
-        );
-        return true;
-      }
       const area = acres * 43560;
       const side = Math.sqrt(area);
       const width = Math.round(side);
@@ -3029,10 +3046,9 @@ export default function PerformanceAIDashboard() {
             "status",
           );
         } else if (job.status === "awaiting_approval") {
-          const modeLabel = strategyMode === "manual" ? "Manual mode" : "Assisted mode";
           appendChatMessage(
             "assistant",
-            `${toReadableLabel(stageLabel)} stage complete. Waiting for your approval. ${modeLabel}.`,
+            `${toReadableLabel(stageLabel)} stage complete. Waiting for your approval. User-controlled workflow.`,
             "status",
           );
         } else if (job.status === "cancelling") {
@@ -3049,10 +3065,9 @@ export default function PerformanceAIDashboard() {
       ) {
         lastJobPhaseSignatureRef.current[job.job_id] = phaseSignature;
         if (normalizedStatus === "awaiting_approval") {
-          const modeLabel = strategyMode === "manual" ? "Manual mode" : "Assisted mode";
           appendChatMessage(
             "assistant",
-            `${toReadableLabel(stageLabel)} stage complete. Waiting for your approval. ${modeLabel}.`,
+            `${toReadableLabel(stageLabel)} stage complete. Waiting for your approval. User-controlled workflow.`,
             "status",
           );
         }
@@ -3697,7 +3712,6 @@ export default function PerformanceAIDashboard() {
     setGrading(true);
     setDrainage(true);
     setUtilities(true);
-    setStrategyMode("assisted");
     setBuildingPlacements([]);
     setPlacementModeEnabled(false);
     setActivePlacementId(null);
@@ -3713,7 +3727,7 @@ export default function PerformanceAIDashboard() {
           nameOverride: "",
           fileNameOverride: "",
           projectInputOverride: {
-            input_mode: "assisted",
+            input_mode: "user",
             strict_mode: false,
             prompt_text: null,
             image_path: null,
@@ -3734,7 +3748,7 @@ export default function PerformanceAIDashboard() {
               site_plan: { parking_count: 0 },
               disciplines: ["corridor", "grading", "drainage", "utility"],
             },
-            allow_ai_fill_for_blanks: true,
+            allow_ai_fill_for_blanks: false,
           },
           latestResultOverride: {},
           autoNamedOverride: false,
@@ -3866,7 +3880,7 @@ export default function PerformanceAIDashboard() {
     previewRerunSignals,
   } = usePreviewReview({ currentPlanMeta, planPreviewSummary });
   const workflowStatus = useMemo(() => {
-    const modeLabel = strategyMode === "manual" ? "Manual" : "Assisted";
+    const modeLabel = "User-controlled";
     const normalizedStatus = String(visibleActiveJob?.status || "").toLowerCase();
     const phaseLabel =
       previewRunningPhase?.label ||
@@ -3895,7 +3909,7 @@ export default function PerformanceAIDashboard() {
       stateDetail = previewReview.release_note || "Review issues before continuing.";
     }
     return { modeLabel, phaseLabel, stateLabel, stateDetail };
-  }, [previewNextPendingPhase?.label, previewReview?.release_note, previewReview?.release_status, previewRunningPhase?.label, strategyMode, visibleActiveJob?.stage, visibleActiveJob?.stage_detail, visibleActiveJob?.status]);
+  }, [previewNextPendingPhase?.label, previewReview?.release_note, previewReview?.release_status, previewRunningPhase?.label, visibleActiveJob?.stage, visibleActiveJob?.stage_detail, visibleActiveJob?.status]);
   const gatingPhaseKey =
     !autoAdvancePhases &&
     String(visibleActiveJob?.status || "").toLowerCase() === "awaiting_approval"
@@ -4417,20 +4431,6 @@ export default function PerformanceAIDashboard() {
             quantityRollupsEnabled={quantityRollupsEnabled}
             onToggleQuantityRollups={() => setQuantityRollupsEnabled((prev) => !prev)}
             quantityRows={quantityRows}
-            buildingPlacements={buildingPlacements}
-            placementModeEnabled={placementModeEnabled}
-            onTogglePlacementMode={handleTogglePlacementMode}
-            onAddBuilding={handleAddBuilding}
-            onUpdateBuilding={handleUpdateBuilding}
-            onRemoveBuilding={handleRemoveBuilding}
-            onToggleBuildingLock={handleToggleBuildingLock}
-            onSelectPlacementTarget={handleSelectPlacementTarget}
-            onAutoPlaceBuildings={handleAutoPlaceBuildings}
-            onRotateBuilding={handleRotateBuilding}
-            onAddObject={handleAddObject}
-            onSuggestLayouts={handleSuggestLayouts}
-            onNextSuggestion={handleNextSuggestion}
-            onGenerateSystem={handleGenerateSystem}
           />
 
           <main className="flex min-w-0 flex-1 flex-col">
@@ -4440,8 +4440,6 @@ export default function PerformanceAIDashboard() {
 
             <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-6 md:px-6">
               <ProjectControls
-                strategyMode={strategyMode}
-                onStrategyModeChange={setStrategyMode}
                 siteName={siteName}
                 fileName={fileName}
                 onSiteNameChange={setSiteName}
@@ -4548,9 +4546,10 @@ export default function PerformanceAIDashboard() {
               previewRenderMode={previewRenderMode}
               placementMode={placementModeEnabled}
               onPlaceBuilding={handlePlaceBuilding}
+              onPlaceObject={handlePlaceObject}
               buildingPlacements={buildingPlacements}
-              lotWidth={parsePositiveNumber(lotWidth) ?? 120}
-              lotHeight={parsePositiveNumber(lotHeight) ?? 100}
+              lotWidth={parsePositiveNumber(lotWidth) ?? 0}
+              lotHeight={parsePositiveNumber(lotHeight) ?? 0}
               onUpdateBuilding={handleUpdateBuilding}
               onSelectBuilding={setActivePlacementId}
               onSetPreviewMode={setPreviewMode}
@@ -4576,9 +4575,260 @@ export default function PerformanceAIDashboard() {
               selectedIssueLabel={selectedIssueLabel}
                 showMeasurements={showMeasurements}
                 showCalculations={showCalculations}
-                measurementOverlayStats={measurementOverlayStats}
-                calculationOverlayStats={calculationOverlayStats}
-              />
+              measurementOverlayStats={measurementOverlayStats}
+              calculationOverlayStats={calculationOverlayStats}
+            />
+
+            <div className="rounded-[24px] border border-slate-200 bg-white/95 p-4 shadow-[0_12px_35px_-28px_rgba(15,23,42,0.45)]">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Object Tray
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Drag objects onto the site. Place the site first, then add buildings and anchors.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleTogglePlacementMode}
+                    className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition ${
+                      placementModeEnabled
+                        ? "border-slate-900 bg-slate-950 text-white"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {placementModeEnabled ? "Placement On" : "Placement Off"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAddObject("building")}
+                    className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                  >
+                    Add Building
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAddObject("basin")}
+                    className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                  >
+                    Add Basin
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAddObject("entrance")}
+                    className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                  >
+                    Add Entrance
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAutoPlaceBuildings}
+                    className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                  >
+                    Auto-place
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSuggestLayouts}
+                    className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                  >
+                    Suggest Layouts
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleNextSuggestion}
+                    className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                  >
+                    Next Suggestion
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr,2fr]">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Site</p>
+                  <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-slate-600">
+                    <label className="flex flex-col gap-1">
+                      Width (ft)
+                      <input
+                        type="number"
+                        value={lotWidth}
+                        onChange={(event) => setLotWidth(event.target.value)}
+                        className="rounded-lg border border-slate-200 px-2 py-1"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      Height (ft)
+                      <input
+                        type="number"
+                        value={lotHeight}
+                        onChange={(event) => setLotHeight(event.target.value)}
+                        className="rounded-lg border border-slate-200 px-2 py-1"
+                      />
+                    </label>
+                  </div>
+                  <div className="mt-3 text-xs text-slate-500">
+                    Area:{" "}
+                    {(() => {
+                      const w = parsePositiveNumber(lotWidth) ?? 0;
+                      const h = parsePositiveNumber(lotHeight) ?? 0;
+                      const acres = w && h ? (w * h) / 43560 : 0;
+                      return acres ? `${acres.toFixed(2)} acres` : "Set dimensions to compute acreage";
+                    })()}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Objects</p>
+                  <div className="mt-2 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {buildingPlacements
+                      .filter((item) => !item.placed)
+                      .map((item) => (
+                      <div
+                        key={item.id}
+                        draggable
+                        onDragStart={(event) => {
+                          event.dataTransfer?.setData("civora-object-id", item.id);
+                          setPlacementModeEnabled(true);
+                        }}
+                        className="rounded-2xl border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-sm"
+                        title={`${item.label} • ${item.w} ft x ${item.d} ft`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-slate-800">{item.label}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveBuilding(item.id)}
+                            className="text-xs font-semibold text-rose-500"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                        <div className="mt-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                          <span>{item.type ?? "building"}</span>
+                          <span>•</span>
+                          <span>{item.w} ft x {item.d} ft</span>
+                        </div>
+                        <div className="mt-2 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleSelectPlacementTarget(item.id)}
+                            className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                          >
+                            {item.placed ? "Re-place" : "Place"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleBuildingLock(item.id)}
+                            className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
+                              item.locked
+                                ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                            }`}
+                          >
+                            {item.locked ? "Locked" : "Unlock"}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {buildingPlacements
+                      .filter((item) => item.placed)
+                      .map((item) => (
+                        <div
+                          key={item.id}
+                          className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 shadow-sm"
+                          title={`${item.label} • ${item.w} ft x ${item.d} ft`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-slate-800">{item.label}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveBuilding(item.id)}
+                              className="text-xs font-semibold text-rose-500"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                          <div className="mt-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                            <span>{item.type ?? "building"}</span>
+                            <span>•</span>
+                            <span>{item.w} ft x {item.d} ft</span>
+                          </div>
+                          <div className="mt-2 flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleSelectPlacementTarget(item.id)}
+                              className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                            >
+                              Re-place
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleBuildingLock(item.id)}
+                              className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
+                                item.locked
+                                  ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                              }`}
+                            >
+                              {item.locked ? "Locked" : "Unlock"}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 border-t border-slate-200 pt-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Generate Systems</p>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 md:grid-cols-3">
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateSystem("roads")}
+                    className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
+                  >
+                    Roads
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateSystem("parking")}
+                    className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
+                  >
+                    Parking
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateSystem("grading")}
+                    className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
+                  >
+                    Grading
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateSystem("drainage")}
+                    className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
+                  >
+                    Drainage
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateSystem("utilities")}
+                    className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
+                  >
+                    Utilities
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateSystem("full")}
+                    className="rounded-xl border border-slate-900 bg-slate-950 px-2 py-2 text-white transition hover:bg-slate-800"
+                  >
+                    Full Site
+                  </button>
+                </div>
+              </div>
+            </div>
             </div>
           </main>
       </div>

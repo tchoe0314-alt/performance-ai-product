@@ -2,7 +2,6 @@
 
 import React from "react";
 
-import type { StrategyMode } from "../types";
 import { TextInput } from "./ui";
 
 type DisciplineToggle = {
@@ -12,8 +11,6 @@ type DisciplineToggle = {
 };
 
 type ProjectControlsProps = {
-  strategyMode: StrategyMode;
-  onStrategyModeChange: (mode: StrategyMode) => void;
   siteName: string;
   fileName: string;
   onSiteNameChange: (value: string) => void;
@@ -25,8 +22,6 @@ type ProjectControlsProps = {
 };
 
 export default function ProjectControls({
-  strategyMode,
-  onStrategyModeChange,
   siteName,
   fileName,
   onSiteNameChange,
@@ -38,39 +33,7 @@ export default function ProjectControls({
 }: ProjectControlsProps) {
   return (
     <div className="space-y-3">
-      <div className="grid gap-3 md:grid-cols-[repeat(3,minmax(0,1fr))] xl:grid-cols-[repeat(6,minmax(0,1fr))]">
-        {[
-          {
-            value: "manual",
-            label: "Manual",
-            desc: "Strict and explicit",
-          },
-          {
-            value: "assisted",
-            label: "Assisted",
-            desc: "AI fills gaps",
-          },
-        ].map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onStrategyModeChange(option.value as StrategyMode)}
-            className={`rounded-2xl border px-4 py-3 text-left transition ${
-              strategyMode === option.value
-                ? "border-slate-900 bg-slate-950 text-white"
-                : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
-            }`}
-          >
-            <p className="text-sm font-medium">{option.label}</p>
-            <p
-              className={`mt-1 text-xs ${
-                strategyMode === option.value ? "text-slate-300" : "text-slate-500"
-              }`}
-            >
-              {option.desc}
-            </p>
-          </button>
-        ))}
+      <div className="grid gap-3 md:grid-cols-[repeat(2,minmax(0,1fr))] xl:grid-cols-[repeat(4,minmax(0,1fr))]">
 
         <TextInput
           value={siteName}
