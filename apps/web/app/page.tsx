@@ -3538,7 +3538,7 @@ export default function PerformanceAIDashboard() {
 
   const handleGenerateSystem = useCallback(
     async (target: "roads" | "parking" | "grading" | "drainage" | "utilities" | "full") => {
-      const requestPayload = buildPayloadFromOverrides({}, null, projectId || null);
+      const requestPayload = buildPayloadFromOverrides({}, undefined, projectId || null);
       const omitField = { source: "omit", value: null } as const;
       const nextManualFields = {
         ...(requestPayload.manual_fields ?? {}),
