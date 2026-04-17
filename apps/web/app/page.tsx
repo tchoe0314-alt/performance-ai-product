@@ -5356,9 +5356,41 @@ export default function PerformanceAIDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f7f7f8] text-slate-950">
-      <div className="flex min-h-screen">
-        <aside className="hidden w-[290px] shrink-0 border-r border-slate-200 bg-[#ececec] lg:flex lg:flex-col">
+    <div className="min-h-screen bg-[#e9eaee] text-slate-950">
+      <div className="flex min-h-screen flex-col">
+        <header className="w-full bg-[radial-gradient(circle_at_top,#1f2937_0%,#0b1120_55%,#0a0f1d_100%)] text-white">
+          <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-4">
+            <div className="flex items-center gap-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-white/10 text-lg font-semibold">
+                C
+              </div>
+              <div>
+                <p className="text-lg font-semibold tracking-tight">Civora AI</p>
+                <p className="text-xs uppercase tracking-[0.3em] text-white/60">Autonomous Civil</p>
+              </div>
+            </div>
+            <nav className="hidden items-center gap-6 text-sm font-medium text-white/80 md:flex">
+              <button type="button" className="text-white">Projects</button>
+              <button type="button" className="border-b-2 border-white pb-1 text-white">Knowledge Base</button>
+              <button type="button" className="text-white/70 hover:text-white">Docs</button>
+            </nav>
+            <div className="flex items-center gap-3">
+              <span className="hidden rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white/70 md:inline-flex">
+                {user.email}
+              </span>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-full border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/80 transition hover:bg-white/20"
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <div className="flex min-h-screen">
+        <aside className="hidden w-[300px] shrink-0 border-r border-slate-200 bg-[#f1f2f6] lg:flex lg:flex-col">
           <div className="border-b border-slate-200 p-4">
             <button
               type="button"
@@ -5437,6 +5469,51 @@ export default function PerformanceAIDashboard() {
 
             <div className="space-y-2">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                Projects
+              </p>
+              <div className="space-y-2">
+                {projects.length === 0 ? (
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+                    No saved projects yet.
+                  </div>
+                ) : (
+                  projects.map((project) => (
+                    <div
+                      key={project.project_id}
+                      className={`flex items-center gap-2 rounded-2xl px-2 py-2 transition ${
+                        project.project_id === projectId
+                          ? "bg-white shadow-sm ring-1 ring-slate-300"
+                          : "hover:bg-white"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => void loadProject(project.project_id)}
+                        className="min-w-0 flex-1 px-2 py-1 text-left text-sm text-slate-700"
+                      >
+                        <p className="truncate font-medium text-slate-950">
+                          {project.name || "Untitled Project"}
+                        </p>
+                        <p className="mt-1 truncate text-xs text-slate-500">
+                          {project.has_result ? "Saved result" : "Draft"}
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void deleteProject(project.project_id)}
+                        aria-label={`Delete ${project.name || "Untitled Project"}`}
+                        className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                 Recent Runs
               </p>
               <div className="space-y-2">
@@ -5476,42 +5553,14 @@ export default function PerformanceAIDashboard() {
         </aside>
 
         <main className="flex min-w-0 flex-1 flex-col">
-          <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 md:px-6">
-            <div className="min-w-0">
-              <p className="truncate text-sm text-slate-500">Signed in as {user.email}</p>
-              <h1 className="truncate text-lg font-semibold text-slate-950">
-                Civora AI
-              </h1>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center justify-between border-b border-slate-200 bg-white/80 px-4 py-3 backdrop-blur md:px-6">
+            <div className="flex items-center gap-2">
               <a
                 href="/upgrades"
                 className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
               >
                 Upgrades
               </a>
-              <div className="hidden max-w-[520px] items-center gap-2 overflow-x-auto rounded-xl border border-slate-200 bg-white px-2 py-1 md:flex">
-                {projects.length === 0 ? (
-                  <span className="px-3 py-1 text-xs text-slate-500">
-                    No projects yet
-                  </span>
-                ) : (
-                  projects.map((project) => (
-                    <button
-                      key={project.project_id}
-                      type="button"
-                      onClick={() => void loadProject(project.project_id)}
-                      className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                        project.project_id === projectId
-                          ? "bg-slate-950 text-white"
-                          : "text-slate-600 hover:bg-slate-100"
-                      }`}
-                    >
-                      {project.name || "Untitled"}
-                    </button>
-                  ))
-                )}
-              </div>
               <button
                 type="button"
                 onClick={() => void handleRefreshWorkspace()}
@@ -5519,13 +5568,28 @@ export default function PerformanceAIDashboard() {
               >
                 Refresh
               </button>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                Sign Out
-              </button>
+            </div>
+            <div className="hidden max-w-[520px] items-center gap-2 overflow-x-auto rounded-xl border border-slate-200 bg-white px-2 py-1 md:flex">
+              {projects.length === 0 ? (
+                <span className="px-3 py-1 text-xs text-slate-500">
+                  No projects yet
+                </span>
+              ) : (
+                projects.map((project) => (
+                  <button
+                    key={project.project_id}
+                    type="button"
+                    onClick={() => void loadProject(project.project_id)}
+                    className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                      project.project_id === projectId
+                        ? "bg-slate-950 text-white"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    {project.name || "Untitled"}
+                  </button>
+                ))
+              )}
             </div>
           </div>
 
