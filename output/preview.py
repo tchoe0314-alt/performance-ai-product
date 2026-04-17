@@ -30,6 +30,15 @@ PREVIEW_ALLOW_HEURISTICS_DEFAULT = False
 PREVIEW_ALLOW_SYNTHESIS_DEFAULT = False
 PREVIEW_ALLOW_PROFILE_INFERENCE_DEFAULT = False
 PREVIEW_MODE_DEFAULT = "production"
+PREVIEW_ROLE_VALUES = {"final", "overlay", "helper", "debug"}
+HARD_BLOCK_HELPER_TOKENS = {
+    "ANCHOR_RAY",
+    "BASIN_TARGET",
+    "ROUTING_GUIDE",
+    "CANDIDATE_EDGE",
+    "CONNECTOR",
+    "DEBUG_LINK",
+}
 
 FINAL_GEOMETRY_LAYERS = {
     "C-BOUNDARY",
@@ -464,13 +473,47 @@ def _normalize_preview_mode(mode: Optional[str]) -> str:
     return PREVIEW_MODE_DEFAULT
 
 
+def _action_preview_role(action: Dict[str, Any]) -> str:
+    meta = safe_dict(action.get("meta"))
+    role = safe_text(meta.get("preview_role"), "").strip().lower()
+    if role in PREVIEW_ROLE_VALUES:
+        return role
+    legacy_role = safe_text(meta.get("role"), "").strip().lower()
+    if legacy_role in PREVIEW_ROLE_VALUES:
+        return legacy_role
+    if "is_final" in meta or "final" in meta:
+        return "final" if bool(meta.get("is_final", meta.get("final"))) else "overlay"
+    layer = get_layer(action, "C-TEXT")
+    return "final" if layer in FINAL_GEOMETRY_LAYERS else "overlay"
+
+
+def _has_blocked_helper_token(action: Dict[str, Any]) -> bool:
+    meta = safe_dict(action.get("meta"))
+    tokens = meta.get("helper_tokens")
+    if isinstance(tokens, list):
+        for token in tokens:
+            token_text = safe_text(token, "").upper()
+            if token_text in HARD_BLOCK_HELPER_TOKENS:
+                return True
+    label = clean_label(action.get("label"), "").upper()
+    text = safe_text(action.get("text"), "").upper()
+    canonical_source_type = safe_text(action.get("canonical_source_type"), "").upper()
+    helper_signature = " ".join(part for part in (label, text, canonical_source_type) if part)
+    if not helper_signature:
+        return False
+    for token in HARD_BLOCK_HELPER_TOKENS:
+        if token in helper_signature:
+            return True
+    return False
+
+
 def _is_final_geometry(action: Dict[str, Any]) -> bool:
     meta = safe_dict(action.get("meta"))
     if "is_final" in meta:
         return bool(meta.get("is_final"))
     if "final" in meta:
         return bool(meta.get("final"))
-    return True
+    return _action_preview_role(action) == "final"
 
 
 def _is_helper_geometry(action: Dict[str, Any]) -> bool:
@@ -479,6 +522,9 @@ def _is_helper_geometry(action: Dict[str, Any]) -> bool:
         return True
     role = safe_text(meta.get("role"), "").upper()
     if role and role in {"HELPER", "DEBUG", "ANCHOR", "CANDIDATE", "GUIDE", "TARGET"}:
+        return True
+    preview_role = safe_text(meta.get("preview_role"), "").upper()
+    if preview_role in {"HELPER", "DEBUG"}:
         return True
     tags = action.get("tags")
     if isinstance(tags, list):
@@ -1929,6 +1975,11 @@ def _filtered_preview_actions(
         for action in records
     )
     filtered = []
+    audit = {
+        "rendered_final_count": 0,
+        "filtered_helper_count": 0,
+        "hidden_incomplete_phase_count": 0,
+    }
     for action in records:
         layer = get_layer(action, "C-TEXT")
         raw_layer = get_raw_layer(action)
@@ -1937,13 +1988,22 @@ def _filtered_preview_actions(
         task = str(action.get("task") or "").lower()
         canonical_source_type = str(action.get("canonical_source_type") or "").upper()
         helper_signature = " ".join(part for part in (label, text, canonical_source_type) if part)
-        if preview_mode != "debug" and _is_helper_geometry(action):
+        preview_role = _action_preview_role(action)
+        if preview_mode in {"production", "engineering"} and _has_blocked_helper_token(action):
+            audit["filtered_helper_count"] += 1
             continue
-        if preview_mode == "production" and not _is_final_geometry(action):
+        if preview_mode != "debug" and _is_helper_geometry(action):
+            audit["filtered_helper_count"] += 1
+            continue
+        if preview_mode == "production" and preview_role != "final":
             continue
         if preview_mode == "production" and layer not in FINAL_GEOMETRY_LAYERS:
             continue
         if preview_mode in {"production", "engineering"} and layer not in profile_layers:
+            audit["hidden_incomplete_phase_count"] += 1
+            continue
+        if preview_mode == "engineering" and preview_role not in {"final", "overlay"}:
+            audit["filtered_helper_count"] += 1
             continue
         if allow_heuristics:
             if has_primary_site_geometry and layer == "C-BOUNDARY":
@@ -2008,7 +2068,8 @@ def _filtered_preview_actions(
                 action = dict(action)
             action["_preview_profile"] = engineering_profile
         filtered.append(action)
-    return filtered
+    audit["rendered_final_count"] = sum(1 for action in filtered if _action_preview_role(action) == "final")
+    return filtered, audit
 
 
 # ----------------------------------------
@@ -2486,7 +2547,7 @@ def _preview_scene(plan, *, include_layers: Optional[set[str]] = None, preview_m
         allow_profile_inference=allow_profile_inference,
     )
     normalized_layers = _normalize_include_layers(include_layers)
-    actions = _filtered_preview_actions(
+    actions, audit = _filtered_preview_actions(
         raw_actions,
         rich_engineering=engineering_profile,
         include_layers=normalized_layers,
@@ -2495,7 +2556,7 @@ def _preview_scene(plan, *, include_layers: Optional[set[str]] = None, preview_m
         preview_mode=resolved_preview_mode,
     )
     if not actions:
-        return engineering_profile, actions, None
+        return engineering_profile, actions, None, audit
 
     drawn_items = []
     for action in actions:
@@ -2509,7 +2570,7 @@ def _preview_scene(plan, *, include_layers: Optional[set[str]] = None, preview_m
         drawn_items,
         engineering_profile=engineering_profile,
     )
-    return engineering_profile, actions, selected_bounds
+    return engineering_profile, actions, selected_bounds, audit
 
 
 def _preview_figure_size(selected_bounds, *, base=7.2):
@@ -2524,7 +2585,7 @@ def _preview_figure_size(selected_bounds, *, base=7.2):
 
 def _draw_plan(ax, plan, *, actions=None, selected_bounds=None, render_labels: bool = True):
     if actions is None or selected_bounds is None:
-        _, actions, selected_bounds = _preview_scene(plan)
+        _, actions, selected_bounds, _ = _preview_scene(plan)
     if not actions or selected_bounds is None:
         return False
 
@@ -2594,7 +2655,7 @@ def render_plan_preview_png(
             or get_layer(action, "C-TEXT") in always_allow
             or not str(action.get("layer") or "").strip()
         ]
-    _, preview_actions, selected_bounds = _preview_scene(
+    _, preview_actions, selected_bounds, _ = _preview_scene(
         {"actions": actions, **{k: v for k, v in plan.items() if k != "actions"}},
         include_layers=allowed if include_layers else None,
         preview_mode=preview_mode,
@@ -2639,13 +2700,13 @@ def build_preview_annotations(plan, *, include_layers: Optional[set[str]] = None
             for action in actions
             if get_layer(action, "C-TEXT") in allowed or not str(action.get("layer") or "").strip()
         ]
-    engineering_profile, preview_actions, selected_bounds = _preview_scene(
+    engineering_profile, preview_actions, selected_bounds, audit = _preview_scene(
         {"actions": actions, **{k: v for k, v in plan.items() if k != "actions"}},
         include_layers=allowed if include_layers else None,
         preview_mode=preview_mode,
     )
     if not preview_actions or not selected_bounds:
-        return {"profile": engineering_profile, "labels": []}
+        return {"profile": engineering_profile, "labels": [], "audit": audit}
     min_x, min_y, max_x, max_y = selected_bounds
     span_x = max(max_x - min_x, 1e-6)
     span_y = max(max_y - min_y, 1e-6)
@@ -2694,7 +2755,7 @@ def build_preview_annotations(plan, *, include_layers: Optional[set[str]] = None
                 },
             }
         )
-    return {"profile": engineering_profile, "labels": labels}
+    return {"profile": engineering_profile, "labels": labels, "audit": audit}
 
 
 def preview_plan(plan):
@@ -2703,7 +2764,7 @@ def preview_plan(plan):
         print("No actions to preview.")
         return
 
-    _, actions, selected_bounds = _preview_scene(plan)
+    _, actions, selected_bounds, _ = _preview_scene(plan)
     fig, ax = plt.subplots(figsize=_preview_figure_size(selected_bounds, base=8.0))
 
     if not _draw_plan(ax, plan, actions=actions, selected_bounds=selected_bounds):

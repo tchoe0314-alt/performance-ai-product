@@ -19,6 +19,61 @@ from backend.planning.export_validation import (
     utility_export_validation,
 )
 
+PREVIEW_ROLE_FINAL = "final"
+PREVIEW_ROLE_OVERLAY = "overlay"
+PREVIEW_ROLE_HELPER = "helper"
+PREVIEW_ROLE_DEBUG = "debug"
+PREVIEW_ROLE_VALUES = {
+    PREVIEW_ROLE_FINAL,
+    PREVIEW_ROLE_OVERLAY,
+    PREVIEW_ROLE_HELPER,
+    PREVIEW_ROLE_DEBUG,
+}
+
+
+def _preview_meta(*, system: str, preview_role: str) -> Dict[str, Any]:
+    normalized_role = safe_str(preview_role, PREVIEW_ROLE_FINAL).lower()
+    if normalized_role not in PREVIEW_ROLE_VALUES:
+        normalized_role = PREVIEW_ROLE_FINAL
+    is_final = normalized_role == PREVIEW_ROLE_FINAL
+    return {
+        "is_final": is_final,
+        "preview_role": normalized_role,
+        "system": safe_str(system, "layout"),
+    }
+
+
+def _system_for_layer(layer: str) -> str:
+    raw = safe_str(layer, "").upper()
+    if raw in {"ROAD", "FIRE"}:
+        return "roads"
+    if raw in {"PARKING"}:
+        return "parking"
+    if raw in {"WALK", "SIDEWALK"}:
+        return "pedestrian"
+    if raw in {"PIPE", "STORM", "DRAIN", "STRUCTURE", "BASIN_BOUNDARY", "LOW_POINTS", "DRAIN_FLOW"}:
+        return "drainage"
+    if raw in {"SAN"}:
+        return "sanitary"
+    if raw in {"WATER", "WATR"}:
+        return "water"
+    if raw in {"UTILITY"}:
+        return "layout"
+    if raw in {"FG_CONTOUR", "EG_CONTOUR", "SURFACE"}:
+        return "grading"
+    return "layout"
+
+
+def _system_for_utility_layer(layer: str) -> str:
+    raw = safe_str(layer, "").upper()
+    if raw == "SAN":
+        return "sanitary"
+    if raw == "STORM":
+        return "drainage"
+    if raw == "WATER":
+        return "water"
+    return "layout"
+
 
 def canonical_action(
     action: Dict[str, Any],
@@ -71,6 +126,7 @@ def canonical_structure_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                     "radius": 1.5,
                     "start_angle": None,
                     "end_angle": None,
+                    "meta": _preview_meta(system="drainage", preview_role=PREVIEW_ROLE_FINAL),
                 },
                 source_type="drainage_structure",
                 source_id=source_id,
@@ -102,6 +158,7 @@ def canonical_structure_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                     "radius": None,
                     "start_angle": None,
                     "end_angle": None,
+                    "meta": _preview_meta(system="drainage", preview_role=PREVIEW_ROLE_OVERLAY),
                 },
                 source_type="drainage_structure",
                 source_id=source_id,
@@ -153,6 +210,7 @@ def canonical_basin_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                         "radius": None,
                         "start_angle": None,
                         "end_angle": None,
+                        "meta": _preview_meta(system="drainage", preview_role=PREVIEW_ROLE_FINAL),
                     },
                     source_type="drainage_basin",
                     source_id=source_id,
@@ -185,6 +243,7 @@ def canonical_basin_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                         "radius": None,
                         "start_angle": None,
                         "end_angle": None,
+                        "meta": _preview_meta(system="grading", preview_role=PREVIEW_ROLE_OVERLAY),
                     },
                     source_type="drainage_basin",
                     source_id=f"{source_id}:bottom",
@@ -209,6 +268,7 @@ def canonical_basin_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                     "radius": None,
                     "start_angle": None,
                     "end_angle": None,
+                    "meta": _preview_meta(system="drainage", preview_role=PREVIEW_ROLE_OVERLAY),
                 },
                 source_type="drainage_basin",
                 source_id=source_id,
@@ -235,6 +295,7 @@ def canonical_basin_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                         "radius": None,
                         "start_angle": None,
                         "end_angle": None,
+                        "meta": _preview_meta(system="drainage", preview_role=PREVIEW_ROLE_OVERLAY),
                     },
                     source_type="drainage_basin",
                     source_id=f"{source_id}:storage",
@@ -264,6 +325,7 @@ def canonical_basin_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                         "radius": 1.25,
                         "start_angle": None,
                         "end_angle": None,
+                        "meta": _preview_meta(system="drainage", preview_role=PREVIEW_ROLE_FINAL),
                     },
                     source_type="drainage_basin",
                     source_id=f"{source_id}:outlet",
@@ -291,6 +353,7 @@ def canonical_basin_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                         "radius": None,
                         "start_angle": None,
                         "end_angle": None,
+                        "meta": _preview_meta(system="drainage", preview_role=PREVIEW_ROLE_OVERLAY),
                     },
                     source_type="drainage_basin",
                     source_id=f"{source_id}:outlet_note",
@@ -315,6 +378,7 @@ def canonical_basin_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                         "radius": None,
                         "start_angle": None,
                         "end_angle": None,
+                        "meta": _preview_meta(system="drainage", preview_role=PREVIEW_ROLE_OVERLAY),
                     },
                     source_type="drainage_basin",
                     source_id=f"{source_id}:flow",
@@ -362,6 +426,7 @@ def canonical_drainage_surface_actions(project: ProjectModel) -> List[Dict[str, 
                     "radius": 0.9,
                     "start_angle": None,
                     "end_angle": None,
+                    "meta": _preview_meta(system="drainage", preview_role=PREVIEW_ROLE_OVERLAY),
                 },
                 source_type="drainage_low_point",
                 source_id=source_id,
@@ -408,6 +473,7 @@ def canonical_drainage_surface_actions(project: ProjectModel) -> List[Dict[str, 
                     "radius": None,
                     "start_angle": None,
                     "end_angle": None,
+                    "meta": _preview_meta(system="drainage", preview_role=PREVIEW_ROLE_OVERLAY),
                 },
                 source_type="drainage_flow_path",
                 source_id=source_id,
@@ -476,6 +542,7 @@ def canonical_storm_pipe_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                     "radius": None,
                     "start_angle": None,
                     "end_angle": None,
+                    "meta": _preview_meta(system="drainage", preview_role=PREVIEW_ROLE_FINAL),
                 },
                 source_type="storm_pipe_segment",
                 source_id=source_id,
@@ -513,6 +580,7 @@ def canonical_storm_pipe_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                     "radius": None,
                     "start_angle": None,
                     "end_angle": None,
+                    "meta": _preview_meta(system="drainage", preview_role=PREVIEW_ROLE_OVERLAY),
                 },
                 source_type="storm_pipe_segment",
                 source_id=source_id,
@@ -554,6 +622,7 @@ def canonical_sanitary_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                     "radius": None,
                     "start_angle": None,
                     "end_angle": None,
+                    "meta": _preview_meta(system="sanitary", preview_role=PREVIEW_ROLE_FINAL),
                 },
                 source_type="sanitary_segment",
                 source_id=source_id,
@@ -589,6 +658,7 @@ def canonical_sanitary_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                     "radius": None,
                     "start_angle": None,
                     "end_angle": None,
+                    "meta": _preview_meta(system="sanitary", preview_role=PREVIEW_ROLE_OVERLAY),
                 },
                 source_type="sanitary_segment",
                 source_id=source_id,
@@ -619,6 +689,7 @@ def canonical_sanitary_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                     "radius": 2.0,
                     "start_angle": None,
                     "end_angle": None,
+                    "meta": _preview_meta(system="sanitary", preview_role=PREVIEW_ROLE_FINAL),
                 },
                 source_type="sanitary_manhole",
                 source_id=source_id,
@@ -643,6 +714,7 @@ def canonical_sanitary_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                     "radius": None,
                     "start_angle": None,
                     "end_angle": None,
+                    "meta": _preview_meta(system="sanitary", preview_role=PREVIEW_ROLE_OVERLAY),
                 },
                 source_type="sanitary_manhole",
                 source_id=source_id,
@@ -687,6 +759,7 @@ def canonical_sheet_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                         "radius": None,
                         "start_angle": None,
                         "end_angle": None,
+                        "meta": _preview_meta(system="layout", preview_role=PREVIEW_ROLE_HELPER),
                     },
                     source_type="profile_alignment",
                     source_id=source_id,
@@ -722,6 +795,7 @@ def canonical_sheet_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                         "radius": None,
                         "start_angle": None,
                         "end_angle": None,
+                        "meta": _preview_meta(system="layout", preview_role=PREVIEW_ROLE_HELPER),
                     },
                     source_type="cross_section_cut",
                     source_id=source_id,
@@ -751,6 +825,7 @@ def canonical_sheet_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                         "radius": 0.5,
                         "start_angle": None,
                         "end_angle": None,
+                        "meta": _preview_meta(system="layout", preview_role=PREVIEW_ROLE_HELPER),
                     },
                     source_type="cross_section_cut",
                     source_id=source_id,
@@ -784,6 +859,7 @@ def canonical_utility_actions(project: ProjectModel) -> List[Dict[str, Any]]:
         "generic_utility",
     )
     layer = utility_layer_for_system(system_type)
+    system = _system_for_utility_layer(layer)
     for index, segment in enumerate(segments, start=1):
         rec = safe_dict(segment)
         route_points = safe_list(rec.get("route_points"))
@@ -812,6 +888,7 @@ def canonical_utility_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                     "radius": None,
                     "start_angle": None,
                     "end_angle": None,
+                    "meta": _preview_meta(system=system, preview_role=PREVIEW_ROLE_FINAL),
                 },
                 source_type="utility_segment",
                 source_id=source_id,
@@ -852,6 +929,7 @@ def canonical_utility_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                     "radius": None,
                     "start_angle": None,
                     "end_angle": None,
+                    "meta": _preview_meta(system=system, preview_role=PREVIEW_ROLE_OVERLAY),
                 },
                 source_type="utility_segment",
                 source_id=source_id,
@@ -868,8 +946,10 @@ def drawing_entity_actions(project: ProjectModel) -> List[Dict[str, Any]]:
         layer = safe_str(
             getattr(getattr(entity, "style", None), "layer", "ANNO"), "ANNO"
         ).upper()
+        system = _system_for_layer(layer)
         if hasattr(entity, "text") and hasattr(entity, "insertion"):
             insertion = getattr(entity, "insertion", None)
+            preview_role = PREVIEW_ROLE_OVERLAY
             actions.append(
                 {
                     "task": "text_note",
@@ -891,6 +971,7 @@ def drawing_entity_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                     "radius": None,
                     "start_angle": None,
                     "end_angle": None,
+                    "meta": _preview_meta(system=system, preview_role=preview_role),
                 }
             )
         elif hasattr(entity, "polyline"):
@@ -919,6 +1000,7 @@ def drawing_entity_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                         "radius": None,
                         "start_angle": None,
                         "end_angle": None,
+                        "meta": _preview_meta(system=system, preview_role=PREVIEW_ROLE_FINAL),
                     }
                 )
     return actions

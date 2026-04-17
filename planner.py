@@ -2826,6 +2826,32 @@ def _boundary_points_for_preview(boundary: Any) -> List[List[float]]:
     return points
 
 
+def _preview_meta_for_base_action(layer: str, task: str) -> Dict[str, Any]:
+    raw_layer = safe_str(layer, "").upper()
+    role = "overlay" if task in {"text_note", "point", "north_arrow"} else "final"
+    if raw_layer in {"ROAD", "FIRE"}:
+        system = "roads"
+    elif raw_layer in {"PARKING"}:
+        system = "parking"
+    elif raw_layer in {"WALK", "SIDEWALK"}:
+        system = "pedestrian"
+    elif raw_layer in {"PIPE", "STORM", "DRAIN", "STRUCTURE", "BASIN_BOUNDARY", "LOW_POINTS", "DRAIN_FLOW"}:
+        system = "drainage"
+    elif raw_layer in {"SAN"}:
+        system = "sanitary"
+    elif raw_layer in {"WATER", "WATR"}:
+        system = "water"
+    elif raw_layer in {"FG_CONTOUR", "EG_CONTOUR", "SURFACE"}:
+        system = "grading"
+    else:
+        system = "layout"
+    return {
+        "is_final": role == "final",
+        "preview_role": role,
+        "system": system,
+    }
+
+
 def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
     actions: List[Dict[str, Any]] = []
 
@@ -2835,12 +2861,13 @@ def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
             boundary = getattr(zone, "boundary", None)
             boundary_points = _boundary_points_for_preview(boundary) if boundary is not None else []
             if len(boundary_points) >= 3:
+                layer = _zone_layer_for_preview(zone)
                 actions.append({
                     "task": "polygon",
                     "points": boundary_points,
                     "closed": True,
                     "label": _zone_label_for_preview(zone),
-                    "layer": _zone_layer_for_preview(zone),
+                    "layer": layer,
                     "origin": None,
                     "width": None,
                     "height": None,
@@ -2850,18 +2877,20 @@ def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                     "radius": None,
                     "start_angle": None,
                     "end_angle": None,
+                    "meta": _preview_meta_for_base_action(layer, "polygon"),
                 })
                 continue
             bbox = getattr(boundary, "bbox", None)
             if bbox is None:
                 continue
+            layer = _zone_layer_for_preview(zone)
             actions.append({
                 "task": "rectangle",
                 "origin": [bbox.min_x, bbox.min_y],
                 "width": bbox.width,
                 "height": bbox.height,
                 "label": _zone_label_for_preview(zone),
-                "layer": _zone_layer_for_preview(zone),
+                "layer": layer,
                 "points": None,
                 "closed": None,
                 "text": None,
@@ -2870,6 +2899,7 @@ def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                 "radius": None,
                 "start_angle": None,
                 "end_angle": None,
+                "meta": _preview_meta_for_base_action(layer, "rectangle"),
             })
 
     objects_dict = getattr(project, "objects", {}) or {}
@@ -2894,6 +2924,7 @@ def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                     "radius": None,
                     "start_angle": None,
                     "end_angle": None,
+                    "meta": _preview_meta_for_base_action(layer, "polygon"),
                 })
                 continue
             anchor = getattr(obj, "anchor", None)
@@ -2916,6 +2947,7 @@ def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                 "radius": None,
                 "start_angle": None,
                 "end_angle": None,
+                "meta": _preview_meta_for_base_action(layer, "text_note"),
             })
 
     return actions
