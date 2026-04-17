@@ -28,6 +28,42 @@ from .common import safe_dict, safe_float, safe_int, safe_list, safe_str
 from .field_contract import field_path_is_omitted
 
 
+def _preview_meta_for_action(layer: str, task: str) -> Dict[str, Any]:
+    raw_layer = safe_str(layer, "").upper()
+    task_lower = safe_str(task, "").lower()
+    overlay_layers = {"ANNO", "DRAIN_FLOW", "FG_CONTOUR", "EG_CONTOUR", "SURFACE", "SPOT_FG", "SPOT_EG"}
+    helper_layers = {"DRAIN", "PIPE", "BASIN_BOUNDARY"}
+    if task_lower in {"text_note", "point", "north_arrow"}:
+        role = "overlay"
+    elif raw_layer in helper_layers or raw_layer in overlay_layers:
+        role = "overlay"
+    else:
+        role = "final"
+
+    if raw_layer in {"ROAD", "FIRE"}:
+        system = "roads"
+    elif raw_layer == "PARKING":
+        system = "parking"
+    elif raw_layer in {"WALK", "SIDEWALK"}:
+        system = "pedestrian"
+    elif raw_layer in {"DRAIN", "PIPE", "BASIN_BOUNDARY", "DRAIN_FLOW"}:
+        system = "drainage"
+    elif raw_layer == "SAN":
+        system = "sanitary"
+    elif raw_layer in {"WATER", "WATR"}:
+        system = "water"
+    elif raw_layer in {"FG_CONTOUR", "EG_CONTOUR", "SURFACE", "SPOT_FG", "SPOT_EG"}:
+        system = "grading"
+    else:
+        system = "layout"
+
+    return {
+        "is_final": role == "final",
+        "preview_role": role,
+        "system": system,
+    }
+
+
 def build_existing_surface(
     parsed: Dict[str, Any],
     *,
@@ -118,6 +154,7 @@ def surface_actions_from_grid(surface: Optional[GridSurface], *, layer: str, not
                 "radius": None,
                 "start_angle": None,
                 "end_angle": None,
+                "meta": _preview_meta_for_action(layer, "polyline"),
             })
         if note_prefix:
             p1, p2 = segs[0]
@@ -138,6 +175,7 @@ def surface_actions_from_grid(surface: Optional[GridSurface], *, layer: str, not
                 "radius": None,
                 "start_angle": None,
                 "end_angle": None,
+                "meta": _preview_meta_for_action(layer, "text_note"),
             })
     return actions
 
@@ -205,6 +243,7 @@ def _control_spot_grade_actions(
             "radius": None,
             "start_angle": None,
             "end_angle": None,
+            "meta": _preview_meta_for_action("SPOT_FG", "text_note"),
         })
         seen.append((x, y))
         if len(actions) >= limit:

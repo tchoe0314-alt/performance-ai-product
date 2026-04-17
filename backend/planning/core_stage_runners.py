@@ -29,6 +29,42 @@ from .field_contract import (
 from .runtime import PlannerExecutionContext, _lot_area, _mark_dependency_state, collect_plan_stats
 
 
+def _preview_meta_for_action(layer: str, task: str) -> Dict[str, Any]:
+    raw_layer = safe_str(layer, "").upper()
+    task_lower = safe_str(task, "").lower()
+    overlay_layers = {"ANNO", "DRAIN_FLOW", "FG_CONTOUR", "EG_CONTOUR", "SURFACE"}
+    helper_layers = {"DRAIN", "PIPE", "BASIN_BOUNDARY"}
+    if task_lower in {"text_note", "point", "north_arrow"}:
+        role = "overlay"
+    elif raw_layer in helper_layers or raw_layer in overlay_layers:
+        role = "overlay"
+    else:
+        role = "final"
+
+    if raw_layer in {"ROAD", "FIRE"}:
+        system = "roads"
+    elif raw_layer == "PARKING":
+        system = "parking"
+    elif raw_layer in {"WALK", "SIDEWALK"}:
+        system = "pedestrian"
+    elif raw_layer in {"DRAIN", "PIPE", "BASIN_BOUNDARY", "DRAIN_FLOW"}:
+        system = "drainage"
+    elif raw_layer == "SAN":
+        system = "sanitary"
+    elif raw_layer in {"WATER", "WATR"}:
+        system = "water"
+    elif raw_layer in {"FG_CONTOUR", "EG_CONTOUR", "SURFACE"}:
+        system = "grading"
+    else:
+        system = "layout"
+
+    return {
+        "is_final": role == "final",
+        "preview_role": role,
+        "system": system,
+    }
+
+
 def _program_building_specs(parsed: Dict[str, Any], site_plan: Dict[str, Any]) -> List[Dict[str, Any]]:
     execution_payload = unwrap_fields_for_execution(parsed)
     buildings = safe_list(execution_payload.get("buildings"))
@@ -345,6 +381,7 @@ def _layout_fallback_actions(
                 "origin": [walk_x, walk_y],
                 "width": walk_width,
                 "height": walk_h,
+                "meta": _preview_meta_for_action("WALK", "rectangle"),
             }
         )
 
@@ -419,6 +456,7 @@ def _layout_fallback_actions(
                 "origin": [park_x, park_y],
                 "width": park_w,
                 "height": park_h,
+                "meta": _preview_meta_for_action("PARKING", "rectangle"),
             }
         )
 
@@ -445,6 +483,7 @@ def _layout_fallback_actions(
                 "origin": [round(x, 3), round(y, 3)],
                 "width": round(w, 3),
                 "height": round(h, 3),
+                "meta": _preview_meta_for_action(layer, "rectangle"),
             }
         )
 
@@ -600,6 +639,7 @@ def _synthesize_layout_collectors(
                 "height": round(h, 3),
                 "synthetic_layout_collector": True,
                 "semantic_surface_role": "circulation",
+                "meta": _preview_meta_for_action(layer, "rectangle"),
             }
         )
 
@@ -766,6 +806,7 @@ def _synthesize_layout_semantics(actions: Sequence[Dict[str, Any]]) -> List[Dict
                 "origin": [walk_x, walk_y],
                 "width": walk_width,
                 "height": walk_h,
+                "meta": _preview_meta_for_action("WALK", "rectangle"),
             }
             key = repr(walk_action)
             if key not in seen:
@@ -904,6 +945,7 @@ def run_layout_stage(
                         "origin": [round(safe_float(placement.get("x"), 0.0), 3), round(safe_float(placement.get("y"), 0.0), 3)],
                         "width": round(safe_float(placement.get("w"), build_w), 3),
                         "height": round(safe_float(placement.get("d"), build_d), 3),
+                        "meta": _preview_meta_for_action("BUILDING", "rectangle"),
                     }
                 )
             fallback_actions.extend(

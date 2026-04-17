@@ -22,6 +22,46 @@ from .field_contract import field_path_is_omitted, unwrap_fields_for_execution
 from .runtime import PlannerExecutionContext, _mark_dependency_state
 
 
+def _preview_meta_for_action(layer: str, task: str, *, role: Optional[str] = None, system: Optional[str] = None) -> Dict[str, Any]:
+    raw_layer = safe_str(layer, "").upper()
+    task_lower = safe_str(task, "").lower()
+    overlay_layers = {"ANNO", "DRAIN_FLOW", "FG_CONTOUR", "EG_CONTOUR", "SURFACE"}
+    helper_layers = {"DRAIN", "PIPE", "BASIN_BOUNDARY"}
+    if role:
+        resolved_role = role
+    elif task_lower in {"text_note", "point", "north_arrow"}:
+        resolved_role = "overlay"
+    elif raw_layer in helper_layers or raw_layer in overlay_layers:
+        resolved_role = "overlay"
+    else:
+        resolved_role = "final"
+
+    if system:
+        resolved_system = system
+    elif raw_layer in {"ROAD", "FIRE"}:
+        resolved_system = "roads"
+    elif raw_layer == "PARKING":
+        resolved_system = "parking"
+    elif raw_layer in {"WALK", "SIDEWALK"}:
+        resolved_system = "pedestrian"
+    elif raw_layer in {"DRAIN", "PIPE", "BASIN_BOUNDARY", "DRAIN_FLOW"}:
+        resolved_system = "drainage"
+    elif raw_layer == "SAN":
+        resolved_system = "sanitary"
+    elif raw_layer in {"WATER", "WATR"}:
+        resolved_system = "water"
+    elif raw_layer in {"FG_CONTOUR", "EG_CONTOUR", "SURFACE"}:
+        resolved_system = "grading"
+    else:
+        resolved_system = "layout"
+
+    return {
+        "is_final": resolved_role == "final",
+        "preview_role": resolved_role,
+        "system": resolved_system,
+    }
+
+
 def run_sanitary_stage(
     ctx: PlannerExecutionContext,
     *,
@@ -671,6 +711,7 @@ def run_utility_stage(
                         "radius": None,
                         "start_angle": None,
                         "end_angle": None,
+                        "meta": _preview_meta_for_action("UTILITY", "polyline", role="overlay", system="utilities"),
                     }
                 )
                 fallback_actions.append(
@@ -689,6 +730,7 @@ def run_utility_stage(
                         "radius": None,
                         "start_angle": None,
                         "end_angle": None,
+                        "meta": _preview_meta_for_action("UTILITY", "text_note", role="overlay", system="utilities"),
                     }
                 )
                 fallback_segments.append(
