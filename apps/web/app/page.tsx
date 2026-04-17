@@ -1197,7 +1197,8 @@ export default function PerformanceAIDashboard() {
       .map((raw, idx) => {
         if (!raw || typeof raw !== "object") return null;
         const rec = raw as Record<string, unknown>;
-        const origin = Array.isArray(rec.origin) ? rec.origin : [];
+        const originRaw = (rec as { origin?: unknown }).origin;
+        const origin = Array.isArray(originRaw) ? originRaw : [];
         const rawX = rec.x ?? origin[0];
         const rawY = rec.y ?? origin[1];
         const x = typeof rawX === "number" ? rawX : rawX !== undefined ? Number(rawX) : NaN;
