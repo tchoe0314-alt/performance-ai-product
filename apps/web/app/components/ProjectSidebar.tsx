@@ -228,8 +228,6 @@ export default function ProjectSidebar({
     );
   };
 
-  );
-
   return (
     <aside
       className={`hidden shrink-0 border-r border-slate-200 bg-[#f1f2f6] lg:flex lg:flex-col ${
