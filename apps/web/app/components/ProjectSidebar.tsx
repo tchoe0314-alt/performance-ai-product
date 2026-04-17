@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, MessageSquarePlus } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 
 import type { ChatMessage, LearningReport } from "../types";
 import {
@@ -233,30 +233,11 @@ export default function ProjectSidebar({
       }`}
     >
       <div className="border-b border-slate-200 p-4">
-        <div className="flex items-center justify-between">
-          {!collapsed ? (
-            <button
-              type="button"
-              onClick={onNewProject}
-              className="flex w-full items-center justify-center rounded-2xl bg-slate-950 px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-800"
-            >
-              <MessageSquarePlus className="mr-2 h-4 w-4" />
-              New Project
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={onNewProject}
-              className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950 text-white transition hover:bg-slate-800"
-              aria-label="New Project"
-            >
-              <MessageSquarePlus className="h-4 w-4" />
-            </button>
-          )}
+        <div className="flex items-center justify-end">
           <button
             type="button"
             onClick={() => setCollapsed((prev) => !prev)}
-            className="ml-3 inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50"
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}

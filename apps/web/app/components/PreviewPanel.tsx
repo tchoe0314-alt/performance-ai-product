@@ -412,53 +412,11 @@ export default function PreviewPanel({
             <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
               Preview Workspace
             </span>
-            {previewReview && (
-              <span
-                className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${
-                  previewReview.release_status === "ready"
-                    ? "bg-emerald-100 text-emerald-800"
-                    : previewReview.release_status === "blocked"
-                      ? "bg-amber-100 text-amber-800"
-                      : "bg-slate-100 text-slate-700"
-                }`}
-              >
-                {previewReview.release_status === "ready"
-                  ? "Release Ready"
-                  : previewReview.release_status === "blocked"
-                    ? "Blocked"
-                    : "Needs Review"}
-              </span>
-            )}
           </div>
           <p className="text-sm font-semibold text-slate-950">Live Preview</p>
           <p className="mt-1 text-sm text-slate-500">
             The preview shows the latest engineered plan even when final export is still under review.
           </p>
-          {previewReview && (
-            <div
-              className={`inline-flex max-w-3xl items-start rounded-2xl border px-4 py-3 text-sm ${
-                previewReview.release_status === "ready"
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                  : previewReview.release_status === "blocked"
-                    ? "border-amber-200 bg-amber-50 text-amber-900"
-                    : "border-slate-200 bg-slate-50 text-slate-700"
-              }`}
-            >
-              <div>
-                <p className="font-semibold">
-                  {previewReview.release_status === "ready"
-                    ? "Release review is clear."
-                    : previewReview.release_status === "blocked"
-                      ? "Export is still blocked."
-                      : "Preview needs follow-up review."}
-                </p>
-                <p className="mt-1 text-xs">
-                  {previewReview.release_note ||
-                    "Preview review summary is available for the latest engineering pass."}
-                </p>
-              </div>
-            </div>
-          )}
           {previewTotalPhaseCount > 0 && previewCompletedPhaseCount < previewTotalPhaseCount ? (
             <div className="inline-flex max-w-3xl items-start rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
               <div>
@@ -470,66 +428,6 @@ export default function PreviewPanel({
                       ? `${previewNextPendingPhase.label} is still pending. Systems like drainage, storm, and utilities appear after their phases finish.`
                       : "Additional systems appear as later phases complete."}
                 </p>
-              </div>
-            </div>
-          ) : null}
-          {previewAudit ? (
-            <div className="inline-flex max-w-3xl items-start rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-700">
-              <div>
-                <p className="font-semibold uppercase tracking-[0.18em] text-[10px] text-slate-500">
-                  Preview Audit
-                </p>
-                <p className="mt-2 text-xs">
-                  Mode: <span className="font-semibold text-slate-900">{previewRenderMode}</span>
-                </p>
-                <p className="mt-1 text-xs">
-                  Rendered final:{" "}
-                  <span className="font-semibold text-slate-900">
-                    {formatCount(previewAudit.rendered_final_count ?? 0)}
-                  </span>
-                  {" · "}
-                  Filtered helper/debug:{" "}
-                  <span className="font-semibold text-slate-900">
-                    {formatCount(previewAudit.filtered_helper_count ?? 0)}
-                  </span>
-                  {" · "}
-                  Hidden incomplete:{" "}
-                  <span className="font-semibold text-slate-900">
-                    {formatCount(previewAudit.hidden_incomplete_phase_count ?? 0)}
-                  </span>
-                </p>
-                {previewRenderMode === "debug" && previewAudit.stage_diagnostics ? (
-                  <div className="mt-3 border-t border-slate-200 pt-3 text-[11px] text-slate-600">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                      Stage Diagnostics
-                    </p>
-                    {Object.values(previewAudit.stage_diagnostics).map((entry) => {
-                      if (!entry || typeof entry !== "object") return null;
-                      const stage = String((entry as any).stage || "");
-                      const status = String((entry as any).status || "");
-                      const message = String((entry as any).message || "");
-                      const generated = (entry as any).generated || {};
-                      const rendered = (entry as any).rendered || {};
-                      return (
-                        <div key={stage} className="mt-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
-                          <div className="flex items-center justify-between text-[11px] font-semibold text-slate-700">
-                            <span className="uppercase tracking-[0.14em] text-slate-500">{stage || "stage"}</span>
-                            <span>{status || "pending"}</span>
-                          </div>
-                          {message ? <p className="mt-1 text-[10px] text-slate-500">{message}</p> : null}
-                          <p className="mt-1 text-[10px] text-slate-500">
-                            Generated: {formatCount(generated.total ?? 0)} · Final: {formatCount(generated.final ?? 0)} · Overlay:{" "}
-                            {formatCount(generated.overlay ?? 0)}
-                          </p>
-                          <p className="mt-1 text-[10px] text-slate-500">
-                            Rendered: {formatCount(rendered.total ?? 0)} · Final: {formatCount(rendered.final ?? 0)} · Overlay:{" "}
-                            {formatCount(rendered.overlay ?? 0)}
-                          </p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : null}
               </div>
             </div>
           ) : null}
@@ -683,54 +581,6 @@ export default function PreviewPanel({
                 </button>
               ))}
             </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-              <span>Render Mode</span>
-              <button
-                type="button"
-                onClick={() => {
-                  if (previewRenderMode === "production") return;
-                  onQueuePreviewRefresh("Switching to production preview...");
-                  onSetPreviewRenderMode("production");
-                }}
-                className={`rounded-full border px-2.5 py-1 ${
-                  previewRenderMode === "production"
-                    ? "border-slate-900 bg-slate-950 text-white"
-                    : "border-slate-200 bg-white text-slate-600"
-                }`}
-              >
-                Production
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (previewRenderMode === "engineering") return;
-                  onQueuePreviewRefresh("Switching to engineering preview...");
-                  onSetPreviewRenderMode("engineering");
-                }}
-                className={`rounded-full border px-2.5 py-1 ${
-                  previewRenderMode === "engineering"
-                    ? "border-slate-900 bg-slate-950 text-white"
-                    : "border-slate-200 bg-white text-slate-600"
-                }`}
-              >
-                Engineering
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (previewRenderMode === "debug") return;
-                  onQueuePreviewRefresh("Switching to debug preview...");
-                  onSetPreviewRenderMode("debug");
-                }}
-                className={`rounded-full border px-2.5 py-1 ${
-                  previewRenderMode === "debug"
-                    ? "border-slate-900 bg-slate-950 text-white"
-                    : "border-slate-200 bg-white text-slate-600"
-                }`}
-              >
-                Debug
-              </button>
-            </div>
           </div>
           <div className="mb-3 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
             <span className="font-semibold text-slate-900">Mode:</span>
@@ -760,15 +610,10 @@ export default function PreviewPanel({
                   interactive={previewInteraction === "interactive"}
                   onOpenFullscreen={onOpenFullscreen}
                 />
-                {previewRenderMode !== "production" ? (
-                  <div className="pointer-events-none absolute left-4 top-4 rounded-full border border-white/40 bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm">
-                    {previewRenderMode === "debug" ? "Debug mode" : "Engineering overlays"}
-                  </div>
-                ) : null}
                 {usingAnnotation3D ? (
                   <div
                     className={`pointer-events-none absolute left-4 rounded-full border border-white/40 bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm ${
-                      previewRenderMode !== "production" ? "top-14" : "top-4"
+                      "top-4"
                     }`}
                   >
                     Approximate 3D
@@ -777,7 +622,7 @@ export default function PreviewPanel({
                 {!hasGradingSurface ? (
                   <div
                     className={`pointer-events-none absolute right-4 rounded-full border border-white/40 bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm ${
-                      previewRenderMode !== "production" || usingAnnotation3D ? "top-14" : "top-4"
+                      usingAnnotation3D ? "top-14" : "top-4"
                     }`}
                   >
                     Grading surface missing
@@ -1055,11 +900,6 @@ export default function PreviewPanel({
                   AI Layout + Generation
                 </span>
               </div>
-              {previewRenderMode !== "production" ? (
-                <div className="pointer-events-none absolute left-6 top-6 hidden rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white lg:block">
-                  {previewRenderMode === "debug" ? "Debug mode" : "Engineering overlays"}
-                </div>
-              ) : null}
               {previewInteraction === "interactive" && !planPreviewAnnotations?.labels?.length ? (
                 <div className="pointer-events-none absolute right-6 top-6 hidden rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white lg:block">
                   Hover labels pending
@@ -1071,9 +911,7 @@ export default function PreviewPanel({
                 </div>
               ) : previewInteraction === "interactive" ? (
                 <div
-                  className={`pointer-events-none absolute left-6 hidden rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white lg:block ${
-                    previewRenderMode !== "production" ? "top-16" : "top-6"
-                  }`}
+                  className="pointer-events-none absolute left-6 top-6 hidden rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white lg:block"
                 >
                   Hover geometry for details
                 </div>

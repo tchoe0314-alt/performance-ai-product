@@ -35,7 +35,6 @@ export default function AppHeader({
           >
             Projects
           </button>
-          <button type="button" className="border-b-2 border-white pb-1 text-white">Knowledge Base</button>
           <button
             type="button"
             onClick={onOpenDocs}

@@ -64,22 +64,7 @@ export default function ProjectControls({
         />
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {disciplineToggles.map(({ label, checked, onToggle }) => (
-          <button
-            key={label}
-            type="button"
-            onClick={onToggle}
-            className={`rounded-full border px-3 py-2 text-xs font-medium transition ${
-              checked
-                ? "border-slate-900 bg-slate-950 text-white"
-                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <div className="hidden" />
     </div>
   );
 }

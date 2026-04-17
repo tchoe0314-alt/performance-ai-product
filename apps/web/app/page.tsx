@@ -4888,127 +4888,131 @@ export default function PerformanceAIDashboard() {
                   </div>
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Objects</p>
-                  <div className="mt-2 flex w-full gap-3 overflow-x-auto pb-2">
-                    {buildingPlacements
-                      .filter((item) => !item.placed)
-                      .map((item) => (
-                      <div
-                        key={item.id}
-                        draggable={!item.locked}
-                        onDragStart={(event) => {
-                          if (item.locked) return;
-                          event.dataTransfer?.setData("civora-object-id", item.id);
-                          setPlacementModeEnabled(true);
-                        }}
-                        className={`min-w-[220px] rounded-2xl border bg-white p-3 text-xs text-slate-600 shadow-sm ${
-                          activePlacementId === item.id
-                            ? "border-amber-400 ring-2 ring-amber-200"
-                            : "border-slate-200"
-                        }`}
-                        title={`${item.label} • ${item.w} ft x ${item.d} ft`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-slate-800">{item.label}</span>
-                          <button
-                            type="button"
-                                onClick={() => handleRemoveBuilding(item.id)}
-                                className="text-xs font-semibold text-rose-500"
-                              >
-                                Delete
-                              </button>
-                        </div>
-                        <div className="mt-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                          <span>{SITE_OBJECT_CATALOG[item.type ?? "building"]?.label ?? "Building"}</span>
-                          <span>•</span>
-                          <span>{item.w} ft x {item.d} ft</span>
-                        </div>
-                        <div className="mt-2 flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleSelectPlacementTarget(item.id)}
-                            disabled={item.type === "site"}
-                            className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${
-                              item.type === "site"
-                                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
-                                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                            }`}
-                          >
-                            {item.type === "site" ? "Configured" : item.placed ? "Re-place" : "Place"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleBuildingLock(item.id)}
-                            disabled={item.type === "site"}
-                            className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
-                              item.type === "site"
-                                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
-                                : item.locked
-                                  ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-                                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                            }`}
-                          >
-                            {item.locked ? "Locked" : "Unlock"}
-                          </button>
-                        </div>
+                    <div className="mt-2 max-h-72 space-y-3 overflow-y-auto pr-1">
+                      <div className="flex w-full gap-3 overflow-x-auto pb-2">
+                        {buildingPlacements
+                          .filter((item) => !item.placed)
+                          .map((item) => (
+                            <div
+                              key={item.id}
+                              draggable={!item.locked}
+                              onDragStart={(event) => {
+                                if (item.locked) return;
+                                event.dataTransfer?.setData("civora-object-id", item.id);
+                                setPlacementModeEnabled(true);
+                              }}
+                              className={`min-w-[220px] rounded-2xl border bg-white p-3 text-xs text-slate-600 shadow-sm ${
+                                activePlacementId === item.id
+                                  ? "border-amber-400 ring-2 ring-amber-200"
+                                  : "border-slate-200"
+                              }`}
+                              title={`${item.label} • ${item.w} ft x ${item.d} ft`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="font-semibold text-slate-800">{item.label}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveBuilding(item.id)}
+                                  className="text-xs font-semibold text-rose-500"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                              <div className="mt-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                                <span>{SITE_OBJECT_CATALOG[item.type ?? "building"]?.label ?? "Building"}</span>
+                                <span>•</span>
+                                <span>{item.w} ft x {item.d} ft</span>
+                              </div>
+                              <div className="mt-2 flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSelectPlacementTarget(item.id)}
+                                  disabled={item.type === "site"}
+                                  className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                                    item.type === "site"
+                                      ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  {item.type === "site" ? "Configured" : item.placed ? "Re-place" : "Place"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleBuildingLock(item.id)}
+                                  disabled={item.type === "site"}
+                                  className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
+                                    item.type === "site"
+                                      ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                      : item.locked
+                                        ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  {item.locked ? "Locked" : "Unlock"}
+                                </button>
+                              </div>
+                            </div>
+                          ))}
                       </div>
-                        ))}
-                      {buildingPlacements
-                        .filter((item) => item.placed)
-                        .map((item) => (
-                          <div
-                            key={item.id}
-                            className={`rounded-2xl border bg-slate-50 p-3 text-xs text-slate-600 shadow-sm ${
-                              activePlacementId === item.id
-                                ? "border-amber-400 ring-2 ring-amber-200"
-                                : "border-slate-200"
-                            }`}
-                            title={`${item.label} • ${item.w} ft x ${item.d} ft`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="font-semibold text-slate-800">{item.label}</span>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveBuilding(item.id)}
-                                className="text-xs font-semibold text-rose-500"
-                              >
-                                Delete
-                              </button>
-                          </div>
-                          <div className="mt-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                            <span>{SITE_OBJECT_CATALOG[item.type ?? "building"]?.label ?? "Building"}</span>
-                            <span>•</span>
-                            <span>{item.w} ft x {item.d} ft</span>
-                          </div>
-                          <div className="mt-2 flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleSelectPlacementTarget(item.id)}
-                              disabled={item.type === "site"}
-                              className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${
-                                item.type === "site"
-                                  ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
-                                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        {buildingPlacements
+                          .filter((item) => item.placed)
+                          .map((item) => (
+                            <div
+                              key={item.id}
+                              className={`rounded-2xl border bg-slate-50 p-3 text-xs text-slate-600 shadow-sm ${
+                                activePlacementId === item.id
+                                  ? "border-amber-400 ring-2 ring-amber-200"
+                                  : "border-slate-200"
                               }`}
+                              title={`${item.label} • ${item.w} ft x ${item.d} ft`}
                             >
-                              {item.type === "site" ? "Configured" : "Re-place"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleToggleBuildingLock(item.id)}
-                              disabled={item.type === "site"}
-                              className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
-                                item.type === "site"
-                                  ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
-                                  : item.locked
-                                    ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-                                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                              }`}
-                            >
-                              {item.locked ? "Locked" : "Unlock"}
-                            </button>
-                          </div>
-                        </div>
-                        ))}
+                              <div className="flex items-center justify-between">
+                                <span className="font-semibold text-slate-800">{item.label}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveBuilding(item.id)}
+                                  className="text-xs font-semibold text-rose-500"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                              <div className="mt-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                                <span>{SITE_OBJECT_CATALOG[item.type ?? "building"]?.label ?? "Building"}</span>
+                                <span>•</span>
+                                <span>{item.w} ft x {item.d} ft</span>
+                              </div>
+                              <div className="mt-2 flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSelectPlacementTarget(item.id)}
+                                  disabled={item.type === "site"}
+                                  className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                                    item.type === "site"
+                                      ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  {item.type === "site" ? "Configured" : "Re-place"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleBuildingLock(item.id)}
+                                  disabled={item.type === "site"}
+                                  className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
+                                    item.type === "site"
+                                      ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                      : item.locked
+                                        ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  {item.locked ? "Locked" : "Unlock"}
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
                     </div>
                   </div>
                 </div>
