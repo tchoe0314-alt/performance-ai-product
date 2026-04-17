@@ -15,7 +15,7 @@ type ThinkingState = {
 
 type ChatPanelProps = {
   chatMessages: ChatMessage[];
-  chatScrollRef: React.RefObject<HTMLDivElement>;
+  chatScrollRef: React.RefObject<HTMLDivElement | null>;
   onSetMessageFeedback: (messageId: string, feedback: ChatMessage["feedback"]) => void;
   thinkingState: ThinkingState;
   busy: boolean;

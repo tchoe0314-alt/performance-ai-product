@@ -111,8 +111,8 @@ type ProjectSidebarProps = {
   };
   onTogglePreviewLayer: (key: keyof ProjectSidebarProps["previewLayers"]) => void;
   onQueuePreviewRefresh: (reason: string) => void;
-  mapSnapshotInputRef: React.RefObject<HTMLInputElement>;
-  surveyInputRef: React.RefObject<HTMLInputElement>;
+  mapSnapshotInputRef: React.RefObject<HTMLInputElement | null>;
+  surveyInputRef: React.RefObject<HTMLInputElement | null>;
   onUploadImage: (file: File) => Promise<void>;
   onUploadSurvey: (file: File) => Promise<void>;
   surveyFileName: string;

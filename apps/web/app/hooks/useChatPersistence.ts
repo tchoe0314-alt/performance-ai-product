@@ -9,7 +9,7 @@ type UseChatPersistenceOptions = {
   chatMessages: ChatMessage[];
   setChatMessages: (messages: ChatMessage[]) => void;
   chatMessagesRef: React.MutableRefObject<ChatMessage[]>;
-  chatScrollRef: React.RefObject<HTMLDivElement>;
+  chatScrollRef: React.RefObject<HTMLDivElement | null>;
   projectId: string;
   currentProjectId?: string;
 };

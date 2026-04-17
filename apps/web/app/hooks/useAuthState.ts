@@ -158,6 +158,7 @@ export default function useAuthState({
     setAuthName,
     setAuthEmail,
     setAuthPassword,
+    setAuthError,
     setShowPassword,
     handleAuth,
     handleLogout,
