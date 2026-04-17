@@ -103,6 +103,16 @@ class AuthStore:
         token_value = str(token or "").strip()
         if not token_value:
             return None
+        qa_token = str(os.getenv("QA_BYPASS_TOKEN", "")).strip()
+        if qa_token and secrets.compare_digest(token_value, qa_token):
+            now = _now()
+            return {
+                "user_id": "user_qa_bypass",
+                "email": str(os.getenv("QA_BYPASS_EMAIL", "qa@civora.ai")).strip(),
+                "name": str(os.getenv("QA_BYPASS_NAME", "QA Access")).strip(),
+                "created_at": now,
+                "updated_at": now,
+            }
 
         connection = self.db.connect()
         try:
@@ -135,6 +145,9 @@ class AuthStore:
     def logout(self, token: str) -> None:
         token_value = str(token or "").strip()
         if not token_value:
+            return
+        qa_token = str(os.getenv("QA_BYPASS_TOKEN", "")).strip()
+        if qa_token and secrets.compare_digest(token_value, qa_token):
             return
         connection = self.db.connect()
         try:

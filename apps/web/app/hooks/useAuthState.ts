@@ -127,6 +127,23 @@ export default function useAuthState({
   }, [onLogoutCleanup, onStatusMessage, token]);
 
   useEffect(() => {
+    const qaToken = String(process.env.NEXT_PUBLIC_QA_BYPASS_TOKEN || "").trim();
+    if (qaToken) {
+      setToken(qaToken);
+      setStoredToken(qaToken);
+      void loadMe(qaToken)
+        .then(async () => {
+          await refreshProjectsRef.current(qaToken);
+          await refreshJobsRef.current(qaToken, { suppressError: true });
+          onStatusMessage("QA access enabled.");
+        })
+        .catch(() => {
+          clearStoredToken();
+          setToken("");
+          setUser(null);
+        });
+      return;
+    }
     void loadAuthStatus();
     const stored = getStoredToken();
     if (!stored) return;
