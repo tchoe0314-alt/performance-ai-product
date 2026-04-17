@@ -87,6 +87,15 @@ export default function PreviewPanel({
     () => (Array.isArray(planPreviewAnnotations?.labels) ? planPreviewAnnotations?.labels : []),
     [planPreviewAnnotations],
   );
+  const issueHighlightBounds = useMemo(() => {
+    if (!selectedIssueLabel || !previewLabels.length) return null;
+    const target = previewLabels.find(
+      (item) =>
+        item.bounds &&
+        (item.label === selectedIssueLabel || item.label.includes(selectedIssueLabel)),
+    );
+    return target?.bounds ?? null;
+  }, [previewLabels, selectedIssueLabel]);
   const [hoveredAnnotation, setHoveredAnnotation] = useState<(typeof previewLabels)[number] | null>(null);
   const [pinnedAnnotation, setPinnedAnnotation] = useState<(typeof previewLabels)[number] | null>(null);
   const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number } | null>(null);
@@ -505,6 +514,53 @@ export default function PreviewPanel({
                 }`}
                 onClick={onOpenFullscreen}
               />
+              {planPreviewAnnotations?.labels?.length ? (
+                <div className="pointer-events-none absolute inset-0">
+                  {issueHighlightBounds ? (
+                    <div
+                      className="absolute rounded-[12px] border-2 border-rose-400/80 bg-rose-400/10 shadow-[0_0_0_6px_rgba(244,63,94,0.12)]"
+                      style={{
+                        left: `${Math.min(Math.max(issueHighlightBounds.x1 * 100, 0), 100)}%`,
+                        top: `${Math.min(Math.max(issueHighlightBounds.y1 * 100, 0), 100)}%`,
+                        width: `${Math.max(
+                          Math.min(Math.max(issueHighlightBounds.x2 * 100, 0), 100) -
+                            Math.min(Math.max(issueHighlightBounds.x1 * 100, 0), 100),
+                          2,
+                        )}%`,
+                        height: `${Math.max(
+                          Math.min(Math.max(issueHighlightBounds.y2 * 100, 0), 100) -
+                            Math.min(Math.max(issueHighlightBounds.y1 * 100, 0), 100),
+                          2,
+                        )}%`,
+                      }}
+                    />
+                  ) : null}
+                  {previewInteraction === "interactive"
+                    ? planPreviewAnnotations.labels.map((item, idx) => (
+                        <div
+                          key={`${item.label}-${idx}`}
+                          className="group pointer-events-auto absolute"
+                          style={{
+                            left: `${Math.min(Math.max(item.x * 100, 0), 100)}%`,
+                            top: `${Math.min(Math.max(item.y * 100, 0), 100)}%`,
+                            transform: "translate(-50%, -50%)",
+                          }}
+                        >
+                          <div
+                            className={`h-2 w-2 rounded-full transition ${
+                              item.label === selectedIssueLabel
+                                ? "bg-rose-500/80 shadow-[0_0_0_6px_rgba(244,63,94,0.15)]"
+                                : "bg-slate-900/30 opacity-0 group-hover:opacity-100"
+                            }`}
+                          />
+                          <div className="pointer-events-none absolute left-1/2 top-0 z-10 hidden -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm group-hover:block">
+                            {item.label}
+                          </div>
+                        </div>
+                      ))
+                    : null}
+                </div>
+              ) : null}
               {showInteractive && activeAnnotation && hoverPoint ? (
                 <div
                   className="pointer-events-none absolute z-20 min-w-[220px] max-w-[280px] rounded-2xl border border-slate-200 bg-white/95 p-3 text-xs text-slate-700 shadow-lg"
@@ -607,54 +663,51 @@ export default function PreviewPanel({
                     No hover labels yet. Refresh the preview to generate them.
                   </div>
                 ) : null}
-                {previewInteraction === "interactive" &&
-                planPreviewAnnotations?.labels?.length ? (
+                {planPreviewAnnotations?.labels?.length ? (
                   <div className="pointer-events-none absolute inset-0">
-                    {selectedIssueLabel ? (
-                      (() => {
-                        const target = planPreviewAnnotations.labels.find(
-                          (item) => item.label === selectedIssueLabel && item.bounds,
-                        );
-                        if (!target?.bounds) return null;
-                        const left = Math.min(Math.max(target.bounds.x1 * 100, 0), 100);
-                        const top = Math.min(Math.max(target.bounds.y1 * 100, 0), 100);
-                        const right = Math.min(Math.max(target.bounds.x2 * 100, 0), 100);
-                        const bottom = Math.min(Math.max(target.bounds.y2 * 100, 0), 100);
-                        return (
-                          <div
-                            className="absolute rounded-[12px] border-2 border-rose-400/80 bg-rose-400/10 shadow-[0_0_0_6px_rgba(244,63,94,0.12)]"
-                            style={{
-                              left: `${left}%`,
-                              top: `${top}%`,
-                              width: `${Math.max(right - left, 2)}%`,
-                              height: `${Math.max(bottom - top, 2)}%`,
-                            }}
-                          />
-                        );
-                      })()
-                    ) : null}
-                    {planPreviewAnnotations.labels.map((item, idx) => (
+                    {issueHighlightBounds ? (
                       <div
-                        key={`${item.label}-${idx}`}
-                        className="group pointer-events-auto absolute"
+                        className="absolute rounded-[12px] border-2 border-rose-400/80 bg-rose-400/10 shadow-[0_0_0_6px_rgba(244,63,94,0.12)]"
                         style={{
-                          left: `${Math.min(Math.max(item.x * 100, 0), 100)}%`,
-                          top: `${Math.min(Math.max(item.y * 100, 0), 100)}%`,
-                          transform: "translate(-50%, -50%)",
+                          left: `${Math.min(Math.max(issueHighlightBounds.x1 * 100, 0), 100)}%`,
+                          top: `${Math.min(Math.max(issueHighlightBounds.y1 * 100, 0), 100)}%`,
+                          width: `${Math.max(
+                            Math.min(Math.max(issueHighlightBounds.x2 * 100, 0), 100) -
+                              Math.min(Math.max(issueHighlightBounds.x1 * 100, 0), 100),
+                            2,
+                          )}%`,
+                          height: `${Math.max(
+                            Math.min(Math.max(issueHighlightBounds.y2 * 100, 0), 100) -
+                              Math.min(Math.max(issueHighlightBounds.y1 * 100, 0), 100),
+                            2,
+                          )}%`,
                         }}
-                      >
-                        <div
-                          className={`h-2 w-2 rounded-full transition ${
-                            item.label === selectedIssueLabel
-                              ? "bg-rose-500/80 shadow-[0_0_0_6px_rgba(244,63,94,0.15)]"
-                              : "bg-slate-900/30 opacity-0 group-hover:opacity-100"
-                          }`}
-                        />
-                        <div className="pointer-events-none absolute left-1/2 top-0 z-10 hidden -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm group-hover:block">
-                          {item.label}
-                        </div>
-                      </div>
-                    ))}
+                      />
+                    ) : null}
+                    {previewInteraction === "interactive"
+                      ? planPreviewAnnotations.labels.map((item, idx) => (
+                          <div
+                            key={`${item.label}-${idx}`}
+                            className="group pointer-events-auto absolute"
+                            style={{
+                              left: `${Math.min(Math.max(item.x * 100, 0), 100)}%`,
+                              top: `${Math.min(Math.max(item.y * 100, 0), 100)}%`,
+                              transform: "translate(-50%, -50%)",
+                            }}
+                          >
+                            <div
+                              className={`h-2 w-2 rounded-full transition ${
+                                item.label === selectedIssueLabel
+                                  ? "bg-rose-500/80 shadow-[0_0_0_6px_rgba(244,63,94,0.15)]"
+                                  : "bg-slate-900/30 opacity-0 group-hover:opacity-100"
+                              }`}
+                            />
+                            <div className="pointer-events-none absolute left-1/2 top-0 z-10 hidden -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm group-hover:block">
+                              {item.label}
+                            </div>
+                          </div>
+                        ))
+                      : null}
                   </div>
                 ) : null}
                 {showInteractive && activeAnnotation && fullscreenHoverPoint ? (
