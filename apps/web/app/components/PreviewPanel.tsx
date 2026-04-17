@@ -312,7 +312,7 @@ export default function PreviewPanel({
 
   const handleBuildingMouseDown = useCallback(
     (
-      event: React.MouseEvent<HTMLDivElement>,
+      event: React.MouseEvent<HTMLElement>,
       building: BuildingPlacement,
       bounds: { left: number; top: number; width: number; height: number },
       mode: "move" | "resize" | "rotate" = "move",
