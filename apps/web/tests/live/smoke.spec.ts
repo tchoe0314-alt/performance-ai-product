@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -17,7 +18,7 @@ const FALLBACK_BASE_URL =
   process.env.PLAYWRIGHT_FALLBACK_BASE_URL ||
   "https://civoraai.com";
 
-async function ensureAppUrl(page: Parameters<typeof test>[0]["page"]) {
+async function ensureAppUrl(page: Page) {
   const currentUrl = page.url();
   if (currentUrl.includes("vercel.com/")) {
     await page.goto(FALLBACK_BASE_URL, { waitUntil: "domcontentloaded" }).catch(() => null);
@@ -46,7 +47,7 @@ async function ensureAppUrl(page: Parameters<typeof test>[0]["page"]) {
   return false;
 }
 
-async function waitForComposer(page: Parameters<typeof test>[0]["page"]) {
+async function waitForComposer(page: Page) {
   const composer = page.getByPlaceholder(
     "Message Civora AI with what you want to create or change...",
   );

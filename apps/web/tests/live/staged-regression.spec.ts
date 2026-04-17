@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -17,7 +18,7 @@ const FALLBACK_BASE_URL =
   process.env.PLAYWRIGHT_FALLBACK_BASE_URL ||
   "https://civoraai.com";
 
-async function ensureAppUrl(page: Parameters<typeof test>[0]["page"]) {
+async function ensureAppUrl(page: Page) {
   const currentUrl = page.url();
   if (currentUrl.includes("vercel.com/")) {
     await page.goto(FALLBACK_BASE_URL, { waitUntil: "domcontentloaded" }).catch(() => null);
@@ -105,7 +106,7 @@ function decodeDataUrl(dataUrl: string): Buffer {
 }
 
 async function apiJson<T>(
-  request: Parameters<typeof test>[0]["request"],
+  request: APIRequestContext,
   token: string,
   pathName: string,
   options?: { method?: "GET" | "POST"; data?: unknown },
@@ -154,8 +155,8 @@ async function apiJson<T>(
 }
 
 async function waitForNewJob(
-  page: Parameters<typeof test>[0]["page"],
-  request: Parameters<typeof test>[0]["request"],
+  page: Page,
+  request: APIRequestContext,
   token: string,
   knownJobIds: Set<string>,
 ): Promise<JobSummary> {
@@ -190,7 +191,7 @@ async function waitForNewJob(
 }
 
 async function waitForApprovalCheckpoint(
-  request: Parameters<typeof test>[0]["request"],
+  request: APIRequestContext,
   token: string,
   jobId: string,
   projectId: string,
@@ -205,9 +206,9 @@ async function waitForApprovalCheckpoint(
       `/api/projects/${projectId}/result`,
     );
 
-    const job = jobPayload.job || {};
-  const latestResult = resultPayload.latest_result ?? {};
-  const finalPlan = latestResult.final_plan ?? {};
+    const job = (jobPayload.job ?? {}) as NonNullable<JobDetailResponse["job"]>;
+    const latestResult = resultPayload.latest_result ?? {};
+    const finalPlan = latestResult.final_plan ?? {};
     const actions = Array.isArray(finalPlan.actions) ? finalPlan.actions : [];
     const checkpoint = (finalPlan.meta || {}).runtime_phase_checkpoint || {};
 
@@ -230,7 +231,7 @@ async function waitForApprovalCheckpoint(
 }
 
 async function savePreviewArtifact(
-  request: Parameters<typeof test>[0]["request"],
+  request: APIRequestContext,
   token: string,
   artifactDir: string,
   projectId: string,
@@ -252,7 +253,7 @@ async function savePreviewArtifact(
   return pngPath;
 }
 
-async function waitForComposer(page: Parameters<typeof test>[0]["page"]) {
+async function waitForComposer(page: Page) {
   const composer = page.getByPlaceholder(
     "Message Civora AI with what you want to create or change...",
   );
