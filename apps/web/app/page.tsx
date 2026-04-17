@@ -1995,87 +1995,6 @@ export default function PerformanceAIDashboard() {
     ],
     [totalPipeLength, maxSlope, minSlope, flowCfs, cutFillNet, basinSize],
   );
-  const previewLayerList = useMemo(() => {
-    const layers = new Set<string>();
-    if (previewLayers.buildings) {
-      ["BUILDING", "STRUCTURE", "PAD"].forEach((layer) => layers.add(layer));
-    }
-    if (previewLayers.roads) {
-      ["ROAD", "PAVEMENT", "PARKING", "WALK"].forEach((layer) => layers.add(layer));
-    }
-    if (previewLayers.grading) {
-      ["SURFACE", "FG_CONTOUR", "EG_CONTOUR", "SPOT_FG", "DRAIN_FLOW", "FLOW_ARROW"].forEach((layer) =>
-        layers.add(layer),
-      );
-    }
-    if (previewLayers.drainage) {
-      ["DRAIN", "PIPE", "STORM", "BASIN_BOUNDARY"].forEach((layer) => layers.add(layer));
-    }
-    if (previewLayers.utilities) {
-      ["UTILITY", "WATER", "SAN"].forEach((layer) => layers.add(layer));
-    }
-    if (previewLayers.structures) {
-      ["BRIDGE", "POOL", "STRUCTURE"].forEach((layer) => layers.add(layer));
-    }
-    if (previewLayers.lots) {
-      ["LOT", "OPEN_SPACE", "EASEMENT"].forEach((layer) => layers.add(layer));
-    }
-    return Array.from(layers);
-  }, [previewLayers]);
-
-  const preview3DItems = useMemo<Preview3DItem[]>(() => {
-    const actions = Array.isArray(backendResult?.final_plan?.actions)
-      ? backendResult.final_plan.actions
-      : [];
-    const items: Preview3DItem[] = [];
-    for (const action of actions) {
-      if (!action || typeof action !== "object") continue;
-      const geometry =
-        (action as PlanAction).geometry ?? (action as Record<string, unknown>);
-      if (!geometry || typeof geometry !== "object") continue;
-      const layer = String(action.layer || "").toUpperCase();
-      const width = Number((geometry as { width?: number }).width || 0);
-      const height = Number((geometry as { height?: number }).height || 0);
-      const origin = Array.isArray((geometry as { origin?: unknown }).origin)
-        ? (geometry as { origin?: number[] }).origin || []
-        : [];
-      if (!width || !height || origin.length < 2) continue;
-      const x = Number(origin[0] || 0);
-      const y = Number(origin[1] || 0);
-      const label = String(action.label || "");
-      const isBuilding =
-        layer === "BUILDING" || label.toLowerCase().includes("build");
-      const isRoad =
-        layer === "ROAD" || layer === "PAVEMENT" || label.toLowerCase().includes("road");
-      const isParking =
-        layer === "PARKING" || label.toLowerCase().includes("park");
-      const isStructure = layer === "BRIDGE" || layer === "POOL" || layer === "STRUCTURE";
-
-      if (isBuilding && !previewLayers.buildings) continue;
-      if ((isRoad || isParking) && !previewLayers.roads) continue;
-      if (isStructure && !previewLayers.structures) continue;
-
-      const color = isBuilding
-        ? "#e2e8f0"
-        : isStructure
-          ? "#fde68a"
-          : isRoad
-            ? "#c7d2fe"
-            : "#dbeafe";
-      const heightFt = isBuilding ? 28 : isStructure ? 10 : isRoad ? 2 : 1;
-      items.push({
-        x,
-        y,
-        w: width,
-        h: height,
-        height: heightFt,
-        color,
-        label: label || layer,
-        layer: isBuilding ? "BUILDING" : isStructure ? "STRUCTURE" : isRoad ? "ROAD" : "PARKING",
-      });
-    }
-    return items;
-  }, [backendResult, previewLayers]);
   const currentTruthAudit = useMemo(
     () => currentPlanMeta?.truth_audit ?? {},
     [currentPlanMeta],
@@ -3163,6 +3082,18 @@ export default function PerformanceAIDashboard() {
   };
 
   const handleSendMessage = () => {
+    const trimmed = prompt.trim();
+    if (!trimmed && !imageName) return;
+    if (busy || visibleActiveJob) {
+      appendChatMessage("user", trimmed || "Uploaded an image.");
+      appendChatMessage(
+        "assistant",
+        "Got it. I saved that note and will apply it after the current phase finishes or once you approve the next phase.",
+        "status",
+      );
+      setPrompt("");
+      return;
+    }
     void runOrchestrator("run");
   };
 
@@ -4059,11 +3990,6 @@ export default function PerformanceAIDashboard() {
   };
 
   useEffect(() => {
-    if (!planPreviewUrl || !token) return;
-    requestPreviewInBackground(artifactPayload, { silentStatus: true });
-  }, [previewQuality, previewLayerList, planPreviewUrl, token, artifactPayload]);
-
-  useEffect(() => {
     if (!token || !backendResult) return;
     const finalPlan =
       backendResult?.final_plan && typeof backendResult.final_plan === "object"
@@ -4700,6 +4626,114 @@ export default function PerformanceAIDashboard() {
     phaseOnlyEntries.find((phase) =>
       ["pending", "partial", "review"].includes(phase.status.toLowerCase()),
     ) ?? null;
+  const gatingPhaseKey =
+    !autoAdvancePhases &&
+    String(visibleActiveJob?.status || "").toLowerCase() === "awaiting_approval"
+      ? previewRunningPhase?.key || previewNextPendingPhase?.key || revisePhaseTarget
+      : null;
+
+  const previewLayersEffective = useMemo(() => {
+    if (!gatingPhaseKey) return previewLayers;
+    switch (gatingPhaseKey) {
+      case "layout":
+        return { ...previewLayers, grading: false, drainage: false, utilities: false };
+      case "grading":
+        return { ...previewLayers, drainage: false, utilities: false };
+      case "drainage_storm":
+        return { ...previewLayers, grading: false, utilities: false };
+      case "utilities":
+        return { ...previewLayers, grading: false, drainage: false };
+      default:
+        return previewLayers;
+    }
+  }, [gatingPhaseKey, previewLayers]);
+
+  const previewLayerList = useMemo(() => {
+    const layers = new Set<string>();
+    if (previewLayersEffective.buildings) {
+      ["BUILDING", "STRUCTURE", "PAD"].forEach((layer) => layers.add(layer));
+    }
+    if (previewLayersEffective.roads) {
+      ["ROAD", "PAVEMENT", "PARKING", "WALK"].forEach((layer) => layers.add(layer));
+    }
+    if (previewLayersEffective.grading) {
+      ["SURFACE", "FG_CONTOUR", "EG_CONTOUR", "SPOT_FG", "DRAIN_FLOW", "FLOW_ARROW"].forEach((layer) =>
+        layers.add(layer),
+      );
+    }
+    if (previewLayersEffective.drainage) {
+      ["DRAIN", "PIPE", "STORM", "BASIN_BOUNDARY"].forEach((layer) => layers.add(layer));
+    }
+    if (previewLayersEffective.utilities) {
+      ["UTILITY", "WATER", "SAN"].forEach((layer) => layers.add(layer));
+    }
+    if (previewLayersEffective.structures) {
+      ["BRIDGE", "POOL", "STRUCTURE"].forEach((layer) => layers.add(layer));
+    }
+    if (previewLayersEffective.lots) {
+      ["LOT", "OPEN_SPACE", "EASEMENT"].forEach((layer) => layers.add(layer));
+    }
+    return Array.from(layers);
+  }, [previewLayersEffective]);
+
+  useEffect(() => {
+    if (!planPreviewUrl || !token) return;
+    requestPreviewInBackground(artifactPayload, { silentStatus: true });
+  }, [previewQuality, previewLayerList, planPreviewUrl, token, artifactPayload]);
+
+  const preview3DItems = useMemo<Preview3DItem[]>(() => {
+    const actions = Array.isArray(backendResult?.final_plan?.actions)
+      ? backendResult.final_plan.actions
+      : [];
+    const items: Preview3DItem[] = [];
+    for (const action of actions) {
+      if (!action || typeof action !== "object") continue;
+      const geometry =
+        (action as PlanAction).geometry ?? (action as Record<string, unknown>);
+      if (!geometry || typeof geometry !== "object") continue;
+      const layer = String(action.layer || "").toUpperCase();
+      const width = Number((geometry as { width?: number }).width || 0);
+      const height = Number((geometry as { height?: number }).height || 0);
+      const origin = Array.isArray((geometry as { origin?: unknown }).origin)
+        ? (geometry as { origin?: number[] }).origin || []
+        : [];
+      if (!width || !height || origin.length < 2) continue;
+      const x = Number(origin[0] || 0);
+      const y = Number(origin[1] || 0);
+      const label = String(action.label || "");
+      const isBuilding =
+        layer === "BUILDING" || label.toLowerCase().includes("build");
+      const isRoad =
+        layer === "ROAD" || layer === "PAVEMENT" || label.toLowerCase().includes("road");
+      const isParking =
+        layer === "PARKING" || label.toLowerCase().includes("park");
+      const isStructure = layer === "BRIDGE" || layer === "POOL" || layer === "STRUCTURE";
+
+      if (isBuilding && !previewLayersEffective.buildings) continue;
+      if ((isRoad || isParking) && !previewLayersEffective.roads) continue;
+      if (isStructure && !previewLayersEffective.structures) continue;
+
+      const color = isBuilding
+        ? "#e2e8f0"
+        : isStructure
+          ? "#fde68a"
+          : isRoad
+            ? "#c7d2fe"
+            : "#dbeafe";
+      const heightFt = isBuilding ? 28 : isStructure ? 10 : isRoad ? 2 : 1;
+      items.push({
+        x,
+        y,
+        w: width,
+        h: height,
+        height: heightFt,
+        color,
+        label: label || layer,
+        layer: isBuilding ? "BUILDING" : isStructure ? "STRUCTURE" : isRoad ? "ROAD" : "PARKING",
+      });
+    }
+    return items;
+  }, [backendResult, previewLayersEffective]);
   useEffect(() => {
     const status = String(visibleActiveJob?.status || "").toLowerCase();
     if (status !== "awaiting_approval") return;
@@ -5480,24 +5514,24 @@ export default function PerformanceAIDashboard() {
                 )}
 
                 <div className="mb-4 rounded-3xl border border-slate-200 bg-slate-50 p-3">
-                  <TextArea
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    onKeyDown={(event) => {
-                      if (
-                        event.key === "Enter" &&
-                        !event.shiftKey &&
-                        !(event.nativeEvent as KeyboardEvent).isComposing
-                      ) {
-                        event.preventDefault();
-                        if (!busy && !visibleActiveJob && (prompt.trim() || imageName)) {
+                    <TextArea
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                      onKeyDown={(event) => {
+                        if (
+                          event.key === "Enter" &&
+                          !event.shiftKey &&
+                          !(event.nativeEvent as KeyboardEvent).isComposing
+                        ) {
+                          event.preventDefault();
+                        if (prompt.trim() || imageName) {
                           handleSendMessage();
                         }
-                      }
-                    }}
-                    placeholder="Message Civora AI with what you want to create or change..."
-                    className="h-[150px] min-h-[150px] max-h-[240px] border-0 bg-transparent px-1 py-1 shadow-none focus:ring-0"
-                  />
+                        }
+                      }}
+                      placeholder="Message Civora AI with what you want to create or change..."
+                      className="h-[150px] min-h-[150px] max-h-[240px] border-0 bg-transparent px-1 py-1 shadow-none focus:ring-0"
+                    />
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                     <div className="flex flex-wrap gap-2">
                       <label className="inline-flex cursor-pointer items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
@@ -5552,7 +5586,7 @@ export default function PerformanceAIDashboard() {
                       <button
                         type="button"
                         onClick={handleSendMessage}
-                        disabled={busy || Boolean(visibleActiveJob)}
+                        disabled={busy && !prompt.trim() && !imageName}
                         className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {busy && activePlanTool === "run"
