@@ -2339,6 +2339,9 @@ export default function PerformanceAIDashboard() {
     const addBuildingMatch = lower.match(
       /(add|create|place)\s+(a\s+)?building[^0-9]*?(\d+(\.\d+)?)\s*(ft|feet|')?\s*(x|by)\s*(\d+(\.\d+)?)/,
     );
+    const addObjectMatch = lower.match(
+      /(add|create|place)\s+(a\s+)?(retail building|multifamily building|industrial building|office building|pad|pool|amenity area|open space|entrance|access point|road|drive aisle|parking field|parking|sidewalk|path|basin|detention pond|outfall|inlet|manhole|hydrant|setback zone|no-build zone|utility corridor|lot block|subdivision block|bridge)\s*(\d+(\.\d+)?)?\s*(ft|feet|')?\s*(x|by)?\s*(\d+(\.\d+)?)?/,
+    );
     const plotDimsMatch = lower.match(
       /(add|create|set)\s+(a\s+)?(lot|plot|site)[^0-9]*?(\d+(\.\d+)?)\s*(ft|feet|')?\s*(x|by)\s*(\d+(\.\d+)?)/,
     );
@@ -2374,6 +2377,77 @@ export default function PerformanceAIDashboard() {
       appendChatMessage(
         "assistant",
         `Added a ${width} ft by ${depth} ft building to the placement tray. Use placement mode to drop it on the site or auto-place it.`,
+        "status",
+      );
+      return true;
+    }
+    if (addObjectMatch) {
+      const rawType = addObjectMatch[3];
+      if (!rawType) return false;
+      const typeMap: Record<string, SiteObjectType> = {
+        "retail building": "retail_building",
+        "multifamily building": "multifamily_building",
+        "industrial building": "industrial_building",
+        "office building": "office_building",
+        pad: "pad",
+        pool: "pool",
+        "amenity area": "amenity",
+        "open space": "open_space",
+        entrance: "entrance",
+        "access point": "entrance",
+        road: "road",
+        "drive aisle": "road",
+        "parking field": "parking",
+        parking: "parking",
+        sidewalk: "sidewalk",
+        path: "sidewalk",
+        basin: "basin",
+        "detention pond": "basin",
+        outfall: "outfall",
+        inlet: "inlet",
+        manhole: "manhole",
+        hydrant: "hydrant",
+        "setback zone": "setback_zone",
+        "no-build zone": "no_build_zone",
+        "utility corridor": "utility_corridor",
+        "lot block": "lot_block",
+        "subdivision block": "lot_block",
+        bridge: "bridge",
+      };
+      const typeKey = typeMap[rawType];
+      if (!typeKey) return false;
+      if (!lot.w || !lot.h) {
+        appendChatMessage("user", message);
+        appendChatMessage(
+          "assistant",
+          "Set the site boundary first (width and height), then I can add that object at scale.",
+          "status",
+        );
+        return true;
+      }
+      const width = addObjectMatch[4] ? Number(addObjectMatch[4]) : null;
+      const depth = addObjectMatch[8] ? Number(addObjectMatch[8]) : null;
+      appendChatMessage("user", message);
+      const catalog = SITE_OBJECT_CATALOG[typeKey];
+      const nextPlacement: BuildingPlacement = {
+        id: `${typeKey}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        label: formatObjectLabel(
+          typeKey,
+          buildingPlacements.filter((item) => item.type === typeKey).length + 1,
+        ),
+        type: typeKey,
+        use: catalog?.use,
+        w: width && Number.isFinite(width) ? width : catalog?.defaultW ?? 40,
+        d: depth && Number.isFinite(depth) ? depth : catalog?.defaultD ?? 40,
+        rotation: 0,
+        locked: false,
+        placed: false,
+        meta: { category: catalog?.category },
+      };
+      setBuildingPlacements((prev) => [...prev, nextPlacement]);
+      appendChatMessage(
+        "assistant",
+        `Added ${nextPlacement.label} to the placement tray. Place it on the canvas when you're ready.`,
         "status",
       );
       return true;
