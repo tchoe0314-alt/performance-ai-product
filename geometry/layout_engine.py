@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+from core.constraint_engine import ConstraintIssue, validate_site_layout
 
 
 Rect = Dict[str, float]
@@ -150,6 +153,12 @@ def _rects_overlap(a: Rect, b: Rect, tol: float = 0.0) -> bool:
     )
 
 
+def _rect_gap(a: Rect, b: Rect) -> Tuple[float, float]:
+    gap_x = max(0.0, max(b["x"] - _rect_right(a), a["x"] - _rect_right(b)))
+    gap_y = max(0.0, max(b["y"] - _rect_top(a), a["y"] - _rect_top(b)))
+    return gap_x, gap_y
+
+
 def _move_rect_inside(r: Rect, outer: Rect) -> Rect:
     r = dict(r)
     r["x"] = _clamp(r["x"], outer["x"], _rect_right(outer) - r["w"])
@@ -197,6 +206,29 @@ def _buildable_area(lot: Rect, setback: float) -> Rect:
 # =============================================================================
 # normalization
 # =============================================================================
+
+@dataclass
+class LayoutCandidateScore:
+    total: float
+    metrics: Dict[str, float] = field(default_factory=dict)
+    penalties: Dict[str, float] = field(default_factory=dict)
+    constraint_summary: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class LayoutCandidate:
+    key: str
+    params: Dict[str, Any]
+    layout: Optional[Dict[str, Any]] = None
+    score: Optional[LayoutCandidateScore] = None
+    issues: List[ConstraintIssue] = field(default_factory=list)
+    error: Optional[str] = None
+
+    @property
+    def valid(self) -> bool:
+        if self.error or not self.score:
+            return False
+        return bool(self.score.constraint_summary.get("errors", 0) == 0)
 
 def _normalize_site_type(site_type: str) -> str:
     st = (site_type or "commercial_pad").lower().strip()
@@ -375,6 +407,295 @@ def _choose_program_defaults(site_type: str, intensity: str) -> Dict[str, float]
         "front_offset": 12.0,
         "target_stalls_per_ksf": 4.0,
     }
+
+
+# =============================================================================
+# candidate generation + evaluation
+# =============================================================================
+
+@dataclass
+class LayoutCandidateScore:
+    total: float
+    metrics: Dict[str, float] = field(default_factory=dict)
+    penalties: Dict[str, float] = field(default_factory=dict)
+    constraint_summary: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class LayoutCandidate:
+    key: str
+    params: Dict[str, Any]
+    layout: Optional[Dict[str, Any]] = None
+    score: Optional[LayoutCandidateScore] = None
+    issues: List[ConstraintIssue] = field(default_factory=list)
+    error: Optional[str] = None
+
+    @property
+    def valid(self) -> bool:
+        if self.error or not self.score:
+            return False
+        return bool(self.score.constraint_summary.get("errors", 0) == 0)
+
+
+def _candidate_strategy_pool(base_strategy: str) -> List[str]:
+    base = _normalize_layout_strategy(base_strategy)
+    ordered = [
+        base,
+        "front_parking",
+        "side_parking",
+        "rear_parking",
+        "street_building",
+        "building_courts",
+    ]
+    unique: List[str] = []
+    for item in ordered:
+        if item and item not in unique:
+            unique.append(item)
+    return unique[:4]
+
+
+def _candidate_edge_pool(parsed: Dict[str, Any], base_edge: str) -> List[str]:
+    raw_edge = parsed.get("street_edge")
+    edges = [base_edge]
+    if not raw_edge:
+        edges.append(_opposite_edge(base_edge))
+    return edges
+
+
+def _candidate_param_set(parsed: Dict[str, Any]) -> List[Dict[str, Any]]:
+    base_params = {
+        "lot": parsed.get("lot") or {
+            "x": 0.0,
+            "y": 0.0,
+            "w": 120.0,
+            "h": 100.0,
+        },
+        "setback": _safe_float(parsed.get("setback"), 10.0),
+        "building_width": _safe_optional_float(parsed.get("building_width")),
+        "building_depth": _safe_optional_float(parsed.get("building_depth")),
+        "layout_strategy": _safe_str(parsed.get("layout_strategy"), "front_parking"),
+        "street_edge": _safe_str(parsed.get("street_edge"), "bottom"),
+        "intensity": _safe_str(parsed.get("intensity"), "medium"),
+        "site_type": _safe_str(parsed.get("site_type"), "commercial_pad"),
+        "parking_count": _safe_int((parsed.get("site_plan") or {}).get("parking_count"), 0) or None,
+    }
+
+    strategies = _candidate_strategy_pool(base_params["layout_strategy"])
+    edges = _candidate_edge_pool(parsed, _normalize_street_edge(base_params["street_edge"]))
+
+    candidates: List[Dict[str, Any]] = []
+    seen = set()
+    for strategy in strategies:
+        for edge in edges:
+            key = (strategy, edge)
+            if key in seen:
+                continue
+            seen.add(key)
+            params = dict(base_params)
+            params["layout_strategy"] = strategy
+            params["street_edge"] = edge
+            candidates.append(params)
+    return candidates
+
+
+def _summarize_constraint_issues(issues: Sequence[ConstraintIssue]) -> Dict[str, Any]:
+    errors = sum(1 for issue in issues if issue.severity == "error")
+    warnings = sum(1 for issue in issues if issue.severity == "warning")
+    infos = sum(1 for issue in issues if issue.severity == "info")
+    top = [
+        {
+            "code": issue.code,
+            "severity": issue.severity,
+            "message": issue.message,
+        }
+        for issue in list(issues)[:6]
+    ]
+    return {
+        "errors": errors,
+        "warnings": warnings,
+        "infos": infos,
+        "issue_count": len(list(issues)),
+        "top_issues": top,
+    }
+
+
+def _driveway_access_quality(lot: Rect, driveway: Optional[Rect], parking: Optional[Rect]) -> float:
+    if not driveway or not parking:
+        return 0.35
+    gap_x, gap_y = _rect_gap(driveway, parking)
+    gap = max(gap_x, gap_y)
+    if _rects_overlap(driveway, parking, tol=0.1):
+        return 1.0
+    if gap <= 8.0:
+        return 0.9
+    if gap <= 20.0:
+        return 0.65
+    return 0.35
+
+
+def _circulation_quality(building: Rect, parking: Rect, driveway: Optional[Rect]) -> float:
+    if driveway is None:
+        return 0.4
+    if _rects_overlap(building, driveway, tol=0.1):
+        return 0.2
+    gap_x, gap_y = _rect_gap(parking, driveway)
+    gap = max(gap_x, gap_y)
+    if gap <= 6.0:
+        return 1.0
+    if gap <= 16.0:
+        return 0.7
+    return 0.4
+
+
+def _geometry_cleanliness(building: Rect, parking: Rect, driveway: Optional[Rect]) -> float:
+    if _rects_overlap(building, parking, tol=0.1):
+        return 0.1
+    if driveway and _rects_overlap(building, driveway, tol=0.1):
+        return 0.2
+    if driveway and _rects_overlap(parking, driveway, tol=0.1):
+        return 0.4
+    return 1.0
+
+
+def _grading_friendliness(parsed: Dict[str, Any], lot: Rect, building: Rect, parking: Rect) -> float:
+    # First-pass engineering heuristic. This should be replaced with drainage/grading
+    # engine feedback once available.
+    drainage = parsed.get("drainage") or {}
+    outfall = _normalize_street_edge(_safe_str(drainage.get("outfall_side"), ""))
+    if not outfall:
+        return 0.8
+
+    score = 0.8
+    edge_band = 0.12
+    if outfall == "bottom" and building["y"] <= lot["y"] + lot["h"] * edge_band:
+        score -= 0.15
+    if outfall == "top" and _rect_top(building) >= _rect_top(lot) - lot["h"] * edge_band:
+        score -= 0.15
+    if outfall == "left" and building["x"] <= lot["x"] + lot["w"] * edge_band:
+        score -= 0.15
+    if outfall == "right" and _rect_right(building) >= _rect_right(lot) - lot["w"] * edge_band:
+        score -= 0.15
+    if outfall == "bottom" and parking["y"] <= lot["y"] + lot["h"] * edge_band:
+        score -= 0.05
+    if outfall == "top" and _rect_top(parking) >= _rect_top(lot) - lot["h"] * edge_band:
+        score -= 0.05
+    if outfall == "left" and parking["x"] <= lot["x"] + lot["w"] * edge_band:
+        score -= 0.05
+    if outfall == "right" and _rect_right(parking) >= _rect_right(lot) - lot["w"] * edge_band:
+        score -= 0.05
+    return max(0.1, min(1.0, score))
+
+
+def _score_layout(layout: Dict[str, Any], parsed: Dict[str, Any], issues: Sequence[ConstraintIssue]) -> LayoutCandidateScore:
+    lot = layout.get("lot") or {}
+    building = layout.get("building") or {}
+    parking = layout.get("parking") or {}
+    driveway = layout.get("driveway")
+    buildable = layout.get("buildable") or {}
+
+    lot_rect = _rect(_safe_float(lot.get("x"), 0.0), _safe_float(lot.get("y"), 0.0), _safe_float(lot.get("w"), 0.0), _safe_float(lot.get("h"), 0.0))
+    building_rect = _rect(_safe_float(building.get("x"), 0.0), _safe_float(building.get("y"), 0.0), _safe_float(building.get("w"), 0.0), _safe_float(building.get("h"), 0.0))
+    parking_rect = _rect(_safe_float(parking.get("x"), 0.0), _safe_float(parking.get("y"), 0.0), _safe_float(parking.get("w"), 0.0), _safe_float(parking.get("h"), 0.0))
+    buildable_rect = _rect(_safe_float(buildable.get("x"), 0.0), _safe_float(buildable.get("y"), 0.0), _safe_float(buildable.get("w"), 0.0), _safe_float(buildable.get("h"), 0.0))
+    driveway_rect = None
+    if isinstance(driveway, dict):
+        driveway_rect = _rect(
+            _safe_float(driveway.get("x"), 0.0),
+            _safe_float(driveway.get("y"), 0.0),
+            _safe_float(driveway.get("w"), 0.0),
+            _safe_float(driveway.get("h"), 0.0),
+        )
+
+    site_type = _safe_str(layout.get("site_type"), parsed.get("site_type") or "commercial_pad")
+    intensity = _safe_str(layout.get("intensity"), parsed.get("intensity") or "medium")
+    requested_parking = _safe_int((parsed.get("site_plan") or {}).get("parking_count"), 0) or None
+    desired_count = _parking_count_from_program(building_rect, site_type, intensity, requested_parking)
+    achieved_count = _safe_int(layout.get("parking_count"), 0)
+    if achieved_count <= 0 and parking_rect["w"] > 0 and parking_rect["h"] > 0:
+        achieved_count = _estimate_parking_capacity(parking_rect, _parking_standards(parsed))
+
+    parking_ratio = achieved_count / desired_count if desired_count > 0 else 1.0
+    parking_efficiency = max(0.0, min(1.2, parking_ratio))
+
+    access_quality = _driveway_access_quality(lot_rect, driveway_rect, parking_rect)
+    circulation_quality = _circulation_quality(building_rect, parking_rect, driveway_rect)
+    geometry_cleanliness = _geometry_cleanliness(building_rect, parking_rect, driveway_rect)
+    building_quality = 1.0 if _rect_fits_inside(building_rect, buildable_rect, tol=0.5) else 0.0
+    grading_quality = _grading_friendliness(parsed, lot_rect, building_rect, parking_rect)
+
+    constraint_summary = _summarize_constraint_issues(issues)
+    errors = constraint_summary["errors"]
+    warnings = constraint_summary["warnings"]
+    infos = constraint_summary["infos"]
+    constraint_penalty = errors * 25.0 + warnings * 8.0 + infos * 2.0
+
+    total = (
+        parking_efficiency * 30.0
+        + access_quality * 15.0
+        + building_quality * 15.0
+        + circulation_quality * 15.0
+        + geometry_cleanliness * 10.0
+        + grading_quality * 10.0
+    )
+    total = max(0.0, total - constraint_penalty)
+
+    metrics = {
+        "parking_efficiency": parking_efficiency,
+        "access_quality": access_quality,
+        "building_quality": building_quality,
+        "circulation_quality": circulation_quality,
+        "geometry_cleanliness": geometry_cleanliness,
+        "grading_friendliness": grading_quality,
+        "desired_parking": float(desired_count),
+        "achieved_parking": float(achieved_count),
+    }
+    penalties = {
+        "constraint_penalty": constraint_penalty,
+        "constraint_errors": float(errors),
+        "constraint_warnings": float(warnings),
+        "constraint_infos": float(infos),
+    }
+    return LayoutCandidateScore(total=round(total, 3), metrics=metrics, penalties=penalties, constraint_summary=constraint_summary)
+
+
+def _evaluate_layout_candidates(parsed: Dict[str, Any]) -> Tuple[List[LayoutCandidate], Optional[LayoutCandidate]]:
+    candidates: List[LayoutCandidate] = []
+    for idx, params in enumerate(_candidate_param_set(parsed), start=1):
+        key = f"candidate_{idx}"
+        candidate = LayoutCandidate(key=key, params=params)
+        try:
+            candidate.layout = generate_smart_layout(**params)
+            candidate.issues = validate_site_layout(candidate.layout)
+            candidate.score = _score_layout(candidate.layout, parsed, candidate.issues)
+        except Exception as exc:
+            candidate.error = str(exc)
+        candidates.append(candidate)
+
+    scored = [c for c in candidates if c.score is not None]
+    if not scored:
+        return candidates, None
+
+    valid = [c for c in scored if c.valid]
+    pool = valid if valid else scored
+    pool.sort(key=lambda c: c.score.total, reverse=True)
+    return candidates, pool[0]
+
+
+def _candidate_summary(candidates: Sequence[LayoutCandidate]) -> List[Dict[str, Any]]:
+    summaries: List[Dict[str, Any]] = []
+    for candidate in candidates:
+        summary = {
+            "key": candidate.key,
+            "params": candidate.params,
+            "error": candidate.error,
+            "score": candidate.score.total if candidate.score else None,
+            "metrics": candidate.score.metrics if candidate.score else {},
+            "penalties": candidate.score.penalties if candidate.score else {},
+            "constraints": candidate.score.constraint_summary if candidate.score else {},
+            "valid": candidate.valid,
+        }
+        summaries.append(summary)
+    return summaries
 
 
 # =============================================================================
@@ -1187,6 +1508,18 @@ def generate_smart_layout(
 
 
 def generate_ai_guided_layout(parsed: Dict[str, Any]) -> Dict[str, Any]:
+    candidates, best = _evaluate_layout_candidates(parsed)
+    if best and best.layout:
+        best.layout["evaluation"] = {
+            "score": best.score.total if best.score else None,
+            "metrics": best.score.metrics if best.score else {},
+            "penalties": best.score.penalties if best.score else {},
+            "constraints": best.score.constraint_summary if best.score else {},
+            "candidate_key": best.key,
+        }
+        best.layout["candidate_evaluations"] = _candidate_summary(candidates)
+        return best.layout
+
     lot = parsed.get("lot") or {
         "x": 0.0,
         "y": 0.0,
@@ -1219,6 +1552,64 @@ def generate_ai_guided_layout(parsed: Dict[str, Any]) -> Dict[str, Any]:
 # actions
 # =============================================================================
 
+def _preview_meta_for_action(layer: str, task: str) -> Dict[str, Any]:
+    raw_layer = _safe_str(layer, "").upper()
+    task_lower = _safe_str(task, "").lower()
+    overlay_layers = {"ANNO", "DRAIN_FLOW", "FG_CONTOUR", "EG_CONTOUR", "SURFACE"}
+    helper_layers = {"DRAIN", "PIPE", "BASIN_BOUNDARY"}
+    if task_lower in {"text_note", "point", "north_arrow"}:
+        role = "overlay"
+    elif raw_layer in helper_layers:
+        role = "overlay"
+    elif raw_layer in overlay_layers:
+        role = "overlay"
+    else:
+        role = "final"
+
+    if raw_layer in {"ROAD", "FIRE"}:
+        system = "roads"
+    elif raw_layer == "PARKING":
+        system = "parking"
+    elif raw_layer in {"WALK", "SIDEWALK"}:
+        system = "pedestrian"
+    elif raw_layer in {"DRAIN", "PIPE", "BASIN_BOUNDARY", "DRAIN_FLOW"}:
+        system = "drainage"
+    elif raw_layer == "SAN":
+        system = "sanitary"
+    elif raw_layer in {"WATER", "WATR"}:
+        system = "water"
+    elif raw_layer in {"FG_CONTOUR", "EG_CONTOUR", "SURFACE"}:
+        system = "grading"
+    else:
+        system = "layout"
+
+    return {
+        "is_final": role == "final",
+        "preview_role": role,
+        "system": system,
+    }
+
+
+def _ensure_preview_meta(action: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(action, dict):
+        return action
+    meta = action.get("meta")
+    if isinstance(meta, dict) and meta.get("preview_role") and "is_final" in meta:
+        return action
+    layer = _safe_str(action.get("layer"), "SITE")
+    task = _safe_str(action.get("task"), "")
+    preview_meta = _preview_meta_for_action(layer, task)
+    if isinstance(meta, dict):
+        merged = dict(meta)
+        merged.setdefault("is_final", preview_meta["is_final"])
+        merged.setdefault("preview_role", preview_meta["preview_role"])
+        merged.setdefault("system", preview_meta["system"])
+        action["meta"] = merged
+    else:
+        action["meta"] = preview_meta
+    return action
+
+
 def _rect_action_from_obj(obj: Rect, label: str, layer: str) -> Dict[str, Any]:
     return {
         "task": "rectangle",
@@ -1235,6 +1626,7 @@ def _rect_action_from_obj(obj: Rect, label: str, layer: str) -> Dict[str, Any]:
         "radius": None,
         "start_angle": None,
         "end_angle": None,
+        "meta": _preview_meta_for_action(layer, "rectangle"),
     }
 
 
@@ -1254,6 +1646,7 @@ def _text_action(x: float, y: float, text: str, layer: str = "ANNO", h: float = 
         "radius": None,
         "start_angle": None,
         "end_angle": None,
+        "meta": _preview_meta_for_action(layer, "text_note"),
     }
 
 
@@ -1273,6 +1666,7 @@ def _polyline_action(points: List[List[float]], layer: str, label: Optional[str]
         "radius": None,
         "start_angle": None,
         "end_angle": None,
+        "meta": _preview_meta_for_action(layer, "polyline"),
     }
 
 
@@ -1292,6 +1686,7 @@ def _circle_action(x: float, y: float, radius: float, layer: str, label: Optiona
         "radius": radius,
         "start_angle": None,
         "end_angle": None,
+        "meta": _preview_meta_for_action(layer, "circle"),
     }
 
 
@@ -2424,7 +2819,7 @@ def _build_expanded_plan(parsed: Dict[str, Any]) -> Dict[str, Any]:
                 for action in extra_actions
                 if not _is_schematic_layout_action(action) and not _is_layout_display_action(action)
             ]
-        actions.extend(extra_actions)
+        actions.extend(_ensure_preview_meta(action) for action in extra_actions)
 
     assumptions = list(parsed.get("assumptions") or [])
     assumptions.extend(
@@ -2488,11 +2883,14 @@ def expand_plan(parsed: Dict[str, Any]) -> Dict[str, Any]:
                 "site_type": layout.get("site_type", "commercial_pad"),
                 "project_type": project_type,
                 "parking_count": layout.get("parking_count", 0),
+                "layout_evaluation": layout.get("evaluation"),
+                "candidate_evaluations": layout.get("candidate_evaluations"),
             },
             "assumptions": list(parsed.get("assumptions", []))
             + [
                 "Single-layout path used.",
                 "Parking modules and frontage access standardized from layout engine defaults.",
+                "Candidate layouts were generated, checked with constraint_engine, and scored before selection.",
             ],
         }
 

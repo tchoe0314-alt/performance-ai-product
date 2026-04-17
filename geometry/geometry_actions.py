@@ -2,12 +2,59 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from core.utils import safe_num, safe_text
 
 
 PointLike = Tuple[float, float]
+
+
+def _preview_meta_for_action(layer: str, task: str) -> Dict[str, Any]:
+    raw_layer = safe_text(layer, "").upper()
+    task_lower = safe_text(task, "").lower()
+    overlay_layers = {"ANNO", "DRAIN_FLOW", "FG_CONTOUR", "EG_CONTOUR", "SURFACE"}
+    helper_layers = {"DRAIN", "PIPE", "BASIN_BOUNDARY"}
+    if task_lower in {"text_note", "point", "north_arrow"}:
+        role = "overlay"
+    elif raw_layer in helper_layers or raw_layer in overlay_layers:
+        role = "overlay"
+    else:
+        role = "final"
+
+    if raw_layer in {"ROAD", "FIRE"}:
+        system = "roads"
+    elif raw_layer == "PARKING":
+        system = "parking"
+    elif raw_layer in {"WALK", "SIDEWALK"}:
+        system = "pedestrian"
+    elif raw_layer in {"DRAIN", "PIPE", "BASIN_BOUNDARY", "DRAIN_FLOW"}:
+        system = "drainage"
+    elif raw_layer == "SAN":
+        system = "sanitary"
+    elif raw_layer in {"WATER", "WATR"}:
+        system = "water"
+    elif raw_layer in {"FG_CONTOUR", "EG_CONTOUR", "SURFACE"}:
+        system = "grading"
+    else:
+        system = "layout"
+
+    return {
+        "is_final": role == "final",
+        "preview_role": role,
+        "system": system,
+    }
+
+
+def _merge_preview_meta(layer: str, task: str, meta: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    base = _preview_meta_for_action(layer, task)
+    if not isinstance(meta, dict):
+        return base
+    merged = dict(meta)
+    merged.setdefault("is_final", base["is_final"])
+    merged.setdefault("preview_role", base["preview_role"])
+    merged.setdefault("system", base["system"])
+    return merged
 
 
 def _xy(point: PointLike) -> List[float]:
@@ -48,6 +95,7 @@ def rect_action(
     height: float,
     label: str = "",
     layer: str = "SITE",
+    meta: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     action = _base_action("rectangle")
     action["origin"] = _xy(origin)
@@ -55,6 +103,7 @@ def rect_action(
     action["height"] = safe_num(height)
     action["label"] = safe_text(label, "")
     action["layer"] = safe_text(layer, "SITE")
+    action["meta"] = _merge_preview_meta(layer, "rectangle", meta)
     return action
 
 
@@ -63,6 +112,7 @@ def rect_from_corners_action(
     upper_right: PointLike,
     label: str = "",
     layer: str = "SITE",
+    meta: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     x1 = safe_num(lower_left[0])
     y1 = safe_num(lower_left[1])
@@ -74,7 +124,7 @@ def rect_from_corners_action(
     w = abs(x2 - x1)
     h = abs(y2 - y1)
 
-    return rect_action((x, y), w, h, label=label, layer=layer)
+    return rect_action((x, y), w, h, label=label, layer=layer, meta=meta)
 
 
 def arc_action(
@@ -84,6 +134,7 @@ def arc_action(
     end_angle: float,
     label: str = "",
     layer: str = "PAVEMENT",
+    meta: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     action = _base_action("arc")
     action["center"] = _xy(center)
@@ -92,6 +143,7 @@ def arc_action(
     action["end_angle"] = safe_num(end_angle)
     action["label"] = safe_text(label, "")
     action["layer"] = safe_text(layer, "PAVEMENT")
+    action["meta"] = _merge_preview_meta(layer, "arc", meta)
     return action
 
 
@@ -100,12 +152,14 @@ def text_action(
     text: str,
     height: float = 2.0,
     layer: str = "ANNO",
+    meta: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     action = _base_action("text_note")
     action["origin"] = _xy(origin)
     action["layer"] = safe_text(layer, "ANNO")
     action["text"] = safe_text(text, "")
     action["text_height"] = safe_num(height)
+    action["meta"] = _merge_preview_meta(layer, "text_note", meta)
     return action
 
 
@@ -113,22 +167,26 @@ def point_action(
     origin: PointLike,
     label: str = "",
     layer: str = "SYMBOL",
+    meta: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     action = _base_action("point")
     action["origin"] = _xy(origin)
     action["label"] = safe_text(label, "")
     action["layer"] = safe_text(layer, "SYMBOL")
+    action["meta"] = _merge_preview_meta(layer, "point", meta)
     return action
 
 
 def north_arrow_action(
     origin: PointLike,
     layer: str = "SYMBOL",
+    meta: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     action = _base_action("north_arrow")
     action["origin"] = _xy(origin)
     action["label"] = "N"
     action["layer"] = safe_text(layer, "SYMBOL")
+    action["meta"] = _merge_preview_meta(layer, "north_arrow", meta)
     return action
 
 
@@ -137,6 +195,7 @@ def polyline_action(
     label: str = "",
     layer: str = "PAVEMENT",
     closed: bool = False,
+    meta: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     clean_points = _clean_points(points)
     if len(clean_points) < 2:
@@ -147,6 +206,7 @@ def polyline_action(
     action["closed"] = bool(closed)
     action["label"] = safe_text(label, "")
     action["layer"] = safe_text(layer, "PAVEMENT")
+    action["meta"] = _merge_preview_meta(layer, "polyline", meta)
     return action
 
 
@@ -154,6 +214,7 @@ def polygon_action(
     points: Sequence[PointLike],
     label: str = "",
     layer: str = "SITE",
+    meta: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     clean_points = _clean_points(points)
     if len(clean_points) < 3:
@@ -164,6 +225,7 @@ def polygon_action(
     action["closed"] = True
     action["label"] = safe_text(label, "")
     action["layer"] = safe_text(layer, "SITE")
+    action["meta"] = _merge_preview_meta(layer, "polygon", meta)
     return action
 
 
@@ -172,12 +234,14 @@ def circle_action(
     radius: float,
     label: str = "",
     layer: str = "SITE",
+    meta: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     action = _base_action("circle")
     action["center"] = _xy(center)
     action["radius"] = safe_num(radius)
     action["label"] = safe_text(label, "")
     action["layer"] = safe_text(layer, "SITE")
+    action["meta"] = _merge_preview_meta(layer, "circle", meta)
     return action
 
 
@@ -188,10 +252,11 @@ def center_label_action(
     text: str,
     text_height: float = 2.0,
     layer: str = "ANNO",
+    meta: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     x = safe_num(rect_origin[0]) + safe_num(width) / 2.0
     y = safe_num(rect_origin[1]) + safe_num(height) / 2.0
-    return text_action((x, y), text=text, height=text_height, layer=layer)
+    return text_action((x, y), text=text, height=text_height, layer=layer, meta=meta)
 
 
 def chain_actions(*action_groups: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:

@@ -1700,6 +1700,7 @@ def _actions_from_linear_features(features: Sequence[Dict[str, Any]], layer_defa
                 "radius": None,
                 "start_angle": None,
                 "end_angle": None,
+                "meta": _preview_meta_for_base_action(layer, "polyline"),
             })
             if label:
                 end_pt = safe_list(pts[-1])
@@ -1719,6 +1720,7 @@ def _actions_from_linear_features(features: Sequence[Dict[str, Any]], layer_defa
                         "radius": None,
                         "start_angle": None,
                         "end_angle": None,
+                        "meta": _preview_meta_for_base_action(layer, "text_note"),
                     })
     return actions
 
@@ -1747,6 +1749,7 @@ def _actions_from_point_features(features: Sequence[Dict[str, Any]], layer_defau
             "radius": 1.0,
             "start_angle": None,
             "end_angle": None,
+            "meta": _preview_meta_for_base_action(layer, "circle"),
         })
         if label:
             actions.append({
@@ -1764,6 +1767,7 @@ def _actions_from_point_features(features: Sequence[Dict[str, Any]], layer_defau
                 "radius": None,
                 "start_angle": None,
                 "end_angle": None,
+                "meta": _preview_meta_for_base_action(layer, "text_note"),
             })
     return actions
 
@@ -2559,6 +2563,7 @@ def _install_minimum_grading_actions(project: ProjectModel, parsed: Dict[str, An
             "radius": None,
             "start_angle": None,
             "end_angle": None,
+            "meta": _preview_meta_for_base_action("SPOT_FG", "text_note"),
         })
     # concept contours / flow arrows
     for frac, label in ((0.25, 'FG-A'), (0.5, 'FG-B'), (0.75, 'FG-C')):
@@ -2578,6 +2583,7 @@ def _install_minimum_grading_actions(project: ProjectModel, parsed: Dict[str, An
             "radius": None,
             "start_angle": None,
             "end_angle": None,
+            "meta": _preview_meta_for_base_action("FG_CONTOUR", "polyline"),
         })
     actions.append({
         "task": "polyline",
@@ -2594,6 +2600,7 @@ def _install_minimum_grading_actions(project: ProjectModel, parsed: Dict[str, An
         "radius": None,
         "start_angle": None,
         "end_angle": None,
+        "meta": _preview_meta_for_base_action("DRAIN_FLOW", "polyline"),
     })
     _merge_actions_into_expanded_plan(project, actions, grading_fallback=True, grading_minimum_export=True)
     return len(actions)

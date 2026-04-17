@@ -372,6 +372,11 @@ export type PreviewResponse = {
   preview_image_data_url: string;
   preview_annotations?: {
     profile?: string;
+    audit?: {
+      rendered_final_count?: number;
+      filtered_helper_count?: number;
+      hidden_incomplete_phase_count?: number;
+    };
     labels?: {
       label: string;
       layer: string;

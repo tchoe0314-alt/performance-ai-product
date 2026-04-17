@@ -141,6 +141,7 @@ export default function PreviewPanel({
 }: PreviewPanelProps) {
   const drainageCard = useDraggableCard();
   const issuesCard = useDraggableCard();
+  const previewAudit = planPreviewAnnotations?.audit;
   return (
     <div className="rounded-[28px] border border-slate-200 bg-white/90 p-4 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.4)] backdrop-blur md:p-6">
       <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -206,6 +207,34 @@ export default function PreviewPanel({
                     : previewNextPendingPhase
                       ? `${previewNextPendingPhase.label} is still pending. Systems like drainage, storm, and utilities appear after their phases finish.`
                       : "Additional systems appear as later phases complete."}
+                </p>
+              </div>
+            </div>
+          ) : null}
+          {previewAudit ? (
+            <div className="inline-flex max-w-3xl items-start rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-700">
+              <div>
+                <p className="font-semibold uppercase tracking-[0.18em] text-[10px] text-slate-500">
+                  Preview Audit
+                </p>
+                <p className="mt-2 text-xs">
+                  Mode: <span className="font-semibold text-slate-900">{previewRenderMode}</span>
+                </p>
+                <p className="mt-1 text-xs">
+                  Rendered final:{" "}
+                  <span className="font-semibold text-slate-900">
+                    {formatCount(previewAudit.rendered_final_count ?? 0)}
+                  </span>
+                  {" · "}
+                  Filtered helper/debug:{" "}
+                  <span className="font-semibold text-slate-900">
+                    {formatCount(previewAudit.filtered_helper_count ?? 0)}
+                  </span>
+                  {" · "}
+                  Hidden incomplete:{" "}
+                  <span className="font-semibold text-slate-900">
+                    {formatCount(previewAudit.hidden_incomplete_phase_count ?? 0)}
+                  </span>
                 </p>
               </div>
             </div>
