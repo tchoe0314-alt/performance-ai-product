@@ -21,6 +21,18 @@ def append_chat_learning_event(payload: Dict[str, Any]) -> None:
         return
 
 
+def append_chat_interaction_event(payload: Dict[str, Any]) -> None:
+    try:
+        _LEARNING_PATH.parent.mkdir(parents=True, exist_ok=True)
+        event = dict(payload)
+        event["ts"] = time.time()
+        event.setdefault("event_type", "interaction")
+        with _LEARNING_PATH.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(event, ensure_ascii=False) + "\n")
+    except Exception:
+        return
+
+
 def append_chat_training_example(example: Dict[str, Any]) -> None:
     try:
         _LEARNING_PATH.parent.mkdir(parents=True, exist_ok=True)

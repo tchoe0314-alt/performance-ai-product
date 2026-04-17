@@ -5,7 +5,7 @@ import json
 import os
 import random
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Optional
 
 from parsers.ai_parser import _get_client
 
@@ -49,6 +49,33 @@ def _training_examples(events: List[Dict[str, Any]], max_examples: int) -> List[
         if event.get("event_type") == "training_example"
         and event.get("input")
         and event.get("output")
+    ]
+    if len(examples) > max_examples:
+        examples = random.sample(examples, max_examples)
+    return examples
+
+
+def _interaction_examples(
+    events: List[Dict[str, Any]],
+    max_examples: int,
+    *,
+    exclude_message_ids: Optional[set] = None,
+) -> List[Dict[str, Any]]:
+    exclude_message_ids = exclude_message_ids or set()
+    examples = [
+        {
+            "source": "interaction",
+            "feedback": "unrated",
+            "input": event.get("message"),
+            "output": event.get("assistant_message"),
+            "project_id": event.get("project_id"),
+            "message_id": event.get("message_id"),
+        }
+        for event in events
+        if event.get("event_type") == "interaction"
+        and event.get("message")
+        and event.get("assistant_message")
+        and (event.get("message_id") not in exclude_message_ids)
     ]
     if len(examples) > max_examples:
         examples = random.sample(examples, max_examples)
@@ -128,6 +155,8 @@ def main() -> None:
     parser.add_argument("--output", default="data/chat_training.jsonl")
     parser.add_argument("--max-examples", type=int, default=500)
     parser.add_argument("--max-synthetic", type=int, default=60)
+    parser.add_argument("--max-unrated", type=int, default=300)
+    parser.add_argument("--exclude-unrated", action="store_true")
     args = parser.parse_args()
 
     input_path = Path(args.input)
@@ -137,7 +166,17 @@ def main() -> None:
     examples = _training_examples(events, args.max_examples)
     positives = [ex for ex in examples if ex.get("feedback") == "up"]
     synthetic = _synthesize_examples(positives, args.max_synthetic)
-    all_rows = examples + synthetic
+    interaction_examples: List[Dict[str, Any]] = []
+    if not args.exclude_unrated:
+        exclude_message_ids = {
+            ex.get("message_id") for ex in examples if ex.get("message_id")
+        }
+        interaction_examples = _interaction_examples(
+            events,
+            args.max_unrated,
+            exclude_message_ids=exclude_message_ids,
+        )
+    all_rows = examples + interaction_examples + synthetic
     _write_jsonl(output_path, all_rows)
 
 
