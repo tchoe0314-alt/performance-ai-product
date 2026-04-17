@@ -1476,6 +1476,7 @@ export default function PerformanceAIDashboard() {
   const [learningReport, setLearningReport] = useState<LearningReport | null>(null);
   const [learningReportUpdatedAt, setLearningReportUpdatedAt] = useState<number | null>(null);
   const [queuedPhaseNotes, setQueuedPhaseNotes] = useState<string[]>([]);
+  const [showLearningPanel, setShowLearningPanel] = useState(true);
   const [imageName, setImageName] = useState("");
   const [siteName, setSiteName] = useState("");
   const [fileName, setFileName] = useState("");
@@ -5371,48 +5372,67 @@ export default function PerformanceAIDashboard() {
 
           <div className="space-y-6 overflow-y-auto p-4">
             <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                Projects
-              </p>
-              <div className="space-y-2">
-                {projects.length === 0 ? (
-                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
-                    No saved projects yet.
-                  </div>
-                ) : (
-                  projects.map((project) => (
-                    <div
-                      key={project.project_id}
-                      className={`flex items-center gap-2 rounded-2xl px-2 py-2 transition ${
-                        project.project_id === projectId
-                          ? "bg-white shadow-sm ring-1 ring-slate-300"
-                          : "hover:bg-white"
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => void loadProject(project.project_id)}
-                        className="min-w-0 flex-1 px-2 py-1 text-left text-sm text-slate-700"
-                      >
-                        <p className="truncate font-medium text-slate-950">
-                          {project.name || "Untitled Project"}
-                        </p>
-                        <p className="mt-1 truncate text-xs text-slate-500">
-                          {project.has_result ? "Saved result" : "Draft"}
-                        </p>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void deleteProject(project.project_id)}
-                        aria-label={`Delete ${project.name || "Untitled Project"}`}
-                        className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ))
-                )}
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Learning
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowLearningPanel((value) => !value)}
+                  className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 transition hover:bg-slate-100"
+                >
+                  {showLearningPanel ? "Hide" : "Show"}
+                </button>
               </div>
+              {showLearningPanel ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-3 text-xs text-slate-600">
+                  {(() => {
+                    const sessionLearning = computeLearningScore(chatMessages);
+                    const reportScore = learningReport?.feedback?.score_percent;
+                    const reportTotal = learningReport?.feedback?.total;
+                    const datasetCount = learningReport?.training_examples?.count;
+                    const lastRun =
+                      learningReportUpdatedAt
+                        ? new Date(learningReportUpdatedAt).toLocaleString()
+                        : null;
+                    return (
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {sessionLearning.total ? (
+                            <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700">
+                              Session {sessionLearning.score}% ({sessionLearning.total})
+                            </span>
+                          ) : null}
+                          {typeof reportScore === "number" ? (
+                            <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700">
+                              Global {reportScore}% ({reportTotal ?? 0})
+                            </span>
+                          ) : null}
+                          {typeof datasetCount === "number" ? (
+                            <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700">
+                              Training {datasetCount}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void refreshLearningReport()}
+                            className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
+                          >
+                            Refresh
+                          </button>
+                          {lastRun ? (
+                            <span className="text-[11px] text-slate-400">
+                              Last refresh: {lastRun}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : null}
             </div>
 
             <div className="space-y-2">
@@ -5463,13 +5483,35 @@ export default function PerformanceAIDashboard() {
                 Civora AI
               </h1>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <a
                 href="/upgrades"
                 className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
               >
                 Upgrades
               </a>
+              <div className="hidden max-w-[520px] items-center gap-2 overflow-x-auto rounded-xl border border-slate-200 bg-white px-2 py-1 md:flex">
+                {projects.length === 0 ? (
+                  <span className="px-3 py-1 text-xs text-slate-500">
+                    No projects yet
+                  </span>
+                ) : (
+                  projects.map((project) => (
+                    <button
+                      key={project.project_id}
+                      type="button"
+                      onClick={() => void loadProject(project.project_id)}
+                      className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                        project.project_id === projectId
+                          ? "bg-slate-950 text-white"
+                          : "text-slate-600 hover:bg-slate-100"
+                      }`}
+                    >
+                      {project.name || "Untitled"}
+                    </button>
+                  ))
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => void handleRefreshWorkspace()}
@@ -5584,53 +5626,7 @@ export default function PerformanceAIDashboard() {
 
             <div className="rounded-[28px] border border-slate-200 bg-white">
               {(() => {
-                const sessionLearning = computeLearningScore(chatMessages);
-                const reportScore = learningReport?.feedback?.score_percent;
-                const reportTotal = learningReport?.feedback?.total;
-                const datasetCount = learningReport?.training_examples?.count;
-                const lastRun =
-                  learningReportUpdatedAt
-                    ? new Date(learningReportUpdatedAt).toLocaleString()
-                    : null;
-                if (!sessionLearning.total && !reportTotal && !datasetCount) return null;
-                return (
-                  <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 text-xs text-slate-500 md:px-6">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-semibold uppercase tracking-[0.14em]">
-                        Learning Health
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => void refreshLearningReport()}
-                        className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
-                      >
-                        Refresh
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {sessionLearning.total ? (
-                        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700">
-                          Session helpful: {sessionLearning.score}% ({sessionLearning.total})
-                        </span>
-                      ) : null}
-                      {typeof reportScore === "number" ? (
-                        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700">
-                          Global helpful: {reportScore}% ({reportTotal ?? 0})
-                        </span>
-                      ) : null}
-                      {typeof datasetCount === "number" ? (
-                        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700">
-                          Training set: {datasetCount}
-                        </span>
-                      ) : null}
-                      {lastRun ? (
-                        <span className="text-[11px] text-slate-400">
-                          Last refresh: {lastRun}
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                );
+                return null;
               })()}
               <div
                 ref={chatScrollRef}
