@@ -515,6 +515,7 @@ export type BuildingPlacement = {
   w: number;
   d: number;
   rotation?: number;
+  type?: SiteObjectType;
   use?: string;
   locked?: boolean;
   placed?: boolean;
