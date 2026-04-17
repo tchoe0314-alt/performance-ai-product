@@ -2,11 +2,6 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  FileImage,
-  Maximize2,
-  X,
-} from "lucide-react";
 
 import {
   deleteJson,
@@ -64,7 +59,6 @@ import type {
 import {
   defaultAssumptions,
   defaultIssues,
-  formatChatTimestamp,
   toReadableLabel,
   joinNatural,
   toArray,
@@ -72,8 +66,6 @@ import {
   readPositiveNumber,
   parsePositiveNumber,
   readMetricValue,
-  formatMetric,
-  formatCount,
   summarizePlanResponse,
 } from "./utils/formatting";
 
@@ -81,7 +73,6 @@ import {
   createChatMessage,
   createWelcomeMessage,
   extractDesignMemory,
-  getChatThreadStorageKey,
 } from "./utils/chat";
 
 import {
@@ -91,14 +82,14 @@ import {
   uploadedImageSrc,
 } from "./utils/auth";
 
-import Preview3DCanvas from "./components/Preview3DCanvas";
 import AppHeader from "./components/AppHeader";
 import AuthScreen from "./components/AuthScreen";
 import ProjectSidebar from "./components/ProjectSidebar";
 import WorkspaceToolbar from "./components/WorkspaceToolbar";
+import ChatPanel from "./components/ChatPanel";
+import PreviewPanel from "./components/PreviewPanel";
+import useChatPersistence from "./hooks/useChatPersistence";
 import {
-  SmallButton,
-  TextArea,
   TextInput,
 } from "./components/ui";
 
@@ -1000,79 +991,6 @@ export default function PerformanceAIDashboard() {
   };
 
   useEffect(() => {
-    const node = chatScrollRef.current;
-    if (!node) return;
-    node.scrollTo({
-      top: node.scrollHeight,
-      behavior: "smooth",
-    });
-  }, [chatMessages]);
-
-  useEffect(() => {
-    chatMessagesRef.current = chatMessages;
-  }, [chatMessages]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const key = getChatThreadStorageKey(
-      currentProject?.project_id || projectId || "draft",
-    );
-    try {
-      window.localStorage.setItem(key, JSON.stringify(chatMessagesRef.current));
-    } catch {
-      // Ignore local storage failures.
-    }
-  }, [chatMessages, currentProject?.project_id, projectId]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const key = getChatThreadStorageKey(
-      currentProject?.project_id || projectId || "draft",
-    );
-    if (chatMessagesRef.current.length > 1) return;
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return;
-    try {
-      const stored = JSON.parse(raw);
-      if (!Array.isArray(stored) || !stored.length) return;
-      const restored = stored
-        .filter((message: ChatMessage) => message && typeof message.content === "string")
-        .map((message: ChatMessage): ChatMessage => ({
-          id:
-            typeof message.id === "string"
-              ? message.id
-              : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          role:
-            message.role === "user" ||
-            message.role === "assistant" ||
-            message.role === "system"
-              ? message.role
-              : "assistant",
-          content: message.content,
-          createdAt:
-            typeof message.createdAt === "number" ? message.createdAt : Date.now(),
-          kind:
-            message.kind === "status" ||
-            message.kind === "explanation" ||
-            message.kind === "action"
-              ? message.kind
-              : "message",
-          feedback:
-            message.feedback === "up" || message.feedback === "down"
-              ? message.feedback
-              : undefined,
-          phaseTag: typeof message.phaseTag === "string" ? message.phaseTag : undefined,
-        }));
-      if (restored.length) {
-        chatMessagesRef.current = restored;
-        setChatMessages(restored);
-      }
-    } catch {
-      // Ignore invalid local storage payloads.
-    }
-  }, [currentProject?.project_id, projectId]);
-
-  useEffect(() => {
     return () => {
       if (chatAutosaveTimeoutRef.current !== null) {
         window.clearTimeout(chatAutosaveTimeoutRef.current);
@@ -1084,6 +1002,15 @@ export default function PerformanceAIDashboard() {
     if (!token) return;
     void refreshLearningReport();
   }, [token]);
+
+  useChatPersistence({
+    chatMessages,
+    setChatMessages,
+    chatMessagesRef,
+    chatScrollRef,
+    projectId,
+    currentProjectId: currentProject?.project_id,
+  });
 
   const applyProjectInput = (projectInput: ProjectInput) => {
     if (!projectInput || typeof projectInput !== "object") {
@@ -4334,703 +4261,82 @@ export default function PerformanceAIDashboard() {
               </div>
             </div>
 
-            <div className="rounded-[28px] border border-slate-200 bg-white">
-              {(() => {
-                return null;
-              })()}
-              <div
-                ref={chatScrollRef}
-                className="max-h-[420px] space-y-4 overflow-y-auto p-4 md:p-6"
-              >
-                {chatMessages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-                  >
-                    <div
-                      className={`max-w-[85%] rounded-[28px] px-4 py-3 ${
-                        message.role === "user"
-                          ? "bg-slate-950 text-white"
-                          : message.role === "system"
-                            ? "border border-amber-200 bg-amber-50 text-amber-900"
-                            : "border border-slate-200 bg-white text-slate-900"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-70">
-                          {message.role === "user"
-                            ? "You"
-                            : message.role === "system"
-                              ? "Action"
-                              : "Civora AI"}
-                        </span>
-                        {message.role === "assistant" && message.phaseTag ? (
-                          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                            {message.phaseTag}
-                          </span>
-                        ) : null}
-                        <span className="text-[11px] opacity-60">
-                          {formatChatTimestamp(message.createdAt)}
-                        </span>
-                      </div>
-                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
-                        {message.content}
-                      </p>
-                      {message.role === "assistant" ? (
-                        <div className="mt-3 flex items-center gap-2 text-xs">
-                          <span className="text-slate-400">Was this helpful?</span>
-                          <button
-                            type="button"
-                            onClick={() => setMessageFeedback(message.id, "up")}
-                            className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
-                              message.feedback === "up"
-                                ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-                                : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                            }`}
-                          >
-                            Helpful
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setMessageFeedback(message.id, "down")}
-                            className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
-                              message.feedback === "down"
-                                ? "border-rose-500 bg-rose-50 text-rose-700"
-                                : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                            }`}
-                          >
-                            Not quite
-                          </button>
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
-              </div>
+            <ChatPanel
+              chatMessages={chatMessages}
+              chatScrollRef={chatScrollRef}
+              onSetMessageFeedback={setMessageFeedback}
+              thinkingState={thinkingState}
+              busy={busy}
+              activePlanTool={activePlanTool}
+              visibleActiveJobStatus={visibleActiveJob?.status ?? ""}
+              hasDirectRunInFlight={hasDirectRunInFlight}
+              autoAdvancePhases={autoAdvancePhases}
+              onToggleAutoAdvance={() => setAutoAdvancePhases((prev) => !prev)}
+              revisePhaseTarget={revisePhaseTarget}
+              onRevisePhaseTargetChange={setRevisePhaseTarget}
+              onCancelJob={handleCancelActiveJob}
+              onReviseJob={handleReviseActiveJob}
+              onContinueJob={handleContinueActiveJob}
+              prompt={prompt}
+              imageName={imageName}
+              onPromptChange={setPrompt}
+              onPromptKeyDown={(event) => {
+                if (
+                  event.key === "Enter" &&
+                  !event.shiftKey &&
+                  !(event.nativeEvent as KeyboardEvent).isComposing
+                ) {
+                  event.preventDefault();
+                  if (prompt.trim() || imageName) {
+                    handleSendMessage();
+                  }
+                }
+              }}
+              onSendMessage={handleSendMessage}
+              onUploadImage={uploadImage}
+              onExplainPlan={handleExplainPlan}
+              onRunFix={() => void runOrchestrator("fix")}
+              onRunImprove={() => void runOrchestrator("improve")}
+              onSaveProject={() => void saveProject()}
+              canExplain={Boolean(backendResult || selectedRun)}
+              statusMessage={statusMessage}
+              hasVisibleActiveJob={Boolean(visibleActiveJob)}
+            />
 
-              <div className="border-t border-slate-200 p-4 md:p-6">
-                {(busy || visibleActiveJob) && (
-                  <div className="mb-4 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-950">
-                          {thinkingState.label}
-                        </p>
-                        <p className="mt-1 text-sm text-slate-600">
-                          {thinkingState.detail}
-                        </p>
-                      </div>
-                      <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                        {thinkingState.progress}%
-                      </span>
-                    </div>
-                    <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-200">
-                      <div
-                        className="h-full rounded-full bg-slate-950 transition-all duration-500"
-                        style={{ width: `${thinkingState.progress}%` }}
-                      />
-                    </div>
-                    {visibleActiveJob && (
-                      <div className="mt-3 flex items-center justify-between text-xs text-slate-600">
-                        <span className="font-semibold uppercase tracking-[0.12em] text-slate-500">
-                          Auto-advance phases
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setAutoAdvancePhases((prev) => !prev)}
-                          className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] transition ${
-                            autoAdvancePhases
-                              ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                          }`}
-                        >
-                          {autoAdvancePhases ? "On" : "Off"}
-                        </button>
-                      </div>
-                    )}
-                    {(visibleActiveJob || hasDirectRunInFlight) && (
-                      <div className="mt-4 flex justify-end">
-                        <button
-                          type="button"
-                          onClick={handleCancelActiveJob}
-                          disabled={String(visibleActiveJob?.status || "").toLowerCase() === "cancelling"}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {String(visibleActiveJob?.status || "").toLowerCase() === "cancelling"
-                            ? "Cancelling..."
-                            : "Cancel"}
-                        </button>
-                        {String(visibleActiveJob?.status || "").toLowerCase() === "awaiting_approval" && (
-                          <>
-                            <div className="ml-2 flex items-center gap-2">
-                              <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                                Revise phase
-                              </label>
-                              <select
-                                value={revisePhaseTarget}
-                                onChange={(event) =>
-                                  setRevisePhaseTarget(
-                                    event.target.value as typeof revisePhaseTarget,
-                                  )
-                                }
-                                className="rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs font-semibold text-slate-700"
-                              >
-                                <option value="layout">Layout</option>
-                                <option value="grading">Grading</option>
-                                <option value="drainage_storm">Drainage/Storm</option>
-                                <option value="utilities">Utilities</option>
-                                <option value="coordination_validation">Coordination</option>
-                              </select>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={handleReviseActiveJob}
-                              className="ml-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                            >
-                              Save Changes &amp; Revise
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleContinueActiveJob}
-                              className="ml-2 rounded-xl border border-slate-900 bg-slate-950 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
-                            >
-                              Approve &amp; Continue
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div className="mb-4 rounded-3xl border border-slate-200 bg-slate-50 p-3">
-                    <TextArea
-                      value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                      onKeyDown={(event) => {
-                        if (
-                          event.key === "Enter" &&
-                          !event.shiftKey &&
-                          !(event.nativeEvent as KeyboardEvent).isComposing
-                        ) {
-                          event.preventDefault();
-                        if (prompt.trim() || imageName) {
-                          handleSendMessage();
-                        }
-                        }
-                      }}
-                      placeholder="Message Civora AI with what you want to create or change..."
-                      className="h-[150px] min-h-[150px] max-h-[240px] border-0 bg-transparent px-1 py-1 shadow-none focus:ring-0"
-                    />
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap gap-2">
-                      <label className="inline-flex cursor-pointer items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
-                        <FileImage className="mr-2 h-4 w-4" />
-                        Upload
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              await uploadImage(file);
-                            }
-                          }}
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        onClick={handleExplainPlan}
-                        disabled={!backendResult && !selectedRun}
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Explain
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void runOrchestrator("fix")}
-                        disabled={busy || Boolean(visibleActiveJob)}
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Fix
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void runOrchestrator("improve")}
-                        disabled={busy || Boolean(visibleActiveJob)}
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Improve
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => void saveProject()}
-                        disabled={busy || Boolean(visibleActiveJob)}
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Save
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSendMessage}
-                        disabled={busy && !prompt.trim() && !imageName}
-                        className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {busy && activePlanTool === "run"
-                          ? "Working..."
-                          : visibleActiveJob
-                            ? "Working..."
-                            : "Send"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {!busy && !visibleActiveJob && statusMessage && (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                    {statusMessage}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="rounded-[28px] border border-slate-200 bg-white/90 p-4 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.4)] backdrop-blur md:p-6">
-              <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                <div className="space-y-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                      Preview Workspace
-                    </span>
-                    {previewReview && (
-                      <span
-                        className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${
-                          previewReview.release_status === "ready"
-                            ? "bg-emerald-100 text-emerald-800"
-                            : previewReview.release_status === "blocked"
-                              ? "bg-amber-100 text-amber-800"
-                              : "bg-slate-100 text-slate-700"
-                        }`}
-                      >
-                        {previewReview.release_status === "ready"
-                          ? "Release Ready"
-                          : previewReview.release_status === "blocked"
-                            ? "Blocked"
-                            : "Needs Review"}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-sm font-semibold text-slate-950">Live Preview</p>
-                  <p className="mt-1 text-sm text-slate-500">
-                    The preview shows the latest engineered plan even when final export is still under review.
-                  </p>
-                  {previewReview && (
-                    <div
-                      className={`inline-flex max-w-3xl items-start rounded-2xl border px-4 py-3 text-sm ${
-                        previewReview.release_status === "ready"
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                          : previewReview.release_status === "blocked"
-                            ? "border-amber-200 bg-amber-50 text-amber-900"
-                            : "border-slate-200 bg-slate-50 text-slate-700"
-                      }`}
-                    >
-                      <div>
-                        <p className="font-semibold">
-                          {previewReview.release_status === "ready"
-                            ? "Release review is clear."
-                            : previewReview.release_status === "blocked"
-                              ? "Export is still blocked."
-                              : "Preview needs follow-up review."}
-                        </p>
-                        <p className="mt-1 text-xs">
-                          {previewReview.release_note ||
-                            "Preview review summary is available for the latest engineering pass."}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                  {previewTotalPhaseCount > 0 && previewCompletedPhaseCount < previewTotalPhaseCount ? (
-                    <div className="inline-flex max-w-3xl items-start rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                      <div>
-                        <p className="font-semibold">Preview shows completed phases only.</p>
-                        <p className="mt-1 text-xs">
-                          {previewRunningPhase
-                            ? `${previewRunningPhase.label} is the current active phase. Systems like drainage, storm, and utilities appear after their phases finish.`
-                            : previewNextPendingPhase
-                              ? `${previewNextPendingPhase.label} is still pending. Systems like drainage, storm, and utilities appear after their phases finish.`
-                              : "Additional systems appear as later phases complete."}
-                        </p>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={handlePreviewPlan}
-                    disabled={busy}
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Refresh Preview
-                  </button>
-                  {planPreviewUrl ? (
-                    <button
-                      type="button"
-                      onClick={() => setPreviewFullscreenOpen(true)}
-                      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                    >
-                      <Maximize2 className="h-4 w-4" />
-                      Fullscreen Preview
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={handleExportDxf}
-                    disabled={busy}
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Export DXF
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleExportReport}
-                    disabled={busy}
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Export Report
-                  </button>
-                </div>
-              </div>
-
-              {planPreviewUrl ? (
-                <div className="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#edf2f7_100%)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                      <span>Preview Mode</span>
-                      <button
-                        type="button"
-                        onClick={() => setPreviewMode("2d")}
-                        className={`rounded-full border px-2.5 py-1 ${
-                          previewMode === "2d"
-                            ? "border-slate-900 bg-slate-950 text-white"
-                            : "border-slate-200 bg-white text-slate-600"
-                        }`}
-                      >
-                        2D
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPreviewMode("3d")}
-                        className={`rounded-full border px-2.5 py-1 ${
-                          previewMode === "3d"
-                            ? "border-slate-900 bg-slate-950 text-white"
-                            : "border-slate-200 bg-white text-slate-600"
-                        }`}
-                      >
-                        3D
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                      <span>Interaction</span>
-                      <button
-                        type="button"
-                        onClick={() => setPreviewInteraction("static")}
-                        className={`rounded-full border px-2.5 py-1 ${
-                          previewInteraction === "static"
-                            ? "border-slate-900 bg-slate-950 text-white"
-                            : "border-slate-200 bg-white text-slate-600"
-                        }`}
-                      >
-                        Static
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (previewInteraction === "interactive") return;
-                          queuePreviewRefresh("Loading interactive labels...");
-                          setPreviewInteraction("interactive");
-                        }}
-                        className={`rounded-full border px-2.5 py-1 ${
-                          previewInteraction === "interactive"
-                            ? "border-slate-900 bg-slate-950 text-white"
-                            : "border-slate-200 bg-white text-slate-600"
-                        }`}
-                      >
-                        Interactive
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                      <span>Quality</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (previewQuality === "standard") return;
-                          queuePreviewRefresh("Requesting standard-quality preview...");
-                          setPreviewQuality("standard");
-                        }}
-                        className={`rounded-full border px-2.5 py-1 ${
-                          previewQuality === "standard"
-                            ? "border-slate-900 bg-slate-950 text-white"
-                            : "border-slate-200 bg-white text-slate-600"
-                        }`}
-                      >
-                        Standard
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (previewQuality === "high") return;
-                          queuePreviewRefresh("Requesting high-quality preview...");
-                          setPreviewQuality("high");
-                        }}
-                        className={`rounded-full border px-2.5 py-1 ${
-                          previewQuality === "high"
-                            ? "border-slate-900 bg-slate-950 text-white"
-                            : "border-slate-200 bg-white text-slate-600"
-                        }`}
-                      >
-                        High
-                      </button>
-                    </div>
-                  </div>
-                  {(previewRefreshing || previewRefreshNote) && (
-                    <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
-                      <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-                      <span>{previewRefreshNote || "Refreshing preview..."}</span>
-                    </div>
-                  )}
-                  {previewMode === "3d" ? (
-                    preview3DEffectiveItems.length ? (
-                      <div className="relative">
-                        <Preview3DCanvas
-                          items={preview3DEffectiveItems}
-                          interactive={previewInteraction === "interactive"}
-                          onOpenFullscreen={() => setPreviewFullscreenOpen(true)}
-                        />
-                        {usingAnnotation3D ? (
-                          <div className="pointer-events-none absolute left-4 top-4 rounded-full border border-white/40 bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm">
-                            Approximate 3D
-                          </div>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => setPreviewFullscreenOpen(true)}
-                          className="absolute bottom-4 right-4 rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm transition hover:bg-slate-900"
-                        >
-                          Open Fullscreen
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="relative flex min-h-[560px] items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)]">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={planPreviewUrl}
-                          alt="Generated plan preview"
-                          className="max-h-[560px] w-full origin-center -skew-y-1 scale-[0.98] object-contain"
-                          onClick={() => setPreviewFullscreenOpen(true)}
-                        />
-                        <div className="pointer-events-none absolute left-6 top-6 rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600 shadow-sm">
-                          3D geometry not ready yet
-                        </div>
-                      </div>
-                    )
-                  ) : (
-                    <div className="relative flex min-h-[560px] items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)]">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={planPreviewUrl}
-                        alt="Generated plan preview"
-                        className={`max-h-[560px] w-full object-contain ${
-                          previewInteraction === "interactive" ? "cursor-zoom-in" : "cursor-default"
-                        }`}
-                        onClick={() => setPreviewFullscreenOpen(true)}
-                      />
-                      <div className="pointer-events-none absolute right-6 top-6 hidden w-[260px] rounded-[22px] border border-white/20 bg-slate-900/80 p-4 text-xs text-white shadow-[0_20px_50px_-30px_rgba(15,23,42,0.8)] backdrop-blur lg:block">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70">
-                          Drainage Stats
-                        </p>
-                        <div className="mt-3 space-y-2">
-                          {phaseStats.drainage_storm.map((item) => (
-                            <div key={item.label} className="flex items-center justify-between gap-2">
-                              <span className="text-white/70">{item.label}</span>
-                              <span className="font-semibold text-white">
-                                {item.unit === "ea" || item.format === "count"
-                                  ? formatCount(item.value, item.unit)
-                                  : formatMetric(item.value, item.unit)}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="pointer-events-none absolute right-6 top-[250px] hidden w-[260px] rounded-[22px] border border-white/20 bg-slate-900/80 p-4 text-xs text-white shadow-[0_20px_50px_-30px_rgba(15,23,42,0.8)] backdrop-blur lg:block">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70">
-                          Issues Found
-                        </p>
-                        <div className="mt-3 space-y-2">
-                          {issues.slice(0, 4).map((issue, index) => (
-                            <div key={`${issue.message}-${index}`} className="flex items-start gap-2">
-                              <span className="mt-1 h-1.5 w-1.5 rounded-full bg-amber-400" />
-                              <span className="text-white/80">{issue.message}</span>
-                            </div>
-                          ))}
-                          {issues.length === 0 ? (
-                            <span className="text-white/60">No issues flagged.</span>
-                          ) : null}
-                        </div>
-                      </div>
-                      <div className="pointer-events-none absolute bottom-6 left-6 hidden rounded-[18px] border border-white/20 bg-white/70 px-4 py-3 text-xs text-slate-700 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.6)] backdrop-blur lg:block">
-                        <span className="font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          AI Layout + Generation
-                        </span>
-                      </div>
-                      {previewInteraction === "interactive" ? (
-                        <div className="pointer-events-none absolute left-6 top-6 hidden rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white lg:block">
-                          Open fullscreen to hover labels
-                        </div>
-                      ) : null}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="flex min-h-[360px] items-center justify-center rounded-[28px] border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                  Send a message and Civora AI will generate a plan preview here.
-                </div>
-              )}
-
-              {previewFullscreenOpen && planPreviewUrl ? (
-                <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/88 p-4 backdrop-blur-sm">
-                  <div className="flex h-full w-full max-w-[96vw] flex-col rounded-[28px] border border-slate-700/60 bg-slate-950 shadow-[0_30px_90px_-40px_rgba(15,23,42,0.95)]">
-                    <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-5 py-4 text-white">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                          Fullscreen Preview
-                        </p>
-                        <p className="mt-1 text-sm text-slate-200">
-                          Inspect the latest engineered plan without the sidebar chrome.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setPreviewFullscreenOpen(false)}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-100 transition hover:bg-slate-800"
-                      >
-                        <X className="h-4 w-4" />
-                        Close
-                      </button>
-                    </div>
-                    <div className="flex min-h-0 flex-1 items-center justify-center p-4">
-                      <div className="relative max-h-full w-full">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={planPreviewUrl}
-                          alt="Generated plan preview fullscreen"
-                          className="max-h-full w-full rounded-[20px] bg-white object-contain shadow-2xl"
-                        />
-                        {previewInteraction === "interactive" &&
-                        !planPreviewAnnotations?.labels?.length ? (
-                          <div className="pointer-events-none absolute right-6 top-6 rounded-2xl border border-white/20 bg-slate-900/80 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
-                            No hover labels yet. Refresh the preview to generate them.
-                          </div>
-                        ) : null}
-                        {previewInteraction === "interactive" &&
-                        planPreviewAnnotations?.labels?.length ? (
-                          <div className="pointer-events-none absolute inset-0">
-                            {selectedIssueLabel ? (
-                              (() => {
-                                const target = planPreviewAnnotations.labels.find(
-                                  (item) => item.label === selectedIssueLabel && item.bounds,
-                                );
-                                if (!target?.bounds) return null;
-                                const left = Math.min(Math.max(target.bounds.x1 * 100, 0), 100);
-                                const top = Math.min(Math.max(target.bounds.y1 * 100, 0), 100);
-                                const right = Math.min(Math.max(target.bounds.x2 * 100, 0), 100);
-                                const bottom = Math.min(Math.max(target.bounds.y2 * 100, 0), 100);
-                                return (
-                                  <div
-                                    className="absolute rounded-[12px] border-2 border-rose-400/80 bg-rose-400/10 shadow-[0_0_0_6px_rgba(244,63,94,0.12)]"
-                                    style={{
-                                      left: `${left}%`,
-                                      top: `${top}%`,
-                                      width: `${Math.max(right - left, 2)}%`,
-                                      height: `${Math.max(bottom - top, 2)}%`,
-                                    }}
-                                  />
-                                );
-                              })()
-                            ) : null}
-                            {planPreviewAnnotations.labels.map((item, idx) => (
-                              <div
-                                key={`${item.label}-${idx}`}
-                                className="group pointer-events-auto absolute"
-                                style={{
-                                  left: `${Math.min(Math.max(item.x * 100, 0), 100)}%`,
-                                  top: `${Math.min(Math.max(item.y * 100, 0), 100)}%`,
-                                  transform: "translate(-50%, -50%)",
-                                }}
-                              >
-                                <div
-                                  className={`h-2 w-2 rounded-full transition ${
-                                    item.label === selectedIssueLabel
-                                      ? "bg-rose-500/80 shadow-[0_0_0_6px_rgba(244,63,94,0.15)]"
-                                      : "bg-slate-900/30 opacity-0 group-hover:opacity-100"
-                                  }`}
-                                />
-                                <div className="pointer-events-none absolute left-1/2 top-0 z-10 hidden -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm group-hover:block">
-                                  {item.label}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : null}
-                        {previewInteraction === "interactive" && showMeasurements ? (
-                          <div className="pointer-events-none absolute left-6 top-6 w-[240px] rounded-2xl border border-slate-200/70 bg-white/90 p-3 text-xs text-slate-700 shadow-sm backdrop-blur">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                              Measurements
-                            </p>
-                            <div className="mt-2 space-y-1">
-                              {measurementOverlayStats
-                                .filter((item) => Number(item.value || 0) > 0)
-                                .map((item) => (
-                                  <div key={item.label} className="flex items-center justify-between gap-2">
-                                    <span>{item.label}</span>
-                                    <span className="font-semibold">
-                                      {item.unit === "stalls"
-                                        ? formatCount(Number(item.value || 0), item.unit)
-                                        : formatMetric(Number(item.value || 0), item.unit)}
-                                    </span>
-                                  </div>
-                                ))}
-                            </div>
-                          </div>
-                        ) : null}
-                        {previewInteraction === "interactive" && showCalculations ? (
-                          <div className="pointer-events-none absolute bottom-6 left-6 w-[240px] rounded-2xl border border-slate-200/70 bg-white/90 p-3 text-xs text-slate-700 shadow-sm backdrop-blur">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                              Calculations
-                            </p>
-                            <div className="mt-2 space-y-1">
-                              {calculationOverlayStats
-                                .filter((item) => Number(item.value || 0) > 0)
-                                .map((item) => (
-                                  <div key={item.label} className="flex items-center justify-between gap-2">
-                                    <span>{item.label}</span>
-                                    <span className="font-semibold">
-                                      {formatMetric(Number(item.value || 0), item.unit)}
-                                    </span>
-                                  </div>
-                                ))}
-                            </div>
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
-            </div>
+            <PreviewPanel
+              previewReview={previewReview}
+              previewTotalPhaseCount={previewTotalPhaseCount}
+              previewCompletedPhaseCount={previewCompletedPhaseCount}
+              previewRunningPhase={previewRunningPhase}
+              previewNextPendingPhase={previewNextPendingPhase}
+              onRefreshPreview={handlePreviewPlan}
+              busy={busy}
+              planPreviewUrl={planPreviewUrl}
+              previewMode={previewMode}
+              previewInteraction={previewInteraction}
+              previewQuality={previewQuality}
+              onSetPreviewMode={setPreviewMode}
+              onSetPreviewInteraction={setPreviewInteraction}
+              onSetPreviewQuality={setPreviewQuality}
+              onQueuePreviewRefresh={queuePreviewRefresh}
+              previewRefreshing={previewRefreshing}
+              previewRefreshNote={previewRefreshNote}
+              preview3DEffectiveItems={preview3DEffectiveItems}
+              usingAnnotation3D={usingAnnotation3D}
+              onOpenFullscreen={() => setPreviewFullscreenOpen(true)}
+              previewFullscreenOpen={previewFullscreenOpen}
+              onCloseFullscreen={() => setPreviewFullscreenOpen(false)}
+              onExportDxf={handleExportDxf}
+              onExportReport={handleExportReport}
+              phaseStats={phaseStats}
+              issues={issues}
+              planPreviewAnnotations={planPreviewAnnotations}
+              selectedIssueLabel={selectedIssueLabel}
+              showMeasurements={showMeasurements}
+              showCalculations={showCalculations}
+              measurementOverlayStats={measurementOverlayStats}
+              calculationOverlayStats={calculationOverlayStats}
+            />
           </div>
         </main>
       </div>
