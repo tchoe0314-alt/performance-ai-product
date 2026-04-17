@@ -4814,7 +4814,7 @@ export default function PerformanceAIDashboard() {
                   </div>
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Objects</p>
-                    <div className="mt-2 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  <div className="mt-2 flex w-full gap-3 overflow-x-auto pb-2">
                     {buildingPlacements
                       .filter((item) => !item.placed)
                       .map((item) => (
@@ -4826,7 +4826,7 @@ export default function PerformanceAIDashboard() {
                           event.dataTransfer?.setData("civora-object-id", item.id);
                           setPlacementModeEnabled(true);
                         }}
-                        className={`rounded-2xl border bg-white p-3 text-xs text-slate-600 shadow-sm ${
+                        className={`min-w-[220px] rounded-2xl border bg-white p-3 text-xs text-slate-600 shadow-sm ${
                           activePlacementId === item.id
                             ? "border-amber-400 ring-2 ring-amber-200"
                             : "border-slate-200"
