@@ -1552,6 +1552,7 @@ export default function PerformanceAIDashboard() {
   const chatMessagesRef = useRef<ChatMessage[]>([createWelcomeMessage()]);
   const suppressProjectAutoLoadRef = useRef(false);
   const chatAutosaveTimeoutRef = useRef<number | null>(null);
+  const autosaveSuspendRef = useRef(false);
   const autoAdvanceByJobRef = useRef<Record<string, boolean>>({});
   const previewRecoveryKeyRef = useRef("");
   const lastSiteInputProjectRef = useRef("");
@@ -3379,6 +3380,7 @@ export default function PerformanceAIDashboard() {
     const activeProjectId =
       resolvedProjectIdRef.current || projectId || currentProject?.project_id || "";
     if (!token || !activeProjectId || !currentProject) return;
+    if (autosaveSuspendRef.current) return;
     const savedThread = Array.isArray(currentProject?.project_input?.meta?.chat_thread)
       ? currentProject.project_input.meta.chat_thread
       : [];
@@ -3409,6 +3411,7 @@ export default function PerformanceAIDashboard() {
 
   useEffect(() => {
     if (!token || !currentProject?.project_id) return;
+    if (autosaveSuspendRef.current) return;
     if (controlAutosaveTimeoutRef.current !== null) {
       window.clearTimeout(controlAutosaveTimeoutRef.current);
     }
@@ -3465,6 +3468,15 @@ export default function PerformanceAIDashboard() {
 
   const loadProject = async (id: string) => {
     if (!token) return;
+    autosaveSuspendRef.current = true;
+    if (chatAutosaveTimeoutRef.current !== null) {
+      window.clearTimeout(chatAutosaveTimeoutRef.current);
+      chatAutosaveTimeoutRef.current = null;
+    }
+    if (controlAutosaveTimeoutRef.current !== null) {
+      window.clearTimeout(controlAutosaveTimeoutRef.current);
+      controlAutosaveTimeoutRef.current = null;
+    }
     const requestId = projectLoadRequestRef.current + 1;
     projectLoadRequestRef.current = requestId;
     try {
@@ -3494,6 +3506,8 @@ export default function PerformanceAIDashboard() {
       setStatusMessage(
         error instanceof Error ? error.message : "Project load failed.",
       );
+    } finally {
+      autosaveSuspendRef.current = false;
     }
   };
 
