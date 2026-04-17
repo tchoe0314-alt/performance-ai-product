@@ -88,10 +88,8 @@ import ProjectSidebar from "./components/ProjectSidebar";
 import WorkspaceToolbar from "./components/WorkspaceToolbar";
 import ChatPanel from "./components/ChatPanel";
 import PreviewPanel from "./components/PreviewPanel";
+import ProjectControls from "./components/ProjectControls";
 import useChatPersistence from "./hooks/useChatPersistence";
-import {
-  TextInput,
-} from "./components/ui";
 
 function formatTimestamp(value?: number): string {
   if (!value) return "Unknown time";
@@ -4167,99 +4165,29 @@ export default function PerformanceAIDashboard() {
             />
 
           <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-6 md:px-6">
-            <div className="space-y-3">
-              <div className="grid gap-3 md:grid-cols-[repeat(3,minmax(0,1fr))] xl:grid-cols-[repeat(6,minmax(0,1fr))]">
-              {[
-                {
-                  value: "manual",
-                  label: "Manual",
-                  desc: "Strict and explicit",
-                },
-                {
-                  value: "assisted",
-                  label: "Assisted",
-                  desc: "AI fills gaps",
-                },
-              ].map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setStrategyMode(option.value as StrategyMode)}
-                  className={`rounded-2xl border px-4 py-3 text-left transition ${
-                    strategyMode === option.value
-                      ? "border-slate-900 bg-slate-950 text-white"
-                      : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
-                  }`}
-                >
-                  <p className="text-sm font-medium">{option.label}</p>
-                  <p
-                    className={`mt-1 text-xs ${
-                      strategyMode === option.value ? "text-slate-300" : "text-slate-500"
-                    }`}
-                  >
-                    {option.desc}
-                  </p>
-                </button>
-              ))}
-
-              <TextInput
-                value={siteName}
-                onChange={(e) => {
-                  setSiteName(e.target.value);
-                  setSiteNameAuto(false);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void saveProject({
-                      nameOverride: siteName.trim(),
-                      fileNameOverride: fileName.trim(),
-                      autoNamedOverride: false,
-                      autoFileNamedOverride: false,
-                    });
-                  }
-                }}
-                placeholder="Project name"
-              />
-
-              <TextInput
-                value={fileName}
-                onChange={(e) => {
-                  setFileName(e.target.value);
-                  setFileNameAuto(false);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void saveProject({
-                      nameOverride: siteName.trim(),
-                      fileNameOverride: fileName.trim(),
-                      autoNamedOverride: false,
-                      autoFileNamedOverride: false,
-                    });
-                  }
-                }}
-                placeholder="File name"
-              />
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                {disciplineToggles.map(({ label, checked, setter }) => (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => setter(!checked)}
-                    className={`rounded-full border px-3 py-2 text-xs font-medium transition ${
-                      checked
-                        ? "border-slate-900 bg-slate-950 text-white"
-                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <ProjectControls
+              strategyMode={strategyMode}
+              onStrategyModeChange={setStrategyMode}
+              siteName={siteName}
+              fileName={fileName}
+              onSiteNameChange={setSiteName}
+              onFileNameChange={setFileName}
+              onSiteNameEdited={() => setSiteNameAuto(false)}
+              onFileNameEdited={() => setFileNameAuto(false)}
+              onSaveProjectNames={() =>
+                void saveProject({
+                  nameOverride: siteName.trim(),
+                  fileNameOverride: fileName.trim(),
+                  autoNamedOverride: false,
+                  autoFileNamedOverride: false,
+                })
+              }
+              disciplineToggles={disciplineToggles.map((item) => ({
+                label: item.label,
+                checked: item.checked,
+                onToggle: () => item.setter(!item.checked),
+              }))}
+            />
 
             <ChatPanel
               chatMessages={chatMessages}
