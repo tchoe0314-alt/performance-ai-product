@@ -456,16 +456,20 @@ export default function PreviewPanel({
                   <span className="text-[10px] text-white/50">Drag</span>
                 </div>
                 <div className="mt-3 space-y-2">
-                  {phaseStats.drainage_storm.map((item) => (
-                    <div key={item.label} className="flex items-center justify-between gap-2">
-                      <span className="text-white/70">{item.label}</span>
-                      <span className="font-semibold text-white">
-                        {item.unit === "ea" || item.format === "count"
-                          ? formatCount(item.value, item.unit)
-                          : formatMetric(item.value, item.unit)}
-                      </span>
-                    </div>
-                  ))}
+                  {phaseStats.drainage_storm.length ? (
+                    phaseStats.drainage_storm.map((item) => (
+                      <div key={item.label} className="flex items-center justify-between gap-2">
+                        <span className="text-white/70">{item.label}</span>
+                        <span className="font-semibold text-white">
+                          {item.unit === "ea" || item.format === "count"
+                            ? formatCount(item.value, item.unit)
+                            : formatMetric(item.value, item.unit)}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <span className="text-white/70">Drainage not generated yet.</span>
+                  )}
                 </div>
               </div>
               <div
@@ -491,7 +495,11 @@ export default function PreviewPanel({
                     </div>
                   ))}
                   {issues.length === 0 ? (
-                    <span className="text-white/60">No issues flagged.</span>
+                    <span className="text-white/60">
+                      {previewReview?.release_status === "ready"
+                        ? "No issues flagged."
+                        : "Issues pending until engineering completes."}
+                    </span>
                   ) : null}
                 </div>
               </div>

@@ -31,6 +31,133 @@ PREVIEW_ALLOW_SYNTHESIS_DEFAULT = False
 PREVIEW_ALLOW_PROFILE_INFERENCE_DEFAULT = False
 PREVIEW_MODE_DEFAULT = "production"
 
+FINAL_GEOMETRY_LAYERS = {
+    "C-BOUNDARY",
+    "C-SETBACK",
+    "C-CENTERLINE",
+    "C-BUILDING",
+    "C-PAVEMENT",
+    "C-PARKING",
+    "C-DRIVEWAY",
+    "C-ROAD",
+    "C-SIDEWALK",
+    "C-CONTOUR",
+    "C-SPOT-ELEV",
+    "C-GRADING",
+    "C-CUT",
+    "C-FILL",
+    "C-STRM-PIPE",
+    "C-STRM-INLET",
+    "C-STRM-MH",
+    "C-DRAIN-FLOW",
+    "C-LOW-POINT",
+    "C-POND",
+    "C-WATR",
+    "C-SAN",
+    "C-UTIL",
+    "C-HYDRANT",
+}
+
+PROFILE_LAYER_VISIBILITY = {
+    "layout": {
+        "C-BOUNDARY",
+        "C-SETBACK",
+        "C-CENTERLINE",
+        "C-BUILDING",
+        "C-PAVEMENT",
+        "C-PARKING",
+        "C-DRIVEWAY",
+        "C-ROAD",
+        "C-SIDEWALK",
+    },
+    "grading": {
+        "C-BOUNDARY",
+        "C-SETBACK",
+        "C-CENTERLINE",
+        "C-BUILDING",
+        "C-PAVEMENT",
+        "C-PARKING",
+        "C-DRIVEWAY",
+        "C-ROAD",
+        "C-SIDEWALK",
+        "C-CONTOUR",
+        "C-SPOT-ELEV",
+        "C-GRADING",
+        "C-CUT",
+        "C-FILL",
+    },
+    "drainage": {
+        "C-BOUNDARY",
+        "C-SETBACK",
+        "C-CENTERLINE",
+        "C-BUILDING",
+        "C-PAVEMENT",
+        "C-PARKING",
+        "C-DRIVEWAY",
+        "C-ROAD",
+        "C-SIDEWALK",
+        "C-CONTOUR",
+        "C-SPOT-ELEV",
+        "C-GRADING",
+        "C-CUT",
+        "C-FILL",
+        "C-STRM-INLET",
+        "C-DRAIN-FLOW",
+        "C-LOW-POINT",
+        "C-POND",
+    },
+    "storm": {
+        "C-BOUNDARY",
+        "C-SETBACK",
+        "C-CENTERLINE",
+        "C-BUILDING",
+        "C-PAVEMENT",
+        "C-PARKING",
+        "C-DRIVEWAY",
+        "C-ROAD",
+        "C-SIDEWALK",
+        "C-CONTOUR",
+        "C-SPOT-ELEV",
+        "C-GRADING",
+        "C-CUT",
+        "C-FILL",
+        "C-STRM-PIPE",
+        "C-STRM-INLET",
+        "C-STRM-MH",
+        "C-DRAIN-FLOW",
+        "C-LOW-POINT",
+        "C-POND",
+    },
+    "utilities": {
+        "C-BOUNDARY",
+        "C-SETBACK",
+        "C-CENTERLINE",
+        "C-BUILDING",
+        "C-PAVEMENT",
+        "C-PARKING",
+        "C-DRIVEWAY",
+        "C-ROAD",
+        "C-SIDEWALK",
+        "C-CONTOUR",
+        "C-SPOT-ELEV",
+        "C-GRADING",
+        "C-CUT",
+        "C-FILL",
+        "C-STRM-PIPE",
+        "C-STRM-INLET",
+        "C-STRM-MH",
+        "C-DRAIN-FLOW",
+        "C-LOW-POINT",
+        "C-POND",
+        "C-WATR",
+        "C-SAN",
+        "C-UTIL",
+        "C-HYDRANT",
+    },
+    "complete": FINAL_GEOMETRY_LAYERS,
+    "baseline": FINAL_GEOMETRY_LAYERS,
+}
+
 STANDARD_LAYERS = {
     "C-BOUNDARY",
     "C-SETBACK",
@@ -335,6 +462,15 @@ def _normalize_preview_mode(mode: Optional[str]) -> str:
     if normalized in {"production", "engineering", "debug"}:
         return normalized
     return PREVIEW_MODE_DEFAULT
+
+
+def _is_final_geometry(action: Dict[str, Any]) -> bool:
+    meta = safe_dict(action.get("meta"))
+    if "is_final" in meta:
+        return bool(meta.get("is_final"))
+    if "final" in meta:
+        return bool(meta.get("final"))
+    return True
 
 
 def _is_helper_geometry(action: Dict[str, Any]) -> bool:
@@ -1743,6 +1879,7 @@ def _filtered_preview_actions(
     engineering_profile = _normalize_engineering_profile(rich_engineering)
     include_layers = _normalize_include_layers(include_layers)
     preview_mode = _normalize_preview_mode(preview_mode)
+    profile_layers = PROFILE_LAYER_VISIBILITY.get(engineering_profile, FINAL_GEOMETRY_LAYERS)
     records = [action for action in actions if isinstance(action, dict)]
     if allow_synthesis:
         records = _synthesize_layout_preview_actions(records)
@@ -1801,6 +1938,12 @@ def _filtered_preview_actions(
         canonical_source_type = str(action.get("canonical_source_type") or "").upper()
         helper_signature = " ".join(part for part in (label, text, canonical_source_type) if part)
         if preview_mode != "debug" and _is_helper_geometry(action):
+            continue
+        if preview_mode == "production" and not _is_final_geometry(action):
+            continue
+        if preview_mode == "production" and layer not in FINAL_GEOMETRY_LAYERS:
+            continue
+        if preview_mode in {"production", "engineering"} and layer not in profile_layers:
             continue
         if allow_heuristics:
             if has_primary_site_geometry and layer == "C-BOUNDARY":
