@@ -632,8 +632,14 @@ def chat_feedback(
 def chat_learning_cron(
     payload: ChatLearningCronPayload,
     x_cron_secret: Optional[str] = Header(default=None),
+    authorization: Optional[str] = Header(default=None),
 ) -> Dict[str, Any]:
-    if CRON_SECRET and str(x_cron_secret or "").strip() != CRON_SECRET:
+    token = str(x_cron_secret or "").strip()
+    if not token and authorization:
+        auth_value = str(authorization or "").strip()
+        if auth_value.lower().startswith("bearer "):
+            token = auth_value[7:].strip()
+    if CRON_SECRET and token != CRON_SECRET:
         raise HTTPException(status_code=401, detail="Invalid cron secret.")
     from backend.services.chat_learning_pipeline import run_chat_learning_pipeline
 
