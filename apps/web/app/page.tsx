@@ -34,7 +34,6 @@ import type {
   SiteObjectType,
   ChatDecisionResponse,
   ChatMessage,
-  LearningReport,
   DisciplineToggle,
   Preview3DItem,
   PlanRequestPayload,
@@ -49,6 +48,7 @@ import {
   readPositiveNumber,
   parsePositiveNumber,
   readMetricValue,
+  formatMetric,
   summarizePlanResponse,
 } from "./utils/formatting";
 
@@ -62,7 +62,6 @@ import { uploadedImageSrc } from "./utils/auth";
 
 import AppHeader from "./components/AppHeader";
 import AuthScreen from "./components/AuthScreen";
-import ProjectSidebar from "./components/ProjectSidebar";
 import WorkspaceToolbar from "./components/WorkspaceToolbar";
 import ChatPanel from "./components/ChatPanel";
 import PreviewPanel from "./components/PreviewPanel";
@@ -254,8 +253,7 @@ export default function PerformanceAIDashboard() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => [
     createWelcomeMessage(),
   ]);
-  const [learningReport, setLearningReport] = useState<LearningReport | null>(null);
-  const [learningReportUpdatedAt, setLearningReportUpdatedAt] = useState<number | null>(null);
+  const [chatCollapsed, setChatCollapsed] = useState(false);
   const [imageName, setImageName] = useState("");
   const [siteName, setSiteName] = useState("");
   const [fileName, setFileName] = useState("");
@@ -758,6 +756,14 @@ export default function PerformanceAIDashboard() {
       }),
     [busy, visibleActiveJob?.status, visibleActiveJob?.stage, visibleActiveJob?.stage_detail, visibleActiveJob?.progress, visibleActiveJob?.updated_at, visibleActiveJob?.queue_position, visibleActiveJob?.queued_count, visibleActiveJob?.running_count, visibleActiveJobStale, activePlanTool, statusMessage],
   );
+
+  const chatSummary = useMemo(() => {
+    const last = chatMessages[chatMessages.length - 1];
+    if (!last) return "Ask Civora about your site or place objects.";
+    const roleLabel = last.role === "user" ? "You" : "Civora";
+    const snippet = String(last.content || "").trim().slice(0, 120);
+    return snippet ? `${roleLabel}: ${snippet}${snippet.length >= 120 ? "…" : ""}` : "Chat is ready.";
+  }, [chatMessages]);
   const approvalStatus = useMemo<{ state: ApprovalState; label: string | null }>(() => {
     if (approvalInFlight) {
       return { state: "approving", label: approvalPhaseLabel };
@@ -1018,19 +1024,6 @@ export default function PerformanceAIDashboard() {
     });
   };
 
-  const refreshLearningReport = async () => {
-    if (!token) return;
-    try {
-      const data = await getJson<{ success: boolean; report: LearningReport | null }>(
-        "/api/chat/learning-report",
-        { token },
-      );
-      setLearningReport(data.report ?? null);
-      setLearningReportUpdatedAt(Date.now());
-    } catch {
-      // Ignore learning report failures.
-    }
-  };
 
   const setMessageFeedback = async (
     messageId: string,
@@ -1081,10 +1074,6 @@ export default function PerformanceAIDashboard() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!token) return;
-    void refreshLearningReport();
-  }, [token]);
 
   useChatPersistence({
     chatMessages,
@@ -1372,14 +1361,33 @@ export default function PerformanceAIDashboard() {
           setActivePlacementId(firstUnplaced.id);
         }
       }
+      if (!next) {
+        setActivePlacementId(null);
+      }
+      setStatusMessage(
+        next
+          ? "Placement mode enabled. Click on the canvas to drop the selected object."
+          : "Placement mode disabled.",
+      );
       return next;
     });
   }, [activePlacementId, buildingPlacements]);
 
   const handleSelectPlacementTarget = useCallback((id: string) => {
+    const lot = resolveLotBounds();
+    if (!lot.w || !lot.h) {
+      setStatusMessage("Set the site width and height before placing objects.");
+      return;
+    }
     setActivePlacementId(id);
     setPlacementModeEnabled(true);
-  }, []);
+    const target = buildingPlacements.find((item) => item.id === id);
+    setStatusMessage(
+      target
+        ? `Ready to place ${target.label}. Click on the canvas to drop it.`
+        : "Placement active. Click on the canvas to drop the object.",
+    );
+  }, [buildingPlacements, resolveLotBounds]);
 
   const handleAutoPlaceBuildings = useCallback(() => {
     const lot = resolveLotBounds();
@@ -2355,6 +2363,126 @@ export default function PerformanceAIDashboard() {
     return false;
   };
 
+  const tryHandleInfoIntent = (message: string): boolean => {
+    const normalized = message.toLowerCase();
+    const placed = buildingPlacements.filter((item) => item.placed);
+    const unplaced = buildingPlacements.filter((item) => !item.placed);
+    const selected = activePlacementId
+      ? buildingPlacements.find((item) => item.id === activePlacementId)
+      : null;
+
+    const formatPlacement = (item: BuildingPlacement) => {
+      const dims = `${item.w} ft x ${item.d} ft`;
+      const position =
+        item.placed && typeof item.x === "number" && typeof item.y === "number"
+          ? `@ ${Math.round(item.x)} ft, ${Math.round(item.y)} ft`
+          : "unplaced";
+      const lockTag = item.locked ? "locked" : "unlocked";
+      return `${item.label} (${item.type ?? "building"}, ${dims}, ${position}, ${lockTag})`;
+    };
+
+    if (/(what(’|')?s on the site|what is on the site|placed objects|site objects)/i.test(normalized)) {
+      if (!placed.length) {
+        appendChatMessage("assistant", "No objects are placed on the site yet.", "status");
+        return true;
+      }
+      appendChatMessage(
+        "assistant",
+        `Placed objects:\n${placed.map(formatPlacement).join("\n")}`,
+        "status",
+      );
+      return true;
+    }
+
+    if (/(unplaced|in the tray|not placed)/i.test(normalized)) {
+      if (!unplaced.length) {
+        appendChatMessage("assistant", "All current objects are placed on the site.", "status");
+        return true;
+      }
+      appendChatMessage(
+        "assistant",
+        `Unplaced objects:\n${unplaced.map(formatPlacement).join("\n")}`,
+        "status",
+      );
+      return true;
+    }
+
+    if (/(selected|current selection|what is selected)/i.test(normalized)) {
+      if (!selected) {
+        appendChatMessage("assistant", "Nothing is selected right now.", "status");
+        return true;
+      }
+      appendChatMessage(
+        "assistant",
+        `Selected object: ${formatPlacement(selected)}`,
+        "status",
+      );
+      return true;
+    }
+
+    if (/(issues|conflicts|problems)/i.test(normalized)) {
+      if (!issues.length) {
+        appendChatMessage("assistant", "No issues are reported on the latest run.", "status");
+        return true;
+      }
+      appendChatMessage(
+        "assistant",
+        `Issues:\n${issues.slice(0, 6).map((item) => `- ${item.message}`).join("\n")}`,
+        "status",
+      );
+      return true;
+    }
+
+    if (/(blocked|why.*(drainage|utilities|grading))/i.test(normalized)) {
+      if (!previewBlockedReasons.length) {
+        appendChatMessage("assistant", "No blockers are currently recorded.", "status");
+        return true;
+      }
+      appendChatMessage(
+        "assistant",
+        `Current blockers:\n${previewBlockedReasons.map((reason) => `- ${reason}`).join("\n")}`,
+        "status",
+      );
+      return true;
+    }
+
+    if (/(drainage stats|storm stats|pipe length|metrics|quantities)/i.test(normalized)) {
+      if (!totalPipeLength && !maxSlope && !minSlope && !flowCfs && !cutFillNet && !basinSize) {
+        appendChatMessage("assistant", "Drainage stats are not available yet.", "status");
+        return true;
+      }
+      const metricLines = [
+        totalPipeLength ? `Total pipe length: ${formatMetric(totalPipeLength, "ft")}` : null,
+        maxSlope ? `Max slope: ${formatMetric(maxSlope, "%")}` : null,
+        minSlope ? `Min slope: ${formatMetric(minSlope, "%")}` : null,
+        flowCfs ? `Flow: ${formatMetric(flowCfs, "cfs")}` : null,
+        cutFillNet ? `Cut/Fill net: ${formatMetric(cutFillNet, "cf")}` : null,
+        basinSize ? `Pond size: ${formatMetric(basinSize, "sf")}` : null,
+      ].filter(Boolean);
+      appendChatMessage("assistant", metricLines.join("\n"), "status");
+      return true;
+    }
+
+    if (/(systems|generated systems|what systems)/i.test(normalized)) {
+      const enabled = [
+        previewLayers.buildings ? "buildings" : null,
+        previewLayers.roads ? "roads/parking" : null,
+        previewLayers.grading ? "grading" : null,
+        previewLayers.drainage ? "drainage/storm" : null,
+        previewLayers.utilities ? "utilities" : null,
+        previewLayers.structures ? "structures" : null,
+      ].filter(Boolean);
+      appendChatMessage(
+        "assistant",
+        `Preview layers enabled: ${enabled.length ? enabled.join(", ") : "none"}.`,
+        "status",
+      );
+      return true;
+    }
+
+    return false;
+  };
+
   const handleSendMessage = () => {
     const trimmed = prompt.trim();
     if (!trimmed && !imageName) return;
@@ -2383,6 +2511,11 @@ export default function PerformanceAIDashboard() {
       return;
     }
     if (trimmed) {
+      const handledInfo = tryHandleInfoIntent(trimmed);
+      if (handledInfo) {
+        setPrompt("");
+        return;
+      }
       const handled = tryHandleObjectIntent(trimmed);
       if (handled) {
         setPrompt("");
@@ -3705,51 +3838,12 @@ export default function PerformanceAIDashboard() {
 
   const {
     previewReview,
-    previewAssumptionCategories,
-    previewFixActions,
-    previewFixTargets,
-    previewReviewCategories,
     previewBlockedReasons,
-    previewFailedDeliverables,
-    previewExtraDeliverables,
-    previewReadyDeliverables,
     previewCompletedPhaseCount,
     previewTotalPhaseCount,
     previewRunningPhase,
     previewNextPendingPhase,
-    previewRerunSignals,
   } = usePreviewReview({ currentPlanMeta, planPreviewSummary });
-  const workflowStatus = useMemo(() => {
-    const modeLabel = "User-controlled";
-    const normalizedStatus = String(visibleActiveJob?.status || "").toLowerCase();
-    const phaseLabel =
-      previewRunningPhase?.label ||
-      previewNextPendingPhase?.label ||
-      String(visibleActiveJob?.stage || "").trim() ||
-      "Awaiting input";
-    let stateLabel = "Waiting for input";
-    let stateDetail = "Ready for a new request.";
-    if (normalizedStatus === "queued") {
-      stateLabel = "Queued";
-      stateDetail = "Waiting for a worker to start the next phase.";
-    } else if (normalizedStatus === "running") {
-      stateLabel = "Running";
-      stateDetail = String(visibleActiveJob?.stage_detail || "Engineering in progress.");
-    } else if (normalizedStatus === "awaiting_approval") {
-      stateLabel = "Waiting for approval";
-      stateDetail = "Review the current phase and approve to continue.";
-    } else if (normalizedStatus === "cancelling") {
-      stateLabel = "Cancelling";
-      stateDetail = "Stopping the current run.";
-    } else if (normalizedStatus === "completed") {
-      stateLabel = "Complete";
-      stateDetail = "All requested phases are finished.";
-    } else if (previewReview?.release_status === "blocked") {
-      stateLabel = "Blocked";
-      stateDetail = previewReview.release_note || "Review issues before continuing.";
-    }
-    return { modeLabel, phaseLabel, stateLabel, stateDetail };
-  }, [previewNextPendingPhase?.label, previewReview?.release_note, previewReview?.release_status, previewRunningPhase?.label, visibleActiveJob?.stage, visibleActiveJob?.stage_detail, visibleActiveJob?.status]);
   const gatingPhaseKey =
     String(visibleActiveJob?.status || "").toLowerCase() === "awaiting_approval"
       ? previewRunningPhase?.key || previewNextPendingPhase?.key
@@ -4069,96 +4163,6 @@ export default function PerformanceAIDashboard() {
     : preview3DAnnotationItems;
   const usingAnnotation3D =
     preview3DItems.length === 0 && preview3DAnnotationItems.length > 0;
-  const whatYouNeedSummary = (() => {
-    const manualFields =
-      currentProject?.project_input?.manual_fields && typeof currentProject.project_input.manual_fields === "object"
-        ? currentProject.project_input.manual_fields
-        : {};
-    const lot = (manualFields.lot && typeof manualFields.lot === "object" ? manualFields.lot : {}) as {
-      w?: number;
-      h?: number;
-    };
-    const sitePlan =
-      (manualFields.site_plan && typeof manualFields.site_plan === "object"
-        ? manualFields.site_plan
-        : {}) as { parking_count?: number };
-    const projectTypeValue = String(
-      manualFields.project_type || projectType || "",
-    ).trim();
-    const lotWidthValue = readPositiveNumber(lot.w ?? lotWidth);
-    const lotHeightValue = readPositiveNumber(lot.h ?? lotHeight);
-    const parkingValue = readPositiveNumber(sitePlan.parking_count ?? parkingCount);
-    const buildingWidthValue = readPositiveNumber(manualFields.building_width ?? buildingWidth);
-    const buildingDepthValue = readPositiveNumber(manualFields.building_depth ?? buildingDepth);
-    const requestedDeliverables = new Set(
-      toArray(previewReview?.requested_deliverables)
-        .map((item: unknown) => String(item || "").trim())
-        .filter(Boolean),
-    );
-    const disciplineSet = new Set(
-      [
-        ...toArray(manualFields.disciplines),
-        roads ? "corridor" : null,
-        grading ? "grading" : null,
-        drainage ? "drainage" : null,
-        utilities ? "utility" : null,
-      ]
-        .map((item: unknown) => String(item || "").trim().toLowerCase())
-        .filter(Boolean),
-    );
-    const neededNow: string[] = [];
-    const supporting: string[] = [];
-    const inScope: string[] = [];
-
-    if (!projectTypeValue) {
-      neededNow.push("site type or land use");
-    }
-    if (!lotWidthValue || !lotHeightValue) {
-      neededNow.push("lot size or boundary dimensions");
-    }
-    if (!buildingWidthValue || !buildingDepthValue) {
-      neededNow.push("building footprint dimensions");
-    }
-    if (!parkingValue) {
-      neededNow.push("parking target or building program");
-    }
-
-    if (disciplineSet.has("corridor") || requestedDeliverables.has("site_plan")) {
-      inScope.push("roads and site access");
-      supporting.push("frontage access constraints");
-    }
-    if (disciplineSet.has("grading") || requestedDeliverables.has("grading_plan")) {
-      inScope.push("grading");
-      supporting.push("survey, slope, or benchmark elevations");
-    }
-    if (disciplineSet.has("drainage") || requestedDeliverables.has("storm_pipe_plan")) {
-      inScope.push("drainage and storm");
-      supporting.push("storm outfall or drainage direction");
-      supporting.push("existing drainage patterns");
-    }
-    if (disciplineSet.has("utility") || requestedDeliverables.has("utility_plan")) {
-      inScope.push("utilities");
-      supporting.push("water and sanitary tie-in points");
-      supporting.push("utility maps or known connection locations");
-    }
-
-    const blocked = previewBlockedReasons.filter(Boolean);
-    const note =
-      blocked.length > 0
-        ? `The current blockers are ${joinNatural(blocked, 3)}.`
-        : previewReview?.release_status === "ready"
-          ? "The core design inputs look complete enough for release-ready review."
-          : neededNow.length
-            ? "Filling the missing inputs below will make the next run more reliable."
-            : "The core design inputs are already in place. The supporting items below would sharpen the engineering output.";
-
-    return {
-      neededNow: Array.from(new Set(neededNow)),
-      supporting: Array.from(new Set(supporting)).filter((item) => !neededNow.includes(item)),
-      inScope: Array.from(new Set(inScope)),
-      note,
-    };
-  })();
 
   if (!user) {
     return (
@@ -4202,117 +4206,12 @@ export default function PerformanceAIDashboard() {
         />
 
         <div className="flex min-h-screen">
-          <ProjectSidebar
-            onNewProject={handleNewProject}
-            chatMessages={chatMessages}
-            learningReport={learningReport}
-            learningReportUpdatedAt={learningReportUpdatedAt}
-            onRefreshLearningReport={refreshLearningReport}
-            previewAssumptionCategories={previewAssumptionCategories}
-            previewFixActions={previewFixActions}
-            previewFixTargets={previewFixTargets}
-            previewReviewCategories={previewReviewCategories}
-            previewBlockedReasons={previewBlockedReasons}
-            previewReadyDeliverables={previewReadyDeliverables}
-            previewFailedDeliverables={previewFailedDeliverables}
-            previewExtraDeliverables={previewExtraDeliverables}
-            previewReviewReadyCount={previewReadyDeliverables.length}
-            previewReviewRequestedCount={
-              (previewReview?.requested_deliverables ?? []).length ||
-              previewReadyDeliverables.length
-            }
-            previewRerunTotal={previewReview?.rerun_total ?? 0}
-            whatYouNeedSummary={whatYouNeedSummary}
-            previewRerunSignals={previewRerunSignals}
-            issues={issues}
-            issueTargets={issueTargets}
-            previewInteraction={previewInteraction}
-            selectedIssueId={selectedIssueId}
-            onSelectIssue={setSelectedIssueId}
-            totalPipeLength={totalPipeLength}
-            maxSlope={maxSlope}
-            minSlope={minSlope}
-            flowCfs={flowCfs}
-            cutFillNet={cutFillNet}
-            basinSize={basinSize}
-            showMeasurements={showMeasurements}
-            showCalculations={showCalculations}
-            onToggleMeasurements={() => setShowMeasurements((prev) => !prev)}
-            onToggleCalculations={() => setShowCalculations((prev) => !prev)}
-            previewLayers={previewLayers}
-            onTogglePreviewLayer={(key) =>
-              setPreviewLayers((prev) => ({ ...prev, [key]: !prev[key] }))
-            }
-            onQueuePreviewRefresh={queuePreviewRefresh}
-            mapSnapshotInputRef={mapSnapshotInputRef}
-            surveyInputRef={surveyInputRef}
-            onUploadImage={uploadImage}
-            onUploadSurvey={uploadSurvey}
-            surveyFileName={surveyFileName}
-            surveySlopeEstimate={surveySlopeEstimate}
-            mapSnapshotPath={mapSnapshotPath}
-            mapAnalysis={mapAnalysis}
-            uploadedImageApiUrl={uploadedImageApiUrl}
-            uploadedImagePreviewUrl={uploadedImagePreviewUrl}
-            onEstimateSurveySlope={estimateSurveySlope}
-            onAnalyzeMapSnapshot={analyzeMapSnapshot}
-            quantityRollupsEnabled={quantityRollupsEnabled}
-            onToggleQuantityRollups={() => setQuantityRollupsEnabled((prev) => !prev)}
-            quantityRows={quantityRows}
-          />
-
           <main className="flex min-w-0 flex-1 flex-col">
             <WorkspaceToolbar
               onRefreshWorkspace={handleRefreshWorkspace}
             />
 
             <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-6 md:px-6">
-              <ProjectControls
-                siteName={siteName}
-                fileName={fileName}
-                onSiteNameChange={setSiteName}
-                onFileNameChange={setFileName}
-                onSiteNameEdited={() => setSiteNameAuto(false)}
-                onFileNameEdited={() => setFileNameAuto(false)}
-                onSaveProjectNames={() =>
-                  void saveProject({
-                    nameOverride: siteName.trim(),
-                    fileNameOverride: fileName.trim(),
-                    autoNamedOverride: false,
-                    autoFileNamedOverride: false,
-                  })
-                }
-                disciplineToggles={disciplineToggles.map((item) => ({
-                  label: item.label,
-                  checked: item.checked,
-                  onToggle: () => item.setter(!item.checked),
-                }))}
-              />
-
-              <div className="rounded-[24px] border border-slate-200 bg-white/90 p-4 shadow-[0_14px_45px_-30px_rgba(15,23,42,0.4)]">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Workflow Status
-                    </p>
-                    <p className="mt-2 text-lg font-semibold text-slate-950">
-                      {workflowStatus.stateLabel}
-                    </p>
-                    <p className="mt-1 text-sm text-slate-600">
-                      {workflowStatus.stateDetail}
-                    </p>
-                  </div>
-                  <div className="flex flex-col gap-2 text-sm text-slate-600">
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                      Mode: {workflowStatus.modeLabel}
-                    </span>
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                      Phase: {workflowStatus.phaseLabel}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
               <ChatPanel
                 chatMessages={chatMessages}
                 chatScrollRef={chatScrollRef}
@@ -4351,6 +4250,31 @@ export default function PerformanceAIDashboard() {
                 approvalState={approvalStatus.state}
                 approvalPhaseLabel={approvalStatus.label}
                 approvalError={approvalError}
+                collapsed={chatCollapsed}
+                onToggleCollapsed={() => setChatCollapsed((prev) => !prev)}
+                summaryText={chatSummary}
+              />
+
+              <ProjectControls
+                siteName={siteName}
+                fileName={fileName}
+                onSiteNameChange={setSiteName}
+                onFileNameChange={setFileName}
+                onSiteNameEdited={() => setSiteNameAuto(false)}
+                onFileNameEdited={() => setFileNameAuto(false)}
+                onSaveProjectNames={() =>
+                  void saveProject({
+                    nameOverride: siteName.trim(),
+                    fileNameOverride: fileName.trim(),
+                    autoNamedOverride: false,
+                    autoFileNamedOverride: false,
+                  })
+                }
+                disciplineToggles={disciplineToggles.map((item) => ({
+                  label: item.label,
+                  checked: item.checked,
+                  onToggle: () => item.setter(!item.checked),
+                }))}
               />
 
             <PreviewPanel
@@ -4367,7 +4291,7 @@ export default function PerformanceAIDashboard() {
               previewQuality={previewQuality}
               previewLabelDensity={previewLabelDensity}
               previewRenderMode={previewRenderMode}
-              placementMode={placementModeEnabled}
+              placementMode={placementModeEnabled || Boolean(activePlacementId)}
               onPlaceBuilding={handlePlaceBuilding}
               onPlaceObject={handlePlaceObject}
               buildingPlacements={buildingPlacements}
@@ -4515,7 +4439,11 @@ export default function PerformanceAIDashboard() {
                           event.dataTransfer?.setData("civora-object-id", item.id);
                           setPlacementModeEnabled(true);
                         }}
-                        className="rounded-2xl border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-sm"
+                        className={`rounded-2xl border bg-white p-3 text-xs text-slate-600 shadow-sm ${
+                          activePlacementId === item.id
+                            ? "border-amber-400 ring-2 ring-amber-200"
+                            : "border-slate-200"
+                        }`}
                         title={`${item.label} • ${item.w} ft x ${item.d} ft`}
                       >
                         <div className="flex items-center justify-between">
@@ -4560,7 +4488,11 @@ export default function PerformanceAIDashboard() {
                       .map((item) => (
                         <div
                           key={item.id}
-                          className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 shadow-sm"
+                          className={`rounded-2xl border bg-slate-50 p-3 text-xs text-slate-600 shadow-sm ${
+                            activePlacementId === item.id
+                              ? "border-amber-400 ring-2 ring-amber-200"
+                              : "border-slate-200"
+                          }`}
                           title={`${item.label} • ${item.w} ft x ${item.d} ft`}
                         >
                           <div className="flex items-center justify-between">

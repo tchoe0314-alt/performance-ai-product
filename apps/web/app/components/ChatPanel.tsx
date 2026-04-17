@@ -1,6 +1,6 @@
 "use client";
 
-import { FileImage } from "lucide-react";
+import { ChevronDown, FileImage } from "lucide-react";
 
 import type { ChatMessage, PlanToolMode } from "../types";
 import { formatChatTimestamp } from "../utils/formatting";
@@ -39,6 +39,9 @@ type ChatPanelProps = {
   approvalState: "idle" | "approving" | "starting";
   approvalPhaseLabel: string | null;
   approvalError: string | null;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  summaryText: string;
 };
 
 export default function ChatPanel({
@@ -68,6 +71,9 @@ export default function ChatPanel({
   approvalState,
   approvalPhaseLabel,
   approvalError,
+  collapsed,
+  onToggleCollapsed,
+  summaryText,
 }: ChatPanelProps) {
   const normalizedStatus = String(visibleActiveJobStatus || "").toLowerCase();
   const isCancelling = normalizedStatus === "cancelling";
@@ -76,78 +82,96 @@ export default function ChatPanel({
   const approvalLabel = approvalPhaseLabel ? `Starting ${approvalPhaseLabel}...` : "Starting next phase...";
 
   return (
-    <div className="rounded-[28px] border border-slate-200 bg-white">
-      <div
-        ref={chatScrollRef}
-        className="max-h-[420px] space-y-4 overflow-y-auto p-4 md:p-6"
+    <div className="rounded-[24px] border border-slate-200 bg-white shadow-[0_10px_40px_-28px_rgba(15,23,42,0.5)]">
+      <button
+        type="button"
+        onClick={onToggleCollapsed}
+        className="flex w-full items-center justify-between gap-4 border-b border-slate-200 px-4 py-3 text-left"
       >
-        {chatMessages.map((message) => (
-          <div
-            key={message.id}
-            className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-          >
-            <div
-              className={`max-w-[85%] rounded-[28px] px-4 py-3 ${
-                message.role === "user"
-                  ? "bg-slate-950 text-white"
-                  : message.role === "system"
-                    ? "border border-amber-200 bg-amber-50 text-amber-900"
-                    : "border border-slate-200 bg-white text-slate-900"
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-70">
-                  {message.role === "user"
-                    ? "You"
-                    : message.role === "system"
-                      ? "Action"
-                      : "Civora AI"}
-                </span>
-                {message.role === "assistant" && message.phaseTag ? (
-                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                    {message.phaseTag}
-                  </span>
-                ) : null}
-                <span className="text-[11px] opacity-60">
-                  {formatChatTimestamp(message.createdAt)}
-                </span>
-              </div>
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
-                {message.content}
-              </p>
-              {message.role === "assistant" ? (
-                <div className="mt-3 flex items-center gap-2 text-xs">
-                  <span className="text-slate-400">Was this helpful?</span>
-                  <button
-                    type="button"
-                    onClick={() => onSetMessageFeedback(message.id, "up")}
-                    className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
-                      message.feedback === "up"
-                        ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-                        : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    Helpful
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onSetMessageFeedback(message.id, "down")}
-                    className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
-                      message.feedback === "down"
-                        ? "border-rose-500 bg-rose-50 text-rose-700"
-                        : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    Not quite
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        ))}
-      </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+            Chat
+          </p>
+          <p className="mt-1 text-sm text-slate-700">{summaryText}</p>
+        </div>
+        <ChevronDown
+          className={`h-4 w-4 text-slate-500 transition ${collapsed ? "" : "rotate-180"}`}
+        />
+      </button>
 
-      <div className="border-t border-slate-200 p-4 md:p-6">
+      {!collapsed ? (
+        <div
+          ref={chatScrollRef}
+          className="max-h-[320px] space-y-4 overflow-y-auto p-4 md:p-6"
+        >
+          {chatMessages.map((message) => (
+            <div
+              key={message.id}
+              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+            >
+              <div
+                className={`max-w-[85%] rounded-[28px] px-4 py-3 ${
+                  message.role === "user"
+                    ? "bg-slate-950 text-white"
+                    : message.role === "system"
+                      ? "border border-amber-200 bg-amber-50 text-amber-900"
+                      : "border border-slate-200 bg-white text-slate-900"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-70">
+                    {message.role === "user"
+                      ? "You"
+                      : message.role === "system"
+                        ? "Action"
+                        : "Civora AI"}
+                  </span>
+                  {message.role === "assistant" && message.phaseTag ? (
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                      {message.phaseTag}
+                    </span>
+                  ) : null}
+                  <span className="text-[11px] opacity-60">
+                    {formatChatTimestamp(message.createdAt)}
+                  </span>
+                </div>
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
+                  {message.content}
+                </p>
+                {message.role === "assistant" ? (
+                  <div className="mt-3 flex items-center gap-2 text-xs">
+                    <span className="text-slate-400">Was this helpful?</span>
+                    <button
+                      type="button"
+                      onClick={() => onSetMessageFeedback(message.id, "up")}
+                      className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
+                        message.feedback === "up"
+                          ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                          : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      Helpful
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onSetMessageFeedback(message.id, "down")}
+                      className={`rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
+                        message.feedback === "down"
+                          ? "border-rose-500 bg-rose-50 text-rose-700"
+                          : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      Not quite
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="border-t border-slate-200 p-4 md:p-5">
         {(busy || hasVisibleActiveJob) && (
           <div className="mb-4 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4">
             <div className="flex items-start justify-between gap-4">
@@ -212,13 +236,15 @@ export default function ChatPanel({
           </div>
         )}
 
-        <div className="mb-4 rounded-3xl border border-slate-200 bg-slate-50 p-3">
+        <div className={`rounded-3xl border border-slate-200 bg-slate-50 p-3 ${collapsed ? "" : "mb-4"}`}>
           <TextArea
             value={prompt}
             onChange={(e) => onPromptChange(e.target.value)}
             onKeyDown={onPromptKeyDown}
             placeholder="Message Civora AI with what you want to create or change..."
-            className="h-[150px] min-h-[150px] max-h-[240px] border-0 bg-transparent px-1 py-1 shadow-none focus:ring-0"
+            className={`border-0 bg-transparent px-1 py-1 shadow-none focus:ring-0 ${
+              collapsed ? "h-[72px] min-h-[72px] max-h-[96px]" : "h-[150px] min-h-[150px] max-h-[240px]"
+            }`}
           />
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap gap-2">
@@ -287,7 +313,7 @@ export default function ChatPanel({
           </div>
         </div>
 
-        {!busy && !hasVisibleActiveJob && statusMessage && (
+        {!busy && !hasVisibleActiveJob && !collapsed && statusMessage && (
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
             {statusMessage}
           </div>

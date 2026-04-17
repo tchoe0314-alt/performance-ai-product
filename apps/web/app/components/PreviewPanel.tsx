@@ -1059,7 +1059,7 @@ export default function PreviewPanel({
               ) : null}
               {placementMode ? (
                 <div className="pointer-events-none absolute left-6 top-6 hidden rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-800 lg:block">
-                  Placement mode: click to drop a building
+                  Placement mode: click to drop the selected object
                 </div>
               ) : previewInteraction === "interactive" ? (
                 <div
