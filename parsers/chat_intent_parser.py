@@ -783,6 +783,9 @@ def _revision_acknowledgement(message: str, context: Dict[str, Any]) -> str:
     reply = " ".join(parts).strip()
     if not reply.endswith("."):
         reply += "."
+    phase = str(context.get("current_phase") or "").strip()
+    if phase:
+        reply = f"{reply} Current phase: {phase}."
     return reply + _remembered_instruction_fragment(context)
 
 
@@ -799,6 +802,9 @@ def _revision_mode_acknowledgement(message: str, context: Dict[str, Any], preamb
     reply = " ".join(parts).strip()
     if not reply.endswith("."):
         reply += "."
+    phase = str(context.get("current_phase") or "").strip()
+    if phase:
+        reply = f"{reply} Current phase: {phase}."
     return reply + _remembered_instruction_fragment(context)
 
 
@@ -1849,7 +1855,7 @@ def _structured_clarification_reply(
     inferred_project_type: str,
 ) -> str:
     strategy_mode = str(context.get("strategy_mode") or "assisted").strip().lower()
-    primary_missing = missing[:3]
+    primary_missing = missing[:2]
     ask = _format_missing_requirements(primary_missing)
     prompt_parts: List[str] = []
     if inferred_project_type:
@@ -1872,11 +1878,11 @@ def _structured_clarification_reply(
     if any("systems" in item for item in primary_missing):
         examples.append("which systems to include")
     if examples:
-        prompt_parts.append("Tell me " + _format_missing_requirements(examples[:3]) + ".")
+        prompt_parts.append("Tell me " + _format_missing_requirements(examples[:2]) + ".")
 
     if strategy_mode == "assisted":
         prompt_parts.append(
-            "If you want, I can stay within exactly what you asked for, or I can assist by filling in only the missing engineering details once you say yes."
+            "If you want, I can stay within exactly what you asked for, or I can fill in only the missing engineering details once you say yes."
         )
 
     return " ".join(prompt_parts) + _remembered_instruction_fragment(context)
@@ -2399,9 +2405,11 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         "Choose fix or improve only when the user is explicitly asking for that action. "
         "In manual mode, be conservative and ask for clarification unless the design request is explicit. "
         "If the user is asking for a design but the request is underspecified, do not bluff or invent a full plan. "
-        "Set needs_clarification=true and write a short, natural assistant message that asks for the next most important missing details, such as site type, lot size, parking target, building size, road needs, grading needs, drainage needs, utility scope, or image/sketch availability. "
+        "Set needs_clarification=true and write a short, natural assistant message that asks for the next most important missing details. "
+        "Ask at most two questions and avoid long lists. "
         "In assisted mode, when key details are missing, you may ask whether the user wants Civora to help fill in those blanks instead of guessing outright. "
         "The context may include a memory_summary of the user's stated preferences and constraints from earlier in the chat. Respect those remembered instructions and do not forget them when deciding how to respond. "
+        "If context includes current_phase, reference it briefly so the user knows where the workflow is. "
         "Ask only the smallest useful set of follow-up questions needed to move the design forward. "
         "For casual conversation, answer naturally and briefly like a helpful AI teammate. "
         "Return concise, helpful assistant wording with a calm professional personality. "
@@ -2504,7 +2512,7 @@ def _openai_chat_clarification(
     system_prompt = (
         "You are Civora AI. The user asked for a design, but required inputs are missing. "
         "Write a short, friendly clarification question that asks only for the missing details. "
-        "Keep it to 1-3 sentences, and do not invent site details. "
+        "Ask at most two questions, keep it to 1-3 sentences, and do not invent site details. "
         "Return plain text only."
     )
     payload = {

@@ -1553,6 +1553,7 @@ export default function PerformanceAIDashboard() {
   const suppressProjectAutoLoadRef = useRef(false);
   const chatAutosaveTimeoutRef = useRef<number | null>(null);
   const autosaveSuspendRef = useRef(false);
+  const lastProjectNameSignatureRef = useRef<string>("");
   const autoAdvanceByJobRef = useRef<Record<string, boolean>>({});
   const previewRecoveryKeyRef = useRef("");
   const lastSiteInputProjectRef = useRef("");
@@ -2181,6 +2182,31 @@ export default function PerformanceAIDashboard() {
     void refreshLearningReport();
   }, [token]);
 
+  useEffect(() => {
+    if (autosaveSuspendRef.current) return;
+    const signature = `${siteName}::${fileName}`;
+    if (!lastProjectNameSignatureRef.current) {
+      lastProjectNameSignatureRef.current = signature;
+      return;
+    }
+    if (signature === lastProjectNameSignatureRef.current) return;
+    lastProjectNameSignatureRef.current = signature;
+    if (prompt.trim()) {
+      if (directRunAbortRef.current) {
+        directRunAbortRef.current.abort();
+        directRunAbortRef.current = null;
+        runSubmissionRef.current = false;
+        setBusy(false);
+      }
+      setPrompt("");
+      appendChatMessage(
+        "assistant",
+        "I cleared the draft prompt because the project name changed. Paste it back if you still want to run it.",
+        "status",
+      );
+    }
+  }, [siteName, fileName, prompt]);
+
   const applyProjectInput = (projectInput: ProjectInput) => {
     if (!projectInput || typeof projectInput !== "object") {
       return;
@@ -2324,6 +2350,19 @@ export default function PerformanceAIDashboard() {
     const nextStrategy = overrides.strategyMode ?? strategyMode;
     const liveThread = chatMessagesRef.current;
     const designMemory = extractDesignMemory(liveThread);
+    const storedMemory =
+      currentProject?.project_input?.meta?.chat_memory &&
+      typeof currentProject.project_input.meta.chat_memory === "object"
+        ? currentProject.project_input.meta.chat_memory
+        : null;
+    const mergedPreferences = [
+      ...toArray((storedMemory as { preferences?: string[] } | null)?.preferences),
+      ...designMemory.preferences,
+    ].slice(-8);
+    const mergedConstraints = [
+      ...toArray((storedMemory as { constraints?: string[] } | null)?.constraints),
+      ...designMemory.constraints,
+    ].slice(-8);
     return {
       strategy_mode: nextStrategy,
       site_name: overrides.siteName ?? siteName,
@@ -2365,9 +2404,15 @@ export default function PerformanceAIDashboard() {
         : [],
       issues,
       memory_summary: {
-        ...designMemory,
-        examples: [...designMemory.preferences, ...designMemory.constraints].slice(-8),
+        preferences: mergedPreferences,
+        constraints: mergedConstraints,
+        open_questions: toArray((storedMemory as { open_questions?: string[] } | null)?.open_questions).slice(-6),
+        examples: [...mergedPreferences, ...mergedConstraints].slice(-8),
       },
+      current_phase:
+        String(visibleActiveJob?.stage || "") ||
+        String((currentPlanMeta?.runtime_phase_checkpoint as { stage_name?: string } | undefined)?.stage_name || ""),
+      current_phase_detail: String(visibleActiveJob?.stage_detail || ""),
       chat_thread: [
         ...liveThread,
         createChatMessage("user", message),
@@ -3611,11 +3656,13 @@ export default function PerformanceAIDashboard() {
           activeJobProjectSyncRef.current = activeJobProjectSignature;
           const requestId = projectLoadRequestRef.current + 1;
           projectLoadRequestRef.current = requestId;
+          autosaveSuspendRef.current = true;
           void getJson<{ project: ProjectRecord }>(`/api/projects/${jobProjectId}`, {
             token,
           })
             .then((projectData) => {
               if (projectLoadRequestRef.current !== requestId) {
+                autosaveSuspendRef.current = false;
                 return;
               }
               const syncedProject = projectData.project;
@@ -3626,6 +3673,7 @@ export default function PerformanceAIDashboard() {
               applyProjectInput(syncedProject.project_input ?? {});
               upsertProjectSummary(syncedProject);
               loadProjectResultInBackground(syncedProject);
+              autosaveSuspendRef.current = false;
             })
             .catch((error) => {
               setStatusMessage(
@@ -3633,6 +3681,7 @@ export default function PerformanceAIDashboard() {
                   ? error.message
                   : "Project sync from active job failed.",
               );
+              autosaveSuspendRef.current = false;
             });
         }
       }
