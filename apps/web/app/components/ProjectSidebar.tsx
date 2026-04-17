@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { ChevronDown, MessageSquarePlus } from "lucide-react";
 
-import type { ChatMessage, LearningReport, PhaseStats } from "../types";
+import type { ChatMessage, LearningReport } from "../types";
 import {
   computeLearningScore,
   defaultIssues,
@@ -129,7 +129,6 @@ type ProjectSidebarProps = {
   quantityRollupsEnabled: boolean;
   onToggleQuantityRollups: () => void;
   quantityRows: QuantityRow[];
-  phaseStats: PhaseStats;
 };
 
 export default function ProjectSidebar({
@@ -204,7 +203,6 @@ export default function ProjectSidebar({
   quantityRollupsEnabled,
   onToggleQuantityRollups,
   quantityRows,
-  phaseStats,
 }: ProjectSidebarProps) {
   const [showLearningPanel, setShowLearningPanel] = useState(true);
   const [sidebarSections, setSidebarSections] = useState<Record<string, boolean>>({
@@ -223,7 +221,6 @@ export default function ProjectSidebar({
     siteInputs: false,
     materials: false,
     coverage: false,
-    phaseStats: true,
   });
 
   const learningSummary = useMemo(() => {
@@ -938,49 +935,6 @@ export default function ProjectSidebar({
           </div>,
         )}
 
-        {renderSidebarSection(
-          "phaseStats",
-          "Phase Stats",
-          <div className="grid gap-2 text-sm text-slate-700">
-            {previewPhaseEntries.map((phase) => (
-              <div
-                key={phase.key}
-                className="rounded-2xl border border-slate-200 px-3 py-2"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">{phase.label}</span>
-                  <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
-                    {phase.status}
-                  </span>
-                </div>
-                <div className="mt-2 grid gap-1 text-xs text-slate-500">
-                  {(() => {
-                    const metrics = (phaseStats[phase.key as keyof PhaseStats] ?? [])
-                      .filter((item) => Number(item.value || 0) > 0)
-                      .slice(0, 4);
-                    if (!metrics.length) {
-                      return (
-                        <p className="text-xs text-slate-500">
-                          Metrics will populate after this phase completes.
-                        </p>
-                      );
-                    }
-                    return metrics.map((item) => (
-                      <div key={item.label} className="flex items-center justify-between">
-                        <span>{item.label}</span>
-                        <span className="font-semibold text-slate-700">
-                          {item.format === "count"
-                            ? formatCount(Number(item.value || 0), item.unit)
-                            : formatMetric(Number(item.value || 0), item.unit)}
-                        </span>
-                      </div>
-                    ));
-                  })()}
-                </div>
-              </div>
-            ))}
-          </div>,
-        )}
       </div>
     </aside>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Maximize2, X } from "lucide-react";
 
 import type {
@@ -50,6 +50,57 @@ type PreviewPanelProps = {
   calculationOverlayStats: Array<{ label: string; value: number | null; unit: string }>;
 };
 
+type DragState = {
+  startX: number;
+  startY: number;
+  originX: number;
+  originY: number;
+};
+
+function useDraggableCard() {
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<DragState | null>(null);
+  const positionRef = useRef(position);
+
+  useEffect(() => {
+    positionRef.current = position;
+  }, [position]);
+
+  const onPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    dragRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: positionRef.current.x,
+      originY: positionRef.current.y,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }, []);
+
+  useEffect(() => {
+    const handleMove = (event: PointerEvent) => {
+      if (!dragRef.current) return;
+      const dx = event.clientX - dragRef.current.startX;
+      const dy = event.clientY - dragRef.current.startY;
+      setPosition({
+        x: dragRef.current.originX + dx,
+        y: dragRef.current.originY + dy,
+      });
+    };
+    const handleUp = () => {
+      dragRef.current = null;
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+    return () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+    };
+  }, []);
+
+  return { position, onPointerDown };
+}
+
 export default function PreviewPanel({
   previewReview,
   previewTotalPhaseCount,
@@ -84,6 +135,8 @@ export default function PreviewPanel({
   measurementOverlayStats,
   calculationOverlayStats,
 }: PreviewPanelProps) {
+  const drainageCard = useDraggableCard();
+  const issuesCard = useDraggableCard();
   return (
     <div className="rounded-[28px] border border-slate-200 bg-white/90 p-4 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.4)] backdrop-blur md:p-6">
       <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -335,10 +388,21 @@ export default function PreviewPanel({
                 }`}
                 onClick={onOpenFullscreen}
               />
-              <div className="pointer-events-none absolute right-6 top-6 hidden w-[260px] rounded-[22px] border border-white/20 bg-slate-900/80 p-4 text-xs text-white shadow-[0_20px_50px_-30px_rgba(15,23,42,0.8)] backdrop-blur lg:block">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70">
-                  Drainage Stats
-                </p>
+              <div
+                className="pointer-events-auto absolute right-6 top-6 hidden min-h-[160px] w-[260px] min-w-[220px] rounded-[22px] border border-white/20 bg-slate-900/80 p-4 text-xs text-white shadow-[0_20px_50px_-30px_rgba(15,23,42,0.8)] backdrop-blur lg:block"
+                style={{
+                  transform: `translate(${drainageCard.position.x}px, ${drainageCard.position.y}px)`,
+                  resize: "both",
+                  overflow: "auto",
+                }}
+              >
+                <div
+                  onPointerDown={drainageCard.onPointerDown}
+                  className="flex cursor-move items-center justify-between text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70"
+                >
+                  <span>Drainage Stats</span>
+                  <span className="text-[10px] text-white/50">Drag</span>
+                </div>
                 <div className="mt-3 space-y-2">
                   {phaseStats.drainage_storm.map((item) => (
                     <div key={item.label} className="flex items-center justify-between gap-2">
@@ -352,10 +416,21 @@ export default function PreviewPanel({
                   ))}
                 </div>
               </div>
-              <div className="pointer-events-none absolute right-6 top-[250px] hidden w-[260px] rounded-[22px] border border-white/20 bg-slate-900/80 p-4 text-xs text-white shadow-[0_20px_50px_-30px_rgba(15,23,42,0.8)] backdrop-blur lg:block">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70">
-                  Issues Found
-                </p>
+              <div
+                className="pointer-events-auto absolute right-6 top-[250px] hidden min-h-[160px] w-[260px] min-w-[220px] rounded-[22px] border border-white/20 bg-slate-900/80 p-4 text-xs text-white shadow-[0_20px_50px_-30px_rgba(15,23,42,0.8)] backdrop-blur lg:block"
+                style={{
+                  transform: `translate(${issuesCard.position.x}px, ${issuesCard.position.y}px)`,
+                  resize: "both",
+                  overflow: "auto",
+                }}
+              >
+                <div
+                  onPointerDown={issuesCard.onPointerDown}
+                  className="flex cursor-move items-center justify-between text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70"
+                >
+                  <span>Issues Found</span>
+                  <span className="text-[10px] text-white/50">Drag</span>
+                </div>
                 <div className="mt-3 space-y-2">
                   {issues.slice(0, 4).map((issue, index) => (
                     <div key={`${issue.message}-${index}`} className="flex items-start gap-2">

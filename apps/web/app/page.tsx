@@ -2784,7 +2784,7 @@ export default function PerformanceAIDashboard() {
     const previewPayload = {
       ...payload,
       preview_quality: previewQuality,
-      render_labels: false,
+      render_labels: previewInteraction === "interactive",
       preview_layers: previewLayerList,
     };
     try {
@@ -3656,7 +3656,20 @@ export default function PerformanceAIDashboard() {
   return (
     <div className="min-h-screen bg-[#e9eaee] text-slate-950">
       <div className="flex min-h-screen flex-col">
-        <AppHeader userEmail={user.email} onLogout={handleLogout} />
+        <AppHeader
+          userEmail={user.email}
+          projects={projects}
+          activeProjectId={projectId}
+          onSelectProject={(nextProjectId) => {
+            void loadProject(nextProjectId);
+          }}
+          onViewDocs={async (nextProjectId) => {
+            await loadProject(nextProjectId);
+            await handlePreviewPlan();
+            setPreviewFullscreenOpen(true);
+          }}
+          onLogout={handleLogout}
+        />
 
         <div className="flex min-h-screen">
           <ProjectSidebar
@@ -3736,7 +3749,6 @@ export default function PerformanceAIDashboard() {
             quantityRollupsEnabled={quantityRollupsEnabled}
             onToggleQuantityRollups={() => setQuantityRollupsEnabled((prev) => !prev)}
             quantityRows={quantityRows}
-            phaseStats={phaseStats}
           />
 
           <main className="flex min-w-0 flex-1 flex-col">
