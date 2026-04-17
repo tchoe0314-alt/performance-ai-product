@@ -1,0 +1,542 @@
+export type UserRecord = {
+  user_id: string;
+  email: string;
+  name: string;
+};
+
+export type Assumption = {
+  field: string;
+  value: string;
+  reason: string;
+};
+
+export type Issue = {
+  severity: "warning" | "error";
+  message: string;
+};
+
+export type BackendIssue = {
+  severity?: string;
+  message?: string;
+};
+
+export type BackendAssumption = {
+  field_name?: string;
+  field?: string;
+  assumed_value?: unknown;
+  reason?: string;
+};
+
+export type ProjectSummary = {
+  project_id: string;
+  name: string;
+  description?: string;
+  has_result?: boolean;
+  updated_at?: number;
+};
+
+export type ProjectRecord = {
+  project_id: string;
+  name: string;
+  description?: string;
+  updated_at?: number;
+  project_input?: ProjectInput;
+  latest_result?: PlanResponse;
+  metadata?: ProjectMetadata;
+  has_result?: boolean;
+};
+
+export type JobSummary = {
+  job_id: string;
+  status: string;
+  job_type?: string;
+  project_id?: string | null;
+  updated_at?: number;
+  error?: string | null;
+  result?: PlanResponse | null;
+  stage?: string;
+  stage_detail?: string;
+  progress?: number;
+  queue_position?: number | null;
+  queued_count?: number;
+  running_count?: number;
+};
+
+export type WorkflowRunSummary = {
+  run_id: string;
+  source?: string;
+  created_at?: number;
+  success?: boolean;
+  message?: string;
+  input_mode?: string;
+  strict_mode?: boolean;
+  engineering_status?: {
+    success?: boolean;
+    status?: string;
+    trust_score?: number;
+  };
+  truth_success?: boolean;
+  all_required_complete?: boolean;
+  requested_deliverables?: string[];
+  produced_deliverables?: string[];
+  failed_deliverables?: string[];
+  manual_failures?: Array<{
+    code?: string;
+    message?: string;
+    system?: string;
+    rule?: string;
+    location?: string;
+    reason?: string;
+  }>;
+  coordination_summary?: {
+    unresolved_conflicts?: number;
+    selected_strategy?: string;
+  };
+  stage_summary?: {
+    statuses?: Record<string, string>;
+  };
+};
+
+export type WorkflowArtifact = {
+  artifact_id: string;
+  kind?: string;
+  filename?: string;
+  created_at?: number;
+  download_path?: string;
+};
+
+export type ManualFailure = {
+  code?: string;
+  message?: string;
+  system?: string;
+  rule?: string;
+  location?: string;
+  reason?: string;
+};
+
+export type IterationRecord = Record<string, unknown> & {
+  stage?: string;
+  status?: string;
+  phase?: string;
+};
+
+export type MetricValue = number | { value?: number } | null;
+export type ManagerMetrics = Record<string, MetricValue>;
+export type QuantityTotals = Record<string, number | null | undefined>;
+
+export type PipeSegment = {
+  length_ft?: number;
+  slope_pct?: number;
+  slope_ft_ft?: number;
+};
+
+export type StormSummary = {
+  segments?: PipeSegment[];
+  pipe_segments?: PipeSegment[];
+  storm_pipe_segments?: PipeSegment[];
+  total_system_flow_cfs?: number;
+  total_system_capacity_cfs?: number;
+};
+
+export type PlanExplanation = {
+  summary?: string;
+  overview?: string;
+  why?: string;
+  reasoning?: string;
+};
+
+export type ConvergenceSummary = {
+  assumption_summary?: {
+    examples?: string[];
+  };
+  fix_summary?: {
+    autofix_actions?: string[];
+  };
+  blocked_reasons?: string[];
+  blocked_exports?: string[];
+  unresolved_issue_categories?: string[];
+  dominant_issue_categories?: string[];
+  unresolved_conflict_count?: number;
+};
+
+export type PhaseCheckpoint = {
+  label?: string;
+  status?: string;
+  ready?: boolean;
+  deliverables?: string[];
+  messages?: string[];
+  blockers?: string[];
+  has_data?: boolean;
+  stages?: string[];
+  completed_phase_count?: number;
+  total_phase_count?: number;
+  blocked_exports?: string[];
+  blocked_reasons?: string[];
+  deliverables_ready?: string[];
+  deliverables_extra?: string[];
+  note?: string;
+  current_stage?: string;
+  current_status?: string;
+  job_progress?: number;
+};
+
+export type PlanMeta = {
+  explanation?: PlanExplanation;
+  convergence_summary?: ConvergenceSummary;
+  deliverables?: {
+    produced?: string[];
+    failed?: string[];
+  };
+  produced_deliverables?: string[];
+  failed_deliverables?: string[];
+  release_review?: PreviewReview;
+  release_status?: string;
+  release_note?: string;
+  phase_checkpoints?: Record<string, PhaseCheckpoint>;
+  runtime_phase_checkpoint?: {
+    stage_name?: string;
+  };
+  engineering_status?: {
+    success?: boolean;
+    status?: string;
+    trust_score?: number;
+  };
+  manager_export?: {
+    metrics?: ManagerMetrics;
+  };
+  quantities?: {
+    totals?: QuantityTotals;
+  };
+  storm_pipes?: StormSummary;
+  drainage?: Record<string, unknown>;
+  grading?: Record<string, unknown>;
+  utilities?: Record<string, unknown>;
+  truth_audit?: {
+    success?: boolean;
+  };
+  manual_validation?: {
+    failures?: ManualFailure[];
+  };
+  coordination?: Record<string, unknown>;
+  iterations?: IterationRecord[];
+};
+
+export type PlanAction = {
+  geometry?: {
+    origin?: [number, number];
+    width?: number;
+    height?: number;
+  };
+  label?: string;
+  layer?: string;
+};
+
+export type PlanResponse = {
+  final_plan?: {
+    meta?: PlanMeta;
+    actions?: PlanAction[];
+  };
+  assumptions?: BackendAssumption[];
+  issues?: BackendIssue[];
+  message?: string;
+  metadata?: {
+    iterations?: IterationRecord[];
+  };
+  job_progress?: {
+    stage?: string;
+    [key: string]: unknown;
+  };
+};
+
+export type SurveyFileInput = {
+  filename?: string;
+  stored_filename?: string;
+  survey_url?: string;
+};
+
+export type MapSnapshotInput = {
+  filename?: string;
+  stored_filename?: string;
+  image_path?: string;
+  image_url?: string;
+};
+
+export type MapAnalysis = Record<string, unknown>;
+
+export type SiteInputs = {
+  map_snapshot?: MapSnapshotInput;
+  map_analysis?: MapAnalysis;
+  survey_file?: SurveyFileInput;
+  slope_estimate?: SurveySlopeResponse | null;
+};
+
+export type ProjectInputMeta = Record<string, unknown> & {
+  site_inputs?: SiteInputs;
+  chat_thread?: ChatMessage[];
+  auto_named?: boolean;
+  auto_file_named?: boolean;
+};
+
+export type ManualFields = {
+  project_name?: string;
+  file_name?: string;
+  units?: string;
+  project_type?: string;
+  lot?: { x: number; y: number; w: number; h: number };
+  setback?: number;
+  building_width?: number;
+  building_depth?: number;
+  buildings?: Array<{ name: string; w?: number; d?: number }>;
+  site_plan?: { parking_count?: number };
+  grading?: {
+    min_slope_pct?: number;
+    max_parking_slope_pct?: number;
+    max_road_grade_pct?: number;
+    max_ada_cross_slope_pct?: number;
+  };
+  drainage?: {
+    min_pipe_slope_pct?: number;
+  };
+  disciplines?: string[];
+  terrain?: string;
+};
+
+export type ProjectInput = {
+  project_id?: string | null;
+  full_design_mode?: boolean;
+  input_mode?: StrategyMode;
+  strict_mode?: boolean;
+  prompt_text?: string | null;
+  image_path?: string | null;
+  manual_fields?: ManualFields;
+  allow_ai_fill_for_blanks?: boolean;
+  meta?: ProjectInputMeta;
+};
+
+export type ProjectMetadata = Record<string, unknown> & {
+  workflow?: {
+    runs?: WorkflowRunSummary[];
+    artifacts?: WorkflowArtifact[];
+  };
+};
+
+export type PlanRequestPayload = Record<string, unknown> & {
+  project_id?: string | null;
+  full_design_mode?: boolean;
+  input_mode?: StrategyMode;
+  strict_mode?: boolean;
+  prompt_text?: string | null;
+  image_path?: string | null;
+  manual_fields?: ManualFields;
+  allow_ai_fill_for_blanks?: boolean;
+  optimize_goal?: string | null;
+  meta?: ProjectInputMeta;
+};
+
+export type PreviewRequestPayload = Record<string, unknown> & {
+  project_id?: string | null;
+  result?: PlanResponse;
+  filename_stem?: string;
+};
+
+export type PhaseMetric = {
+  label: string;
+  value: number | null;
+  unit: string;
+  format?: "count";
+};
+
+export type PhaseStats = {
+  layout: PhaseMetric[];
+  grading: PhaseMetric[];
+  drainage_storm: PhaseMetric[];
+  utilities: PhaseMetric[];
+  coordination_validation: PhaseMetric[];
+};
+
+export type AuthStatus = {
+  auth_enabled: boolean;
+  user_count: number;
+};
+
+export type DisciplineToggle = {
+  label: string;
+  checked: boolean;
+  setter: React.Dispatch<React.SetStateAction<boolean>>;
+  desc: string;
+};
+
+export type PreviewResponse = {
+  success: boolean;
+  preview_image_data_url: string;
+  preview_annotations?: {
+    profile?: string;
+    labels?: {
+      label: string;
+      layer: string;
+      x: number;
+      y: number;
+      bounds?: { x1: number; y1: number; x2: number; y2: number };
+    }[];
+  };
+  summary?: {
+    project_name?: string;
+    units?: string;
+    action_count?: number;
+    review?: {
+      trust_score?: number;
+      converged?: boolean;
+      passes_run?: number;
+      unresolved_conflict_count?: number;
+      assumption_count?: number;
+      assumption_categories?: string[];
+      assumption_examples?: string[];
+      autofix_actions?: string[];
+      dominant_fix_targets?: string[];
+      review_categories?: string[];
+      blocked_exports?: string[];
+      blocked_reasons?: string[];
+      requested_deliverables?: string[];
+      ready_deliverables?: string[];
+      produced_deliverables?: string[];
+      extra_deliverables?: string[];
+      failed_deliverables?: string[];
+      rerun_total?: number;
+      rerun_stages?: string[];
+      rerun_reasons?: string[];
+      phase_checkpoints?: Record<
+        string,
+        {
+          label?: string;
+          status?: string;
+          ready?: boolean;
+          deliverables?: string[];
+          messages?: string[];
+          blockers?: string[];
+          has_data?: boolean;
+          stages?: string[];
+          completed_phase_count?: number;
+          total_phase_count?: number;
+          blocked_exports?: string[];
+          blocked_reasons?: string[];
+          deliverables_ready?: string[];
+          deliverables_extra?: string[];
+          note?: string;
+          current_stage?: string;
+          current_status?: string;
+          job_progress?: number;
+        }
+      >;
+      release_status?: "ready" | "review" | "blocked" | string;
+      release_note?: string;
+    };
+  };
+};
+
+export type PreviewReview = NonNullable<PreviewResponse["summary"]>["review"];
+
+export type UploadImageResponse = {
+  success: boolean;
+  image_path?: string;
+  image_url?: string;
+  filename?: string;
+};
+
+export type UploadSurveyResponse = {
+  success: boolean;
+  filename?: string;
+  stored_filename?: string;
+  survey_url?: string;
+};
+
+export type SurveySlopeResponse = {
+  success: boolean;
+  slope_ratio?: number;
+  slope_percent?: number;
+  downhill_dx?: number;
+  downhill_dy?: number;
+  direction?: string;
+  point_count?: number;
+};
+
+export type PlanToolMode = "run" | "fix" | "improve";
+export type StrategyMode = "manual" | "assisted";
+export type ControlOverrides = Partial<{
+  strategyMode: StrategyMode;
+  projectType: string;
+  units: string;
+  roads: boolean;
+  grading: boolean;
+  drainage: boolean;
+  utilities: boolean;
+  siteName: string;
+  fileName: string;
+  lotWidth: string | number;
+  lotHeight: string | number;
+  buildingWidth: string | number;
+  buildingDepth: string | number;
+  buildingCount: string | number;
+  setback: string | number;
+  parkingCount: string | number;
+  minSlopePct: string | number;
+  pipeMinSlopePct: string | number;
+  maxParkingSlopePct: string | number;
+  maxRoadGradePct: string | number;
+  maxAdaCrossSlopePct: string | number;
+}>;
+
+export type ChatDecisionIntent =
+  | "conversation"
+  | "settings"
+  | "design"
+  | "explain"
+  | "fix"
+  | "improve";
+
+export type ChatDecisionResponse = {
+  success: boolean;
+  intent: ChatDecisionIntent;
+  assistant_message: string;
+  run_mode: "none" | "run" | "fix" | "improve";
+  design_prompt: string;
+  needs_clarification: boolean;
+  reason: string;
+  confidence: number;
+  control_overrides: ControlOverrides;
+};
+
+export type ChatMessage = {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  createdAt: number;
+  kind?: "message" | "status" | "explanation" | "action";
+  feedback?: "up" | "down";
+  phaseTag?: string;
+};
+
+export type LearningReport = {
+  feedback?: {
+    up?: number;
+    down?: number;
+    total?: number;
+    score_percent?: number;
+  };
+  training_examples?: {
+    count?: number;
+    synthetic?: number;
+    feedback_based?: number;
+    interaction?: number;
+  };
+};
+
+export type Preview3DItem = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  height: number;
+  color: string;
+  label: string;
+  layer: string;
+};

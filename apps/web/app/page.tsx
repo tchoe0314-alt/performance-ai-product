@@ -2,18 +2,9 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
 import {
-  Clock3,
-  Eye,
-  EyeOff,
   FileImage,
-  FolderOpen,
-  Map,
   Maximize2,
-  MessageSquarePlus,
-  Sparkles,
-  Trash2,
   X,
 } from "lucide-react";
 
@@ -26,1261 +17,90 @@ import {
   toApiUrl,
 } from "../lib/api";
 
-type UserRecord = {
-  user_id: string;
-  email: string;
-  name: string;
-};
-
-type Assumption = {
-  field: string;
-  value: string;
-  reason: string;
-};
-
-type Issue = {
-  severity: "warning" | "error";
-  message: string;
-};
-
-type BackendIssue = {
-  severity?: string;
-  message?: string;
-};
-
-type BackendAssumption = {
-  field_name?: string;
-  field?: string;
-  assumed_value?: unknown;
-  reason?: string;
-};
-
-type ProjectSummary = {
-  project_id: string;
-  name: string;
-  description?: string;
-  has_result?: boolean;
-  updated_at?: number;
-};
-
-type ProjectRecord = {
-  project_id: string;
-  name: string;
-  description?: string;
-  updated_at?: number;
-  project_input?: ProjectInput;
-  latest_result?: PlanResponse;
-  metadata?: ProjectMetadata;
-  has_result?: boolean;
-};
-
-type JobSummary = {
-  job_id: string;
-  status: string;
-  job_type?: string;
-  project_id?: string | null;
-  updated_at?: number;
-  error?: string | null;
-  result?: PlanResponse | null;
-  stage?: string;
-  stage_detail?: string;
-  progress?: number;
-  queue_position?: number | null;
-  queued_count?: number;
-  running_count?: number;
-};
-
-type WorkflowRunSummary = {
-  run_id: string;
-  source?: string;
-  created_at?: number;
-  success?: boolean;
-  message?: string;
-  input_mode?: string;
-  strict_mode?: boolean;
-  engineering_status?: {
-    success?: boolean;
-    status?: string;
-    trust_score?: number;
-  };
-  truth_success?: boolean;
-  all_required_complete?: boolean;
-  requested_deliverables?: string[];
-  produced_deliverables?: string[];
-  failed_deliverables?: string[];
-  manual_failures?: Array<{
-    code?: string;
-    message?: string;
-    system?: string;
-    rule?: string;
-    location?: string;
-    reason?: string;
-  }>;
-  coordination_summary?: {
-    unresolved_conflicts?: number;
-    selected_strategy?: string;
-  };
-  stage_summary?: {
-    statuses?: Record<string, string>;
-  };
-};
-
-type WorkflowArtifact = {
-  artifact_id: string;
-  kind?: string;
-  filename?: string;
-  created_at?: number;
-  download_path?: string;
-};
-
-type ManualFailure = {
-  code?: string;
-  message?: string;
-  system?: string;
-  rule?: string;
-  location?: string;
-  reason?: string;
-};
-
-type IterationRecord = Record<string, unknown> & {
-  stage?: string;
-  status?: string;
-  phase?: string;
-};
-
-type MetricValue = number | { value?: number } | null;
-type ManagerMetrics = Record<string, MetricValue>;
-type QuantityTotals = Record<string, number | null | undefined>;
-
-type PipeSegment = {
-  length_ft?: number;
-  slope_pct?: number;
-  slope_ft_ft?: number;
-};
-
-type StormSummary = {
-  segments?: PipeSegment[];
-  pipe_segments?: PipeSegment[];
-  storm_pipe_segments?: PipeSegment[];
-  total_system_flow_cfs?: number;
-  total_system_capacity_cfs?: number;
-};
-
-type PlanExplanation = {
-  summary?: string;
-  overview?: string;
-  why?: string;
-  reasoning?: string;
-};
-
-type ConvergenceSummary = {
-  assumption_summary?: {
-    examples?: string[];
-  };
-  fix_summary?: {
-    autofix_actions?: string[];
-  };
-  blocked_reasons?: string[];
-  blocked_exports?: string[];
-  unresolved_issue_categories?: string[];
-  dominant_issue_categories?: string[];
-  unresolved_conflict_count?: number;
-};
-
-type PhaseCheckpoint = {
-  label?: string;
-  status?: string;
-  ready?: boolean;
-  deliverables?: string[];
-  messages?: string[];
-  blockers?: string[];
-  has_data?: boolean;
-  stages?: string[];
-  completed_phase_count?: number;
-  total_phase_count?: number;
-  blocked_exports?: string[];
-  blocked_reasons?: string[];
-  deliverables_ready?: string[];
-  deliverables_extra?: string[];
-  note?: string;
-  current_stage?: string;
-  current_status?: string;
-  job_progress?: number;
-};
-
-type PlanMeta = {
-  explanation?: PlanExplanation;
-  convergence_summary?: ConvergenceSummary;
-  deliverables?: {
-    produced?: string[];
-    failed?: string[];
-  };
-  produced_deliverables?: string[];
-  failed_deliverables?: string[];
-  release_review?: PreviewReview;
-  release_status?: string;
-  release_note?: string;
-  phase_checkpoints?: Record<string, PhaseCheckpoint>;
-  runtime_phase_checkpoint?: {
-    stage_name?: string;
-  };
-  engineering_status?: {
-    success?: boolean;
-    status?: string;
-    trust_score?: number;
-  };
-  manager_export?: {
-    metrics?: ManagerMetrics;
-  };
-  quantities?: {
-    totals?: QuantityTotals;
-  };
-  storm_pipes?: StormSummary;
-  drainage?: Record<string, unknown>;
-  grading?: Record<string, unknown>;
-  utilities?: Record<string, unknown>;
-  truth_audit?: {
-    success?: boolean;
-  };
-  manual_validation?: {
-    failures?: ManualFailure[];
-  };
-  coordination?: Record<string, unknown>;
-  iterations?: IterationRecord[];
-};
-
-type PlanAction = {
-  geometry?: {
-    origin?: [number, number];
-    width?: number;
-    height?: number;
-  };
-  label?: string;
-  layer?: string;
-};
-
-type PlanResponse = {
-  final_plan?: {
-    meta?: PlanMeta;
-    actions?: PlanAction[];
-  };
-  assumptions?: BackendAssumption[];
-  issues?: BackendIssue[];
-  message?: string;
-  metadata?: {
-    iterations?: IterationRecord[];
-  };
-  job_progress?: {
-    stage?: string;
-    [key: string]: unknown;
-  };
-};
-
-type SurveyFileInput = {
-  filename?: string;
-  stored_filename?: string;
-  survey_url?: string;
-};
-
-type MapSnapshotInput = {
-  filename?: string;
-  stored_filename?: string;
-  image_path?: string;
-  image_url?: string;
-};
-
-type MapAnalysis = Record<string, unknown>;
-
-type SiteInputs = {
-  map_snapshot?: MapSnapshotInput;
-  map_analysis?: MapAnalysis;
-  survey_file?: SurveyFileInput;
-  slope_estimate?: SurveySlopeResponse | null;
-};
-
-type ProjectInputMeta = Record<string, unknown> & {
-  site_inputs?: SiteInputs;
-  chat_thread?: ChatMessage[];
-  auto_named?: boolean;
-  auto_file_named?: boolean;
-};
-
-type ManualFields = {
-  project_name?: string;
-  file_name?: string;
-  units?: string;
-  project_type?: string;
-  lot?: { x: number; y: number; w: number; h: number };
-  setback?: number;
-  building_width?: number;
-  building_depth?: number;
-  buildings?: Array<{ name: string; w?: number; d?: number }>;
-  site_plan?: { parking_count?: number };
-  grading?: {
-    min_slope_pct?: number;
-    max_parking_slope_pct?: number;
-    max_road_grade_pct?: number;
-    max_ada_cross_slope_pct?: number;
-  };
-  drainage?: {
-    min_pipe_slope_pct?: number;
-  };
-  disciplines?: string[];
-  terrain?: string;
-};
-
-type ProjectInput = {
-  project_id?: string | null;
-  full_design_mode?: boolean;
-  input_mode?: StrategyMode;
-  strict_mode?: boolean;
-  prompt_text?: string | null;
-  image_path?: string | null;
-  manual_fields?: ManualFields;
-  allow_ai_fill_for_blanks?: boolean;
-  meta?: ProjectInputMeta;
-};
-
-type ProjectMetadata = Record<string, unknown> & {
-  workflow?: {
-    runs?: WorkflowRunSummary[];
-    artifacts?: WorkflowArtifact[];
-  };
-};
-
-type PlanRequestPayload = Record<string, unknown> & {
-  project_id?: string | null;
-  full_design_mode?: boolean;
-  input_mode?: StrategyMode;
-  strict_mode?: boolean;
-  prompt_text?: string | null;
-  image_path?: string | null;
-  manual_fields?: ManualFields;
-  allow_ai_fill_for_blanks?: boolean;
-  optimize_goal?: string | null;
-  meta?: ProjectInputMeta;
-};
-
-type PreviewRequestPayload = Record<string, unknown> & {
-  project_id?: string | null;
-  result?: PlanResponse;
-  filename_stem?: string;
-};
-
-type PhaseMetric = {
-  label: string;
-  value: number | null;
-  unit: string;
-  format?: "count";
-};
-
-type PhaseStats = {
-  layout: PhaseMetric[];
-  grading: PhaseMetric[];
-  drainage_storm: PhaseMetric[];
-  utilities: PhaseMetric[];
-  coordination_validation: PhaseMetric[];
-};
-
-type AuthStatus = {
-  auth_enabled: boolean;
-  user_count: number;
-};
-
-type DisciplineToggle = {
-  label: string;
-  checked: boolean;
-  setter: React.Dispatch<React.SetStateAction<boolean>>;
-  desc: string;
-};
-
-type PreviewResponse = {
-  success: boolean;
-  preview_image_data_url: string;
-  preview_annotations?: {
-    profile?: string;
-    labels?: {
-      label: string;
-      layer: string;
-      x: number;
-      y: number;
-      bounds?: { x1: number; y1: number; x2: number; y2: number };
-    }[];
-  };
-  summary?: {
-    project_name?: string;
-    units?: string;
-    action_count?: number;
-    review?: {
-      trust_score?: number;
-      converged?: boolean;
-      passes_run?: number;
-      unresolved_conflict_count?: number;
-      assumption_count?: number;
-      assumption_categories?: string[];
-      assumption_examples?: string[];
-      autofix_actions?: string[];
-      dominant_fix_targets?: string[];
-      review_categories?: string[];
-      blocked_exports?: string[];
-      blocked_reasons?: string[];
-      requested_deliverables?: string[];
-      ready_deliverables?: string[];
-      produced_deliverables?: string[];
-      extra_deliverables?: string[];
-      failed_deliverables?: string[];
-      rerun_total?: number;
-      rerun_stages?: string[];
-      rerun_reasons?: string[];
-      phase_checkpoints?: Record<
-        string,
-        {
-          label?: string;
-          status?: string;
-          ready?: boolean;
-          deliverables?: string[];
-          messages?: string[];
-          blockers?: string[];
-          has_data?: boolean;
-          stages?: string[];
-          completed_phase_count?: number;
-          total_phase_count?: number;
-          blocked_exports?: string[];
-          blocked_reasons?: string[];
-          deliverables_ready?: string[];
-          deliverables_extra?: string[];
-          note?: string;
-          current_stage?: string;
-          current_status?: string;
-          job_progress?: number;
-        }
-      >;
-      release_status?: "ready" | "review" | "blocked" | string;
-      release_note?: string;
-    };
-  };
-};
-
-type PreviewReview = NonNullable<PreviewResponse["summary"]>["review"];
-
-type UploadImageResponse = {
-  success: boolean;
-  image_path?: string;
-  image_url?: string;
-  filename?: string;
-};
-
-type UploadSurveyResponse = {
-  success: boolean;
-  filename?: string;
-  stored_filename?: string;
-  survey_url?: string;
-};
-
-type SurveySlopeResponse = {
-  success: boolean;
-  slope_ratio?: number;
-  slope_percent?: number;
-  downhill_dx?: number;
-  downhill_dy?: number;
-  direction?: string;
-  point_count?: number;
-};
-
-type PlanToolMode = "run" | "fix" | "improve";
-type StrategyMode = "manual" | "assisted";
-type ControlOverrides = Partial<{
-  strategyMode: StrategyMode;
-  projectType: string;
-  units: string;
-  roads: boolean;
-  grading: boolean;
-  drainage: boolean;
-  utilities: boolean;
-  siteName: string;
-  fileName: string;
-  lotWidth: string | number;
-  lotHeight: string | number;
-  buildingWidth: string | number;
-  buildingDepth: string | number;
-  buildingCount: string | number;
-  setback: string | number;
-  parkingCount: string | number;
-  minSlopePct: string | number;
-  pipeMinSlopePct: string | number;
-  maxParkingSlopePct: string | number;
-  maxRoadGradePct: string | number;
-  maxAdaCrossSlopePct: string | number;
-}>;
-type ChatDecisionIntent =
-  | "conversation"
-  | "settings"
-  | "design"
-  | "explain"
-  | "fix"
-  | "improve";
-type ChatDecisionResponse = {
-  success: boolean;
-  intent: ChatDecisionIntent;
-  assistant_message: string;
-  run_mode: "none" | "run" | "fix" | "improve";
-  design_prompt: string;
-  needs_clarification: boolean;
-  reason: string;
-  confidence: number;
-  control_overrides: ControlOverrides;
-};
-type ChatMessage = {
-  id: string;
-  role: "user" | "assistant" | "system";
-  content: string;
-  createdAt: number;
-  kind?: "message" | "status" | "explanation" | "action";
-  feedback?: "up" | "down";
-  phaseTag?: string;
-};
-type LearningReport = {
-  feedback?: {
-    up?: number;
-    down?: number;
-    total?: number;
-    score_percent?: number;
-  };
-  training_examples?: {
-    count?: number;
-    synthetic?: number;
-    feedback_based?: number;
-    interaction?: number;
-  };
-};
-
-const defaultAssumptions: Assumption[] = [
-  {
-    field: "project_type",
-    value: "commercial_pad",
-    reason:
-      "AI filled this because the prompt described a general commercial site concept.",
-  },
-  {
-    field: "lot",
-    value: "estimated from sketch extents",
-    reason: "No exact lot dimensions were provided in the form.",
-  },
-];
-
-const defaultIssues: Issue[] = [
-  {
-    severity: "warning",
-    message: "No confirmed scale reference is set for the uploaded image.",
-  },
-];
-
-const CHAT_THREAD_KEY_PREFIX = "civora-chat-thread:";
-
-function getChatThreadStorageKey(projectId: string) {
-  return `${CHAT_THREAD_KEY_PREFIX}${projectId || "draft"}`;
-}
-
-function createChatMessage(
-  role: ChatMessage["role"],
-  content: string,
-  kind: ChatMessage["kind"] = "message",
-  feedback?: ChatMessage["feedback"],
-  phaseTag?: string,
-): ChatMessage {
-  return {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    role,
-    content,
-    createdAt: Date.now(),
-    kind,
-    feedback,
-    phaseTag,
-  };
-}
-
-function createWelcomeMessage(): ChatMessage {
-  return createChatMessage(
-    "assistant",
-    "Hi, I’m Civora. I can help you think through a site, answer questions, and turn design requests into a plan when you’re ready. Tell me what you want to change, or just ask me a question first.",
-  );
-}
-
-function formatChatTimestamp(value: number) {
-  try {
-    return new Date(value).toLocaleTimeString([], {
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  } catch {
-    return "";
-  }
-}
-
-function toReadableLabel(value: string): string {
-  const normalized = value
-    .replace(/design_defaults/gi, "design defaults")
-    .replace(/^qa$/i, "validation")
-    .replace(/^general$/i, "design")
-    .replace(/_/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return normalized
-    .replace(/_/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function joinNatural(items: string[], limit = 3): string {
-  const filtered = items
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .slice(0, limit);
-  if (!filtered.length) {
-    return "";
-  }
-  if (filtered.length === 1) {
-    return filtered[0];
-  }
-  if (filtered.length === 2) {
-    return `${filtered[0]} and ${filtered[1]}`;
-  }
-  return `${filtered.slice(0, -1).join(", ")}, and ${filtered[filtered.length - 1]}`;
-}
-
-function toArray<T>(value: unknown): T[] {
-  return Array.isArray(value) ? (value as T[]) : [];
-}
-
-function toMetricValue(value: number | null | undefined): number | null {
-  return value ?? null;
-}
-
-function readPositiveNumber(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
-    return value;
-  }
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return null;
-    }
-    const parsed = Number(trimmed);
-    if (Number.isFinite(parsed) && parsed > 0) {
-      return parsed;
-    }
-  }
-  return null;
-}
-
-function parsePositiveNumber(value: string | number | null | undefined): number | null {
-  const numeric = Number(value ?? 0);
-  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
-}
-
-function extractDesignMemory(thread: ChatMessage[]): {
-  preferences: string[];
-  constraints: string[];
-} {
-  const preferences: string[] = [];
-  const constraints: string[] = [];
-  const seen = new Set<string>();
-
-  for (const message of thread) {
-    if (message.role !== "user") continue;
-    const clauses = message.content.split(/[.!?\n;]+/);
-    for (const clause of clauses) {
-      const clean = clause.replace(/\s+/g, " ").trim();
-      if (!clean || clean.length < 8) continue;
-      const lowered = clean.toLowerCase();
-      const key = lowered.slice(0, 160);
-      if (seen.has(key)) continue;
-
-      if (
-        lowered.includes("make sure") ||
-        lowered.includes("remember to") ||
-        lowered.includes("prefer ") ||
-        lowered.includes("keep ") ||
-        lowered.includes("stay in ")
-      ) {
-        preferences.push(clean);
-        seen.add(key);
-        continue;
-      }
-
-      if (
-        lowered.includes("do not") ||
-        lowered.includes("don't") ||
-        lowered.includes("dont") ||
-        lowered.includes("never ") ||
-        lowered.includes("without ") ||
-        lowered.includes("no guessing") ||
-        lowered.includes("ask for clarification")
-      ) {
-        constraints.push(clean);
-        seen.add(key);
-      }
-    }
-  }
-
-  return {
-    preferences: preferences.slice(-8),
-    constraints: constraints.slice(-8),
-  };
-}
-
-function computeLearningScore(thread: ChatMessage[]): { score: number; total: number } {
-  let up = 0;
-  let down = 0;
-  for (const message of thread) {
-    if (message.role !== "assistant") continue;
-    if (message.feedback === "up") up += 1;
-    if (message.feedback === "down") down += 1;
-  }
-  const total = up + down;
-  if (total === 0) {
-    return { score: 0, total: 0 };
-  }
-  return { score: Math.round((up / total) * 100), total };
-}
-
-function readMetricValue(value: MetricValue | undefined): number | null {
-  if (value == null) return null;
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "object" && typeof value.value === "number" && Number.isFinite(value.value)) {
-    return value.value;
-  }
-  return null;
-}
-
-function formatMetric(value: number | null, unit: string): string {
-  if (value == null || !Number.isFinite(value)) return "Pending";
-  return `${value.toFixed(1)} ${unit}`;
-}
-
-function formatCount(value: number | null, unit?: string): string {
-  if (value == null || !Number.isFinite(value)) return "Pending";
-  const rounded = Math.round(value);
-  return unit ? `${rounded.toLocaleString()} ${unit}` : rounded.toLocaleString();
-}
-
-type Preview3DItem = {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  height: number;
-  color: string;
-  label: string;
-  layer: string;
-};
-
-function Preview3DCanvas({
-  items,
-  interactive,
-}: {
-  items: Preview3DItem[];
-  interactive: boolean;
-}) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [rotation, setRotation] = useState({ x: 0.75, z: -0.8 });
-  const dragRef = useRef<{ x: number; y: number } | null>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const parent = canvas.parentElement;
-    if (!parent) return;
-    const width = parent.clientWidth;
-    const height = parent.clientHeight;
-    const ratio = window.devicePixelRatio || 1;
-    canvas.width = width * ratio;
-    canvas.height = height * ratio;
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-
-    if (!items.length) {
-      ctx.fillStyle = "#94a3b8";
-      ctx.font = "14px ui-sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText("No geometry to render yet.", width / 2, height / 2);
-      return;
-    }
-
-    const minX = Math.min(...items.map((item) => item.x));
-    const minY = Math.min(...items.map((item) => item.y));
-    const maxX = Math.max(...items.map((item) => item.x + item.w));
-    const maxY = Math.max(...items.map((item) => item.y + item.h));
-    const spanX = Math.max(maxX - minX, 1);
-    const spanY = Math.max(maxY - minY, 1);
-    const scale = Math.min(width / spanX, height / spanY) * 0.65;
-    const centerX = width / 2;
-    const centerY = height / 2 + 20;
-
-    const project = (x: number, y: number, z: number) => {
-      const cx = x - (minX + spanX / 2);
-      const cy = y - (minY + spanY / 2);
-      const cosZ = Math.cos(rotation.z);
-      const sinZ = Math.sin(rotation.z);
-      const rx = cx * cosZ - cy * sinZ;
-      const ry = cx * sinZ + cy * cosZ;
-      const cosX = Math.cos(rotation.x);
-      const sinX = Math.sin(rotation.x);
-      const ry2 = ry * cosX - z * sinX;
-      return {
-        x: centerX + rx * scale,
-        y: centerY + ry2 * scale,
-      };
-    };
-
-    ctx.fillStyle = "#eef2f7";
-    ctx.fillRect(0, 0, width, height);
-
-    const drawFace = (points: { x: number; y: number }[], color: string) => {
-      ctx.beginPath();
-      points.forEach((pt, idx) => {
-        if (idx === 0) ctx.moveTo(pt.x, pt.y);
-        else ctx.lineTo(pt.x, pt.y);
-      });
-      ctx.closePath();
-      ctx.fillStyle = color;
-      ctx.fill();
-      ctx.strokeStyle = "rgba(15,23,42,0.15)";
-      ctx.stroke();
-    };
-
-    const sorted = [...items].sort((a, b) => (a.x + a.y) - (b.x + b.y));
-    for (const item of sorted) {
-      const base = [
-        project(item.x, item.y, 0),
-        project(item.x + item.w, item.y, 0),
-        project(item.x + item.w, item.y + item.h, 0),
-        project(item.x, item.y + item.h, 0),
-      ];
-      const top = [
-        project(item.x, item.y, item.height),
-        project(item.x + item.w, item.y, item.height),
-        project(item.x + item.w, item.y + item.h, item.height),
-        project(item.x, item.y + item.h, item.height),
-      ];
-      const sideDark = item.layer === "BUILDING" ? "#94a3b8" : "#cbd5f5";
-      const sideLight = item.layer === "BUILDING" ? "#bfc7d4" : "#dbe5ff";
-      drawFace([base[0], base[1], top[1], top[0]], sideDark);
-      drawFace([base[1], base[2], top[2], top[1]], sideLight);
-      drawFace([top[0], top[1], top[2], top[3]], item.color);
-    }
-  }, [items, rotation]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !interactive) return;
-    const onPointerDown = (event: PointerEvent) => {
-      dragRef.current = { x: event.clientX, y: event.clientY };
-    };
-    const onPointerMove = (event: PointerEvent) => {
-      if (!dragRef.current) return;
-      const dx = event.clientX - dragRef.current.x;
-      const dy = event.clientY - dragRef.current.y;
-      dragRef.current = { x: event.clientX, y: event.clientY };
-      setRotation((prev) => ({
-        x: Math.max(0.2, Math.min(1.2, prev.x + dy * 0.005)),
-        z: prev.z + dx * 0.005,
-      }));
-    };
-    const onPointerUp = () => {
-      dragRef.current = null;
-    };
-    canvas.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-    return () => {
-      canvas.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-    };
-  }, [interactive]);
-
-  return (
-    <div className="relative h-[520px] w-full overflow-hidden rounded-[20px] bg-white">
-      <canvas ref={canvasRef} className="h-full w-full" />
-      {interactive ? (
-        <div className="pointer-events-none absolute right-4 top-4 rounded-full bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
-          Drag to rotate
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function summarizePlanResponse(
-  data: PlanResponse,
-  mode: PlanToolMode,
-): string {
-  const plan = data?.final_plan ?? {};
-  const meta = plan?.meta ?? {};
-  const explanation = meta?.explanation;
-  const convergence = meta?.convergence_summary ?? {};
-  const assumptionSummary = convergence?.assumption_summary ?? {};
-  const producedDeliverables = Array.isArray(meta?.deliverables?.produced)
-    ? meta.deliverables.produced
-    : Array.isArray(meta?.produced_deliverables)
-      ? meta.produced_deliverables
-      : [];
-  const failedDeliverables = Array.isArray(meta?.deliverables?.failed)
-    ? meta.deliverables.failed
-    : Array.isArray(meta?.failed_deliverables)
-      ? meta.failed_deliverables
-      : [];
-  const assumptions = Array.isArray(data?.assumptions)
-    ? data.assumptions
-    : Array.isArray(assumptionSummary?.examples)
-      ? assumptionSummary.examples.map((example) => ({
-          field_name: "assumption",
-          reason: String(example || ""),
-        }))
-      : [];
-  const issues = Array.isArray(data?.issues) ? data.issues : [];
-  const assumptionExamples = (() => {
-    const seen = new Set<string>();
-    const isInternalAssumption = (value: string) => {
-      const lowered = value.toLowerCase();
-      return (
-        lowered === "plan" ||
-        lowered === "assumption" ||
-        lowered.includes("planner execution assumption") ||
-        lowered.includes("projectmanager as active lifecycle state") ||
-        lowered.includes("action geometry is treated as output packaging") ||
-        lowered.includes("quantities prefer canonical projectmanager metrics") ||
-        lowered.includes("planner executed model-first workflow") ||
-        lowered.includes("prompt was parsed with deterministic fast-path rules") ||
-        lowered.includes("autofix site layout") ||
-        lowered.includes("autofix_site_layout")
-      );
-    };
-    const formatted = assumptions
-      .map((assumption) => {
-        const fallbackField =
-          "field_name" in assumption
-            ? assumption.field_name
-            : (assumption as BackendAssumption | null)?.field;
-        const field = String(fallbackField || "an input")
-          .replace(/_/g, " ")
-          .trim();
-        const reason = String(assumption?.reason || "").trim();
-        const loweredField = field.toLowerCase();
-        if (
-          loweredField === "plan" ||
-          loweredField === "assumption" ||
-          isInternalAssumption(reason)
-        ) {
-          return null;
-        }
-        const normalized = `${field}::${reason}`.toLowerCase();
-        if (seen.has(normalized)) {
-          return null;
-        }
-        seen.add(normalized);
-        return reason ? `${field} (${reason})` : field;
-      })
-      .filter(Boolean);
-    if (formatted.length) {
-      return formatted.slice(0, 3);
-    }
-    const fallbackExamples = Array.isArray(assumptionSummary?.examples)
-      ? assumptionSummary.examples
-          .map((example) => String(example || "").trim())
-          .filter((example: string) => Boolean(example) && !isInternalAssumption(example))
-      : [];
-    return fallbackExamples.slice(0, 3);
-  })();
-  const fixSummary = convergence?.fix_summary ?? {};
-  const blockedReasons = Array.isArray(convergence?.blocked_reasons)
-    ? convergence.blocked_reasons
-    : [];
-  const blockedExports = Array.isArray(convergence?.blocked_exports)
-    ? convergence.blocked_exports
-    : [];
-  const reviewCategories = Array.isArray(convergence?.unresolved_issue_categories)
-    ? convergence.unresolved_issue_categories
-    : [];
-  const autofixActions = Array.isArray(fixSummary?.autofix_actions)
-    ? fixSummary.autofix_actions
-    : [];
-  const dominantFixTargets = Array.isArray(convergence?.dominant_issue_categories)
-    ? convergence.dominant_issue_categories
-    : [];
-  const unresolved = Number(convergence?.unresolved_conflict_count ?? 0);
-  const headline =
-    (typeof explanation?.summary === "string"
-      ? explanation.summary
-      : typeof explanation?.overview === "string"
-        ? explanation.overview
-        : typeof data?.message === "string"
-          ? data.message
-          : mode === "fix"
-            ? "I ran a focused fix pass and updated the active design."
-            : mode === "improve"
-              ? "I ran an improvement pass and updated the active design."
-              : "I updated the active design workspace.");
-  const why =
-    typeof explanation?.why === "string"
-      ? explanation.why
-      : typeof explanation?.reasoning === "string"
-        ? explanation.reasoning
-        : null;
-
-  const readableAutofixActions = autofixActions
-    .map((item) => toReadableLabel(String(item || "")))
-    .filter(Boolean);
-  const readableFixTargets = dominantFixTargets
-    .map((item) => toReadableLabel(String(item || "")))
-    .filter(Boolean);
-  const readableReviewCategories = reviewCategories
-    .map((item) => toReadableLabel(String(item || "")))
-    .filter(
-      (item: string) =>
-        Boolean(item) &&
-        item.toLowerCase() !== "uncategorized" &&
-        item.toLowerCase() !== "general",
-    );
-  const readableBlockedReasons = blockedReasons
-    .map((item) => toReadableLabel(String(item || "")))
-    .filter(Boolean);
-  const readableBlockedExports = blockedExports
-    .map((item) => toReadableLabel(String(item || "")))
-    .filter(Boolean);
-  const readableProduced = producedDeliverables
-    .map((item) => toReadableLabel(String(item || "")))
-    .filter(Boolean);
-  const readableFailed = failedDeliverables
-    .map((item) => toReadableLabel(String(item || "")))
-    .filter(Boolean);
-  const issueMessages = issues
-    .slice(0, 2)
-    .map((issue) => String(issue?.message || "").trim())
-    .filter(Boolean);
-
-  const assumptionList = assumptionExamples.filter(
-    (item): item is string => Boolean(item),
-  );
-
-  const notes = [
-    assumptionList.length
-      ? `I used assisted assumptions for ${joinNatural(assumptionList)}.`
-      : "I did not need to record any explicit assisted assumptions on this run.",
-    readableAutofixActions.length || readableFixTargets.length
-      ? `I applied fixes around ${joinNatural(
-          readableAutofixActions.length ? readableAutofixActions : readableFixTargets,
-        )}.`
-      : "I did not need to record any corrective fix actions on this run.",
-    readableReviewCategories.length || issueMessages.length || unresolved > 0
-      ? `You should still review ${joinNatural(
-          readableReviewCategories.length
-            ? readableReviewCategories
-            : issueMessages.length
-              ? issueMessages
-              : [`${unresolved} unresolved conflicts`],
-        )}.`
-      : "I don’t see any active review items recorded right now.",
-    readableBlockedReasons.length || readableBlockedExports.length || readableFailed.length
-      ? `What is still blocked: ${joinNatural(
-          readableBlockedReasons.length
-            ? readableBlockedReasons
-            : readableBlockedExports.length
-              ? readableBlockedExports
-              : readableFailed,
-        )}.`
-      : "Nothing is explicitly blocked right now.",
-    producedDeliverables.length
-      ? `I produced ${joinNatural(readableProduced, 4)}.`
-      : null,
-    why,
-  ].filter(Boolean);
-
-  return [headline, ...notes].join(" ");
-}
-
-function Card({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <div
-      className={`rounded-[28px] border border-slate-200/80 bg-white/92 shadow-[0_20px_60px_-28px_rgba(15,23,42,0.28)] backdrop-blur ${className}`}
-    >
-      {children}
-    </div>
-  );
-}
-
-function CardHeader({ children }: { children: React.ReactNode }) {
-  return <div className="p-6 pb-4">{children}</div>;
-}
-
-function CardContent({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return <div className={`p-6 pt-0 ${className}`}>{children}</div>;
-}
-
-function SectionTitle({
-  icon: Icon,
-  title,
-  desc,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  desc: string;
-}) {
-  return (
-    <div className="flex items-start gap-3">
-      <div className="rounded-2xl border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-2.5 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.45)]">
-        <Icon className="h-5 w-5 text-slate-800" />
-      </div>
-      <div>
-        <h3 className="text-[15px] font-semibold tracking-tight text-slate-950">
-          {title}
-        </h3>
-        <p className="mt-1 text-sm leading-6 text-slate-500">{desc}</p>
-      </div>
-    </div>
-  );
-}
-
-function Pill({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
-      {children}
-    </span>
-  );
-}
-
-function SmallButton({
-  children,
-  onClick,
-  variant = "primary",
-  disabled = false,
-}: {
-  children: React.ReactNode;
-  onClick?: () => void;
-  variant?: "primary" | "secondary";
-  disabled?: boolean;
-}) {
-  const styles =
-    variant === "primary"
-      ? "border border-slate-900 bg-slate-950 text-white hover:bg-slate-800"
-      : "border border-slate-200 bg-white text-slate-900 hover:border-slate-300 hover:bg-slate-50";
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={`inline-flex items-center rounded-2xl px-4 py-2.5 text-sm font-medium shadow-[0_12px_30px_-22px_rgba(15,23,42,0.55)] transition duration-200 ${styles} ${
-        disabled ? "cursor-not-allowed opacity-60" : "hover:-translate-y-0.5"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-2">
-      <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-        {label}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      {...props}
-      className={`w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] placeholder:text-slate-400 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70 ${
-        props.className ?? ""
-      }`}
-    />
-  );
-}
-
-function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return (
-    <textarea
-      {...props}
-      className={`min-h-[168px] max-h-[280px] w-full resize-none overflow-y-auto rounded-[24px] border border-slate-200 bg-white px-4 py-3.5 text-sm leading-6 text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] placeholder:text-slate-400 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70 ${
-        props.className ?? ""
-      }`}
-    />
-  );
-}
-
-const TOKEN_KEY = "civora-ai-token";
-const LEGACY_TOKEN_KEY = "performance-ai-token";
-
-function getStoredToken() {
-  if (typeof window === "undefined") {
-    return "";
-  }
-  return (
-    window.localStorage.getItem(TOKEN_KEY) ??
-    window.localStorage.getItem(LEGACY_TOKEN_KEY) ??
-    ""
-  );
-}
-
-function setStoredToken(token: string) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.localStorage.setItem(TOKEN_KEY, token);
-}
-
-function clearStoredToken() {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.localStorage.removeItem(TOKEN_KEY);
-  window.localStorage.removeItem(LEGACY_TOKEN_KEY);
-}
-
-function uploadedImageSrc(pathOrUrl: string, token: string): string {
-  const safeToken = encodeURIComponent(token);
-  if (!pathOrUrl || !token) {
-    return "";
-  }
-
-  if (pathOrUrl.startsWith("/api/uploads/")) {
-    return `${toApiUrl(pathOrUrl)}?access_token=${safeToken}`;
-  }
-
-  const filename = pathOrUrl.split("/").pop();
-  if (!filename) {
-    return "";
-  }
-
-  return `${toApiUrl(`/api/uploads/${filename}`)}?access_token=${safeToken}`;
-}
+import type {
+  UserRecord,
+  Assumption,
+  Issue,
+  BackendAssumption,
+  BackendIssue,
+  ProjectSummary,
+  ProjectRecord,
+  ProjectInput,
+  ProjectMetadata,
+  JobSummary,
+  WorkflowRunSummary,
+  WorkflowArtifact,
+  ManualFailure,
+  IterationRecord,
+  ManagerMetrics,
+  MetricValue,
+  QuantityTotals,
+  PipeSegment,
+  StormSummary,
+  PlanExplanation,
+  PlanMeta,
+  PlanResponse,
+  PlanAction,
+  SurveySlopeResponse,
+  MapAnalysis,
+  PreviewResponse,
+  PreviewReview,
+  UploadImageResponse,
+  UploadSurveyResponse,
+  PlanToolMode,
+  StrategyMode,
+  ControlOverrides,
+  ChatDecisionResponse,
+  ChatMessage,
+  LearningReport,
+  DisciplineToggle,
+  PhaseStats,
+  PhaseMetric,
+  Preview3DItem,
+  PlanRequestPayload,
+  PreviewRequestPayload,
+} from "./types";
+
+import {
+  defaultAssumptions,
+  defaultIssues,
+  formatChatTimestamp,
+  toReadableLabel,
+  joinNatural,
+  toArray,
+  toMetricValue,
+  readPositiveNumber,
+  parsePositiveNumber,
+  readMetricValue,
+  formatMetric,
+  formatCount,
+  summarizePlanResponse,
+} from "./utils/formatting";
+
+import {
+  createChatMessage,
+  createWelcomeMessage,
+  extractDesignMemory,
+  getChatThreadStorageKey,
+} from "./utils/chat";
+
+import {
+  clearStoredToken,
+  getStoredToken,
+  setStoredToken,
+  uploadedImageSrc,
+} from "./utils/auth";
+
+import Preview3DCanvas from "./components/Preview3DCanvas";
+import AppHeader from "./components/AppHeader";
+import AuthScreen from "./components/AuthScreen";
+import ProjectSidebar from "./components/ProjectSidebar";
+import WorkspaceToolbar from "./components/WorkspaceToolbar";
+import {
+  SmallButton,
+  TextArea,
+  TextInput,
+} from "./components/ui";
 
 function formatTimestamp(value?: number): string {
   if (!value) return "Unknown time";
@@ -1476,7 +296,6 @@ export default function PerformanceAIDashboard() {
   const [learningReport, setLearningReport] = useState<LearningReport | null>(null);
   const [learningReportUpdatedAt, setLearningReportUpdatedAt] = useState<number | null>(null);
   const [queuedPhaseNotes, setQueuedPhaseNotes] = useState<string[]>([]);
-  const [showLearningPanel, setShowLearningPanel] = useState(true);
   const [imageName, setImageName] = useState("");
   const [siteName, setSiteName] = useState("");
   const [fileName, setFileName] = useState("");
@@ -1517,6 +336,8 @@ export default function PerformanceAIDashboard() {
   const [previewMode, setPreviewMode] = useState<"2d" | "3d">("2d");
   const [previewInteraction, setPreviewInteraction] = useState<"static" | "interactive">("interactive");
   const [previewQuality, setPreviewQuality] = useState<"standard" | "high">("standard");
+  const [previewRefreshing, setPreviewRefreshing] = useState(false);
+  const [previewRefreshNote, setPreviewRefreshNote] = useState<string | null>(null);
   const [showMeasurements, setShowMeasurements] = useState(false);
   const [showCalculations, setShowCalculations] = useState(false);
   const [autoAdvancePhases, setAutoAdvancePhases] = useState(false);
@@ -1536,6 +357,7 @@ export default function PerformanceAIDashboard() {
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
   const [previewFullscreenOpen, setPreviewFullscreenOpen] = useState(false);
   const [projectId, setProjectId] = useState("");
+  const [showProjectDropdown, setShowProjectDropdown] = useState(false);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [jobs, setJobs] = useState<JobSummary[]>([]);
   const [currentProject, setCurrentProject] = useState<ProjectRecord | null>(null);
@@ -1558,6 +380,7 @@ export default function PerformanceAIDashboard() {
   const lastJobStatusRef = useRef<Record<string, string>>({});
   const lastJobPhaseSignatureRef = useRef<Record<string, string>>({});
   const lastStaleJobWarningRef = useRef<Record<string, boolean>>({});
+  const previewRefreshIntentRef = useRef<{ reason: string; track?: boolean } | null>(null);
   const lastProjectResultRefreshRef = useRef<Record<string, number>>({});
   const lastJobPartialResultRefreshRef = useRef<Record<string, number>>({});
   const chatMessagesRef = useRef<ChatMessage[]>([createWelcomeMessage()]);
@@ -4182,35 +3005,46 @@ export default function PerformanceAIDashboard() {
 
   const requestPreview = async (
     payload: PreviewRequestPayload,
-    options?: { silent?: boolean },
+    options?: { silent?: boolean; track?: boolean },
   ) => {
     if (!token) return;
+    if (options?.track) {
+      setPreviewRefreshing(true);
+      setPreviewRefreshNote((prev) => prev || "Refreshing preview...");
+    }
     const previewPayload = {
       ...payload,
       preview_quality: previewQuality,
       render_labels: false,
       preview_layers: previewLayerList,
     };
-    const data = await postJson<PreviewResponse>("/api/preview", previewPayload, {
-      token,
-    });
-    setPlanPreviewUrl(data.preview_image_data_url);
-    setPlanPreviewSummary(data.summary ?? null);
-    setPlanPreviewAnnotations(data.preview_annotations ?? null);
-    if (!options?.silent) {
-      setStatusMessage("Plan preview generated.");
+    try {
+      const data = await postJson<PreviewResponse>("/api/preview", previewPayload, {
+        token,
+      });
+      setPlanPreviewUrl(data.preview_image_data_url);
+      setPlanPreviewSummary(data.summary ?? null);
+      setPlanPreviewAnnotations(data.preview_annotations ?? null);
+      if (!options?.silent) {
+        setStatusMessage("Plan preview generated.");
+      }
+    } finally {
+      if (options?.track) {
+        setPreviewRefreshing(false);
+        setPreviewRefreshNote(null);
+      }
     }
   };
 
   const requestPreviewInBackground = (
     payload: PreviewRequestPayload,
-    options?: { loadingMessage?: string; successMessage?: string; silentStatus?: boolean },
+    options?: { loadingMessage?: string; successMessage?: string; silentStatus?: boolean; track?: boolean },
   ) => {
     if (!token) return;
     if (options?.loadingMessage && !options?.silentStatus) {
       setStatusMessage(options.loadingMessage);
     }
-    void requestPreview(payload, { silent: true })
+    void requestPreview(payload, { silent: true, track: options?.track })
       .then(() => {
         if (options?.successMessage && !options?.silentStatus) {
           setStatusMessage(options.successMessage);
@@ -4221,6 +3055,10 @@ export default function PerformanceAIDashboard() {
           setStatusMessage(
             error instanceof Error ? error.message : "Preview generation failed.",
           );
+        }
+        if (options?.track) {
+          setPreviewRefreshing(false);
+          setPreviewRefreshNote(null);
         }
       });
   };
@@ -4366,6 +3204,15 @@ export default function PerformanceAIDashboard() {
     siteName,
   ]);
 
+  const queuePreviewRefresh = (reason: string) => {
+    if (!token) return;
+    if (!backendResult && !projectId && !planPreviewUrl) {
+      setStatusMessage("Run the planner first so there is something to preview.");
+      return;
+    }
+    previewRefreshIntentRef.current = { reason, track: true };
+  };
+
   const handlePreviewPlan = async () => {
     if (!token) return;
     if (!backendResult && !projectId) {
@@ -4375,7 +3222,7 @@ export default function PerformanceAIDashboard() {
     setStatusMessage("Refreshing preview...");
     setBusy(true);
     try {
-      await requestPreview(artifactPayload);
+      await requestPreview(artifactPayload, { track: true });
     } catch (error) {
       setStatusMessage(
         error instanceof Error ? error.message : "Preview generation failed.",
@@ -4922,9 +3769,28 @@ export default function PerformanceAIDashboard() {
   }, [previewLayersEffective]);
 
   useEffect(() => {
-    if (!planPreviewUrl || !token) return;
+    if (!token) return;
+    if (!backendResult && !planPreviewUrl) return;
+    const intent = previewRefreshIntentRef.current;
+    if (intent) {
+      previewRefreshIntentRef.current = null;
+      setPreviewRefreshNote(intent.reason);
+      requestPreviewInBackground(artifactPayload, {
+        silentStatus: true,
+        track: intent.track,
+      });
+      return;
+    }
     requestPreviewInBackground(artifactPayload, { silentStatus: true });
-  }, [previewQuality, previewLayerList, planPreviewUrl, token, artifactPayload]);
+  }, [
+    previewQuality,
+    previewInteraction,
+    previewLayerList,
+    planPreviewUrl,
+    token,
+    artifactPayload,
+    backendResult,
+  ]);
 
   const preview3DItems = useMemo<Preview3DItem[]>(() => {
     const actions = Array.isArray(backendResult?.final_plan?.actions)
@@ -4979,6 +3845,70 @@ export default function PerformanceAIDashboard() {
     }
     return items;
   }, [backendResult, previewLayersEffective]);
+  const preview3DAnnotationItems = useMemo<Preview3DItem[]>(() => {
+    const labels = Array.isArray(planPreviewAnnotations?.labels)
+      ? planPreviewAnnotations?.labels
+      : [];
+    if (!labels.length) return [];
+    const items: Preview3DItem[] = [];
+    const scale = 100;
+    for (const label of labels) {
+      const bounds = (label as { bounds?: { x1?: number; y1?: number; x2?: number; y2?: number } })
+        .bounds;
+      if (!bounds) continue;
+      const x1 = Number(bounds.x1 ?? 0);
+      const y1 = Number(bounds.y1 ?? 0);
+      const x2 = Number(bounds.x2 ?? 0);
+      const y2 = Number(bounds.y2 ?? 0);
+      const w = Math.max(0.01, (x2 - x1) * scale);
+      const h = Math.max(0.01, (y2 - y1) * scale);
+      const layer = String((label as { layer?: string }).layer || "").toUpperCase();
+      const isBuilding = layer === "BUILDING";
+      const isRoad = ["ROAD", "PAVEMENT", "PARKING", "WALK"].includes(layer);
+      const isDrainage = ["DRAIN", "PIPE", "STORM", "BASIN_BOUNDARY"].includes(layer);
+      const isUtility = ["SAN", "UTILITY", "WATER"].includes(layer);
+      const isStructure = ["STRUCTURE", "BRIDGE", "POOL"].includes(layer);
+      const isLot = layer === "LOT";
+
+      if (isBuilding && !previewLayersEffective.buildings) continue;
+      if (isRoad && !previewLayersEffective.roads) continue;
+      if (isDrainage && !previewLayersEffective.drainage) continue;
+      if (isUtility && !previewLayersEffective.utilities) continue;
+      if (isStructure && !previewLayersEffective.structures) continue;
+      if (isLot && !previewLayersEffective.lots) continue;
+
+      const color = isBuilding
+        ? "#e2e8f0"
+        : isStructure
+          ? "#fde68a"
+          : isRoad
+            ? "#c7d2fe"
+            : isDrainage
+              ? "#bbf7d0"
+              : isUtility
+                ? "#fbcfe8"
+                : isLot
+                  ? "#e2e8f0"
+                  : "#dbeafe";
+      const heightFt = isBuilding ? 26 : isStructure ? 8 : isRoad ? 2 : 1;
+      items.push({
+        x: x1 * scale,
+        y: y1 * scale,
+        w,
+        h,
+        height: heightFt,
+        color,
+        label: String((label as { label?: string }).label || layer || "Shape"),
+        layer: isBuilding ? "BUILDING" : isStructure ? "STRUCTURE" : isRoad ? "ROAD" : "PARKING",
+      });
+    }
+    return items;
+  }, [planPreviewAnnotations, previewLayersEffective]);
+  const preview3DEffectiveItems = preview3DItems.length
+    ? preview3DItems
+    : preview3DAnnotationItems;
+  const usingAnnotation3D =
+    preview3DItems.length === 0 && preview3DAnnotationItems.length > 0;
   useEffect(() => {
     const status = String(visibleActiveJob?.status || "").toLowerCase();
     if (status !== "awaiting_approval") return;
@@ -5189,409 +4119,125 @@ export default function PerformanceAIDashboard() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)] p-6">
-        <div className="mx-auto grid min-h-[90vh] max-w-6xl items-center gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="space-y-6"
-          >
-            <div className="space-y-4">
-              <Pill>Beta Control Room</Pill>
-              <h1 className="max-w-2xl text-5xl font-semibold tracking-tight text-slate-950">
-                Civora AI — Autonomous Civil Engineering Design
-              </h1>
-              <p className="max-w-2xl text-lg leading-8 text-slate-600">
-                Sign in to run civil site concepts, review clear engineering
-                outcomes, and export readable plans from one clean workflow.
-              </p>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <Card className="rounded-2xl">
-                <CardContent className="p-5">
-                  <FolderOpen className="h-5 w-5 text-slate-900" />
-                  <p className="mt-3 text-sm font-medium text-slate-900">Projects</p>
-                  <p className="mt-1 text-sm text-slate-500">Open, rerun, and review real project history.</p>
-                </CardContent>
-              </Card>
-              <Card className="rounded-2xl">
-                <CardContent className="p-5">
-                  <Clock3 className="h-5 w-5 text-slate-900" />
-                  <p className="mt-3 text-sm font-medium text-slate-900">Runs</p>
-                  <p className="mt-1 text-sm text-slate-500">See what passed, what failed, and why it matters.</p>
-                </CardContent>
-              </Card>
-              <Card className="rounded-2xl">
-                <CardContent className="p-5">
-                  <Map className="h-5 w-5 text-slate-900" />
-                  <p className="mt-3 text-sm font-medium text-slate-900">Deliverables</p>
-                  <p className="mt-1 text-sm text-slate-500">Preview, download, and share readable civil outputs.</p>
-                </CardContent>
-              </Card>
-            </div>
-          </motion.div>
-
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-            <Card className="rounded-[28px]">
-              <CardHeader>
-                <SectionTitle
-                  icon={Sparkles}
-                  title={authMode === "register" ? "Create Account" : "Sign In"}
-                  desc="Auth is now user-scoped so projects and jobs are private per beta tester."
-                />
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="inline-flex rounded-2xl border border-black/10 bg-slate-100 p-1">
-                  <button
-                    type="button"
-                    onClick={() => setAuthMode("login")}
-                    className={`rounded-2xl px-4 py-2 text-sm font-medium transition ${
-                      authMode === "login" ? "bg-white shadow-sm text-slate-900" : "text-slate-600"
-                    }`}
-                  >
-                    Sign In
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAuthMode("register")}
-                    className={`rounded-2xl px-4 py-2 text-sm font-medium transition ${
-                      authMode === "register" ? "bg-white shadow-sm text-slate-900" : "text-slate-600"
-                    }`}
-                  >
-                    Create Account
-                  </button>
-                </div>
-                <div className="rounded-2xl border border-black/10 bg-slate-50 p-4 text-sm text-slate-600">
-                  {authStatus ? (
-                    authStatus.user_count > 0 ? (
-                      <span>
-                        {authStatus.user_count} Civora AI beta account
-                        {authStatus.user_count === 1 ? "" : "s"} already exist in this
-                        workspace. Use <strong>Sign In</strong> if you made one before,
-                        or create another account.
-                      </span>
-                    ) : (
-                      <span>No Civora AI beta accounts exist yet. Create the first one here.</span>
-                    )
-                  ) : (
-                    <span>Account status will appear here once the Civora AI backend responds.</span>
-                  )}
-                </div>
-                {authStatusError ? (
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                    {authStatusError}
-                  </div>
-                ) : null}
-                {authMode === "register" ? (
-                  <Field label="Name">
-                    <TextInput
-                      value={authName}
-                      onChange={(e) => setAuthName(e.target.value)}
-                      placeholder="Jane Engineer"
-                    />
-                  </Field>
-                ) : null}
-                <Field label="Email">
-                  <TextInput
-                    value={authEmail}
-                    onChange={(e) => setAuthEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    autoComplete="email"
-                  />
-                </Field>
-                <Field label="Password">
-                  <div className="relative">
-                    <TextInput
-                      type={showPassword ? "text" : "password"}
-                      value={authPassword}
-                      onChange={(e) => setAuthPassword(e.target.value)}
-                      placeholder="At least 8 characters"
-                      autoComplete={
-                        authMode === "register" ? "new-password" : "current-password"
-                      }
-                      className="pr-12"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword((value) => !value)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
-                      aria-label={showPassword ? "Hide password" : "Show password"}
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </Field>
-                {authError ? (
-                  <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                    {authError}
-                  </div>
-                ) : null}
-                <div className="flex flex-wrap gap-3">
-                  <SmallButton onClick={handleAuth} disabled={authLoading}>
-                    <Sparkles className="mr-2 h-4 w-4" />
-                    {authLoading
-                      ? "Working..."
-                      : authMode === "register"
-                        ? "Create Account"
-                        : "Sign In"}
-                  </SmallButton>
-                  <SmallButton
-                    variant="secondary"
-                    onClick={() => {
-                      setAuthError("");
-                      setAuthMode((mode) =>
-                        mode === "register" ? "login" : "register",
-                      );
-                    }}
-                  >
-                    {authMode === "register" ? "Have an account?" : "Need an account?"}
-                  </SmallButton>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        </div>
-      </div>
+      <AuthScreen
+        authMode={authMode}
+        authStatus={authStatus}
+        authStatusError={authStatusError}
+        authName={authName}
+        authEmail={authEmail}
+        authPassword={authPassword}
+        showPassword={showPassword}
+        authError={authError}
+        authLoading={authLoading}
+        onAuthModeChange={setAuthMode}
+        onAuthNameChange={setAuthName}
+        onAuthEmailChange={setAuthEmail}
+        onAuthPasswordChange={setAuthPassword}
+        onTogglePassword={() => setShowPassword((value) => !value)}
+        onClearAuthError={() => setAuthError("")}
+        onSubmit={handleAuth}
+      />
     );
   }
 
   return (
     <div className="min-h-screen bg-[#e9eaee] text-slate-950">
       <div className="flex min-h-screen flex-col">
-        <header className="w-full bg-[radial-gradient(circle_at_top,#1f2937_0%,#0b1120_55%,#0a0f1d_100%)] text-white">
-          <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-4">
-            <div className="flex items-center gap-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-white/10 text-lg font-semibold">
-                C
-              </div>
-              <div>
-                <p className="text-lg font-semibold tracking-tight">Civora AI</p>
-                <p className="text-xs uppercase tracking-[0.3em] text-white/60">Autonomous Civil</p>
-              </div>
-            </div>
-            <nav className="hidden items-center gap-6 text-sm font-medium text-white/80 md:flex">
-              <button type="button" className="text-white">Projects</button>
-              <button type="button" className="border-b-2 border-white pb-1 text-white">Knowledge Base</button>
-              <button type="button" className="text-white/70 hover:text-white">Docs</button>
-            </nav>
-            <div className="flex items-center gap-3">
-              <span className="hidden rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white/70 md:inline-flex">
-                {user.email}
-              </span>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="rounded-full border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/80 transition hover:bg-white/20"
-              >
-                Sign Out
-              </button>
-            </div>
-          </div>
-        </header>
+        <AppHeader userEmail={user.email} onLogout={handleLogout} />
 
         <div className="flex min-h-screen">
-        <aside className="hidden w-[300px] shrink-0 border-r border-slate-200 bg-[#f1f2f6] lg:flex lg:flex-col">
-          <div className="border-b border-slate-200 p-4">
-            <button
-              type="button"
-              onClick={handleNewProject}
-              className="flex w-full items-center justify-center rounded-2xl bg-slate-950 px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-800"
-            >
-              <MessageSquarePlus className="mr-2 h-4 w-4" />
-              New Project
-            </button>
-          </div>
+          <ProjectSidebar
+            onNewProject={handleNewProject}
+            chatMessages={chatMessages}
+            learningReport={learningReport}
+            learningReportUpdatedAt={learningReportUpdatedAt}
+            onRefreshLearningReport={refreshLearningReport}
+            previewPhaseEntries={previewPhaseEntries}
+            combinedPreviewPhase={combinedPreviewPhase}
+            previewAssumptionCategories={previewAssumptionCategories}
+            previewFixActions={previewFixActions}
+            previewFixTargets={previewFixTargets}
+            previewReviewCategories={previewReviewCategories}
+            previewBlockedReasons={previewBlockedReasons}
+            previewReadyDeliverables={previewReadyDeliverables}
+            previewFailedDeliverables={previewFailedDeliverables}
+            previewExtraDeliverables={previewExtraDeliverables}
+            previewReviewReadyCount={previewReadyDeliverables.length}
+            previewReviewRequestedCount={
+              (previewReview?.requested_deliverables ?? []).length ||
+              previewReadyDeliverables.length
+            }
+            previewRerunTotal={previewReview?.rerun_total ?? 0}
+            whatYouNeedSummary={whatYouNeedSummary}
+            previewRerunSignals={previewRerunSignals}
+            issues={issues}
+            issueTargets={issueTargets}
+            previewInteraction={previewInteraction}
+            selectedIssueId={selectedIssueId}
+            onSelectIssue={setSelectedIssueId}
+            totalPipeLength={totalPipeLength}
+            maxSlope={maxSlope}
+            minSlope={minSlope}
+            flowCfs={flowCfs}
+            cutFillNet={cutFillNet}
+            basinSize={basinSize}
+            parkingCount={parkingCount}
+            buildingWidth={buildingWidth}
+            buildingCount={buildingCount}
+            buildingDepth={buildingDepth}
+            minSlopePct={minSlopePct}
+            maxParkingSlopePct={maxParkingSlopePct}
+            maxAdaCrossSlopePct={maxAdaCrossSlopePct}
+            maxRoadGradePct={maxRoadGradePct}
+            pipeMinSlopePct={pipeMinSlopePct}
+            onParkingCountChange={setParkingCount}
+            onBuildingWidthChange={setBuildingWidth}
+            onBuildingCountChange={setBuildingCount}
+            onBuildingDepthChange={setBuildingDepth}
+            onMinSlopePctChange={setMinSlopePct}
+            onMaxParkingSlopePctChange={setMaxParkingSlopePct}
+            onMaxAdaCrossSlopePctChange={setMaxAdaCrossSlopePct}
+            onMaxRoadGradePctChange={setMaxRoadGradePct}
+            onPipeMinSlopePctChange={setPipeMinSlopePct}
+            showMeasurements={showMeasurements}
+            showCalculations={showCalculations}
+            onToggleMeasurements={() => setShowMeasurements((prev) => !prev)}
+            onToggleCalculations={() => setShowCalculations((prev) => !prev)}
+            previewLayers={previewLayers}
+            onTogglePreviewLayer={(key) =>
+              setPreviewLayers((prev) => ({ ...prev, [key]: !prev[key] }))
+            }
+            onQueuePreviewRefresh={queuePreviewRefresh}
+            mapSnapshotInputRef={mapSnapshotInputRef}
+            surveyInputRef={surveyInputRef}
+            onUploadImage={uploadImage}
+            onUploadSurvey={uploadSurvey}
+            surveyFileName={surveyFileName}
+            surveySlopeEstimate={surveySlopeEstimate}
+            mapSnapshotPath={mapSnapshotPath}
+            mapAnalysis={mapAnalysis}
+            uploadedImageApiUrl={uploadedImageApiUrl}
+            uploadedImagePreviewUrl={uploadedImagePreviewUrl}
+            onEstimateSurveySlope={estimateSurveySlope}
+            onAnalyzeMapSnapshot={analyzeMapSnapshot}
+            quantityRollupsEnabled={quantityRollupsEnabled}
+            onToggleQuantityRollups={() => setQuantityRollupsEnabled((prev) => !prev)}
+            quantityRows={quantityRows}
+            phaseStats={phaseStats}
+          />
 
-          <div className="space-y-6 overflow-y-auto p-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Learning
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setShowLearningPanel((value) => !value)}
-                  className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 transition hover:bg-slate-100"
-                >
-                  {showLearningPanel ? "Hide" : "Show"}
-                </button>
-              </div>
-              {showLearningPanel ? (
-                <div className="rounded-2xl border border-slate-200 bg-white p-3 text-xs text-slate-600">
-                  {(() => {
-                    const sessionLearning = computeLearningScore(chatMessages);
-                    const reportScore = learningReport?.feedback?.score_percent;
-                    const reportTotal = learningReport?.feedback?.total;
-                    const datasetCount = learningReport?.training_examples?.count;
-                    const lastRun =
-                      learningReportUpdatedAt
-                        ? new Date(learningReportUpdatedAt).toLocaleString()
-                        : null;
-                    return (
-                      <div className="space-y-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          {sessionLearning.total ? (
-                            <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700">
-                              Session {sessionLearning.score}% ({sessionLearning.total})
-                            </span>
-                          ) : null}
-                          {typeof reportScore === "number" ? (
-                            <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700">
-                              Global {reportScore}% ({reportTotal ?? 0})
-                            </span>
-                          ) : null}
-                          {typeof datasetCount === "number" ? (
-                            <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700">
-                              Training {datasetCount}
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => void refreshLearningReport()}
-                            className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
-                          >
-                            Refresh
-                          </button>
-                          {lastRun ? (
-                            <span className="text-[11px] text-slate-400">
-                              Last refresh: {lastRun}
-                            </span>
-                          ) : null}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                Projects
-              </p>
-              <div className="space-y-2">
-                {projects.length === 0 ? (
-                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
-                    No saved projects yet.
-                  </div>
-                ) : (
-                  projects.map((project) => (
-                    <div
-                      key={project.project_id}
-                      className={`flex items-center gap-2 rounded-2xl px-2 py-2 transition ${
-                        project.project_id === projectId
-                          ? "bg-white shadow-sm ring-1 ring-slate-300"
-                          : "hover:bg-white"
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => void loadProject(project.project_id)}
-                        className="min-w-0 flex-1 px-2 py-1 text-left text-sm text-slate-700"
-                      >
-                        <p className="truncate font-medium text-slate-950">
-                          {project.name || "Untitled Project"}
-                        </p>
-                        <p className="mt-1 truncate text-xs text-slate-500">
-                          {project.has_result ? "Saved result" : "Draft"}
-                        </p>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void deleteProject(project.project_id)}
-                        aria-label={`Delete ${project.name || "Untitled Project"}`}
-                        className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                Recent Runs
-              </p>
-              <div className="space-y-2">
-                {workflowRuns.length === 0 ? (
-                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
-                    No saved runs yet.
-                  </div>
-                ) : (
-                  workflowRuns.slice(0, 8).map((run) => (
-                    <button
-                      key={run.run_id}
-                      type="button"
-                      onClick={() => setSelectedRunId(run.run_id)}
-                      className={`block w-full rounded-2xl px-4 py-3 text-left transition ${
-                        selectedRun?.run_id === run.run_id
-                          ? "bg-white shadow-sm ring-1 ring-slate-300"
-                          : "hover:bg-white"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-medium text-slate-900">
-                          {run.success ? "Completed run" : "Failed run"}
-                        </span>
-                        <span className="text-xs text-slate-500">
-                          {run.success ? "Pass" : "Fail"}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {formatTimestamp(run.created_at)}
-                      </p>
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        </aside>
-
-        <main className="flex min-w-0 flex-1 flex-col">
-          <div className="flex items-center justify-between border-b border-slate-200 bg-white/80 px-4 py-3 backdrop-blur md:px-6">
-            <div className="flex items-center gap-2">
-              <a
-                href="/upgrades"
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                Upgrades
-              </a>
-              <button
-                type="button"
-                onClick={() => void handleRefreshWorkspace()}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                Refresh
-              </button>
-            </div>
-            <div className="hidden max-w-[520px] items-center gap-2 overflow-x-auto rounded-xl border border-slate-200 bg-white px-2 py-1 md:flex">
-              {projects.length === 0 ? (
-                <span className="px-3 py-1 text-xs text-slate-500">
-                  No projects yet
-                </span>
-              ) : (
-                projects.map((project) => (
-                  <button
-                    key={project.project_id}
-                    type="button"
-                    onClick={() => void loadProject(project.project_id)}
-                    className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                      project.project_id === projectId
-                        ? "bg-slate-950 text-white"
-                        : "text-slate-600 hover:bg-slate-100"
-                    }`}
-                  >
-                    {project.name || "Untitled"}
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
+          <main className="flex min-w-0 flex-1 flex-col">
+            <WorkspaceToolbar
+              onRefreshWorkspace={handleRefreshWorkspace}
+              showProjectDropdown={showProjectDropdown}
+              onToggleProjectDropdown={() => setShowProjectDropdown((value) => !value)}
+              projects={projects}
+              projectId={projectId}
+              onSelectProject={(nextProjectId) => {
+                setShowProjectDropdown(false);
+                void loadProject(nextProjectId);
+              }}
+            />
 
           <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-6 md:px-6">
             <div className="space-y-3">
@@ -6101,7 +4747,11 @@ export default function PerformanceAIDashboard() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setPreviewInteraction("interactive")}
+                        onClick={() => {
+                          if (previewInteraction === "interactive") return;
+                          queuePreviewRefresh("Loading interactive labels...");
+                          setPreviewInteraction("interactive");
+                        }}
                         className={`rounded-full border px-2.5 py-1 ${
                           previewInteraction === "interactive"
                             ? "border-slate-900 bg-slate-950 text-white"
@@ -6115,7 +4765,11 @@ export default function PerformanceAIDashboard() {
                       <span>Quality</span>
                       <button
                         type="button"
-                        onClick={() => setPreviewQuality("standard")}
+                        onClick={() => {
+                          if (previewQuality === "standard") return;
+                          queuePreviewRefresh("Requesting standard-quality preview...");
+                          setPreviewQuality("standard");
+                        }}
                         className={`rounded-full border px-2.5 py-1 ${
                           previewQuality === "standard"
                             ? "border-slate-900 bg-slate-950 text-white"
@@ -6126,7 +4780,11 @@ export default function PerformanceAIDashboard() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setPreviewQuality("high")}
+                        onClick={() => {
+                          if (previewQuality === "high") return;
+                          queuePreviewRefresh("Requesting high-quality preview...");
+                          setPreviewQuality("high");
+                        }}
                         className={`rounded-full border px-2.5 py-1 ${
                           previewQuality === "high"
                             ? "border-slate-900 bg-slate-950 text-white"
@@ -6137,8 +4795,47 @@ export default function PerformanceAIDashboard() {
                       </button>
                     </div>
                   </div>
+                  {(previewRefreshing || previewRefreshNote) && (
+                    <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
+                      <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+                      <span>{previewRefreshNote || "Refreshing preview..."}</span>
+                    </div>
+                  )}
                   {previewMode === "3d" ? (
-                    <Preview3DCanvas items={preview3DItems} interactive={previewInteraction === "interactive"} />
+                    preview3DEffectiveItems.length ? (
+                      <div className="relative">
+                        <Preview3DCanvas
+                          items={preview3DEffectiveItems}
+                          interactive={previewInteraction === "interactive"}
+                          onOpenFullscreen={() => setPreviewFullscreenOpen(true)}
+                        />
+                        {usingAnnotation3D ? (
+                          <div className="pointer-events-none absolute left-4 top-4 rounded-full border border-white/40 bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm">
+                            Approximate 3D
+                          </div>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => setPreviewFullscreenOpen(true)}
+                          className="absolute bottom-4 right-4 rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm transition hover:bg-slate-900"
+                        >
+                          Open Fullscreen
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="relative flex min-h-[560px] items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)]">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={planPreviewUrl}
+                          alt="Generated plan preview"
+                          className="max-h-[560px] w-full origin-center -skew-y-1 scale-[0.98] object-contain"
+                          onClick={() => setPreviewFullscreenOpen(true)}
+                        />
+                        <div className="pointer-events-none absolute left-6 top-6 rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600 shadow-sm">
+                          3D geometry not ready yet
+                        </div>
+                      </div>
+                    )
                   ) : (
                     <div className="relative flex min-h-[560px] items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)]">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -6148,11 +4845,7 @@ export default function PerformanceAIDashboard() {
                         className={`max-h-[560px] w-full object-contain ${
                           previewInteraction === "interactive" ? "cursor-zoom-in" : "cursor-default"
                         }`}
-                        onClick={() => {
-                          if (previewInteraction === "interactive") {
-                            setPreviewFullscreenOpen(true);
-                          }
-                        }}
+                        onClick={() => setPreviewFullscreenOpen(true)}
                       />
                       <div className="pointer-events-none absolute right-6 top-6 hidden w-[260px] rounded-[22px] border border-white/20 bg-slate-900/80 p-4 text-xs text-white shadow-[0_20px_50px_-30px_rgba(15,23,42,0.8)] backdrop-blur lg:block">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70">
@@ -6192,6 +4885,11 @@ export default function PerformanceAIDashboard() {
                           AI Layout + Generation
                         </span>
                       </div>
+                      {previewInteraction === "interactive" ? (
+                        <div className="pointer-events-none absolute left-6 top-6 hidden rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white lg:block">
+                          Open fullscreen to hover labels
+                        </div>
+                      ) : null}
                     </div>
                   )}
                 </div>
@@ -6230,6 +4928,12 @@ export default function PerformanceAIDashboard() {
                           alt="Generated plan preview fullscreen"
                           className="max-h-full w-full rounded-[20px] bg-white object-contain shadow-2xl"
                         />
+                        {previewInteraction === "interactive" &&
+                        !planPreviewAnnotations?.labels?.length ? (
+                          <div className="pointer-events-none absolute right-6 top-6 rounded-2xl border border-white/20 bg-slate-900/80 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
+                            No hover labels yet. Refresh the preview to generate them.
+                          </div>
+                        ) : null}
                         {previewInteraction === "interactive" &&
                         planPreviewAnnotations?.labels?.length ? (
                           <div className="pointer-events-none absolute inset-0">
@@ -6326,737 +5030,6 @@ export default function PerformanceAIDashboard() {
                 </div>
               ) : null}
 
-              {previewReview && (
-                <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(320px,1fr)]">
-                  <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-5">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Engineering Review
-                        </p>
-                        <p className="mt-2 text-base font-semibold text-slate-950">
-                          Latest run summary
-                        </p>
-                        {activePreviewPhase ? (
-                          <p className="mt-2 text-sm text-slate-600">
-                            {activePreviewPhase.label}: {activePreviewPhase.summary}
-                          </p>
-                        ) : null}
-                      </div>
-                      <div className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600 shadow-sm ring-1 ring-slate-200">
-                        {effectivePreviewUnresolvedCount} unresolved
-                      </div>
-                    </div>
-
-                    <div className="mt-5 space-y-4">
-                      {combinedPreviewPhase ? (
-                        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                                Combined View
-                              </p>
-                              <p className="mt-2 text-sm font-medium text-slate-900">
-                                {combinedPreviewPhase.summary}
-                              </p>
-                            </div>
-                            <span
-                              className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                                combinedPreviewPhase.status.toLowerCase() === "ready"
-                                  ? "bg-emerald-100 text-emerald-700"
-                                  : combinedPreviewPhase.status.toLowerCase() === "blocked"
-                                    ? "bg-rose-100 text-rose-700"
-                                    : combinedPreviewPhase.status.toLowerCase() === "running"
-                                      ? "bg-blue-100 text-blue-700"
-                                      : "bg-amber-100 text-amber-700"
-                              }`}
-                            >
-                              {toReadableLabel(combinedPreviewPhase.status)}
-                            </span>
-                          </div>
-                          {previewTotalPhaseCount > 0 ? (
-                            <div className="mt-4">
-                              <div className="flex items-center justify-between gap-3 text-xs font-medium text-slate-500">
-                                <span>{previewPhaseHeadline}</span>
-                                <span>{previewPhaseProgressPercent}%</span>
-                              </div>
-                              <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
-                                <div
-                                  className="h-full rounded-full bg-slate-900 transition-all duration-500"
-                                  style={{ width: `${previewPhaseProgressPercent}%` }}
-                                />
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
-                      ) : null}
-                      {previewPhaseEntries.length ? (
-                        <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                            Phase Progress
-                          </p>
-                          <div className="mt-3 space-y-2">
-                            {previewPhaseEntries
-                              .filter((phase) => phase.key !== "combined_view")
-                              .map((phase) => (
-                              <div
-                                key={phase.key}
-                                className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2"
-                              >
-                                <div className="min-w-0">
-                                  <p className="text-sm font-medium text-slate-900">{phase.label}</p>
-                                  <p className="mt-1 text-sm text-slate-600">{phase.summary}</p>
-                                </div>
-                                  <span
-                                  className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                                    phase.status.toLowerCase() === "ready" || phase.status.toLowerCase() === "complete"
-                                      ? "bg-emerald-100 text-emerald-700"
-                                      : phase.status.toLowerCase() === "blocked" || phase.status.toLowerCase() === "failed"
-                                        ? "bg-rose-100 text-rose-700"
-                                        : phase.status.toLowerCase() === "running"
-                                          ? "bg-blue-100 text-blue-700"
-                                          : "bg-amber-100 text-amber-700"
-                                  }`}
-                                >
-                                  {toReadableLabel(phase.status)}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
-
-                      <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          Assumptions
-                        </p>
-                        <p className="mt-2 text-sm text-slate-700">
-                          {previewAssumptionCategories.length
-                            ? joinNatural(previewAssumptionCategories, 4)
-                            : "No assisted assumptions were recorded on the latest pass."}
-                        </p>
-                      </div>
-
-                      <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          Fixes Applied
-                        </p>
-                        <p className="mt-2 text-sm text-slate-700">
-                          {previewFixActions.length
-                            ? joinNatural(previewFixActions, 4)
-                            : previewFixTargets.length
-                              ? joinNatural(previewFixTargets, 4)
-                              : "No corrective fix actions were recorded in the latest pass."}
-                        </p>
-                      </div>
-
-                      <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          Needs Review
-                        </p>
-                        <p className="mt-2 text-sm text-slate-700">
-                          {previewReviewCategories.length
-                            ? joinNatural(previewReviewCategories, 4)
-                            : "No major review categories are currently flagged."}
-                        </p>
-                      </div>
-
-                      <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          Blockers
-                        </p>
-                        <p className="mt-2 text-sm text-slate-700">
-                          {previewBlockedReasons.length
-                            ? joinNatural(previewBlockedReasons, 4)
-                            : "No export blockers are currently recorded."}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="rounded-[24px] border border-slate-200 bg-white p-5">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Deliverables
-                      </p>
-                      <p className="mt-3 text-2xl font-semibold text-slate-950">
-                        {(previewReview.ready_deliverables ?? []).length}/
-                        {(previewReview.requested_deliverables ?? []).length ||
-                          (previewReview.ready_deliverables ?? []).length}
-                      </p>
-                      <p className="mt-1 text-sm text-slate-500">Requested outputs ready</p>
-                      <div className="mt-4 space-y-3 text-sm text-slate-700">
-                        <div>
-                          <p className="font-medium text-slate-900">Ready now</p>
-                          <p className="mt-1 text-slate-600">
-                            {previewReadyDeliverables.length
-                              ? joinNatural(previewReadyDeliverables, 4)
-                              : "No ready deliverables recorded yet."}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="font-medium text-slate-900">Still blocked</p>
-                          <p className="mt-1 text-slate-600">
-                            {previewFailedDeliverables.length
-                              ? joinNatural(previewFailedDeliverables, 4)
-                              : "No requested deliverables are explicitly failed."}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="font-medium text-slate-900">Extra preview outputs</p>
-                          <p className="mt-1 text-slate-600">
-                            {previewExtraDeliverables.length
-                              ? joinNatural(previewExtraDeliverables, 4)
-                              : "No extra preview-only outputs were recorded."}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="rounded-[24px] border border-slate-200 bg-white p-5">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        What You Need
-                      </p>
-                      <p className="mt-3 text-sm text-slate-600">{whatYouNeedSummary.note}</p>
-                      <div className="mt-4 space-y-3 text-sm text-slate-700">
-                        <div>
-                          <p className="font-medium text-slate-900">Needed now</p>
-                          <p className="mt-1 text-slate-600">
-                            {whatYouNeedSummary.neededNow.length
-                              ? joinNatural(whatYouNeedSummary.neededNow, 4)
-                              : "No critical missing inputs are recorded right now."}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="font-medium text-slate-900">Helpful next</p>
-                          <p className="mt-1 text-slate-600">
-                            {whatYouNeedSummary.supporting.length
-                              ? joinNatural(whatYouNeedSummary.supporting, 4)
-                              : "No additional supporting files or field references are specifically requested."}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="font-medium text-slate-900">Current scope</p>
-                          <p className="mt-1 text-slate-600">
-                            {whatYouNeedSummary.inScope.length
-                              ? joinNatural(whatYouNeedSummary.inScope, 4)
-                              : "No active systems are selected yet."}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="rounded-[24px] border border-slate-200 bg-white p-5">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Run Stability
-                      </p>
-                      <p className="mt-3 text-2xl font-semibold text-slate-950">
-                        {previewReview.rerun_total ?? 0}
-                      </p>
-                      <p className="mt-1 text-sm text-slate-500">Reruns across the latest engineering cycle</p>
-                      <p className="mt-4 text-sm text-slate-600">
-                        {previewRerunSignals.length
-                          ? joinNatural(previewRerunSignals, 4)
-                          : "No repeated reruns were recorded in the latest pass."}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="space-y-4">
-                    <div className="rounded-[24px] border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Issue Navigator
-                      </p>
-                      <p className="mt-2 text-sm font-medium text-slate-900">
-                        Click an issue to highlight the closest system in preview.
-                      </p>
-                      <div className="mt-3 space-y-2 text-sm text-slate-600">
-                        {(issues.length ? issues : defaultIssues).map((issue, idx) => (
-                          <button
-                            key={`${issue.message}-${idx}`}
-                            type="button"
-                            onClick={() => {
-                              if (previewInteraction !== "interactive") return;
-                              setSelectedIssueId(`${issue.message}-${idx}`);
-                            }}
-                            disabled={previewInteraction !== "interactive"}
-                            className={`flex w-full items-start justify-between gap-3 rounded-2xl border px-3 py-2 text-left transition ${
-                              selectedIssueId === `${issue.message}-${idx}`
-                                ? "border-slate-900 bg-slate-950 text-white"
-                                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                            } ${previewInteraction !== "interactive" ? "cursor-not-allowed opacity-60" : ""}`}
-                          >
-                            <div className="text-left">
-                              <span className="font-medium">{issue.message}</span>
-                              {issueTargets[idx]?.label ? (
-                                <p className="mt-1 text-[11px] uppercase tracking-[0.12em] opacity-70">
-                                  Highlight: {issueTargets[idx]?.label}
-                                </p>
-                              ) : null}
-                            </div>
-                            <span className="text-xs uppercase tracking-[0.14em] opacity-60">
-                              {issue.severity}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                      <div className="mt-3 flex items-center justify-between gap-2 text-xs text-slate-500">
-                        <span>Allow override</span>
-                        <button
-                          type="button"
-                          className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600"
-                        >
-                          Override
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="rounded-[24px] border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Engineering Metrics
-                      </p>
-                      <div className="mt-3 grid gap-2 text-sm text-slate-700">
-                        <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
-                          <span>Total pipe length</span>
-                          <span className="font-semibold">
-                            {formatMetric(totalPipeLength, "ft")}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
-                          <span>Max slope</span>
-                          <span className="font-semibold">
-                            {formatMetric(maxSlope, "%")}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
-                          <span>Min slope</span>
-                          <span className="font-semibold">
-                            {formatMetric(minSlope, "%")}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
-                          <span>Flow (CFS)</span>
-                          <span className="font-semibold">
-                            {formatMetric(flowCfs, "cfs")}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
-                          <span>Cut / Fill</span>
-                          <span className="font-semibold">
-                            {formatMetric(cutFillNet, "cf")}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
-                          <span>Pond size</span>
-                          <span className="font-semibold">
-                            {formatMetric(basinSize, "sf")}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="rounded-[24px] border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Design Controls
-                      </p>
-                      <div className="mt-3 grid gap-3 text-sm text-slate-700">
-                        <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
-                          Parking count
-                          <input
-                            type="number"
-                            min="0"
-                            value={parkingCount}
-                            onChange={(event) => setParkingCount(event.target.value)}
-                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                          />
-                        </label>
-                        <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
-                          Building width (ft)
-                          <input
-                            type="number"
-                            min="0"
-                            value={buildingWidth}
-                            onChange={(event) => setBuildingWidth(event.target.value)}
-                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                          />
-                        </label>
-                        <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
-                          Building count
-                          <input
-                            type="number"
-                            min="0"
-                            value={buildingCount}
-                            onChange={(event) => setBuildingCount(event.target.value)}
-                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                          />
-                        </label>
-                        <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
-                          Building depth (ft)
-                          <input
-                            type="number"
-                            min="0"
-                            value={buildingDepth}
-                            onChange={(event) => setBuildingDepth(event.target.value)}
-                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                          />
-                        </label>
-                        <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
-                          Min slope (%)
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.1"
-                            value={minSlopePct}
-                            onChange={(event) => setMinSlopePct(event.target.value)}
-                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                          />
-                        </label>
-                        <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
-                          Max parking slope (%)
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.1"
-                            value={maxParkingSlopePct}
-                            onChange={(event) => setMaxParkingSlopePct(event.target.value)}
-                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                          />
-                        </label>
-                        <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
-                          Max ADA cross slope (%)
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.1"
-                            value={maxAdaCrossSlopePct}
-                            onChange={(event) => setMaxAdaCrossSlopePct(event.target.value)}
-                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                          />
-                        </label>
-                        <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
-                          Max road grade (%)
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.1"
-                            value={maxRoadGradePct}
-                            onChange={(event) => setMaxRoadGradePct(event.target.value)}
-                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                          />
-                        </label>
-                        <label className="grid gap-1 text-xs uppercase tracking-[0.14em] text-slate-500">
-                          Pipe min slope (%)
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={pipeMinSlopePct}
-                            onChange={(event) => setPipeMinSlopePct(event.target.value)}
-                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                          />
-                        </label>
-                      </div>
-                    </div>
-
-                    <div className="rounded-[24px] border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Overlays
-                      </p>
-                      <div className="mt-3 space-y-2 text-sm text-slate-700">
-                        <button
-                          type="button"
-                          onClick={() => setShowMeasurements((prev) => !prev)}
-                          className={`flex w-full items-center justify-between rounded-2xl border px-3 py-2 ${
-                            showMeasurements
-                              ? "border-slate-900 bg-slate-950 text-white"
-                              : "border-slate-200 bg-white text-slate-700"
-                          }`}
-                        >
-                          <span>Measurements overlay</span>
-                          <span className="text-xs uppercase tracking-[0.14em]">
-                            {showMeasurements ? "On" : "Off"}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setShowCalculations((prev) => !prev)}
-                          className={`flex w-full items-center justify-between rounded-2xl border px-3 py-2 ${
-                            showCalculations
-                              ? "border-slate-900 bg-slate-950 text-white"
-                              : "border-slate-200 bg-white text-slate-700"
-                          }`}
-                        >
-                          <span>Calculations overlay</span>
-                          <span className="text-xs uppercase tracking-[0.14em]">
-                            {showCalculations ? "On" : "Off"}
-                          </span>
-                        </button>
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 text-xs text-slate-600">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                            Preview Layers
-                          </p>
-                          <div className="mt-2 grid gap-2">
-                            {[
-                              { key: "buildings", label: "Buildings" },
-                              { key: "roads", label: "Roads + parking" },
-                              { key: "grading", label: "Grading contours" },
-                              { key: "drainage", label: "Drainage/storm" },
-                              { key: "utilities", label: "Utilities" },
-                              { key: "structures", label: "Structures + pools" },
-                              { key: "lots", label: "Lots + parcels" },
-                            ].map((item) => (
-                              <button
-                                key={item.key}
-                                type="button"
-                                onClick={() =>
-                                  setPreviewLayers((prev) => ({
-                                    ...prev,
-                                    [item.key]: !prev[item.key as keyof typeof prev],
-                                  }))
-                                }
-                                className={`flex w-full items-center justify-between rounded-2xl border px-3 py-2 text-sm ${
-                                  previewLayers[item.key as keyof typeof previewLayers]
-                                    ? "border-slate-900 bg-slate-950 text-white"
-                                    : "border-slate-200 bg-white text-slate-700"
-                                }`}
-                              >
-                                <span>{item.label}</span>
-                                <span className="text-xs uppercase tracking-[0.14em]">
-                                  {previewLayers[item.key as keyof typeof previewLayers] ? "On" : "Off"}
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="rounded-[24px] border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Site Inputs
-                      </p>
-                      <div className="mt-3 space-y-2 text-sm text-slate-700">
-                        <button
-                          type="button"
-                          onClick={() => mapSnapshotInputRef.current?.click()}
-                          className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50"
-                        >
-                          <span>Upload map snapshot</span>
-                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
-                            {uploadedImageApiUrl || uploadedImagePreviewUrl ? "Ready" : "Upload"}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => surveyInputRef.current?.click()}
-                          className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50"
-                        >
-                          <span>Import survey file</span>
-                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
-                            {surveyFileName ? "Ready" : "Upload"}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={estimateSurveySlope}
-                          disabled={!surveyFileName}
-                          className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          <span>Estimate slope automatically</span>
-                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
-                            {surveySlopeEstimate?.slope_percent ? "Estimated" : "Compute"}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={analyzeMapSnapshot}
-                          disabled={!mapSnapshotPath}
-                          className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          <span>Analyze map snapshot</span>
-                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
-                            {mapAnalysis?.success ? "Ready" : "Analyze"}
-                          </span>
-                        </button>
-                        {surveyFileName ? (
-                          <p className="text-xs text-slate-500">
-                            Survey loaded: {surveyFileName}
-                          </p>
-                        ) : null}
-                        {uploadedImageApiUrl || uploadedImagePreviewUrl ? (
-                          <p className="text-xs text-slate-500">
-                            Map snapshot loaded and ready for interpretation.
-                          </p>
-                        ) : null}
-                        {mapAnalysis?.success ? (
-                          <p className="text-xs text-slate-500">
-                            Map analysis captured{" "}
-                            {(mapAnalysis?.counts as { zones?: number } | undefined)?.zones ?? 0} zones,{" "}
-                            {(mapAnalysis?.counts as { objects?: number } | undefined)?.objects ?? 0} objects,{" "}
-                            {(mapAnalysis?.counts as { centerlines?: number } | undefined)?.centerlines ?? 0}{" "}
-                            centerlines.
-                          </p>
-                        ) : null}
-                        {surveySlopeEstimate?.slope_percent ? (
-                          <p className="text-xs text-slate-500">
-                            Estimated {surveySlopeEstimate.slope_percent.toFixed(2)}% slope toward{" "}
-                            {surveySlopeEstimate.direction || "N/A"} from{" "}
-                            {surveySlopeEstimate.point_count ?? 0} points.
-                          </p>
-                        ) : null}
-                      </div>
-                      <input
-                        ref={mapSnapshotInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={async (event) => {
-                          const file = event.currentTarget.files?.[0];
-                          if (file) {
-                            await uploadImage(file);
-                          }
-                          event.currentTarget.value = "";
-                        }}
-                      />
-                      <input
-                        ref={surveyInputRef}
-                        type="file"
-                        accept=".csv"
-                        className="hidden"
-                        onChange={async (event) => {
-                          const file = event.currentTarget.files?.[0];
-                          if (file) {
-                            await uploadSurvey(file);
-                          }
-                          event.currentTarget.value = "";
-                        }}
-                      />
-                    </div>
-
-                    <div className="rounded-[24px] border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Materials &amp; Quantities
-                      </p>
-                      <p className="mt-2 text-sm text-slate-600">
-                        Live takeoffs from the current engineering run.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => setQuantityRollupsEnabled((prev) => !prev)}
-                        className={`mt-3 flex w-full items-center justify-between rounded-2xl border px-3 py-2 text-sm ${
-                          quantityRollupsEnabled
-                            ? "border-slate-900 bg-slate-950 text-white"
-                            : "border-slate-200 bg-white text-slate-700"
-                        }`}
-                      >
-                        <span>Quantity rollups</span>
-                        <span className="text-xs uppercase tracking-[0.14em]">
-                          {quantityRollupsEnabled ? "On" : "Off"}
-                        </span>
-                      </button>
-                      {quantityRollupsEnabled ? (
-                        quantityRows.length ? (
-                          <div className="mt-3 grid gap-2 text-sm text-slate-700">
-                            {quantityRows.map((row) => (
-                              <div
-                                key={row.label}
-                                className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2"
-                              >
-                                <span>{row.label}</span>
-                                <span className="font-semibold">
-                                  {row.unit === "ea" || row.unit === "stalls"
-                                    ? formatCount(Number(row.value || 0), row.unit)
-                                    : formatMetric(Number(row.value || 0), row.unit)}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="mt-3 text-sm text-slate-500">
-                            Quantities will populate once the plan has run through the engine.
-                          </p>
-                        )
-                      ) : null}
-                    </div>
-
-                    <div className="rounded-[24px] border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Coverage Scope
-                      </p>
-                      <div className="mt-3 grid gap-2 text-sm text-slate-700">
-                        {[
-                          { label: "Roads", status: "Engineering" },
-                          { label: "Bridges / structural support", status: "Concept" },
-                          { label: "Recreational swimming pools", status: "Concept" },
-                          { label: "Subdivisions", status: "Concept" },
-                          { label: "Drainage / storm", status: "Engineering" },
-                          { label: "Utilities", status: "Engineering" },
-                          { label: "Geotechnical support", status: "Concept" },
-                          { label: "Environmental / regulatory", status: "Concept" },
-                          { label: "Erosion & sediment", status: "Concept" },
-                          { label: "Construction workflows", status: "Concept" },
-                          { label: "Inspection / operations", status: "Concept" },
-                        ].map((item) => (
-                          <div
-                            key={item.label}
-                            className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2"
-                          >
-                            <span>{item.label}</span>
-                            <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
-                              {item.status}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="rounded-[24px] border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Phase Stats
-                      </p>
-                      <div className="mt-3 grid gap-2 text-sm text-slate-700">
-                        {previewPhaseEntries.map((phase) => (
-                          <div
-                            key={phase.key}
-                            className="rounded-2xl border border-slate-200 px-3 py-2"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="font-medium">{phase.label}</span>
-                              <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
-                                {phase.status}
-                              </span>
-                            </div>
-                            <div className="mt-2 grid gap-1 text-xs text-slate-500">
-                              {(() => {
-                                const metrics =
-                                  (phaseStats[phase.key as keyof PhaseStats] ?? [])
-                                    .filter((item) => Number(item.value || 0) > 0)
-                                    .slice(0, 4);
-                                if (!metrics.length) {
-                                  return (
-                                    <p className="text-xs text-slate-500">
-                                      Metrics will populate after this phase completes.
-                                    </p>
-                                  );
-                                }
-                                return metrics.map((item) => (
-                                  <div key={item.label} className="flex items-center justify-between">
-                                    <span>{item.label}</span>
-                                    <span className="font-semibold text-slate-700">
-                                      {item.format === "count"
-                                        ? formatCount(Number(item.value || 0), item.unit)
-                                        : formatMetric(Number(item.value || 0), item.unit)}
-                                    </span>
-                                  </div>
-                                ));
-                              })()}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </main>
