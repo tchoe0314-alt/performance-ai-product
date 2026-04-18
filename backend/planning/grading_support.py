@@ -266,6 +266,38 @@ def _control_spot_grade_actions(
         seen.append((x, y))
         if len(actions) >= limit:
             break
+
+    if proposed_surface is not None and len(actions) < limit:
+        corners = [
+            (safe_float(getattr(proposed_surface, "x_min", 0.0), 0.0), safe_float(getattr(proposed_surface, "y_min", 0.0), 0.0)),
+            (safe_float(getattr(proposed_surface, "x_min", 0.0), 0.0), safe_float(getattr(proposed_surface, "y_max", 0.0), 0.0)),
+            (safe_float(getattr(proposed_surface, "x_max", 0.0), 0.0), safe_float(getattr(proposed_surface, "y_min", 0.0), 0.0)),
+            (safe_float(getattr(proposed_surface, "x_max", 0.0), 0.0), safe_float(getattr(proposed_surface, "y_max", 0.0), 0.0)),
+        ]
+        for x, y in corners:
+            if _too_close(x, y):
+                continue
+            z = _sample_surface_nearest(proposed_surface, x, y, DEFAULT_PAD_ELEV)
+            actions.append({
+                "task": "text_note",
+                "origin": [round(x, 3), round(y, 3)],
+                "points": None,
+                "closed": None,
+                "width": None,
+                "height": None,
+                "label": None,
+                "layer": "SPOT_FG",
+                "text": f"FG {z:.2f}",
+                "text_height": TEXT_HEIGHT_SMALL,
+                "center": None,
+                "radius": None,
+                "start_angle": None,
+                "end_angle": None,
+                "meta": _preview_meta_for_action("SPOT_FG", "text_note"),
+            })
+            seen.append((x, y))
+            if len(actions) >= limit:
+                break
     return actions
 
 
@@ -684,6 +716,8 @@ def grading_drainage_coordination(parsed: Dict[str, Any], project: ProjectModel,
 def build_grade_elements(project: ProjectModel, parsed: Dict[str, Any]) -> List[GradeElement]:
     elems: List[GradeElement] = []
     surface_obj = project.meta.get("existing_surface")
+    grading_profile = safe_dict(parsed.get("grading"))
+    basin_depth = safe_float(grading_profile.get("basin_depth_ft"), 3.0)
     for zone in project.zones.values():
         bbox = zone.boundary.bbox
         zt = zone.zone_type
@@ -738,17 +772,19 @@ def build_grade_elements(project: ProjectModel, parsed: Dict[str, Any]) -> List[
                 )
             )
         elif zt in {ZoneType.DETENTION, ZoneType.DRAINAGE}:
+            depth = max(1.0, basin_depth)
             elems.append(
                 GradeElement(
-                    kind="pond",
+                    kind="basin",
                     x=bbox.min_x,
                     y=bbox.min_y,
                     width=bbox.width,
                     depth=bbox.height,
-                    base_elev=sampled - 1.5,
-                    priority=5,
-                    transition_zone=10.0,
-                    name=zone.name or "POND",
+                    base_elev=sampled - depth,
+                    edge_rise=depth,
+                    priority=12,
+                    transition_zone=max(12.0, min(bbox.width, bbox.height) * 0.2),
+                    name=zone.name or "BASIN",
                 )
             )
     return elems

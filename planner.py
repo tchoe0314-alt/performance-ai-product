@@ -1647,6 +1647,8 @@ def _infer_surface_profile(parsed: Dict[str, Any]) -> Dict[str, Any]:
         profile["source"] = "corner_elevations"
         return profile
     if not terrain_text:
+        profile["inferred"] = True
+        profile["source"] = "default_min_slope"
         return profile
 
     text = lower_text(terrain_text)

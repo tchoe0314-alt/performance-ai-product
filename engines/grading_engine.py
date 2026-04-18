@@ -553,9 +553,14 @@ class GradingEngine:
             w = element.influence_weight(x, y)
             if w <= EPS:
                 continue
+            priority = getattr(element, "priority", 0) or 0
+            try:
+                priority_weight = 1.0 + max(0.0, float(priority)) * 0.08
+            except Exception:
+                priority_weight = 1.0
             z = element.elevation_at(x, y)
-            weighted_z += z * w
-            weighted_w += w
+            weighted_z += z * w * priority_weight
+            weighted_w += w * priority_weight
 
         if weighted_w <= EPS:
             return None, 0.0
