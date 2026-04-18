@@ -191,7 +191,7 @@ export default function PreviewPanel({
   const [rotateDragStart, setRotateDragStart] = useState<{ x: number; value: number } | null>(null);
   const activeAnnotation = pinnedAnnotation ?? hoveredAnnotation;
   const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-  const showMap = Boolean(mapboxToken);
+  const showMap = Boolean(mapboxToken) && previewQuality === "high";
   const showGeneratedPlan = !showMap && hasGeneratedPlan && !placementMode && !selectedBuildingId;
   const hasInteractiveLabels = previewLabels.length > 0 && showGeneratedPlan;
   const showInteractive = previewInteraction === "interactive";
@@ -845,6 +845,7 @@ export default function PreviewPanel({
               id: item.id,
               type: item.type || "building",
               label: item.label || item.name || item.type || "object",
+              height: typeof item.h === "number" && Number.isFinite(item.h) ? item.h : 16,
             },
           };
         })
@@ -901,6 +902,11 @@ export default function PreviewPanel({
           map.addLayer({ id, type, source, paint });
         }
       };
+      const ensureExtrusion = (id: string, source: string, paint: mapboxgl.AnyPaint) => {
+        if (!map.getLayer(id)) {
+          map.addLayer({ id, type: "fill-extrusion", source, paint });
+        }
+      };
 
       ensureSource("civora-buildings", toFeatureCollection(buildings, "Polygon"));
       ensureSource("civora-roads", toFeatureCollection(roads, "LineString"));
@@ -932,25 +938,27 @@ export default function PreviewPanel({
       }
       ensureSource("civora-survey", surveyFeatureCollection());
 
-      ensureLayer("civora-buildings-fill", "civora-buildings", "fill", {
-        "fill-color": "#1e293b",
-        "fill-opacity": 0.35,
+      ensureExtrusion("civora-buildings-extrusion", "civora-buildings", {
+        "fill-extrusion-color": "#374151",
+        "fill-extrusion-height": ["get", "height"],
+        "fill-extrusion-base": 0,
+        "fill-extrusion-opacity": 0.6,
       });
       ensureLayer("civora-buildings-line", "civora-buildings", "line", {
-        "line-color": "#0f172a",
+        "line-color": "#111827",
         "line-width": 2,
       });
       ensureLayer("civora-roads-line", "civora-roads", "line", {
-        "line-color": "#2563eb",
-        "line-width": 2.5,
+        "line-color": "#1f2937",
+        "line-width": 3,
       });
       ensureLayer("civora-parking-fill", "civora-parking", "fill", {
         "fill-color": "#64748b",
-        "fill-opacity": 0.25,
+        "fill-opacity": 0.35,
       });
       ensureLayer("civora-basins-fill", "civora-basins", "fill", {
-        "fill-color": "#10b981",
-        "fill-opacity": 0.25,
+        "fill-color": "#0ea5e9",
+        "fill-opacity": 0.28,
       });
       if (showSiteBounds && sitePolygon) {
         ensureLayer("civora-site-line", "civora-site", "line", {
