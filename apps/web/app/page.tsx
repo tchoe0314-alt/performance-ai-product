@@ -1560,6 +1560,13 @@ export default function PerformanceAIDashboard() {
         meta: { category: catalog.category },
       };
       setBuildingPlacements((prev) => [...prev, nextPlacement]);
+      console.debug("[placement] add-object", {
+        id: nextPlacement.id,
+        type: nextPlacement.type,
+        w: nextPlacement.w,
+        d: nextPlacement.d,
+        placed: nextPlacement.placed,
+      });
     },
     [
       buildingPlacements,
@@ -1680,6 +1687,15 @@ export default function PerformanceAIDashboard() {
       }
       const boundedX = Math.min(Math.max(nextX, lot.x), lot.x + lot.w - w);
       const boundedY = Math.min(Math.max(nextY, lot.y), lot.y + lot.h - d);
+      console.debug("[placement] place-building", {
+        activePlacementId,
+        position,
+        lot,
+        boundedX,
+        boundedY,
+        w,
+        d,
+      });
       if (activePlacementId) {
         setBuildingPlacements((prev) =>
           prev.map((item) =>
@@ -1709,6 +1725,13 @@ export default function PerformanceAIDashboard() {
         placed: true,
       };
       setBuildingPlacements((prev) => [...prev, nextPlacement]);
+      console.debug("[placement] place-building-new", {
+        id: nextPlacement.id,
+        x: nextPlacement.x,
+        y: nextPlacement.y,
+        w: nextPlacement.w,
+        d: nextPlacement.d,
+      });
       markSystemsStale();
       setStatusMessage("Object placed. Regenerate systems to reflect the new layout.");
       void ensureProjectDraftRef.current()
@@ -1735,6 +1758,13 @@ export default function PerformanceAIDashboard() {
       }
       const clampedX = Math.min(Math.max(position.x, 0), 1);
       const clampedY = Math.min(Math.max(position.y, 0), 1);
+      console.debug("[placement] place-object", {
+        id,
+        position,
+        lot,
+        clampedX,
+        clampedY,
+      });
       setBuildingPlacements((prev) =>
         prev.map((item) => {
           if (item.id !== id) return item;
@@ -1745,6 +1775,13 @@ export default function PerformanceAIDashboard() {
           }
           const boundedX = Math.min(Math.max(x, lot.x), lot.x + lot.w - item.w);
           const boundedY = Math.min(Math.max(y, lot.y), lot.y + lot.h - item.d);
+          console.debug("[placement] place-object-commit", {
+            id,
+            x: boundedX,
+            y: boundedY,
+            w: item.w,
+            d: item.d,
+          });
           return { ...item, x: boundedX, y: boundedY, placed: true };
         }),
       );
@@ -1791,12 +1828,28 @@ export default function PerformanceAIDashboard() {
     setActivePlacementId(id);
     setPlacementModeEnabled(true);
     const target = buildingPlacements.find((item) => item.id === id);
+    console.debug("[placement] select-target", {
+      id,
+      type: target?.type,
+      placed: target?.placed,
+    });
     setStatusMessage(
       target
         ? `Ready to place ${target.label}. Click on the canvas to drop it.`
         : "Placement active. Click on the canvas to drop the object.",
     );
   }, [buildingPlacements, resolveLotBounds]);
+
+  useEffect(() => {
+    const placed = buildingPlacements.filter(
+      (item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y),
+    );
+    console.debug("[placement] state", {
+      total: buildingPlacements.length,
+      placed: placed.length,
+      ids: placed.map((item) => item.id),
+    });
+  }, [buildingPlacements]);
 
   const handleAutoPlaceBuildings = useCallback(() => {
     const lot = resolveLotBounds();

@@ -345,6 +345,11 @@ export default function PreviewPanel({
       if (relativeX < 0 || relativeX > 1 || relativeY < 0 || relativeY > 1) {
         return;
       }
+      console.debug("[placement] canvas-click", {
+        source: "overlay",
+        relativeX,
+        relativeY,
+      });
       onPlaceBuilding({ x: relativeX, y: relativeY });
     },
     [onPlaceBuilding, placementMode],
@@ -615,6 +620,23 @@ export default function PreviewPanel({
     if (!showMap || !mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
     const handleClick = (event: mapboxgl.MapMouseEvent) => {
+      if (placementMode) {
+        const container = map.getContainer();
+        const rect = container.getBoundingClientRect();
+        const relativeX = event.point.x / Math.max(rect.width, 1);
+        const relativeY = event.point.y / Math.max(rect.height, 1);
+        console.debug("[placement] map-click", {
+          relativeX,
+          relativeY,
+          activeId: selectedBuildingId ?? null,
+        });
+        if (selectedBuildingId) {
+          onPlaceObject(selectedBuildingId, { x: relativeX, y: relativeY });
+        } else {
+          onPlaceBuilding({ x: relativeX, y: relativeY });
+        }
+        return;
+      }
       const features = map.queryRenderedFeatures(event.point, {
         layers: [
           "civora-buildings-fill",
@@ -633,7 +655,7 @@ export default function PreviewPanel({
     return () => {
       map.off("click", handleClick);
     };
-  }, [mapLoaded, onSelectBuilding, showMap]);
+  }, [mapLoaded, onPlaceBuilding, onPlaceObject, placementMode, selectedBuildingId, onSelectBuilding, showMap]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
