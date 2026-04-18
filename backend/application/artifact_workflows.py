@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from base64 import b64encode
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Protocol
 
 from fastapi import HTTPException
 
