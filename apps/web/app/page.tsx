@@ -422,6 +422,16 @@ export default function PerformanceAIDashboard() {
   const [previewRenderMode, setPreviewRenderMode] = useState<"production" | "engineering" | "debug">("production");
   const [previewRefreshing, setPreviewRefreshing] = useState(false);
   const [previewRefreshNote, setPreviewRefreshNote] = useState<string | null>(null);
+  const [previewDebug, setPreviewDebug] = useState<{
+    objectCount: number;
+    placedCount: number;
+    previewRequestedAt?: string | null;
+    previewResponseBytes?: number | null;
+    previewAnnotationsCount?: number | null;
+    previewHasImage?: boolean;
+    previewMode: string;
+    previewLayers: string[];
+  } | null>(null);
   const [approvalInFlight, setApprovalInFlight] = useState(false);
   const [approvalPhaseLabel, setApprovalPhaseLabel] = useState<string | null>(null);
   const [approvalError, setApprovalError] = useState<string | null>(null);
@@ -3807,6 +3817,23 @@ export default function PerformanceAIDashboard() {
       const data = await postJson<PreviewResponse>("/api/preview", previewPayload, {
         token,
       });
+      const responseBytes =
+        typeof data.preview_image_data_url === "string"
+          ? data.preview_image_data_url.length
+          : 0;
+      const annotationsCount = Array.isArray(data.preview_annotations?.labels)
+        ? data.preview_annotations?.labels.length
+        : 0;
+      setPreviewDebug((prev) => ({
+        objectCount: prev?.objectCount ?? buildingPlacements.length,
+        placedCount: prev?.placedCount ?? buildingPlacements.filter((item) => item.placed).length,
+        previewRequestedAt: new Date().toISOString(),
+        previewResponseBytes: responseBytes,
+        previewAnnotationsCount: annotationsCount,
+        previewHasImage: Boolean(data.preview_image_data_url),
+        previewMode: previewRenderMode,
+        previewLayers: previewLayerList,
+      }));
       setPlanPreviewUrl(data.preview_image_data_url);
       setPlanPreviewSummary(data.summary ?? null);
       setPlanPreviewAnnotations(data.preview_annotations ?? null);
@@ -4426,6 +4453,19 @@ export default function PerformanceAIDashboard() {
   }, [previewLayersEffective]);
 
   useEffect(() => {
+    setPreviewDebug((prev) => ({
+      objectCount: buildingPlacements.length,
+      placedCount: buildingPlacements.filter((item) => item.placed).length,
+      previewRequestedAt: prev?.previewRequestedAt ?? null,
+      previewResponseBytes: prev?.previewResponseBytes ?? null,
+      previewAnnotationsCount: prev?.previewAnnotationsCount ?? null,
+      previewHasImage: prev?.previewHasImage ?? Boolean(planPreviewUrl),
+      previewMode: previewRenderMode,
+      previewLayers: previewLayerList,
+    }));
+  }, [buildingPlacements, planPreviewUrl, previewLayerList, previewRenderMode]);
+
+  useEffect(() => {
     if (!token) return;
     if (!backendResult && !planPreviewUrl) return;
     const intent = previewRefreshIntentRef.current;
@@ -4927,10 +4967,11 @@ export default function PerformanceAIDashboard() {
                 busy={busy}
                 planPreviewUrl={planPreviewUrl}
                 previewMode={previewMode}
-              previewInteraction={previewInteraction}
-              previewQuality={previewQuality}
-              previewLabelDensity={previewLabelDensity}
-              previewRenderMode={previewRenderMode}
+                previewInteraction={previewInteraction}
+                previewQuality={previewQuality}
+                previewLabelDensity={previewLabelDensity}
+                previewRenderMode={previewRenderMode}
+                previewDebug={previewDebug}
               placementMode={placementModeEnabled || Boolean(activePlacementId)}
               onPlaceBuilding={handlePlaceBuilding}
               onPlaceObject={handlePlaceObject}

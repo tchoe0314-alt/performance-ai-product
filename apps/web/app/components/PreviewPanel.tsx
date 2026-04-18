@@ -28,6 +28,16 @@ type PreviewPanelProps = {
   previewQuality: "standard" | "high";
   previewLabelDensity: "low" | "standard" | "high";
   previewRenderMode: "production" | "engineering" | "debug";
+  previewDebug?: {
+    objectCount: number;
+    placedCount: number;
+    previewRequestedAt?: string | null;
+    previewResponseBytes?: number | null;
+    previewAnnotationsCount?: number | null;
+    previewHasImage?: boolean;
+    previewMode: string;
+    previewLayers: string[];
+  } | null;
   onSetPreviewMode: (value: "2d" | "3d") => void;
   onSetPreviewInteraction: (value: "static" | "interactive") => void;
   onSetPreviewQuality: (value: "standard" | "high") => void;
@@ -76,6 +86,7 @@ export default function PreviewPanel({
   previewQuality,
   previewLabelDensity,
   previewRenderMode,
+  previewDebug,
   onSetPreviewMode,
   onSetPreviewInteraction,
   onSetPreviewQuality,
@@ -159,6 +170,11 @@ export default function PreviewPanel({
     [buildingPlacements, hoveredObjectId],
   );
   const show3D = previewMode === "3d" && Boolean(planPreviewUrl);
+  useEffect(() => {
+    if (previewMode === "3d" && (!planPreviewUrl || preview3DEffectiveItems.length === 0)) {
+      onSetPreviewMode("2d");
+    }
+  }, [onSetPreviewMode, planPreviewUrl, preview3DEffectiveItems.length, previewMode]);
   useEffect(() => {
     if (!planPreviewUrl && previewMode === "3d") {
       onSetPreviewMode("2d");
@@ -744,6 +760,25 @@ export default function PreviewPanel({
             <span className="font-semibold text-slate-900">Interactive:</span>
             <span>{previewInteraction === "interactive" ? "Hover enabled" : "Static"}</span>
           </div>
+          {previewRenderMode === "debug" && previewDebug ? (
+            <div className="mb-4 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600">
+              <div className="font-semibold uppercase tracking-[0.14em] text-slate-500">Preview Debug</div>
+              <div className="mt-2 grid gap-1 sm:grid-cols-2">
+                <div>Objects: {previewDebug.objectCount}</div>
+                <div>Placed: {previewDebug.placedCount}</div>
+                <div>Preview image: {previewDebug.previewHasImage ? "Yes" : "No"}</div>
+                <div>Annotations: {previewDebug.previewAnnotationsCount ?? 0}</div>
+                <div>Response bytes: {previewDebug.previewResponseBytes ?? 0}</div>
+                <div>Mode: {previewDebug.previewMode}</div>
+                <div className="sm:col-span-2">
+                  Layers: {previewDebug.previewLayers.join(", ") || "none"}
+                </div>
+                <div className="sm:col-span-2">
+                  Requested: {previewDebug.previewRequestedAt || "n/a"}
+                </div>
+              </div>
+            </div>
+          ) : null}
           {(previewRefreshing || previewRefreshNote) && (
             <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
               <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
