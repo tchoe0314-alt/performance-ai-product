@@ -861,7 +861,7 @@ export default function PreviewPanel({
             properties: {
               id: item.id,
               type: item.type || "building",
-              label: item.label || item.name || item.type || "object",
+              label: item.label || item.type || "object",
               height: typeof item.h === "number" && Number.isFinite(item.h) ? item.h : 16,
             },
           };
