@@ -90,6 +90,12 @@ def canonical_action(
         out["canonical_source_name"] = safe_str(source_name)
     if source_stage:
         out["canonical_source_stage"] = safe_str(source_stage)
+    meta = out.get("meta")
+    if isinstance(meta, dict):
+        meta.setdefault("entity_id", safe_str(source_id))
+        meta.setdefault("entity_type", safe_str(source_type))
+    else:
+        out["meta"] = {"entity_id": safe_str(source_id), "entity_type": safe_str(source_type)}
     return out
 
 

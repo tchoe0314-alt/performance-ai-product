@@ -161,6 +161,19 @@ export default function PreviewPanel({
     () => buildingPlacements.find((item) => item.id === selectedBuildingId) ?? null,
     [buildingPlacements, selectedBuildingId],
   );
+
+  useEffect(() => {
+    if (!activeAnnotation?.meta) {
+      return;
+    }
+    const entityId = String(activeAnnotation.meta.entity_id || "");
+    if (!entityId) {
+      return;
+    }
+    if (buildingPlacements.some((item) => item.id === entityId)) {
+      setHoveredObjectId(entityId);
+    }
+  }, [activeAnnotation, buildingPlacements]);
   const activeHighlightBounds = activeAnnotation?.bounds ?? null;
   const clampPercent = (value: number) => Math.min(Math.max(value * 100, 0), 100);
   const buildBoundsStyle = (bounds: { x1: number; y1: number; x2: number; y2: number }) => {

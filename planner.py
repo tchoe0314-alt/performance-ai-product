@@ -2885,6 +2885,8 @@ def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
             boundary_points = _boundary_points_for_preview(boundary) if boundary is not None else []
             if len(boundary_points) >= 3:
                 layer = _zone_layer_for_preview(zone)
+                zone_id = safe_str(getattr(zone, "id", ""), "")
+                zone_type = safe_str(getattr(zone, "zone_type", ""), "zone")
                 actions.append({
                     "task": "polygon",
                     "points": boundary_points,
@@ -2900,13 +2902,21 @@ def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                     "radius": None,
                     "start_angle": None,
                     "end_angle": None,
-                    "meta": _preview_meta_for_base_action(layer, "polygon"),
+                    "meta": {
+                        **_preview_meta_for_base_action(layer, "polygon"),
+                        "entity_id": zone_id or None,
+                        "source": "zone",
+                    },
+                    "canonical_source_id": zone_id or None,
+                    "canonical_source_type": zone_type or "zone",
                 })
                 continue
             bbox = getattr(boundary, "bbox", None)
             if bbox is None:
                 continue
             layer = _zone_layer_for_preview(zone)
+            zone_id = safe_str(getattr(zone, "id", ""), "")
+            zone_type = safe_str(getattr(zone, "zone_type", ""), "zone")
             actions.append({
                 "task": "rectangle",
                 "origin": [bbox.min_x, bbox.min_y],
@@ -2922,7 +2932,13 @@ def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                 "radius": None,
                 "start_angle": None,
                 "end_angle": None,
-                "meta": _preview_meta_for_base_action(layer, "rectangle"),
+                "meta": {
+                    **_preview_meta_for_base_action(layer, "rectangle"),
+                    "entity_id": zone_id or None,
+                    "source": "zone",
+                },
+                "canonical_source_id": zone_id or None,
+                "canonical_source_type": zone_type or "zone",
             })
 
     objects_dict = getattr(project, "objects", {}) or {}
@@ -2932,6 +2948,8 @@ def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
             boundary = getattr(obj, "boundary", None)
             boundary_points = _boundary_points_for_preview(boundary) if boundary is not None else []
             if layer and boundary_points:
+                obj_id = safe_str(getattr(obj, "id", ""), "")
+                obj_kind = safe_str(getattr(obj, "kind", ""), "object")
                 actions.append({
                     "task": "polygon",
                     "points": boundary_points,
@@ -2947,7 +2965,13 @@ def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                     "radius": None,
                     "start_angle": None,
                     "end_angle": None,
-                    "meta": _preview_meta_for_base_action(layer, "polygon"),
+                    "meta": {
+                        **_preview_meta_for_base_action(layer, "polygon"),
+                        "entity_id": obj_id or None,
+                        "source": safe_str(safe_dict(getattr(obj, "properties", {})).get("source"), "model"),
+                    },
+                    "canonical_source_id": obj_id or None,
+                    "canonical_source_type": obj_kind or "object",
                 })
                 continue
             anchor = getattr(obj, "anchor", None)
@@ -2955,6 +2979,8 @@ def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                 continue
             if layer is None:
                 continue
+            obj_id = safe_str(getattr(obj, "id", ""), "")
+            obj_kind = safe_str(getattr(obj, "kind", ""), "object")
             actions.append({
                 "task": "text_note",
                 "origin": [getattr(anchor, "x", 0.0), getattr(anchor, "y", 0.0)],
@@ -2970,7 +2996,13 @@ def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                 "radius": None,
                 "start_angle": None,
                 "end_angle": None,
-                "meta": _preview_meta_for_base_action(layer, "text_note"),
+                "meta": {
+                    **_preview_meta_for_base_action(layer, "text_note"),
+                    "entity_id": obj_id or None,
+                    "source": safe_str(safe_dict(getattr(obj, "properties", {})).get("source"), "model"),
+                },
+                "canonical_source_id": obj_id or None,
+                "canonical_source_type": obj_kind or "object",
             })
 
     return actions
@@ -2988,6 +3020,118 @@ def _has_primary_preview_geometry(actions: Sequence[Dict[str, Any]]) -> bool:
         if lower_text(rec.get("task")) in geometric_tasks:
             return True
     return False
+
+
+def _dirty_systems_from_project(project: ProjectModel) -> set[str]:
+    meta = safe_dict(getattr(project, "meta", {}))
+    dirty_state = safe_dict(meta.get("system_dirty_state"))
+    dirty: set[str] = set()
+    for name, record in dirty_state.items():
+        entry = safe_dict(record) if isinstance(record, dict) else {"state": record}
+        state_value = safe_str(entry.get("state"), entry.get("status") or entry.get("value") or "")
+        if state_value.lower() in {"dirty", "stale"}:
+            dirty.add(safe_str(name).lower())
+    return dirty
+
+
+def _action_system_from_meta(action: Dict[str, Any]) -> str:
+    meta = safe_dict(action.get("meta"))
+    system = safe_str(meta.get("system"), "").lower()
+    if system:
+        if system in {"water", "sanitary"}:
+            return "utilities"
+        return system
+    layer = safe_str(action.get("layer"), "").upper()
+    if layer in {"ROAD", "PAVEMENT", "FIRE", "ROUTE", "CENTERLINE"}:
+        return "roads"
+    if layer in {"PARKING"}:
+        return "parking"
+    if layer in {"WALK", "SIDEWALK"}:
+        return "pedestrian"
+    if layer in {"PIPE", "DRAIN", "STRUCTURE", "BASIN_BOUNDARY", "LOW_POINTS", "DRAIN_FLOW"}:
+        return "drainage"
+    if layer in {"SAN", "WATER", "WATR", "UTILITY"}:
+        return "utilities"
+    if layer in {"FG_CONTOUR", "EG_CONTOUR", "SURFACE", "SPOT_EG", "SPOT_FG"}:
+        return "grading"
+    return "layout"
+
+
+def _filter_actions_for_dirty_systems(actions: Sequence[Dict[str, Any]], dirty_systems: set[str]) -> List[Dict[str, Any]]:
+    if not dirty_systems:
+        return list(actions)
+    layout_layers = {
+        "ROAD",
+        "PAVEMENT",
+        "FIRE",
+        "PARKING",
+        "WALK",
+        "SIDEWALK",
+        "ROUTE",
+        "CENTERLINE",
+        "C-ROAD",
+        "C-PAVEMENT",
+        "C-PARKING",
+        "C-DRIVEWAY",
+        "C-SIDEWALK",
+        "C-CENTERLINE",
+    }
+    grading_layers = {
+        "FG_CONTOUR",
+        "EG_CONTOUR",
+        "SURFACE",
+        "SPOT_EG",
+        "SPOT_FG",
+        "C-CONTOUR",
+        "C-SPOT-ELEV",
+        "C-GRADING",
+        "C-CUT",
+        "C-FILL",
+    }
+    drainage_layers = {
+        "PIPE",
+        "DRAIN",
+        "STRUCTURE",
+        "BASIN_BOUNDARY",
+        "LOW_POINTS",
+        "DRAIN_FLOW",
+        "C-STRM-PIPE",
+        "C-STRM-INLET",
+        "C-STRM-MH",
+        "C-DRAIN-FLOW",
+        "C-LOW-POINT",
+        "C-POND",
+    }
+    utility_layers = {
+        "UTILITY",
+        "WATER",
+        "WATR",
+        "SAN",
+        "C-WATR",
+        "C-SAN",
+        "C-UTIL",
+        "C-HYDRANT",
+    }
+    protected_layout_layers = {"BUILDING", "SITE", "SETBACK", "C-BUILDING", "C-BOUNDARY", "C-SETBACK"}
+
+    filtered: List[Dict[str, Any]] = []
+    for action in safe_list(actions):
+        rec = safe_dict(action)
+        if not rec:
+            continue
+        layer = safe_str(rec.get("layer"), "").upper()
+        system = _action_system_from_meta(rec)
+        if "grading" in dirty_systems and (system == "grading" or layer in grading_layers):
+            continue
+        if "drainage" in dirty_systems and (system == "drainage" or layer in drainage_layers):
+            continue
+        if "utilities" in dirty_systems and (system == "utilities" or layer in utility_layers):
+            continue
+        if dirty_systems.intersection({"layout", "roads", "parking"}):
+            if layer in layout_layers and layer not in protected_layout_layers:
+                continue
+        filtered.append(rec)
+    return filtered
 
 
 def _filter_base_preview_actions_for_expanded_plan(
@@ -3029,6 +3173,7 @@ def _filter_base_preview_actions_for_expanded_plan(
 
 
 def project_model_to_plan(project: ProjectModel, project_name: str) -> Dict[str, Any]:
+    dirty_systems = _dirty_systems_from_project(project)
     expanded = safe_dict(getattr(project, "meta", {}).get("_expanded_plan"))
     if expanded and safe_list(expanded.get("actions")):
         out = sanitize_plan(expanded)
@@ -3047,16 +3192,18 @@ def project_model_to_plan(project: ProjectModel, project_name: str) -> Dict[str,
             _project_model_base_actions(project),
             expanded_actions,
         )
-        out["actions"] = _merge_plan_actions(
+        merged_actions = _merge_plan_actions(
             _merge_plan_actions(
                 base_actions,
                 expanded_actions,
             ),
             _canonical_export_actions(project),
         )
+        out["actions"] = _filter_actions_for_dirty_systems(merged_actions, dirty_systems)
         return out
 
     actions = _merge_plan_actions(_project_model_base_actions(project), _canonical_export_actions(project))
+    actions = _filter_actions_for_dirty_systems(actions, dirty_systems)
 
     return sanitize_plan({
         "project_name": project_name,
@@ -7858,6 +8005,7 @@ def _run_model_first_workflow(
         "invalidated_targets": manager.get_invalidated_targets() if hasattr(manager, "get_invalidated_targets") else [],
         "dirty_state": deepcopy(safe_dict(manager_export.get("dirty_state"))),
     }
+    plan["meta"]["system_dirty_state"] = deepcopy(getattr(manager, "system_dirty_state", {}))
 
     score_total, weighted = _planner_score_from_manager(manager)
     plan["meta"]["planner_score"] = {"total": round(score_total, 3), "weighted_components": weighted}

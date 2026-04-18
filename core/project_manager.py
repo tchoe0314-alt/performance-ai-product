@@ -539,6 +539,8 @@ class ProjectManager:
         state_row["state"] = "dirty"
         if source:
             state_row["source"] = source
+        if isinstance(getattr(self.project, "meta", None), dict):
+            self.project.meta["system_dirty_state"] = _snapshot_serialize(self.system_dirty_state)
 
     def mark_system_clean(self, name: str, message: str = "") -> None:
         record = self._ensure_engine_record(name)
@@ -547,6 +549,8 @@ class ProjectManager:
         if message:
             record["message"] = message
         self.system_dirty_state[name] = {"state": "clean", "reasons": []}
+        if isinstance(getattr(self.project, "meta", None), dict):
+            self.project.meta["system_dirty_state"] = _snapshot_serialize(self.system_dirty_state)
 
     def is_system_dirty(self, name: str) -> bool:
         state_row = self.system_dirty_state.get(name)

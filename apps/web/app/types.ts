@@ -286,7 +286,19 @@ export type ManualFields = {
   setback?: number;
   building_width?: number;
   building_depth?: number;
-  buildings?: Array<{ name: string; w?: number; d?: number }>;
+  buildings?: Array<{
+    id?: string;
+    name: string;
+    w?: number;
+    d?: number;
+    type?: string;
+    use?: string;
+    rotation?: number;
+    locked?: boolean;
+    source?: string;
+    generated?: boolean;
+    systemDependencies?: string[];
+  }>;
   site_plan?: { parking_count?: number };
   grading?: {
     min_slope_pct?: number;
@@ -298,6 +310,7 @@ export type ManualFields = {
     min_pipe_slope_pct?: number;
   };
   ponds?: Array<{
+    id?: string;
     name?: string;
     x?: number;
     y?: number;
@@ -305,8 +318,12 @@ export type ManualFields = {
     d?: number;
     rotation?: number;
     locked?: boolean;
+    source?: string;
+    generated?: boolean;
+    systemDependencies?: string[];
   }>;
   access_points?: Array<{
+    id?: string;
     name?: string;
     x?: number;
     y?: number;
@@ -314,6 +331,9 @@ export type ManualFields = {
     d?: number;
     rotation?: number;
     locked?: boolean;
+    source?: string;
+    generated?: boolean;
+    systemDependencies?: string[];
   }>;
   disciplines?: string[];
   terrain?: string;

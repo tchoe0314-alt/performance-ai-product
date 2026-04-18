@@ -12,7 +12,7 @@ from core.config import (
     DEFAULT_SETBACK,
     PIPE_INTENSITY_IN_HR,
 )
-from core.geometry_core import ProjectModel, ZoneType, _snapshot_serialize, rect_zone
+from core.geometry_core import EngineeringDomain, EngineeringObject, Point3D, ProjectModel, ZoneType, _snapshot_serialize, rect_zone
 from core.project_manager import ConflictSeverity, DependencyState, ProjectManager
 from engines.hydrology_engine import RationalArea, compute_rational_method
 
@@ -582,7 +582,50 @@ def _bootstrap_manager(parsed: Dict[str, Any]) -> ProjectManager:
         meta={"source": "planner_bootstrap"},
     )
     project.add_zone(site_zone)
-    return ProjectManager(project)
+    manager = ProjectManager(project)
+
+    meta = safe_dict(parsed.get("meta"))
+    site_object_id = safe_str(meta.get("site_object_id"), "")
+    if site_object_id:
+        site_anchor = Point3D(
+            site_zone.boundary.bbox.center_x,
+            site_zone.boundary.bbox.center_y,
+            0.0,
+        )
+        manager.add_object(
+            EngineeringObject(
+                id=site_object_id,
+                kind="site",
+                name="SITE",
+                anchor=site_anchor,
+                boundary=site_zone.boundary,
+                tags=["layout", "site"],
+                domain=EngineeringDomain.GENERAL,
+                properties={
+                    "width": site_zone.boundary.bbox.width,
+                    "depth": site_zone.boundary.bbox.height,
+                    "source": "user",
+                    "generated": False,
+                    "locked": True,
+                    "system_dependencies": ["layout", "grading", "drainage", "sanitary", "utility_network"],
+                },
+            )
+        )
+
+    dirty_state = safe_dict(meta.get("system_dirty_state"))
+    if dirty_state:
+        for name, record in dirty_state.items():
+            entry = safe_dict(record) if isinstance(record, dict) else {"state": record}
+            state_value = safe_str(entry.get("state"), entry.get("status") or entry.get("value") or "")
+            if state_value.lower() in {"dirty", "stale", "not_generated"}:
+                manager.mark_system_dirty(
+                    safe_str(name),
+                    reason=safe_str(entry.get("reason"), "Frontend marked system dirty."),
+                    source=safe_str(entry.get("source"), "frontend"),
+                )
+            elif state_value.lower() in {"clean", "fresh", "complete"}:
+                manager.mark_system_clean(safe_str(name))
+    return manager
 
 
 def _register_default_dependencies(manager: ProjectManager) -> None:

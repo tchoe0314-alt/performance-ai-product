@@ -634,6 +634,7 @@ export default function PerformanceAIDashboard() {
     const placementOverrides = buildingPlacements
       .filter((placement) => placement.placed && Number.isFinite(placement.x) && Number.isFinite(placement.y))
       .map((placement) => ({
+        id: placement.id,
         name: placement.label,
         label: placement.label,
         type: placement.type ?? "building",
@@ -644,6 +645,9 @@ export default function PerformanceAIDashboard() {
         rotation: placement.rotation,
         use: placement.use,
         locked: placement.locked,
+        source: placement.source,
+        generated: placement.generated,
+        systemDependencies: placement.systemDependencies,
       }));
     const basinOverrides = placementOverrides.filter((placement) => placement.type === "basin");
     const entranceOverrides = placementOverrides.filter((placement) => placement.type === "entrance");
@@ -656,6 +660,7 @@ export default function PerformanceAIDashboard() {
     }
     if (basinOverrides.length) {
       manualFields.ponds = basinOverrides.map((placement) => ({
+        id: placement.id,
         name: placement.label,
         x: placement.x,
         y: placement.y,
@@ -663,10 +668,14 @@ export default function PerformanceAIDashboard() {
         d: placement.d,
         rotation: placement.rotation,
         locked: placement.locked,
+        source: placement.source,
+        generated: placement.generated,
+        systemDependencies: placement.systemDependencies,
       }));
     }
     if (entranceOverrides.length) {
       manualFields.access_points = entranceOverrides.map((placement) => ({
+        id: placement.id,
         name: placement.label,
         x: placement.x,
         y: placement.y,
@@ -674,6 +683,9 @@ export default function PerformanceAIDashboard() {
         d: placement.d,
         rotation: placement.rotation,
         locked: placement.locked,
+        source: placement.source,
+        generated: placement.generated,
+        systemDependencies: placement.systemDependencies,
       }));
     }
 
@@ -740,6 +752,8 @@ export default function PerformanceAIDashboard() {
       meta: {
         chat_thread: chatMessagesRef.current,
         site_inputs: currentProject?.project_input?.meta?.site_inputs ?? {},
+        system_dirty_state: systemStatuses,
+        site_object_id: buildingPlacements.find((item) => item.type === "site")?.id ?? null,
       },
       manual_fields: buildManualFields({
         nextSiteName: siteName,
@@ -766,6 +780,7 @@ export default function PerformanceAIDashboard() {
       allow_ai_fill_for_blanks: false,
     }),
     [
+      buildingPlacements,
       projectId,
       prompt,
       imageName,
@@ -789,6 +804,7 @@ export default function PerformanceAIDashboard() {
       grading,
       drainage,
       utilities,
+      systemStatuses,
       currentProject,
       buildManualFields,
     ],
@@ -1837,6 +1853,8 @@ export default function PerformanceAIDashboard() {
       meta: {
         chat_thread: chatMessagesRef.current,
         site_inputs: currentProject?.project_input?.meta?.site_inputs ?? {},
+        system_dirty_state: systemStatuses,
+        site_object_id: buildingPlacements.find((item) => item.type === "site")?.id ?? null,
       },
       manual_fields: buildManualFields({
         nextSiteName,

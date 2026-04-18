@@ -1003,16 +1003,83 @@ def run_layout_stage(
                 continue
             if _coerce_float_optional(pond_rec.get("x")) is None or _coerce_float_optional(pond_rec.get("y")) is None:
                 continue
-            project.add_zone(
-                rect_zone(
-                    safe_float(pond_rec.get("x"), lot_x),
-                    safe_float(pond_rec.get("y"), lot_y),
-                    max(1.0, safe_float(pond_rec.get("w"), 30.0)),
-                    max(1.0, safe_float(pond_rec.get("d"), 20.0)),
-                    zone_type=ZoneType.DETENTION,
-                    name=safe_str(pond_rec.get("name"), "BASIN"),
-                )
+            pond_x = safe_float(pond_rec.get("x"), lot_x)
+            pond_y = safe_float(pond_rec.get("y"), lot_y)
+            pond_w = max(1.0, safe_float(pond_rec.get("w"), 30.0))
+            pond_d = max(1.0, safe_float(pond_rec.get("d"), 20.0))
+            pond_name = safe_str(pond_rec.get("name"), "BASIN")
+            pond_zone = rect_zone(
+                pond_x,
+                pond_y,
+                pond_w,
+                pond_d,
+                zone_type=ZoneType.DETENTION,
+                name=pond_name,
             )
+            project.add_zone(pond_zone)
+            pond_id = safe_str(pond_rec.get("id"), "")
+            pond_kwargs = {
+                "kind": "detention_basin",
+                "name": pond_name,
+                "anchor": Point3D(pond_x + pond_w / 2.0, pond_y + pond_d / 2.0, DEFAULT_PAD_ELEV),
+                "boundary": pond_zone.boundary,
+                "tags": ["drainage", "basin"],
+                "domain": EngineeringDomain.DRAINAGE,
+                "properties": {
+                    "width": pond_w,
+                    "depth": pond_d,
+                    "canonical_id": pond_id or None,
+                    "source": safe_str(pond_rec.get("source"), "user"),
+                    "generated": bool(pond_rec.get("generated")) if "generated" in pond_rec else False,
+                    "locked": bool(pond_rec.get("locked")) if "locked" in pond_rec else False,
+                    "system_dependencies": list(pond_rec.get("systemDependencies") or []),
+                },
+            }
+            if pond_id:
+                pond_kwargs["id"] = pond_id
+            project.add_object(EngineeringObject(**pond_kwargs))
+
+        for access in safe_list(execution_payload.get("access_points")):
+            access_rec = safe_dict(access)
+            if not access_rec:
+                continue
+            if _coerce_float_optional(access_rec.get("x")) is None or _coerce_float_optional(access_rec.get("y")) is None:
+                continue
+            access_x = safe_float(access_rec.get("x"), lot_x)
+            access_y = safe_float(access_rec.get("y"), lot_y)
+            access_w = max(1.0, safe_float(access_rec.get("w"), 10.0))
+            access_d = max(1.0, safe_float(access_rec.get("d"), 10.0))
+            access_name = safe_str(access_rec.get("name"), "ACCESS")
+            access_id = safe_str(access_rec.get("id"), "")
+            access_zone = rect_zone(
+                access_x,
+                access_y,
+                access_w,
+                access_d,
+                zone_type=ZoneType.ROAD,
+                name=access_name,
+            )
+            project.add_zone(access_zone)
+            access_kwargs = {
+                "kind": "access_point",
+                "name": access_name,
+                "anchor": Point3D(access_x + access_w / 2.0, access_y + access_d / 2.0, DEFAULT_PAD_ELEV),
+                "boundary": access_zone.boundary,
+                "tags": ["layout", "access"],
+                "domain": EngineeringDomain.ROAD,
+                "properties": {
+                    "width": access_w,
+                    "depth": access_d,
+                    "canonical_id": access_id or None,
+                    "source": safe_str(access_rec.get("source"), "user"),
+                    "generated": bool(access_rec.get("generated")) if "generated" in access_rec else False,
+                    "locked": bool(access_rec.get("locked")) if "locked" in access_rec else False,
+                    "system_dependencies": list(access_rec.get("systemDependencies") or []),
+                },
+            }
+            if access_id:
+                access_kwargs["id"] = access_id
+            project.add_object(EngineeringObject(**access_kwargs))
 
         def _coerce_float_optional(value: Any) -> float | None:
             try:
@@ -1046,8 +1113,14 @@ def run_layout_stage(
                 origin = safe_list(building_action.get("origin"))
                 bx = safe_float(origin[0], lot_x) if len(origin) >= 2 else lot_x
                 by = safe_float(origin[1], lot_y) if len(origin) >= 2 else lot_y
+                canonical_id = safe_str(
+                    building_action.get("canonical_source_id")
+                    or safe_dict(building_action.get("meta")).get("entity_id")
+                    or "",
+                )
                 placements.append(
                     {
+                        "id": canonical_id or None,
                         "name": safe_str(building_specs[idx].get("name"), safe_str(building_action.get("label"), f"BUILDING-{idx + 1}")),
                         "use": lower_text(building_specs[idx].get("use")) or "generic",
                         "x": bx,
@@ -1129,19 +1202,30 @@ def run_layout_stage(
             pd = max(1.0, safe_float(placement.get("d"), build_d))
             pname = safe_str(placement.get("name"), "BUILDING")
             puse = lower_text(placement.get("use")) or "generic"
+            placement_id = safe_str(placement.get("id"), "")
             zone = rect_zone(px, py, pw, pd, zone_type=ZoneType.BUILDING, name=pname)
             project.add_zone(zone)
-            project.add_object(
-                EngineeringObject(
-                    kind=f"{puse}_building" if puse and puse != "generic" else "building",
-                    name=pname,
-                    anchor=Point3D(px + pw / 2.0, py + pd / 2.0, DEFAULT_PAD_ELEV),
-                    boundary=zone.boundary,
-                    tags=["layout", "building", puse] if puse else ["layout", "building"],
-                    domain=EngineeringDomain.BUILDING,
-                    properties={"width": pw, "depth": pd, "use": puse},
-                )
-            )
+            obj_kwargs = {
+                "kind": f"{puse}_building" if puse and puse != "generic" else "building",
+                "name": pname,
+                "anchor": Point3D(px + pw / 2.0, py + pd / 2.0, DEFAULT_PAD_ELEV),
+                "boundary": zone.boundary,
+                "tags": ["layout", "building", puse] if puse else ["layout", "building"],
+                "domain": EngineeringDomain.BUILDING,
+                "properties": {
+                    "width": pw,
+                    "depth": pd,
+                    "use": puse,
+                    "canonical_id": placement_id or None,
+                    "source": safe_str(placement.get("source"), "user"),
+                    "generated": bool(placement.get("generated")) if "generated" in placement else False,
+                    "locked": bool(placement.get("locked")) if "locked" in placement else False,
+                    "system_dependencies": list(placement.get("systemDependencies") or []),
+                },
+            }
+            if placement_id:
+                obj_kwargs["id"] = placement_id
+            project.add_object(EngineeringObject(**obj_kwargs))
 
         expanded_actions = safe_list(safe_dict(project.meta.get("_expanded_plan")).get("actions"))
         layout_overlap_issues = _layout_overlap_issues(expanded_actions)

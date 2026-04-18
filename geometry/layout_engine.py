@@ -2512,7 +2512,15 @@ def _append_building_actions(actions: List[Dict[str, Any]], buildings: List[Dict
         d = _safe_float(b.get("d"), 60.0)
         label = _safe_str(b.get("label"), "BLDG")
         layer = _safe_str(b.get("layer"), "BUILDING")
-        actions.append(_rect_action_from_obj(_rect(x, y, w, d), label, layer))
+        action = _rect_action_from_obj(_rect(x, y, w, d), label, layer)
+        canonical_id = _safe_str(b.get("id"), "")
+        if canonical_id:
+            action["canonical_source_id"] = canonical_id
+            action["canonical_source_type"] = _safe_str(b.get("type"), "building") or "building"
+            meta = action.get("meta")
+            if isinstance(meta, dict):
+                meta.setdefault("entity_id", canonical_id)
+        actions.append(action)
 
 
 def _append_parking_actions(actions: List[Dict[str, Any]], parking_areas: List[Dict[str, Any]]) -> None:
@@ -2648,7 +2656,15 @@ def _append_pond_actions(actions: List[Dict[str, Any]], ponds: List[Dict[str, An
             [x + w * 0.20, y + h],
             [x, y + h * 0.45],
         ]
-        actions.append(_polyline_action(poly, layer=layer, label=label, closed=True))
+        action = _polyline_action(poly, layer=layer, label=label, closed=True)
+        canonical_id = _safe_str(p.get("id"), "")
+        if canonical_id:
+            action["canonical_source_id"] = canonical_id
+            action["canonical_source_type"] = _safe_str(p.get("type"), "basin") or "basin"
+            meta = action.get("meta")
+            if isinstance(meta, dict):
+                meta.setdefault("entity_id", canonical_id)
+        actions.append(action)
 
 
 def _append_utility_actions(actions: List[Dict[str, Any]], utilities: List[Dict[str, Any]]) -> None:
@@ -2719,7 +2735,15 @@ def _append_grading_actions(actions: List[Dict[str, Any]], grading: Dict[str, An
 
 def _build_expanded_plan(parsed: Dict[str, Any]) -> Dict[str, Any]:
     site_box = _site_box_from_parsed(parsed)
-    actions: List[Dict[str, Any]] = [_rect_action_from_obj(site_box, "LOT", "SITE")]
+    site_action = _rect_action_from_obj(site_box, "LOT", "SITE")
+    site_id = _safe_str(_safe_dict(parsed.get("meta")).get("site_object_id"), "")
+    if site_id:
+        site_action["canonical_source_id"] = site_id
+        site_action["canonical_source_type"] = "site"
+        meta = site_action.get("meta")
+        if isinstance(meta, dict):
+            meta.setdefault("entity_id", site_id)
+    actions: List[Dict[str, Any]] = [site_action]
 
     raw_buildings = _nonempty_list(parsed.get("buildings"))
     positioned_buildings = []
