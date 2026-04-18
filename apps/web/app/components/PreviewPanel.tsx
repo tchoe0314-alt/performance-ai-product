@@ -27,6 +27,7 @@ type PreviewPanelProps = {
   previewInteraction: "static" | "interactive";
   previewQuality: "standard" | "high";
   previewLabelDensity: "low" | "standard" | "high";
+  hasGeneratedPlan: boolean;
   onSetPreviewMode: (value: "2d" | "3d") => void;
   onSetPreviewInteraction: (value: "static" | "interactive") => void;
   onSetPreviewQuality: (value: "standard" | "high") => void;
@@ -92,6 +93,7 @@ export default function PreviewPanel({
   previewInteraction,
   previewQuality,
   previewLabelDensity,
+  hasGeneratedPlan,
   onSetPreviewMode,
   onSetPreviewInteraction,
   onSetPreviewQuality,
@@ -164,7 +166,7 @@ export default function PreviewPanel({
   const previewImageRef = useRef<HTMLImageElement | null>(null);
   const fullscreenImageRef = useRef<HTMLImageElement | null>(null);
   const activeAnnotation = pinnedAnnotation ?? hoveredAnnotation;
-  const showGeneratedPlan = !placementMode && !selectedBuildingId;
+  const showGeneratedPlan = hasGeneratedPlan && !placementMode && !selectedBuildingId;
   const hasInteractiveLabels = previewLabels.length > 0 && showGeneratedPlan;
   const showInteractive = previewInteraction === "interactive";
   const legendPalette = {
@@ -1010,12 +1012,12 @@ export default function PreviewPanel({
                     Add objects to start building the site. Then click Place and drop them here.
                   </div>
                 )}
-                {!showGeneratedPlan && previewMode === "3d" ? null : !planPreviewUrl && previewMode === "3d" ? (
+                {!showGeneratedPlan && previewMode === "3d" ? (
                   <div className="pointer-events-none absolute left-6 top-6 rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm">
                     3D needs a preview run
                   </div>
                 ) : null}
-                {overlayBounds && (previewMode === "2d" || !planPreviewUrl) ? (
+                {overlayBounds && (previewMode === "2d" || !showGeneratedPlan) ? (
                   <div
                     className="pointer-events-none absolute"
                     style={{
@@ -1580,6 +1582,61 @@ export default function PreviewPanel({
                           </div>
                         );
                       })}
+                      {suggestedPlacements
+                        .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
+                        .map((item) => {
+                          const left = ((item.x || 0) / Math.max(lotWidth, 1)) * 100;
+                          const top = ((item.y || 0) / Math.max(lotHeight, 1)) * 100;
+                          const rotated = (item.rotation ?? 0) % 180 !== 0;
+                          const displayW = rotated ? item.d : item.w;
+                          const displayD = rotated ? item.w : item.d;
+                          const width = (displayW / Math.max(lotWidth, 1)) * 100;
+                          const height = (displayD / Math.max(lotHeight, 1)) * 100;
+                          const rotation = item.rotation ?? 0;
+                          const borderColorMap: Record<string, string> = {
+                            site: "border-slate-400",
+                            setback_zone: "border-slate-300",
+                            no_build_zone: "border-rose-400",
+                            basin: "border-emerald-500",
+                            entrance: "border-amber-500",
+                            driveway: "border-orange-400",
+                            road: "border-blue-500",
+                            parking: "border-violet-500",
+                            sidewalk: "border-teal-500",
+                            pool: "border-cyan-500",
+                            pad: "border-stone-400",
+                          };
+                          const borderColor =
+                            (item.type && borderColorMap[item.type]) || "border-slate-400";
+                          return (
+                            <div
+                              key={item.id}
+                              className="pointer-events-auto absolute"
+                              style={{
+                                left: `${left}%`,
+                                top: `${top}%`,
+                                width: `${width}%`,
+                                height: `${height}%`,
+                                transform: `rotate(${rotation}deg)`,
+                                transformOrigin: "center",
+                                cursor: "pointer",
+                              }}
+                              onMouseEnter={() => setHoveredObjectId(item.id)}
+                              onMouseLeave={() => setHoveredObjectId(null)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onSelectBuilding(item.id);
+                              }}
+                            >
+                              <div
+                                className={`h-full w-full rounded-[8px] border-2 border-dashed bg-slate-50/70 transition ${borderColor}`}
+                              />
+                              <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow">
+                                Suggested
+                              </div>
+                            </div>
+                          );
+                        })}
                   </div>
                 ) : null}
                 {showInteractive && activeAnnotation && fullscreenHoverPoint ? (

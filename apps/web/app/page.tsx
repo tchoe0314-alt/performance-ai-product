@@ -1473,10 +1473,18 @@ export default function PerformanceAIDashboard() {
     [],
   );
 
+  const clearGeneratedPreview = useCallback(() => {
+    setPlanPreviewUrl("");
+    setPlanPreviewSummary(null);
+    setPlanPreviewAnnotations(null);
+    setBackendResult(null);
+  }, []);
+
   const handleAddObject = useCallback(
     (type: SiteObjectType) => {
       const catalog = SITE_OBJECT_CATALOG[type];
       if (!catalog) return;
+      clearGeneratedPreview();
       if (type === "site") {
         const width = parsePositiveNumber(lotWidth) ?? catalog.defaultW;
         const height = parsePositiveNumber(lotHeight) ?? catalog.defaultD;
@@ -1549,6 +1557,7 @@ export default function PerformanceAIDashboard() {
     },
     [
       buildingPlacements,
+      clearGeneratedPreview,
       formatObjectLabel,
       lotHeight,
       lotWidth,
@@ -1558,6 +1567,7 @@ export default function PerformanceAIDashboard() {
   );
 
   const handleUpdateBuilding = useCallback((id: string, updates: Partial<BuildingPlacement>) => {
+    clearGeneratedPreview();
     const nextUpdates = { ...updates };
     if (typeof updates.x === "number" || typeof updates.y === "number") {
       nextUpdates.placed = true;
@@ -1570,7 +1580,7 @@ export default function PerformanceAIDashboard() {
     void ensureProjectDraftRef.current()
       .then(() => saveProjectRef.current({ silent: true }))
       .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object update...", track: true });
-  }, [markSystemsStale]);
+  }, [clearGeneratedPreview, markSystemsStale]);
 
   const persistDetectedPlacements = useCallback(
     (nextDetected: BuildingPlacement[]) => {
@@ -1598,6 +1608,7 @@ export default function PerformanceAIDashboard() {
   );
 
   const handleRemoveBuilding = useCallback((id: string) => {
+    clearGeneratedPreview();
     setBuildingPlacements((prev) => prev.filter((item) => item.id !== id));
     setActivePlacementId((prev) => (prev === id ? null : prev));
     setPlacementModeEnabled((prev) => (activePlacementId === id ? false : prev));
@@ -1606,9 +1617,10 @@ export default function PerformanceAIDashboard() {
     void ensureProjectDraftRef.current()
       .then(() => saveProjectRef.current({ silent: true }))
       .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object removal...", track: true });
-  }, [activePlacementId, markSystemsStale]);
+  }, [activePlacementId, clearGeneratedPreview, markSystemsStale]);
 
   const handleAcceptDetected = useCallback((id: string) => {
+    clearGeneratedPreview();
     setDetectedPlacements((prev) => {
       const target = prev.find((item) => item.id === id);
       if (!target) return prev;
@@ -1626,15 +1638,16 @@ export default function PerformanceAIDashboard() {
       persistDetectedPlacements(nextDetected);
       return nextDetected;
     });
-  }, [persistDetectedPlacements]);
+  }, [clearGeneratedPreview, persistDetectedPlacements]);
 
   const handleRejectDetected = useCallback((id: string) => {
+    clearGeneratedPreview();
     setDetectedPlacements((prev) => {
       const nextDetected = prev.filter((item) => item.id !== id);
       persistDetectedPlacements(nextDetected);
       return nextDetected;
     });
-  }, [persistDetectedPlacements]);
+  }, [clearGeneratedPreview, persistDetectedPlacements]);
 
   const handleToggleBuildingLock = useCallback((id: string) => {
     setBuildingPlacements((prev) =>
@@ -1644,6 +1657,7 @@ export default function PerformanceAIDashboard() {
 
   const handlePlaceBuilding = useCallback(
     (position: { x: number; y: number }) => {
+      clearGeneratedPreview();
       const lot = resolveLotBounds();
       if (!lot.w || !lot.h) {
         setStatusMessage("Set the site width and height before placing buildings.");
@@ -1698,6 +1712,7 @@ export default function PerformanceAIDashboard() {
     [
       activePlacementId,
       buildingPlacements.length,
+      clearGeneratedPreview,
       markSystemsStale,
       resolveDefaultBuildingDims,
       resolveLotBounds,
@@ -1706,6 +1721,7 @@ export default function PerformanceAIDashboard() {
 
   const handlePlaceObject = useCallback(
     (id: string, position: { x: number; y: number }) => {
+      clearGeneratedPreview();
       const lot = resolveLotBounds();
       if (!lot.w || !lot.h) {
         setStatusMessage("Set the site width and height before placing objects.");
@@ -1732,7 +1748,7 @@ export default function PerformanceAIDashboard() {
         .then(() => saveProjectRef.current({ silent: true }))
         .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object placement...", track: true });
     },
-    [markSystemsStale, resolveLotBounds],
+    [clearGeneratedPreview, markSystemsStale, resolveLotBounds],
   );
 
   const handleTogglePlacementMode = useCallback(() => {
@@ -3777,6 +3793,7 @@ export default function PerformanceAIDashboard() {
     if (!token) return;
     const localPreviewUrl = URL.createObjectURL(file);
     setUploadedImagePreviewUrl(localPreviewUrl);
+    clearGeneratedPreview();
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -3812,6 +3829,13 @@ export default function PerformanceAIDashboard() {
         },
       });
       setStatusMessage("Image uploaded.");
+      const width = parsePositiveNumber(lotWidth);
+      const height = parsePositiveNumber(lotHeight);
+      if (width && height) {
+        void handleAnalyzeImageFeatures(data.image_path || "");
+      } else {
+        setStatusMessage("Image uploaded. Set site dimensions to run detection.");
+      }
     } catch (error) {
       setImageName(file.name);
       setStatusMessage(
@@ -3942,8 +3966,11 @@ export default function PerformanceAIDashboard() {
     [detectionScaleFtPerPx, lotHeight, lotWidth],
   );
 
-  const handleAnalyzeImageFeatures = useCallback(async () => {
-    if (!token || !mapSnapshotPath) return;
+  const handleAnalyzeImageFeatures = useCallback(async (overridePath?: string) => {
+    if (!token) return;
+    const sourcePath = overridePath || mapSnapshotPath;
+    if (!sourcePath) return;
+    clearGeneratedPreview();
     const width = parsePositiveNumber(lotWidth);
     const height = parsePositiveNumber(lotHeight);
     if (!width || !height) {
@@ -3953,7 +3980,7 @@ export default function PerformanceAIDashboard() {
     try {
       const result = await postJson<ImageDetectResponse>(
         "/api/image/detect-features",
-        { image_path: mapSnapshotPath, source_type: "map" },
+        { image_path: sourcePath, source_type: "map" },
         { token },
       );
       const detections = Array.isArray(result.detections) ? result.detections : [];
@@ -3983,7 +4010,7 @@ export default function PerformanceAIDashboard() {
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Detection failed.");
     }
-  }, [currentProject, lotHeight, lotWidth, mapDetectionToPlacement, mapSnapshotPath, payloadPreview, saveProject, token]);
+  }, [clearGeneratedPreview, currentProject, lotHeight, lotWidth, mapDetectionToPlacement, mapSnapshotPath, payloadPreview, saveProject, token]);
 
   const handleAnalyzeSiteAccess = useCallback(() => {
     const confirmed = buildingPlacements.filter(
@@ -4397,6 +4424,7 @@ export default function PerformanceAIDashboard() {
       setStatusMessage("Site address cleared.");
       return;
     }
+    clearGeneratedPreview();
     try {
       const geocode = await postJson<{ lat: number; lng: number; display_name: string; provider: string }>(
         "/api/geocode",
@@ -5820,7 +5848,7 @@ export default function PerformanceAIDashboard() {
                             </button>
                             <button
                               type="button"
-                              onClick={handleAnalyzeImageFeatures}
+                              onClick={() => handleAnalyzeImageFeatures()}
                               disabled={!mapSnapshotPath}
                               className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                             >
@@ -5883,7 +5911,7 @@ export default function PerformanceAIDashboard() {
                       </button>
                       <button
                         type="button"
-                        onClick={handleAnalyzeImageFeatures}
+                        onClick={() => handleAnalyzeImageFeatures()}
                         disabled={!mapSnapshotPath}
                         className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                       >
@@ -6171,7 +6199,8 @@ export default function PerformanceAIDashboard() {
                 previewInteraction={previewInteraction}
                 previewQuality={previewQuality}
                 previewLabelDensity={previewLabelDensity}
-              placementMode={placementModeEnabled || Boolean(activePlacementId)}
+                hasGeneratedPlan={Boolean(planPreviewUrl && backendResult)}
+                placementMode={placementModeEnabled || Boolean(activePlacementId)}
               onPlaceBuilding={handlePlaceBuilding}
               onPlaceObject={handlePlaceObject}
               buildingPlacements={buildingPlacements}
