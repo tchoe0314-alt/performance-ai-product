@@ -3,6 +3,7 @@
 type AppHeaderProps = {
   userEmail: string;
   onOpenProjects: () => void;
+  onOpenSiteInputs: () => void;
   onOpenDocs: () => void;
   onOpenChat: () => void;
   onLogout: () => void;
@@ -11,6 +12,7 @@ type AppHeaderProps = {
 export default function AppHeader({
   userEmail,
   onOpenProjects,
+  onOpenSiteInputs,
   onOpenDocs,
   onOpenChat,
   onLogout,
@@ -34,6 +36,13 @@ export default function AppHeader({
             className="text-white/70 transition hover:text-white"
           >
             Projects
+          </button>
+          <button
+            type="button"
+            onClick={onOpenSiteInputs}
+            className="text-white/70 transition hover:text-white"
+          >
+            Site
           </button>
           <button
             type="button"

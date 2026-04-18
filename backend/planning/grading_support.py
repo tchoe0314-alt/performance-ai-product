@@ -82,6 +82,26 @@ def build_existing_surface(
     ncols = max(2, int(round((x_max - x_min) / cell)) + 1)
     nrows = max(2, int(round((y_max - y_min) / cell)) + 1)
     profile = infer_surface_profile(parsed)
+    meta = safe_dict(parsed.get("meta"))
+    site_inputs = safe_dict(meta.get("site_inputs"))
+    survey_file = safe_dict(site_inputs.get("survey_file"))
+    has_survey = bool(survey_file.get("stored_filename") or survey_file.get("survey_url"))
+    has_map_analysis = bool(site_inputs.get("map_analysis"))
+    map_snapshot = safe_dict(site_inputs.get("map_snapshot"))
+    has_map_snapshot = bool(map_snapshot.get("stored_filename") or map_snapshot.get("image_path"))
+    has_address = bool(site_inputs.get("address"))
+    if has_survey:
+        profile["source_quality"] = "survey"
+        profile["source_detail"] = "Survey/topo data provided"
+    elif has_map_analysis or has_map_snapshot:
+        profile["source_quality"] = "image_inferred"
+        profile["source_detail"] = "Map or image inference"
+    elif has_address:
+        profile["source_quality"] = "address_context"
+        profile["source_detail"] = "Address-only context"
+    else:
+        profile["source_quality"] = "assumed"
+        profile["source_detail"] = "Fallback assumptions"
     ux, uy = normalize_vector(profile["downhill_dx"], profile["downhill_dy"])
     slope_ratio = max(0.002, safe_float(profile["slope_ratio"], 0.02))
     center_x = (x_min + x_max) / 2.0
@@ -486,6 +506,7 @@ def canonical_grading_payload(
     existing_min, existing_max = surface_range(existing_surface)
     proposed_min, proposed_max = surface_range(proposed_surface)
     inferred_profile = getattr(existing_surface, "_inferred_profile", {}) if existing_surface is not None else {}
+    inferred_profile_dict = safe_dict(inferred_profile)
     if flow_samples:
         ranked_samples = sorted(
             flow_samples,
@@ -525,8 +546,8 @@ def canonical_grading_payload(
             "min_z": round(existing_min, 3),
             "max_z": round(existing_max, 3),
             "range_z": round(existing_max - existing_min, 3),
-            "terrain_inferred": bool(safe_dict(inferred_profile).get("inferred")),
-            "terrain_profile": deepcopy(safe_dict(inferred_profile)),
+            "terrain_inferred": bool(inferred_profile_dict.get("inferred")),
+            "terrain_profile": deepcopy(inferred_profile_dict),
         },
         "proposed_surface": {
             "nrows": safe_int(getattr(proposed_surface, "nrows", 0), 0) if proposed_surface is not None else 0,
@@ -541,6 +562,8 @@ def canonical_grading_payload(
             "fill_cf": round(safe_float(getattr(result, "fill_volume", 0.0), 0.0), 3),
             "net_cf": round(safe_float(getattr(result, "net_volume", 0.0), 0.0), 3),
         },
+        "grading_source_quality": safe_str(inferred_profile_dict.get("source_quality"), ""),
+        "grading_source_detail": safe_str(inferred_profile_dict.get("source_detail"), ""),
         "checks": [
             {
                 "name": safe_str(getattr(check, "name", "")),

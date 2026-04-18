@@ -38,6 +38,7 @@ import type {
   Preview3DItem,
   PlanRequestPayload,
   PreviewRequestPayload,
+  SiteInputs,
 } from "./types";
 
 const ADD_MENU_SECTIONS: Array<{
@@ -369,7 +370,7 @@ export default function PerformanceAIDashboard() {
     createWelcomeMessage(),
   ]);
   const [chatCollapsed, setChatCollapsed] = useState(false);
-  const [activeSidePanel, setActiveSidePanel] = useState<"projects" | "docs" | "chat" | null>(null);
+  const [activeSidePanel, setActiveSidePanel] = useState<"projects" | "docs" | "chat" | "site" | null>(null);
   const [imageName, setImageName] = useState("");
   const [siteName, setSiteName] = useState("");
   const [fileName, setFileName] = useState("");
@@ -409,6 +410,7 @@ export default function PerformanceAIDashboard() {
   const [surveySlopeEstimate, setSurveySlopeEstimate] = useState<SurveySlopeResponse | null>(null);
   const [mapSnapshotPath, setMapSnapshotPath] = useState("");
   const [mapAnalysis, setMapAnalysis] = useState<MapAnalysis | null>(null);
+  const [siteAddress, setSiteAddress] = useState("");
   const [planPreviewUrl, setPlanPreviewUrl] = useState("");
   const [planPreviewSummary, setPlanPreviewSummary] =
     useState<PreviewResponse["summary"] | null>(null);
@@ -3324,6 +3326,7 @@ export default function PerformanceAIDashboard() {
     const mapAnalysisResult = siteInputs?.map_analysis ?? null;
     const surveyFile = siteInputs?.survey_file ?? {};
     const slopeEstimate = siteInputs?.slope_estimate ?? null;
+    setSiteAddress(String(siteInputs?.address || ""));
     setSurveyFileName(String(surveyFile?.stored_filename || ""));
     setSurveySlopeEstimate(slopeEstimate || null);
     const mapUrl = String(mapSnapshot?.image_url || "");
@@ -3843,6 +3846,30 @@ export default function PerformanceAIDashboard() {
         error instanceof Error ? error.message : "Map snapshot analysis failed.",
       );
     }
+  };
+
+  const saveSiteAddress = async () => {
+    if (!token) return;
+    const trimmed = siteAddress.trim();
+    const currentInput = currentProject?.project_input ?? payloadPreview;
+    const nextSiteInputs = {
+      ...(currentInput?.meta?.site_inputs ?? {}),
+      address: trimmed || undefined,
+    };
+    await saveProject({
+      silent: true,
+      projectInputOverride: {
+        ...currentInput,
+        input_mode: "user",
+        strict_mode: false,
+        allow_ai_fill_for_blanks: false,
+        meta: {
+          ...(currentInput?.meta ?? {}),
+          site_inputs: nextSiteInputs,
+        },
+      },
+    });
+    setStatusMessage(trimmed ? "Site address saved." : "Site address cleared.");
   };
 
   const requestPreview = async (
@@ -4813,6 +4840,32 @@ export default function PerformanceAIDashboard() {
   const usingAnnotation3D =
     preview3DItems.length === 0 && preview3DAnnotationItems.length > 0;
   const lotBounds = resolveLotBounds();
+  const siteInputs = (currentProject?.project_input?.meta?.site_inputs ?? {}) as SiteInputs;
+  const gradingSourceSummary = useMemo(() => {
+    const hasSurvey = Boolean(siteInputs?.survey_file?.stored_filename || siteInputs?.survey_file?.survey_url);
+    const hasMapAnalysis = Boolean(siteInputs?.map_analysis);
+    const hasMapSnapshot = Boolean(siteInputs?.map_snapshot?.stored_filename || siteInputs?.map_snapshot?.image_path);
+    const hasAddress = Boolean(siteInputs?.address);
+    if (hasSurvey) {
+      return "Survey/topo (highest trust)";
+    }
+    if (hasMapAnalysis || hasMapSnapshot) {
+      return "Image/map inferred (approximate)";
+    }
+    if (hasAddress) {
+      return "Address-only context (approximate)";
+    }
+    return "Fallback assumptions";
+  }, [siteInputs]);
+  const mapAnalysisCounts = useMemo(() => {
+    if (!mapAnalysis || typeof mapAnalysis !== "object") return { zones: 0, objects: 0, centerlines: 0 };
+    const record = mapAnalysis as { counts?: { zones?: number; objects?: number; centerlines?: number } };
+    return {
+      zones: record.counts?.zones ?? 0,
+      objects: record.counts?.objects ?? 0,
+      centerlines: record.counts?.centerlines ?? 0,
+    };
+  }, [mapAnalysis]);
   const sortedProjects = useMemo(
     () => [...projects].sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0)),
     [projects],
@@ -4847,6 +4900,7 @@ export default function PerformanceAIDashboard() {
         <AppHeader
           userEmail={user.email}
           onOpenProjects={() => setActiveSidePanel("projects")}
+          onOpenSiteInputs={() => setActiveSidePanel("site")}
           onOpenDocs={() => setActiveSidePanel("docs")}
           onOpenChat={() => setActiveSidePanel("chat")}
           onLogout={handleLogout}
@@ -4860,6 +4914,8 @@ export default function PerformanceAIDashboard() {
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                     {activeSidePanel === "projects"
                       ? "Projects"
+                      : activeSidePanel === "site"
+                        ? "Site Inputs"
                       : activeSidePanel === "docs"
                         ? "Docs"
                         : "Chat"}
@@ -4867,6 +4923,8 @@ export default function PerformanceAIDashboard() {
                   <p className="mt-1 text-sm text-slate-700">
                     {activeSidePanel === "projects"
                       ? "Switch between projects."
+                      : activeSidePanel === "site"
+                        ? "Provide address, imagery, and survey data."
                       : activeSidePanel === "docs"
                         ? "Preview docs and exports."
                         : "Conversation and updates."}
@@ -4937,6 +4995,136 @@ export default function PerformanceAIDashboard() {
                     ) : (
                       <p className="text-sm text-slate-500">No projects yet.</p>
                     )}
+                  </div>
+                ) : null}
+
+                {activeSidePanel === "site" ? (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Site address
+                      </label>
+                      <input
+                        value={siteAddress}
+                        onChange={(event) => setSiteAddress(event.target.value)}
+                        onBlur={() => void saveSiteAddress()}
+                        placeholder="123 Main St, City, State"
+                        className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void saveSiteAddress()}
+                        className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                      >
+                        Save address
+                      </button>
+                    </div>
+
+                    <div className="space-y-2 text-sm text-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => mapSnapshotInputRef.current?.click()}
+                        className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50"
+                      >
+                        <span>Upload site image / map snapshot</span>
+                        <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
+                          {uploadedImageApiUrl || uploadedImagePreviewUrl ? "Ready" : "Upload"}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => surveyInputRef.current?.click()}
+                        className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50"
+                      >
+                        <span>Upload survey / topo file</span>
+                        <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
+                          {surveyFileName ? "Ready" : "Upload"}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={estimateSurveySlope}
+                        disabled={!surveyFileName}
+                        className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <span>Estimate slope from survey</span>
+                        <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
+                          {surveySlopeEstimate?.slope_percent ? "Estimated" : "Compute"}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={analyzeMapSnapshot}
+                        disabled={!mapSnapshotPath}
+                        className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <span>Analyze map snapshot</span>
+                        <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
+                          {mapAnalysis?.success ? "Ready" : "Analyze"}
+                        </span>
+                      </button>
+                      {surveyFileName ? (
+                        <p className="text-xs text-slate-500">Survey loaded: {surveyFileName}</p>
+                      ) : null}
+                      {uploadedImageApiUrl || uploadedImagePreviewUrl ? (
+                        <p className="text-xs text-slate-500">
+                          Map snapshot loaded and ready for interpretation.
+                        </p>
+                      ) : null}
+                      {mapAnalysis?.success ? (
+                        <p className="text-xs text-slate-500">
+                          Map analysis captured {mapAnalysisCounts.zones} zones,{" "}
+                          {mapAnalysisCounts.objects} objects,{" "}
+                          {mapAnalysisCounts.centerlines} centerlines.
+                        </p>
+                      ) : null}
+                      {surveySlopeEstimate?.slope_percent ? (
+                        <p className="text-xs text-slate-500">
+                          Estimated {surveySlopeEstimate.slope_percent.toFixed(2)}% slope toward{" "}
+                          {surveySlopeEstimate.direction || "N/A"} from {surveySlopeEstimate.point_count ?? 0} points.
+                        </p>
+                      ) : null}
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        Grading source
+                      </p>
+                      <p className="mt-2 text-sm font-semibold text-slate-800">
+                        {gradingSourceSummary}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Civora uses the highest‑trust source available. Survey/topo overrides imagery or address
+                        inference.
+                      </p>
+                    </div>
+
+                    <input
+                      ref={mapSnapshotInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (event) => {
+                        const file = event.currentTarget.files?.[0];
+                        if (file) {
+                          await uploadImage(file);
+                        }
+                        event.currentTarget.value = "";
+                      }}
+                    />
+                    <input
+                      ref={surveyInputRef}
+                      type="file"
+                      accept=".csv"
+                      className="hidden"
+                      onChange={async (event) => {
+                        const file = event.currentTarget.files?.[0];
+                        if (file) {
+                          await uploadSurvey(file);
+                        }
+                        event.currentTarget.value = "";
+                      }}
+                    />
                   </div>
                 ) : null}
 
