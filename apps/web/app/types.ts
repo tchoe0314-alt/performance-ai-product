@@ -274,23 +274,30 @@ export type SiteInputs = {
   map_snapshot?: MapSnapshotInput;
   map_analysis?: MapAnalysis;
   survey_file?: SurveyFileInput;
+  survey_file_type?: string;
+  survey_parse_success?: boolean;
   slope_estimate?: SurveySlopeResponse | null;
   survey_points?: number[][];
   survey_point_count?: number;
   survey_point_warnings?: string[];
+  survey_bounds?: { min_x?: number; min_y?: number; max_x?: number; max_y?: number } | null;
+  survey_elevation_range?: { min?: number; max?: number } | null;
   survey_point_columns?: {
     x?: string;
     y?: string;
     z?: string;
   };
   survey_invalid_rows?: number;
+  use_survey_for_grading?: boolean;
   detected_objects?: BuildingPlacement[];
   detection_scale?: {
     distance_ft?: number;
     pixel_distance?: number;
     scale_ft_per_px?: number;
     calibrated?: boolean;
+    scale_source?: "mapbox" | "manual" | "approximate";
   };
+  site_alignment_locked?: boolean;
   site_rotation_deg?: number;
 };
 

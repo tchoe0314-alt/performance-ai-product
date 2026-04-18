@@ -1484,6 +1484,11 @@ export default function PerformanceAIDashboard() {
     return { w: width, d: depth };
   }, [buildingDepth, buildingWidth]);
 
+  const hasSiteBoundary = useCallback(() => {
+    const lot = resolveLotBounds();
+    return Boolean(lot.w && lot.h);
+  }, [resolveLotBounds]);
+
   const markSystemsStale = useCallback(() => {
     setSystemStatuses((prev) => ({
       roads: prev.roads === "not_generated" ? "not_generated" : "stale",
@@ -1873,21 +1878,13 @@ export default function PerformanceAIDashboard() {
     );
   }, [askClarification, buildingPlacements, resolveLotBounds]);
 
-  const askClarification = useCallback(
-    (question: string, action: string, payload?: Record<string, unknown>) => {
-      setPendingClarification({ action, payload, question });
-      setActiveSidePanel("chat");
-      setChatCollapsed(false);
-      appendChatMessage("assistant", question, "status");
-      setStatusMessage(question);
-    },
-    [appendChatMessage],
-  );
-
-  const hasSiteBoundary = useCallback(() => {
-    const lot = resolveLotBounds();
-    return Boolean(lot.w && lot.h);
-  }, [resolveLotBounds]);
+  function askClarification(question: string, action: string, payload?: Record<string, unknown>) {
+    setPendingClarification({ action, payload, question });
+    setActiveSidePanel("chat");
+    setChatCollapsed(false);
+    appendChatMessage("assistant", question, "status");
+    setStatusMessage(question);
+  }
 
   const scheduleScaleSave = useCallback(
     (ftPerPx: number, source: "mapbox" | "manual" | "approximate") => {
@@ -1896,7 +1893,8 @@ export default function PerformanceAIDashboard() {
       }
       const currentInput = currentProject?.project_input ?? payloadPreview;
       scaleSaveTimeoutRef.current = window.setTimeout(() => {
-        void saveProject({
+        if (!saveProjectRef.current) return;
+        void saveProjectRef.current({
           silent: true,
           projectInputOverride: {
             ...currentInput,
@@ -1908,8 +1906,8 @@ export default function PerformanceAIDashboard() {
               site_inputs: {
                 ...(currentInput?.meta?.site_inputs ?? {}),
                 detection_scale: {
-                  distance_ft: detectionScaleFeet ? parsePositiveNumber(detectionScaleFeet) ?? null : null,
-                  pixel_distance: detectionScalePixels ? parsePositiveNumber(detectionScalePixels) ?? null : null,
+                  distance_ft: detectionScaleFeet ? parsePositiveNumber(detectionScaleFeet) ?? undefined : undefined,
+                  pixel_distance: detectionScalePixels ? parsePositiveNumber(detectionScalePixels) ?? undefined : undefined,
                   scale_ft_per_px: ftPerPx,
                   scale_source: source,
                 },
@@ -1920,7 +1918,7 @@ export default function PerformanceAIDashboard() {
         });
       }, 600);
     },
-    [currentProject, detectionScaleFeet, detectionScalePixels, payloadPreview, saveProject, siteScaleLocked],
+    [currentProject, detectionScaleFeet, detectionScalePixels, payloadPreview, siteScaleLocked],
   );
 
   useEffect(() => {
@@ -4277,36 +4275,29 @@ export default function PerformanceAIDashboard() {
     }
   };
 
-  const mapSurveyPointsToSite = useCallback(
-    (points: number[][]) => {
-      const width = parsePositiveNumber(lotWidth);
-      const height = parsePositiveNumber(lotHeight);
-      if (!points.length || !width || !height) return [];
-      const xs = points.map((p) => p[0]);
-      const ys = points.map((p) => p[1]);
-      const minX = Math.min(...xs);
-      const maxX = Math.max(...xs);
-      const minY = Math.min(...ys);
-      const maxY = Math.max(...ys);
-      const spanX = Math.max(maxX - minX, 1e-6);
-      const spanY = Math.max(maxY - minY, 1e-6);
-      const withinLot =
-        minX >= 0 &&
-        minY >= 0 &&
-        maxX <= width * 1.2 &&
-        maxY <= height * 1.2;
-      const mapPoint = (p: number[]) => {
-        const x = withinLot ? p[0] : ((p[0] - minX) / spanX) * width;
-        const y = withinLot ? p[1] : ((p[1] - minY) / spanY) * height;
-        const z = typeof p[2] === "number" ? p[2] : undefined;
-        return { x, y, z };
-      };
-      const mapped = points.map(mapPoint);
-      const step = Math.max(1, Math.ceil(mapped.length / 2000));
-      return mapped.filter((_, idx) => idx % step === 0);
-    },
-    [lotHeight, lotWidth],
-  );
+  function mapSurveyPointsToSite(points: number[][]) {
+    const width = parsePositiveNumber(lotWidth);
+    const height = parsePositiveNumber(lotHeight);
+    if (!points.length || !width || !height) return [];
+    const xs = points.map((p) => p[0]);
+    const ys = points.map((p) => p[1]);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const spanX = Math.max(maxX - minX, 1e-6);
+    const spanY = Math.max(maxY - minY, 1e-6);
+    const withinLot = minX >= 0 && minY >= 0 && maxX <= width * 1.2 && maxY <= height * 1.2;
+    const mapPoint = (p: number[]) => {
+      const x = withinLot ? p[0] : ((p[0] - minX) / spanX) * width;
+      const y = withinLot ? p[1] : ((p[1] - minY) / spanY) * height;
+      const z = typeof p[2] === "number" ? p[2] : undefined;
+      return { x, y, z };
+    };
+    const mapped = points.map(mapPoint);
+    const step = Math.max(1, Math.ceil(mapped.length / 2000));
+    return mapped.filter((_, idx) => idx % step === 0);
+  }
 
   const uploadSurvey = async (file: File) => {
     if (!token) return;
@@ -4835,14 +4826,14 @@ export default function PerformanceAIDashboard() {
     setDetectionScaleFtPerPx(scale);
     setDetectionScaleSource("manual");
     const currentInput = currentProject?.project_input ?? payloadPreview;
-    const nextSiteInputs = {
+    const nextSiteInputs: SiteInputs = {
       ...(currentInput?.meta?.site_inputs ?? {}),
       detection_scale: {
         distance_ft: distanceFt,
         pixel_distance: pixelDistance,
         scale_ft_per_px: scale,
         calibrated: true,
-        scale_source: "manual",
+        scale_source: "manual" as const,
       },
       site_alignment_locked: siteScaleLocked,
     };
@@ -5324,6 +5315,8 @@ export default function PerformanceAIDashboard() {
     projectId,
     siteName,
   ]);
+
+  const siteInputs = (currentProject?.project_input?.meta?.site_inputs ?? {}) as SiteInputs;
 
   const handleGenerateSystem = useCallback(
     async (target: "roads" | "parking" | "grading" | "drainage" | "utilities" | "full") => {
@@ -6154,7 +6147,6 @@ export default function PerformanceAIDashboard() {
   const usingAnnotation3D =
     preview3DItems.length === 0 && preview3DAnnotationItems.length > 0;
   const lotBounds = resolveLotBounds();
-  const siteInputs = (currentProject?.project_input?.meta?.site_inputs ?? {}) as SiteInputs;
   const missingSite = !(lotBounds.w && lotBounds.h);
   const missingImage = !mapSnapshotPath;
   const hasBasinPlaced = buildingPlacements.some((item) => item.type === "basin" && item.placed);
@@ -6742,7 +6734,8 @@ export default function PerformanceAIDashboard() {
                         {showAdvancedCalibration ? "Hide Advanced" : "Advanced Calibration"}
                       </button>
                       {showAdvancedCalibration ? (
-                      <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-slate-600">
+                        <div className="mt-3">
+                          <div className="grid grid-cols-2 gap-3 text-xs text-slate-600">
                         <label className="flex flex-col gap-1">
                           Known distance (ft)
                           <input
@@ -6761,14 +6754,14 @@ export default function PerformanceAIDashboard() {
                             className="rounded-lg border border-slate-200 px-2 py-1"
                           />
                         </label>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => void applyDetectionScale()}
-                        className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                      >
-                        Apply scale
-                      </button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void applyDetectionScale()}
+                          className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                        >
+                          Apply scale
+                        </button>
                         <p className="mt-2 text-xs text-slate-500">
                           {detectionScaleFtPerPx
                             ? `Calibrated (${detectionScaleSource === "mapbox" ? "Mapbox" : "Manual"}): 1 px ≈ ${detectionScaleFtPerPx.toFixed(3)} ft`
@@ -6779,6 +6772,7 @@ export default function PerformanceAIDashboard() {
                           <p className="mt-1">
                             Pick two points in the uploaded image with a known real‑world distance, measure the pixel distance between them, then enter both values and apply.
                           </p>
+                        </div>
                         </div>
                       ) : null}
                     </div>
