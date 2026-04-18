@@ -176,7 +176,8 @@ export default function PreviewPanel({
   const previewImageRef = useRef<HTMLImageElement | null>(null);
   const fullscreenImageRef = useRef<HTMLImageElement | null>(null);
   const activeAnnotation = pinnedAnnotation ?? hoveredAnnotation;
-  const hasInteractiveLabels = previewLabels.length > 0;
+  const showGeneratedPlan = !placementMode && !selectedBuildingId;
+  const hasInteractiveLabels = previewLabels.length > 0 && showGeneratedPlan;
   const showInteractive = previewInteraction === "interactive";
   const previewModeDescription =
     previewRenderMode === "debug"
@@ -588,12 +589,12 @@ export default function PreviewPanel({
     ];
     return entries.filter((entry) => entry.value);
   }, [activeAnnotation, previewRenderMode]);
-  const effectiveBounds = previewImageBounds ?? previewContainerBounds;
+  const overlayBounds = showGeneratedPlan ? (previewImageBounds ?? previewContainerBounds) : previewContainerBounds;
 
   useEffect(() => {
     const handleUpdate = () => {
       updateContainerBounds();
-      if (planPreviewUrl) {
+      if (planPreviewUrl && showGeneratedPlan) {
         updateImageBounds(previewRef, previewImageRef, setPreviewImageBounds);
       } else {
         setPreviewImageBounds(null);
@@ -608,7 +609,7 @@ export default function PreviewPanel({
       if (observer) observer.disconnect();
       window.removeEventListener("resize", handleUpdate);
     };
-  }, [planPreviewUrl, previewMode, updateContainerBounds, updateImageBounds]);
+  }, [planPreviewUrl, previewMode, showGeneratedPlan, updateContainerBounds, updateImageBounds]);
 
   useEffect(() => {
     if (!previewFullscreenOpen || !planPreviewUrl) return;
@@ -623,8 +624,6 @@ export default function PreviewPanel({
       window.removeEventListener("resize", handleUpdate);
     };
   }, [planPreviewUrl, previewFullscreenOpen, updateImageBounds]);
-  const showGeneratedPlan = !placementMode;
-
   const [focusTransform, setFocusTransform] = useState<{ scale: number; tx: number; ty: number } | null>(null);
 
   useEffect(() => {
@@ -978,7 +977,7 @@ export default function PreviewPanel({
                 const payload = event.dataTransfer?.getData("civora-object-id");
                 if (!payload) return;
                 const rect = previewRef.current?.getBoundingClientRect();
-                const bounds = effectiveBounds ?? {
+                const bounds = overlayBounds ?? {
                   left: 0,
                   top: 0,
                   width: rect?.width ?? 1,
@@ -996,10 +995,10 @@ export default function PreviewPanel({
                 });
               }}
               onMouseMove={(event) => {
-                if (effectiveBounds) {
-                  updateDraggedBuilding(event, effectiveBounds);
+                if (overlayBounds) {
+                  updateDraggedBuilding(event, overlayBounds);
                 }
-                resolveHover(event, previewRef, effectiveBounds, setHoverPoint);
+                resolveHover(event, previewRef, overlayBounds, setHoverPoint);
               }}
               onMouseLeave={() => {
                 setHoveredAnnotation(null);
@@ -1014,7 +1013,7 @@ export default function PreviewPanel({
               }}
               onClick={(event) => {
                 if (placementMode) {
-                  resolvePlacement(event, previewRef, effectiveBounds);
+                  resolvePlacement(event, previewRef, overlayBounds);
                   return;
                 }
                 if (!showInteractive || !hoveredAnnotation) return;
@@ -1046,14 +1045,14 @@ export default function PreviewPanel({
                     3D needs a preview run
                   </div>
                 ) : null}
-                {effectiveBounds && (previewMode === "2d" || !planPreviewUrl) ? (
+                {overlayBounds && (previewMode === "2d" || !planPreviewUrl) ? (
                   <div
                     className="pointer-events-none absolute"
                     style={{
-                      left: effectiveBounds.left,
-                      top: effectiveBounds.top,
-                      width: effectiveBounds.width,
-                      height: effectiveBounds.height,
+                      left: overlayBounds.left,
+                      top: overlayBounds.top,
+                      width: overlayBounds.width,
+                      height: overlayBounds.height,
                     }}
                   >
                     {lotWidth > 0 && lotHeight > 0 ? (
@@ -1125,7 +1124,7 @@ export default function PreviewPanel({
                             }}
                           >
                             <div
-                              className={`h-full w-full rounded-[8px] border-2 bg-slate-900/10 transition ${borderColor} ${
+                              className={`h-full w-full rounded-[8px] border-2 bg-slate-900/15 shadow-sm transition ${borderColor} ${
                                 isSelected ? "ring-2 ring-amber-300" : ""
                               } ${isAccessHighlight ? "ring-2 ring-rose-300" : ""}`}
                             />

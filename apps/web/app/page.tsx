@@ -1607,12 +1607,14 @@ export default function PerformanceAIDashboard() {
 
   const handleRemoveBuilding = useCallback((id: string) => {
     setBuildingPlacements((prev) => prev.filter((item) => item.id !== id));
+    setActivePlacementId((prev) => (prev === id ? null : prev));
+    setPlacementModeEnabled((prev) => (activePlacementId === id ? false : prev));
     markSystemsStale();
     setStatusMessage("Object removed. Regenerate systems to reflect the new layout.");
     void ensureProjectDraftRef.current()
       .then(() => saveProjectRef.current({ silent: true }))
       .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object removal...", track: true });
-  }, [markSystemsStale]);
+  }, [activePlacementId, markSystemsStale]);
 
   const handleAcceptDetected = useCallback((id: string) => {
     setDetectedPlacements((prev) => {
