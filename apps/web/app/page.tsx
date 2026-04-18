@@ -475,6 +475,11 @@ export default function PerformanceAIDashboard() {
   const [mapSnapshotPath, setMapSnapshotPath] = useState("");
   const [mapAnalysis, setMapAnalysis] = useState<MapAnalysis | null>(null);
   const [siteAddress, setSiteAddress] = useState("");
+  const [pendingClarification, setPendingClarification] = useState<{
+    action: string;
+    payload?: Record<string, unknown>;
+    question: string;
+  } | null>(null);
   const [planPreviewUrl, setPlanPreviewUrl] = useState("");
   const [planPreviewSummary, setPlanPreviewSummary] =
     useState<PreviewResponse["summary"] | null>(null);
@@ -1542,11 +1547,15 @@ export default function PerformanceAIDashboard() {
         });
         return;
       }
-      const lot = resolveLotBounds();
-      if (!lot.w || !lot.h) {
-        setStatusMessage("Set the site width and height before adding objects.");
+      if (!hasSiteBoundary()) {
+        askClarification(
+          "What size should the site boundary be? You can say something like “600 ft by 400 ft” or “12 acres.”",
+          "set_site_then_add",
+          { type },
+        );
         return;
       }
+      const lot = resolveLotBounds();
       const existingCount =
         buildingPlacements.filter((item) => item.type === type).length + 1;
       const defaults =
@@ -1590,6 +1599,8 @@ export default function PerformanceAIDashboard() {
       buildingPlacements,
       clearGeneratedPreview,
       formatObjectLabel,
+      hasSiteBoundary,
+      askClarification,
       lotHeight,
       lotWidth,
       resolveDefaultBuildingDims,
@@ -1839,7 +1850,11 @@ export default function PerformanceAIDashboard() {
   const handleSelectPlacementTarget = useCallback((id: string) => {
     const lot = resolveLotBounds();
     if (!lot.w || !lot.h) {
-      setStatusMessage("Set the site width and height before placing objects.");
+      askClarification(
+        "I need a site boundary before placing objects. What size should the site be?",
+        "place_object_missing_site",
+        { id },
+      );
       return;
     }
     setPreviewMode("2d");
@@ -1856,7 +1871,22 @@ export default function PerformanceAIDashboard() {
         ? `Ready to place ${target.label}. Click on the canvas to drop it.`
         : "Placement active. Click on the canvas to drop the object.",
     );
-  }, [buildingPlacements, resolveLotBounds]);
+  }, [askClarification, buildingPlacements, resolveLotBounds]);
+
+  const askClarification = useCallback(
+    (question: string, action: string, payload?: Record<string, unknown>) => {
+      setPendingClarification({ action, payload, question });
+      setActiveSidePanel("chat");
+      appendChatMessage("assistant", question, "status");
+      setStatusMessage(question);
+    },
+    [appendChatMessage],
+  );
+
+  const hasSiteBoundary = useCallback(() => {
+    const lot = resolveLotBounds();
+    return Boolean(lot.w && lot.h);
+  }, [resolveLotBounds]);
 
   const scheduleScaleSave = useCallback(
     (ftPerPx: number, source: "mapbox" | "manual" | "approximate") => {
@@ -3226,6 +3256,162 @@ export default function PerformanceAIDashboard() {
       handleContinueActiveJob();
       return;
     }
+    if (pendingClarification && trimmed) {
+      appendChatMessage("user", trimmed);
+      setPrompt("");
+      const lot = resolveLotBounds();
+      const hasSite = Boolean(lot.w && lot.h);
+      if (pendingClarification.action === "set_site_then_add") {
+        const handled = tryHandleObjectIntent(trimmed);
+        if (handled && hasSite) {
+          const type = pendingClarification.payload?.type as SiteObjectType | undefined;
+          if (type) {
+            setPendingClarification(null);
+            handleAddObject(type);
+            return;
+          }
+        }
+        appendChatMessage("assistant", pendingClarification.question, "status");
+        return;
+      }
+      if (pendingClarification.action === "set_site_then_detect") {
+        const handled = tryHandleObjectIntent(trimmed);
+        if (handled && hasSite) {
+          setPendingClarification(null);
+          void handleAnalyzeImageFeatures();
+          return;
+        }
+        appendChatMessage("assistant", pendingClarification.question, "status");
+        return;
+      }
+      if (pendingClarification.action === "set_site_then_generate") {
+        const handled = tryHandleObjectIntent(trimmed);
+        if (handled && hasSite) {
+          const target = pendingClarification.payload?.target as
+            | "roads"
+            | "parking"
+            | "grading"
+            | "drainage"
+            | "utilities"
+            | "full"
+            | undefined;
+          if (target) {
+            setPendingClarification(null);
+            void handleGenerateSystem(target);
+            return;
+          }
+        }
+        appendChatMessage("assistant", pendingClarification.question, "status");
+        return;
+      }
+      if (pendingClarification.action === "place_object_missing_site") {
+        const handled = tryHandleObjectIntent(trimmed);
+        if (handled && hasSite) {
+          const id = pendingClarification.payload?.id as string | undefined;
+          if (id) {
+            setPendingClarification(null);
+            handleSelectPlacementTarget(id);
+            return;
+          }
+        }
+        appendChatMessage("assistant", pendingClarification.question, "status");
+        return;
+      }
+      if (pendingClarification.action === "upload_image_then_detect") {
+        if (mapSnapshotPath) {
+          setPendingClarification(null);
+          void handleAnalyzeImageFeatures();
+          return;
+        }
+        appendChatMessage(
+          "assistant",
+          "Please upload a site image/map snapshot first, then say “done.”",
+          "status",
+        );
+        return;
+      }
+      if (pendingClarification.action === "access_analysis_missing") {
+        const confirmed = buildingPlacements.filter(
+          (item) => item.placed && (item.source === "user" || item.source === "user_confirmed"),
+        );
+        const accessTypes = new Set<SiteObjectType>(["road", "entrance", "parking", "sidewalk", "driveway"]);
+        const buildingTypes = new Set<SiteObjectType>([
+          "building",
+          "retail_building",
+          "multifamily_building",
+          "industrial_building",
+          "office_building",
+          "pad",
+        ]);
+        const buildings = confirmed.filter((item) => buildingTypes.has(item.type as SiteObjectType));
+        const access = confirmed.filter((item) => accessTypes.has(item.type as SiteObjectType));
+        if (buildings.length && access.length) {
+          setPendingClarification(null);
+          handleAnalyzeSiteAccess();
+          return;
+        }
+        appendChatMessage(
+          "assistant",
+          "Once you add or confirm buildings and access objects, I can run access analysis.",
+          "status",
+        );
+        return;
+      }
+      if (pendingClarification.action === "grading_source") {
+        const lower = trimmed.toLowerCase();
+        if (/(survey)/.test(lower)) {
+          if (!surveyFileName) {
+            appendChatMessage("assistant", "Please upload a survey/topo file first.", "status");
+            return;
+          }
+          setUseSurveyForGrading(true);
+        } else if (/(map|terrain)/.test(lower)) {
+          setUseSurveyForGrading(false);
+        } else if (/(assume|assumed|fallback)/.test(lower)) {
+          setUseSurveyForGrading(false);
+        } else {
+          appendChatMessage(
+            "assistant",
+            "Should I use survey, map terrain, or an assumed slope?",
+            "status",
+          );
+          return;
+        }
+        const target = pendingClarification.payload?.target as
+          | "roads"
+          | "parking"
+          | "grading"
+          | "drainage"
+          | "utilities"
+          | "full"
+          | undefined;
+        if (target) {
+          setPendingClarification(null);
+          void handleGenerateSystem(target);
+          return;
+        }
+      }
+      if (pendingClarification.action === "drainage_missing_basin") {
+        const hasBasin = buildingPlacements.some((item) => item.type === "basin" && item.placed);
+        if (hasBasin) {
+          const target = pendingClarification.payload?.target as
+            | "drainage"
+            | "full"
+            | undefined;
+          if (target) {
+            setPendingClarification(null);
+            void handleGenerateSystem(target);
+            return;
+          }
+        }
+        appendChatMessage(
+          "assistant",
+          "Add a basin object first, then I can run drainage.",
+          "status",
+        );
+        return;
+      }
+    }
     if (busy || visibleActiveJob) {
       if (trimmed || imageName) {
         appendChatMessage("user", trimmed || "Uploaded an image.");
@@ -4273,12 +4459,21 @@ export default function PerformanceAIDashboard() {
   const handleAnalyzeImageFeatures = useCallback(async (overridePath?: string) => {
     if (!token) return;
     const sourcePath = overridePath || mapSnapshotPath;
-    if (!sourcePath) return;
+    if (!sourcePath) {
+      askClarification(
+        "Upload a site image or map snapshot before running detection. Want me to open the Site Inputs panel?",
+        "upload_image_then_detect",
+      );
+      return;
+    }
     clearGeneratedPreview();
     const width = parsePositiveNumber(lotWidth);
     const height = parsePositiveNumber(lotHeight);
     if (!width || !height) {
-      setStatusMessage("Set site dimensions before running detection.");
+      askClarification(
+        "I need the site boundary dimensions before detection. What size should the site be?",
+        "set_site_then_detect",
+      );
       return;
     }
     try {
@@ -4314,7 +4509,7 @@ export default function PerformanceAIDashboard() {
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Detection failed.");
     }
-  }, [clearGeneratedPreview, currentProject, lotHeight, lotWidth, mapDetectionToPlacement, mapSnapshotPath, payloadPreview, saveProject, token]);
+  }, [askClarification, clearGeneratedPreview, currentProject, lotHeight, lotWidth, mapDetectionToPlacement, mapSnapshotPath, payloadPreview, saveProject, token]);
 
   const handleAnalyzeSiteAccess = useCallback(() => {
     const confirmed = buildingPlacements.filter(
@@ -4344,7 +4539,7 @@ export default function PerformanceAIDashboard() {
         reason = "Add or confirm roads, driveways, or access objects to run access analysis.";
       }
       setAnalysisEmptyReason(reason);
-      setStatusMessage(reason);
+      askClarification(reason, "access_analysis_missing");
       return;
     }
     setAnalysisEmptyReason(null);
@@ -4559,7 +4754,7 @@ export default function PerformanceAIDashboard() {
     setAnalysisSelectedIssueId(issues[0]?.id ?? null);
     setAnalysisFocusLocked(Boolean(issues[0]?.id));
     setStatusMessage("Site access analysis complete (conceptual).");
-  }, [buildingPlacements]);
+  }, [askClarification, buildingPlacements]);
 
 
   useEffect(() => {
@@ -5071,6 +5266,38 @@ export default function PerformanceAIDashboard() {
 
   const handleGenerateSystem = useCallback(
     async (target: "roads" | "parking" | "grading" | "drainage" | "utilities" | "full") => {
+      if (!hasSiteBoundary()) {
+        askClarification(
+          "I need a site boundary before generating systems. What size should the site be?",
+          "set_site_then_generate",
+          { target },
+        );
+        return;
+      }
+      const hasBasin =
+        target === "drainage" || target === "full"
+          ? buildingPlacements.some((item) => item.type === "basin" && item.placed)
+          : true;
+      if (!hasBasin && (target === "drainage" || target === "full")) {
+        askClarification(
+          "Drainage needs a basin or outfall target. Do you want me to add a basin object for you?",
+          "drainage_missing_basin",
+          { target },
+        );
+        return;
+      }
+      if (target === "grading" || target === "drainage" || target === "full") {
+        const hasSurvey = Boolean(surveyFileName) && useSurveyForGrading;
+        const hasMapTerrain = Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng);
+        if (!hasSurvey && !hasMapTerrain && !surveySlopeEstimate?.slope_percent) {
+          askClarification(
+            "I need a terrain source for grading. Use survey, map terrain, or a first‑pass assumed slope?",
+            "grading_source",
+            { target },
+          );
+          return;
+        }
+      }
       const requestPayload = buildPayloadFromOverrides({}, undefined, projectId || null);
       const omitField = { source: "omit", value: null } as const;
       const nextManualFields = {
@@ -5120,7 +5347,19 @@ export default function PerformanceAIDashboard() {
         };
       });
     },
-    [buildPayloadFromOverrides, executePlanAction, projectId],
+    [
+      askClarification,
+      buildPayloadFromOverrides,
+      buildingPlacements,
+      executePlanAction,
+      hasSiteBoundary,
+      projectId,
+      siteInputs?.geocode?.lat,
+      siteInputs?.geocode?.lng,
+      surveyFileName,
+      surveySlopeEstimate?.slope_percent,
+      useSurveyForGrading,
+    ],
   );
 
   const queuePreviewRefresh = (reason: string) => {
@@ -5227,9 +5466,6 @@ export default function PerformanceAIDashboard() {
     setDetectionScaleSource("approximate");
     setSiteScaleLocked(false);
     setShowAdvancedCalibration(false);
-    setShowAdvancedCalibration(false);
-    setDetectionScaleSource("approximate");
-    setSiteScaleLocked(false);
     setSiteRotationDeg(0);
     setSiteRotationInput("0");
     setShowSiteBounds(true);
@@ -5244,6 +5480,7 @@ export default function PerformanceAIDashboard() {
     setAnalysisSelectedIssueId(null);
     setAnalysisFocusLocked(false);
     setSelectedIssueId(null);
+    setPendingClarification(null);
   }, []);
 
   const handleNewProject = async () => {
