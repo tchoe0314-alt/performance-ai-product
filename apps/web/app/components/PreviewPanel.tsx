@@ -1402,6 +1402,14 @@ export default function PreviewPanel({
             </span>
             <span className="font-semibold text-slate-900">Interactive:</span>
             <span>{previewInteraction === "interactive" ? "Hover enabled" : "Static"}</span>
+            {cursorSitePoint ? (
+              <>
+                <span className="font-semibold text-slate-900">Cursor:</span>
+                <span>
+                  X {cursorSitePoint.x.toFixed(1)} ft • Y {cursorSitePoint.y.toFixed(1)} ft
+                </span>
+              </>
+            ) : null}
           </div>
           {(previewRefreshing || previewRefreshNote) && (
             <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
@@ -1669,11 +1677,6 @@ export default function PreviewPanel({
                         onClearHighlights?.();
                       }}
                     >
-                      {cursorSitePoint ? (
-                        <div className="pointer-events-none absolute left-3 top-3 rounded-full border border-slate-200 bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-slate-700 shadow">
-                          X {cursorSitePoint.x.toFixed(1)} ft • Y {cursorSitePoint.y.toFixed(1)} ft
-                        </div>
-                      ) : null}
                       {buildingPlacements
                       .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
                       .map((item) => {
