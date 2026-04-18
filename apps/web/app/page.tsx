@@ -645,6 +645,7 @@ export default function PerformanceAIDashboard() {
         d: placement.d,
         rotation: placement.rotation,
         use: placement.use,
+        stall_count: placement.stallCount,
         locked: placement.locked,
         source: placement.source,
         generated: placement.generated,
@@ -652,8 +653,20 @@ export default function PerformanceAIDashboard() {
       }));
     const basinOverrides = placementOverrides.filter((placement) => placement.type === "basin");
     const entranceOverrides = placementOverrides.filter((placement) => placement.type === "entrance");
-    const buildingOverrides = placementOverrides.filter(
-      (placement) => placement.type !== "basin" && placement.type !== "entrance",
+    const parkingOverrides = placementOverrides.filter((placement) => placement.type === "parking");
+    const buildingTypes = new Set<SiteObjectType>([
+      "building",
+      "retail_building",
+      "multifamily_building",
+      "industrial_building",
+      "office_building",
+      "pad",
+      "pool",
+      "amenity",
+      "open_space",
+    ]);
+    const buildingOverrides = placementOverrides.filter((placement) =>
+      buildingTypes.has(placement.type as SiteObjectType),
     );
 
     if (buildingOverrides.length) {
@@ -700,8 +713,18 @@ export default function PerformanceAIDashboard() {
       );
     }
 
-    if (parkingCountValue !== null) {
-      manualFields.site_plan = { parking_count: parkingCountValue };
+    const parkingFromPlacements = parkingOverrides.reduce((sum, placement) => {
+      const value =
+        typeof placement.stall_count === "number"
+          ? placement.stall_count
+          : parsePositiveNumber(placement.stall_count);
+      return sum + (value ?? 0);
+    }, 0);
+    const resolvedParkingCount =
+      parkingFromPlacements > 0 ? parkingFromPlacements : parkingCountValue;
+
+    if (resolvedParkingCount !== null) {
+      manualFields.site_plan = { parking_count: resolvedParkingCount };
     }
 
     if (minSlopeValue !== null) {
@@ -1342,8 +1365,27 @@ export default function PerformanceAIDashboard() {
   const resolveLotBounds = useCallback(() => {
     const width = parsePositiveNumber(lotWidth) ?? 0;
     const height = parsePositiveNumber(lotHeight) ?? 0;
+    if (!width || !height) {
+      const site = buildingPlacements.find((item) => item.type === "site");
+      if (site?.w && site?.d) {
+        return { x: 0, y: 0, w: site.w, h: site.d };
+      }
+    }
     return { x: 0, y: 0, w: width, h: height };
-  }, [lotHeight, lotWidth]);
+  }, [buildingPlacements, lotHeight, lotWidth]);
+
+  useEffect(() => {
+    const site = buildingPlacements.find((item) => item.type === "site");
+    if (!site) return;
+    const nextWidth = String(site.w ?? "");
+    const nextHeight = String(site.d ?? "");
+    if (nextWidth && lotWidth !== nextWidth) {
+      setLotWidth(nextWidth);
+    }
+    if (nextHeight && lotHeight !== nextHeight) {
+      setLotHeight(nextHeight);
+    }
+  }, [buildingPlacements, lotHeight, lotWidth]);
 
   const resolveDefaultBuildingDims = useCallback(() => {
     const width = parsePositiveNumber(buildingWidth) ?? SITE_OBJECT_CATALOG.building.defaultW;
@@ -1415,6 +1457,8 @@ export default function PerformanceAIDashboard() {
         buildingPlacements.filter((item) => item.type === type).length + 1;
       const defaults =
         type === "building" ? resolveDefaultBuildingDims() : { w: catalog.defaultW, d: catalog.defaultD };
+      const parkingStalls =
+        type === "parking" ? parsePositiveNumber(parkingCount) ?? 0 : undefined;
       const nextPlacement: BuildingPlacement = {
         id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         label: formatObjectLabel(type, existingCount),
@@ -1423,6 +1467,7 @@ export default function PerformanceAIDashboard() {
         w: defaults.w,
         d: defaults.d,
         rotation: 0,
+        stallCount: parkingStalls,
         locked: false,
         placed: false,
         source: "user",
@@ -4631,6 +4676,7 @@ export default function PerformanceAIDashboard() {
     : preview3DAnnotationItems;
   const usingAnnotation3D =
     preview3DItems.length === 0 && preview3DAnnotationItems.length > 0;
+  const lotBounds = resolveLotBounds();
   const sortedProjects = useMemo(
     () => [...projects].sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0)),
     [projects],
@@ -4871,7 +4917,7 @@ export default function PerformanceAIDashboard() {
                 busy={busy}
                 planPreviewUrl={planPreviewUrl}
                 previewMode={previewMode}
-                previewInteraction={previewInteraction}
+              previewInteraction={previewInteraction}
               previewQuality={previewQuality}
               previewLabelDensity={previewLabelDensity}
               previewRenderMode={previewRenderMode}
@@ -4880,8 +4926,8 @@ export default function PerformanceAIDashboard() {
               onPlaceObject={handlePlaceObject}
               buildingPlacements={buildingPlacements}
               selectedBuildingId={activePlacementId}
-              lotWidth={parsePositiveNumber(lotWidth) ?? 0}
-              lotHeight={parsePositiveNumber(lotHeight) ?? 0}
+              lotWidth={lotBounds.w}
+              lotHeight={lotBounds.h}
               onUpdateBuilding={handleUpdateBuilding}
               onRemoveBuilding={handleRemoveBuilding}
               onSelectBuilding={setActivePlacementId}
@@ -5013,7 +5059,22 @@ export default function PerformanceAIDashboard() {
                         <input
                           type="number"
                           value={lotWidth}
-                          onChange={(event) => setLotWidth(event.target.value)}
+                          onChange={(event) => {
+                            const nextValue = event.target.value;
+                            setLotWidth(nextValue);
+                            setBuildingPlacements((prev) =>
+                              prev.map((item) =>
+                                item.type === "site"
+                                  ? {
+                                      ...item,
+                                      w:
+                                        parsePositiveNumber(nextValue) ??
+                                        item.w,
+                                    }
+                                  : item,
+                              ),
+                            );
+                          }}
                           className="rounded-lg border border-slate-200 px-2 py-1"
                         />
                       </label>
@@ -5022,7 +5083,22 @@ export default function PerformanceAIDashboard() {
                         <input
                           type="number"
                           value={lotHeight}
-                          onChange={(event) => setLotHeight(event.target.value)}
+                          onChange={(event) => {
+                            const nextValue = event.target.value;
+                            setLotHeight(nextValue);
+                            setBuildingPlacements((prev) =>
+                              prev.map((item) =>
+                                item.type === "site"
+                                  ? {
+                                      ...item,
+                                      d:
+                                        parsePositiveNumber(nextValue) ??
+                                        item.d,
+                                    }
+                                  : item,
+                              ),
+                            );
+                          }}
                           className="rounded-lg border border-slate-200 px-2 py-1"
                         />
                       </label>
@@ -5074,6 +5150,52 @@ export default function PerformanceAIDashboard() {
                                 <span>•</span>
                                 <span>{item.w} ft x {item.d} ft</span>
                               </div>
+                              {item.type !== "site" ? (
+                                <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-600">
+                                  <label className="flex flex-col gap-1">
+                                    Width
+                                    <input
+                                      type="number"
+                                      value={item.w}
+                                      onChange={(event) =>
+                                        handleUpdateBuilding(item.id, {
+                                          w: parsePositiveNumber(event.target.value) ?? item.w,
+                                        })
+                                      }
+                                      className="rounded-md border border-slate-200 px-2 py-1"
+                                    />
+                                  </label>
+                                  <label className="flex flex-col gap-1">
+                                    Height
+                                    <input
+                                      type="number"
+                                      value={item.d}
+                                      onChange={(event) =>
+                                        handleUpdateBuilding(item.id, {
+                                          d: parsePositiveNumber(event.target.value) ?? item.d,
+                                        })
+                                      }
+                                      className="rounded-md border border-slate-200 px-2 py-1"
+                                    />
+                                  </label>
+                                  {item.type === "parking" ? (
+                                    <label className="col-span-2 flex flex-col gap-1">
+                                      Stalls
+                                      <input
+                                        type="number"
+                                        value={item.stallCount ?? ""}
+                                        onChange={(event) =>
+                                          handleUpdateBuilding(item.id, {
+                                            stallCount:
+                                              parsePositiveNumber(event.target.value) ?? 0,
+                                          })
+                                        }
+                                        className="rounded-md border border-slate-200 px-2 py-1"
+                                      />
+                                    </label>
+                                  ) : null}
+                                </div>
+                              ) : null}
                               <div className="mt-2 flex items-center gap-2">
                                 <button
                                   type="button"
@@ -5133,6 +5255,52 @@ export default function PerformanceAIDashboard() {
                                 <span>•</span>
                                 <span>{item.w} ft x {item.d} ft</span>
                               </div>
+                              {item.type !== "site" ? (
+                                <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-600">
+                                  <label className="flex flex-col gap-1">
+                                    Width
+                                    <input
+                                      type="number"
+                                      value={item.w}
+                                      onChange={(event) =>
+                                        handleUpdateBuilding(item.id, {
+                                          w: parsePositiveNumber(event.target.value) ?? item.w,
+                                        })
+                                      }
+                                      className="rounded-md border border-slate-200 px-2 py-1"
+                                    />
+                                  </label>
+                                  <label className="flex flex-col gap-1">
+                                    Height
+                                    <input
+                                      type="number"
+                                      value={item.d}
+                                      onChange={(event) =>
+                                        handleUpdateBuilding(item.id, {
+                                          d: parsePositiveNumber(event.target.value) ?? item.d,
+                                        })
+                                      }
+                                      className="rounded-md border border-slate-200 px-2 py-1"
+                                    />
+                                  </label>
+                                  {item.type === "parking" ? (
+                                    <label className="col-span-2 flex flex-col gap-1">
+                                      Stalls
+                                      <input
+                                        type="number"
+                                        value={item.stallCount ?? ""}
+                                        onChange={(event) =>
+                                          handleUpdateBuilding(item.id, {
+                                            stallCount:
+                                              parsePositiveNumber(event.target.value) ?? 0,
+                                          })
+                                        }
+                                        className="rounded-md border border-slate-200 px-2 py-1"
+                                      />
+                                    </label>
+                                  ) : null}
+                                </div>
+                              ) : null}
                               <div className="mt-2 flex items-center gap-2">
                                 <button
                                   type="button"

@@ -555,6 +555,7 @@ export type BuildingPlacement = {
   rotation?: number;
   type?: SiteObjectType;
   use?: string;
+  stallCount?: number;
   source?: "user" | "generated" | "inferred";
   generated?: boolean;
   capabilities?: {
