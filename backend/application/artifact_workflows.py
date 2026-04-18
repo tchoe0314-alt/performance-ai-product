@@ -20,6 +20,9 @@ class ArtifactServiceProtocol(Protocol):
         render_labels: bool = True,
         quality: str = "standard",
         include_layers: Optional[list[str]] = None,
+        preview_style: Optional[str] = None,
+        label_density: Optional[str] = None,
+        preview_mode: Optional[str] = None,
     ) -> bytes:
         ...
 
@@ -33,6 +36,9 @@ class ArtifactServiceProtocol(Protocol):
         result_data: Dict[str, Any],
         stem: Optional[str] = None,
     ) -> Path:
+        ...
+
+    def delete_preview_cache_for_project(self, *, user_id: str, project_id: str) -> int:
         ...
 
 
@@ -876,6 +882,10 @@ def build_preview_response(
         project_id=project_id,
     )
     final_plan = _display_plan_from_result(result_data, enforce_export_guards=False)
+    if project_id:
+        meta = final_plan.get("meta") if isinstance(final_plan.get("meta"), dict) else {}
+        meta["project_id"] = project_id
+        final_plan["meta"] = meta
     png_bytes = artifact_service.build_preview_png(
         final_plan,
         render_labels=bool(render_labels),

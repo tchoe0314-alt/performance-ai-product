@@ -7,6 +7,7 @@ import json
 import re
 import time
 import uuid
+import shutil
 
 import report_builder
 from output.dxf_exporter import save_dxf
@@ -50,9 +51,11 @@ class ArtifactService:
         include_layers: Optional[list[str]] = None,
         preview_mode: Optional[str] = None,
     ) -> str:
+        project_id = str((final_plan.get("meta") or {}).get("project_id") or "")
         payload = json.dumps(
             {
                 "render_version": self.preview_cache_version,
+                "project_id": project_id,
                 "render_labels": bool(render_labels),
                 "quality": str(quality),
                 "preview_style": str(preview_style or ""),
@@ -67,6 +70,25 @@ class ArtifactService:
         )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
+    def delete_preview_cache_for_project(self, *, user_id: str, project_id: str) -> int:
+        if not project_id:
+            return 0
+        target = self.preview_cache_dir / str(project_id)
+        if not target.exists():
+            return 0
+        removed = 0
+        for path in target.glob("*.png"):
+            try:
+                path.unlink()
+                removed += 1
+            except Exception:
+                continue
+        try:
+            shutil.rmtree(target, ignore_errors=True)
+        except Exception:
+            pass
+        return removed
+
     def build_preview_png(
         self,
         final_plan: Dict[str, Any],
@@ -78,7 +100,10 @@ class ArtifactService:
         include_layers: Optional[list[str]] = None,
         preview_mode: Optional[str] = None,
     ) -> bytes:
-        cache_path = self.preview_cache_dir / f"{self._preview_cache_key(final_plan, render_labels=render_labels, quality=quality, preview_style=preview_style, label_density=label_density, include_layers=include_layers, preview_mode=preview_mode)}.png"
+        project_id = str((final_plan.get("meta") or {}).get("project_id") or "").strip()
+        cache_root = self.preview_cache_dir / project_id if project_id else self.preview_cache_dir
+        cache_root.mkdir(parents=True, exist_ok=True)
+        cache_path = cache_root / f"{self._preview_cache_key(final_plan, render_labels=render_labels, quality=quality, preview_style=preview_style, label_density=label_density, include_layers=include_layers, preview_mode=preview_mode)}.png"
         if cache_path.exists():
             return cache_path.read_bytes()
         quality_key = str(quality).lower()
