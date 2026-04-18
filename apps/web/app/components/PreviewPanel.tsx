@@ -194,7 +194,10 @@ export default function PreviewPanel({
   const [rotateDragStart, setRotateDragStart] = useState<{ x: number; value: number } | null>(null);
   const activeAnnotation = pinnedAnnotation ?? hoveredAnnotation;
   const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-  const showMap = Boolean(mapboxToken) && previewQuality === "high";
+  const showMap =
+    Boolean(mapboxToken) &&
+    previewQuality === "high" &&
+    Boolean(geocode?.lat && geocode?.lng);
   const showGeneratedPlan = !showMap && hasGeneratedPlan && !placementMode && !selectedBuildingId;
   const hasInteractiveLabels = previewLabels.length > 0 && showGeneratedPlan;
   const hasLiveObjects =
@@ -380,9 +383,13 @@ export default function PreviewPanel({
         relativeX,
         relativeY,
       });
+      if (selectedBuildingId) {
+        onPlaceObject(selectedBuildingId, { x: relativeX, y: relativeY });
+        return;
+      }
       onPlaceBuilding({ x: relativeX, y: relativeY });
     },
-    [onPlaceBuilding, placementMode],
+    [onPlaceBuilding, onPlaceObject, placementMode, selectedBuildingId],
   );
 
   const clampValue = (value: number, min: number, max: number) =>
@@ -1307,7 +1314,7 @@ export default function PreviewPanel({
         </div>
       </div>
 
-      <div className="flex flex-col rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+      <div className="flex min-h-0 flex-1 flex-col rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               <span>Preview Mode</span>
@@ -1492,7 +1499,7 @@ export default function PreviewPanel({
           ) : (
             <div
               ref={previewRef}
-              className={`relative flex h-full min-h-0 w-full flex-1 items-center justify-center rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] ${
+              className={`relative flex w-full flex-1 min-h-[320px] items-center justify-center rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] ${
                 previewInteraction === "interactive" ? "cursor-crosshair" : "cursor-default"
               }`}
               onDragOver={(event) => {
