@@ -159,6 +159,11 @@ export default function PreviewPanel({
     [buildingPlacements, hoveredObjectId],
   );
   const show3D = previewMode === "3d" && Boolean(planPreviewUrl);
+  useEffect(() => {
+    if (!planPreviewUrl && previewMode === "3d") {
+      onSetPreviewMode("2d");
+    }
+  }, [onSetPreviewMode, planPreviewUrl, previewMode]);
   const selectedObject = useMemo(
     () => buildingPlacements.find((item) => item.id === selectedBuildingId) ?? null,
     [buildingPlacements, selectedBuildingId],

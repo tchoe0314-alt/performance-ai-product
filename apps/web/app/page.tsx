@@ -5065,7 +5065,7 @@ export default function PerformanceAIDashboard() {
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Site</p>
                     <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-slate-600">
                       <label className="flex flex-col gap-1">
-                        Width (ft)
+                        Length (ft)
                         <input
                           type="number"
                           value={lotWidth}
@@ -5089,7 +5089,7 @@ export default function PerformanceAIDashboard() {
                         />
                       </label>
                       <label className="flex flex-col gap-1">
-                        Height (ft)
+                        Width (ft)
                         <input
                           type="number"
                           value={lotHeight}
