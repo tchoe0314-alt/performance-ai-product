@@ -667,7 +667,7 @@ export default function PreviewPanel({
     setFocusTransform({ scale: Math.min(Math.max(scale, 1), 3), tx: centerX, ty: centerY });
   }, [analysisHighlight, analysisPaths, buildingPlacements, lotHeight, lotWidth, suggestedPlacements]);
   return (
-    <div className="rounded-[28px] border border-slate-200 bg-white/90 p-4 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.4)] backdrop-blur md:p-6">
+    <div className="flex h-full flex-col rounded-[28px] border border-slate-200 bg-white/90 p-4 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.4)] backdrop-blur md:p-6">
       <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -754,7 +754,7 @@ export default function PreviewPanel({
         </div>
       </div>
 
-      <div className="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+      <div className="flex min-h-0 flex-1 flex-col rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               <span>Preview Mode</span>
@@ -922,12 +922,12 @@ export default function PreviewPanel({
                 </button>
               </div>
             ) : (
-              <div className="relative flex min-h-[640px] items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)]">
+              <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)]">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={planPreviewUrl}
                   alt="Generated plan preview"
-                  className="max-h-[640px] w-full origin-center -skew-y-1 scale-[0.98] object-contain"
+                  className="h-full w-full origin-center -skew-y-1 scale-[0.98] object-contain"
                   onClick={onOpenFullscreen}
                 />
                 <div className="pointer-events-none absolute left-6 top-6 rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600 shadow-sm">
@@ -938,7 +938,7 @@ export default function PreviewPanel({
           ) : (
             <div
               ref={previewRef}
-              className={`relative flex min-h-[640px] items-center justify-center rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] ${
+              className={`relative flex min-h-0 flex-1 items-center justify-center rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] ${
                 previewInteraction === "interactive" ? "cursor-crosshair" : "cursor-default"
               }`}
               onDragOver={(event) => {
@@ -1001,7 +1001,7 @@ export default function PreviewPanel({
                     ref={previewImageRef}
                     src={planPreviewUrl}
                     alt="Generated plan preview"
-                    className={`max-h-[640px] w-full object-contain ${
+                  className={`h-full w-full object-contain ${
                       previewInteraction === "interactive" ? "cursor-crosshair" : "cursor-default"
                     }`}
                     onLoad={() => updateImageBounds(previewRef, previewImageRef, setPreviewImageBounds)}
@@ -1412,7 +1412,7 @@ export default function PreviewPanel({
             <div className="flex min-h-0 flex-1 items-center justify-center p-4">
               <div
                 ref={fullscreenRef}
-                className="relative max-h-full w-full"
+                className="relative h-full w-full"
                 onDragOver={(event) => {
                   event.preventDefault();
                 }}
@@ -1457,7 +1457,7 @@ export default function PreviewPanel({
                   ref={fullscreenImageRef}
                   src={planPreviewUrl}
                   alt="Generated plan preview fullscreen"
-                  className="max-h-full w-full rounded-[20px] bg-white object-contain shadow-2xl"
+                  className="h-full w-full rounded-[20px] bg-white object-contain shadow-2xl"
                   onLoad={() => updateImageBounds(fullscreenRef, fullscreenImageRef, setFullscreenImageBounds)}
                 />
                 {previewInteraction === "interactive" &&

@@ -4689,6 +4689,18 @@ export default function PerformanceAIDashboard() {
         }
         const latestResult = data.latest_result ?? {};
         if (latestResult && Object.keys(latestResult).length) {
+          const activeStatus = String(visibleActiveJob?.status || "").toLowerCase();
+          const hasStaleSystems = Object.values(systemStatuses).some(
+            (status) => status === "stale",
+          );
+          const shouldSuppressLatestResult =
+            hasStaleSystems &&
+            activeStatus !== "running" &&
+            activeStatus !== "queued" &&
+            activeStatus !== "awaiting_approval";
+          if (shouldSuppressLatestResult) {
+            return;
+          }
           applyBackendResult(latestResult);
           requestPreviewInBackground(
             {
@@ -6233,7 +6245,8 @@ export default function PerformanceAIDashboard() {
 
             <WorkspaceToolbar onRefreshWorkspace={handleRefreshWorkspace} />
 
-            <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-6 md:px-6">
+            <div className="flex w-full flex-1 flex-col gap-6 px-4 py-6 md:px-6">
+              <div className="flex min-h-0 flex-1 flex-col">
               <PreviewPanel
                 previewReview={previewReview}
                 previewTotalPhaseCount={previewTotalPhaseCount}
@@ -6317,6 +6330,7 @@ export default function PerformanceAIDashboard() {
                 measurementOverlayStats={measurementOverlayStats}
                 calculationOverlayStats={calculationOverlayStats}
               />
+              </div>
 
               <div className="rounded-[24px] border border-slate-200 bg-white/95 p-4 shadow-[0_12px_35px_-28px_rgba(15,23,42,0.45)]">
                 <div className="flex flex-wrap items-center justify-between gap-3">
