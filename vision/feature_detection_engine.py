@@ -313,6 +313,7 @@ class FeatureDetectionEngine:
             simplified = self._simplify_path(shifted, epsilon=epsilon)
             if kind == "building":
                 simplified = self._orthogonalize_polygon(simplified)
+                simplified = self._fit_rectangular_footprint(simplified)
             if len(simplified) >= 3:
                 if simplified[0] != simplified[-1]:
                     simplified.append(simplified[0])
@@ -479,6 +480,33 @@ class FeatureDetectionEngine:
         if closed and adjusted[0] != adjusted[-1]:
             adjusted.append(adjusted[0])
         return adjusted
+
+    @staticmethod
+    def _fit_rectangular_footprint(points: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+        if len(points) < 4:
+            return points
+        closed = points[0] == points[-1]
+        seq = points[:-1] if closed else points
+        xs = [p[0] for p in seq]
+        ys = [p[1] for p in seq]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        width = max_x - min_x
+        height = max_y - min_y
+        if width <= 0 or height <= 0:
+            return points
+        area = width * height
+        # Only snap to a rectangle if the polygon is close to rectangular already.
+        if len(seq) > 8 and area > 0:
+            bbox = [
+                (min_x, min_y),
+                (max_x, min_y),
+                (max_x, max_y),
+                (min_x, max_y),
+                (min_x, min_y),
+            ]
+            return bbox
+        return points
 
     @staticmethod
     def _sobel_edges(gray: np.ndarray) -> np.ndarray:
