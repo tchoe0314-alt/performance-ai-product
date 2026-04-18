@@ -901,6 +901,16 @@ export default function PreviewPanel({
       (item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y),
     );
 
+    if (debugStats?.enabled) {
+      console.debug("[debug-preview] render-layer", {
+        canonicalCount: buildingPlacements.length,
+        placedCount: placedObjects.length,
+        suggestedCount: suggestedPlacements.length,
+        showMap,
+        previewImageActive: Boolean(planPreviewUrl),
+      });
+    }
+
     const buildPolygon = (item: BuildingPlacement) => {
       const x = item.x ?? 0;
       const y = item.y ?? 0;

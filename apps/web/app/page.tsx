@@ -1501,6 +1501,30 @@ export default function PerformanceAIDashboard() {
     [buildingPlacements],
   );
 
+  const debugLog = useCallback(
+    (label: string, payload?: Record<string, unknown>) => {
+      if (!debugPreview) return;
+      const snapshot = {
+        projectId: projectId || currentProject?.project_id || "",
+        canonicalCount: buildingPlacements.length,
+        placedCount: placedObjectCount,
+        previewImageActive: Boolean(planPreviewUrl),
+        placementMode: placementModeEnabled || Boolean(activePlacementId),
+      };
+      console.debug(`[debug-preview] ${label}`, { ...snapshot, ...(payload ?? {}) });
+    },
+    [
+      activePlacementId,
+      buildingPlacements.length,
+      currentProject?.project_id,
+      debugPreview,
+      placedObjectCount,
+      placementModeEnabled,
+      planPreviewUrl,
+      projectId,
+    ],
+  );
+
   const ensureSiteBoundary = useCallback(
     (reason: string) => {
       const hasSite = buildingPlacements.some((item) => item.type === "site");
@@ -1568,6 +1592,7 @@ export default function PerformanceAIDashboard() {
     setPlanPreviewSummary(null);
     setPlanPreviewAnnotations(null);
     setBackendResult(null);
+    debugLog("clear-generated-preview");
   }, []);
 
   const handleAddObject = useCallback(
@@ -1651,6 +1676,10 @@ export default function PerformanceAIDashboard() {
         d: nextPlacement.d,
         placed: nextPlacement.placed,
       });
+      debugLog("add-object", {
+        id: nextPlacement.id,
+        type: nextPlacement.type,
+      });
     },
     [
       buildingPlacements,
@@ -1708,6 +1737,7 @@ export default function PerformanceAIDashboard() {
 
   const handleRemoveBuilding = useCallback((id: string) => {
     clearGeneratedPreview();
+    debugLog("remove-object", { id });
     setBuildingPlacements((prev) => prev.filter((item) => item.id !== id));
     setActivePlacementId((prev) => (prev === id ? null : prev));
     setPlacementModeEnabled((prev) => (activePlacementId === id ? false : prev));
@@ -1782,6 +1812,11 @@ export default function PerformanceAIDashboard() {
         w,
         d,
       });
+      debugLog("place-building", {
+        activePlacementId: activePlacementId ?? null,
+        boundedX,
+        boundedY,
+      });
       if (activePlacementId) {
         setBuildingPlacements((prev) =>
           prev.map((item) =>
@@ -1792,6 +1827,7 @@ export default function PerformanceAIDashboard() {
         );
         setActivePlacementId(null);
         markSystemsStale();
+        debugLog("place-building-commit", { id: activePlacementId ?? null });
         setStatusMessage("Object placed. Regenerate systems to reflect the new layout.");
         void ensureProjectDraftRef.current()
           .then(() => saveProjectRef.current({ silent: true }))
@@ -1817,6 +1853,11 @@ export default function PerformanceAIDashboard() {
         y: nextPlacement.y,
         w: nextPlacement.w,
         d: nextPlacement.d,
+      });
+      debugLog("place-building-new", {
+        id: nextPlacement.id,
+        x: nextPlacement.x,
+        y: nextPlacement.y,
       });
       markSystemsStale();
       setStatusMessage("Object placed. Regenerate systems to reflect the new layout.");
@@ -1856,6 +1897,7 @@ export default function PerformanceAIDashboard() {
         clampedX,
         clampedY,
       });
+      debugLog("place-object", { id, clampedX, clampedY });
       setBuildingPlacements((prev) =>
         prev.map((item) => {
           if (item.id !== id) return item;
@@ -1873,12 +1915,14 @@ export default function PerformanceAIDashboard() {
             w: item.w,
             d: item.d,
           });
+          debugLog("place-object-commit", { id, x: boundedX, y: boundedY });
           return { ...item, x: boundedX, y: boundedY, placed: true };
         }),
       );
       setActivePlacementId((prev) => (prev === id ? null : prev));
       setPlacementModeEnabled(false);
       markSystemsStale();
+      debugLog("place-object-complete", { id });
       setStatusMessage("Object placed. Regenerate systems to reflect the new layout.");
       void ensureProjectDraftRef.current()
         .then(() => saveProjectRef.current({ silent: true }))
@@ -5554,6 +5598,7 @@ export default function PerformanceAIDashboard() {
   };
 
   const resetWorkspaceState = useCallback(() => {
+    debugLog("reset-workspace");
     setPlanPreviewUrl("");
     setPlanPreviewSummary(null);
     setPlanPreviewAnnotations(null);
@@ -5597,6 +5642,7 @@ export default function PerformanceAIDashboard() {
   }, []);
 
   const handleNewProject = async () => {
+    debugLog("new-project-start");
     projectLoadRequestRef.current += 1;
     suppressProjectAutoLoadRef.current = true;
     draftProjectPromiseRef.current = null;
@@ -5693,6 +5739,7 @@ export default function PerformanceAIDashboard() {
         if (createdProject?.project_id) {
           resolvedProjectIdRef.current = createdProject.project_id;
           setProjectId(createdProject.project_id);
+          debugLog("new-project-created", { projectId: createdProject.project_id });
         }
       }
     } finally {
