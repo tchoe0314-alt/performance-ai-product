@@ -158,6 +158,7 @@ export default function PreviewPanel({
     () => buildingPlacements.find((item) => item.id === hoveredObjectId) ?? null,
     [buildingPlacements, hoveredObjectId],
   );
+  const show3D = previewMode === "3d" && Boolean(planPreviewUrl);
   const selectedObject = useMemo(
     () => buildingPlacements.find((item) => item.id === selectedBuildingId) ?? null,
     [buildingPlacements, selectedBuildingId],
@@ -606,12 +607,16 @@ export default function PreviewPanel({
               </button>
               <button
                 type="button"
-                onClick={() => onSetPreviewMode("3d")}
+                onClick={() => {
+                  if (!planPreviewUrl) return;
+                  onSetPreviewMode("3d");
+                }}
                 className={`rounded-full border px-2.5 py-1 ${
                   previewMode === "3d"
                     ? "border-slate-900 bg-slate-950 text-white"
                     : "border-slate-200 bg-white text-slate-600"
                 }`}
+                disabled={!planPreviewUrl}
               >
                 3D
               </button>
@@ -720,7 +725,7 @@ export default function PreviewPanel({
               <span>{previewRefreshNote || "Refreshing preview..."}</span>
             </div>
           )}
-          {previewMode === "3d" && planPreviewUrl ? (
+          {show3D ? (
             preview3DEffectiveItems.length ? (
               <div className="relative">
                 <Preview3DCanvas
@@ -833,6 +838,11 @@ export default function PreviewPanel({
                     Add objects to start building the site. Then click Place and drop them here.
                   </div>
                 )}
+                {!planPreviewUrl && previewMode === "3d" ? (
+                  <div className="pointer-events-none absolute left-6 top-6 rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm">
+                    3D needs a preview run
+                  </div>
+                ) : null}
                 {effectiveBounds && previewMode === "2d" ? (
                   <div
                     className="pointer-events-none absolute"
