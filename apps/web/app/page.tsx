@@ -485,6 +485,7 @@ export default function PerformanceAIDashboard() {
     question: string;
   } | null>(null);
   const [planPreviewUrl, setPlanPreviewUrl] = useState("");
+  const [planPreviewProjectId, setPlanPreviewProjectId] = useState<string | null>(null);
   const [planPreviewSummary, setPlanPreviewSummary] =
     useState<PreviewResponse["summary"] | null>(null);
   const [planPreviewAnnotations, setPlanPreviewAnnotations] =
@@ -1622,6 +1623,7 @@ export default function PerformanceAIDashboard() {
     setPlanPreviewSummary(null);
     setPlanPreviewAnnotations(null);
     setBackendResult(null);
+    setPlanPreviewProjectId(null);
     debugLog("clear-generated-preview");
   }, []);
 
@@ -5272,6 +5274,7 @@ export default function PerformanceAIDashboard() {
         token,
       });
       setPlanPreviewUrl(data.preview_image_data_url);
+      setPlanPreviewProjectId(projectId || currentProject?.project_id || null);
       setPlanPreviewSummary(data.summary ?? null);
       setPlanPreviewAnnotations(data.preview_annotations ?? null);
       if (!options?.silent) {
@@ -5311,6 +5314,30 @@ export default function PerformanceAIDashboard() {
         }
       });
   };
+
+  useEffect(() => {
+    if (planPreviewProjectId && projectId && planPreviewProjectId !== projectId) {
+      debugLog("discard-preview-project-mismatch", {
+        planPreviewProjectId,
+        projectId,
+      });
+      clearGeneratedPreview();
+      return;
+    }
+    if (!buildingPlacements.length && !detectedPlacements.length && planPreviewUrl && !backendResult) {
+      debugLog("discard-preview-empty-canonical");
+      clearGeneratedPreview();
+    }
+  }, [
+    backendResult,
+    buildingPlacements.length,
+    clearGeneratedPreview,
+    debugLog,
+    detectedPlacements.length,
+    planPreviewProjectId,
+    planPreviewUrl,
+    projectId,
+  ]);
 
   useEffect(() => {
     if (!token || !backendResult) return;
@@ -7222,6 +7249,8 @@ export default function PerformanceAIDashboard() {
                 onRefreshPreview={handlePreviewPlan}
                 busy={busy}
                 planPreviewUrl={planPreviewUrl}
+                planPreviewProjectId={planPreviewProjectId}
+                currentProjectId={projectId || currentProject?.project_id || null}
                 previewMode={previewMode}
                 previewInteraction={previewInteraction}
                 previewQuality={previewQuality}

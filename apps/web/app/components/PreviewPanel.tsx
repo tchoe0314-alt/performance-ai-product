@@ -25,6 +25,8 @@ type PreviewPanelProps = {
   onRefreshPreview: () => void;
   busy: boolean;
   planPreviewUrl: string;
+  planPreviewProjectId?: string | null;
+  currentProjectId?: string | null;
   previewMode: "2d" | "3d";
   previewInteraction: "static" | "interactive";
   previewQuality: "standard" | "high";
@@ -108,6 +110,8 @@ export default function PreviewPanel({
   onRefreshPreview,
   busy,
   planPreviewUrl,
+  planPreviewProjectId,
+  currentProjectId,
   previewMode,
   previewInteraction,
   previewQuality,
@@ -208,7 +212,12 @@ export default function PreviewPanel({
     Boolean(mapboxToken) &&
     previewQuality === "high" &&
     Boolean(geocode?.lat && geocode?.lng);
-  const showGeneratedPlan = !showMap && hasGeneratedPlan && !placementMode && !selectedBuildingId;
+  const showGeneratedPlan =
+    !showMap &&
+    hasGeneratedPlan &&
+    !placementMode &&
+    !selectedBuildingId &&
+    (!planPreviewProjectId || !currentProjectId || planPreviewProjectId === currentProjectId);
   const hasInteractiveLabels = previewLabels.length > 0 && showGeneratedPlan;
   const hasLiveObjects =
     buildingPlacements.length > 0 ||
@@ -660,12 +669,6 @@ export default function PreviewPanel({
     };
   }, [lotHeight, lotWidth, previewContainerBounds]);
 
-  const overlayBoundsResolved = useMemo(() => {
-    if (overlayBounds) return overlayBounds;
-    if (!previewContainerBounds) return null;
-    return previewContainerBounds;
-  }, [overlayBounds, previewContainerBounds]);
-
   const renderedCanonicalCount = useMemo(
     () =>
       buildingPlacements.filter(
@@ -673,6 +676,20 @@ export default function PreviewPanel({
       ).length,
     [buildingPlacements],
   );
+
+  const overlayBoundsResolved = useMemo(() => {
+    if (overlayBounds) return overlayBounds;
+    if (!previewContainerBounds) return null;
+    return previewContainerBounds;
+  }, [overlayBounds, previewContainerBounds]);
+
+  useEffect(() => {
+    if (!renderedCanonicalCount) return;
+    if (overlayBoundsResolved) return;
+    if (!previewRef.current) return;
+    const handle = window.requestAnimationFrame(() => updateContainerBounds());
+    return () => window.cancelAnimationFrame(handle);
+  }, [overlayBoundsResolved, renderedCanonicalCount, updateContainerBounds]);
 
   useEffect(() => {
     if (!debugStats?.enabled) return;
@@ -815,6 +832,23 @@ export default function PreviewPanel({
       map.off("zoomend", reportScale);
     };
   }, [latLngToSite, lotHeight, lotWidth, mapLoaded, onMapScaleUpdate, onPlaceBuilding, onPlaceObject, placementMode, selectedBuildingId, onSelectBuilding, showMap]);
+
+  useEffect(() => {
+    if (!showMap) return;
+    const handle = window.setTimeout(() => {
+      mapRef.current?.resize();
+      fullscreenMapRef.current?.resize();
+      setMapRevision((value) => value + 1);
+      if (debugStats?.enabled) {
+        console.debug("[debug-preview] map-refresh", {
+          mode: previewMode,
+          interaction: previewInteraction,
+          quality: previewQuality,
+        });
+      }
+    }, 150);
+    return () => window.clearTimeout(handle);
+  }, [debugStats?.enabled, previewInteraction, previewMode, previewQuality, showMap]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
