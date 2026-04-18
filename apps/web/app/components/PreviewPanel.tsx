@@ -202,13 +202,33 @@ export default function PreviewPanel({
     (surveyPoints?.length ?? 0) > 0 ||
     Boolean(lotWidth && lotHeight);
   const showInteractive = previewInteraction === "interactive";
-  const legendPalette = {
+  const normalPalette = {
     building: "#0f172a",
+    buildingFill: "rgba(15, 23, 42, 0.12)",
     parking: "#cbd5e1",
+    parkingFill: "rgba(148, 163, 184, 0.18)",
     road: "#475569",
+    roadFill: "rgba(71, 85, 105, 0.2)",
     drainage: "#1d4ed8",
     utilities: "#7c3aed",
+    detectedStroke: "#f59e0b",
+    detectedFill: "rgba(245, 158, 11, 0.15)",
+    siteBorder: "border-slate-300/70",
   } as const;
+  const highPalette = {
+    building: "#111827",
+    buildingFill: "rgba(17, 24, 39, 0.28)",
+    parking: "#6b7280",
+    parkingFill: "rgba(107, 114, 128, 0.3)",
+    road: "#1f2937",
+    roadFill: "rgba(31, 41, 55, 0.35)",
+    drainage: "#0ea5e9",
+    utilities: "#8b5cf6",
+    detectedStroke: "#f59e0b",
+    detectedFill: "rgba(245, 158, 11, 0.2)",
+    siteBorder: "border-white/60",
+  } as const;
+  const legendPalette = previewQuality === "high" ? highPalette : normalPalette;
   const hoveredObject = useMemo(
     () =>
       [...buildingPlacements, ...suggestedPlacements].find((item) => item.id === hoveredObjectId) ??
@@ -1551,7 +1571,9 @@ export default function PreviewPanel({
                     }}
                   >
                     {lotWidth > 0 && lotHeight > 0 ? (
-                      <div className="absolute inset-0 rounded-[16px] border-2 border-dashed border-slate-300/70" />
+                      <div
+                        className={`absolute inset-0 rounded-[16px] border-2 border-dashed ${legendPalette.siteBorder}`}
+                      />
                     ) : null}
                     {(buildingPlacements.length || suggestedPlacements.length || (surveyPoints?.length ?? 0) > 0) ? (
                       <svg
@@ -1571,14 +1593,14 @@ export default function PreviewPanel({
                             const isLine = item.geometryType === "polyline";
                             const stroke =
                               item.source === "detected_from_image"
-                                ? "#f59e0b"
+                                ? legendPalette.detectedStroke
                                 : item.type === "road"
-                                  ? "#2563eb"
-                                  : "#0f172a";
+                                  ? legendPalette.road
+                                  : legendPalette.building;
                             const fill =
                               item.source === "detected_from_image"
-                                ? "rgba(245, 158, 11, 0.15)"
-                                : "rgba(15, 23, 42, 0.12)";
+                                ? legendPalette.detectedFill
+                                : legendPalette.buildingFill;
                             return isLine ? (
                               <polyline
                                 key={`geom-${item.id}`}
@@ -1644,10 +1666,10 @@ export default function PreviewPanel({
                         const height = (displayD / Math.max(lotHeight, 1)) * 100;
                         const rotation = item.rotation ?? 0;
                         const borderColorMap: Record<string, string> = {
-                          site: "border-slate-400",
+                          site: previewQuality === "high" ? "border-white/70" : "border-slate-400",
                           setback_zone: "border-slate-300",
                           no_build_zone: "border-rose-400",
-                          basin: "border-emerald-500",
+                          basin: previewQuality === "high" ? "border-sky-300" : "border-emerald-500",
                           entrance: "border-amber-500",
                           driveway: "border-orange-400",
                           road: "border-blue-500",
@@ -1683,9 +1705,15 @@ export default function PreviewPanel({
                             }}
                           >
                             <div
-                              className={`h-full w-full rounded-[8px] border-2 bg-slate-900/15 shadow-sm transition ${borderColor} ${
+                              className={`h-full w-full rounded-[8px] border-2 shadow-sm transition ${borderColor} ${
                                 isSelected ? "ring-2 ring-amber-300" : ""
                               } ${isAccessHighlight ? "ring-2 ring-rose-300" : ""}`}
+                              style={{
+                                backgroundColor:
+                                  previewQuality === "high"
+                                    ? legendPalette.buildingFill
+                                    : "rgba(15, 23, 42, 0.12)",
+                              }}
                             />
                             {isSelected && caps.rotatable ? (
                               <button
