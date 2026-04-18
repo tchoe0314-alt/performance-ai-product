@@ -176,6 +176,7 @@ export default function PreviewPanel({
   const [previewImageBounds, setPreviewImageBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [fullscreenImageBounds, setFullscreenImageBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [previewContainerBounds, setPreviewContainerBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const [cursorSitePoint, setCursorSitePoint] = useState<{ x: number; y: number } | null>(null);
   const [draggingBuildingId, setDraggingBuildingId] = useState<string | null>(null);
   const [draggingMode, setDraggingMode] = useState<"move" | "resize" | "rotate" | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -1493,11 +1494,27 @@ export default function PreviewPanel({
                   updateDraggedBuilding(event, overlayBounds);
                 }
                 resolveHover(event, previewRef, overlayBounds, setHoverPoint);
+                if (overlayBounds && lotWidth > 0 && lotHeight > 0 && previewRef.current) {
+                  const rect = previewRef.current.getBoundingClientRect();
+                  const relX = (event.clientX - rect.left - overlayBounds.left) / Math.max(overlayBounds.width, 1);
+                  const relY = (event.clientY - rect.top - overlayBounds.top) / Math.max(overlayBounds.height, 1);
+                  if (relX >= 0 && relX <= 1 && relY >= 0 && relY <= 1) {
+                    setCursorSitePoint({
+                      x: relX * lotWidth,
+                      y: relY * lotHeight,
+                    });
+                  } else {
+                    setCursorSitePoint(null);
+                  }
+                } else {
+                  setCursorSitePoint(null);
+                }
               }}
               onMouseLeave={() => {
                 setHoveredAnnotation(null);
                 setHoveredObjectId(null);
                 setHoverPoint(null);
+                setCursorSitePoint(null);
                 setDraggingBuildingId(null);
                 setDraggingMode(null);
               }}
@@ -1652,6 +1669,11 @@ export default function PreviewPanel({
                         onClearHighlights?.();
                       }}
                     >
+                      {cursorSitePoint ? (
+                        <div className="pointer-events-none absolute left-3 top-3 rounded-full border border-slate-200 bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-slate-700 shadow">
+                          X {cursorSitePoint.x.toFixed(1)} ft • Y {cursorSitePoint.y.toFixed(1)} ft
+                        </div>
+                      ) : null}
                       {buildingPlacements
                       .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
                       .map((item) => {
