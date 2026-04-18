@@ -441,6 +441,10 @@ export default function PerformanceAIDashboard() {
   const [showSiteBounds, setShowSiteBounds] = useState(true);
   const [fitToSiteRequest, setFitToSiteRequest] = useState(0);
   const [alignToRoadRequest, setAlignToRoadRequest] = useState(0);
+  const debugPreview = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    return window.location.search.includes("debugPreview=1");
+  }, []);
   const rotationSaveTimeoutRef = useRef<number | null>(null);
   const scaleSaveTimeoutRef = useRef<number | null>(null);
   const [focusDetectedId, setFocusDetectedId] = useState<string | null>(null);
@@ -1488,6 +1492,14 @@ export default function PerformanceAIDashboard() {
     const lot = resolveLotBounds();
     return Boolean(lot.w && lot.h);
   }, [resolveLotBounds]);
+
+  const placedObjectCount = useMemo(
+    () =>
+      buildingPlacements.filter(
+        (item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y),
+      ).length,
+    [buildingPlacements],
+  );
 
   const ensureSiteBoundary = useCallback(
     (reason: string) => {
@@ -7207,6 +7219,15 @@ export default function PerformanceAIDashboard() {
                   setDetectionScaleFtPerPx(ftPerPx);
                   setDetectionScaleSource(source);
                   scheduleScaleSave(ftPerPx, source);
+                }}
+                debugStats={{
+                  enabled: debugPreview,
+                  projectId: projectId || currentProject?.project_id || "",
+                  canonicalCount: buildingPlacements.length,
+                  placedCount: placedObjectCount,
+                  previewImageActive: Boolean(planPreviewUrl),
+                  placementMode: placementModeEnabled || Boolean(activePlacementId),
+                  selectedId: activePlacementId,
                 }}
               />
               </div>

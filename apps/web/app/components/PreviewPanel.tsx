@@ -88,6 +88,15 @@ type PreviewPanelProps = {
   onSetSiteRotationDeg?: (value: number) => void;
   surveyPoints?: Array<{ x: number; y: number; z?: number }>;
   onMapScaleUpdate?: (payload: { ftPerPx: number; source: "mapbox" }) => void;
+  debugStats?: {
+    enabled: boolean;
+    projectId: string;
+    canonicalCount: number;
+    placedCount: number;
+    previewImageActive: boolean;
+    placementMode: boolean;
+    selectedId: string | null;
+  };
 };
 
 export default function PreviewPanel({
@@ -154,6 +163,7 @@ export default function PreviewPanel({
   onSetSiteRotationDeg,
   surveyPoints,
   onMapScaleUpdate,
+  debugStats,
 }: PreviewPanelProps) {
   const previewLabels = useMemo(
     () => (Array.isArray(planPreviewAnnotations?.labels) ? planPreviewAnnotations?.labels : []),
@@ -1445,6 +1455,17 @@ export default function PreviewPanel({
                 <span className="font-semibold text-slate-900">Cursor:</span>
                 <span>
                   X {cursorSitePoint.x.toFixed(1)} ft • Y {cursorSitePoint.y.toFixed(1)} ft
+                </span>
+              </>
+            ) : null}
+            {debugStats?.enabled ? (
+              <>
+                <span className="font-semibold text-slate-900">Debug:</span>
+                <span>
+                  Canonical {debugStats.canonicalCount} • Placed {debugStats.placedCount} •
+                  Preview {debugStats.previewImageActive ? "on" : "off"} •
+                  Placement {debugStats.placementMode ? "on" : "off"} •
+                  Project {debugStats.projectId || "none"}
                 </span>
               </>
             ) : null}
