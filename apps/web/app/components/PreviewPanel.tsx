@@ -660,6 +660,12 @@ export default function PreviewPanel({
     };
   }, [lotHeight, lotWidth, previewContainerBounds]);
 
+  const overlayBoundsResolved = useMemo(() => {
+    if (overlayBounds) return overlayBounds;
+    if (!previewContainerBounds) return null;
+    return previewContainerBounds;
+  }, [overlayBounds, previewContainerBounds]);
+
   const renderedCanonicalCount = useMemo(
     () =>
       buildingPlacements.filter(
@@ -670,14 +676,14 @@ export default function PreviewPanel({
 
   useEffect(() => {
     if (!debugStats?.enabled) return;
-    if (renderedCanonicalCount > 0 && !overlayBounds) {
+    if (renderedCanonicalCount > 0 && !overlayBoundsResolved) {
       console.warn("[debug-preview] render-missing-overlay", {
         renderedCanonicalCount,
         lotWidth,
         lotHeight,
       });
     }
-  }, [debugStats?.enabled, lotHeight, lotWidth, overlayBounds, renderedCanonicalCount]);
+  }, [debugStats?.enabled, lotHeight, lotWidth, overlayBoundsResolved, renderedCanonicalCount]);
 
   const siteToLatLng = useCallback(
     (xFt: number, yFt: number) => {
@@ -1560,7 +1566,7 @@ export default function PreviewPanel({
                 const payload = event.dataTransfer?.getData("civora-object-id");
                 if (!payload) return;
                 const rect = previewRef.current?.getBoundingClientRect();
-                const bounds = overlayBounds ?? {
+                const bounds = overlayBoundsResolved ?? {
                   left: 0,
                   top: 0,
                   width: rect?.width ?? 1,
@@ -1586,14 +1592,18 @@ export default function PreviewPanel({
                   onSetSiteRotationDeg(Math.max(-180, Math.min(180, nextValue)));
                   return;
                 }
-                if (overlayBounds) {
-                  updateDraggedBuilding(event, overlayBounds);
+                if (overlayBoundsResolved) {
+                  updateDraggedBuilding(event, overlayBoundsResolved);
                 }
-                resolveHover(event, previewRef, overlayBounds, setHoverPoint);
-                if (overlayBounds && lotWidth > 0 && lotHeight > 0 && previewRef.current) {
+                resolveHover(event, previewRef, overlayBoundsResolved, setHoverPoint);
+                if (overlayBoundsResolved && lotWidth > 0 && lotHeight > 0 && previewRef.current) {
                   const rect = previewRef.current.getBoundingClientRect();
-                  const relX = (event.clientX - rect.left - overlayBounds.left) / Math.max(overlayBounds.width, 1);
-                  const relY = (event.clientY - rect.top - overlayBounds.top) / Math.max(overlayBounds.height, 1);
+                  const relX =
+                    (event.clientX - rect.left - overlayBoundsResolved.left) /
+                    Math.max(overlayBoundsResolved.width, 1);
+                  const relY =
+                    (event.clientY - rect.top - overlayBoundsResolved.top) /
+                    Math.max(overlayBoundsResolved.height, 1);
                   if (relX >= 0 && relX <= 1 && relY >= 0 && relY <= 1) {
                     setCursorSitePoint({
                       x: relX * lotWidth,
@@ -1621,7 +1631,7 @@ export default function PreviewPanel({
               }}
               onClick={(event) => {
                 if (placementMode) {
-                  resolvePlacement(event, previewRef, overlayBounds);
+                  resolvePlacement(event, previewRef, overlayBoundsResolved);
                   return;
                 }
                 if (!showInteractive || !hoveredAnnotation) return;
@@ -1673,14 +1683,14 @@ export default function PreviewPanel({
                     3D needs a preview run
                   </div>
                 ) : null}
-                {overlayBounds && (previewMode === "2d" || !showGeneratedPlan) ? (
+                {overlayBoundsResolved && (previewMode === "2d" || !showGeneratedPlan) ? (
                   <div
                     className="pointer-events-none absolute z-10"
                     style={{
-                      left: overlayBounds.left,
-                      top: overlayBounds.top,
-                      width: overlayBounds.width,
-                      height: overlayBounds.height,
+                      left: overlayBoundsResolved.left,
+                      top: overlayBoundsResolved.top,
+                      width: overlayBoundsResolved.width,
+                      height: overlayBoundsResolved.height,
                     }}
                   >
                     {lotWidth > 0 && lotHeight > 0 ? (
