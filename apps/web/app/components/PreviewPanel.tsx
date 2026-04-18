@@ -469,10 +469,30 @@ export default function PreviewPanel({
         ? `${hoveredObject.h.toFixed(1)} ft`
         : null;
     const source = hoveredObject.generated ? "generated" : hoveredObject.source || "user";
+    const position =
+      typeof hoveredObject.x === "number" && typeof hoveredObject.y === "number"
+        ? `X ${hoveredObject.x.toFixed(1)} ft • Y ${hoveredObject.y.toFixed(1)} ft`
+        : null;
+    const positionRelative =
+      position && lotWidth > 0 && lotHeight > 0
+        ? `(${((hoveredObject.x ?? 0) / lotWidth * 100).toFixed(1)}%, ${(
+            (hoveredObject.y ?? 0) /
+            lotHeight *
+            100
+          ).toFixed(1)}%)`
+        : null;
     return [
       { label: "Type", value: type },
       { label: "ID", value: hoveredObject.id },
       { label: "Dimensions", value: dims },
+      ...(position
+        ? [
+            {
+              label: "Position",
+              value: positionRelative ? `${position} ${positionRelative}` : position,
+            },
+          ]
+        : []),
       ...(height ? [{ label: "Height", value: height }] : []),
       { label: "Source", value: source },
     ];

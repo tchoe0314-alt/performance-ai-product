@@ -5282,6 +5282,16 @@ export default function PerformanceAIDashboard() {
                                 <span>•</span>
                                 <span>{item.w} ft x {item.d} ft</span>
                               </div>
+                              {typeof item.x === "number" && typeof item.y === "number" ? (
+                                <div className="mt-1 text-[11px] text-slate-500">
+                                  X {item.x.toFixed(1)} ft • Y {item.y.toFixed(1)} ft
+                                  {lotBounds.w > 0 && lotBounds.h > 0 ? (
+                                    <span className="ml-2 text-[10px] uppercase tracking-[0.12em] text-slate-400">
+                                      {((item.x / lotBounds.w) * 100).toFixed(1)}% · {((item.y / lotBounds.h) * 100).toFixed(1)}%
+                                    </span>
+                                  ) : null}
+                                </div>
+                              ) : null}
                               {item.type !== "site" ? (
                                 <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-600">
                                   <label className="flex flex-col gap-1">
