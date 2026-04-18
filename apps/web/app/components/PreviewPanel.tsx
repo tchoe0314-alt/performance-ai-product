@@ -1402,7 +1402,7 @@ export default function PreviewPanel({
                 </button>
               </div>
             ) : (
-              <div className="relative flex items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] min-h-[620px] h-[clamp(620px,78vh,900px)]">
+              <div className="relative flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)]">
                 <div className="pointer-events-none absolute left-6 top-6 rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600 shadow-sm">
                   3D geometry not ready yet
                 </div>
@@ -1411,7 +1411,7 @@ export default function PreviewPanel({
           ) : (
             <div
               ref={previewRef}
-              className={`relative flex items-center justify-center rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] min-h-[620px] h-[clamp(620px,78vh,900px)] ${
+              className={`relative flex min-h-0 w-full flex-1 items-center justify-center rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] ${
                 previewInteraction === "interactive" ? "cursor-crosshair" : "cursor-default"
               }`}
               onDragOver={(event) => {
