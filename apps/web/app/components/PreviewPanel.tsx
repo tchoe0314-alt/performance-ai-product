@@ -903,7 +903,7 @@ export default function PreviewPanel({
                     3D needs a preview run
                   </div>
                 ) : null}
-                {effectiveBounds && previewMode === "2d" ? (
+                {effectiveBounds && (previewMode === "2d" || !planPreviewUrl) ? (
                   <div
                     className="pointer-events-none absolute"
                     style={{

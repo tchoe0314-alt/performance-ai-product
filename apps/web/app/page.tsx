@@ -464,6 +464,19 @@ export default function PerformanceAIDashboard() {
   const runSubmissionRef = useRef(false);
   const directRunAbortRef = useRef<AbortController | null>(null);
   const draftProjectPromiseRef = useRef<Promise<ProjectRecord | null> | null>(null);
+  const ensureProjectDraftRef = useRef<() => Promise<string | null>>(() => Promise.resolve(null));
+  const saveProjectRef = useRef<
+    (options?: {
+      silent?: boolean;
+      projectIdOverride?: string | null;
+      nameOverride?: string;
+      fileNameOverride?: string;
+      projectInputOverride?: ProjectInput;
+      latestResultOverride?: PlanResponse;
+      autoNamedOverride?: boolean;
+      autoFileNamedOverride?: boolean;
+    }) => Promise<ProjectRecord | null>
+  >(() => Promise.resolve(null));
   const resolvedProjectIdRef = useRef("");
   const projectLoadRequestRef = useRef(0);
   const projectResultLoadRequestRef = useRef(0);
@@ -1523,12 +1536,18 @@ export default function PerformanceAIDashboard() {
     );
     markSystemsStale();
     setStatusMessage("Object updated. Regenerate systems to reflect the new layout.");
+    void ensureProjectDraftRef.current()
+      .then(() => saveProjectRef.current({ silent: true }))
+      .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object update...", track: true });
   }, [markSystemsStale]);
 
   const handleRemoveBuilding = useCallback((id: string) => {
     setBuildingPlacements((prev) => prev.filter((item) => item.id !== id));
     markSystemsStale();
     setStatusMessage("Object removed. Regenerate systems to reflect the new layout.");
+    void ensureProjectDraftRef.current()
+      .then(() => saveProjectRef.current({ silent: true }))
+      .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object removal...", track: true });
   }, [markSystemsStale]);
 
   const handleToggleBuildingLock = useCallback((id: string) => {
@@ -1558,6 +1577,9 @@ export default function PerformanceAIDashboard() {
         setActivePlacementId(null);
         markSystemsStale();
         setStatusMessage("Object placed. Regenerate systems to reflect the new layout.");
+        void ensureProjectDraftRef.current()
+          .then(() => saveProjectRef.current({ silent: true }))
+          .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object placement...", track: true });
         return;
       }
       const nextPlacement: BuildingPlacement = {
@@ -1575,6 +1597,9 @@ export default function PerformanceAIDashboard() {
       setBuildingPlacements((prev) => [...prev, nextPlacement]);
       markSystemsStale();
       setStatusMessage("Object placed. Regenerate systems to reflect the new layout.");
+      void ensureProjectDraftRef.current()
+        .then(() => saveProjectRef.current({ silent: true }))
+        .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object placement...", track: true });
     },
     [
       activePlacementId,
@@ -1602,6 +1627,9 @@ export default function PerformanceAIDashboard() {
       );
       markSystemsStale();
       setStatusMessage("Object placed. Regenerate systems to reflect the new layout.");
+      void ensureProjectDraftRef.current()
+        .then(() => saveProjectRef.current({ silent: true }))
+        .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object placement...", track: true });
     },
     [markSystemsStale, resolveLotBounds],
   );
@@ -1618,6 +1646,9 @@ export default function PerformanceAIDashboard() {
       if (!next) {
         setActivePlacementId(null);
       }
+      if (next) {
+        setPreviewMode("2d");
+      }
       setStatusMessage(
         next
           ? "Placement mode enabled. Click on the canvas to drop the selected object."
@@ -1633,6 +1664,7 @@ export default function PerformanceAIDashboard() {
       setStatusMessage("Set the site width and height before placing objects.");
       return;
     }
+    setPreviewMode("2d");
     setActivePlacementId(id);
     setPlacementModeEnabled(true);
     const target = buildingPlacements.find((item) => item.id === id);
@@ -3261,6 +3293,7 @@ export default function PerformanceAIDashboard() {
     grading,
     drainage,
     utilities,
+    buildingPlacements,
   ]);
 
   useEffect(() => {
@@ -3355,6 +3388,11 @@ export default function PerformanceAIDashboard() {
       draftProjectPromiseRef.current = null;
     }
   };
+
+  useEffect(() => {
+    ensureProjectDraftRef.current = ensureProjectDraft;
+    saveProjectRef.current = saveProject;
+  }, [ensureProjectDraft, saveProject]);
 
   const loadJob = async (id: string) => {
     if (!token) return;
@@ -4072,19 +4110,11 @@ export default function PerformanceAIDashboard() {
 
   const queuePreviewRefresh = (reason: string) => {
     if (!token) return;
-    if (!backendResult && !projectId && !planPreviewUrl) {
-      setStatusMessage("Run the planner first so there is something to preview.");
-      return;
-    }
     previewRefreshIntentRef.current = { reason, track: true };
   };
 
   const handlePreviewPlan = async () => {
     if (!token) return;
-    if (!backendResult && !projectId) {
-      setStatusMessage("Run the planner first so there is something to preview.");
-      return;
-    }
     setStatusMessage("Refreshing preview...");
     setBusy(true);
     try {
@@ -4508,7 +4538,7 @@ export default function PerformanceAIDashboard() {
 
   useEffect(() => {
     if (!token) return;
-    if (!backendResult && !planPreviewUrl) return;
+    if (!backendResult && !planPreviewUrl && !projectId) return;
     const intent = previewRefreshIntentRef.current;
     if (intent) {
       previewRefreshIntentRef.current = null;

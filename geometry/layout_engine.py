@@ -63,6 +63,12 @@ def _safe_str(value: Any, default: str) -> str:
     return text if text else default
 
 
+def _safe_dict(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    return {}
+
+
 def _generic_render_label(label: Any, layer: Any = None) -> Optional[str]:
     text = _safe_str(label, "").strip()
     if not text:
