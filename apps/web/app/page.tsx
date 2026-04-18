@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { getJson, postBinary, postForm, postJson } from "../lib/api";
+import { deleteJson, getJson, postBinary, postForm, postJson } from "../lib/api";
 
 import type {
   Assumption,
@@ -474,6 +474,7 @@ export default function PerformanceAIDashboard() {
     setProjects,
     refreshProjects,
     upsertProjectSummary,
+    removeProjectSummary,
   } = useProjectsState();
 
   const {
@@ -4172,6 +4173,42 @@ export default function PerformanceAIDashboard() {
     }
   };
 
+  const handleDeleteProject = async (projectIdToDelete: string) => {
+    if (!token) return;
+    const target = projects.find((item) => item.project_id === projectIdToDelete);
+    const confirmed = window.confirm(
+      `Delete "${target?.name || "Untitled Project"}"? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+    try {
+      setStatusMessage("Deleting project...");
+      await deleteJson<{ success: boolean }>(`/api/projects/${projectIdToDelete}`, {
+        token,
+      });
+      removeProjectSummary(projectIdToDelete);
+      if (currentProject?.project_id === projectIdToDelete || projectId === projectIdToDelete) {
+        const remaining = projects.filter(
+          (item) => item.project_id !== projectIdToDelete,
+        );
+        if (remaining.length) {
+          const next = [...remaining].sort(
+            (a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0),
+          )[0];
+          if (next?.project_id) {
+            await loadProject(next.project_id);
+          }
+        } else {
+          await handleNewProject();
+        }
+      }
+      setStatusMessage("Project deleted.");
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : "Could not delete project.",
+      );
+    }
+  };
+
   const downloadBlob = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -4664,31 +4701,56 @@ export default function PerformanceAIDashboard() {
               <div className="flex-1 overflow-y-auto p-4">
                 {activeSidePanel === "projects" ? (
                   <div className="space-y-3">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await handleNewProject();
+                        setActiveSidePanel(null);
+                      }}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                    >
+                      + New Project
+                    </button>
                     {sortedProjects.length ? (
                       sortedProjects.map((projectSummary) => (
-                        <button
+                        <div
                           key={projectSummary.project_id}
-                          type="button"
-                          onClick={() => {
-                            void loadProject(projectSummary.project_id);
-                            setActiveSidePanel(null);
-                          }}
-                          className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
+                          className={`relative w-full rounded-2xl border px-4 py-3 text-left transition ${
                             projectSummary.project_id === projectId
                               ? "border-slate-900 bg-slate-950 text-white"
                               : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                           }`}
                         >
-                          <p className="text-sm font-semibold">
-                            {projectSummary.name || "Untitled Project"}
-                          </p>
-                          <p className="mt-1 text-xs uppercase tracking-[0.12em] opacity-70">
-                            {projectSummary.description ||
-                              (projectSummary.updated_at
-                                ? `Updated ${new Date(projectSummary.updated_at * 1000).toLocaleDateString()}`
-                                : "No description")}
-                          </p>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void loadProject(projectSummary.project_id);
+                              setActiveSidePanel(null);
+                            }}
+                            className="block w-full text-left"
+                          >
+                            <p className="text-sm font-semibold">
+                              {projectSummary.name || "Untitled Project"}
+                            </p>
+                            <p className="mt-1 text-xs uppercase tracking-[0.12em] opacity-70">
+                              {projectSummary.description ||
+                                (projectSummary.updated_at
+                                  ? `Updated ${new Date(projectSummary.updated_at * 1000).toLocaleDateString()}`
+                                  : "No description")}
+                            </p>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteProject(projectSummary.project_id)}
+                            className={`absolute right-3 top-3 rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                              projectSummary.project_id === projectId
+                                ? "border-white/40 text-white/80 hover:bg-white/10"
+                                : "border-slate-200 text-slate-500 hover:bg-slate-50"
+                            }`}
+                          >
+                            Delete
+                          </button>
+                        </div>
                       ))
                     ) : (
                       <p className="text-sm text-slate-500">No projects yet.</p>
