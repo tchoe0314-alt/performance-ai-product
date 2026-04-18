@@ -110,6 +110,9 @@ class FeatureDetectionEngine:
         if not detections:
             warnings.append("No strong feature regions detected. Try a clearer map or topo image.")
 
+        # Help release large temporary arrays before returning.
+        del arr, r, g, b, gray, green_mask, blue_mask, light_mask, driveway_mask
+
         return FeatureDetectionResult(
             success=True,
             message="Feature detection completed (heuristic).",

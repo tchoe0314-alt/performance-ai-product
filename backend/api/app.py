@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 import httpx
 
 from parsers.chat_intent_parser import assess_design_readiness, decide_chat_message
+from backend.services.heavy_ops import run_heavy_operation
 from backend.application.design_workflows import (
     build_run_summary as application_build_run_summary,
     count_unresolved_conflicts as application_count_unresolved_conflicts,
@@ -581,7 +582,7 @@ def detect_image_features(
         raise HTTPException(status_code=400, detail="Image path is required for detection.")
 
     engine = FeatureDetectionEngine()
-    result = engine.detect(payload.image_path)
+    result = run_heavy_operation("image_detection", engine.detect, payload.image_path)
     return {
         "success": result.success,
         "message": result.message,

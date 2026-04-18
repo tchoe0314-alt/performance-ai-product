@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import logging
 import math
 import mimetypes
 import shutil
@@ -9,6 +10,11 @@ from typing import Any, Dict, Optional, Protocol
 
 from fastapi import HTTPException, UploadFile
 from fastapi.responses import FileResponse
+from PIL import Image
+
+
+logger = logging.getLogger(__name__)
+MAX_UPLOAD_IMAGE_DIM = 2048
 
 
 class AuthStoreProtocol(Protocol):
@@ -30,6 +36,27 @@ def upload_image_file(
 
     with target.open("wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
+
+    try:
+        with Image.open(target) as img:
+            width, height = img.size
+            max_dim = max(width, height)
+            if max_dim > MAX_UPLOAD_IMAGE_DIM:
+                scale = MAX_UPLOAD_IMAGE_DIM / float(max_dim)
+                next_size = (int(round(width * scale)), int(round(height * scale)))
+                resized = img.convert("RGB")
+                resized.thumbnail(next_size, Image.Resampling.LANCZOS)
+                resized.save(target, format="JPEG", quality=85, optimize=True)
+                logger.info(
+                    "image_downscaled %s",
+                    {
+                        "original": (width, height),
+                        "resized": resized.size,
+                        "target": str(target),
+                    },
+                )
+    except Exception as exc:
+        logger.warning("image_downscale_failed %s", {"error": str(exc), "target": str(target)})
 
     return {
         "success": True,

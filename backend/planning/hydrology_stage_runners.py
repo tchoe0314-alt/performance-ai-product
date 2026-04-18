@@ -30,6 +30,7 @@ from engines.storm.storm_types import (
 )
 
 from .common import lower_text, polyline_length, safe_dict, safe_float, safe_int, safe_list, safe_str
+from backend.monitoring import log_memory
 from .field_contract import field_path_is_omitted, unwrap_fields_for_execution
 from .runtime import PlannerExecutionContext, _mark_dependency_state
 
@@ -326,6 +327,16 @@ def run_drainage_stage(
         surface_detail = safe_str(grading_summary.get("grading_source_detail"), "") or safe_str(
             inferred_profile.get("source_detail"),
             "",
+        )
+        log_memory(
+            "drainage_surface:selected",
+            {
+                "surface_source": surface_source,
+                "surface_quality": surface_quality,
+                "ncols": safe_int(getattr(surface, "ncols", 0), 0) if surface is not None else 0,
+                "nrows": safe_int(getattr(surface, "nrows", 0), 0) if surface is not None else 0,
+                "cell": safe_float(getattr(surface, "cell_size", 0.0), 0.0) if surface is not None else 0.0,
+            },
         )
         engine = None
         for candidate in (
