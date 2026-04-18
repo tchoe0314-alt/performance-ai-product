@@ -27,22 +27,10 @@ type PreviewPanelProps = {
   previewInteraction: "static" | "interactive";
   previewQuality: "standard" | "high";
   previewLabelDensity: "low" | "standard" | "high";
-  previewRenderMode: "production" | "engineering" | "debug";
-  previewDebug?: {
-    objectCount: number;
-    placedCount: number;
-    previewRequestedAt?: string | null;
-    previewResponseBytes?: number | null;
-    previewAnnotationsCount?: number | null;
-    previewHasImage?: boolean;
-    previewMode: string;
-    previewLayers: string[];
-  } | null;
   onSetPreviewMode: (value: "2d" | "3d") => void;
   onSetPreviewInteraction: (value: "static" | "interactive") => void;
   onSetPreviewQuality: (value: "standard" | "high") => void;
   onSetPreviewLabelDensity: (value: "low" | "standard" | "high") => void;
-  onSetPreviewRenderMode: (value: "production" | "engineering" | "debug") => void;
   onQueuePreviewRefresh: (reason: string) => void;
   previewRefreshing: boolean;
   previewRefreshNote: string | null;
@@ -104,13 +92,10 @@ export default function PreviewPanel({
   previewInteraction,
   previewQuality,
   previewLabelDensity,
-  previewRenderMode,
-  previewDebug,
   onSetPreviewMode,
   onSetPreviewInteraction,
   onSetPreviewQuality,
   onSetPreviewLabelDensity,
-  onSetPreviewRenderMode,
   onQueuePreviewRefresh,
   previewRefreshing,
   previewRefreshNote,
@@ -150,7 +135,6 @@ export default function PreviewPanel({
   measurementOverlayStats,
   calculationOverlayStats,
 }: PreviewPanelProps) {
-  const previewAudit = planPreviewAnnotations?.audit;
   const previewLabels = useMemo(
     () => (Array.isArray(planPreviewAnnotations?.labels) ? planPreviewAnnotations?.labels : []),
     [planPreviewAnnotations],
@@ -183,12 +167,6 @@ export default function PreviewPanel({
   const showGeneratedPlan = !placementMode && !selectedBuildingId;
   const hasInteractiveLabels = previewLabels.length > 0 && showGeneratedPlan;
   const showInteractive = previewInteraction === "interactive";
-  const previewModeDescription =
-    previewRenderMode === "debug"
-      ? "Debug shows helper geometry, routing guides, and audit details."
-      : previewRenderMode === "engineering"
-        ? "Engineering shows final geometry with overlays like grades, labels, and system annotations."
-        : "Production shows final, client-facing geometry only.";
   const legendPalette = {
     building: "#0f172a",
     parking: "#cbd5e1",
@@ -581,18 +559,6 @@ export default function PreviewPanel({
       ...(confidence ? [{ label: "Confidence", value: confidence }] : []),
     ];
   }, [hoveredObject]);
-  const debugHoverDetails = useMemo(() => {
-    if (!activeAnnotation?.meta || previewRenderMode !== "debug") return [];
-    const meta = activeAnnotation.meta;
-    const entries = [
-      { label: "Entity ID", value: meta.entity_id },
-      { label: "Source stage", value: meta.source_stage },
-      { label: "Source type", value: meta.source_type },
-      { label: "Preview role", value: meta.preview_role },
-      { label: "Inferred", value: meta.inferred ? "Yes" : "No" },
-    ];
-    return entries.filter((entry) => entry.value);
-  }, [activeAnnotation, previewRenderMode]);
   const overlayBounds = showGeneratedPlan ? (previewImageBounds ?? previewContainerBounds) : previewContainerBounds;
 
   useEffect(() => {
@@ -902,8 +868,6 @@ export default function PreviewPanel({
             </div>
           </div>
           <div className="mb-3 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-            <span className="font-semibold text-slate-900">Mode:</span>
-            <span>{previewModeDescription}</span>
             <span className="font-semibold text-slate-900">Quality:</span>
             <span>{previewQuality === "high" ? "High" : "Standard"}</span>
             <span className="font-semibold text-slate-900">Labels:</span>
@@ -915,25 +879,6 @@ export default function PreviewPanel({
             <span className="font-semibold text-slate-900">Interactive:</span>
             <span>{previewInteraction === "interactive" ? "Hover enabled" : "Static"}</span>
           </div>
-          {previewRenderMode === "debug" && previewDebug ? (
-            <div className="mb-4 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600">
-              <div className="font-semibold uppercase tracking-[0.14em] text-slate-500">Preview Debug</div>
-              <div className="mt-2 grid gap-1 sm:grid-cols-2">
-                <div>Objects: {previewDebug.objectCount}</div>
-                <div>Placed: {previewDebug.placedCount}</div>
-                <div>Preview image: {previewDebug.previewHasImage ? "Yes" : "No"}</div>
-                <div>Annotations: {previewDebug.previewAnnotationsCount ?? 0}</div>
-                <div>Response bytes: {previewDebug.previewResponseBytes ?? 0}</div>
-                <div>Mode: {previewDebug.previewMode}</div>
-                <div className="sm:col-span-2">
-                  Layers: {previewDebug.previewLayers.join(", ") || "none"}
-                </div>
-                <div className="sm:col-span-2">
-                  Requested: {previewDebug.previewRequestedAt || "n/a"}
-                </div>
-              </div>
-            </div>
-          ) : null}
           {(previewRefreshing || previewRefreshNote) && (
             <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
               <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
@@ -1386,21 +1331,6 @@ export default function PreviewPanel({
                         </div>
                       </div>
                     )}
-                    {debugHoverDetails.length ? (
-                      <div className="mt-3 border-t border-slate-100 pt-2 text-[11px]">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                          Debug
-                        </p>
-                        <div className="mt-2 space-y-1">
-                          {debugHoverDetails.map((detail) => (
-                            <div key={detail.label} className="flex items-center justify-between gap-2">
-                              <span className="text-slate-500">{detail.label}</span>
-                              <span className="font-semibold text-slate-900">{detail.value}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
                   </div>
                 </div>
               ) : null}
@@ -1687,21 +1617,6 @@ export default function PreviewPanel({
                         </div>
                       </div>
                     )}
-                    {debugHoverDetails.length ? (
-                      <div className="mt-3 border-t border-slate-100 pt-2 text-[11px]">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                          Debug
-                        </p>
-                        <div className="mt-2 space-y-1">
-                          {debugHoverDetails.map((detail) => (
-                            <div key={detail.label} className="flex items-center justify-between gap-2">
-                              <span className="text-slate-500">{detail.label}</span>
-                              <span className="font-semibold text-slate-900">{detail.value}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
                   </div>
                 </div>
               ) : null}
