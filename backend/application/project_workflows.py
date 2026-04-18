@@ -6,7 +6,7 @@ from typing import Any, Callable, Dict, Optional, Protocol
 from fastapi import HTTPException
 
 from backend.application.design_workflows import new_workflow_id, now_ts
-from backend.application.artifact_workflows import ArtifactServiceProtocol
+from backend.application.protocols import ArtifactServiceProtocol
 from backend.application.job_workflows import JobQueueProtocol
 
 

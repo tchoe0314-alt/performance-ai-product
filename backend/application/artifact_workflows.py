@@ -2,46 +2,17 @@ from __future__ import annotations
 
 from base64 import b64encode
 from pathlib import Path
-from typing import Any, Dict, Optional, Protocol
+from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
 
 from backend.application.design_workflows import build_run_summary, final_plan_from_result
-from backend.services.heavy_ops import run_heavy_operation
+from backend.application.protocols import ArtifactServiceProtocol
 from backend.monitoring import log_memory
+from backend.services.heavy_ops import run_heavy_operation
 from backend.application.project_workflows import artifact_summary, save_project_workflow_update
 from geometry.layout_engine import _build_expanded_plan
 from output.preview import build_preview_annotations
-
-
-class ArtifactServiceProtocol(Protocol):
-    def build_preview_png(
-        self,
-        final_plan: Dict[str, Any],
-        *,
-        render_labels: bool = True,
-        quality: str = "standard",
-        include_layers: Optional[list[str]] = None,
-        preview_style: Optional[str] = None,
-        label_density: Optional[str] = None,
-        preview_mode: Optional[str] = None,
-    ) -> bytes:
-        ...
-
-    def export_dxf(self, *, user_id: str, final_plan: Dict[str, Any], stem: Optional[str] = None) -> Path:
-        ...
-
-    def export_report_json(
-        self,
-        *,
-        user_id: str,
-        result_data: Dict[str, Any],
-        stem: Optional[str] = None,
-    ) -> Path:
-        ...
-
-    def delete_preview_cache_for_project(self, *, user_id: str, project_id: str) -> int:
-        ...
 
 
 class ProjectStoreProtocol(Protocol):
