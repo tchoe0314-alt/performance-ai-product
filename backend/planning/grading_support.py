@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from copy import deepcopy
-import logging
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from core.config import (
@@ -27,11 +26,6 @@ from engines.surface_engine import GridSurface, SurveyPoint, SurfaceEngine
 
 from .common import safe_dict, safe_float, safe_int, safe_list, safe_str
 from .field_contract import field_path_is_omitted
-from backend.monitoring import log_memory
-
-
-logger = logging.getLogger(__name__)
-MAX_SURFACE_DIM = 220
 
 
 def _preview_meta_for_action(layer: str, task: str) -> Dict[str, Any]:
@@ -84,14 +78,9 @@ def build_existing_surface(
     x_max = safe_float(lot.get("x"), DEFAULT_LOT_X) + safe_float(lot.get("w"), DEFAULT_LOT_WIDTH) + SURFACE_PADDING
     y_max = safe_float(lot.get("y"), DEFAULT_LOT_Y) + safe_float(lot.get("h"), DEFAULT_LOT_HEIGHT) + SURFACE_PADDING
     cell = max(1.0, safe_float(CELL_SIZE, 5.0))
-    span_x = max(x_max - x_min, 1.0)
-    span_y = max(y_max - y_min, 1.0)
-    cap_cell = max(span_x / max(MAX_SURFACE_DIM - 1, 1), span_y / max(MAX_SURFACE_DIM - 1, 1))
-    if cap_cell > cell:
-        cell = cap_cell
 
-    ncols = max(2, int(round(span_x / cell)) + 1)
-    nrows = max(2, int(round(span_y / cell)) + 1)
+    ncols = max(2, int(round((x_max - x_min) / cell)) + 1)
+    nrows = max(2, int(round((y_max - y_min) / cell)) + 1)
     profile = infer_surface_profile(parsed)
     meta = safe_dict(parsed.get("meta"))
     site_inputs = safe_dict(meta.get("site_inputs"))
@@ -131,16 +120,6 @@ def build_existing_surface(
         slope_ratio = max(0.002, abs(z_nw - z_se) / diag)
 
     values: List[List[float]] = []
-    log_memory(
-        "grading_surface:before",
-        {
-            "ncols": ncols,
-            "nrows": nrows,
-            "cell": round(cell, 3),
-            "span_x": round(span_x, 2),
-            "span_y": round(span_y, 2),
-        },
-    )
     for row in range(nrows):
         y = y_min + row * cell
         row_vals: List[float] = []
@@ -164,14 +143,6 @@ def build_existing_surface(
         ncols=ncols,
         nrows=nrows,
         values=values,
-    )
-    log_memory(
-        "grading_surface:generated",
-        {
-            "ncols": ncols,
-            "nrows": nrows,
-            "cell": round(cell, 3),
-        },
     )
     if has_survey:
         survey_points = list(site_inputs.get("survey_points") or [])
@@ -199,14 +170,6 @@ def build_existing_surface(
                 profile["survey_point_count"] = len(parsed_points)
                 profile["survey_used"] = True
                 setattr(survey_surface, "_inferred_profile", profile)
-                log_memory(
-                    "grading_surface:survey",
-                    {
-                        "ncols": safe_int(getattr(survey_surface, "ncols", 0), 0),
-                        "nrows": safe_int(getattr(survey_surface, "nrows", 0), 0),
-                        "cell": safe_float(getattr(survey_surface, "cell_size", 0.0), 0.0),
-                    },
-                )
                 return survey_surface
             except Exception as exc:
                 profile["survey_used"] = False

@@ -8,8 +8,6 @@ from fastapi import HTTPException
 
 from backend.application.design_workflows import build_run_summary, final_plan_from_result
 from backend.application.protocols import ArtifactServiceProtocol
-from backend.monitoring import log_memory
-from backend.services.heavy_ops import run_heavy_operation
 from backend.application.project_workflows import artifact_summary, save_project_workflow_update
 from geometry.layout_engine import _build_expanded_plan
 from output.preview import build_preview_annotations
@@ -859,10 +857,7 @@ def build_preview_response(
         meta = final_plan.get("meta") if isinstance(final_plan.get("meta"), dict) else {}
         meta["project_id"] = project_id
         final_plan["meta"] = meta
-    log_memory("preview_render:before", {"action_count": len(final_plan.get("actions") or [])})
-    png_bytes = run_heavy_operation(
-        "preview_render",
-        artifact_service.build_preview_png,
+    png_bytes = artifact_service.build_preview_png(
         final_plan,
         render_labels=bool(render_labels),
         quality=preview_quality or "standard",
@@ -871,7 +866,6 @@ def build_preview_response(
         include_layers=preview_layers,
         preview_mode=preview_mode,
     )
-    log_memory("preview_render:after")
     preview_annotations = build_preview_annotations(
         final_plan,
         include_layers=set(preview_layers or []) if preview_layers else None,
