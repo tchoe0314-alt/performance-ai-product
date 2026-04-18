@@ -56,12 +56,52 @@ def upload_survey_file(
     with target.open("wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
+    file_type = Path(safe_name).suffix.lower().lstrip(".")
+    parse_success = False
+    point_count = 0
+    contour_count = 0
+    recognized_columns: Dict[str, Any] = {}
+    invalid_rows = 0
+    bounds = None
+    elevation_range = None
+    warnings: list[str] = []
+
+    if file_type == "csv":
+        points, parse_warnings, diagnostics = _parse_survey_points(target=target)
+        warnings.extend(parse_warnings)
+        recognized_columns = diagnostics.get("recognized_columns", {})
+        invalid_rows = diagnostics.get("invalid_rows", 0)
+        point_count = len(points)
+        if points:
+            xs = [p[0] for p in points]
+            ys = [p[1] for p in points]
+            zs = [p[2] for p in points]
+            bounds = {
+                "min_x": min(xs),
+                "min_y": min(ys),
+                "max_x": max(xs),
+                "max_y": max(ys),
+            }
+            elevation_range = {"min": min(zs), "max": max(zs)}
+        parse_success = len(points) >= 3
+    else:
+        warnings.append("Survey file stored. Parsing is only supported for CSV survey points right now.")
+
     return {
         "success": True,
         "message": "Survey uploaded.",
         "filename": safe_name,
         "stored_filename": stored_name,
         "survey_url": f"/api/uploads/{stored_name}",
+        "file_type": file_type,
+        "parse_success": parse_success,
+        "point_count": point_count,
+        "contour_count": contour_count,
+        "recognized_columns": recognized_columns,
+        "invalid_rows": invalid_rows,
+        "bounds": bounds,
+        "elevation_range": elevation_range,
+        "warnings": warnings,
     }
 
 

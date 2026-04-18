@@ -556,6 +556,16 @@ export type UploadSurveyResponse = {
   filename?: string;
   stored_filename?: string;
   survey_url?: string;
+  file_type?: string;
+  parse_success?: boolean;
+  point_count?: number;
+  contour_count?: number;
+  recognized_columns?: { x?: string; y?: string; z?: string };
+  invalid_rows?: number;
+  bounds?: { min_x?: number; min_y?: number; max_x?: number; max_y?: number };
+  elevation_range?: { min?: number; max?: number };
+  warnings?: string[];
+  message?: string;
 };
 
 export type SurveySlopeResponse = {

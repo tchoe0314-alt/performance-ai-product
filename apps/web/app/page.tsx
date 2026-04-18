@@ -415,6 +415,20 @@ export default function PerformanceAIDashboard() {
   const [uploadedImageApiUrl, setUploadedImageApiUrl] = useState("");
   const [surveyFileName, setSurveyFileName] = useState("");
   const [surveySlopeEstimate, setSurveySlopeEstimate] = useState<SurveySlopeResponse | null>(null);
+  const [surveyPoints, setSurveyPoints] = useState<number[][]>([]);
+  const [surveyDiagnostics, setSurveyDiagnostics] = useState<{
+    fileType?: string;
+    parseSuccess?: boolean;
+    pointCount?: number;
+    contourCount?: number;
+    recognizedColumns?: { x?: string; y?: string; z?: string };
+    invalidRows?: number;
+    bounds?: { min_x?: number; min_y?: number; max_x?: number; max_y?: number };
+    elevationRange?: { min?: number; max?: number };
+    warnings?: string[];
+  } | null>(null);
+  const [surveyPreviewPoints, setSurveyPreviewPoints] = useState<Array<{ x: number; y: number; z?: number }>>([]);
+  const [useSurveyForGrading, setUseSurveyForGrading] = useState(true);
   const [detectedPlacements, setDetectedPlacements] = useState<BuildingPlacement[]>([]);
   const [detectionScaleFeet, setDetectionScaleFeet] = useState("");
   const [detectionScalePixels, setDetectionScalePixels] = useState("");
@@ -3487,12 +3501,28 @@ export default function PerformanceAIDashboard() {
     const surveyFile = siteInputs?.survey_file ?? {};
     const slopeEstimate = siteInputs?.slope_estimate ?? null;
       const detectionScale = siteInputs?.detection_scale ?? {};
+    const useSurvey = siteInputs?.use_survey_for_grading;
+    const storedPoints = Array.isArray(siteInputs?.survey_points) ? siteInputs?.survey_points : [];
     const detectedObjects = Array.isArray(siteInputs?.detected_objects)
       ? (siteInputs?.detected_objects as BuildingPlacement[])
       : [];
     setSiteAddress(String(siteInputs?.address || ""));
     setSurveyFileName(String(surveyFile?.stored_filename || ""));
     setSurveySlopeEstimate(slopeEstimate || null);
+    setUseSurveyForGrading(useSurvey !== undefined ? Boolean(useSurvey) : true);
+    setSurveyPoints(storedPoints as number[][]);
+    setSurveyPreviewPoints(mapSurveyPointsToSite(storedPoints as number[][]));
+    setSurveyDiagnostics((prev) => ({
+      ...(prev ?? {}),
+      fileType: siteInputs?.survey_file_type ?? prev?.fileType,
+      parseSuccess: siteInputs?.survey_parse_success ?? prev?.parseSuccess,
+      pointCount: siteInputs?.survey_point_count ?? prev?.pointCount,
+      recognizedColumns: siteInputs?.survey_point_columns ?? prev?.recognizedColumns,
+      invalidRows: siteInputs?.survey_invalid_rows ?? prev?.invalidRows,
+      bounds: siteInputs?.survey_bounds ?? prev?.bounds,
+      elevationRange: siteInputs?.survey_elevation_range ?? prev?.elevationRange,
+      warnings: siteInputs?.survey_point_warnings ?? prev?.warnings,
+    }));
       setDetectionScaleFeet(
         detectionScale?.distance_ft ? String(detectionScale.distance_ft) : "",
       );
@@ -3513,7 +3543,7 @@ export default function PerformanceAIDashboard() {
     }
     setMapSnapshotPath(String(mapSnapshot?.image_path || ""));
     setMapAnalysis(mapAnalysisResult || null);
-  }, [currentProject, token]);
+  }, [currentProject, mapSurveyPointsToSite, token]);
 
   const loadProject = async (id: string) => {
     if (!token) return;
@@ -3955,6 +3985,37 @@ export default function PerformanceAIDashboard() {
     }
   };
 
+  const mapSurveyPointsToSite = useCallback(
+    (points: number[][]) => {
+      const width = parsePositiveNumber(lotWidth);
+      const height = parsePositiveNumber(lotHeight);
+      if (!points.length || !width || !height) return [];
+      const xs = points.map((p) => p[0]);
+      const ys = points.map((p) => p[1]);
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
+      const spanX = Math.max(maxX - minX, 1e-6);
+      const spanY = Math.max(maxY - minY, 1e-6);
+      const withinLot =
+        minX >= 0 &&
+        minY >= 0 &&
+        maxX <= width * 1.2 &&
+        maxY <= height * 1.2;
+      const mapPoint = (p: number[]) => {
+        const x = withinLot ? p[0] : ((p[0] - minX) / spanX) * width;
+        const y = withinLot ? p[1] : ((p[1] - minY) / spanY) * height;
+        const z = typeof p[2] === "number" ? p[2] : undefined;
+        return { x, y, z };
+      };
+      const mapped = points.map(mapPoint);
+      const step = Math.max(1, Math.ceil(mapped.length / 2000));
+      return mapped.filter((_, idx) => idx % step === 0);
+    },
+    [lotHeight, lotWidth],
+  );
+
   const uploadSurvey = async (file: File) => {
     if (!token) return;
     try {
@@ -3965,6 +4026,31 @@ export default function PerformanceAIDashboard() {
       });
       const storedFilename = data.stored_filename || file.name;
       setSurveyFileName(storedFilename);
+      setSurveyDiagnostics({
+        fileType: data.file_type,
+        parseSuccess: data.parse_success,
+        pointCount: data.point_count,
+        contourCount: data.contour_count,
+        recognizedColumns: data.recognized_columns,
+        invalidRows: data.invalid_rows,
+        bounds: data.bounds,
+        elevationRange: data.elevation_range,
+        warnings: data.warnings,
+      });
+      let pointsResponse: SurveyPointsResponse | null = null;
+      if (storedFilename && (data.file_type || "").toLowerCase() === "csv") {
+        pointsResponse = await postJson<SurveyPointsResponse>(
+          "/api/survey/points",
+          { filename: storedFilename },
+          { token },
+        );
+        const points = Array.isArray(pointsResponse.points) ? pointsResponse.points : [];
+        setSurveyPoints(points);
+        setSurveyPreviewPoints(mapSurveyPointsToSite(points));
+      } else {
+        setSurveyPoints([]);
+        setSurveyPreviewPoints([]);
+      }
       const currentInput = currentProject?.project_input ?? payloadPreview;
       const nextSiteInputs = {
         ...(currentInput?.meta?.site_inputs ?? {}),
@@ -3973,6 +4059,16 @@ export default function PerformanceAIDashboard() {
           stored_filename: storedFilename,
           survey_url: data.survey_url || "",
         },
+        survey_file_type: data.file_type,
+        survey_parse_success: data.parse_success,
+        survey_point_count: pointsResponse?.point_count ?? data.point_count ?? 0,
+        survey_point_columns: pointsResponse?.recognized_columns ?? data.recognized_columns ?? {},
+        survey_invalid_rows: pointsResponse?.invalid_rows ?? data.invalid_rows ?? 0,
+        survey_point_warnings: pointsResponse?.warnings ?? data.warnings ?? [],
+        survey_points: pointsResponse?.points ?? [],
+        survey_bounds: data.bounds ?? null,
+        survey_elevation_range: data.elevation_range ?? null,
+        use_survey_for_grading: useSurveyForGrading,
       };
       await saveProject({
         silent: true,
@@ -3987,7 +4083,7 @@ export default function PerformanceAIDashboard() {
           },
         },
       });
-      setStatusMessage("Survey uploaded.");
+      setStatusMessage(data.parse_success ? "Survey uploaded and parsed." : "Survey uploaded.");
     } catch (error) {
       setSurveyFileName(file.name);
       setStatusMessage(
@@ -4127,6 +4223,7 @@ export default function PerformanceAIDashboard() {
     },
     [detectionScaleFtPerPx, lotHeight, lotWidth],
   );
+
 
   const handleAnalyzeImageFeatures = useCallback(async (overridePath?: string) => {
     if (!token) return;
@@ -5067,6 +5164,10 @@ export default function PerformanceAIDashboard() {
     setUploadedImagePreviewUrl("");
     setSurveyFileName("");
     setSurveySlopeEstimate(null);
+    setSurveyPoints([]);
+    setSurveyPreviewPoints([]);
+    setSurveyDiagnostics(null);
+    setUseSurveyForGrading(true);
     setMapSnapshotPath("");
     setMapAnalysis(null);
     setSiteAddress("");
@@ -5106,6 +5207,10 @@ export default function PerformanceAIDashboard() {
     setUploadedImagePreviewUrl("");
     setSurveyFileName("");
     setSurveySlopeEstimate(null);
+    setSurveyPoints([]);
+    setSurveyPreviewPoints([]);
+    setSurveyDiagnostics(null);
+    setUseSurveyForGrading(true);
     setMapSnapshotPath("");
     setMapAnalysis(null);
     resetWorkspaceState();
@@ -6103,6 +6208,9 @@ export default function PerformanceAIDashboard() {
                           {surveyFileName ? "Ready" : "Upload"}
                         </span>
                       </button>
+                      <p className="text-xs text-slate-500">
+                        Supported: CSV survey points, DXF topo/contours (parsing pending).
+                      </p>
                       <button
                         type="button"
                         onClick={estimateSurveySlope}
@@ -6153,7 +6261,46 @@ export default function PerformanceAIDashboard() {
                         </p>
                       ) : null}
                       {surveyFileName ? (
-                        <p className="text-xs text-slate-500">Survey loaded: {surveyFileName}</p>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                          <p className="font-semibold text-slate-700">Survey loaded</p>
+                          <p className="mt-1">
+                            {surveyFileName}
+                            {surveyDiagnostics?.fileType ? ` · ${surveyDiagnostics.fileType.toUpperCase()}` : ""}
+                          </p>
+                          {surveyDiagnostics?.parseSuccess !== undefined ? (
+                            <p className="mt-1">
+                              {surveyDiagnostics.parseSuccess ? "Parse success" : "Parse pending"} ·{" "}
+                              {surveyDiagnostics.pointCount ?? 0} points
+                            </p>
+                          ) : null}
+                          {surveyDiagnostics?.recognizedColumns ? (
+                            <p className="mt-1">
+                              Columns: {surveyDiagnostics.recognizedColumns.x || "x"} /{" "}
+                              {surveyDiagnostics.recognizedColumns.y || "y"} /{" "}
+                              {surveyDiagnostics.recognizedColumns.z || "z"} · Invalid rows:{" "}
+                              {surveyDiagnostics.invalidRows ?? 0}
+                            </p>
+                          ) : null}
+                          {surveyDiagnostics?.bounds ? (
+                            <p className="mt-1">
+                              Extents: [{surveyDiagnostics.bounds.min_x?.toFixed?.(1) ?? "?"},{" "}
+                              {surveyDiagnostics.bounds.min_y?.toFixed?.(1) ?? "?"}] → [
+                              {surveyDiagnostics.bounds.max_x?.toFixed?.(1) ?? "?"},{" "}
+                              {surveyDiagnostics.bounds.max_y?.toFixed?.(1) ?? "?"}]
+                            </p>
+                          ) : null}
+                          {surveyDiagnostics?.elevationRange ? (
+                            <p className="mt-1">
+                              Elevation: {surveyDiagnostics.elevationRange.min?.toFixed?.(2) ?? "?"}–{" "}
+                              {surveyDiagnostics.elevationRange.max?.toFixed?.(2) ?? "?"} ft
+                            </p>
+                          ) : null}
+                          {surveyDiagnostics?.warnings?.length ? (
+                            <p className="mt-2 text-amber-600">
+                              {surveyDiagnostics.warnings[0]}
+                            </p>
+                          ) : null}
+                        </div>
                       ) : null}
                       {uploadedImageApiUrl || uploadedImagePreviewUrl ? (
                         <p className="text-xs text-slate-500">
@@ -6186,6 +6333,36 @@ export default function PerformanceAIDashboard() {
                         Civora uses the highest‑trust source available. Survey/topo overrides imagery or address
                         inference.
                       </p>
+                      <label className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
+                        <span>Use survey for grading</span>
+                        <input
+                          type="checkbox"
+                          checked={useSurveyForGrading}
+                          disabled={!surveyFileName}
+                          onChange={(event) => {
+                            const next = event.target.checked;
+                            setUseSurveyForGrading(next);
+                            const currentInput = currentProject?.project_input ?? payloadPreview;
+                            void saveProject({
+                              silent: true,
+                              projectInputOverride: {
+                                ...currentInput,
+                                input_mode: "user",
+                                strict_mode: false,
+                                allow_ai_fill_for_blanks: false,
+                                meta: {
+                                  ...(currentInput?.meta ?? {}),
+                                  site_inputs: {
+                                    ...(currentInput?.meta?.site_inputs ?? {}),
+                                    use_survey_for_grading: next,
+                                  },
+                                },
+                              },
+                            });
+                          }}
+                          className="h-4 w-4 accent-slate-900"
+                        />
+                      </label>
                     </div>
 
                     <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
@@ -6316,6 +6493,20 @@ export default function PerformanceAIDashboard() {
                         Columns: {siteInputs?.survey_point_columns?.x || "x"} / {siteInputs?.survey_point_columns?.y || "y"} / {siteInputs?.survey_point_columns?.z || "z"} ·
                         Invalid rows: {siteInputs?.survey_invalid_rows ?? 0}
                       </p>
+                      {surveyDiagnostics?.bounds ? (
+                        <p className="mt-1 text-xs text-slate-500">
+                          Extents: [{surveyDiagnostics.bounds.min_x?.toFixed?.(1) ?? "?"},{" "}
+                          {surveyDiagnostics.bounds.min_y?.toFixed?.(1) ?? "?"}] → [
+                          {surveyDiagnostics.bounds.max_x?.toFixed?.(1) ?? "?"},{" "}
+                          {surveyDiagnostics.bounds.max_y?.toFixed?.(1) ?? "?"}]
+                        </p>
+                      ) : null}
+                      {surveyDiagnostics?.elevationRange ? (
+                        <p className="mt-1 text-xs text-slate-500">
+                          Elevation range: {surveyDiagnostics.elevationRange.min?.toFixed?.(2) ?? "?"}–{" "}
+                          {surveyDiagnostics.elevationRange.max?.toFixed?.(2) ?? "?"} ft
+                        </p>
+                      ) : null}
                       {Array.isArray(siteInputs?.survey_point_warnings) && siteInputs.survey_point_warnings.length ? (
                         <p className="mt-2 text-xs text-amber-600">
                           {siteInputs.survey_point_warnings[0]}
@@ -6359,7 +6550,7 @@ export default function PerformanceAIDashboard() {
                     <input
                       ref={surveyInputRef}
                       type="file"
-                      accept=".csv"
+                      accept=".csv,.dxf"
                       className="hidden"
                       onChange={async (event) => {
                         const file = event.currentTarget.files?.[0];
@@ -6568,6 +6759,7 @@ export default function PerformanceAIDashboard() {
                   setSiteRotationInput(String(value));
                   scheduleRotationSave(value);
                 }}
+                surveyPoints={surveyPreviewPoints}
               />
               </div>
 

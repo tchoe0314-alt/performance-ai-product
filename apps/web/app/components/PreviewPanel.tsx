@@ -86,6 +86,7 @@ type PreviewPanelProps = {
   fitToSiteRequest?: number;
   alignToRoadRequest?: number;
   onSetSiteRotationDeg?: (value: number) => void;
+  surveyPoints?: Array<{ x: number; y: number; z?: number }>;
 };
 
 export default function PreviewPanel({
@@ -150,6 +151,7 @@ export default function PreviewPanel({
   fitToSiteRequest,
   alignToRoadRequest,
   onSetSiteRotationDeg,
+  surveyPoints,
 }: PreviewPanelProps) {
   const previewLabels = useMemo(
     () => (Array.isArray(planPreviewAnnotations?.labels) ? planPreviewAnnotations?.labels : []),
@@ -849,6 +851,30 @@ export default function PreviewPanel({
         .filter(Boolean),
     });
 
+    const surveyFeatureCollection = () => {
+      if (!surveyPoints || !surveyPoints.length) {
+        return { type: "FeatureCollection", features: [] };
+      }
+      const features = surveyPoints
+        .map((pt, idx) => {
+          const coords = convertSiteToLngLat(pt.x, pt.y);
+          if (!coords) return null;
+          return {
+            type: "Feature",
+            geometry: {
+              type: "Point",
+              coordinates: coords,
+            },
+            properties: {
+              id: `survey-${idx}`,
+              elevation: typeof pt.z === "number" ? pt.z : null,
+            },
+          };
+        })
+        .filter(Boolean);
+      return { type: "FeatureCollection", features };
+    };
+
     const buildings = placedObjects.filter((item) => !item.type || item.type === "building");
     const roads = placedObjects.filter((item) => item.type === "road" || item.type === "driveway");
     const parking = placedObjects.filter((item) => item.type === "parking");
@@ -904,6 +930,7 @@ export default function PreviewPanel({
           ],
         });
       }
+      ensureSource("civora-survey", surveyFeatureCollection());
 
       ensureLayer("civora-buildings-fill", "civora-buildings", "fill", {
         "fill-color": "#1e293b",
@@ -942,6 +969,15 @@ export default function PreviewPanel({
           "circle-stroke-width": 1,
         });
       }
+      if (surveyPoints && surveyPoints.length) {
+        ensureLayer("civora-survey-points", "civora-survey", "circle", {
+          "circle-color": "#7c3aed",
+          "circle-radius": 2.2,
+          "circle-opacity": 0.7,
+        });
+      } else if (map.getLayer("civora-survey-points")) {
+        map.removeLayer("civora-survey-points");
+      }
     };
 
     updateMap(mapRef.current);
@@ -957,6 +993,7 @@ export default function PreviewPanel({
     mapRevision,
     showMap,
     showSiteBounds,
+    surveyPoints,
   ]);
 
   useEffect(() => {
@@ -1465,7 +1502,7 @@ export default function PreviewPanel({
                     {lotWidth > 0 && lotHeight > 0 ? (
                       <div className="absolute inset-0 rounded-[16px] border-2 border-dashed border-slate-300/70" />
                     ) : null}
-                    {(buildingPlacements.length || suggestedPlacements.length) ? (
+                    {(buildingPlacements.length || suggestedPlacements.length || (surveyPoints?.length ?? 0) > 0) ? (
                       <svg
                         className="absolute inset-0"
                         viewBox="0 0 100 100"
@@ -1511,6 +1548,22 @@ export default function PreviewPanel({
                               />
                             );
                           })}
+                        {(surveyPoints ?? []).length
+                          ? (surveyPoints ?? []).slice(0, 1500).map((pt, idx) => {
+                              const x = (pt.x / Math.max(lotWidth, 1)) * 100;
+                              const y = (pt.y / Math.max(lotHeight, 1)) * 100;
+                              return (
+                                <circle
+                                  key={`survey-${idx}`}
+                                  cx={x}
+                                  cy={y}
+                                  r={0.35}
+                                  fill="#7c3aed"
+                                  opacity={0.65}
+                                />
+                              );
+                            })
+                          : null}
                       </svg>
                     ) : null}
                     <div
