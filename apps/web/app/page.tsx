@@ -444,6 +444,7 @@ export default function PerformanceAIDashboard() {
   >([]);
   const [analysisSelectedIssueId, setAnalysisSelectedIssueId] = useState<string | null>(null);
   const [analysisFocusLocked, setAnalysisFocusLocked] = useState(false);
+  const [analysisEmptyReason, setAnalysisEmptyReason] = useState<string | null>(null);
   const [detectionConfidenceFilter, setDetectionConfidenceFilter] = useState<"high" | "medium" | "all">("all");
   const [mapSnapshotPath, setMapSnapshotPath] = useState("");
   const [mapAnalysis, setMapAnalysis] = useState<MapAnalysis | null>(null);
@@ -4008,6 +4009,20 @@ export default function PerformanceAIDashboard() {
     ]);
     const buildings = confirmed.filter((item) => buildingTypes.has(item.type as SiteObjectType));
     const access = confirmed.filter((item) => accessTypes.has(item.type as SiteObjectType));
+    if (!buildings.length || !access.length) {
+      setAnalysisIssues([]);
+      setAnalysisPaths([]);
+      setAnalysisSelectedIssueId(null);
+      setAnalysisFocusLocked(false);
+      setAnalysisEmptyReason(
+        "Address provides site context only. Add or confirm buildings and access objects to run analysis.",
+      );
+      setStatusMessage(
+        "Address provides site context only. Add or confirm buildings and access objects to run analysis.",
+      );
+      return;
+    }
+    setAnalysisEmptyReason(null);
     const issues: Array<{
       id: string;
       buildingId: string;
@@ -4091,19 +4106,6 @@ export default function PerformanceAIDashboard() {
         }
       }
     });
-
-    if (!access.length) {
-      issues.push({
-        id: "no-access",
-        buildingId: "",
-        accessId: "",
-        distanceFt: 0,
-        thresholdFt: threshold,
-        message: "No confirmed access/road objects found for access analysis.",
-        pathId: "",
-        issueType: "no_access_objects",
-      });
-    }
 
     const buildPathPoints = (edgePoints: Array<Array<{ x: number; y: number }>>) => {
       const points: Array<{ x: number; y: number }> = [];
@@ -4226,19 +4228,6 @@ export default function PerformanceAIDashboard() {
         });
       }
     });
-
-    if (!buildings.length) {
-      issues.push({
-        id: "no-buildings",
-        buildingId: "",
-        accessId: "",
-        distanceFt: 0,
-        thresholdFt: threshold,
-        message: "No confirmed buildings found for access analysis.",
-        pathId: "",
-        issueType: "no_buildings",
-      });
-    }
 
     setAnalysisIssues(issues);
     setAnalysisPaths(paths);
@@ -5449,6 +5438,24 @@ export default function PerformanceAIDashboard() {
     () => analysisIssues.find((issue) => issue.id === analysisSelectedIssueId) ?? null,
     [analysisIssues, analysisSelectedIssueId],
   );
+  const confirmedObjectCounts = useMemo(() => {
+    const confirmed = buildingPlacements.filter(
+      (item) => item.placed && (item.source === "user" || item.source === "user_confirmed"),
+    );
+    const buildingTypes = new Set<SiteObjectType>([
+      "building",
+      "retail_building",
+      "multifamily_building",
+      "industrial_building",
+      "office_building",
+      "pad",
+    ]);
+    const accessTypes = new Set<SiteObjectType>(["road", "entrance", "parking", "sidewalk", "driveway"]);
+    return {
+      buildings: confirmed.filter((item) => buildingTypes.has(item.type as SiteObjectType)).length,
+      access: confirmed.filter((item) => accessTypes.has(item.type as SiteObjectType)).length,
+    };
+  }, [buildingPlacements]);
   const buildAnalysisReport = useCallback(
     (selectedOnly: boolean) => {
       const confirmed = buildingPlacements.filter(
@@ -5722,6 +5729,31 @@ export default function PerformanceAIDashboard() {
                       >
                         Save address
                       </button>
+                      {siteAddress ? (
+                        <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                          <p className="font-semibold text-slate-700">Next steps</p>
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            Address adds context only. Create the site boundary or detect features to start modeling.
+                          </p>
+                          <div className="mt-2 flex flex-col gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleAddObject("site")}
+                              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                            >
+                              Create site boundary
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleAnalyzeImageFeatures}
+                              disabled={!mapSnapshotPath}
+                              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Detect site features
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="space-y-2 text-sm text-slate-700">
@@ -5781,6 +5813,7 @@ export default function PerformanceAIDashboard() {
                       <button
                         type="button"
                         onClick={handleAnalyzeSiteAccess}
+                        disabled={confirmedObjectCounts.buildings === 0 || confirmedObjectCounts.access === 0}
                         className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50"
                       >
                         <span>Analyze site access</span>
@@ -5788,6 +5821,11 @@ export default function PerformanceAIDashboard() {
                           {analysisIssues.length ? "Reviewed" : "Run"}
                         </span>
                       </button>
+                      {confirmedObjectCounts.buildings === 0 || confirmedObjectCounts.access === 0 ? (
+                        <p className="text-xs text-slate-500">
+                          Address provides site context only. Add or confirm buildings and access objects to run analysis.
+                        </p>
+                      ) : null}
                       {surveyFileName ? (
                         <p className="text-xs text-slate-500">Survey loaded: {surveyFileName}</p>
                       ) : null}
@@ -6407,6 +6445,11 @@ export default function PerformanceAIDashboard() {
                             </li>
                           ))}
                         </ul>
+                      </div>
+                    ) : analysisEmptyReason ? (
+                      <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                        <p className="font-semibold text-slate-700">Access analysis needs objects</p>
+                        <p className="mt-1">{analysisEmptyReason}</p>
                       </div>
                     ) : null}
                     <div className="mt-2 max-h-72 space-y-3 overflow-y-auto pr-1">
