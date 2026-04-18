@@ -178,6 +178,7 @@ import {
   createChatMessage,
   createWelcomeMessage,
   extractDesignMemory,
+  getChatThreadStorageKey,
 } from "./utils/chat";
 
 import { uploadedImageSrc } from "./utils/auth";
@@ -4892,6 +4893,13 @@ export default function PerformanceAIDashboard() {
     const nextThread = [createWelcomeMessage()];
     chatMessagesRef.current = nextThread;
     setChatMessages(nextThread);
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.removeItem(getChatThreadStorageKey("draft"));
+      } catch {
+        // Ignore local storage failures.
+      }
+    }
     setStatusMessage("Started a new project.");
     try {
       if (token) {
@@ -4952,6 +4960,13 @@ export default function PerformanceAIDashboard() {
       await deleteJson<{ success: boolean }>(`/api/projects/${projectIdToDelete}`, {
         token,
       });
+      if (typeof window !== "undefined") {
+        try {
+          window.localStorage.removeItem(getChatThreadStorageKey(projectIdToDelete));
+        } catch {
+          // Ignore local storage failures.
+        }
+      }
       removeProjectSummary(projectIdToDelete);
       if (currentProject?.project_id === projectIdToDelete || projectId === projectIdToDelete) {
         const remaining = projects.filter(

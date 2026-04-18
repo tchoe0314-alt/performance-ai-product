@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, Optional, Protocol
 from fastapi import HTTPException
 
 from backend.application.design_workflows import new_workflow_id, now_ts
+from backend.application.job_workflows import JobQueueProtocol
 
 
 class ProjectStoreProtocol(Protocol):
@@ -345,10 +346,13 @@ def save_project_record(
 def delete_project_record(
     *,
     project_store: ProjectStoreProtocol,
+    job_queue: Optional[JobQueueProtocol] = None,
     user_id: str,
     project_id: str,
 ) -> Dict[str, Any]:
     deleted = project_store.delete_project(user_id=user_id, project_id=project_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Project not found.")
+    if job_queue is not None:
+        job_queue.delete_jobs_for_project(user_id=user_id, project_id=project_id)
     return {"success": True, "project_id": project_id}

@@ -257,6 +257,18 @@ class JobQueueService:
         )
         return detail
 
+    def delete_jobs_for_project(self, *, user_id: str, project_id: str) -> int:
+        connection = self.db.connect()
+        try:
+            cursor = connection.execute(
+                "DELETE FROM jobs WHERE user_id = ? AND project_id = ?",
+                (user_id, project_id),
+            )
+            connection.commit()
+            return cursor.rowcount
+        finally:
+            connection.close()
+
     def cancel_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
         self._ensure_workers_alive()
         record = self.get_job(user_id=user_id, job_id=job_id)

@@ -833,6 +833,7 @@ def get_project_result(project_id: str, current_user: Dict[str, Any] = Depends(g
 def delete_project(project_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     return application_delete_project_record(
         project_store=PROJECT_STORE,
+        job_queue=JOB_QUEUE,
         user_id=current_user["user_id"],
         project_id=project_id,
     )

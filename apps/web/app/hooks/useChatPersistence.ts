@@ -38,6 +38,7 @@ export default function useChatPersistence({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (!currentProjectId && !projectId) return;
     const key = getChatThreadStorageKey(currentProjectId || projectId || "draft");
     try {
       window.localStorage.setItem(key, JSON.stringify(chatMessagesRef.current));
@@ -48,6 +49,7 @@ export default function useChatPersistence({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (!currentProjectId && !projectId) return;
     const key = getChatThreadStorageKey(currentProjectId || projectId || "draft");
     if (chatMessagesRef.current.length > 1) return;
     const raw = window.localStorage.getItem(key);

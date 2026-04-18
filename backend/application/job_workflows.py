@@ -38,6 +38,9 @@ class JobQueueProtocol(Protocol):
     ) -> Optional[Dict[str, Any]]:
         ...
 
+    def delete_jobs_for_project(self, *, user_id: str, project_id: str) -> int:
+        ...
+
     def get_job_detail(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
         ...
 
