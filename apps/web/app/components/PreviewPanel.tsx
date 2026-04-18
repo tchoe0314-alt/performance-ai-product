@@ -660,6 +660,25 @@ export default function PreviewPanel({
     };
   }, [lotHeight, lotWidth, previewContainerBounds]);
 
+  const renderedCanonicalCount = useMemo(
+    () =>
+      buildingPlacements.filter(
+        (item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y),
+      ).length,
+    [buildingPlacements],
+  );
+
+  useEffect(() => {
+    if (!debugStats?.enabled) return;
+    if (renderedCanonicalCount > 0 && !overlayBounds) {
+      console.warn("[debug-preview] render-missing-overlay", {
+        renderedCanonicalCount,
+        lotWidth,
+        lotHeight,
+      });
+    }
+  }, [debugStats?.enabled, lotHeight, lotWidth, overlayBounds, renderedCanonicalCount]);
+
   const siteToLatLng = useCallback(
     (xFt: number, yFt: number) => {
       if (!geocode?.lat || !geocode?.lng) return null;
@@ -1656,7 +1675,7 @@ export default function PreviewPanel({
                 ) : null}
                 {overlayBounds && (previewMode === "2d" || !showGeneratedPlan) ? (
                   <div
-                    className="pointer-events-none absolute"
+                    className="pointer-events-none absolute z-10"
                     style={{
                       left: overlayBounds.left,
                       top: overlayBounds.top,
@@ -1805,8 +1824,8 @@ export default function PreviewPanel({
                               style={{
                                 backgroundColor:
                                   previewQuality === "high"
-                                    ? legendPalette.buildingFill
-                                    : "rgba(15, 23, 42, 0.12)",
+                                    ? "rgba(17, 24, 39, 0.38)"
+                                    : "rgba(15, 23, 42, 0.22)",
                               }}
                             />
                             {isSelected && caps.rotatable ? (
