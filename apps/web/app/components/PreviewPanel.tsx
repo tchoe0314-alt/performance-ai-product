@@ -196,6 +196,11 @@ export default function PreviewPanel({
   const showMap = Boolean(mapboxToken) && previewQuality === "high";
   const showGeneratedPlan = !showMap && hasGeneratedPlan && !placementMode && !selectedBuildingId;
   const hasInteractiveLabels = previewLabels.length > 0 && showGeneratedPlan;
+  const hasLiveObjects =
+    buildingPlacements.length > 0 ||
+    suggestedPlacements.length > 0 ||
+    (surveyPoints?.length ?? 0) > 0 ||
+    Boolean(lotWidth && lotHeight);
   const showInteractive = previewInteraction === "interactive";
   const legendPalette = {
     building: "#0f172a",
@@ -1397,7 +1402,7 @@ export default function PreviewPanel({
                 </button>
               </div>
             ) : (
-              <div className="relative flex items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] min-h-[520px] h-[clamp(520px,70vh,820px)]">
+              <div className="relative flex items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] min-h-[620px] h-[clamp(620px,78vh,900px)]">
                 <div className="pointer-events-none absolute left-6 top-6 rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600 shadow-sm">
                   3D geometry not ready yet
                 </div>
@@ -1406,7 +1411,7 @@ export default function PreviewPanel({
           ) : (
             <div
               ref={previewRef}
-              className={`relative flex items-center justify-center rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] min-h-[520px] h-[clamp(520px,70vh,820px)] ${
+              className={`relative flex items-center justify-center rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] min-h-[620px] h-[clamp(620px,78vh,900px)] ${
                 previewInteraction === "interactive" ? "cursor-crosshair" : "cursor-default"
               }`}
               onDragOver={(event) => {
@@ -1504,7 +1509,7 @@ export default function PreviewPanel({
                     onLoad={() => updateImageBounds(previewRef, previewImageRef, setPreviewImageBounds)}
                     onClick={onOpenFullscreen}
                   />
-                ) : !showMap ? (
+                ) : !showMap && !hasLiveObjects ? (
                   <div className="flex h-full w-full items-center justify-center text-sm text-slate-400">
                     Add objects to start building the site. Then click Place and drop them here.
                   </div>
