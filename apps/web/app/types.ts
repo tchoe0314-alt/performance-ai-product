@@ -269,6 +269,9 @@ export type SiteInputs = {
   map_analysis?: MapAnalysis;
   survey_file?: SurveyFileInput;
   slope_estimate?: SurveySlopeResponse | null;
+  survey_points?: number[][];
+  survey_point_count?: number;
+  survey_point_warnings?: string[];
 };
 
 export type ProjectInputMeta = Record<string, unknown> & {

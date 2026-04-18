@@ -36,6 +36,7 @@ from backend.application.file_workflows import (
     download_artifact_response as application_download_artifact_response,
     get_uploaded_image_response as application_get_uploaded_image_response,
     estimate_slope_from_survey as application_estimate_slope_from_survey,
+    read_survey_points as application_read_survey_points,
     upload_image_file as application_upload_image_file,
     upload_survey_file as application_upload_survey_file,
 )
@@ -497,6 +498,18 @@ def estimate_survey_slope(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
     return application_estimate_slope_from_survey(
+        upload_dir=UPLOAD_DIR,
+        current_user=current_user,
+        filename=payload.filename,
+    )
+
+
+@app.post("/api/survey/points")
+def get_survey_points(
+    payload: SurveySlopePayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    return application_read_survey_points(
         upload_dir=UPLOAD_DIR,
         current_user=current_user,
         filename=payload.filename,

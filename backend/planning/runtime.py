@@ -536,6 +536,8 @@ def normalize_parsed_payload(parsed: Dict[str, Any]) -> Dict[str, Any]:
     setback_resolved = resolve_field(norm.get("setback"), DEFAULT_SETBACK)
     norm["setback"] = None if field_path_is_omitted(norm, "setback") else max(0.0, safe_float(setback_resolved, DEFAULT_SETBACK))
     norm.setdefault("meta", {})
+    if isinstance(parsed.get("meta"), dict) and isinstance(parsed.get("meta", {}).get("site_inputs"), dict):
+        norm["meta"]["site_inputs"] = deepcopy(parsed["meta"]["site_inputs"])
     return norm
 
 

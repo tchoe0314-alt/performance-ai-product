@@ -65,6 +65,39 @@ def upload_survey_file(
     }
 
 
+def _parse_survey_points(
+    *,
+    target: Path,
+) -> tuple[list[tuple[float, float, float]], list[str]]:
+    points: list[tuple[float, float, float]] = []
+    warnings: list[str] = []
+    with target.open("r", newline="", encoding="utf-8-sig") as handle:
+        reader = csv.DictReader(handle)
+        if not reader.fieldnames:
+            return points, ["Survey CSV has no header row."]
+        fields = {str(name or "").strip().lower() for name in (reader.fieldnames or [])}
+        x_candidates = [key for key in ("x", "easting", "east", "lon", "longitude") if key in fields]
+        y_candidates = [key for key in ("y", "northing", "north", "lat", "latitude") if key in fields]
+        z_candidates = [key for key in ("z", "elev", "elevation", "height") if key in fields]
+        if not (x_candidates and y_candidates and z_candidates):
+            return points, ["Survey CSV must include x/y/z columns (x,y,z or easting/northing/elevation)."]
+
+        x_key = x_candidates[0]
+        y_key = y_candidates[0]
+        z_key = z_candidates[0]
+        for row in reader:
+            try:
+                x = float(row.get(x_key, ""))
+                y = float(row.get(y_key, ""))
+                z = float(row.get(z_key, ""))
+            except Exception:
+                continue
+            points.append((x, y, z))
+    if len(points) < 3:
+        warnings.append("Survey file needs at least 3 valid points.")
+    return points, warnings
+
+
 def estimate_slope_from_survey(
     *,
     upload_dir: Path,
@@ -80,26 +113,9 @@ def estimate_slope_from_survey(
     if not target.exists():
         raise HTTPException(status_code=404, detail="Survey file not found.")
 
-    points: list[tuple[float, float, float]] = []
-    with target.open("r", newline="", encoding="utf-8-sig") as handle:
-        reader = csv.DictReader(handle)
-        fields = {str(name or "").strip().lower() for name in (reader.fieldnames or [])}
-        if not {"x", "y", "z"}.issubset(fields):
-            raise HTTPException(
-                status_code=400,
-                detail="Survey CSV must include x, y, z columns.",
-            )
-        for row in reader:
-            try:
-                x = float(row.get("x", ""))
-                y = float(row.get("y", ""))
-                z = float(row.get("z", ""))
-            except Exception:
-                continue
-            points.append((x, y, z))
-
+    points, warnings = _parse_survey_points(target=target)
     if len(points) < 3:
-        raise HTTPException(status_code=400, detail="Survey file needs at least 3 valid points.")
+        raise HTTPException(status_code=400, detail=warnings[0] if warnings else "Survey file needs at least 3 valid points.")
 
     sum_x = sum(p[0] for p in points)
     sum_y = sum(p[1] for p in points)
@@ -170,6 +186,30 @@ def estimate_slope_from_survey(
         "direction": direction_label,
         "plane_coefficients": {"a": round(a, 6), "b": round(b, 6), "c": round(c, 6)},
         "point_count": len(points),
+        "warnings": warnings,
+    }
+
+
+def read_survey_points(
+    *,
+    upload_dir: Path,
+    current_user: Dict[str, Any],
+    filename: str,
+) -> Dict[str, Any]:
+    safe_name = Path(filename).name
+    expected_prefix = f"{current_user['user_id']}_"
+    if not safe_name.startswith(expected_prefix):
+        raise HTTPException(status_code=403, detail="That survey file does not belong to this user.")
+
+    target = upload_dir / safe_name
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="Survey file not found.")
+
+    points, warnings = _parse_survey_points(target=target)
+    return {
+        "points": points,
+        "point_count": len(points),
+        "warnings": warnings,
     }
 
 

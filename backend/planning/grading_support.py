@@ -22,7 +22,7 @@ from core.config import (
 from core.geometry_core import Point3D, ProjectModel, ZoneType
 from engines.contour_engine import contour_segments
 from engines.grading_engine import GradeElement
-from engines.surface_engine import GridSurface
+from engines.surface_engine import GridSurface, SurveyPoint, SurfaceEngine
 
 from .common import safe_dict, safe_float, safe_int, safe_list, safe_str
 from .field_contract import field_path_is_omitted
@@ -144,6 +144,40 @@ def build_existing_surface(
         nrows=nrows,
         values=values,
     )
+    if has_survey:
+        survey_points = list(site_inputs.get("survey_points") or [])
+        parsed_points: List[SurveyPoint] = []
+        for item in survey_points:
+            if not isinstance(item, (list, tuple)) or len(item) < 3:
+                continue
+            try:
+                x = float(item[0])
+                y = float(item[1])
+                z = float(item[2])
+            except Exception:
+                continue
+            parsed_points.append(SurveyPoint(x=x, y=y, z=z))
+        if len(parsed_points) >= 3:
+            try:
+                engine = SurfaceEngine(parsed_points)
+                survey_surface = engine.build_grid(
+                    x_min=x_min,
+                    y_min=y_min,
+                    x_max=x_max,
+                    y_max=y_max,
+                    cell_size=cell,
+                )
+                profile["survey_point_count"] = len(parsed_points)
+                profile["survey_used"] = True
+                setattr(survey_surface, "_inferred_profile", profile)
+                return survey_surface
+            except Exception as exc:
+                profile["survey_used"] = False
+                profile["survey_error"] = str(exc)
+        else:
+            profile["survey_used"] = False
+            profile["survey_error"] = "Survey points missing or insufficient."
+
     setattr(surface, "_inferred_profile", profile)
     return surface
 

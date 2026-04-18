@@ -3764,6 +3764,11 @@ export default function PerformanceAIDashboard() {
   const estimateSurveySlope = async () => {
     if (!token || !surveyFileName) return;
     try {
+      const pointsData = await postJson<{ points?: number[][]; point_count?: number; warnings?: string[] }>(
+        "/api/survey/points",
+        { filename: surveyFileName },
+        { token },
+      );
       const data = await postJson<SurveySlopeResponse>(
         "/api/survey/estimate-slope",
         { filename: surveyFileName },
@@ -3777,6 +3782,9 @@ export default function PerformanceAIDashboard() {
       const nextSiteInputs = {
         ...(currentInput?.meta?.site_inputs ?? {}),
         slope_estimate: data,
+        survey_points: Array.isArray(pointsData.points) ? pointsData.points : [],
+        survey_point_count: pointsData.point_count ?? (Array.isArray(pointsData.points) ? pointsData.points.length : 0),
+        survey_point_warnings: pointsData.warnings ?? [],
       };
       await saveProject({
         silent: true,
