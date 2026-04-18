@@ -23,6 +23,7 @@ from core.geometry_core import Point3D, ProjectModel, ZoneType
 from engines.contour_engine import contour_segments
 from engines.grading_engine import GradeElement
 from engines.surface_engine import GridSurface, SurveyPoint, SurfaceEngine
+from .terrain_provider import build_terrain_surface, normalize_surface
 
 from .common import safe_dict, safe_float, safe_int, safe_list, safe_str
 from .field_contract import field_path_is_omitted
@@ -102,6 +103,30 @@ def build_existing_surface(
     else:
         profile["source_quality"] = "assumed"
         profile["source_detail"] = "Fallback assumptions"
+    geocode = safe_dict(site_inputs.get("geocode"))
+    site_rotation = safe_float(site_inputs.get("site_rotation_deg"), 0.0)
+    terrain_surface = None
+    if geocode.get("lat") is not None and geocode.get("lng") is not None:
+        terrain_surface = build_terrain_surface(
+            center_lat=safe_float(geocode.get("lat"), 0.0),
+            center_lng=safe_float(geocode.get("lng"), 0.0),
+            lot_x=safe_float(lot.get("x"), DEFAULT_LOT_X),
+            lot_y=safe_float(lot.get("y"), DEFAULT_LOT_Y),
+            lot_width_ft=safe_float(lot.get("w"), DEFAULT_LOT_WIDTH),
+            lot_height_ft=safe_float(lot.get("h"), DEFAULT_LOT_HEIGHT),
+            rotation_deg=site_rotation,
+            x_min=x_min,
+            y_min=y_min,
+            ncols=ncols,
+            nrows=nrows,
+            cell=cell,
+        )
+        if terrain_surface is not None:
+            profile["source_quality"] = "terrain_mapbox"
+            profile["source_detail"] = "Mapbox terrain-rgb"
+            profile["terrain_used"] = True
+            return normalize_surface(terrain_surface, DEFAULT_PAD_ELEV)
+
     ux, uy = normalize_vector(profile["downhill_dx"], profile["downhill_dy"])
     slope_ratio = max(0.002, safe_float(profile["slope_ratio"], 0.02))
     center_x = (x_min + x_max) / 2.0

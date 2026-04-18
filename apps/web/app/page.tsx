@@ -419,6 +419,12 @@ export default function PerformanceAIDashboard() {
   const [detectionScaleFeet, setDetectionScaleFeet] = useState("");
   const [detectionScalePixels, setDetectionScalePixels] = useState("");
   const [detectionScaleFtPerPx, setDetectionScaleFtPerPx] = useState<number | null>(null);
+  const [siteRotationDeg, setSiteRotationDeg] = useState(0);
+  const [siteRotationInput, setSiteRotationInput] = useState("0");
+  const [showSiteBounds, setShowSiteBounds] = useState(true);
+  const [fitToSiteRequest, setFitToSiteRequest] = useState(0);
+  const [alignToRoadRequest, setAlignToRoadRequest] = useState(0);
+  const rotationSaveTimeoutRef = useRef<number | null>(null);
   const [focusDetectedId, setFocusDetectedId] = useState<string | null>(null);
   const [focusObjectId, setFocusObjectId] = useState<string | null>(null);
   const [analysisPaths, setAnalysisPaths] = useState<
@@ -3427,22 +3433,26 @@ export default function PerformanceAIDashboard() {
     const mapAnalysisResult = siteInputs?.map_analysis ?? null;
     const surveyFile = siteInputs?.survey_file ?? {};
     const slopeEstimate = siteInputs?.slope_estimate ?? null;
-    const detectionScale = siteInputs?.detection_scale ?? {};
+      const detectionScale = siteInputs?.detection_scale ?? {};
     const detectedObjects = Array.isArray(siteInputs?.detected_objects)
       ? (siteInputs?.detected_objects as BuildingPlacement[])
       : [];
     setSiteAddress(String(siteInputs?.address || ""));
     setSurveyFileName(String(surveyFile?.stored_filename || ""));
     setSurveySlopeEstimate(slopeEstimate || null);
-    setDetectionScaleFeet(
-      detectionScale?.distance_ft ? String(detectionScale.distance_ft) : "",
-    );
+      setDetectionScaleFeet(
+        detectionScale?.distance_ft ? String(detectionScale.distance_ft) : "",
+      );
     setDetectionScalePixels(
       detectionScale?.pixel_distance ? String(detectionScale.pixel_distance) : "",
     );
-    setDetectionScaleFtPerPx(
-      typeof detectionScale?.scale_ft_per_px === "number" ? detectionScale.scale_ft_per_px : null,
-    );
+      setDetectionScaleFtPerPx(
+        typeof detectionScale?.scale_ft_per_px === "number" ? detectionScale.scale_ft_per_px : null,
+      );
+      const rotationValue =
+        typeof siteInputs?.site_rotation_deg === "number" ? siteInputs.site_rotation_deg : 0;
+      setSiteRotationDeg(rotationValue);
+      setSiteRotationInput(String(rotationValue));
     setDetectedPlacements(detectedObjects);
     const mapUrl = String(mapSnapshot?.image_url || "");
     if (mapUrl) {
@@ -3935,7 +3945,13 @@ export default function PerformanceAIDashboard() {
 
   const mapDetectionToPlacement = useCallback(
     (
-      detection: { kind: string; bbox: [number, number, number, number]; confidence?: number },
+      detection: {
+        kind: string;
+        bbox: [number, number, number, number];
+        confidence?: number;
+        geometry_type?: "polygon" | "polyline" | "rect";
+        geometry?: Array<[number, number]>;
+      },
       imageWidth: number,
       imageHeight: number,
     ): BuildingPlacement | null => {
@@ -3945,10 +3961,53 @@ export default function PerformanceAIDashboard() {
       const height = parsePositiveNumber(lotHeight);
       if (!width || !height) return null;
       const scaleFtPerPx = detectionScaleFtPerPx && detectionScaleFtPerPx > 0 ? detectionScaleFtPerPx : null;
-      const mappedX = scaleFtPerPx ? x * scaleFtPerPx : (x / imageWidth) * width;
-      const mappedY = scaleFtPerPx ? y * scaleFtPerPx : (y / imageHeight) * height;
-      const mappedW = scaleFtPerPx ? w * scaleFtPerPx : (w / imageWidth) * width;
-      const mappedD = scaleFtPerPx ? h * scaleFtPerPx : (h / imageHeight) * height;
+      const mapPoint = (pt: [number, number]) => {
+        const [px, py] = pt;
+        const mappedX = scaleFtPerPx ? px * scaleFtPerPx : (px / imageWidth) * width;
+        const mappedY = scaleFtPerPx ? py * scaleFtPerPx : (py / imageHeight) * height;
+        return [mappedX, mappedY] as [number, number];
+      };
+      const mappedGeometry = Array.isArray(detection.geometry)
+        ? detection.geometry.map((pt) => mapPoint(pt))
+        : null;
+      const geometryBounds = mappedGeometry?.length
+        ? mappedGeometry.reduce(
+            (acc, pt) => {
+              return {
+                minX: Math.min(acc.minX, pt[0]),
+                minY: Math.min(acc.minY, pt[1]),
+                maxX: Math.max(acc.maxX, pt[0]),
+                maxY: Math.max(acc.maxY, pt[1]),
+              };
+            },
+            {
+              minX: Number.POSITIVE_INFINITY,
+              minY: Number.POSITIVE_INFINITY,
+              maxX: Number.NEGATIVE_INFINITY,
+              maxY: Number.NEGATIVE_INFINITY,
+            },
+          )
+        : null;
+      const mappedX = geometryBounds
+        ? geometryBounds.minX
+        : scaleFtPerPx
+          ? x * scaleFtPerPx
+          : (x / imageWidth) * width;
+      const mappedY = geometryBounds
+        ? geometryBounds.minY
+        : scaleFtPerPx
+          ? y * scaleFtPerPx
+          : (y / imageHeight) * height;
+      const mappedW = geometryBounds
+        ? geometryBounds.maxX - geometryBounds.minX
+        : scaleFtPerPx
+          ? w * scaleFtPerPx
+          : (w / imageWidth) * width;
+      const mappedD = geometryBounds
+        ? geometryBounds.maxY - geometryBounds.minY
+        : scaleFtPerPx
+          ? h * scaleFtPerPx
+          : (h / imageHeight) * height;
       const typeMap: Record<string, SiteObjectType> = {
         building: "building",
         road: "road",
@@ -4000,6 +4059,8 @@ export default function PerformanceAIDashboard() {
         generated: false,
         confidence: detection.confidence ?? 0.2,
         confirmed: false,
+        geometryType: detection.geometry_type,
+        geometry: mappedGeometry ?? undefined,
         capabilities: { movable: true, resizable: true, rotatable: false, deletable: true },
         placed: true,
         meta: {
@@ -4346,6 +4407,43 @@ export default function PerformanceAIDashboard() {
     });
     setStatusMessage("Detection scale calibrated.");
   }, [currentProject, detectionScaleFeet, detectionScalePixels, payloadPreview, saveProject]);
+
+  const persistSiteRotation = useCallback(
+    async (nextValue: number) => {
+      const currentInput = currentProject?.project_input ?? payloadPreview;
+      const nextSiteInputs = {
+        ...(currentInput?.meta?.site_inputs ?? {}),
+        site_rotation_deg: nextValue,
+      };
+      await saveProject({
+        silent: true,
+        projectInputOverride: {
+          ...currentInput,
+          input_mode: "user",
+          strict_mode: false,
+          allow_ai_fill_for_blanks: false,
+          meta: {
+            ...(currentInput?.meta ?? {}),
+            site_inputs: nextSiteInputs,
+          },
+        },
+      });
+    },
+    [currentProject, payloadPreview, saveProject],
+  );
+
+  const scheduleRotationSave = useCallback(
+    (nextValue: number) => {
+      if (rotationSaveTimeoutRef.current) {
+        window.clearTimeout(rotationSaveTimeoutRef.current);
+      }
+      rotationSaveTimeoutRef.current = window.setTimeout(() => {
+        void persistSiteRotation(nextValue);
+        rotationSaveTimeoutRef.current = null;
+      }, 400);
+    },
+    [persistSiteRotation],
+  );
 
   const estimateSurveySlope = async () => {
     if (!token || !surveyFileName) return;
@@ -4924,6 +5022,11 @@ export default function PerformanceAIDashboard() {
     setDetectionScaleFeet("");
     setDetectionScalePixels("");
     setDetectionScaleFtPerPx(null);
+    setSiteRotationDeg(0);
+    setSiteRotationInput("0");
+    setShowSiteBounds(true);
+    setFitToSiteRequest(0);
+    setAlignToRoadRequest(0);
     setFocusDetectedId(null);
     setFocusObjectId(null);
     setPlacementModeEnabled(false);
@@ -6063,17 +6166,90 @@ export default function PerformanceAIDashboard() {
                       >
                         Apply scale
                       </button>
-                      <p className="mt-2 text-xs text-slate-500">
-                        {detectionScaleFtPerPx
-                          ? `Calibrated: 1 px ≈ ${detectionScaleFtPerPx.toFixed(3)} ft`
-                          : "No calibration applied. Detection sizes are approximate."}
-                      </p>
-                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
-                        <p className="font-semibold text-slate-700">How to calibrate</p>
-                        <p className="mt-1">
-                          Pick two points in the uploaded image with a known real‑world distance, measure the pixel distance between them, then enter both values and apply.
+                        <p className="mt-2 text-xs text-slate-500">
+                          {detectionScaleFtPerPx
+                            ? `Calibrated: 1 px ≈ ${detectionScaleFtPerPx.toFixed(3)} ft`
+                            : "No calibration applied. Detection sizes are approximate."}
                         </p>
+                        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+                          <p className="font-semibold text-slate-700">How to calibrate</p>
+                          <p className="mt-1">
+                            Pick two points in the uploaded image with a known real‑world distance, measure the pixel distance between them, then enter both values and apply.
+                          </p>
+                        </div>
                       </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        Site rotation
+                      </p>
+                      <div className="mt-3 flex items-center gap-3">
+                        <input
+                          type="range"
+                          min={-180}
+                          max={180}
+                          value={siteRotationDeg}
+                          onChange={(event) => {
+                            const value = Number(event.target.value);
+                            setSiteRotationDeg(value);
+                            setSiteRotationInput(String(value));
+                            scheduleRotationSave(value);
+                          }}
+                          className="w-full"
+                        />
+                        <input
+                          type="number"
+                          value={siteRotationInput}
+                          onChange={(event) => {
+                            setSiteRotationInput(event.target.value);
+                            const value = Number(event.target.value);
+                            if (Number.isFinite(value)) {
+                              setSiteRotationDeg(value);
+                              scheduleRotationSave(value);
+                            }
+                          }}
+                          className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                        />
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFitToSiteRequest((value) => value + 1);
+                          }}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                        >
+                          Fit to Site
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowSiteBounds((value) => !value)}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                        >
+                          {showSiteBounds ? "Hide Site Bounds" : "Show Site Bounds"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAlignToRoadRequest((value) => value + 1)}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                        >
+                          Align to Nearest Road
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSiteRotationDeg(0);
+                            setSiteRotationInput("0");
+                            scheduleRotationSave(0);
+                          }}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                        >
+                          Reset Rotation
+                        </button>
+                      </div>
+                      <p className="mt-2 text-xs text-slate-500">
+                        Hold <span className="font-semibold">R</span> and drag the canvas to rotate the site.
+                      </p>
                     </div>
 
                     <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
@@ -6329,6 +6505,16 @@ export default function PerformanceAIDashboard() {
                 showCalculations={showCalculations}
                 measurementOverlayStats={measurementOverlayStats}
                 calculationOverlayStats={calculationOverlayStats}
+                geocode={siteInputs?.geocode ?? null}
+                siteRotationDeg={siteInputs?.site_rotation_deg ?? 0}
+                showSiteBounds={showSiteBounds}
+                fitToSiteRequest={fitToSiteRequest}
+                alignToRoadRequest={alignToRoadRequest}
+                onSetSiteRotationDeg={(value) => {
+                  setSiteRotationDeg(value);
+                  setSiteRotationInput(String(value));
+                  scheduleRotationSave(value);
+                }}
               />
               </div>
 

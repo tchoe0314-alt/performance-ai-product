@@ -291,6 +291,7 @@ export type SiteInputs = {
     scale_ft_per_px?: number;
     calibrated?: boolean;
   };
+  site_rotation_deg?: number;
 };
 
 export type ProjectInputMeta = Record<string, unknown> & {
@@ -582,6 +583,8 @@ export type ImageFeatureDetection = {
   kind: string;
   bbox: [number, number, number, number];
   confidence?: number;
+  geometry_type?: "polygon" | "polyline" | "rect";
+  geometry?: Array<[number, number]>;
 };
 
 export type ImageDetectResponse = {
@@ -611,6 +614,8 @@ export type BuildingPlacement = {
   generated?: boolean;
   confidence?: number;
   confirmed?: boolean;
+  geometryType?: "polygon" | "polyline" | "rect";
+  geometry?: Array<[number, number]>;
   capabilities?: {
     movable?: boolean;
     resizable?: boolean;

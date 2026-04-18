@@ -592,6 +592,8 @@ def detect_image_features(
                 "kind": det.kind,
                 "bbox": det.bbox,
                 "confidence": det.confidence,
+                "geometry_type": det.geometry_type,
+                "geometry": det.geometry,
             }
             for det in result.detections
         ],

@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import mapboxgl from "mapbox-gl";
+import "mapbox-gl/dist/mapbox-gl.css";
 import { Maximize2, X } from "lucide-react";
 
 import type {
@@ -78,6 +80,12 @@ type PreviewPanelProps = {
   showCalculations: boolean;
   measurementOverlayStats: Array<{ label: string; value: number | null; unit: string }>;
   calculationOverlayStats: Array<{ label: string; value: number | null; unit: string }>;
+  geocode?: { lat?: number; lng?: number } | null;
+  siteRotationDeg?: number | null;
+  showSiteBounds?: boolean;
+  fitToSiteRequest?: number;
+  alignToRoadRequest?: number;
+  onSetSiteRotationDeg?: (value: number) => void;
 };
 
 export default function PreviewPanel({
@@ -136,6 +144,12 @@ export default function PreviewPanel({
   showCalculations,
   measurementOverlayStats,
   calculationOverlayStats,
+  geocode,
+  siteRotationDeg,
+  showSiteBounds = false,
+  fitToSiteRequest,
+  alignToRoadRequest,
+  onSetSiteRotationDeg,
 }: PreviewPanelProps) {
   const previewLabels = useMemo(
     () => (Array.isArray(planPreviewAnnotations?.labels) ? planPreviewAnnotations?.labels : []),
@@ -165,8 +179,18 @@ export default function PreviewPanel({
   const fullscreenRef = useRef<HTMLDivElement | null>(null);
   const previewImageRef = useRef<HTMLImageElement | null>(null);
   const fullscreenImageRef = useRef<HTMLImageElement | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
+  const fullscreenMapContainerRef = useRef<HTMLDivElement | null>(null);
+  const fullscreenMapRef = useRef<mapboxgl.Map | null>(null);
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const [mapRevision, setMapRevision] = useState(0);
+  const [rotateDragActive, setRotateDragActive] = useState(false);
+  const [rotateDragStart, setRotateDragStart] = useState<{ x: number; value: number } | null>(null);
   const activeAnnotation = pinnedAnnotation ?? hoveredAnnotation;
-  const showGeneratedPlan = hasGeneratedPlan && !placementMode && !selectedBuildingId;
+  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+  const showMap = Boolean(mapboxToken);
+  const showGeneratedPlan = !showMap && hasGeneratedPlan && !placementMode && !selectedBuildingId;
   const hasInteractiveLabels = previewLabels.length > 0 && showGeneratedPlan;
   const showInteractive = previewInteraction === "interactive";
   const legendPalette = {
@@ -182,17 +206,17 @@ export default function PreviewPanel({
       null,
     [buildingPlacements, suggestedPlacements, hoveredObjectId],
   );
-  const show3D = previewMode === "3d" && Boolean(planPreviewUrl);
+  const show3D = previewMode === "3d" && Boolean(planPreviewUrl) && !showMap;
   useEffect(() => {
-    if (previewMode === "3d" && (!planPreviewUrl || preview3DEffectiveItems.length === 0)) {
+    if (previewMode === "3d" && (!planPreviewUrl || preview3DEffectiveItems.length === 0 || showMap)) {
       onSetPreviewMode("2d");
     }
-  }, [onSetPreviewMode, planPreviewUrl, preview3DEffectiveItems.length, previewMode]);
+  }, [onSetPreviewMode, planPreviewUrl, preview3DEffectiveItems.length, previewMode, showMap]);
   useEffect(() => {
-    if (!planPreviewUrl && previewMode === "3d") {
+    if ((!planPreviewUrl || showMap) && previewMode === "3d") {
       onSetPreviewMode("2d");
     }
-  }, [onSetPreviewMode, planPreviewUrl, previewMode]);
+  }, [onSetPreviewMode, planPreviewUrl, previewMode, showMap]);
   const selectedObject = useMemo(
     () =>
       [...buildingPlacements, ...suggestedPlacements].find(
@@ -561,12 +585,369 @@ export default function PreviewPanel({
       ...(confidence ? [{ label: "Confidence", value: confidence }] : []),
     ];
   }, [hoveredObject]);
-  const overlayBounds = showGeneratedPlan ? (previewImageBounds ?? previewContainerBounds) : previewContainerBounds;
+  const overlayBounds = previewContainerBounds;
+
+  useEffect(() => {
+    if (!showMap) return;
+    if (!mapContainerRef.current || mapRef.current) return;
+    mapboxgl.accessToken = mapboxToken || "";
+    mapRef.current = new mapboxgl.Map({
+      container: mapContainerRef.current,
+      style: "mapbox://styles/mapbox/satellite-streets-v12",
+      center: [-95.9345, 41.2565],
+      zoom: 16,
+      attributionControl: false,
+    });
+    mapRef.current.on("load", () => {
+      mapRef.current?.addSource("mapbox-dem", {
+        type: "raster-dem",
+        url: "mapbox://mapbox.terrain-rgb",
+        tileSize: 512,
+        maxzoom: 14,
+      });
+      mapRef.current?.setTerrain({ source: "mapbox-dem", exaggeration: 1.0 });
+      setMapLoaded(true);
+      setMapRevision((value) => value + 1);
+    });
+  }, [mapboxToken, showMap]);
+
+  useEffect(() => {
+    if (!showMap || !mapLoaded || !mapRef.current) return;
+    const map = mapRef.current;
+    const handleClick = (event: mapboxgl.MapMouseEvent) => {
+      const features = map.queryRenderedFeatures(event.point, {
+        layers: [
+          "civora-buildings-fill",
+          "civora-parking-fill",
+          "civora-basins-fill",
+          "civora-roads-line",
+        ],
+      });
+      const hit = features?.[0];
+      const id = hit?.properties?.id;
+      if (typeof id === "string") {
+        onSelectBuilding(id);
+      }
+    };
+    map.on("click", handleClick);
+    return () => {
+      map.off("click", handleClick);
+    };
+  }, [mapLoaded, onSelectBuilding, showMap]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() === "r") {
+        setRotateDragActive(true);
+      }
+    };
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() === "r") {
+        setRotateDragActive(false);
+        setRotateDragStart(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!showMap || !previewFullscreenOpen) return;
+    if (!fullscreenMapContainerRef.current || fullscreenMapRef.current) return;
+    mapboxgl.accessToken = mapboxToken || "";
+    fullscreenMapRef.current = new mapboxgl.Map({
+      container: fullscreenMapContainerRef.current,
+      style: "mapbox://styles/mapbox/satellite-streets-v12",
+      center: [-95.9345, 41.2565],
+      zoom: 16,
+      attributionControl: false,
+    });
+    fullscreenMapRef.current.on("load", () => {
+      fullscreenMapRef.current?.addSource("mapbox-dem", {
+        type: "raster-dem",
+        url: "mapbox://mapbox.terrain-rgb",
+        tileSize: 512,
+        maxzoom: 14,
+      });
+      fullscreenMapRef.current?.setTerrain({ source: "mapbox-dem", exaggeration: 1.0 });
+      fullscreenMapRef.current?.resize();
+      setMapRevision((value) => value + 1);
+    });
+  }, [mapboxToken, previewFullscreenOpen, showMap]);
+
+  useEffect(() => {
+    if (!showMap) return;
+    if (!geocode?.lng || !geocode?.lat) return;
+    const center: [number, number] = [geocode.lng, geocode.lat];
+    mapRef.current?.flyTo({ center, zoom: 17 });
+    fullscreenMapRef.current?.flyTo({ center, zoom: 17 });
+  }, [geocode?.lat, geocode?.lng, showMap]);
+
+  useEffect(() => {
+    if (!showMap || !mapLoaded || !mapRef.current || !geocode?.lat || !geocode?.lng) return;
+    if (!fitToSiteRequest || !lotWidth || !lotHeight) return;
+    const corners = [
+      convertSiteToLngLat(0, 0),
+      convertSiteToLngLat(lotWidth, 0),
+      convertSiteToLngLat(lotWidth, lotHeight),
+      convertSiteToLngLat(0, lotHeight),
+    ].filter(Boolean) as Array<[number, number]>;
+    if (corners.length < 4) return;
+    const bounds = corners.reduce(
+      (acc, coord) => acc.extend(coord),
+      new mapboxgl.LngLatBounds(corners[0], corners[0]),
+    );
+    mapRef.current.fitBounds(bounds, { padding: 80, duration: 650 });
+  }, [convertSiteToLngLat, fitToSiteRequest, geocode?.lat, geocode?.lng, lotHeight, lotWidth, mapLoaded, showMap]);
+
+  useEffect(() => {
+    if (!showMap || !mapLoaded || !mapRef.current) return;
+    if (!alignToRoadRequest || !onSetSiteRotationDeg) return;
+    const map = mapRef.current;
+    const centerPoint = map.project(map.getCenter());
+    const box = [
+      [centerPoint.x - 120, centerPoint.y - 120],
+      [centerPoint.x + 120, centerPoint.y + 120],
+    ] as [mapboxgl.PointLike, mapboxgl.PointLike];
+    const features = map.queryRenderedFeatures(box, { layers: ["road", "road-primary", "road-secondary", "road-street"] });
+    const bearings: Array<{ bearing: number; weight: number }> = [];
+    features.forEach((feature) => {
+      const geom = feature.geometry;
+      if (geom.type !== "LineString") return;
+      const coords = geom.coordinates as number[][];
+      for (let i = 0; i < coords.length - 1; i += 1) {
+        const [lng1, lat1] = coords[i];
+        const [lng2, lat2] = coords[i + 1];
+        const dx = lng2 - lng1;
+        const dy = lat2 - lat1;
+        const bearing = (Math.atan2(dy, dx) * 180) / Math.PI;
+        const weight = Math.hypot(dx, dy);
+        if (Number.isFinite(bearing) && Number.isFinite(weight)) {
+          bearings.push({ bearing, weight });
+        }
+      }
+    });
+    if (!bearings.length) return;
+    const dominant = bearings.reduce((acc, item) => (item.weight > acc.weight ? item : acc), bearings[0]);
+    const normalized = ((90 - dominant.bearing + 540) % 360) - 180;
+    onSetSiteRotationDeg(normalized);
+  }, [alignToRoadRequest, mapLoaded, onSetSiteRotationDeg, showMap]);
+
+  const convertSiteToLngLat = useCallback(
+    (xFt: number, yFt: number) => {
+      if (!geocode?.lat || !geocode?.lng) return null;
+      const metersPerDegLat = 111320;
+      const metersPerDegLng = 111320 * Math.cos((geocode.lat * Math.PI) / 180);
+      const dxFt = xFt - lotWidth / 2;
+      const dyFt = lotHeight / 2 - yFt;
+      const rotationDeg = typeof siteRotationDeg === "number" ? siteRotationDeg : 0;
+      const theta = (rotationDeg * Math.PI) / 180;
+      const dxRot = dxFt * Math.cos(theta) - dyFt * Math.sin(theta);
+      const dyRot = dxFt * Math.sin(theta) + dyFt * Math.cos(theta);
+      const dxM = dxRot * 0.3048;
+      const dyM = dyRot * 0.3048;
+      const lng = geocode.lng + dxM / metersPerDegLng;
+      const lat = geocode.lat + dyM / metersPerDegLat;
+      return [lng, lat] as [number, number];
+    },
+    [geocode?.lat, geocode?.lng, lotHeight, lotWidth, siteRotationDeg],
+  );
+
+  useEffect(() => {
+    if (!showMap || !mapLoaded || !mapRef.current) return;
+    if (!geocode?.lat || !geocode?.lng || !lotWidth || !lotHeight) return;
+
+    const placedObjects = buildingPlacements.filter(
+      (item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y),
+    );
+
+    const buildPolygon = (item: BuildingPlacement) => {
+      const x = item.x ?? 0;
+      const y = item.y ?? 0;
+      const rotation = item.rotation ?? 0;
+      const rotated = rotation % 180 !== 0;
+      const w = rotated ? item.d : item.w;
+      const d = rotated ? item.w : item.d;
+      const corners: Array<[number, number]> = [
+        [x, y],
+        [x + w, y],
+        [x + w, y + d],
+        [x, y + d],
+        [x, y],
+      ];
+      const coords = corners
+        .map((pt) => convertSiteToLngLat(pt[0], pt[1]))
+        .filter(Boolean) as Array<[number, number]>;
+      return coords.length === corners.length ? coords : null;
+    };
+
+    const buildLine = (item: BuildingPlacement) => {
+      const coords = buildPolygon(item);
+      if (!coords) return null;
+      return coords;
+    };
+
+    const buildSitePolygon = () => {
+      const corners: Array<[number, number]> = [
+        [0, 0],
+        [lotWidth, 0],
+        [lotWidth, lotHeight],
+        [0, lotHeight],
+        [0, 0],
+      ];
+      const coords = corners
+        .map((pt) => convertSiteToLngLat(pt[0], pt[1]))
+        .filter(Boolean) as Array<[number, number]>;
+      return coords.length === corners.length ? coords : null;
+    };
+
+    const toFeatureCollection = (items: BuildingPlacement[], geometry: "Polygon" | "LineString") => ({
+      type: "FeatureCollection",
+      features: items
+        .map((item) => {
+          const coords = geometry === "LineString" ? buildLine(item) : buildPolygon(item);
+          if (!coords) return null;
+          return {
+            type: "Feature",
+            geometry: {
+              type: geometry,
+              coordinates: geometry === "Polygon" ? [coords] : coords,
+            },
+            properties: {
+              id: item.id,
+              type: item.type || "building",
+              label: item.label || item.name || item.type || "object",
+            },
+          };
+        })
+        .filter(Boolean),
+    });
+
+    const buildings = placedObjects.filter((item) => !item.type || item.type === "building");
+    const roads = placedObjects.filter((item) => item.type === "road" || item.type === "driveway");
+    const parking = placedObjects.filter((item) => item.type === "parking");
+    const basins = placedObjects.filter((item) => item.type === "basin");
+    const sitePolygon = buildSitePolygon();
+
+    const updateMap = (map: mapboxgl.Map | null) => {
+      if (!map || !map.isStyleLoaded()) return;
+      const ensureSource = (id: string, data: any) => {
+        if (!map.getSource(id)) {
+          map.addSource(id, { type: "geojson", data });
+        } else {
+          (map.getSource(id) as mapboxgl.GeoJSONSource).setData(data);
+        }
+      };
+
+      const ensureLayer = (
+        id: string,
+        source: string,
+        type: "fill" | "line" | "circle",
+        paint: mapboxgl.AnyPaint,
+      ) => {
+        if (!map.getLayer(id)) {
+          map.addLayer({ id, type, source, paint });
+        }
+      };
+
+      ensureSource("civora-buildings", toFeatureCollection(buildings, "Polygon"));
+      ensureSource("civora-roads", toFeatureCollection(roads, "LineString"));
+      ensureSource("civora-parking", toFeatureCollection(parking, "Polygon"));
+      ensureSource("civora-basins", toFeatureCollection(basins, "Polygon"));
+      if (sitePolygon) {
+        ensureSource("civora-site", {
+          type: "FeatureCollection",
+          features: [
+            {
+              type: "Feature",
+              geometry: { type: "Polygon", coordinates: [sitePolygon] },
+              properties: { id: "site-boundary" },
+            },
+          ],
+        });
+      }
+      if (geocode?.lat && geocode?.lng) {
+        ensureSource("civora-center", {
+          type: "FeatureCollection",
+          features: [
+            {
+              type: "Feature",
+              geometry: { type: "Point", coordinates: [geocode.lng, geocode.lat] },
+              properties: { id: "site-center" },
+            },
+          ],
+        });
+      }
+
+      ensureLayer("civora-buildings-fill", "civora-buildings", "fill", {
+        "fill-color": "#1e293b",
+        "fill-opacity": 0.35,
+      });
+      ensureLayer("civora-buildings-line", "civora-buildings", "line", {
+        "line-color": "#0f172a",
+        "line-width": 2,
+      });
+      ensureLayer("civora-roads-line", "civora-roads", "line", {
+        "line-color": "#2563eb",
+        "line-width": 2.5,
+      });
+      ensureLayer("civora-parking-fill", "civora-parking", "fill", {
+        "fill-color": "#64748b",
+        "fill-opacity": 0.25,
+      });
+      ensureLayer("civora-basins-fill", "civora-basins", "fill", {
+        "fill-color": "#10b981",
+        "fill-opacity": 0.25,
+      });
+      if (showSiteBounds && sitePolygon) {
+        ensureLayer("civora-site-line", "civora-site", "line", {
+          "line-color": "#f59e0b",
+          "line-width": 2,
+          "line-dasharray": [2, 2],
+        });
+      } else if (map.getLayer("civora-site-line")) {
+        map.removeLayer("civora-site-line");
+      }
+      if (geocode?.lat && geocode?.lng) {
+        ensureLayer("civora-center-crosshair", "civora-center", "circle", {
+          "circle-color": "#f97316",
+          "circle-radius": 4,
+          "circle-stroke-color": "#fff",
+          "circle-stroke-width": 1,
+        });
+      }
+    };
+
+    updateMap(mapRef.current);
+    updateMap(fullscreenMapRef.current);
+  }, [
+    buildingPlacements,
+    convertSiteToLngLat,
+    geocode?.lat,
+    geocode?.lng,
+    lotHeight,
+    lotWidth,
+    mapLoaded,
+    mapRevision,
+    showMap,
+    showSiteBounds,
+  ]);
 
   useEffect(() => {
     const handleUpdate = () => {
       updateContainerBounds();
-      if (planPreviewUrl && showGeneratedPlan) {
+      if (showMap) {
+        if (previewRef.current) {
+          const rect = previewRef.current.getBoundingClientRect();
+          setPreviewImageBounds({ left: 0, top: 0, width: rect.width, height: rect.height });
+        }
+        mapRef.current?.resize();
+        fullscreenMapRef.current?.resize();
+      } else if (planPreviewUrl && showGeneratedPlan) {
         updateImageBounds(previewRef, previewImageRef, setPreviewImageBounds);
       } else {
         setPreviewImageBounds(null);
@@ -581,11 +962,21 @@ export default function PreviewPanel({
       if (observer) observer.disconnect();
       window.removeEventListener("resize", handleUpdate);
     };
-  }, [planPreviewUrl, previewMode, showGeneratedPlan, updateContainerBounds, updateImageBounds]);
+  }, [planPreviewUrl, previewMode, showGeneratedPlan, showMap, updateContainerBounds, updateImageBounds]);
 
   useEffect(() => {
-    if (!previewFullscreenOpen || !planPreviewUrl) return;
-    const handleUpdate = () => updateImageBounds(fullscreenRef, fullscreenImageRef, setFullscreenImageBounds);
+    if (!previewFullscreenOpen) return;
+    const handleUpdate = () => {
+      if (showMap) {
+        if (fullscreenRef.current) {
+          const rect = fullscreenRef.current.getBoundingClientRect();
+          setFullscreenImageBounds({ left: 0, top: 0, width: rect.width, height: rect.height });
+        }
+        fullscreenMapRef.current?.resize();
+      } else if (planPreviewUrl) {
+        updateImageBounds(fullscreenRef, fullscreenImageRef, setFullscreenImageBounds);
+      }
+    };
     handleUpdate();
     if (!fullscreenRef.current) return;
     const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(handleUpdate) : null;
@@ -595,7 +986,7 @@ export default function PreviewPanel({
       if (observer) observer.disconnect();
       window.removeEventListener("resize", handleUpdate);
     };
-  }, [planPreviewUrl, previewFullscreenOpen, updateImageBounds]);
+  }, [planPreviewUrl, previewFullscreenOpen, showMap, updateImageBounds]);
   const [focusTransform, setFocusTransform] = useState<{ scale: number; tx: number; ty: number } | null>(null);
 
   useEffect(() => {
@@ -725,7 +1116,7 @@ export default function PreviewPanel({
           >
             Refresh Preview
           </button>
-          {planPreviewUrl ? (
+          {planPreviewUrl || showMap ? (
             <button
               type="button"
               onClick={onOpenFullscreen}
@@ -923,13 +1314,6 @@ export default function PreviewPanel({
               </div>
             ) : (
               <div className="relative flex items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] min-h-[520px] h-[clamp(520px,70vh,820px)]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={planPreviewUrl}
-                  alt="Generated plan preview"
-                  className="h-full w-full origin-center -skew-y-1 scale-[0.98] object-contain"
-                  onClick={onOpenFullscreen}
-                />
                 <div className="pointer-events-none absolute left-6 top-6 rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600 shadow-sm">
                   3D geometry not ready yet
                 </div>
@@ -967,6 +1351,14 @@ export default function PreviewPanel({
                 });
               }}
               onMouseMove={(event) => {
+                if (rotateDragStart && previewContainerBounds && onSetSiteRotationDeg) {
+                  const deltaX = event.clientX - rotateDragStart.x;
+                  const width = Math.max(previewContainerBounds.width, 1);
+                  const deltaDeg = (deltaX / width) * 180;
+                  const nextValue = rotateDragStart.value + deltaDeg;
+                  onSetSiteRotationDeg(Math.max(-180, Math.min(180, nextValue)));
+                  return;
+                }
                 if (overlayBounds) {
                   updateDraggedBuilding(event, overlayBounds);
                 }
@@ -982,6 +1374,7 @@ export default function PreviewPanel({
               onMouseUp={() => {
                 setDraggingBuildingId(null);
                 setDraggingMode(null);
+                setRotateDragStart(null);
               }}
               onClick={(event) => {
                 if (placementMode) {
@@ -994,8 +1387,28 @@ export default function PreviewPanel({
                 );
               }}
             >
-              <div className="relative flex h-full w-full items-center justify-center overflow-hidden">
-                {showGeneratedPlan && planPreviewUrl ? (
+              <div
+                className="relative flex h-full w-full items-center justify-center overflow-hidden"
+                onMouseDown={(event) => {
+                  if (rotateDragActive && onSetSiteRotationDeg) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setRotateDragStart({
+                      x: event.clientX,
+                      value: typeof siteRotationDeg === "number" ? siteRotationDeg : 0,
+                    });
+                  }
+                }}
+              >
+                {showMap ? (
+                  <div ref={mapContainerRef} className="absolute inset-0 overflow-hidden rounded-[24px]" />
+                ) : null}
+                {showMap ? (
+                  <div className="pointer-events-none absolute right-5 top-5 rounded-full border border-white/40 bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white">
+                    N ↑ {typeof siteRotationDeg === "number" ? `${siteRotationDeg.toFixed(1)}°` : "0°"}
+                  </div>
+                ) : null}
+                {showGeneratedPlan && planPreviewUrl && !showMap ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     ref={previewImageRef}
@@ -1007,11 +1420,11 @@ export default function PreviewPanel({
                     onLoad={() => updateImageBounds(previewRef, previewImageRef, setPreviewImageBounds)}
                     onClick={onOpenFullscreen}
                   />
-                ) : (
+                ) : !showMap ? (
                   <div className="flex h-full w-full items-center justify-center text-sm text-slate-400">
                     Add objects to start building the site. Then click Place and drop them here.
                   </div>
-                )}
+                ) : null}
                 {!showGeneratedPlan && previewMode === "3d" ? (
                   <div className="pointer-events-none absolute left-6 top-6 rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm">
                     3D needs a preview run
@@ -1029,6 +1442,54 @@ export default function PreviewPanel({
                   >
                     {lotWidth > 0 && lotHeight > 0 ? (
                       <div className="absolute inset-0 rounded-[16px] border-2 border-dashed border-slate-300/70" />
+                    ) : null}
+                    {(buildingPlacements.length || suggestedPlacements.length) ? (
+                      <svg
+                        className="absolute inset-0"
+                        viewBox="0 0 100 100"
+                        preserveAspectRatio="none"
+                      >
+                        {[...buildingPlacements, ...suggestedPlacements]
+                          .filter((item) => item.geometryType && Array.isArray(item.geometry))
+                          .map((item) => {
+                            const points = (item.geometry || []).map((pt) => {
+                              const x = (pt[0] / Math.max(lotWidth, 1)) * 100;
+                              const y = (pt[1] / Math.max(lotHeight, 1)) * 100;
+                              return `${x},${y}`;
+                            });
+                            if (!points.length) return null;
+                            const isLine = item.geometryType === "polyline";
+                            const stroke =
+                              item.source === "detected_from_image"
+                                ? "#f59e0b"
+                                : item.type === "road"
+                                  ? "#2563eb"
+                                  : "#0f172a";
+                            const fill =
+                              item.source === "detected_from_image"
+                                ? "rgba(245, 158, 11, 0.15)"
+                                : "rgba(15, 23, 42, 0.12)";
+                            return isLine ? (
+                              <polyline
+                                key={`geom-${item.id}`}
+                                points={points.join(" ")}
+                                fill="none"
+                                stroke={stroke}
+                                strokeWidth={0.8}
+                                strokeDasharray={item.source === "detected_from_image" ? "2 2" : undefined}
+                              />
+                            ) : (
+                              <polygon
+                                key={`geom-${item.id}`}
+                                points={points.join(" ")}
+                                fill={fill}
+                                stroke={stroke}
+                                strokeWidth={0.8}
+                                strokeDasharray={item.source === "detected_from_image" ? "2 2" : undefined}
+                              />
+                            );
+                          })}
+                      </svg>
                     ) : null}
                     <div
                       className="pointer-events-auto absolute inset-0"
@@ -1388,7 +1849,7 @@ export default function PreviewPanel({
           )}
         </div>
 
-      {previewFullscreenOpen && planPreviewUrl ? (
+      {previewFullscreenOpen && (planPreviewUrl || showMap) ? (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/88 p-4 backdrop-blur-sm">
           <div className="flex h-full w-full max-w-[96vw] flex-col rounded-[28px] border border-slate-700/60 bg-slate-950 shadow-[0_30px_90px_-40px_rgba(15,23,42,0.95)]">
             <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-5 py-4 text-white">
@@ -1452,14 +1913,20 @@ export default function PreviewPanel({
                   );
                 }}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  ref={fullscreenImageRef}
-                  src={planPreviewUrl}
-                  alt="Generated plan preview fullscreen"
-                  className="h-full w-full rounded-[20px] bg-white object-contain shadow-2xl"
-                  onLoad={() => updateImageBounds(fullscreenRef, fullscreenImageRef, setFullscreenImageBounds)}
-                />
+                {showMap ? (
+                  <div ref={fullscreenMapContainerRef} className="absolute inset-0 overflow-hidden rounded-[20px]" />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    ref={fullscreenImageRef}
+                    src={planPreviewUrl}
+                    alt="Generated plan preview fullscreen"
+                    className="h-full w-full rounded-[20px] bg-white object-contain shadow-2xl"
+                    onLoad={() =>
+                      updateImageBounds(fullscreenRef, fullscreenImageRef, setFullscreenImageBounds)
+                    }
+                  />
+                )}
                 {previewInteraction === "interactive" &&
                 !planPreviewAnnotations?.labels?.length ? (
                   <div className="pointer-events-none absolute right-6 top-6 rounded-2xl border border-white/20 bg-slate-900/80 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
