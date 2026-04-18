@@ -47,6 +47,41 @@ async function ensureAppUrl(page: Page) {
   return false;
 }
 
+async function ensureChatPanel(page: Page) {
+  const chatButton = page.getByRole("button", { name: "Chat" });
+  if (await chatButton.isVisible().catch(() => false)) {
+    await chatButton.click();
+  }
+}
+
+async function ensureNewProject(page: Page) {
+  const projectsButton = page.getByRole("button", { name: "Projects" });
+  if (await projectsButton.isVisible().catch(() => false)) {
+    await projectsButton.click();
+  }
+  const newProjectButton = page.getByRole("button", { name: /New Project/i });
+  if (await newProjectButton.isVisible().catch(() => false)) {
+    await newProjectButton.click();
+    await page.waitForLoadState("networkidle");
+  }
+}
+
+async function answerClarificationIfNeeded(page: Page) {
+  const clarificationPrompt = page.getByText(
+    "Before I move forward, I still need the site type or land use",
+    { exact: false },
+  );
+  try {
+    await clarificationPrompt.waitFor({ state: "visible", timeout: 30_000 });
+  } catch {
+    return;
+  }
+  const clarificationComposer = await waitForComposer(page);
+  await clarificationComposer.fill("Mixed-use");
+  await expect(clarificationComposer).toHaveValue("Mixed-use");
+  await page.getByRole("button", { name: "Send" }).click();
+}
+
 async function waitForComposer(page: Page) {
   const composer = page.getByPlaceholder(
     "Message Civora AI with what you want to create or change...",
@@ -57,6 +92,10 @@ async function waitForComposer(page: Page) {
       continue;
     }
     await page.waitForLoadState("networkidle").catch(() => null);
+    if (!(await composer.isVisible().catch(() => false))) {
+      await ensureChatPanel(page);
+      await page.waitForTimeout(500);
+    }
     if (await composer.isVisible().catch(() => false)) {
       return composer;
     }
@@ -116,18 +155,19 @@ test("live civora flow", async ({ page, request, baseURL }) => {
     fullPage: true,
   });
 
-  await expect(page.getByText("What You Need")).toBeVisible();
+  await expect(page.getByText("Preview Workspace")).toBeVisible();
 
   if (prompt.trim()) {
-    const newProjectButton = page.getByRole("button", { name: "New Project" });
-    if (await newProjectButton.isVisible().catch(() => false)) {
-      await newProjectButton.click();
-      await page.waitForLoadState("networkidle");
-    }
+    await ensureNewProject(page);
 
     const composer = await waitForComposer(page);
-    await composer.fill(prompt);
+    const enrichedPrompt = /site type|land use|mixed-use|residential|commercial/i.test(prompt)
+      ? prompt
+      : `${prompt}\nSite type: mixed-use.`;
+    await composer.fill(enrichedPrompt);
     await page.getByRole("button", { name: "Send" }).click();
+
+    await answerClarificationIfNeeded(page);
 
     const approveButton = page.getByRole("button", { name: /Approve & Continue/i });
     const approvalBanner = page.getByText("Phase ready for review", { exact: false });

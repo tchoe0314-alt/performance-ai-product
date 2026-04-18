@@ -5772,13 +5772,8 @@ export default function PerformanceAIDashboard() {
     );
   }, [workflowRuns]);
 
-  useEffect(() => {
-    if (!token || projectId || projects.length === 0 || suppressProjectAutoLoadRef.current) return;
-    const preferredProject =
-      projects.find((project) => project.has_result) ?? projects[0];
-    if (!preferredProject) return;
-    void loadProject(preferredProject.project_id);
-  }, [token, projectId, projects]);
+  // Intentionally avoid auto-loading the last project on initial load so the
+  // workspace starts clean and only loads a project when the user selects it.
 
   const {
     previewReview,
