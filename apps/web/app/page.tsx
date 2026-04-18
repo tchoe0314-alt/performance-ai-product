@@ -3458,6 +3458,7 @@ export default function PerformanceAIDashboard() {
     const requestId = projectLoadRequestRef.current + 1;
     projectLoadRequestRef.current = requestId;
     try {
+      resetWorkspaceState();
       setStatusMessage("Loading project...");
       const data = await getJson<{ project: ProjectRecord }>(
         `/api/projects/${id}`,
@@ -4765,6 +4766,36 @@ export default function PerformanceAIDashboard() {
     void runOrchestrator("improve");
   };
 
+  const resetWorkspaceState = useCallback(() => {
+    setPlanPreviewUrl("");
+    setPlanPreviewSummary(null);
+    setPlanPreviewAnnotations(null);
+    setPreviewDebug(null);
+    setPreviewRefreshing(false);
+    setPreviewRefreshNote(null);
+    setBackendResult(null);
+    setUploadedImageApiUrl("");
+    setUploadedImagePreviewUrl("");
+    setSurveyFileName("");
+    setSurveySlopeEstimate(null);
+    setMapSnapshotPath("");
+    setMapAnalysis(null);
+    setSiteAddress("");
+    setBuildingPlacements([]);
+    setDetectedPlacements([]);
+    setDetectionScaleFeet("");
+    setDetectionScalePixels("");
+    setDetectionScaleFtPerPx(null);
+    setFocusDetectedId(null);
+    setPlacementModeEnabled(false);
+    setActivePlacementId(null);
+    setAnalysisIssues([]);
+    setAnalysisPaths([]);
+    setAnalysisSelectedIssueId(null);
+    setAnalysisFocusLocked(false);
+    setSelectedIssueId(null);
+  }, []);
+
   const handleNewProject = async () => {
     projectLoadRequestRef.current += 1;
     suppressProjectAutoLoadRef.current = true;
@@ -4782,9 +4813,7 @@ export default function PerformanceAIDashboard() {
     setSurveySlopeEstimate(null);
     setMapSnapshotPath("");
     setMapAnalysis(null);
-    setBackendResult(null);
-    setPlanPreviewUrl("");
-    setPlanPreviewSummary(null);
+    resetWorkspaceState();
     setSystemStatuses(DEFAULT_SYSTEM_STATUS);
     setAssumptions(defaultAssumptions);
     setIssues([]);
@@ -4810,9 +4839,6 @@ export default function PerformanceAIDashboard() {
     setGrading(true);
     setDrainage(true);
     setUtilities(true);
-    setBuildingPlacements([]);
-    setPlacementModeEnabled(false);
-    setActivePlacementId(null);
     const nextThread = [createWelcomeMessage()];
     chatMessagesRef.current = nextThread;
     setChatMessages(nextThread);
