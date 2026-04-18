@@ -720,6 +720,7 @@ def grading_drainage_coordination(parsed: Dict[str, Any], project: ProjectModel,
     surface_controls = safe_dict(grading.get("surface_controls"))
     terrain_profile = safe_dict(existing.get("terrain_profile"))
     lot = safe_dict(parsed.get("lot"))
+    ponds = [item for item in safe_list(parsed.get("ponds")) if isinstance(item, dict)]
 
     low_points = [item for item in safe_list(grading.get("low_points")) if isinstance(item, dict)]
     flow_samples = [item for item in safe_list(grading.get("flow_samples")) if isinstance(item, dict)]
@@ -739,6 +740,21 @@ def grading_drainage_coordination(parsed: Dict[str, Any], project: ProjectModel,
     outfall_x, outfall_y = point_on_lot_edge(lot, (downhill_dx, downhill_dy), normalize_vector=normalize_vector)
 
     preferred_targets: List[Dict[str, Any]] = []
+    for index, pond in enumerate(ponds, start=1):
+        px = safe_float(pond.get("x"), 0.0)
+        py = safe_float(pond.get("y"), 0.0)
+        pw = max(1.0, safe_float(pond.get("w"), POND_RADIUS * 2))
+        pd = max(1.0, safe_float(pond.get("d"), POND_RADIUS * 2))
+        preferred_targets.append(
+            {
+                "name": safe_str(pond.get("name"), "") or f"USER_POND_{index}",
+                "x": round(px + pw / 2.0, 3),
+                "y": round(py + pd / 2.0, 3),
+                "z": round(safe_float(pond.get("z"), safe_float(pond.get("base_elev"), DEFAULT_PAD_ELEV - 1.0)), 3),
+                "radius": max(POND_RADIUS, max(pw, pd) / 2.0),
+                "source": "user_basin",
+            }
+        )
     ranked_low_points = sorted(low_points, key=lambda item: (safe_float(item.get("z"), 0.0), -safe_float(item.get("local_basin_score"), 0.0)))
     for index, item in enumerate(ranked_low_points[:2], start=1):
         preferred_targets.append({
@@ -767,6 +783,7 @@ def grading_drainage_coordination(parsed: Dict[str, Any], project: ProjectModel,
         "grading_flow_sample_count": len(flow_samples),
         "surface_controls": deepcopy(surface_controls),
         "grading_control_counts": deepcopy(safe_dict(surface_controls.get("control_counts"))),
+        "user_basin_count": len(ponds),
     }
 
 

@@ -303,7 +303,30 @@ def run_drainage_stage(
             )
             return
 
-        surface = project.meta.get("proposed_surface") or project.meta.get("existing_surface") or build_existing_surface(execution_payload)
+        grading_summary = safe_dict(project.meta.get("grading_summary"))
+        surface_source = "fallback"
+        surface_from_grading = False
+        if project.meta.get("proposed_surface") is not None:
+            surface = project.meta.get("proposed_surface")
+            surface_source = "proposed_surface"
+            surface_from_grading = True
+        elif project.meta.get("existing_surface") is not None:
+            surface = project.meta.get("existing_surface")
+            surface_source = "existing_surface"
+            surface_from_grading = bool(grading_summary)
+        else:
+            surface = build_existing_surface(execution_payload)
+            surface_source = "fallback"
+
+        inferred_profile = safe_dict(getattr(surface, "_inferred_profile", {})) if surface is not None else {}
+        surface_quality = safe_str(grading_summary.get("grading_source_quality"), "") or safe_str(
+            inferred_profile.get("source_quality"),
+            "",
+        )
+        surface_detail = safe_str(grading_summary.get("grading_source_detail"), "") or safe_str(
+            inferred_profile.get("source_detail"),
+            "",
+        )
         engine = None
         for candidate in (
             lambda: DrainageEngine(surface),
@@ -318,6 +341,7 @@ def run_drainage_stage(
 
         lot = safe_dict(unwrap_fields_for_execution(parsed.get("lot")))
         coordination = grading_drainage_coordination(execution_payload, project)
+        has_user_basins = safe_int(coordination.get("user_basin_count"), 0) > 0
         if engine is not None and hasattr(engine, "clear_pond_targets"):
             try:
                 engine.clear_pond_targets()
@@ -335,6 +359,15 @@ def run_drainage_stage(
                     )
             except Exception:
                 pass
+        if not has_user_basins:
+            manager.add_conflict(
+                ConflictRecord(
+                    code="DRAINAGE_NO_BASIN",
+                    message="No basin objects were provided; drainage targets are based on grading low points only.",
+                    severity=ConflictSeverity.WARNING,
+                    category="drainage",
+                )
+            )
 
         summary = None
         if engine is not None and hasattr(engine, "design_network"):
@@ -416,6 +449,11 @@ def run_drainage_stage(
             "preferred_targets": deepcopy(safe_list(coordination.get("preferred_targets"))),
             "grading_low_point_count": safe_int(coordination.get("grading_low_point_count"), 0),
             "grading_flow_sample_count": safe_int(coordination.get("grading_flow_sample_count"), 0),
+            "user_basin_count": safe_int(coordination.get("user_basin_count"), 0),
+            "surface_source": surface_source,
+            "surface_from_grading": surface_from_grading,
+            "surface_source_quality": surface_quality,
+            "surface_source_detail": surface_detail,
         }
         primary_basin_count = len(primary_engineered_basins(canonical_drainage))
         canonical_drainage["export_validation"] = drainage_export_validation(

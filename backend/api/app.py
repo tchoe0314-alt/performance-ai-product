@@ -214,6 +214,12 @@ class ImageAnalysisPayload(BaseModel):
     meta: Dict[str, Any] = Field(default_factory=dict)
 
 
+class ImageDetectPayload(BaseModel):
+    image_path: Optional[str] = None
+    source_type: str = "image"
+    meta: Dict[str, Any] = Field(default_factory=dict)
+
+
 class ReviseJobPayload(BaseModel):
     target_phase: Optional[str] = None
 
@@ -543,6 +549,39 @@ def analyze_image(
         "success": result.success,
         "message": result.message,
         "counts": result.counts,
+        "warnings": result.warnings,
+        "meta": result.meta,
+    }
+
+
+@app.post("/api/image/detect-features")
+def detect_image_features(
+    payload: ImageDetectPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    try:
+        from vision.feature_detection_engine import FeatureDetectionEngine
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Feature detection unavailable: {exc}")
+
+    if not payload.image_path:
+        raise HTTPException(status_code=400, detail="Image path is required for detection.")
+
+    engine = FeatureDetectionEngine()
+    result = engine.detect(payload.image_path)
+    return {
+        "success": result.success,
+        "message": result.message,
+        "image_width": result.image_width,
+        "image_height": result.image_height,
+        "detections": [
+            {
+                "kind": det.kind,
+                "bbox": det.bbox,
+                "confidence": det.confidence,
+            }
+            for det in result.detections
+        ],
         "warnings": result.warnings,
         "meta": result.meta,
     }

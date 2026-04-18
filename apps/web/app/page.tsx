@@ -24,6 +24,8 @@ import type {
   PlanMeta,
   PlanResponse,
   SurveySlopeResponse,
+  SurveyPointsResponse,
+  ImageDetectResponse,
   MapAnalysis,
   PreviewResponse,
   UploadImageResponse,
@@ -70,7 +72,7 @@ const ADD_MENU_SECTIONS: Array<{
   {
     title: "Access & Parking",
     key: "access",
-    items: ["entrance", "road", "parking", "sidewalk"],
+    items: ["entrance", "driveway", "road", "parking", "sidewalk"],
   },
   {
     title: "Drainage & Water",
@@ -130,6 +132,7 @@ const SITE_OBJECT_CATALOG: Record<
   amenity: { label: "Amenity Area", category: "buildings", defaultW: 80, defaultD: 40, defaultH: 12 },
   open_space: { label: "Open Space", category: "buildings", defaultW: 120, defaultD: 80, defaultH: 0 },
   entrance: { label: "Entrance / Access", category: "access", defaultW: 24, defaultD: 24 },
+  driveway: { label: "Driveway", category: "access", defaultW: 60, defaultD: 16 },
   road: { label: "Road / Drive Aisle", category: "access", defaultW: 120, defaultD: 28 },
   parking: { label: "Parking Field", category: "access", defaultW: 140, defaultD: 60 },
   sidewalk: { label: "Sidewalk / Path", category: "access", defaultW: 80, defaultD: 12 },
@@ -142,6 +145,9 @@ const SITE_OBJECT_CATALOG: Record<
   lot_block: { label: "Lot / Subdivision Block", category: "advanced", defaultW: 160, defaultD: 120 },
   bridge: { label: "Bridge", category: "advanced", defaultW: 80, defaultD: 24 },
 };
+
+const clampValue = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
 
 type SystemStatus = "fresh" | "stale" | "not_generated";
 
@@ -408,6 +414,37 @@ export default function PerformanceAIDashboard() {
   const [uploadedImageApiUrl, setUploadedImageApiUrl] = useState("");
   const [surveyFileName, setSurveyFileName] = useState("");
   const [surveySlopeEstimate, setSurveySlopeEstimate] = useState<SurveySlopeResponse | null>(null);
+  const [detectedPlacements, setDetectedPlacements] = useState<BuildingPlacement[]>([]);
+  const [detectionScaleFeet, setDetectionScaleFeet] = useState("");
+  const [detectionScalePixels, setDetectionScalePixels] = useState("");
+  const [detectionScaleFtPerPx, setDetectionScaleFtPerPx] = useState<number | null>(null);
+  const [focusDetectedId, setFocusDetectedId] = useState<string | null>(null);
+  const [analysisPaths, setAnalysisPaths] = useState<
+    Array<{
+      id: string;
+      buildingId: string;
+      accessId: string;
+      from: { x: number; y: number };
+      to: { x: number; y: number };
+      label: string;
+      points?: Array<{ x: number; y: number }>;
+    }>
+  >([]);
+  const [analysisIssues, setAnalysisIssues] = useState<
+    Array<{
+      id: string;
+      buildingId: string;
+      accessId: string;
+      distanceFt: number;
+      thresholdFt: number;
+      message: string;
+      pathId: string;
+      issueType: "distance" | "no_access" | "no_buildings" | "no_access_objects";
+    }>
+  >([]);
+  const [analysisSelectedIssueId, setAnalysisSelectedIssueId] = useState<string | null>(null);
+  const [analysisFocusLocked, setAnalysisFocusLocked] = useState(false);
+  const [detectionConfidenceFilter, setDetectionConfidenceFilter] = useState<"high" | "medium" | "all">("all");
   const [mapSnapshotPath, setMapSnapshotPath] = useState("");
   const [mapAnalysis, setMapAnalysis] = useState<MapAnalysis | null>(null);
   const [siteAddress, setSiteAddress] = useState("");
@@ -1543,6 +1580,31 @@ export default function PerformanceAIDashboard() {
       .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object update...", track: true });
   }, [markSystemsStale]);
 
+  const persistDetectedPlacements = useCallback(
+    (nextDetected: BuildingPlacement[]) => {
+      const currentInput = currentProject?.project_input ?? payloadPreview;
+      const nextSiteInputs = {
+        ...(currentInput?.meta?.site_inputs ?? {}),
+        detected_objects: nextDetected,
+      };
+      void ensureProjectDraftRef.current()
+        .then(() => saveProjectRef.current({
+          silent: true,
+          projectInputOverride: {
+            ...currentInput,
+            input_mode: "user",
+            strict_mode: false,
+            allow_ai_fill_for_blanks: false,
+            meta: {
+              ...(currentInput?.meta ?? {}),
+              site_inputs: nextSiteInputs,
+            },
+          },
+        }));
+    },
+    [currentProject, payloadPreview],
+  );
+
   const handleRemoveBuilding = useCallback((id: string) => {
     setBuildingPlacements((prev) => prev.filter((item) => item.id !== id));
     markSystemsStale();
@@ -1551,6 +1613,34 @@ export default function PerformanceAIDashboard() {
       .then(() => saveProjectRef.current({ silent: true }))
       .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object removal...", track: true });
   }, [markSystemsStale]);
+
+  const handleAcceptDetected = useCallback((id: string) => {
+    setDetectedPlacements((prev) => {
+      const target = prev.find((item) => item.id === id);
+      if (!target) return prev;
+      setBuildingPlacements((placements) => [
+        ...placements,
+        {
+          ...target,
+          id: `obj_${Math.random().toString(36).slice(2, 9)}`,
+          label: target.label.replace("Detected ", ""),
+          source: "user_confirmed",
+          confirmed: true,
+        },
+      ]);
+      const nextDetected = prev.filter((item) => item.id !== id);
+      persistDetectedPlacements(nextDetected);
+      return nextDetected;
+    });
+  }, [persistDetectedPlacements]);
+
+  const handleRejectDetected = useCallback((id: string) => {
+    setDetectedPlacements((prev) => {
+      const nextDetected = prev.filter((item) => item.id !== id);
+      persistDetectedPlacements(nextDetected);
+      return nextDetected;
+    });
+  }, [persistDetectedPlacements]);
 
   const handleToggleBuildingLock = useCallback((id: string) => {
     setBuildingPlacements((prev) =>
@@ -2526,7 +2616,7 @@ export default function PerformanceAIDashboard() {
       /(add|create|place)\s+(a\s+)?building[^0-9]*?(\d+(\.\d+)?)\s*(ft|feet|')?\s*(x|by)\s*(\d+(\.\d+)?)/,
     );
     const addObjectMatch = lower.match(
-      /(add|create|place)\s+(a\s+)?(retail building|multifamily building|industrial building|office building|pad|pool|amenity area|open space|entrance|access point|road|drive aisle|parking field|parking|sidewalk|path|basin|detention pond|outfall|inlet|manhole|hydrant|setback zone|no-build zone|utility corridor|lot block|subdivision block|bridge)\s*(\d+(\.\d+)?)?\s*(ft|feet|')?\s*(x|by)?\s*(\d+(\.\d+)?)?/,
+      /(add|create|place)\s+(a\s+)?(retail building|multifamily building|industrial building|office building|pad|pool|amenity area|open space|entrance|access point|driveway|road|drive aisle|parking field|parking|sidewalk|path|basin|detention pond|outfall|inlet|manhole|hydrant|setback zone|no-build zone|utility corridor|lot block|subdivision block|bridge)\s*(\d+(\.\d+)?)?\s*(ft|feet|')?\s*(x|by)?\s*(\d+(\.\d+)?)?/,
     );
     const plotDimsMatch = lower.match(
       /(add|create|set)\s+(a\s+)?(lot|plot|site)[^0-9]*?(\d+(\.\d+)?)\s*(ft|feet|')?\s*(x|by)\s*(\d+(\.\d+)?)/,
@@ -2581,6 +2671,7 @@ export default function PerformanceAIDashboard() {
         "open space": "open_space",
         entrance: "entrance",
         "access point": "entrance",
+        driveway: "driveway",
         road: "road",
         "drive aisle": "road",
         "parking field": "parking",
@@ -3326,9 +3417,23 @@ export default function PerformanceAIDashboard() {
     const mapAnalysisResult = siteInputs?.map_analysis ?? null;
     const surveyFile = siteInputs?.survey_file ?? {};
     const slopeEstimate = siteInputs?.slope_estimate ?? null;
+    const detectionScale = siteInputs?.detection_scale ?? {};
+    const detectedObjects = Array.isArray(siteInputs?.detected_objects)
+      ? (siteInputs?.detected_objects as BuildingPlacement[])
+      : [];
     setSiteAddress(String(siteInputs?.address || ""));
     setSurveyFileName(String(surveyFile?.stored_filename || ""));
     setSurveySlopeEstimate(slopeEstimate || null);
+    setDetectionScaleFeet(
+      detectionScale?.distance_ft ? String(detectionScale.distance_ft) : "",
+    );
+    setDetectionScalePixels(
+      detectionScale?.pixel_distance ? String(detectionScale.pixel_distance) : "",
+    );
+    setDetectionScaleFtPerPx(
+      typeof detectionScale?.scale_ft_per_px === "number" ? detectionScale.scale_ft_per_px : null,
+    );
+    setDetectedPlacements(detectedObjects);
     const mapUrl = String(mapSnapshot?.image_url || "");
     if (mapUrl) {
       setUploadedImageApiUrl(uploadedImageSrc(mapUrl, token));
@@ -3761,10 +3866,430 @@ export default function PerformanceAIDashboard() {
     }
   };
 
+  const mapDetectionToPlacement = useCallback(
+    (
+      detection: { kind: string; bbox: [number, number, number, number]; confidence?: number },
+      imageWidth: number,
+      imageHeight: number,
+    ): BuildingPlacement | null => {
+      if (!imageWidth || !imageHeight) return null;
+      const [x, y, w, h] = detection.bbox;
+      const width = parsePositiveNumber(lotWidth);
+      const height = parsePositiveNumber(lotHeight);
+      if (!width || !height) return null;
+      const scaleFtPerPx = detectionScaleFtPerPx && detectionScaleFtPerPx > 0 ? detectionScaleFtPerPx : null;
+      const mappedX = scaleFtPerPx ? x * scaleFtPerPx : (x / imageWidth) * width;
+      const mappedY = scaleFtPerPx ? y * scaleFtPerPx : (y / imageHeight) * height;
+      const mappedW = scaleFtPerPx ? w * scaleFtPerPx : (w / imageWidth) * width;
+      const mappedD = scaleFtPerPx ? h * scaleFtPerPx : (h / imageHeight) * height;
+      const typeMap: Record<string, SiteObjectType> = {
+        building: "building",
+        road: "road",
+        parking: "parking",
+        sidewalk: "sidewalk",
+        driveway: "driveway",
+        basin: "basin",
+        pool: "pool",
+        open_space: "open_space",
+      };
+      const type = typeMap[detection.kind] ?? "building";
+      const labelMap: Record<SiteObjectType, string> = {
+        site: "Site",
+        setback_zone: "Setback Zone",
+        no_build_zone: "No-Build Zone",
+        building: "Detected Building",
+        retail_building: "Detected Retail",
+        multifamily_building: "Detected Multifamily",
+        industrial_building: "Detected Industrial",
+        office_building: "Detected Office",
+        pad: "Detected Pad",
+        pool: "Detected Pool",
+        amenity: "Detected Amenity",
+        open_space: "Detected Open Space",
+        entrance: "Detected Entrance",
+        driveway: "Detected Driveway",
+        road: "Detected Road",
+        parking: "Detected Parking",
+        sidewalk: "Detected Path",
+        basin: "Detected Basin",
+        outfall: "Detected Outfall",
+        inlet: "Detected Inlet",
+        manhole: "Detected Manhole",
+        hydrant: "Detected Hydrant",
+        utility_corridor: "Detected Utility Corridor",
+        lot_block: "Detected Lot Block",
+        bridge: "Detected Bridge",
+      };
+      return {
+        id: `detected_${Math.random().toString(36).slice(2, 9)}`,
+        label: labelMap[type] ?? "Detected Object",
+        x: clampValue(mappedX, 0, width - mappedW),
+        y: clampValue(mappedY, 0, height - mappedD),
+        w: Math.max(6, mappedW),
+        d: Math.max(6, mappedD),
+        rotation: 0,
+        type,
+        source: "detected_from_image",
+        generated: false,
+        confidence: detection.confidence ?? 0.2,
+        confirmed: false,
+        capabilities: { movable: true, resizable: true, rotatable: false, deletable: true },
+        placed: true,
+        meta: {
+          detection_kind: detection.kind,
+          confidence: detection.confidence ?? 0.2,
+          detected: true,
+          scale_source: scaleFtPerPx ? "calibrated" : "approximate",
+          scale_ft_per_px: scaleFtPerPx ?? null,
+        },
+      };
+    },
+    [detectionScaleFtPerPx, lotHeight, lotWidth],
+  );
+
+  const handleAnalyzeImageFeatures = useCallback(async () => {
+    if (!token || !mapSnapshotPath) return;
+    const width = parsePositiveNumber(lotWidth);
+    const height = parsePositiveNumber(lotHeight);
+    if (!width || !height) {
+      setStatusMessage("Set site dimensions before running detection.");
+      return;
+    }
+    try {
+      const result = await postJson<ImageDetectResponse>(
+        "/api/image/detect-features",
+        { image_path: mapSnapshotPath, source_type: "map" },
+        { token },
+      );
+      const detections = Array.isArray(result.detections) ? result.detections : [];
+      const mapped = detections
+        .map((det) => mapDetectionToPlacement(det, result.image_width ?? 0, result.image_height ?? 0))
+        .filter((item): item is BuildingPlacement => Boolean(item));
+      setDetectedPlacements(mapped);
+      const currentInput = currentProject?.project_input ?? payloadPreview;
+      const nextSiteInputs = {
+        ...(currentInput?.meta?.site_inputs ?? {}),
+        detected_objects: mapped,
+      };
+      await saveProject({
+        silent: true,
+        projectInputOverride: {
+          ...currentInput,
+          input_mode: "user",
+          strict_mode: false,
+          allow_ai_fill_for_blanks: false,
+          meta: {
+            ...(currentInput?.meta ?? {}),
+            site_inputs: nextSiteInputs,
+          },
+        },
+      });
+      setStatusMessage(result.success ? "Detection complete. Review suggested objects." : result.message || "Detection failed.");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Detection failed.");
+    }
+  }, [currentProject, lotHeight, lotWidth, mapDetectionToPlacement, mapSnapshotPath, payloadPreview, saveProject, token]);
+
+  const handleAnalyzeSiteAccess = useCallback(() => {
+    const confirmed = buildingPlacements.filter(
+      (item) => item.placed && (item.source === "user" || item.source === "user_confirmed"),
+    );
+    const accessTypes = new Set<SiteObjectType>(["road", "entrance", "parking", "sidewalk", "driveway"]);
+    const buildingTypes = new Set<SiteObjectType>([
+      "building",
+      "retail_building",
+      "multifamily_building",
+      "industrial_building",
+      "office_building",
+      "pad",
+    ]);
+    const buildings = confirmed.filter((item) => buildingTypes.has(item.type as SiteObjectType));
+    const access = confirmed.filter((item) => accessTypes.has(item.type as SiteObjectType));
+    const issues: Array<{
+      id: string;
+      buildingId: string;
+      accessId: string;
+      distanceFt: number;
+      thresholdFt: number;
+      message: string;
+      pathId: string;
+      issueType: "distance" | "no_access" | "no_buildings" | "no_access_objects";
+    }> = [];
+    const paths: Array<{
+      id: string;
+      buildingId: string;
+      accessId: string;
+      from: { x: number; y: number };
+      to: { x: number; y: number };
+      label: string;
+      points?: Array<{ x: number; y: number }>;
+    }> = [];
+    const threshold = 150;
+    const adjacencyGap = 20;
+    const buildingAccessGap = 40;
+
+    const rectDistance = (
+      a: { x: number; y: number; w: number; d: number },
+      b: { x: number; y: number; w: number; d: number },
+    ) => {
+      const aMinX = a.x;
+      const aMaxX = a.x + a.w;
+      const aMinY = a.y;
+      const aMaxY = a.y + a.d;
+      const bMinX = b.x;
+      const bMaxX = b.x + b.w;
+      const bMinY = b.y;
+      const bMaxY = b.y + b.d;
+      const dx = Math.max(aMinX - bMaxX, bMinX - aMaxX, 0);
+      const dy = Math.max(aMinY - bMaxY, bMinY - aMaxY, 0);
+      const distance = Math.hypot(dx, dy);
+      const bCenterX = b.x + b.w / 2;
+      const bCenterY = b.y + b.d / 2;
+      const aCenterX = a.x + a.w / 2;
+      const aCenterY = a.y + a.d / 2;
+      const pointA = {
+        x: Math.min(Math.max(bCenterX, aMinX), aMaxX),
+        y: Math.min(Math.max(bCenterY, aMinY), aMaxY),
+      };
+      const pointB = {
+        x: Math.min(Math.max(aCenterX, bMinX), bMaxX),
+        y: Math.min(Math.max(aCenterY, bMinY), bMaxY),
+      };
+      return { distance, pointA, pointB };
+    };
+
+    type GraphEdge = { to: string; weight: number; points: Array<{ x: number; y: number }> };
+    const graph: Record<string, GraphEdge[]> = {};
+    const accessMap = new Map(
+      access.map((item) => [
+        item.id,
+        {
+          id: item.id,
+          rect: { x: item.x ?? 0, y: item.y ?? 0, w: item.w, d: item.d },
+          center: { x: (item.x ?? 0) + item.w / 2, y: (item.y ?? 0) + item.d / 2 },
+        },
+      ]),
+    );
+
+    const addEdge = (from: string, to: string, weight: number, points: Array<{ x: number; y: number }>) => {
+      if (!graph[from]) graph[from] = [];
+      graph[from].push({ to, weight, points });
+    };
+
+    const accessEntries = Array.from(accessMap.values());
+    accessEntries.forEach((node, idx) => {
+      for (let j = idx + 1; j < accessEntries.length; j += 1) {
+        const other = accessEntries[j];
+        const { distance, pointA, pointB } = rectDistance(node.rect, other.rect);
+        if (distance <= adjacencyGap) {
+          const weight = Math.max(distance, 1);
+          addEdge(node.id, other.id, weight, [pointA, pointB]);
+          addEdge(other.id, node.id, weight, [pointB, pointA]);
+        }
+      }
+    });
+
+    if (!access.length) {
+      issues.push({
+        id: "no-access",
+        buildingId: "",
+        accessId: "",
+        distanceFt: 0,
+        thresholdFt: threshold,
+        message: "No confirmed access/road objects found for access analysis.",
+        pathId: "",
+        issueType: "no_access_objects",
+      });
+    }
+
+    const buildPathPoints = (edgePoints: Array<Array<{ x: number; y: number }>>) => {
+      const points: Array<{ x: number; y: number }> = [];
+      edgePoints.forEach((segment) => {
+        segment.forEach((pt, idx) => {
+          if (!points.length) {
+            points.push(pt);
+            return;
+          }
+          const last = points[points.length - 1];
+          if (Math.hypot(last.x - pt.x, last.y - pt.y) < 0.01) return;
+          if (idx === 0) {
+            points.push(pt);
+            return;
+          }
+          points.push(pt);
+        });
+      });
+      return points;
+    };
+
+    buildings.forEach((building) => {
+      const buildingNodeId = `building-${building.id}`;
+      const buildingRect = { x: building.x ?? 0, y: building.y ?? 0, w: building.w, d: building.d };
+      graph[buildingNodeId] = [];
+      accessEntries.forEach((accessNode) => {
+        const { distance, pointA, pointB } = rectDistance(buildingRect, accessNode.rect);
+        if (distance <= buildingAccessGap) {
+          const weight = Math.max(distance, 1);
+          addEdge(buildingNodeId, accessNode.id, weight, [pointA, pointB]);
+        }
+      });
+
+      const distances = new Map<string, number>();
+      const prev = new Map<string, { node: string; points: Array<{ x: number; y: number }> }>();
+      const unvisited = new Set<string>(Object.keys(graph));
+      distances.set(buildingNodeId, 0);
+
+      while (unvisited.size) {
+        let current: string | null = null;
+        let bestDistance = Number.POSITIVE_INFINITY;
+        unvisited.forEach((nodeId) => {
+          const dist = distances.get(nodeId);
+          if (dist !== undefined && dist < bestDistance) {
+            bestDistance = dist;
+            current = nodeId;
+          }
+        });
+        if (!current) break;
+        unvisited.delete(current);
+        if (current !== buildingNodeId && accessMap.has(current)) break;
+        const edges = graph[current] ?? [];
+        edges.forEach((edge) => {
+          if (!unvisited.has(edge.to)) return;
+          const nextDist = bestDistance + edge.weight;
+          const existing = distances.get(edge.to);
+          if (existing === undefined || nextDist < existing) {
+            distances.set(edge.to, nextDist);
+            prev.set(edge.to, { node: current as string, points: edge.points });
+          }
+        });
+      }
+
+      let closestAccessId: string | null = null;
+      let closestDistance = Number.POSITIVE_INFINITY;
+      accessEntries.forEach((accessNode) => {
+        const dist = distances.get(accessNode.id);
+        if (dist !== undefined && dist < closestDistance) {
+          closestDistance = dist;
+          closestAccessId = accessNode.id;
+        }
+      });
+
+      if (!closestAccessId || !Number.isFinite(closestDistance)) {
+        issues.push({
+          id: `${building.id}-no-access`,
+          buildingId: building.id,
+          accessId: "",
+          distanceFt: 0,
+          thresholdFt: threshold,
+          message: `Building ${building.label} has no access path.`,
+          pathId: "",
+          issueType: "no_access",
+        });
+        return;
+      }
+
+      const edgePoints: Array<Array<{ x: number; y: number }>> = [];
+      let cursor: string | null = closestAccessId;
+      while (cursor && cursor !== buildingNodeId) {
+        const step = prev.get(cursor);
+        if (!step) break;
+        edgePoints.unshift(step.points);
+        cursor = step.node;
+      }
+
+      const points = buildPathPoints(edgePoints);
+      const from = points[0] ?? { x: buildingRect.x, y: buildingRect.y };
+      const to = points[points.length - 1] ?? from;
+      const pathId = `${building.id}-${closestAccessId}`;
+      paths.push({
+        id: pathId,
+        buildingId: building.id,
+        accessId: closestAccessId,
+        from,
+        to,
+        label: `Access ${Math.round(closestDistance)} ft`,
+        points,
+      });
+      if (closestDistance > threshold) {
+        issues.push({
+          id: `${building.id}-distance`,
+          buildingId: building.id,
+          accessId: closestAccessId,
+          distanceFt: closestDistance,
+          thresholdFt: threshold,
+          message: `Building ${building.label} is ${Math.round(closestDistance)} ft from nearest access (>${threshold} ft).`,
+          pathId,
+          issueType: "distance",
+        });
+      }
+    });
+
+    if (!buildings.length) {
+      issues.push({
+        id: "no-buildings",
+        buildingId: "",
+        accessId: "",
+        distanceFt: 0,
+        thresholdFt: threshold,
+        message: "No confirmed buildings found for access analysis.",
+        pathId: "",
+        issueType: "no_buildings",
+      });
+    }
+
+    setAnalysisIssues(issues);
+    setAnalysisPaths(paths);
+    setAnalysisSelectedIssueId(issues[0]?.id ?? null);
+    setAnalysisFocusLocked(Boolean(issues[0]?.id));
+    setStatusMessage("Site access analysis complete (conceptual).");
+  }, [buildingPlacements]);
+
+
+  useEffect(() => {
+    if (!analysisSelectedIssueId) {
+      setAnalysisFocusLocked(false);
+    }
+  }, [analysisSelectedIssueId]);
+
+  const applyDetectionScale = useCallback(async () => {
+    const distanceFt = parsePositiveNumber(detectionScaleFeet);
+    const pixelDistance = parsePositiveNumber(detectionScalePixels);
+    if (!distanceFt || !pixelDistance) {
+      setStatusMessage("Provide both known distance and pixel distance to calibrate.");
+      return;
+    }
+    const scale = distanceFt / pixelDistance;
+    setDetectionScaleFtPerPx(scale);
+    const currentInput = currentProject?.project_input ?? payloadPreview;
+    const nextSiteInputs = {
+      ...(currentInput?.meta?.site_inputs ?? {}),
+      detection_scale: {
+        distance_ft: distanceFt,
+        pixel_distance: pixelDistance,
+        scale_ft_per_px: scale,
+        calibrated: true,
+      },
+    };
+    await saveProject({
+      silent: true,
+      projectInputOverride: {
+        ...currentInput,
+        input_mode: "user",
+        strict_mode: false,
+        allow_ai_fill_for_blanks: false,
+        meta: {
+          ...(currentInput?.meta ?? {}),
+          site_inputs: nextSiteInputs,
+        },
+      },
+    });
+    setStatusMessage("Detection scale calibrated.");
+  }, [currentProject, detectionScaleFeet, detectionScalePixels, payloadPreview, saveProject]);
+
   const estimateSurveySlope = async () => {
     if (!token || !surveyFileName) return;
     try {
-      const pointsData = await postJson<{ points?: number[][]; point_count?: number; warnings?: string[] }>(
+      const pointsData = await postJson<SurveyPointsResponse>(
         "/api/survey/points",
         { filename: surveyFileName },
         { token },
@@ -3785,6 +4310,8 @@ export default function PerformanceAIDashboard() {
         survey_points: Array.isArray(pointsData.points) ? pointsData.points : [],
         survey_point_count: pointsData.point_count ?? (Array.isArray(pointsData.points) ? pointsData.points.length : 0),
         survey_point_warnings: pointsData.warnings ?? [],
+        survey_point_columns: pointsData.recognized_columns ?? {},
+        survey_invalid_rows: pointsData.invalid_rows ?? 0,
       };
       await saveProject({
         silent: true,
@@ -4865,6 +5392,22 @@ export default function PerformanceAIDashboard() {
     }
     return "Fallback assumptions";
   }, [siteInputs]);
+  const drainageSurfaceSummary = useMemo(() => {
+    if (!drainageSummary || typeof drainageSummary !== "object") {
+      return {
+        surfaceSource: "unknown",
+        surfaceQuality: "",
+        surfaceDetail: "",
+        surfaceFromGrading: false,
+      };
+    }
+    const guidance = (drainageSummary as { surface_guidance?: Record<string, unknown> }).surface_guidance ?? {};
+    const surfaceSource = String(guidance.surface_source || "unknown");
+    const surfaceQuality = String(guidance.surface_source_quality || "");
+    const surfaceDetail = String(guidance.surface_source_detail || "");
+    const surfaceFromGrading = Boolean(guidance.surface_from_grading);
+    return { surfaceSource, surfaceQuality, surfaceDetail, surfaceFromGrading };
+  }, [drainageSummary]);
   const mapAnalysisCounts = useMemo(() => {
     if (!mapAnalysis || typeof mapAnalysis !== "object") return { zones: 0, objects: 0, centerlines: 0 };
     const record = mapAnalysis as { counts?: { zones?: number; objects?: number; centerlines?: number } };
@@ -4874,6 +5417,131 @@ export default function PerformanceAIDashboard() {
       centerlines: record.counts?.centerlines ?? 0,
     };
   }, [mapAnalysis]);
+  const selectedAccessIssue = useMemo(
+    () => analysisIssues.find((issue) => issue.id === analysisSelectedIssueId) ?? null,
+    [analysisIssues, analysisSelectedIssueId],
+  );
+  const buildAnalysisReport = useCallback(
+    (selectedOnly: boolean) => {
+      const confirmed = buildingPlacements.filter(
+        (item) => item.placed && (item.source === "user" || item.source === "user_confirmed"),
+      );
+      const buildingTypes = new Set<SiteObjectType>([
+        "building",
+        "retail_building",
+        "multifamily_building",
+        "industrial_building",
+        "office_building",
+        "pad",
+      ]);
+      const accessTypes = new Set<SiteObjectType>(["road", "entrance", "parking", "sidewalk", "driveway"]);
+      const buildings = confirmed.filter((item) => buildingTypes.has(item.type as SiteObjectType));
+      const access = confirmed.filter((item) => accessTypes.has(item.type as SiteObjectType));
+      const selectedIssue = selectedOnly
+        ? analysisIssues.find((issue) => issue.id === analysisSelectedIssueId) ?? null
+        : null;
+      const issues = selectedOnly && selectedIssue ? [selectedIssue] : analysisIssues;
+      const paths = selectedOnly && selectedIssue
+        ? analysisPaths.filter((path) => path.id === selectedIssue.pathId)
+        : analysisPaths;
+      const resolvedSurfaceSource =
+        drainageSurfaceSummary.surfaceSource && drainageSurfaceSummary.surfaceSource !== "unknown"
+          ? drainageSurfaceSummary.surfaceSource
+          : gradingSourceSummary;
+      return {
+        generated_at: new Date().toISOString(),
+        note: "Conceptual access analysis. Not a code compliance determination.",
+        surface_source: resolvedSurfaceSource,
+        threshold_ft: issues[0]?.thresholdFt ?? 150,
+        buildings: buildings.map((b) => ({
+          id: b.id,
+          label: b.label,
+          type: b.type,
+          x: b.x,
+          y: b.y,
+          w: b.w,
+          d: b.d,
+        })),
+        access_objects: access.map((a) => ({
+          id: a.id,
+          label: a.label,
+          type: a.type,
+          x: a.x,
+          y: a.y,
+          w: a.w,
+          d: a.d,
+        })),
+        issues: issues.map((issue) => {
+          const path = analysisPaths.find((candidate) => candidate.id === issue.pathId);
+          return {
+            issue_id: issue.id,
+            issue_type: issue.issueType,
+            building_id: issue.buildingId,
+            access_object_id: issue.accessId,
+            distance_ft: issue.distanceFt,
+            threshold_ft: issue.thresholdFt,
+            message: issue.message,
+            surface_source: resolvedSurfaceSource,
+            path_coordinates: path
+              ? {
+                  from: path.from,
+                  to: path.to,
+                  points: path.points ?? [path.from, path.to],
+                }
+              : null,
+          };
+        }),
+        paths,
+      };
+    },
+    [
+      analysisIssues,
+      analysisPaths,
+      analysisSelectedIssueId,
+      buildingPlacements,
+      drainageSurfaceSummary,
+      gradingSourceSummary,
+    ],
+  );
+
+  const exportAnalysisReport = useCallback(() => {
+    const report = buildAnalysisReport(false);
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "civora-access-analysis.json";
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [buildAnalysisReport]);
+
+  const exportSelectedAnalysis = useCallback(() => {
+    if (!analysisSelectedIssueId) return;
+    const report = buildAnalysisReport(true);
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "civora-access-analysis-selected.json";
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [analysisSelectedIssueId, buildAnalysisReport]);
+
+  const copyAnalysisJson = useCallback(async () => {
+    const report = buildAnalysisReport(false);
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
+      setStatusMessage("Analysis JSON copied to clipboard.");
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : "Clipboard copy failed.",
+      );
+    }
+  }, [buildAnalysisReport]);
+  const filteredDetectedPlacements = useMemo(() => {
+    const threshold = detectionConfidenceFilter === "high" ? 0.6 : detectionConfidenceFilter === "medium" ? 0.3 : 0.0;
+    return detectedPlacements.filter((item) => (item.confidence ?? 0) >= threshold);
+  }, [detectedPlacements, detectionConfidenceFilter]);
   const sortedProjects = useMemo(
     () => [...projects].sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0)),
     [projects],
@@ -5071,6 +5739,27 @@ export default function PerformanceAIDashboard() {
                           {mapAnalysis?.success ? "Ready" : "Analyze"}
                         </span>
                       </button>
+                      <button
+                        type="button"
+                        onClick={handleAnalyzeImageFeatures}
+                        disabled={!mapSnapshotPath}
+                        className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <span>Detect site features</span>
+                        <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
+                          {detectedPlacements.length ? "Detected" : "Run"}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleAnalyzeSiteAccess}
+                        className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50"
+                      >
+                        <span>Analyze site access</span>
+                        <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
+                          {analysisIssues.length ? "Reviewed" : "Run"}
+                        </span>
+                      </button>
                       {surveyFileName ? (
                         <p className="text-xs text-slate-500">Survey loaded: {surveyFileName}</p>
                       ) : null}
@@ -5105,6 +5794,88 @@ export default function PerformanceAIDashboard() {
                         Civora uses the highest‑trust source available. Survey/topo overrides imagery or address
                         inference.
                       </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        Detection scale calibration
+                      </p>
+                      <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-slate-600">
+                        <label className="flex flex-col gap-1">
+                          Known distance (ft)
+                          <input
+                            type="number"
+                            value={detectionScaleFeet}
+                            onChange={(event) => setDetectionScaleFeet(event.target.value)}
+                            className="rounded-lg border border-slate-200 px-2 py-1"
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1">
+                          Pixel distance (px)
+                          <input
+                            type="number"
+                            value={detectionScalePixels}
+                            onChange={(event) => setDetectionScalePixels(event.target.value)}
+                            className="rounded-lg border border-slate-200 px-2 py-1"
+                          />
+                        </label>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void applyDetectionScale()}
+                        className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                      >
+                        Apply scale
+                      </button>
+                      <p className="mt-2 text-xs text-slate-500">
+                        {detectionScaleFtPerPx
+                          ? `Calibrated: 1 px ≈ ${detectionScaleFtPerPx.toFixed(3)} ft`
+                          : "No calibration applied. Detection sizes are approximate."}
+                      </p>
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+                        <p className="font-semibold text-slate-700">How to calibrate</p>
+                        <p className="mt-1">
+                          Pick two points in the uploaded image with a known real‑world distance, measure the pixel distance between them, then enter both values and apply.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        Survey intake
+                      </p>
+                      <p className="mt-2 text-sm font-semibold text-slate-800">
+                        {siteInputs?.survey_point_count ? `${siteInputs.survey_point_count} points` : "No survey points parsed yet"}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Columns: {siteInputs?.survey_point_columns?.x || "x"} / {siteInputs?.survey_point_columns?.y || "y"} / {siteInputs?.survey_point_columns?.z || "z"} ·
+                        Invalid rows: {siteInputs?.survey_invalid_rows ?? 0}
+                      </p>
+                      {Array.isArray(siteInputs?.survey_point_warnings) && siteInputs.survey_point_warnings.length ? (
+                        <p className="mt-2 text-xs text-amber-600">
+                          {siteInputs.survey_point_warnings[0]}
+                        </p>
+                      ) : null}
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        Drainage surface usage
+                      </p>
+                      <p className="mt-2 text-sm font-semibold text-slate-800">
+                        {drainageSurfaceSummary.surfaceFromGrading ? "Using grading surface" : "Surface source unknown"}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Source: {drainageSurfaceSummary.surfaceSource}
+                        {drainageSurfaceSummary.surfaceQuality
+                          ? ` · ${drainageSurfaceSummary.surfaceQuality.replace(/_/g, " ")}`
+                          : ""}
+                      </p>
+                      {drainageSurfaceSummary.surfaceDetail ? (
+                        <p className="mt-1 text-xs text-slate-500">
+                          {drainageSurfaceSummary.surfaceDetail}
+                        </p>
+                      ) : null}
                     </div>
 
                     <input
@@ -5258,10 +6029,42 @@ export default function PerformanceAIDashboard() {
               onPlaceBuilding={handlePlaceBuilding}
               onPlaceObject={handlePlaceObject}
               buildingPlacements={buildingPlacements}
+              suggestedPlacements={filteredDetectedPlacements}
               selectedBuildingId={activePlacementId}
+              focusDetectedId={focusDetectedId}
+              onClearFocusDetected={() => setFocusDetectedId(null)}
               lotWidth={lotBounds.w}
               lotHeight={lotBounds.h}
               onUpdateBuilding={handleUpdateBuilding}
+              onUpdateSuggested={(id, updates) => {
+                setDetectedPlacements((prev) => {
+                  const nextDetected = prev.map((item) =>
+                    item.id === id ? { ...item, ...updates } : item,
+                  );
+                  persistDetectedPlacements(nextDetected);
+                  return nextDetected;
+                });
+              }}
+              analysisPaths={analysisPaths}
+              analysisHighlight={
+                selectedAccessIssue
+                  ? {
+                      buildingId: selectedAccessIssue.buildingId,
+                      accessId: selectedAccessIssue.accessId,
+                      pathId: selectedAccessIssue.pathId,
+                    }
+                  : null
+              }
+              analysisFocusLocked={analysisFocusLocked}
+              onClearHighlights={() => {
+                setAnalysisSelectedIssueId(null);
+                setAnalysisFocusLocked(false);
+              }}
+              onResetView={() => {
+                setAnalysisSelectedIssueId(null);
+                setFocusDetectedId(null);
+                setAnalysisFocusLocked(false);
+              }}
               onRemoveBuilding={handleRemoveBuilding}
               onSelectBuilding={setActivePlacementId}
                 onSetPreviewMode={setPreviewMode}
@@ -5448,6 +6251,136 @@ export default function PerformanceAIDashboard() {
                   </div>
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Objects</p>
+                    {detectedPlacements.length ? (
+                      <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50/70 p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700">
+                          Detected Objects (Review Required)
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {(["high", "medium", "all"] as const).map((level) => (
+                            <button
+                              key={level}
+                              type="button"
+                              onClick={() => setDetectionConfidenceFilter(level)}
+                              className={`rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                detectionConfidenceFilter === level
+                                  ? "border-amber-400 bg-amber-100 text-amber-800"
+                                  : "border-amber-200 bg-white text-amber-700"
+                              }`}
+                            >
+                              {level === "high" ? "High only" : level === "medium" ? "Medium+" : "All"}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          {filteredDetectedPlacements.map((item) => (
+                            <div
+                              key={item.id}
+                              className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs text-slate-700"
+                            >
+                              <div>
+                                <p className="font-semibold text-slate-800">{item.label}</p>
+                                <p className="text-[11px] text-slate-500">
+                                  {item.w.toFixed(1)} ft × {item.d.toFixed(1)} ft ·{" "}
+                                  {item.confidence ? `${Math.round(item.confidence * 100)}%` : "Approx."} ·{" "}
+                                  {detectionScaleFtPerPx ? "Calibrated" : "Approx scale"}
+                                </p>
+                              </div>
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setFocusDetectedId(item.id)}
+                                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600"
+                                >
+                                  Zoom
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAcceptDetected(item.id)}
+                                  className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-700"
+                                >
+                                  Accept
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRejectDetected(item.id)}
+                                  className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-rose-700"
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="mt-2 text-[11px] text-amber-700/80">
+                          Detected features are approximate and must be confirmed.
+                        </p>
+                      </div>
+                    ) : null}
+                    {analysisIssues.length ? (
+                      <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50/70 p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-rose-700">
+                            Access Analysis (Conceptual)
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={exportAnalysisReport}
+                              className="rounded-full border border-rose-200 bg-white px-2 py-1 text-[10px] font-semibold text-rose-600"
+                            >
+                              Export analysis
+                            </button>
+                            {analysisSelectedIssueId ? (
+                              <button
+                                type="button"
+                                onClick={exportSelectedAnalysis}
+                                className="rounded-full border border-rose-200 bg-white px-2 py-1 text-[10px] font-semibold text-rose-600"
+                              >
+                                Export selected
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              onClick={copyAnalysisJson}
+                              className="rounded-full border border-rose-200 bg-white px-2 py-1 text-[10px] font-semibold text-rose-600"
+                            >
+                              Copy JSON
+                            </button>
+                            <div
+                              className="rounded-full border border-rose-200 bg-white px-2 py-1 text-[10px] font-semibold text-rose-600"
+                              title="Access analysis checks distance from confirmed buildings to nearest confirmed access. Threshold 150 ft."
+                            >
+                              Explain
+                            </div>
+                          </div>
+                        </div>
+                        <p className="mt-2 text-[11px] text-rose-700/80">
+                          Uses confirmed buildings + access objects. Calculates nearest access distance and compares to 150 ft threshold.
+                        </p>
+                        {selectedAccessIssue ? (
+                          <p className="mt-2 text-[11px] text-rose-700">
+                            Selected: {Math.round(selectedAccessIssue.distanceFt)} ft (threshold {selectedAccessIssue.thresholdFt} ft)
+                          </p>
+                        ) : null}
+                        <ul className="mt-3 space-y-1 text-[11px] text-rose-700">
+                          {analysisIssues.map((issue) => (
+                            <li key={issue.id}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAnalysisSelectedIssueId(issue.id);
+                                  setAnalysisFocusLocked(true);
+                                }}
+                                className={`w-full text-left ${analysisSelectedIssueId === issue.id ? "font-semibold underline" : ""}`}
+                              >
+                                {issue.message}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
                     <div className="mt-2 max-h-72 space-y-3 overflow-y-auto pr-1">
                       <div className="flex w-full gap-3 overflow-x-auto pb-2">
                         {buildingPlacements

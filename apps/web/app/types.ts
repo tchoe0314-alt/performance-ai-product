@@ -272,6 +272,19 @@ export type SiteInputs = {
   survey_points?: number[][];
   survey_point_count?: number;
   survey_point_warnings?: string[];
+  survey_point_columns?: {
+    x?: string;
+    y?: string;
+    z?: string;
+  };
+  survey_invalid_rows?: number;
+  detected_objects?: BuildingPlacement[];
+  detection_scale?: {
+    distance_ft?: number;
+    pixel_distance?: number;
+    scale_ft_per_px?: number;
+    calibrated?: boolean;
+  };
 };
 
 export type ProjectInputMeta = Record<string, unknown> & {
@@ -546,6 +559,32 @@ export type SurveySlopeResponse = {
   downhill_dy?: number;
   direction?: string;
   point_count?: number;
+  warnings?: string[];
+  recognized_columns?: { x?: string; y?: string; z?: string };
+  invalid_rows?: number;
+};
+
+export type SurveyPointsResponse = {
+  points?: number[][];
+  point_count?: number;
+  warnings?: string[];
+  recognized_columns?: { x?: string; y?: string; z?: string };
+  invalid_rows?: number;
+};
+
+export type ImageFeatureDetection = {
+  kind: string;
+  bbox: [number, number, number, number];
+  confidence?: number;
+};
+
+export type ImageDetectResponse = {
+  success: boolean;
+  message?: string;
+  image_width?: number;
+  image_height?: number;
+  detections?: ImageFeatureDetection[];
+  warnings?: string[];
 };
 
 export type PlanToolMode = "run" | "fix" | "improve";
@@ -562,8 +601,10 @@ export type BuildingPlacement = {
   type?: SiteObjectType;
   use?: string;
   stallCount?: number;
-  source?: "user" | "generated" | "inferred";
+  source?: "user" | "generated" | "inferred" | "detected_from_image" | "user_confirmed";
   generated?: boolean;
+  confidence?: number;
+  confirmed?: boolean;
   capabilities?: {
     movable?: boolean;
     resizable?: boolean;
@@ -590,6 +631,7 @@ export type SiteObjectType =
   | "amenity"
   | "open_space"
   | "entrance"
+  | "driveway"
   | "road"
   | "parking"
   | "sidewalk"

@@ -497,6 +497,69 @@ def canonical_drainage_surface_actions(project: ProjectModel) -> List[Dict[str, 
     return actions
 
 
+def canonical_drainage_pipe_actions(project: ProjectModel) -> List[Dict[str, Any]]:
+    actions: List[Dict[str, Any]] = []
+    drainage = safe_dict(project.meta.get("drainage_canonical"))
+    if not bool(drainage_export_validation(project, drainage_override=drainage).get("ready")):
+        return actions
+    pipe_runs = safe_list(drainage.get("pipe_runs"))
+    if not pipe_runs:
+        pipe_runs = safe_list(drainage.get("pipes"))
+    for index, run in enumerate(pipe_runs, start=1):
+        rec = safe_dict(run) if isinstance(run, dict) else safe_dict(getattr(run, "__dict__", {}))
+        path = safe_list(rec.get("path") or rec.get("route_points"))
+        if not path:
+            path = safe_list(getattr(run, "path", None)) if not isinstance(run, dict) else []
+        if len(path) < 2:
+            continue
+        name = safe_str(rec.get("label"), "") or safe_str(rec.get("name"), "") or safe_str(
+            rec.get("pipe"), f"DRAIN-PIPE-{index}"
+        )
+        diameter = rec.get("diameter_in")
+        slope = rec.get("slope")
+        if slope is None:
+            slope = rec.get("slope_pct")
+        if slope is None:
+            slope = rec.get("slope_ft_ft")
+        flow = rec.get("flow_cfs") if rec.get("flow_cfs") is not None else rec.get("flow")
+        source_id = safe_str(rec.get("id"), "") or name
+        actions.append(
+            canonical_action(
+                {
+                    "task": "polyline",
+                    "origin": None,
+                    "points": [
+                        [safe_float(p[0], 0.0), safe_float(p[1], 0.0)]
+                        for p in path
+                        if isinstance(p, (list, tuple)) and len(p) >= 2
+                    ],
+                    "closed": False,
+                    "width": None,
+                    "height": None,
+                    "label": name,
+                    "layer": "PIPE",
+                    "text": None,
+                    "text_height": None,
+                    "center": None,
+                    "radius": None,
+                    "start_angle": None,
+                    "end_angle": None,
+                    "meta": {
+                        **_preview_meta(system="drainage", preview_role=PREVIEW_ROLE_FINAL),
+                        "diameter_in": safe_float(diameter, 0.0) if diameter is not None else None,
+                        "slope_ft_ft": safe_float(slope, 0.0) if slope is not None else None,
+                        "flow_cfs": safe_float(flow, 0.0) if flow is not None else None,
+                    },
+                },
+                source_type="drainage_pipe_run",
+                source_id=source_id,
+                source_name=name,
+                source_stage="drainage",
+            )
+        )
+    return actions
+
+
 def canonical_storm_pipe_actions(project: ProjectModel) -> List[Dict[str, Any]]:
     actions: List[Dict[str, Any]] = []
     segments = safe_list(project.meta.get("storm_pipe_segments"))
@@ -1039,6 +1102,7 @@ def canonical_export_actions(project: ProjectModel) -> List[Dict[str, Any]]:
     actions.extend(canonical_structure_actions(project))
     actions.extend(canonical_basin_actions(project))
     actions.extend(canonical_drainage_surface_actions(project))
+    actions.extend(canonical_drainage_pipe_actions(project))
     actions.extend(canonical_storm_pipe_actions(project))
     actions.extend(canonical_sanitary_actions(project))
     actions.extend(canonical_sheet_actions(project))

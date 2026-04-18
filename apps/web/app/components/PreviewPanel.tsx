@@ -53,12 +53,29 @@ type PreviewPanelProps = {
   onPlaceBuilding: (position: { x: number; y: number }) => void;
   onPlaceObject: (id: string, position: { x: number; y: number }) => void;
   buildingPlacements: BuildingPlacement[];
+  suggestedPlacements: BuildingPlacement[];
   selectedBuildingId: string | null;
+  focusDetectedId?: string | null;
+  onClearFocusDetected?: () => void;
   lotWidth: number;
   lotHeight: number;
   onUpdateBuilding: (id: string, updates: Partial<BuildingPlacement>) => void;
+  onUpdateSuggested: (id: string, updates: Partial<BuildingPlacement>) => void;
   onRemoveBuilding: (id: string) => void;
   onSelectBuilding: (id: string | null) => void;
+  analysisPaths?: Array<{
+    id: string;
+    buildingId: string;
+    accessId: string;
+    from: { x: number; y: number };
+    to: { x: number; y: number };
+    label: string;
+    points?: Array<{ x: number; y: number }>;
+  }>;
+  analysisHighlight?: { buildingId: string; accessId: string; pathId: string } | null;
+  analysisFocusLocked?: boolean;
+  onClearHighlights?: () => void;
+  onResetView?: () => void;
   onOpenFullscreen: () => void;
   previewFullscreenOpen: boolean;
   onCloseFullscreen: () => void;
@@ -102,12 +119,21 @@ export default function PreviewPanel({
   onPlaceBuilding,
   onPlaceObject,
   buildingPlacements,
+  suggestedPlacements,
   selectedBuildingId,
+  focusDetectedId,
+  onClearFocusDetected,
   lotWidth,
   lotHeight,
   onUpdateBuilding,
+  onUpdateSuggested,
   onRemoveBuilding,
   onSelectBuilding,
+  analysisPaths,
+  analysisHighlight,
+  analysisFocusLocked,
+  onClearHighlights,
+  onResetView,
   onOpenFullscreen,
   previewFullscreenOpen,
   onCloseFullscreen,
@@ -166,8 +192,10 @@ export default function PreviewPanel({
     utilities: "#7c3aed",
   } as const;
   const hoveredObject = useMemo(
-    () => buildingPlacements.find((item) => item.id === hoveredObjectId) ?? null,
-    [buildingPlacements, hoveredObjectId],
+    () =>
+      [...buildingPlacements, ...suggestedPlacements].find((item) => item.id === hoveredObjectId) ??
+      null,
+    [buildingPlacements, suggestedPlacements, hoveredObjectId],
   );
   const show3D = previewMode === "3d" && Boolean(planPreviewUrl);
   useEffect(() => {
@@ -181,8 +209,11 @@ export default function PreviewPanel({
     }
   }, [onSetPreviewMode, planPreviewUrl, previewMode]);
   const selectedObject = useMemo(
-    () => buildingPlacements.find((item) => item.id === selectedBuildingId) ?? null,
-    [buildingPlacements, selectedBuildingId],
+    () =>
+      [...buildingPlacements, ...suggestedPlacements].find(
+        (item) => item.id === selectedBuildingId,
+      ) ?? null,
+    [buildingPlacements, suggestedPlacements, selectedBuildingId],
   );
 
   useEffect(() => {
@@ -193,10 +224,10 @@ export default function PreviewPanel({
     if (!entityId) {
       return;
     }
-    if (buildingPlacements.some((item) => item.id === entityId)) {
+    if ([...buildingPlacements, ...suggestedPlacements].some((item) => item.id === entityId)) {
       setHoveredObjectId(entityId);
     }
-  }, [activeAnnotation, buildingPlacements]);
+  }, [activeAnnotation, buildingPlacements, suggestedPlacements]);
   const activeHighlightBounds = activeAnnotation?.bounds ?? null;
   const clampPercent = (value: number) => Math.min(Math.max(value * 100, 0), 100);
   const buildBoundsStyle = (bounds: { x1: number; y1: number; x2: number; y2: number }) => {
@@ -325,6 +356,7 @@ export default function PreviewPanel({
       "pool",
       "basin",
       "entrance",
+      "driveway",
       "amenity",
       "open_space",
       "no_build_zone",
@@ -347,6 +379,7 @@ export default function PreviewPanel({
       "no_build_zone",
       "setback_zone",
       "parking",
+      "driveway",
     ]);
     const rotatableTypes = new Set([
       "building",
@@ -360,6 +393,7 @@ export default function PreviewPanel({
       "amenity",
       "open_space",
       "parking",
+      "driveway",
     ]);
     const deletableTypes = new Set([...editableTypes].filter((t) => t !== "site"));
     const movable = editableTypes.has(type) && !item.locked;
@@ -380,7 +414,9 @@ export default function PreviewPanel({
       const rect = event.currentTarget.getBoundingClientRect();
       const localX = event.clientX - rect.left - bounds.left;
       const localY = event.clientY - rect.top - bounds.top;
-      const target = buildingPlacements.find((item) => item.id === draggingBuildingId);
+      const target =
+        buildingPlacements.find((item) => item.id === draggingBuildingId) ??
+        suggestedPlacements.find((item) => item.id === draggingBuildingId);
       if (!target) return;
       const caps = getEditCapabilities(target);
       if (draggingMode === "move" && !caps.movable) return;
@@ -395,7 +431,11 @@ export default function PreviewPanel({
           clampValue(((localY - dragOffset.y) / Math.max(bounds.height, 1)) * lotHeight, 0, Math.max(lotHeight - target.d, 0)),
           5,
         );
-        onUpdateBuilding(draggingBuildingId, { x, y, placed: true });
+        if (target.source === "detected_from_image") {
+          onUpdateSuggested(draggingBuildingId, { x, y, placed: true });
+        } else {
+          onUpdateBuilding(draggingBuildingId, { x, y, placed: true });
+        }
         return;
       }
       if (draggingMode === "resize") {
@@ -403,7 +443,11 @@ export default function PreviewPanel({
         const rawD = clampValue((localY / Math.max(bounds.height, 1)) * lotHeight, 10, lotHeight);
         const nextW = Math.max(10, snapValue(rawW - (target.x ?? 0), 5));
         const nextD = Math.max(10, snapValue(rawD - (target.y ?? 0), 5));
-        onUpdateBuilding(draggingBuildingId, { w: nextW, d: nextD });
+        if (target.source === "detected_from_image") {
+          onUpdateSuggested(draggingBuildingId, { w: nextW, d: nextD });
+        } else {
+          onUpdateBuilding(draggingBuildingId, { w: nextW, d: nextD });
+        }
         return;
       }
       if (draggingMode === "rotate") {
@@ -413,11 +457,16 @@ export default function PreviewPanel({
         const deg = (angle * 180) / Math.PI;
         const normalized = (deg + 360) % 360;
         const snapped = snapValue(normalized, 15);
-        onUpdateBuilding(draggingBuildingId, { rotation: snapped });
+        if (target.source === "detected_from_image") {
+          onUpdateSuggested(draggingBuildingId, { rotation: snapped });
+        } else {
+          onUpdateBuilding(draggingBuildingId, { rotation: snapped });
+        }
       }
     },
     [
       buildingPlacements,
+      suggestedPlacements,
       dragOffset.x,
       dragOffset.y,
       draggingBuildingId,
@@ -425,6 +474,7 @@ export default function PreviewPanel({
       lotHeight,
       lotWidth,
       onUpdateBuilding,
+      onUpdateSuggested,
       placementMode,
     ],
   );
@@ -493,6 +543,10 @@ export default function PreviewPanel({
         ? `${hoveredObject.h.toFixed(1)} ft`
         : null;
     const source = hoveredObject.generated ? "generated" : hoveredObject.source || "user";
+    const confidence =
+      typeof hoveredObject.confidence === "number"
+        ? `${Math.round(hoveredObject.confidence * 100)}%`
+        : null;
     const position =
       typeof hoveredObject.x === "number" && typeof hoveredObject.y === "number"
         ? `X ${hoveredObject.x.toFixed(1)} ft • Y ${hoveredObject.y.toFixed(1)} ft`
@@ -519,6 +573,7 @@ export default function PreviewPanel({
         : []),
       ...(height ? [{ label: "Height", value: height }] : []),
       { label: "Source", value: source },
+      ...(confidence ? [{ label: "Confidence", value: confidence }] : []),
     ];
   }, [hoveredObject]);
   const debugHoverDetails = useMemo(() => {
@@ -569,6 +624,56 @@ export default function PreviewPanel({
     };
   }, [planPreviewUrl, previewFullscreenOpen, updateImageBounds]);
   const showGeneratedPlan = !placementMode;
+
+  const [focusTransform, setFocusTransform] = useState<{ scale: number; tx: number; ty: number } | null>(null);
+
+  useEffect(() => {
+    if (!focusDetectedId) return;
+    const target = suggestedPlacements.find((item) => item.id === focusDetectedId);
+    if (target) {
+      setHoveredObjectId(target.id);
+      onSelectBuilding(target.id);
+    }
+    if (onClearFocusDetected) {
+      const timer = window.setTimeout(() => onClearFocusDetected(), 400);
+      return () => window.clearTimeout(timer);
+    }
+  }, [focusDetectedId, onClearFocusDetected, onSelectBuilding, suggestedPlacements]);
+
+  useEffect(() => {
+    if (!analysisHighlight || !lotWidth || !lotHeight) return;
+    const focusItems = [...buildingPlacements, ...suggestedPlacements].filter(
+      (item) => item.id === analysisHighlight.buildingId || item.id === analysisHighlight.accessId,
+    );
+    if (!focusItems.length) return;
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    focusItems.forEach((item) => {
+      const x = item.x ?? 0;
+      const y = item.y ?? 0;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x + item.w);
+      maxY = Math.max(maxY, y + item.d);
+    });
+    const path = analysisPaths?.find((p) => p.id === analysisHighlight.pathId);
+    if (path) {
+      minX = Math.min(minX, path.from.x, path.to.x);
+      minY = Math.min(minY, path.from.y, path.to.y);
+      maxX = Math.max(maxX, path.from.x, path.to.x);
+      maxY = Math.max(maxY, path.from.y, path.to.y);
+    }
+    if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) return;
+    const padding = 0.1;
+    const boxW = Math.max((maxX - minX) / lotWidth, 0.02);
+    const boxH = Math.max((maxY - minY) / lotHeight, 0.02);
+    const scale = Math.min(1 / (boxW + padding), 1 / (boxH + padding));
+    const centerX = (minX + maxX) / 2 / lotWidth;
+    const centerY = (minY + maxY) / 2 / lotHeight;
+    setFocusTransform({ scale: Math.min(Math.max(scale, 1), 3), tx: centerX, ty: centerY });
+  }, [analysisHighlight, analysisPaths, buildingPlacements, lotHeight, lotWidth, suggestedPlacements]);
   return (
     <div className="rounded-[28px] border border-slate-200 bg-white/90 p-4 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.4)] backdrop-blur md:p-6">
       <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -598,6 +703,28 @@ export default function PreviewPanel({
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
+          {analysisHighlight ? (
+            <button
+              type="button"
+              onClick={() => {
+                setFocusTransform(null);
+                onClearHighlights?.();
+              }}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              Clear highlights
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              setFocusTransform(null);
+              onResetView?.();
+            }}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+          >
+            Reset view
+          </button>
           <button
             type="button"
             onClick={onRefreshPreview}
@@ -932,7 +1059,20 @@ export default function PreviewPanel({
                     {lotWidth > 0 && lotHeight > 0 ? (
                       <div className="absolute inset-0 rounded-[16px] border-2 border-dashed border-slate-300/70" />
                     ) : null}
-                    {buildingPlacements
+                    <div
+                      className="pointer-events-auto absolute inset-0"
+                      style={{
+                        transformOrigin: "top left",
+                        transform: focusTransform
+                          ? `translate(50%, 50%) scale(${focusTransform.scale}) translate(-${focusTransform.tx * 100}%, -${focusTransform.ty * 100}%)`
+                          : undefined,
+                      }}
+                      onClick={() => {
+                        if (analysisFocusLocked) return;
+                        onClearHighlights?.();
+                      }}
+                    >
+                      {buildingPlacements
                       .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
                       .map((item) => {
                         const caps = getEditCapabilities(item);
@@ -951,6 +1091,7 @@ export default function PreviewPanel({
                           no_build_zone: "border-rose-400",
                           basin: "border-emerald-500",
                           entrance: "border-amber-500",
+                          driveway: "border-orange-400",
                           road: "border-blue-500",
                           parking: "border-violet-500",
                           sidewalk: "border-teal-500",
@@ -959,6 +1100,9 @@ export default function PreviewPanel({
                         };
                         const borderColor =
                           (item.type && borderColorMap[item.type]) || "border-slate-900/70";
+                        const isAccessHighlight =
+                          analysisHighlight &&
+                          (analysisHighlight.buildingId === item.id || analysisHighlight.accessId === item.id);
                         return (
                           <div
                             key={item.id}
@@ -983,7 +1127,7 @@ export default function PreviewPanel({
                             <div
                               className={`h-full w-full rounded-[8px] border-2 bg-slate-900/10 transition ${borderColor} ${
                                 isSelected ? "ring-2 ring-amber-300" : ""
-                              }`}
+                              } ${isAccessHighlight ? "ring-2 ring-rose-300" : ""}`}
                             />
                             {isSelected && caps.rotatable ? (
                               <button
@@ -1041,6 +1185,97 @@ export default function PreviewPanel({
                           </div>
                         );
                       })}
+                      {suggestedPlacements
+                      .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
+                      .map((item) => {
+                        const left = ((item.x || 0) / Math.max(lotWidth, 1)) * 100;
+                        const top = ((item.y || 0) / Math.max(lotHeight, 1)) * 100;
+                        const rotated = (item.rotation ?? 0) % 180 !== 0;
+                        const displayW = rotated ? item.d : item.w;
+                        const displayD = rotated ? item.w : item.d;
+                        const width = (displayW / Math.max(lotWidth, 1)) * 100;
+                        const height = (displayD / Math.max(lotHeight, 1)) * 100;
+                        const rotation = item.rotation ?? 0;
+                        return (
+                          <div
+                            key={item.id}
+                            className="pointer-events-auto absolute"
+                            style={{
+                              left: `${left}%`,
+                              top: `${top}%`,
+                              width: `${width}%`,
+                              height: `${height}%`,
+                              transform: `rotate(${rotation}deg)`,
+                              transformOrigin: "center",
+                              cursor: "move",
+                            }}
+                            onMouseDown={(event) => handleBuildingMouseDown(event, item, "move")}
+                            onMouseEnter={() => setHoveredObjectId(item.id)}
+                            onMouseLeave={() => setHoveredObjectId(null)}
+                          >
+                            <div className="h-full w-full rounded-[8px] border-2 border-dashed border-amber-400 bg-amber-200/10" />
+                            <div className="absolute -top-6 left-1/2 -translate-x-1/2 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 shadow">
+                              {item.label}
+                            </div>
+                            {hoveredObjectId === item.id && objectHoverDetails.length ? (
+                              <div className="absolute left-1/2 top-full z-10 mt-3 w-48 -translate-x-1/2 rounded-2xl border border-slate-200 bg-white p-3 text-[11px] text-slate-600 shadow">
+                                <div className="space-y-1">
+                                  {objectHoverDetails.map((detail) => (
+                                    <div
+                                      key={detail.label}
+                                      className="flex items-center justify-between gap-2"
+                                    >
+                                      <span className="text-slate-500">{detail.label}</span>
+                                      <span className="font-semibold text-slate-900">{detail.value}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                      {analysisPaths && analysisPaths.length ? (
+                      <svg className="absolute inset-0" viewBox="0 0 100 100" preserveAspectRatio="none">
+                        {analysisPaths.map((path) => {
+                          const isSelected = analysisHighlight?.pathId === path.id;
+                          const points = path.points?.length
+                            ? path.points
+                            : [path.from, path.to];
+                          const coords = points
+                            .map((pt) => {
+                              const x = (pt.x / Math.max(lotWidth, 1)) * 100;
+                              const y = (pt.y / Math.max(lotHeight, 1)) * 100;
+                              return `${x},${y}`;
+                            })
+                            .join(" ");
+                          const labelPoint = points[Math.floor(points.length / 2)] ?? path.from;
+                          const labelX = (labelPoint.x / Math.max(lotWidth, 1)) * 100;
+                          const labelY = (labelPoint.y / Math.max(lotHeight, 1)) * 100;
+                          return (
+                            <g key={path.id}>
+                              <polyline
+                                points={coords}
+                                fill="none"
+                                stroke={isSelected ? "#ef4444" : "#f97316"}
+                                strokeWidth={isSelected ? "1.2" : "0.6"}
+                                strokeDasharray="2 2"
+                              />
+                              <text
+                                x={labelX}
+                                y={labelY}
+                                fontSize="3"
+                                fill={isSelected ? "#dc2626" : "#ea580c"}
+                                textAnchor="middle"
+                              >
+                                {path.label}
+                              </text>
+                            </g>
+                          );
+                        })}
+                      </svg>
+                      ) : null}
+                    </div>
                   </div>
                 ) : null}
                 {showGeneratedPlan && planPreviewAnnotations?.labels?.length && previewImageBounds ? (
@@ -1341,6 +1576,7 @@ export default function PreviewPanel({
                           no_build_zone: "border-rose-400",
                           basin: "border-emerald-500",
                           entrance: "border-amber-500",
+                          driveway: "border-orange-400",
                           road: "border-blue-500",
                           parking: "border-violet-500",
                           sidewalk: "border-teal-500",

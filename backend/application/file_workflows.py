@@ -68,34 +68,40 @@ def upload_survey_file(
 def _parse_survey_points(
     *,
     target: Path,
-) -> tuple[list[tuple[float, float, float]], list[str]]:
+) -> tuple[list[tuple[float, float, float]], list[str], Dict[str, Any]]:
     points: list[tuple[float, float, float]] = []
     warnings: list[str] = []
+    diagnostics: Dict[str, Any] = {
+        "recognized_columns": {"x": "", "y": "", "z": ""},
+        "invalid_rows": 0,
+    }
     with target.open("r", newline="", encoding="utf-8-sig") as handle:
         reader = csv.DictReader(handle)
         if not reader.fieldnames:
-            return points, ["Survey CSV has no header row."]
+            return points, ["Survey CSV has no header row."], diagnostics
         fields = {str(name or "").strip().lower() for name in (reader.fieldnames or [])}
         x_candidates = [key for key in ("x", "easting", "east", "lon", "longitude") if key in fields]
         y_candidates = [key for key in ("y", "northing", "north", "lat", "latitude") if key in fields]
         z_candidates = [key for key in ("z", "elev", "elevation", "height") if key in fields]
         if not (x_candidates and y_candidates and z_candidates):
-            return points, ["Survey CSV must include x/y/z columns (x,y,z or easting/northing/elevation)."]
+            return points, ["Survey CSV must include x/y/z columns (x,y,z or easting/northing/elevation)."], diagnostics
 
         x_key = x_candidates[0]
         y_key = y_candidates[0]
         z_key = z_candidates[0]
+        diagnostics["recognized_columns"] = {"x": x_key, "y": y_key, "z": z_key}
         for row in reader:
             try:
                 x = float(row.get(x_key, ""))
                 y = float(row.get(y_key, ""))
                 z = float(row.get(z_key, ""))
             except Exception:
+                diagnostics["invalid_rows"] = diagnostics.get("invalid_rows", 0) + 1
                 continue
             points.append((x, y, z))
     if len(points) < 3:
         warnings.append("Survey file needs at least 3 valid points.")
-    return points, warnings
+    return points, warnings, diagnostics
 
 
 def estimate_slope_from_survey(
@@ -113,7 +119,7 @@ def estimate_slope_from_survey(
     if not target.exists():
         raise HTTPException(status_code=404, detail="Survey file not found.")
 
-    points, warnings = _parse_survey_points(target=target)
+    points, warnings, diagnostics = _parse_survey_points(target=target)
     if len(points) < 3:
         raise HTTPException(status_code=400, detail=warnings[0] if warnings else "Survey file needs at least 3 valid points.")
 
@@ -187,6 +193,8 @@ def estimate_slope_from_survey(
         "plane_coefficients": {"a": round(a, 6), "b": round(b, 6), "c": round(c, 6)},
         "point_count": len(points),
         "warnings": warnings,
+        "recognized_columns": diagnostics.get("recognized_columns", {}),
+        "invalid_rows": diagnostics.get("invalid_rows", 0),
     }
 
 
@@ -205,11 +213,13 @@ def read_survey_points(
     if not target.exists():
         raise HTTPException(status_code=404, detail="Survey file not found.")
 
-    points, warnings = _parse_survey_points(target=target)
+    points, warnings, diagnostics = _parse_survey_points(target=target)
     return {
         "points": points,
         "point_count": len(points),
         "warnings": warnings,
+        "recognized_columns": diagnostics.get("recognized_columns", {}),
+        "invalid_rows": diagnostics.get("invalid_rows", 0),
     }
 
 
