@@ -599,7 +599,28 @@ export default function PreviewPanel({
       ...(confidence ? [{ label: "Confidence", value: confidence }] : []),
     ];
   }, [hoveredObject]);
-  const overlayBounds = previewContainerBounds;
+  const overlayBounds = useMemo(() => {
+    if (!previewContainerBounds) return null;
+    if (!lotWidth || !lotHeight) return previewContainerBounds;
+    const padding = 24;
+    const maxWidth = Math.max(previewContainerBounds.width - padding * 2, 1);
+    const maxHeight = Math.max(previewContainerBounds.height - padding * 2, 1);
+    const siteAspect = lotWidth / lotHeight;
+    const containerAspect = maxWidth / maxHeight;
+    let width = maxWidth;
+    let height = maxHeight;
+    if (containerAspect > siteAspect) {
+      width = maxHeight * siteAspect;
+    } else {
+      height = maxWidth / siteAspect;
+    }
+    return {
+      left: (previewContainerBounds.width - width) / 2,
+      top: (previewContainerBounds.height - height) / 2,
+      width,
+      height,
+    };
+  }, [lotHeight, lotWidth, previewContainerBounds]);
 
   useEffect(() => {
     if (!showMap) return;
