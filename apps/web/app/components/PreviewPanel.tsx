@@ -711,6 +711,26 @@ export default function PreviewPanel({
     fullscreenMapRef.current?.flyTo({ center, zoom: 17 });
   }, [geocode?.lat, geocode?.lng, showMap]);
 
+  const convertSiteToLngLat = useCallback(
+    (xFt: number, yFt: number) => {
+      if (!geocode?.lat || !geocode?.lng) return null;
+      const metersPerDegLat = 111320;
+      const metersPerDegLng = 111320 * Math.cos((geocode.lat * Math.PI) / 180);
+      const dxFt = xFt - lotWidth / 2;
+      const dyFt = lotHeight / 2 - yFt;
+      const rotationDeg = typeof siteRotationDeg === "number" ? siteRotationDeg : 0;
+      const theta = (rotationDeg * Math.PI) / 180;
+      const dxRot = dxFt * Math.cos(theta) - dyFt * Math.sin(theta);
+      const dyRot = dxFt * Math.sin(theta) + dyFt * Math.cos(theta);
+      const dxM = dxRot * 0.3048;
+      const dyM = dyRot * 0.3048;
+      const lng = geocode.lng + dxM / metersPerDegLng;
+      const lat = geocode.lat + dyM / metersPerDegLat;
+      return [lng, lat] as [number, number];
+    },
+    [geocode?.lat, geocode?.lng, lotHeight, lotWidth, siteRotationDeg],
+  );
+
   useEffect(() => {
     if (!showMap || !mapLoaded || !mapRef.current || !geocode?.lat || !geocode?.lng) return;
     if (!fitToSiteRequest || !lotWidth || !lotHeight) return;
@@ -760,26 +780,6 @@ export default function PreviewPanel({
     const normalized = ((90 - dominant.bearing + 540) % 360) - 180;
     onSetSiteRotationDeg(normalized);
   }, [alignToRoadRequest, mapLoaded, onSetSiteRotationDeg, showMap]);
-
-  const convertSiteToLngLat = useCallback(
-    (xFt: number, yFt: number) => {
-      if (!geocode?.lat || !geocode?.lng) return null;
-      const metersPerDegLat = 111320;
-      const metersPerDegLng = 111320 * Math.cos((geocode.lat * Math.PI) / 180);
-      const dxFt = xFt - lotWidth / 2;
-      const dyFt = lotHeight / 2 - yFt;
-      const rotationDeg = typeof siteRotationDeg === "number" ? siteRotationDeg : 0;
-      const theta = (rotationDeg * Math.PI) / 180;
-      const dxRot = dxFt * Math.cos(theta) - dyFt * Math.sin(theta);
-      const dyRot = dxFt * Math.sin(theta) + dyFt * Math.cos(theta);
-      const dxM = dxRot * 0.3048;
-      const dyM = dyRot * 0.3048;
-      const lng = geocode.lng + dxM / metersPerDegLng;
-      const lat = geocode.lat + dyM / metersPerDegLat;
-      return [lng, lat] as [number, number];
-    },
-    [geocode?.lat, geocode?.lng, lotHeight, lotWidth, siteRotationDeg],
-  );
 
   useEffect(() => {
     if (!showMap || !mapLoaded || !mapRef.current) return;
