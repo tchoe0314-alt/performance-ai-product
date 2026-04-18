@@ -1411,7 +1411,7 @@ export default function PreviewPanel({
           ) : (
             <div
               ref={previewRef}
-              className={`relative flex min-h-0 w-full flex-1 items-center justify-center rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] ${
+              className={`relative flex h-full min-h-0 w-full flex-1 items-center justify-center rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] ${
                 previewInteraction === "interactive" ? "cursor-crosshair" : "cursor-default"
               }`}
               onDragOver={(event) => {

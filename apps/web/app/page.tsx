@@ -7065,7 +7065,7 @@ export default function PerformanceAIDashboard() {
             <WorkspaceToolbar onRefreshWorkspace={handleRefreshWorkspace} />
 
             <div className="flex w-full flex-1 flex-col gap-6 px-4 py-6 md:px-6">
-              <div className="flex min-h-0 flex-1 flex-col">
+              <div className="flex h-[50vh] min-h-[50vh] flex-col">
               <PreviewPanel
                 previewReview={previewReview}
                 previewTotalPhaseCount={previewTotalPhaseCount}
