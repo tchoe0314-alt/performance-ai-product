@@ -90,6 +90,9 @@ type PreviewPanelProps = {
   onSetSiteRotationDeg?: (value: number) => void;
   surveyPoints?: Array<{ x: number; y: number; z?: number }>;
   onMapScaleUpdate?: (payload: { ftPerPx: number; source: "mapbox" }) => void;
+  mapCenterRequest?: number;
+  onMapCenter?: (payload: { lat: number; lng: number }) => void;
+  siteLocked?: boolean;
   debugStats?: {
     enabled: boolean;
     projectId: string;
@@ -167,6 +170,9 @@ export default function PreviewPanel({
   onSetSiteRotationDeg,
   surveyPoints,
   onMapScaleUpdate,
+  mapCenterRequest,
+  onMapCenter,
+  siteLocked,
   debugStats,
 }: PreviewPanelProps) {
   const previewLabels = useMemo(
@@ -417,6 +423,7 @@ export default function PreviewPanel({
   const getEditCapabilities = (item: BuildingPlacement) => {
     const type = item.type ?? "building";
     const editableTypes = new Set([
+      "site",
       "building",
       "retail_building",
       "multifamily_building",
@@ -436,6 +443,7 @@ export default function PreviewPanel({
       "sidewalk",
     ]);
     const resizableTypes = new Set([
+      "site",
       "building",
       "retail_building",
       "multifamily_building",
@@ -452,6 +460,7 @@ export default function PreviewPanel({
       "driveway",
     ]);
     const rotatableTypes = new Set([
+      "site",
       "building",
       "retail_building",
       "multifamily_building",
@@ -466,10 +475,12 @@ export default function PreviewPanel({
       "driveway",
     ]);
     const deletableTypes = new Set([...editableTypes].filter((t) => t !== "site"));
-    const movable = editableTypes.has(type) && !item.locked;
-    const resizable = resizableTypes.has(type) && !item.locked;
-    const rotatable = rotatableTypes.has(type) && !item.locked;
-    const deletable = deletableTypes.has(type) && !item.locked;
+    const isSite = type === "site";
+    const effectiveLocked = isSite ? Boolean(siteLocked) : item.locked;
+    const movable = editableTypes.has(type) && !effectiveLocked;
+    const resizable = resizableTypes.has(type) && !effectiveLocked;
+    const rotatable = rotatableTypes.has(type) && !effectiveLocked;
+    const deletable = deletableTypes.has(type) && !effectiveLocked;
     return { movable, resizable, rotatable, deletable };
   };
 
@@ -832,6 +843,15 @@ export default function PreviewPanel({
       map.off("zoomend", reportScale);
     };
   }, [latLngToSite, lotHeight, lotWidth, mapLoaded, onMapScaleUpdate, onPlaceBuilding, onPlaceObject, placementMode, selectedBuildingId, onSelectBuilding, showMap]);
+
+  useEffect(() => {
+    if (!showMap || !mapLoaded || !mapRef.current) return;
+    if (!mapCenterRequest) return;
+    const center = mapRef.current.getCenter();
+    if (onMapCenter) {
+      onMapCenter({ lat: center.lat, lng: center.lng });
+    }
+  }, [mapCenterRequest, mapLoaded, onMapCenter, showMap]);
 
   useEffect(() => {
     if (!showMap) return;

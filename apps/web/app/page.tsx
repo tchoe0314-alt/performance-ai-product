@@ -440,6 +440,7 @@ export default function PerformanceAIDashboard() {
   const [siteRotationInput, setSiteRotationInput] = useState("0");
   const [showSiteBounds, setShowSiteBounds] = useState(true);
   const [fitToSiteRequest, setFitToSiteRequest] = useState(0);
+  const [mapCenterRequest, setMapCenterRequest] = useState(0);
   const [alignToRoadRequest, setAlignToRoadRequest] = useState(0);
   const debugPreview = useMemo(() => {
     if (typeof window === "undefined") return false;
@@ -479,6 +480,8 @@ export default function PerformanceAIDashboard() {
   const [mapSnapshotPath, setMapSnapshotPath] = useState("");
   const [mapAnalysis, setMapAnalysis] = useState<MapAnalysis | null>(null);
   const [siteAddress, setSiteAddress] = useState("");
+  const [imageUploadState, setImageUploadState] = useState<"idle" | "uploading" | "uploaded" | "detecting" | "failed">("idle");
+  const [imageUploadNote, setImageUploadNote] = useState<string | null>(null);
   const [pendingClarification, setPendingClarification] = useState<{
     action: string;
     payload?: Record<string, unknown>;
@@ -1464,10 +1467,11 @@ export default function PerformanceAIDashboard() {
     if (!width || !height) {
       const site = buildingPlacements.find((item) => item.type === "site");
       if (site?.w && site?.d) {
-        return { x: 0, y: 0, w: site.w, h: site.d };
+        return { x: site.x ?? 0, y: site.y ?? 0, w: site.w, h: site.d };
       }
     }
-    return { x: 0, y: 0, w: width, h: height };
+    const site = buildingPlacements.find((item) => item.type === "site");
+    return { x: site?.x ?? 0, y: site?.y ?? 0, w: width, h: height };
   }, [buildingPlacements, lotHeight, lotWidth]);
 
   useEffect(() => {
@@ -1482,6 +1486,36 @@ export default function PerformanceAIDashboard() {
       setLotHeight(nextHeight);
     }
   }, [buildingPlacements, lotHeight, lotWidth]);
+
+  useEffect(() => {
+    const site = buildingPlacements.find((item) => item.type === "site");
+    if (!site) return;
+    if (site.locked === siteScaleLocked) return;
+    setBuildingPlacements((prev) =>
+      prev.map((item) =>
+        item.type === "site"
+          ? {
+              ...item,
+              locked: siteScaleLocked,
+              capabilities: {
+                ...item.capabilities,
+                movable: !siteScaleLocked,
+                resizable: !siteScaleLocked,
+                rotatable: !siteScaleLocked,
+              },
+            }
+          : item,
+      ),
+    );
+  }, [buildingPlacements, siteScaleLocked]);
+
+  useEffect(() => {
+    const site = buildingPlacements.find((item) => item.type === "site");
+    if (!site || typeof site.locked !== "boolean") return;
+    if (site.locked !== siteScaleLocked) {
+      setSiteScaleLocked(site.locked);
+    }
+  }, [buildingPlacements, siteScaleLocked]);
 
   const resolveDefaultBuildingDims = useCallback(() => {
     const width = parsePositiveNumber(buildingWidth) ?? SITE_OBJECT_CATALOG.building.defaultW;
@@ -1744,6 +1778,49 @@ export default function PerformanceAIDashboard() {
   const handleUpdateBuilding = useCallback((id: string, updates: Partial<BuildingPlacement>) => {
     clearGeneratedPreview();
     const nextUpdates = { ...updates };
+    const target = buildingPlacements.find((item) => item.id === id);
+    if (target?.type === "site" && (typeof updates.x === "number" || typeof updates.y === "number")) {
+      const currentX = target.x ?? 0;
+      const currentY = target.y ?? 0;
+      const nextX = typeof updates.x === "number" ? updates.x : currentX;
+      const nextY = typeof updates.y === "number" ? updates.y : currentY;
+      const deltaX = nextX - currentX;
+      const deltaY = nextY - currentY;
+      const currentInput = currentProject?.project_input ?? payloadPreview;
+      const geocode = currentInput?.meta?.site_inputs?.geocode;
+      if (geocode?.lat && geocode?.lng) {
+        const metersPerDegLat = 111320;
+        const metersPerDegLng = 111320 * Math.cos((geocode.lat * Math.PI) / 180);
+        const dxM = deltaX * 0.3048;
+        const dyM = -deltaY * 0.3048;
+        const nextLat = geocode.lat + dyM / metersPerDegLat;
+        const nextLng = geocode.lng + dxM / metersPerDegLng;
+        const nextSiteInputs = {
+          ...(currentInput?.meta?.site_inputs ?? {}),
+          geocode: {
+            ...(geocode ?? {}),
+            lat: nextLat,
+            lng: nextLng,
+          },
+        };
+        void saveProjectRef.current?.({
+          silent: true,
+          projectInputOverride: {
+            ...currentInput,
+            input_mode: "user",
+            strict_mode: false,
+            allow_ai_fill_for_blanks: false,
+            meta: {
+              ...(currentInput?.meta ?? {}),
+              site_inputs: nextSiteInputs,
+            },
+          },
+        });
+        setFitToSiteRequest((value) => value + 1);
+        nextUpdates.x = 0;
+        nextUpdates.y = 0;
+      }
+    }
     if (typeof updates.x === "number" || typeof updates.y === "number") {
       nextUpdates.placed = true;
     }
@@ -1755,7 +1832,7 @@ export default function PerformanceAIDashboard() {
     void ensureProjectDraftRef.current()
       .then(() => saveProjectRef.current({ silent: true }))
       .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object update...", track: true });
-  }, [clearGeneratedPreview, markSystemsStale]);
+  }, [buildingPlacements, clearGeneratedPreview, currentProject, markSystemsStale, payloadPreview]);
 
   const persistDetectedPlacements = useCallback(
     (nextDetected: BuildingPlacement[]) => {
@@ -3561,6 +3638,31 @@ export default function PerformanceAIDashboard() {
         );
         return;
       }
+      if (pendingClarification.action === "lock_site_required") {
+        const lower = trimmed.toLowerCase();
+        if (/(yes|ok|lock|confirm)/.test(lower)) {
+          setPendingClarification(null);
+          handleToggleSiteLock();
+          const target = pendingClarification.payload?.action as
+            | "roads"
+            | "parking"
+            | "grading"
+            | "drainage"
+            | "utilities"
+            | "full"
+            | undefined;
+          if (target) {
+            void handleGenerateSystem(target);
+          }
+          return;
+        }
+        appendChatMessage(
+          "assistant",
+          "Lock the site when you're ready, then I can continue.",
+          "status",
+        );
+        return;
+      }
     }
     if (busy || visibleActiveJob) {
       if (trimmed || imageName) {
@@ -3935,7 +4037,10 @@ export default function PerformanceAIDashboard() {
     const surveyFile = siteInputs?.survey_file ?? {};
     const slopeEstimate = siteInputs?.slope_estimate ?? null;
       const detectionScale = siteInputs?.detection_scale ?? {};
-      const alignmentLocked = Boolean(siteInputs?.site_alignment_locked);
+      const alignmentLocked =
+        typeof siteInputs?.site_alignment_locked === "boolean"
+          ? siteInputs.site_alignment_locked
+          : null;
     const useSurvey = siteInputs?.use_survey_for_grading;
     const storedPoints = Array.isArray(siteInputs?.survey_points) ? siteInputs?.survey_points : [];
     const detectedObjects = Array.isArray(siteInputs?.detected_objects)
@@ -3972,7 +4077,9 @@ export default function PerformanceAIDashboard() {
           ? detectionScale.scale_source
           : "approximate",
       );
-      setSiteScaleLocked(alignmentLocked);
+      if (alignmentLocked !== null) {
+        setSiteScaleLocked(alignmentLocked);
+      }
       const rotationValue =
         typeof siteInputs?.site_rotation_deg === "number" ? siteInputs.site_rotation_deg : 0;
       setSiteRotationDeg(rotationValue);
@@ -4327,6 +4434,8 @@ export default function PerformanceAIDashboard() {
     if (!token) return;
     const localPreviewUrl = URL.createObjectURL(file);
     setUploadedImagePreviewUrl(localPreviewUrl);
+    setImageUploadState("uploading");
+    setImageUploadNote("Uploading image…");
     clearGeneratedPreview();
     try {
       const imageElement = new Image();
@@ -4354,6 +4463,7 @@ export default function PerformanceAIDashboard() {
           image_path: data.image_path || "",
           image_url: data.image_url || "",
         },
+        site_alignment_locked: false,
       };
       const hasSite = buildingPlacements.some((item) => item.type === "site");
       if (!hasSite) {
@@ -4367,6 +4477,7 @@ export default function PerformanceAIDashboard() {
         const height = baseSide / Math.sqrt(aspect);
         setLotWidth((prev) => (prev ? prev : width.toFixed(0)));
         setLotHeight((prev) => (prev ? prev : height.toFixed(0)));
+        setSiteScaleLocked(false);
         setBuildingPlacements((prev) => {
           const filtered = prev.filter((item) => item.type !== "site");
           const siteId = `site-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -4380,14 +4491,14 @@ export default function PerformanceAIDashboard() {
               x: 0,
               y: 0,
               rotation: 0,
-              locked: true,
+              locked: false,
               placed: true,
               source: "user",
               generated: false,
               capabilities: {
-                movable: false,
-                resizable: false,
-                rotatable: false,
+                movable: true,
+                resizable: true,
+                rotatable: true,
                 deletable: false,
               },
               systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
@@ -4396,6 +4507,7 @@ export default function PerformanceAIDashboard() {
             ...filtered,
           ];
         });
+        setFitToSiteRequest((value) => value + 1);
       }
       await saveProject({
         silent: true,
@@ -4410,16 +4522,22 @@ export default function PerformanceAIDashboard() {
           },
         },
       });
+      setImageUploadState("uploaded");
+      setImageUploadNote("Image uploaded. Ready for detection.");
       setStatusMessage("Image uploaded.");
       const width = parsePositiveNumber(lotWidth);
       const height = parsePositiveNumber(lotHeight);
       if (width && height) {
+        setImageUploadState("detecting");
+        setImageUploadNote("Detecting site features…");
         void handleAnalyzeImageFeatures(data.image_path || "");
       } else {
         setStatusMessage("Image uploaded. Set site dimensions to run detection.");
       }
     } catch (error) {
       setImageName(file.name);
+      setImageUploadState("failed");
+      setImageUploadNote("Image upload failed.");
       setStatusMessage(
         error instanceof Error ? error.message : "Image upload failed.",
       );
@@ -4670,6 +4788,8 @@ export default function PerformanceAIDashboard() {
       return;
     }
     clearGeneratedPreview();
+    setImageUploadState("detecting");
+    setImageUploadNote("Detecting site features…");
     const width = parsePositiveNumber(lotWidth);
     const height = parsePositiveNumber(lotHeight);
     if (!width || !height) {
@@ -4677,6 +4797,8 @@ export default function PerformanceAIDashboard() {
         "I need the site boundary dimensions before detection. What size should the site be?",
         "set_site_then_detect",
       );
+      setImageUploadState("uploaded");
+      setImageUploadNote("Image uploaded. Set site dimensions to run detection.");
       return;
     }
     try {
@@ -4708,11 +4830,26 @@ export default function PerformanceAIDashboard() {
           },
         },
       });
+      setImageUploadState("uploaded");
+      setImageUploadNote(mapped.length ? "Detection complete. Review suggested objects." : "No detections found.");
       setStatusMessage(result.success ? "Detection complete. Review suggested objects." : result.message || "Detection failed.");
     } catch (error) {
+      setImageUploadState("failed");
+      setImageUploadNote("Detection failed.");
       setStatusMessage(error instanceof Error ? error.message : "Detection failed.");
     }
-  }, [askClarification, clearGeneratedPreview, currentProject, lotHeight, lotWidth, mapDetectionToPlacement, mapSnapshotPath, payloadPreview, saveProject, token]);
+  }, [
+    askClarification,
+    clearGeneratedPreview,
+    currentProject,
+    lotHeight,
+    lotWidth,
+    mapDetectionToPlacement,
+    mapSnapshotPath,
+    payloadPreview,
+    saveProject,
+    token,
+  ]);
 
   const handleAnalyzeSiteAccess = useCallback(() => {
     const confirmed = buildingPlacements.filter(
@@ -5041,6 +5178,45 @@ export default function PerformanceAIDashboard() {
     [persistSiteRotation],
   );
 
+  const handleToggleSiteLock = useCallback(() => {
+    const next = !siteScaleLocked;
+    setSiteScaleLocked(next);
+    const currentInput = currentProject?.project_input ?? payloadPreview;
+    void saveProject({
+      silent: true,
+      projectInputOverride: {
+        ...currentInput,
+        input_mode: "user",
+        strict_mode: false,
+        allow_ai_fill_for_blanks: false,
+        meta: {
+          ...(currentInput?.meta ?? {}),
+          site_inputs: {
+            ...(currentInput?.meta?.site_inputs ?? {}),
+            site_alignment_locked: next,
+          },
+        },
+      },
+    });
+    setBuildingPlacements((prevPlacements) =>
+      prevPlacements.map((item) =>
+        item.type === "site"
+          ? {
+              ...item,
+              locked: next,
+              capabilities: {
+                ...item.capabilities,
+                movable: !next,
+                resizable: !next,
+                rotatable: !next,
+              },
+            }
+          : item,
+      ),
+    );
+    setStatusMessage(next ? "Site alignment locked." : "Site alignment unlocked.");
+  }, [currentProject, payloadPreview, saveProject]);
+
   const estimateSurveySlope = async () => {
     if (!token || !surveyFileName) return;
     try {
@@ -5179,12 +5355,14 @@ export default function PerformanceAIDashboard() {
         display_name: geocode.display_name,
         provider: geocode.provider,
       };
+      nextSiteInputs.site_alignment_locked = false;
       const acres = 10;
       const side = Math.sqrt(acres * 43560);
       let nextSiteId: string | null = null;
       if (!hasSite) {
         setLotWidth((prev) => (prev ? prev : side.toFixed(0)));
         setLotHeight((prev) => (prev ? prev : side.toFixed(0)));
+        setSiteScaleLocked(false);
         setBuildingPlacements((prev) => {
           const filtered = prev.filter((item) => item.type !== "site");
           const siteId = `site-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -5200,14 +5378,14 @@ export default function PerformanceAIDashboard() {
               x: 0,
               y: 0,
               rotation: 0,
-              locked: true,
+              locked: false,
               placed: true,
               source: "user",
               generated: false,
               capabilities: {
-                movable: false,
-                resizable: false,
-                rotatable: false,
+                movable: true,
+                resizable: true,
+                rotatable: true,
                 deletable: false,
               },
               systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
@@ -5215,6 +5393,7 @@ export default function PerformanceAIDashboard() {
             },
           ];
         });
+        setFitToSiteRequest((value) => value + 1);
       } else {
         const existingSite = buildingPlacements.find((item) => item.type === "site");
         nextSiteId = existingSite?.id ?? null;
@@ -5244,6 +5423,7 @@ export default function PerformanceAIDashboard() {
       if (nextSiteId) {
         setFocusObjectId(nextSiteId);
       }
+      setFitToSiteRequest((value) => value + 1);
       setStatusMessage("Site address saved and site boundary initialized.");
     } catch (error) {
       setStatusMessage(
@@ -5251,6 +5431,37 @@ export default function PerformanceAIDashboard() {
       );
     }
   };
+
+  const handleMapCenter = useCallback(
+    async (payload: { lat: number; lng: number }) => {
+      const currentInput = currentProject?.project_input ?? payloadPreview;
+      const nextSiteInputs = {
+        ...(currentInput?.meta?.site_inputs ?? {}),
+        geocode: {
+          ...(currentInput?.meta?.site_inputs?.geocode ?? {}),
+          lat: payload.lat,
+          lng: payload.lng,
+          display_name: currentInput?.meta?.site_inputs?.geocode?.display_name ?? "Map center",
+        },
+      };
+      await saveProject({
+        silent: true,
+        projectInputOverride: {
+          ...currentInput,
+          input_mode: "user",
+          strict_mode: false,
+          allow_ai_fill_for_blanks: false,
+          meta: {
+            ...(currentInput?.meta ?? {}),
+            site_inputs: nextSiteInputs,
+          },
+        },
+      });
+      setFitToSiteRequest((value) => value + 1);
+      setStatusMessage("Site centered on the map view.");
+    },
+    [currentProject, payloadPreview, saveProject],
+  );
 
   const requestPreview = async (
     payload: PreviewRequestPayload,
@@ -5494,6 +5705,19 @@ export default function PerformanceAIDashboard() {
 
   const siteInputs = (currentProject?.project_input?.meta?.site_inputs ?? {}) as SiteInputs;
 
+  const ensureSiteLocked = useCallback(
+    (action: string) => {
+      if (siteScaleLocked) return true;
+      askClarification(
+        "Please lock the site alignment before running this step. Do you want me to lock the site now?",
+        "lock_site_required",
+        { action },
+      );
+      return false;
+    },
+    [askClarification, siteScaleLocked],
+  );
+
   const handleGenerateSystem = useCallback(
     async (target: "roads" | "parking" | "grading" | "drainage" | "utilities" | "full") => {
       if (!hasSiteBoundary()) {
@@ -5502,6 +5726,9 @@ export default function PerformanceAIDashboard() {
           "set_site_then_generate",
           { target },
         );
+        return;
+      }
+      if (!ensureSiteLocked(target)) {
         return;
       }
       const hasBasin =
@@ -5583,6 +5810,7 @@ export default function PerformanceAIDashboard() {
       buildingPlacements,
       executePlanAction,
       hasSiteBoundary,
+      ensureSiteLocked,
       projectId,
       siteInputs?.geocode?.lat,
       siteInputs?.geocode?.lng,
@@ -5680,6 +5908,8 @@ export default function PerformanceAIDashboard() {
     setBackendResult(null);
     setUploadedImageApiUrl("");
     setUploadedImagePreviewUrl("");
+    setImageUploadState("idle");
+    setImageUploadNote(null);
     setSurveyFileName("");
     setSurveySlopeEstimate(null);
     setSurveyPoints([]);
@@ -5701,6 +5931,7 @@ export default function PerformanceAIDashboard() {
     setSiteRotationInput("0");
     setShowSiteBounds(true);
     setFitToSiteRequest(0);
+    setMapCenterRequest(0);
     setAlignToRoadRequest(0);
     setFocusDetectedId(null);
     setFocusObjectId(null);
@@ -6664,6 +6895,21 @@ export default function PerformanceAIDashboard() {
                       >
                         Save address
                       </button>
+                      <div className="mt-3 flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                        <span>
+                          Alignment:{" "}
+                          <span className="font-semibold text-slate-800">
+                            {siteScaleLocked ? "Locked" : "Unlocked"}
+                          </span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleToggleSiteLock}
+                          className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                        >
+                          {siteScaleLocked ? "Unlock Site" : "Lock Site"}
+                        </button>
+                      </div>
                       {siteAddress ? (
                         <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                           <p className="font-semibold text-slate-700">Next steps</p>
@@ -6723,6 +6969,18 @@ export default function PerformanceAIDashboard() {
                           {uploadedImageApiUrl || uploadedImagePreviewUrl ? "Ready" : "Upload"}
                         </span>
                       </button>
+                      {imageUploadState !== "idle" ? (
+                        <p className="text-xs text-slate-500">
+                          {imageUploadNote ||
+                            (imageUploadState === "uploading"
+                              ? "Uploading image…"
+                              : imageUploadState === "detecting"
+                                ? "Detecting site features…"
+                                : imageUploadState === "failed"
+                                  ? "Image upload failed."
+                                  : "Image uploaded.")}
+                        </p>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => surveyInputRef.current?.click()}
@@ -6995,32 +7253,17 @@ export default function PerformanceAIDashboard() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => {
-                            setSiteScaleLocked((prev) => {
-                              const next = !prev;
-                              const currentInput = currentProject?.project_input ?? payloadPreview;
-                              void saveProject({
-                                silent: true,
-                                projectInputOverride: {
-                                  ...currentInput,
-                                  input_mode: "user",
-                                  strict_mode: false,
-                                  allow_ai_fill_for_blanks: false,
-                                  meta: {
-                                    ...(currentInput?.meta ?? {}),
-                                    site_inputs: {
-                                      ...(currentInput?.meta?.site_inputs ?? {}),
-                                      site_alignment_locked: next,
-                                    },
-                                  },
-                                },
-                              });
-                              return next;
-                            });
-                          }}
+                          onClick={() => setMapCenterRequest((value) => value + 1)}
                           className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
                         >
-                          {siteScaleLocked ? "Unlock Site Scale" : "Lock Site Scale"}
+                          Use Map Center
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleToggleSiteLock}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                        >
+                          {siteScaleLocked ? "Unlock Site" : "Lock Site"}
                         </button>
                         <button
                           type="button"
@@ -7328,7 +7571,10 @@ export default function PerformanceAIDashboard() {
                 siteRotationDeg={siteInputs?.site_rotation_deg ?? 0}
                 showSiteBounds={showSiteBounds}
                 fitToSiteRequest={fitToSiteRequest}
+                mapCenterRequest={mapCenterRequest}
                 alignToRoadRequest={alignToRoadRequest}
+                onMapCenter={handleMapCenter}
+                siteLocked={siteScaleLocked}
                 onSetSiteRotationDeg={(value) => {
                   setSiteRotationDeg(value);
                   setSiteRotationInput(String(value));
