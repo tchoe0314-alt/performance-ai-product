@@ -754,7 +754,7 @@ export default function PreviewPanel({
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+      <div className="flex flex-col rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               <span>Preview Mode</span>
@@ -922,7 +922,7 @@ export default function PreviewPanel({
                 </button>
               </div>
             ) : (
-              <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)]">
+              <div className="relative flex items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] min-h-[520px] h-[clamp(520px,70vh,820px)]">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={planPreviewUrl}
@@ -938,7 +938,7 @@ export default function PreviewPanel({
           ) : (
             <div
               ref={previewRef}
-              className={`relative flex min-h-0 flex-1 items-center justify-center rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] ${
+              className={`relative flex items-center justify-center rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] min-h-[520px] h-[clamp(520px,70vh,820px)] ${
                 previewInteraction === "interactive" ? "cursor-crosshair" : "cursor-default"
               }`}
               onDragOver={(event) => {
