@@ -1489,6 +1489,50 @@ export default function PerformanceAIDashboard() {
     return Boolean(lot.w && lot.h);
   }, [resolveLotBounds]);
 
+  const ensureSiteBoundary = useCallback(
+    (reason: string) => {
+      const hasSite = buildingPlacements.some((item) => item.type === "site");
+      if (hasSite) return true;
+      const width =
+        parsePositiveNumber(lotWidth) ?? SITE_OBJECT_CATALOG.site.defaultW;
+      const height =
+        parsePositiveNumber(lotHeight) ?? SITE_OBJECT_CATALOG.site.defaultD;
+      if (!parsePositiveNumber(lotWidth)) setLotWidth(String(width));
+      if (!parsePositiveNumber(lotHeight)) setLotHeight(String(height));
+      setBuildingPlacements((prev) => {
+        const filtered = prev.filter((item) => item.type !== "site");
+        const sitePlacement: BuildingPlacement = {
+          id: `site-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          label: SITE_OBJECT_CATALOG.site.label,
+          type: "site",
+          w: width,
+          d: height,
+          x: 0,
+          y: 0,
+          rotation: 0,
+          locked: true,
+          placed: true,
+          source: "user",
+          generated: false,
+          capabilities: {
+            movable: false,
+            resizable: false,
+            rotatable: false,
+            deletable: false,
+          },
+          systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+          meta: { category: SITE_OBJECT_CATALOG.site.category },
+        };
+        return [sitePlacement, ...filtered];
+      });
+      setStatusMessage(
+        `Site boundary initialized at ${width} ft by ${height} ft. ${reason}`,
+      );
+      return true;
+    },
+    [buildingPlacements, lotHeight, lotWidth],
+  );
+
   const markSystemsStale = useCallback(() => {
     setSystemStatuses((prev) => ({
       roads: prev.roads === "not_generated" ? "not_generated" : "stale",
@@ -1553,12 +1597,8 @@ export default function PerformanceAIDashboard() {
         return;
       }
       if (!hasSiteBoundary()) {
-        askClarification(
-          "What size should the site boundary be? You can say something like “600 ft by 400 ft” or “12 acres.”",
-          "set_site_then_add",
-          { type },
-        );
-        return;
+        const ok = ensureSiteBoundary("You can adjust the site size anytime.");
+        if (!ok) return;
       }
       const lot = resolveLotBounds();
       const existingCount =
@@ -1787,7 +1827,12 @@ export default function PerformanceAIDashboard() {
       clearGeneratedPreview();
       const lot = resolveLotBounds();
       if (!lot.w || !lot.h) {
-        setStatusMessage("Set the site width and height before placing objects.");
+        const ok = ensureSiteBoundary(
+          "Place the object again to drop it on the new site.",
+        );
+        if (!ok) {
+          setStatusMessage("Set the site width and height before placing objects.");
+        }
         return;
       }
       const clampedX = Math.min(Math.max(position.x, 0), 1);
@@ -1819,13 +1864,15 @@ export default function PerformanceAIDashboard() {
           return { ...item, x: boundedX, y: boundedY, placed: true };
         }),
       );
+      setActivePlacementId((prev) => (prev === id ? null : prev));
+      setPlacementModeEnabled(false);
       markSystemsStale();
       setStatusMessage("Object placed. Regenerate systems to reflect the new layout.");
       void ensureProjectDraftRef.current()
         .then(() => saveProjectRef.current({ silent: true }))
         .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object placement...", track: true });
     },
-    [clearGeneratedPreview, markSystemsStale, resolveLotBounds],
+    [clearGeneratedPreview, ensureSiteBoundary, markSystemsStale, resolveLotBounds],
   );
 
   const handleTogglePlacementMode = useCallback(() => {
