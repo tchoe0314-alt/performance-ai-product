@@ -311,6 +311,8 @@ class FeatureDetectionEngine:
                 shifted = self._thin_contour(shifted)
             epsilon = self._adaptive_simplify_epsilon(shifted, kind=kind)
             simplified = self._simplify_path(shifted, epsilon=epsilon)
+            if kind == "building":
+                simplified = self._orthogonalize_polygon(simplified)
             if len(simplified) >= 3:
                 if simplified[0] != simplified[-1]:
                     simplified.append(simplified[0])
@@ -449,6 +451,34 @@ class FeatureDetectionEngine:
         if kind in {"road", "driveway", "sidewalk"}:
             return max(0.8, min(3.0, base * 0.8))
         return base
+
+    @staticmethod
+    def _orthogonalize_polygon(points: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+        if len(points) < 4:
+            return points
+        closed = points[0] == points[-1]
+        seq = points[:-1] if closed else points
+        adjusted: List[Tuple[int, int]] = []
+        for i, pt in enumerate(seq):
+            prev_pt = seq[i - 1]
+            next_pt = seq[(i + 1) % len(seq)]
+            vx1, vy1 = pt[0] - prev_pt[0], pt[1] - prev_pt[1]
+            vx2, vy2 = next_pt[0] - pt[0], next_pt[1] - pt[1]
+            is_h1 = abs(vx1) >= abs(vy1)
+            is_h2 = abs(vx2) >= abs(vy2)
+            if is_h1 and is_h2:
+                # Snap y to neighbor average for horizontal emphasis
+                new_y = int(round((prev_pt[1] + next_pt[1]) / 2))
+                adjusted.append((pt[0], new_y))
+            elif not is_h1 and not is_h2:
+                # Snap x to neighbor average for vertical emphasis
+                new_x = int(round((prev_pt[0] + next_pt[0]) / 2))
+                adjusted.append((new_x, pt[1]))
+            else:
+                adjusted.append(pt)
+        if closed and adjusted[0] != adjusted[-1]:
+            adjusted.append(adjusted[0])
+        return adjusted
 
     @staticmethod
     def _sobel_edges(gray: np.ndarray) -> np.ndarray:
