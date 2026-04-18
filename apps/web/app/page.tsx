@@ -6330,8 +6330,8 @@ export default function PerformanceAIDashboard() {
                         {gradingSourceSummary}
                       </p>
                       <p className="mt-1 text-xs text-slate-500">
-                        Civora uses the highest‑trust source available. Survey/topo overrides imagery or address
-                        inference.
+                        Survey data only comes from uploaded survey/topo files. Mapbox terrain is an approximate
+                        fallback when no survey is active.
                       </p>
                       <label className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
                         <span>Use survey for grading</span>
