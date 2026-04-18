@@ -643,6 +643,46 @@ export default function PreviewPanel({
     };
   }, [lotHeight, lotWidth, previewContainerBounds]);
 
+  const siteToLatLng = useCallback(
+    (xFt: number, yFt: number) => {
+      if (!geocode?.lat || !geocode?.lng) return null;
+      const metersPerDegLat = 111320;
+      const metersPerDegLng = 111320 * Math.cos((geocode.lat * Math.PI) / 180);
+      const dxFt = xFt - lotWidth / 2;
+      const dyFt = lotHeight / 2 - yFt;
+      const rotationDeg = typeof siteRotationDeg === "number" ? siteRotationDeg : 0;
+      const theta = (rotationDeg * Math.PI) / 180;
+      const dxRot = dxFt * Math.cos(theta) - dyFt * Math.sin(theta);
+      const dyRot = dxFt * Math.sin(theta) + dyFt * Math.cos(theta);
+      const dxM = dxRot * 0.3048;
+      const dyM = dyRot * 0.3048;
+      const lng = geocode.lng + dxM / metersPerDegLng;
+      const lat = geocode.lat + dyM / metersPerDegLat;
+      return [lng, lat] as [number, number];
+    },
+    [geocode?.lat, geocode?.lng, lotHeight, lotWidth, siteRotationDeg],
+  );
+
+  const latLngToSite = useCallback(
+    (lat: number, lng: number) => {
+      if (!geocode?.lat || !geocode?.lng) return null;
+      const metersPerDegLat = 111320;
+      const metersPerDegLng = 111320 * Math.cos((geocode.lat * Math.PI) / 180);
+      const dxM = (lng - geocode.lng) * metersPerDegLng;
+      const dyM = (lat - geocode.lat) * metersPerDegLat;
+      const dxFt = dxM / 0.3048;
+      const dyFt = dyM / 0.3048;
+      const rotationDeg = typeof siteRotationDeg === "number" ? siteRotationDeg : 0;
+      const theta = (rotationDeg * Math.PI) / 180;
+      const invDx = dxFt * Math.cos(-theta) - dyFt * Math.sin(-theta);
+      const invDy = dxFt * Math.sin(-theta) + dyFt * Math.cos(-theta);
+      const x = invDx + lotWidth / 2;
+      const y = lotHeight / 2 - invDy;
+      return { x, y };
+    },
+    [geocode?.lat, geocode?.lng, lotHeight, lotWidth, siteRotationDeg],
+  );
+
   useEffect(() => {
     if (!showMap) return;
     if (!mapContainerRef.current || mapRef.current) return;
@@ -685,11 +725,14 @@ export default function PreviewPanel({
     map.on("zoomend", reportScale);
     const handleClick = (event: mapboxgl.MapMouseEvent) => {
       if (placementMode) {
-        const container = map.getContainer();
-        const rect = container.getBoundingClientRect();
-        const relativeX = event.point.x / Math.max(rect.width, 1);
-        const relativeY = event.point.y / Math.max(rect.height, 1);
+        const sitePoint = latLngToSite(event.lngLat.lat, event.lngLat.lng);
+        if (!sitePoint || !lotWidth || !lotHeight) {
+          return;
+        }
+        const relativeX = sitePoint.x / Math.max(lotWidth, 1);
+        const relativeY = sitePoint.y / Math.max(lotHeight, 1);
         console.debug("[placement] map-click", {
+          sitePoint,
           relativeX,
           relativeY,
           activeId: selectedBuildingId ?? null,
@@ -716,12 +759,20 @@ export default function PreviewPanel({
       }
     };
     map.on("click", handleClick);
+    const handleMouseMove = (event: mapboxgl.MapMouseEvent) => {
+      if (!lotWidth || !lotHeight) return;
+      const sitePoint = latLngToSite(event.lngLat.lat, event.lngLat.lng);
+      if (!sitePoint) return;
+      setCursorSitePoint(sitePoint);
+    };
+    map.on("mousemove", handleMouseMove);
     return () => {
       map.off("click", handleClick);
+      map.off("mousemove", handleMouseMove);
       map.off("moveend", reportScale);
       map.off("zoomend", reportScale);
     };
-  }, [mapLoaded, onMapScaleUpdate, onPlaceBuilding, onPlaceObject, placementMode, selectedBuildingId, onSelectBuilding, showMap]);
+  }, [latLngToSite, lotHeight, lotWidth, mapLoaded, onMapScaleUpdate, onPlaceBuilding, onPlaceObject, placementMode, selectedBuildingId, onSelectBuilding, showMap]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -775,34 +826,14 @@ export default function PreviewPanel({
     fullscreenMapRef.current?.flyTo({ center, zoom: 17 });
   }, [geocode?.lat, geocode?.lng, showMap]);
 
-  const convertSiteToLngLat = useCallback(
-    (xFt: number, yFt: number) => {
-      if (!geocode?.lat || !geocode?.lng) return null;
-      const metersPerDegLat = 111320;
-      const metersPerDegLng = 111320 * Math.cos((geocode.lat * Math.PI) / 180);
-      const dxFt = xFt - lotWidth / 2;
-      const dyFt = lotHeight / 2 - yFt;
-      const rotationDeg = typeof siteRotationDeg === "number" ? siteRotationDeg : 0;
-      const theta = (rotationDeg * Math.PI) / 180;
-      const dxRot = dxFt * Math.cos(theta) - dyFt * Math.sin(theta);
-      const dyRot = dxFt * Math.sin(theta) + dyFt * Math.cos(theta);
-      const dxM = dxRot * 0.3048;
-      const dyM = dyRot * 0.3048;
-      const lng = geocode.lng + dxM / metersPerDegLng;
-      const lat = geocode.lat + dyM / metersPerDegLat;
-      return [lng, lat] as [number, number];
-    },
-    [geocode?.lat, geocode?.lng, lotHeight, lotWidth, siteRotationDeg],
-  );
-
   useEffect(() => {
     if (!showMap || !mapLoaded || !mapRef.current || !geocode?.lat || !geocode?.lng) return;
     if (!fitToSiteRequest || !lotWidth || !lotHeight) return;
     const corners = [
-      convertSiteToLngLat(0, 0),
-      convertSiteToLngLat(lotWidth, 0),
-      convertSiteToLngLat(lotWidth, lotHeight),
-      convertSiteToLngLat(0, lotHeight),
+      siteToLatLng(0, 0),
+      siteToLatLng(lotWidth, 0),
+      siteToLatLng(lotWidth, lotHeight),
+      siteToLatLng(0, lotHeight),
     ].filter(Boolean) as Array<[number, number]>;
     if (corners.length < 4) return;
     const bounds = corners.reduce(
@@ -810,7 +841,7 @@ export default function PreviewPanel({
       new mapboxgl.LngLatBounds(corners[0], corners[0]),
     );
     mapRef.current.fitBounds(bounds, { padding: 80, duration: 650 });
-  }, [convertSiteToLngLat, fitToSiteRequest, geocode?.lat, geocode?.lng, lotHeight, lotWidth, mapLoaded, showMap]);
+  }, [siteToLatLng, fitToSiteRequest, geocode?.lat, geocode?.lng, lotHeight, lotWidth, mapLoaded, showMap]);
 
   useEffect(() => {
     if (!showMap || !mapLoaded || !mapRef.current) return;
@@ -868,7 +899,7 @@ export default function PreviewPanel({
         [x, y],
       ];
       const coords = corners
-        .map((pt) => convertSiteToLngLat(pt[0], pt[1]))
+        .map((pt) => siteToLatLng(pt[0], pt[1]))
         .filter(Boolean) as Array<[number, number]>;
       return coords.length === corners.length ? coords : null;
     };
@@ -888,7 +919,7 @@ export default function PreviewPanel({
         [0, 0],
       ];
       const coords = corners
-        .map((pt) => convertSiteToLngLat(pt[0], pt[1]))
+        .map((pt) => siteToLatLng(pt[0], pt[1]))
         .filter(Boolean) as Array<[number, number]>;
       return coords.length === corners.length ? coords : null;
     };
@@ -922,7 +953,7 @@ export default function PreviewPanel({
       }
       const features = surveyPoints
         .map((pt, idx) => {
-          const coords = convertSiteToLngLat(pt.x, pt.y);
+          const coords = siteToLatLng(pt.x, pt.y);
           if (!coords) return null;
           return {
             type: "Feature",
@@ -1056,7 +1087,7 @@ export default function PreviewPanel({
     updateMap(fullscreenMapRef.current);
   }, [
     buildingPlacements,
-    convertSiteToLngLat,
+    siteToLatLng,
     geocode?.lat,
     geocode?.lng,
     lotHeight,
