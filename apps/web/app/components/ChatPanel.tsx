@@ -23,6 +23,8 @@ type ChatPanelProps = {
   hasDirectRunInFlight: boolean;
   onCancelJob: () => void;
   onContinueJob: () => void;
+  pendingClarification?: string | null;
+  onContinuePendingClarification?: () => void;
   prompt: string;
   imageName: string;
   onPromptChange: (value: string) => void;
@@ -55,6 +57,8 @@ export default function ChatPanel({
   hasDirectRunInFlight,
   onCancelJob,
   onContinueJob,
+  pendingClarification,
+  onContinuePendingClarification,
   prompt,
   imageName,
   onPromptChange,
@@ -80,6 +84,7 @@ export default function ChatPanel({
   const isAwaitingApproval = normalizedStatus === "awaiting_approval";
   const isApprovalBusy = approvalState !== "idle";
   const approvalLabel = approvalPhaseLabel ? `Starting ${approvalPhaseLabel}...` : "Starting next phase...";
+  const showContinuePending = Boolean(pendingClarification && onContinuePendingClarification && !busy && !hasVisibleActiveJob);
 
   return (
     <div className="rounded-[24px] border border-slate-200 bg-white shadow-[0_10px_40px_-28px_rgba(15,23,42,0.5)]">
@@ -297,6 +302,15 @@ export default function ChatPanel({
               >
                 Save
               </button>
+              {showContinuePending ? (
+                <button
+                  type="button"
+                  onClick={onContinuePendingClarification}
+                  className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900 transition hover:bg-amber-100"
+                >
+                  Continue
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={onSendMessage}

@@ -1877,6 +1877,7 @@ export default function PerformanceAIDashboard() {
     (question: string, action: string, payload?: Record<string, unknown>) => {
       setPendingClarification({ action, payload, question });
       setActiveSidePanel("chat");
+      setChatCollapsed(false);
       appendChatMessage("assistant", question, "status");
       setStatusMessage(question);
     },
@@ -3443,6 +3444,66 @@ export default function PerformanceAIDashboard() {
       }
     }
     void runOrchestrator("run");
+  };
+
+  const handleContinuePendingClarification = () => {
+    if (!pendingClarification) return;
+    const lot = resolveLotBounds();
+    const hasSite = Boolean(lot.w && lot.h);
+    if (pendingClarification.action === "set_site_then_add") {
+      if (!hasSite) {
+        appendChatMessage("assistant", pendingClarification.question, "status");
+        return;
+      }
+      const type = pendingClarification.payload?.type as SiteObjectType | undefined;
+      if (type) {
+        setPendingClarification(null);
+        handleAddObject(type);
+      }
+      return;
+    }
+    if (pendingClarification.action === "set_site_then_detect") {
+      if (!hasSite) {
+        appendChatMessage("assistant", pendingClarification.question, "status");
+        return;
+      }
+      setPendingClarification(null);
+      void handleAnalyzeImageFeatures();
+      return;
+    }
+    if (pendingClarification.action === "set_site_then_generate") {
+      if (!hasSite) {
+        appendChatMessage("assistant", pendingClarification.question, "status");
+        return;
+      }
+      const target = pendingClarification.payload?.target as
+        | "roads"
+        | "parking"
+        | "grading"
+        | "drainage"
+        | "utilities"
+        | "full"
+        | undefined;
+      if (target) {
+        setPendingClarification(null);
+        void handleGenerateSystem(target);
+      }
+      return;
+    }
+    if (pendingClarification.action === "upload_image_then_detect") {
+      if (!mapSnapshotPath) {
+        appendChatMessage("assistant", "Please upload a site image/map snapshot first.", "status");
+        return;
+      }
+      setPendingClarification(null);
+      void handleAnalyzeImageFeatures();
+      return;
+    }
+    if (pendingClarification.action === "access_analysis_missing") {
+      setPendingClarification(null);
+      handleAnalyzeSiteAccess();
+      return;
+    }
   };
 
   const handleCancelActiveJob = async () => {
@@ -6094,6 +6155,13 @@ export default function PerformanceAIDashboard() {
     preview3DItems.length === 0 && preview3DAnnotationItems.length > 0;
   const lotBounds = resolveLotBounds();
   const siteInputs = (currentProject?.project_input?.meta?.site_inputs ?? {}) as SiteInputs;
+  const missingSite = !(lotBounds.w && lotBounds.h);
+  const missingImage = !mapSnapshotPath;
+  const hasBasinPlaced = buildingPlacements.some((item) => item.type === "basin" && item.placed);
+  const hasTerrainSource =
+    (Boolean(surveyFileName) && useSurveyForGrading) ||
+    Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng) ||
+    Boolean(surveySlopeEstimate?.slope_percent);
   const gradingSourceSummary = useMemo(() => {
     const hasSurvey = Boolean(siteInputs?.survey_file?.stored_filename || siteInputs?.survey_file?.survey_url);
     const hasMapAnalysis = Boolean(siteInputs?.map_analysis);
@@ -6531,8 +6599,8 @@ export default function PerformanceAIDashboard() {
                         className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         <span>Detect site features</span>
-                        <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
-                          {detectedPlacements.length ? "Detected" : "Run"}
+                        <span className="flex items-center gap-2 text-xs uppercase tracking-[0.14em] text-slate-400">
+                          {missingImage ? "Needs image" : detectedPlacements.length ? "Detected" : "Run"}
                         </span>
                       </button>
                       <button
@@ -6947,6 +7015,8 @@ export default function PerformanceAIDashboard() {
                     hasDirectRunInFlight={Boolean(directRunAbortRef.current)}
                     onCancelJob={handleCancelActiveJob}
                     onContinueJob={handleContinueActiveJob}
+                    pendingClarification={pendingClarification?.question || null}
+                    onContinuePendingClarification={handleContinuePendingClarification}
                     prompt={prompt}
                     imageName={imageName}
                     onPromptChange={setPrompt}
@@ -7161,6 +7231,11 @@ export default function PerformanceAIDashboard() {
                         Choose a category to add real, scaled site objects.
                       </p>
                     </div>
+                    {missingSite ? (
+                      <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+                        Needs site
+                      </span>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => setAdvancedAddOpen((value) => !value)}
@@ -7691,42 +7766,82 @@ export default function PerformanceAIDashboard() {
                       onClick={() => handleGenerateSystem("roads")}
                       className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
                     >
-                      Roads
+                      <div className="flex flex-col items-center gap-1">
+                        <span>Roads</span>
+                        {missingSite ? (
+                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Needs site</span>
+                        ) : null}
+                      </div>
                     </button>
                     <button
                       type="button"
                       onClick={() => handleGenerateSystem("parking")}
                       className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
                     >
-                      Parking
+                      <div className="flex flex-col items-center gap-1">
+                        <span>Parking</span>
+                        {missingSite ? (
+                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Needs site</span>
+                        ) : null}
+                      </div>
                     </button>
                     <button
                       type="button"
                       onClick={() => handleGenerateSystem("grading")}
                       className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
                     >
-                      Grading
+                      <div className="flex flex-col items-center gap-1">
+                        <span>Grading</span>
+                        {missingSite ? (
+                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Needs site</span>
+                        ) : !hasTerrainSource ? (
+                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Needs terrain</span>
+                        ) : null}
+                      </div>
                     </button>
                     <button
                       type="button"
                       onClick={() => handleGenerateSystem("drainage")}
                       className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
                     >
-                      Drainage
+                      <div className="flex flex-col items-center gap-1">
+                        <span>Drainage</span>
+                        {missingSite ? (
+                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Needs site</span>
+                        ) : !hasTerrainSource ? (
+                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Needs terrain</span>
+                        ) : !hasBasinPlaced ? (
+                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Needs basin</span>
+                        ) : null}
+                      </div>
                     </button>
                     <button
                       type="button"
                       onClick={() => handleGenerateSystem("utilities")}
                       className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
                     >
-                      Utilities
+                      <div className="flex flex-col items-center gap-1">
+                        <span>Utilities</span>
+                        {missingSite ? (
+                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Needs site</span>
+                        ) : null}
+                      </div>
                     </button>
                     <button
                       type="button"
                       onClick={() => handleGenerateSystem("full")}
                       className="rounded-xl border border-slate-900 bg-slate-950 px-2 py-2 text-white transition hover:bg-slate-800"
                     >
-                      Full Site
+                      <div className="flex flex-col items-center gap-1">
+                        <span>Full Site</span>
+                        {missingSite ? (
+                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-200">Needs site</span>
+                        ) : !hasTerrainSource ? (
+                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-200">Needs terrain</span>
+                        ) : !hasBasinPlaced ? (
+                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-200">Needs basin</span>
+                        ) : null}
+                      </div>
                     </button>
                   </div>
                 </div>
