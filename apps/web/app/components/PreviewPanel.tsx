@@ -1581,7 +1581,7 @@ export default function PreviewPanel({
                         viewBox="0 0 100 100"
                         preserveAspectRatio="none"
                       >
-                        {[...buildingPlacements, ...suggestedPlacements]
+                        {suggestedPlacements
                           .filter((item) => item.geometryType && Array.isArray(item.geometry))
                           .map((item) => {
                             const points = (item.geometry || []).map((pt) => {
@@ -1640,7 +1640,7 @@ export default function PreviewPanel({
                       </svg>
                     ) : null}
                     <div
-                      className="pointer-events-auto absolute inset-0"
+                      className="pointer-events-auto absolute inset-0 z-[30]"
                       style={{
                         transformOrigin: "top left",
                         transform: focusTransform
@@ -1686,7 +1686,7 @@ export default function PreviewPanel({
                         return (
                           <div
                             key={item.id}
-                            className="pointer-events-auto absolute"
+                            className="pointer-events-auto absolute z-[30]"
                             style={{
                               left: `${left}%`,
                               top: `${top}%`,
