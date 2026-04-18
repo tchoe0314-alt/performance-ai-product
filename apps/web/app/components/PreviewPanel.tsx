@@ -589,8 +589,7 @@ export default function PreviewPanel({
         </div>
       </div>
 
-      {planPreviewUrl ? (
-          <div className="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+      <div className="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               <span>Preview Mode</span>
@@ -721,7 +720,7 @@ export default function PreviewPanel({
               <span>{previewRefreshNote || "Refreshing preview..."}</span>
             </div>
           )}
-          {previewMode === "3d" ? (
+          {previewMode === "3d" && planPreviewUrl ? (
             preview3DEffectiveItems.length ? (
               <div className="relative">
                 <Preview3DCanvas
@@ -831,7 +830,7 @@ export default function PreviewPanel({
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center text-sm text-slate-400">
-                    Add objects to start building the site.
+                    Add objects to start building the site. Then click Place and drop them here.
                   </div>
                 )}
                 {effectiveBounds && previewMode === "2d" ? (
@@ -1111,11 +1110,6 @@ export default function PreviewPanel({
             </div>
           )}
         </div>
-      ) : (
-        <div className="flex min-h-[360px] items-center justify-center rounded-[28px] border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-          Send a message and Civora AI will generate a plan preview here.
-        </div>
-      )}
 
       {previewFullscreenOpen && planPreviewUrl ? (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/88 p-4 backdrop-blur-sm">

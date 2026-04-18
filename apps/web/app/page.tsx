@@ -5163,7 +5163,7 @@ export default function PerformanceAIDashboard() {
                               {item.type !== "site" ? (
                                 <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-600">
                                   <label className="flex flex-col gap-1">
-                                    Width
+                                    Length
                                     <input
                                       type="number"
                                       value={item.w}
@@ -5176,7 +5176,7 @@ export default function PerformanceAIDashboard() {
                                     />
                                   </label>
                                   <label className="flex flex-col gap-1">
-                                    Height
+                                    Width
                                     <input
                                       type="number"
                                       value={item.d}
@@ -5190,7 +5190,7 @@ export default function PerformanceAIDashboard() {
                                   </label>
                                   {SITE_OBJECT_CATALOG[item.type ?? "building"]?.defaultH !== undefined ? (
                                     <label className="col-span-2 flex flex-col gap-1">
-                                      Elevation/Height (ft)
+                                      Height (ft)
                                       <input
                                         type="number"
                                         value={item.h ?? ""}
@@ -5285,7 +5285,7 @@ export default function PerformanceAIDashboard() {
                               {item.type !== "site" ? (
                                 <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-600">
                                   <label className="flex flex-col gap-1">
-                                    Width
+                                    Length
                                     <input
                                       type="number"
                                       value={item.w}
@@ -5298,7 +5298,7 @@ export default function PerformanceAIDashboard() {
                                     />
                                   </label>
                                   <label className="flex flex-col gap-1">
-                                    Height
+                                    Width
                                     <input
                                       type="number"
                                       value={item.d}
@@ -5312,7 +5312,7 @@ export default function PerformanceAIDashboard() {
                                   </label>
                                   {SITE_OBJECT_CATALOG[item.type ?? "building"]?.defaultH !== undefined ? (
                                     <label className="col-span-2 flex flex-col gap-1">
-                                      Elevation/Height (ft)
+                                      Height (ft)
                                       <input
                                         type="number"
                                         value={item.h ?? ""}
