@@ -124,6 +124,7 @@ export default function PreviewPanel({
     return target?.bounds ?? null;
   }, [previewLabels, selectedIssueLabel]);
   const [hoveredAnnotation, setHoveredAnnotation] = useState<(typeof previewLabels)[number] | null>(null);
+  const [hoveredObjectId, setHoveredObjectId] = useState<string | null>(null);
   const [pinnedAnnotation, setPinnedAnnotation] = useState<(typeof previewLabels)[number] | null>(null);
   const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number } | null>(null);
   const [fullscreenHoverPoint, setFullscreenHoverPoint] = useState<{ x: number; y: number } | null>(null);
@@ -152,6 +153,14 @@ export default function PreviewPanel({
     drainage: "#1d4ed8",
     utilities: "#7c3aed",
   } as const;
+  const hoveredObject = useMemo(
+    () => buildingPlacements.find((item) => item.id === hoveredObjectId) ?? null,
+    [buildingPlacements, hoveredObjectId],
+  );
+  const selectedObject = useMemo(
+    () => buildingPlacements.find((item) => item.id === selectedBuildingId) ?? null,
+    [buildingPlacements, selectedBuildingId],
+  );
   const activeHighlightBounds = activeAnnotation?.bounds ?? null;
   const clampPercent = (value: number) => Math.min(Math.max(value * 100, 0), 100);
   const buildBoundsStyle = (bounds: { x1: number; y1: number; x2: number; y2: number }) => {
@@ -433,6 +442,18 @@ export default function PreviewPanel({
     ];
     return entries.filter((entry) => entry.value);
   }, [activeAnnotation, formatHoverValue]);
+  const objectHoverDetails = useMemo(() => {
+    if (!hoveredObject) return [];
+    const type = hoveredObject.type ?? "building";
+    const dims = `${hoveredObject.w.toFixed(1)} ft x ${hoveredObject.d.toFixed(1)} ft`;
+    const source = hoveredObject.generated ? "generated" : hoveredObject.source || "user";
+    return [
+      { label: "Type", value: type },
+      { label: "ID", value: hoveredObject.id },
+      { label: "Dimensions", value: dims },
+      { label: "Source", value: source },
+    ];
+  }, [hoveredObject]);
   const debugHoverDetails = useMemo(() => {
     if (!activeAnnotation?.meta || previewRenderMode !== "debug") return [];
     const meta = activeAnnotation.meta;
@@ -745,6 +766,7 @@ export default function PreviewPanel({
               }}
               onMouseLeave={() => {
                 setHoveredAnnotation(null);
+                setHoveredObjectId(null);
                 setHoverPoint(null);
                 setDraggingBuildingId(null);
                 setDraggingMode(null);
@@ -833,6 +855,8 @@ export default function PreviewPanel({
                                   : "default",
                             }}
                             onMouseDown={(event) => handleBuildingMouseDown(event, item, "move")}
+                            onMouseEnter={() => setHoveredObjectId(item.id)}
+                            onMouseLeave={() => setHoveredObjectId(null)}
                             onClick={(event) => {
                               event.stopPropagation();
                               onSelectBuilding(item.id);
@@ -881,6 +905,21 @@ export default function PreviewPanel({
                             <div className="absolute -top-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 shadow">
                               {item.label}
                             </div>
+                            {hoveredObjectId === item.id && objectHoverDetails.length ? (
+                              <div className="absolute left-1/2 top-full z-10 mt-3 w-48 -translate-x-1/2 rounded-2xl border border-slate-200 bg-white p-3 text-[11px] text-slate-600 shadow">
+                                <div className="space-y-1">
+                                  {objectHoverDetails.map((detail) => (
+                                    <div
+                                      key={detail.label}
+                                      className="flex items-center justify-between gap-2"
+                                    >
+                                      <span className="text-slate-500">{detail.label}</span>
+                                      <span className="font-semibold text-slate-900">{detail.value}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
                           </div>
                         );
                       })}

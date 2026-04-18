@@ -535,6 +535,15 @@ export type BuildingPlacement = {
   rotation?: number;
   type?: SiteObjectType;
   use?: string;
+  source?: "user" | "generated" | "inferred";
+  generated?: boolean;
+  capabilities?: {
+    movable?: boolean;
+    resizable?: boolean;
+    rotatable?: boolean;
+    deletable?: boolean;
+  };
+  systemDependencies?: Array<"roads" | "parking" | "grading" | "drainage" | "utilities">;
   meta?: Record<string, unknown>;
   locked?: boolean;
   placed?: boolean;

@@ -138,6 +138,19 @@ const SITE_OBJECT_CATALOG: Record<
   bridge: { label: "Bridge", category: "advanced", defaultW: 80, defaultD: 24 },
 };
 
+type SystemStatus = "fresh" | "stale" | "not_generated";
+
+const DEFAULT_SYSTEM_STATUS: Record<
+  "roads" | "parking" | "grading" | "drainage" | "utilities",
+  SystemStatus
+> = {
+  roads: "not_generated",
+  parking: "not_generated",
+  grading: "not_generated",
+  drainage: "not_generated",
+  utilities: "not_generated",
+};
+
 import {
   defaultAssumptions,
   toReadableLabel,
@@ -379,6 +392,7 @@ export default function PerformanceAIDashboard() {
   const [activePlacementId, setActivePlacementId] = useState<string | null>(null);
   const [placementSuggestions, setPlacementSuggestions] = useState<BuildingPlacement[][]>([]);
   const [advancedAddOpen, setAdvancedAddOpen] = useState(false);
+  const [systemStatuses, setSystemStatuses] = useState(DEFAULT_SYSTEM_STATUS);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
 
   const [assumptions, setAssumptions] =
@@ -1320,6 +1334,16 @@ export default function PerformanceAIDashboard() {
     return { w: width, d: depth };
   }, [buildingDepth, buildingWidth]);
 
+  const markSystemsStale = useCallback(() => {
+    setSystemStatuses((prev) => ({
+      roads: prev.roads === "not_generated" ? "not_generated" : "stale",
+      parking: prev.parking === "not_generated" ? "not_generated" : "stale",
+      grading: prev.grading === "not_generated" ? "not_generated" : "stale",
+      drainage: prev.drainage === "not_generated" ? "not_generated" : "stale",
+      utilities: prev.utilities === "not_generated" ? "not_generated" : "stale",
+    }));
+  }, []);
+
   const formatObjectLabel = useCallback(
     (type: SiteObjectType, count: number) => {
       const base = SITE_OBJECT_CATALOG[type]?.label ?? "Object";
@@ -1350,6 +1374,15 @@ export default function PerformanceAIDashboard() {
             rotation: 0,
             locked: true,
             placed: true,
+            source: "user",
+            generated: false,
+            capabilities: {
+              movable: false,
+              resizable: false,
+              rotatable: false,
+              deletable: false,
+            },
+            systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
             meta: { category: catalog.category },
           };
           return [sitePlacement, ...filtered];
@@ -1375,6 +1408,15 @@ export default function PerformanceAIDashboard() {
         rotation: 0,
         locked: false,
         placed: false,
+        source: "user",
+        generated: false,
+        capabilities: {
+          movable: true,
+          resizable: true,
+          rotatable: true,
+          deletable: true,
+        },
+        systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
         meta: { category: catalog.category },
       };
       setBuildingPlacements((prev) => [...prev, nextPlacement]);
@@ -1397,13 +1439,15 @@ export default function PerformanceAIDashboard() {
     setBuildingPlacements((prev) =>
       prev.map((item) => (item.id === id ? { ...item, ...nextUpdates } : item)),
     );
+    markSystemsStale();
     setStatusMessage("Object updated. Regenerate systems to reflect the new layout.");
-  }, []);
+  }, [markSystemsStale]);
 
   const handleRemoveBuilding = useCallback((id: string) => {
     setBuildingPlacements((prev) => prev.filter((item) => item.id !== id));
+    markSystemsStale();
     setStatusMessage("Object removed. Regenerate systems to reflect the new layout.");
-  }, []);
+  }, [markSystemsStale]);
 
   const handleToggleBuildingLock = useCallback((id: string) => {
     setBuildingPlacements((prev) =>
@@ -1430,6 +1474,7 @@ export default function PerformanceAIDashboard() {
           ),
         );
         setActivePlacementId(null);
+        markSystemsStale();
         setStatusMessage("Object placed. Regenerate systems to reflect the new layout.");
         return;
       }
@@ -1446,11 +1491,13 @@ export default function PerformanceAIDashboard() {
         placed: true,
       };
       setBuildingPlacements((prev) => [...prev, nextPlacement]);
+      markSystemsStale();
       setStatusMessage("Object placed. Regenerate systems to reflect the new layout.");
     },
     [
       activePlacementId,
       buildingPlacements.length,
+      markSystemsStale,
       resolveDefaultBuildingDims,
       resolveLotBounds,
     ],
@@ -1471,9 +1518,10 @@ export default function PerformanceAIDashboard() {
           return { ...item, x, y, placed: true };
         }),
       );
+      markSystemsStale();
       setStatusMessage("Object placed. Regenerate systems to reflect the new layout.");
     },
-    [resolveLotBounds],
+    [markSystemsStale, resolveLotBounds],
   );
 
   const handleTogglePlacementMode = useCallback(() => {
@@ -3902,6 +3950,21 @@ export default function PerformanceAIDashboard() {
         },
         assistantPrefix: `Generating ${systemLabel} around your placed layout...`,
       });
+      setSystemStatuses((prev) => {
+        if (target === "full") {
+          return {
+            roads: "fresh",
+            parking: "fresh",
+            grading: "fresh",
+            drainage: "fresh",
+            utilities: "fresh",
+          };
+        }
+        return {
+          ...prev,
+          [target]: "fresh",
+        };
+      });
     },
     [buildPayloadFromOverrides, executePlanAction, projectId],
   );
@@ -4012,6 +4075,7 @@ export default function PerformanceAIDashboard() {
     setBackendResult(null);
     setPlanPreviewUrl("");
     setPlanPreviewSummary(null);
+    setSystemStatuses(DEFAULT_SYSTEM_STATUS);
     setAssumptions(defaultAssumptions);
     setIssues([]);
     setSiteName("");
@@ -5026,6 +5090,27 @@ export default function PerformanceAIDashboard() {
 
                 <div className="mt-4 border-t border-slate-200 pt-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Generate Systems</p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                    {(
+                      ["roads", "parking", "grading", "drainage", "utilities"] as const
+                    ).map((system) => {
+                      const status = systemStatuses[system];
+                      const tone =
+                        status === "fresh"
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : status === "stale"
+                            ? "border-amber-200 bg-amber-50 text-amber-700"
+                            : "border-slate-200 bg-slate-50 text-slate-500";
+                      return (
+                        <span
+                          key={system}
+                          className={`rounded-full border px-3 py-1 ${tone}`}
+                        >
+                          {system} · {status.replace("_", " ")}
+                        </span>
+                      );
+                    })}
+                  </div>
                   <div className="mt-2 grid grid-cols-2 gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 md:grid-cols-3">
                     <button
                       type="button"
