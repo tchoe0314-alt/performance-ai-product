@@ -308,7 +308,8 @@ class FeatureDetectionEngine:
                     search_radius=2 if kind in {"building"} else 3,
                     min_strength=18.0,
                 )
-            epsilon = self._adaptive_simplify_epsilon(shifted)
+                shifted = self._thin_contour(shifted)
+            epsilon = self._adaptive_simplify_epsilon(shifted, kind=kind)
             simplified = self._simplify_path(shifted, epsilon=epsilon)
             if len(simplified) >= 3:
                 if simplified[0] != simplified[-1]:
@@ -437,12 +438,17 @@ class FeatureDetectionEngine:
         return simplified
 
     @staticmethod
-    def _adaptive_simplify_epsilon(points: List[Tuple[int, int]]) -> float:
+    def _adaptive_simplify_epsilon(points: List[Tuple[int, int]], *, kind: str) -> float:
         xs = [p[0] for p in points]
         ys = [p[1] for p in points]
         span = max(max(xs) - min(xs), max(ys) - min(ys))
         # Smaller epsilon for compact shapes (buildings), larger for wide regions.
-        return max(1.0, min(4.0, span * 0.04))
+        base = max(0.8, min(3.5, span * 0.035))
+        if kind in {"building"}:
+            return max(0.6, min(2.0, base * 0.6))
+        if kind in {"road", "driveway", "sidewalk"}:
+            return max(0.8, min(3.0, base * 0.8))
+        return base
 
     @staticmethod
     def _sobel_edges(gray: np.ndarray) -> np.ndarray:
@@ -495,6 +501,21 @@ class FeatureDetectionEngine:
             else:
                 snapped.append((x, y))
         return snapped
+
+    @staticmethod
+    def _thin_contour(points: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+        if len(points) < 5:
+            return points
+        thinned = [points[0]]
+        last = points[0]
+        for pt in points[1:]:
+            if pt != last:
+                if abs(pt[0] - last[0]) + abs(pt[1] - last[1]) >= 1:
+                    thinned.append(pt)
+                    last = pt
+        if thinned[0] != thinned[-1]:
+            thinned.append(thinned[0])
+        return thinned
 
     @staticmethod
     def _fill_holes(component_mask: np.ndarray) -> np.ndarray:
