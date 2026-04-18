@@ -3795,6 +3795,12 @@ export default function PerformanceAIDashboard() {
     setUploadedImagePreviewUrl(localPreviewUrl);
     clearGeneratedPreview();
     try {
+      const imageElement = new Image();
+      const imageSize = await new Promise<{ width: number; height: number } | null>((resolve) => {
+        imageElement.onload = () => resolve({ width: imageElement.width, height: imageElement.height });
+        imageElement.onerror = () => resolve(null);
+        imageElement.src = localPreviewUrl;
+      });
       const formData = new FormData();
       formData.append("file", file);
       const data = await postForm<UploadImageResponse>("/api/upload-image", formData, {
@@ -3815,6 +3821,48 @@ export default function PerformanceAIDashboard() {
           image_url: data.image_url || "",
         },
       };
+      const hasSite = buildingPlacements.some((item) => item.type === "site");
+      if (!hasSite) {
+        const acres = 10;
+        const baseSide = Math.sqrt(acres * 43560);
+        const aspect =
+          imageSize && imageSize.width > 0 && imageSize.height > 0
+            ? imageSize.width / imageSize.height
+            : 1;
+        const width = baseSide * Math.sqrt(aspect);
+        const height = baseSide / Math.sqrt(aspect);
+        setLotWidth((prev) => (prev ? prev : width.toFixed(0)));
+        setLotHeight((prev) => (prev ? prev : height.toFixed(0)));
+        setBuildingPlacements((prev) => {
+          const filtered = prev.filter((item) => item.type !== "site");
+          const siteId = `site-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          return [
+            {
+              id: siteId,
+              label: "Site Boundary",
+              type: "site",
+              w: width,
+              d: height,
+              x: 0,
+              y: 0,
+              rotation: 0,
+              locked: true,
+              placed: true,
+              source: "user",
+              generated: false,
+              capabilities: {
+                movable: false,
+                resizable: false,
+                rotatable: false,
+                deletable: false,
+              },
+              systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+              meta: { category: "site" },
+            },
+            ...filtered,
+          ];
+        });
+      }
       await saveProject({
         silent: true,
         projectInputOverride: {
@@ -3944,8 +3992,8 @@ export default function PerformanceAIDashboard() {
         label: labelMap[type] ?? "Detected Object",
         x: clampValue(mappedX, 0, width - mappedW),
         y: clampValue(mappedY, 0, height - mappedD),
-        w: Math.max(6, mappedW),
-        d: Math.max(6, mappedD),
+        w: Math.max(12, mappedW),
+        d: Math.max(12, mappedD),
         rotation: 0,
         type,
         source: "detected_from_image",

@@ -1631,6 +1631,9 @@ export default function PreviewPanel({
                               <div
                                 className={`h-full w-full rounded-[8px] border-2 border-dashed bg-slate-50/70 transition ${borderColor}`}
                               />
+                              <div className="absolute left-2 top-2 rounded-full border border-slate-200 bg-white/90 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow">
+                                {item.label}
+                              </div>
                               <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow">
                                 Suggested
                               </div>
