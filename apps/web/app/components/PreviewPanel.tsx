@@ -299,6 +299,9 @@ export default function PreviewPanel({
       const bounds = imageBounds || { left: 0, top: 0, width: rect.width, height: rect.height };
       const relativeX = (event.clientX - rect.left - bounds.left) / Math.max(bounds.width, 1);
       const relativeY = (event.clientY - rect.top - bounds.top) / Math.max(bounds.height, 1);
+      if (!Number.isFinite(relativeX) || !Number.isFinite(relativeY)) {
+        return;
+      }
       if (relativeX < 0 || relativeX > 1 || relativeY < 0 || relativeY > 1) {
         return;
       }
@@ -846,10 +849,22 @@ export default function PreviewPanel({
                 event.preventDefault();
                 const payload = event.dataTransfer?.getData("civora-object-id");
                 if (!payload) return;
-                const bounds = effectiveBounds ?? { left: 0, top: 0, width: 1, height: 1 };
+                const rect = previewRef.current?.getBoundingClientRect();
+                const bounds = effectiveBounds ?? {
+                  left: 0,
+                  top: 0,
+                  width: rect?.width ?? 1,
+                  height: rect?.height ?? 1,
+                };
                 onPlaceObject(payload, {
-                  x: Math.min(Math.max((event.clientX - bounds.left) / Math.max(bounds.width, 1), 0), 1),
-                  y: Math.min(Math.max((event.clientY - bounds.top) / Math.max(bounds.height, 1), 0), 1),
+                  x: Math.min(
+                    Math.max((event.clientX - (rect?.left ?? 0) - bounds.left) / Math.max(bounds.width, 1), 0),
+                    1,
+                  ),
+                  y: Math.min(
+                    Math.max((event.clientY - (rect?.top ?? 0) - bounds.top) / Math.max(bounds.height, 1), 0),
+                    1,
+                  ),
                 });
               }}
               onMouseMove={(event) => {

@@ -1564,13 +1564,21 @@ export default function PerformanceAIDashboard() {
         return;
       }
       const { w, d } = resolveDefaultBuildingDims();
-      const nextX = lot.x + position.x * lot.w - w / 2;
-      const nextY = lot.y + position.y * lot.h - d / 2;
+      const clampedX = Math.min(Math.max(position.x, 0), 1);
+      const clampedY = Math.min(Math.max(position.y, 0), 1);
+      const nextX = lot.x + clampedX * lot.w - w / 2;
+      const nextY = lot.y + clampedY * lot.h - d / 2;
+      if (!Number.isFinite(nextX) || !Number.isFinite(nextY)) {
+        setStatusMessage("Placement failed: invalid coordinates.");
+        return;
+      }
+      const boundedX = Math.min(Math.max(nextX, lot.x), lot.x + lot.w - w);
+      const boundedY = Math.min(Math.max(nextY, lot.y), lot.y + lot.h - d);
       if (activePlacementId) {
         setBuildingPlacements((prev) =>
           prev.map((item) =>
             item.id === activePlacementId
-              ? { ...item, x: nextX, y: nextY, placed: true }
+              ? { ...item, x: boundedX, y: boundedY, placed: true }
               : item,
           ),
         );
@@ -1586,8 +1594,8 @@ export default function PerformanceAIDashboard() {
         id: `building-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         label: `Building ${buildingPlacements.length + 1}`,
         type: "building",
-        x: nextX,
-        y: nextY,
+        x: boundedX,
+        y: boundedY,
         w,
         d,
         rotation: 0,
@@ -1617,12 +1625,19 @@ export default function PerformanceAIDashboard() {
         setStatusMessage("Set the site width and height before placing objects.");
         return;
       }
+      const clampedX = Math.min(Math.max(position.x, 0), 1);
+      const clampedY = Math.min(Math.max(position.y, 0), 1);
       setBuildingPlacements((prev) =>
         prev.map((item) => {
           if (item.id !== id) return item;
-          const x = lot.x + position.x * lot.w - item.w / 2;
-          const y = lot.y + position.y * lot.h - item.d / 2;
-          return { ...item, x, y, placed: true };
+          const x = lot.x + clampedX * lot.w - item.w / 2;
+          const y = lot.y + clampedY * lot.h - item.d / 2;
+          if (!Number.isFinite(x) || !Number.isFinite(y)) {
+            return { ...item, placed: false };
+          }
+          const boundedX = Math.min(Math.max(x, lot.x), lot.x + lot.w - item.w);
+          const boundedY = Math.min(Math.max(y, lot.y), lot.y + lot.h - item.d);
+          return { ...item, x: boundedX, y: boundedY, placed: true };
         }),
       );
       markSystemsStale();
