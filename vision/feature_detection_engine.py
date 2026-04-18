@@ -97,8 +97,8 @@ class FeatureDetectionEngine:
             ("pool", blue_mask),
         ):
             # Merge nearby fragments before component extraction so adjacent detections become a single shape.
-            if kind in {"road", "parking", "driveway", "sidewalk", "open_space"}:
-                mask = self._close_mask(mask, iterations=2)
+            if kind in {"road", "parking", "driveway", "sidewalk", "open_space", "building"}:
+                mask = self._close_mask(mask, iterations=2 if kind != "building" else 1)
             detections.extend(
                 self._components_to_detections(
                     mask=mask,
@@ -267,7 +267,7 @@ class FeatureDetectionEngine:
     ) -> Tuple[str, List[Tuple[float, float]]]:
         if not points:
             return "rect", []
-        line_kinds = {"sidewalk", "path"}
+        line_kinds = {"sidewalk", "path", "road", "driveway"}
         if kind in line_kinds and len(points) >= 2:
             arr = np.asarray(points, dtype=np.float32)
             mean = arr.mean(axis=0)
@@ -291,11 +291,13 @@ class FeatureDetectionEngine:
 
         contour = None
         if component_mask is not None:
-            contour = self._trace_contour(component_mask)
+            filled = self._fill_holes(component_mask)
+            contour = self._trace_contour(filled)
         if contour:
             offset_x, offset_y = component_offset
             shifted = [(pt[0] + offset_x, pt[1] + offset_y) for pt in contour]
-            simplified = self._simplify_path(shifted, epsilon=2.2)
+            epsilon = self._adaptive_simplify_epsilon(shifted)
+            simplified = self._simplify_path(shifted, epsilon=epsilon)
             if len(simplified) >= 3:
                 if simplified[0] != simplified[-1]:
                     simplified.append(simplified[0])
@@ -421,6 +423,43 @@ class FeatureDetectionEngine:
         if closed and simplified[0] != simplified[-1]:
             simplified.append(simplified[0])
         return simplified
+
+    @staticmethod
+    def _adaptive_simplify_epsilon(points: List[Tuple[int, int]]) -> float:
+        xs = [p[0] for p in points]
+        ys = [p[1] for p in points]
+        span = max(max(xs) - min(xs), max(ys) - min(ys))
+        # Smaller epsilon for compact shapes (buildings), larger for wide regions.
+        return max(1.0, min(4.0, span * 0.04))
+
+    @staticmethod
+    def _fill_holes(component_mask: np.ndarray) -> np.ndarray:
+        # Flood fill from borders to find background; fill remaining holes.
+        height, width = component_mask.shape
+        visited = np.zeros_like(component_mask, dtype=bool)
+        stack: List[Tuple[int, int]] = []
+        for x in range(width):
+            if not component_mask[0, x]:
+                stack.append((0, x))
+            if not component_mask[height - 1, x]:
+                stack.append((height - 1, x))
+        for y in range(height):
+            if not component_mask[y, 0]:
+                stack.append((y, 0))
+            if not component_mask[y, width - 1]:
+                stack.append((y, width - 1))
+        while stack:
+            cy, cx = stack.pop()
+            if cy < 0 or cy >= height or cx < 0 or cx >= width:
+                continue
+            if visited[cy, cx] or component_mask[cy, cx]:
+                continue
+            visited[cy, cx] = True
+            stack.extend([(cy - 1, cx), (cy + 1, cx), (cy, cx - 1), (cy, cx + 1)])
+        filled = component_mask.copy()
+        holes = ~component_mask & ~visited
+        filled[holes] = True
+        return filled
 
     @staticmethod
     def _merge_overlaps(detections: List[FeatureDetection]) -> List[FeatureDetection]:
