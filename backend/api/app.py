@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Upload
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+import httpx
 
 from parsers.chat_intent_parser import assess_design_readiness, decide_chat_message
 from backend.application.design_workflows import (
@@ -118,6 +119,18 @@ except Exception:
 class RegisterPayload(BaseModel):
     email: str
     password: str
+
+
+class GeocodePayload(BaseModel):
+    address: str
+
+
+class GeocodeResponse(BaseModel):
+    lat: float
+    lng: float
+    display_name: str
+    provider: str
+    confidence: Optional[float] = None
     name: str = ""
 
 
@@ -585,6 +598,42 @@ def detect_image_features(
         "warnings": result.warnings,
         "meta": result.meta,
     }
+
+
+@app.post("/api/geocode", response_model=GeocodeResponse)
+def geocode_address(
+    payload: GeocodePayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> GeocodeResponse:
+    address = str(payload.address or "").strip()
+    if not address:
+        raise HTTPException(status_code=400, detail="Address is required.")
+    try:
+        with httpx.Client(timeout=8.0) as client:
+            resp = client.get(
+                "https://nominatim.openstreetmap.org/search",
+                params={"q": address, "format": "json", "limit": 1, "addressdetails": 1},
+                headers={"User-Agent": "CivoraAI/0.1 (contact: support@civora.ai)"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Geocoding failed: {exc}") from exc
+    if not data:
+        raise HTTPException(status_code=404, detail="Address could not be geocoded.")
+    first = data[0]
+    try:
+        lat = float(first.get("lat"))
+        lng = float(first.get("lon"))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Invalid geocode response: {exc}") from exc
+    return GeocodeResponse(
+        lat=lat,
+        lng=lng,
+        display_name=str(first.get("display_name") or address),
+        provider="nominatim",
+        confidence=None,
+    )
 
 
 @app.get("/api/uploads/{filename}")

@@ -265,6 +265,12 @@ export type MapAnalysis = Record<string, unknown>;
 
 export type SiteInputs = {
   address?: string;
+  geocode?: {
+    lat?: number;
+    lng?: number;
+    display_name?: string;
+    provider?: string;
+  };
   map_snapshot?: MapSnapshotInput;
   map_analysis?: MapAnalysis;
   survey_file?: SurveyFileInput;

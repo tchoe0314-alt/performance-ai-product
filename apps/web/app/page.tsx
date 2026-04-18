@@ -4014,12 +4014,15 @@ export default function PerformanceAIDashboard() {
       setAnalysisPaths([]);
       setAnalysisSelectedIssueId(null);
       setAnalysisFocusLocked(false);
-      setAnalysisEmptyReason(
-        "Address provides site context only. Add or confirm buildings and access objects to run analysis.",
-      );
-      setStatusMessage(
-        "Address provides site context only. Add or confirm buildings and access objects to run analysis.",
-      );
+      let reason = "Address provides site context only. Add or confirm buildings and access objects to run analysis.";
+      if (!buildings.length && access.length) {
+        reason = "Add or confirm buildings to run access analysis.";
+      }
+      if (!access.length && buildings.length) {
+        reason = "Add or confirm roads, driveways, or access objects to run access analysis.";
+      }
+      setAnalysisEmptyReason(reason);
+      setStatusMessage(reason);
       return;
     }
     setAnalysisEmptyReason(null);
@@ -4378,25 +4381,105 @@ export default function PerformanceAIDashboard() {
   const saveSiteAddress = async () => {
     if (!token) return;
     const trimmed = siteAddress.trim();
+    const hasSite = buildingPlacements.some((item) => item.type === "site");
     const currentInput = currentProject?.project_input ?? payloadPreview;
+    const currentLotWidth = parsePositiveNumber(lotWidth);
+    const currentLotHeight = parsePositiveNumber(lotHeight);
     const nextSiteInputs = {
       ...(currentInput?.meta?.site_inputs ?? {}),
       address: trimmed || undefined,
     };
-    await saveProject({
-      silent: true,
-      projectInputOverride: {
-        ...currentInput,
-        input_mode: "user",
-        strict_mode: false,
-        allow_ai_fill_for_blanks: false,
-        meta: {
-          ...(currentInput?.meta ?? {}),
-          site_inputs: nextSiteInputs,
+    if (!trimmed) {
+      await saveProject({
+        silent: true,
+        projectInputOverride: {
+          ...currentInput,
+          input_mode: "user",
+          strict_mode: false,
+          allow_ai_fill_for_blanks: false,
+          meta: {
+            ...(currentInput?.meta ?? {}),
+            site_inputs: nextSiteInputs,
+          },
         },
-      },
-    });
-    setStatusMessage(trimmed ? "Site address saved." : "Site address cleared.");
+      });
+      setStatusMessage("Site address cleared.");
+      return;
+    }
+    try {
+      const geocode = await postJson<{ lat: number; lng: number; display_name: string; provider: string }>(
+        "/api/geocode",
+        { address: trimmed },
+        { token },
+      );
+      nextSiteInputs.geocode = {
+        lat: geocode.lat,
+        lng: geocode.lng,
+        display_name: geocode.display_name,
+        provider: geocode.provider,
+      };
+      const acres = 10;
+      const side = Math.sqrt(acres * 43560);
+      if (!hasSite) {
+        setLotWidth((prev) => (prev ? prev : side.toFixed(0)));
+        setLotHeight((prev) => (prev ? prev : side.toFixed(0)));
+        setBuildingPlacements((prev) => {
+          const filtered = prev.filter((item) => item.type !== "site");
+          return [
+            ...filtered,
+            {
+              id: `site-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              label: "Site Boundary",
+              type: "site",
+              w: currentLotWidth ?? side,
+              d: currentLotHeight ?? side,
+              x: 0,
+              y: 0,
+              rotation: 0,
+              locked: true,
+              placed: true,
+              source: "user",
+              generated: false,
+              capabilities: {
+                movable: false,
+                resizable: false,
+                rotatable: false,
+                deletable: false,
+              },
+              systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+              meta: { category: "site" },
+            },
+          ];
+        });
+      }
+      await saveProject({
+        silent: true,
+        projectInputOverride: {
+          ...currentInput,
+          input_mode: "user",
+          strict_mode: false,
+          allow_ai_fill_for_blanks: false,
+          meta: {
+            ...(currentInput?.meta ?? {}),
+            site_inputs: nextSiteInputs,
+          },
+          manual_fields: {
+            ...(currentInput?.manual_fields ?? {}),
+            lot: {
+              x: 0,
+              y: 0,
+              w: currentLotWidth ?? side,
+              h: currentLotHeight ?? side,
+            },
+          },
+        },
+      });
+      setStatusMessage("Site address saved and site boundary initialized.");
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : "Geocoding failed.",
+      );
+    }
   };
 
   const requestPreview = async (
@@ -5745,11 +5828,32 @@ export default function PerformanceAIDashboard() {
                             </button>
                             <button
                               type="button"
+                              onClick={() => handleAddObject("building")}
+                              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                            >
+                              Add building
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleAddObject("road")}
+                              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                            >
+                              Add road/access
+                            </button>
+                            <button
+                              type="button"
                               onClick={handleAnalyzeImageFeatures}
                               disabled={!mapSnapshotPath}
                               className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               Detect site features
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setStatusMessage("Adjust the site boundary by editing width/height above.")}
+                              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                            >
+                              Adjust site boundary
                             </button>
                           </div>
                         </div>
