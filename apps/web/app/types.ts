@@ -291,6 +291,7 @@ export type ManualFields = {
     name: string;
     w?: number;
     d?: number;
+    height_ft?: number;
     type?: string;
     use?: string;
     rotation?: number;
@@ -552,6 +553,7 @@ export type BuildingPlacement = {
   y?: number;
   w: number;
   d: number;
+  h?: number;
   rotation?: number;
   type?: SiteObjectType;
   use?: string;

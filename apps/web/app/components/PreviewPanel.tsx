@@ -130,6 +130,7 @@ export default function PreviewPanel({
   const [fullscreenHoverPoint, setFullscreenHoverPoint] = useState<{ x: number; y: number } | null>(null);
   const [previewImageBounds, setPreviewImageBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [fullscreenImageBounds, setFullscreenImageBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const [previewContainerBounds, setPreviewContainerBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [draggingBuildingId, setDraggingBuildingId] = useState<string | null>(null);
   const [draggingMode, setDraggingMode] = useState<"move" | "resize" | "rotate" | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -211,6 +212,11 @@ export default function PreviewPanel({
     },
     [],
   );
+  const updateContainerBounds = useCallback(() => {
+    if (!previewRef.current) return;
+    const rect = previewRef.current.getBoundingClientRect();
+    setPreviewContainerBounds({ left: 0, top: 0, width: rect.width, height: rect.height });
+  }, []);
   const resolveHover = useCallback(
     (
       event: React.MouseEvent<HTMLDivElement>,
@@ -346,7 +352,6 @@ export default function PreviewPanel({
   const updateDraggedBuilding = useCallback(
     (event: React.MouseEvent<HTMLDivElement>, bounds: { left: number; top: number; width: number; height: number }) => {
       if (!draggingBuildingId || !draggingMode) return;
-      if (!placementMode && previewInteraction !== "interactive") return;
       const rect = event.currentTarget.getBoundingClientRect();
       const localX = event.clientX - rect.left - bounds.left;
       const localY = event.clientY - rect.top - bounds.top;
@@ -405,7 +410,6 @@ export default function PreviewPanel({
       building: BuildingPlacement,
       mode: "move" | "resize" | "rotate" = "move",
     ) => {
-      if (!placementMode && previewInteraction !== "interactive") return;
       const caps = getEditCapabilities(building);
       if (mode === "move" && !caps.movable) return;
       if (mode === "resize" && !caps.resizable) return;
@@ -418,7 +422,7 @@ export default function PreviewPanel({
       const rect = event.currentTarget.getBoundingClientRect();
       setDragOffset({ x: event.clientX - rect.left, y: event.clientY - rect.top });
     },
-    [getEditCapabilities, onSelectBuilding, placementMode, previewInteraction],
+    [getEditCapabilities, onSelectBuilding],
   );
 
   const formatHoverValue = (value: number | null | undefined, suffix: string) => {
@@ -459,11 +463,16 @@ export default function PreviewPanel({
     if (!hoveredObject) return [];
     const type = hoveredObject.type ?? "building";
     const dims = `${hoveredObject.w.toFixed(1)} ft x ${hoveredObject.d.toFixed(1)} ft`;
+    const height =
+      typeof hoveredObject.h === "number" && Number.isFinite(hoveredObject.h)
+        ? `${hoveredObject.h.toFixed(1)} ft`
+        : null;
     const source = hoveredObject.generated ? "generated" : hoveredObject.source || "user";
     return [
       { label: "Type", value: type },
       { label: "ID", value: hoveredObject.id },
       { label: "Dimensions", value: dims },
+      ...(height ? [{ label: "Height", value: height }] : []),
       { label: "Source", value: source },
     ];
   }, [hoveredObject]);
@@ -479,10 +488,17 @@ export default function PreviewPanel({
     ];
     return entries.filter((entry) => entry.value);
   }, [activeAnnotation, previewRenderMode]);
+  const effectiveBounds = previewImageBounds ?? previewContainerBounds;
 
   useEffect(() => {
-    if (!planPreviewUrl) return;
-    const handleUpdate = () => updateImageBounds(previewRef, previewImageRef, setPreviewImageBounds);
+    const handleUpdate = () => {
+      updateContainerBounds();
+      if (planPreviewUrl) {
+        updateImageBounds(previewRef, previewImageRef, setPreviewImageBounds);
+      } else {
+        setPreviewImageBounds(null);
+      }
+    };
     handleUpdate();
     if (!previewRef.current) return;
     const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(handleUpdate) : null;
@@ -492,7 +508,7 @@ export default function PreviewPanel({
       if (observer) observer.disconnect();
       window.removeEventListener("resize", handleUpdate);
     };
-  }, [planPreviewUrl, previewMode, updateImageBounds]);
+  }, [planPreviewUrl, previewMode, updateContainerBounds, updateImageBounds]);
 
   useEffect(() => {
     if (!previewFullscreenOpen || !planPreviewUrl) return;
@@ -766,16 +782,17 @@ export default function PreviewPanel({
                 event.preventDefault();
                 const payload = event.dataTransfer?.getData("civora-object-id");
                 if (!payload) return;
+                const bounds = effectiveBounds ?? { left: 0, top: 0, width: 1, height: 1 };
                 onPlaceObject(payload, {
-                  x: Math.min(Math.max((event.clientX - (previewImageBounds?.left ?? 0)) / Math.max(previewImageBounds?.width ?? 1, 1), 0), 1),
-                  y: Math.min(Math.max((event.clientY - (previewImageBounds?.top ?? 0)) / Math.max(previewImageBounds?.height ?? 1, 1), 0), 1),
+                  x: Math.min(Math.max((event.clientX - bounds.left) / Math.max(bounds.width, 1), 0), 1),
+                  y: Math.min(Math.max((event.clientY - bounds.top) / Math.max(bounds.height, 1), 0), 1),
                 });
               }}
               onMouseMove={(event) => {
-                if (previewImageBounds) {
-                  updateDraggedBuilding(event, previewImageBounds);
+                if (effectiveBounds) {
+                  updateDraggedBuilding(event, effectiveBounds);
                 }
-                resolveHover(event, previewRef, previewImageBounds, setHoverPoint);
+                resolveHover(event, previewRef, effectiveBounds, setHoverPoint);
               }}
               onMouseLeave={() => {
                 setHoveredAnnotation(null);
@@ -790,7 +807,7 @@ export default function PreviewPanel({
               }}
               onClick={(event) => {
                 if (placementMode) {
-                  resolvePlacement(event, previewRef, previewImageBounds);
+                  resolvePlacement(event, previewRef, effectiveBounds);
                   return;
                 }
                 if (!showInteractive || !hoveredAnnotation) return;
@@ -800,25 +817,31 @@ export default function PreviewPanel({
               }}
             >
               <div className="relative flex h-full w-full items-center justify-center overflow-hidden">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  ref={previewImageRef}
-                  src={planPreviewUrl}
-                  alt="Generated plan preview"
-                  className={`max-h-[640px] w-full object-contain ${
-                    previewInteraction === "interactive" ? "cursor-crosshair" : "cursor-default"
-                  }`}
-                  onLoad={() => updateImageBounds(previewRef, previewImageRef, setPreviewImageBounds)}
-                  onClick={onOpenFullscreen}
-                />
-                {previewImageBounds && previewMode === "2d" ? (
+                {planPreviewUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    ref={previewImageRef}
+                    src={planPreviewUrl}
+                    alt="Generated plan preview"
+                    className={`max-h-[640px] w-full object-contain ${
+                      previewInteraction === "interactive" ? "cursor-crosshair" : "cursor-default"
+                    }`}
+                    onLoad={() => updateImageBounds(previewRef, previewImageRef, setPreviewImageBounds)}
+                    onClick={onOpenFullscreen}
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-sm text-slate-400">
+                    Add objects to start building the site.
+                  </div>
+                )}
+                {effectiveBounds && previewMode === "2d" ? (
                   <div
                     className="pointer-events-none absolute"
                     style={{
-                      left: previewImageBounds.left,
-                      top: previewImageBounds.top,
-                      width: previewImageBounds.width,
-                      height: previewImageBounds.height,
+                      left: effectiveBounds.left,
+                      top: effectiveBounds.top,
+                      width: effectiveBounds.width,
+                      height: effectiveBounds.height,
                     }}
                   >
                     {lotWidth > 0 && lotHeight > 0 ? (
@@ -862,10 +885,7 @@ export default function PreviewPanel({
                               height: `${height}%`,
                               transform: `rotate(${rotation}deg)`,
                               transformOrigin: "center",
-                              cursor:
-                                (placementMode || previewInteraction === "interactive") && caps.movable
-                                  ? "move"
-                                  : "default",
+                              cursor: caps.movable ? "move" : "default",
                             }}
                             onMouseDown={(event) => handleBuildingMouseDown(event, item, "move")}
                             onMouseEnter={() => setHoveredObjectId(item.id)}

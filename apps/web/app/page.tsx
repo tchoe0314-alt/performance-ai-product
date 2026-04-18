@@ -86,17 +86,18 @@ const ADD_MENU_SECTIONS: Array<{
 
 const SITE_OBJECT_CATALOG: Record<
   SiteObjectType,
-  { label: string; category: string; defaultW: number; defaultD: number; use?: string }
+  { label: string; category: string; defaultW: number; defaultD: number; defaultH?: number; use?: string }
 > = {
   site: { label: "Site", category: "site", defaultW: 400, defaultD: 300 },
   setback_zone: { label: "Setback Zone", category: "site", defaultW: 200, defaultD: 120 },
   no_build_zone: { label: "No-Build Zone", category: "site", defaultW: 160, defaultD: 120 },
-  building: { label: "Building", category: "buildings", defaultW: 80, defaultD: 50 },
+  building: { label: "Building", category: "buildings", defaultW: 80, defaultD: 50, defaultH: 30 },
   retail_building: {
     label: "Retail Building",
     category: "buildings",
     defaultW: 70,
     defaultD: 45,
+    defaultH: 24,
     use: "retail",
   },
   multifamily_building: {
@@ -104,6 +105,7 @@ const SITE_OBJECT_CATALOG: Record<
     category: "buildings",
     defaultW: 110,
     defaultD: 58,
+    defaultH: 36,
     use: "multifamily",
   },
   industrial_building: {
@@ -111,6 +113,7 @@ const SITE_OBJECT_CATALOG: Record<
     category: "buildings",
     defaultW: 140,
     defaultD: 90,
+    defaultH: 36,
     use: "industrial",
   },
   office_building: {
@@ -118,12 +121,13 @@ const SITE_OBJECT_CATALOG: Record<
     category: "buildings",
     defaultW: 100,
     defaultD: 60,
+    defaultH: 30,
     use: "office",
   },
-  pad: { label: "Pad", category: "buildings", defaultW: 60, defaultD: 40 },
-  pool: { label: "Pool", category: "buildings", defaultW: 50, defaultD: 30 },
-  amenity: { label: "Amenity Area", category: "buildings", defaultW: 80, defaultD: 40 },
-  open_space: { label: "Open Space", category: "buildings", defaultW: 120, defaultD: 80 },
+  pad: { label: "Pad", category: "buildings", defaultW: 60, defaultD: 40, defaultH: 4 },
+  pool: { label: "Pool", category: "buildings", defaultW: 50, defaultD: 30, defaultH: 6 },
+  amenity: { label: "Amenity Area", category: "buildings", defaultW: 80, defaultD: 40, defaultH: 12 },
+  open_space: { label: "Open Space", category: "buildings", defaultW: 120, defaultD: 80, defaultH: 0 },
   entrance: { label: "Entrance / Access", category: "access", defaultW: 24, defaultD: 24 },
   road: { label: "Road / Drive Aisle", category: "access", defaultW: 120, defaultD: 28 },
   parking: { label: "Parking Field", category: "access", defaultW: 140, defaultD: 60 },
@@ -643,6 +647,7 @@ export default function PerformanceAIDashboard() {
         y: placement.y,
         w: placement.w,
         d: placement.d,
+        height_ft: placement.h,
         rotation: placement.rotation,
         use: placement.use,
         stall_count: placement.stallCount,
@@ -670,7 +675,10 @@ export default function PerformanceAIDashboard() {
     );
 
     if (buildingOverrides.length) {
-      manualFields.buildings = buildingOverrides;
+      manualFields.buildings = buildingOverrides.map((placement) => ({
+        ...placement,
+        height_ft: placement.height_ft,
+      }));
     }
     if (basinOverrides.length) {
       manualFields.ponds = basinOverrides.map((placement) => ({
@@ -1457,6 +1465,7 @@ export default function PerformanceAIDashboard() {
         buildingPlacements.filter((item) => item.type === type).length + 1;
       const defaults =
         type === "building" ? resolveDefaultBuildingDims() : { w: catalog.defaultW, d: catalog.defaultD };
+      const defaultHeight = catalog.defaultH ?? 0;
       const parkingStalls =
         type === "parking" ? parsePositiveNumber(parkingCount) ?? 0 : undefined;
       const nextPlacement: BuildingPlacement = {
@@ -1466,6 +1475,7 @@ export default function PerformanceAIDashboard() {
         use: catalog.use,
         w: defaults.w,
         d: defaults.d,
+        h: defaultHeight,
         rotation: 0,
         stallCount: parkingStalls,
         locked: false,
@@ -5178,6 +5188,23 @@ export default function PerformanceAIDashboard() {
                                       className="rounded-md border border-slate-200 px-2 py-1"
                                     />
                                   </label>
+                                  {SITE_OBJECT_CATALOG[item.type ?? "building"]?.defaultH !== undefined ? (
+                                    <label className="col-span-2 flex flex-col gap-1">
+                                      Elevation/Height (ft)
+                                      <input
+                                        type="number"
+                                        value={item.h ?? ""}
+                                        onChange={(event) =>
+                                          handleUpdateBuilding(item.id, {
+                                            h:
+                                              parsePositiveNumber(event.target.value) ??
+                                              item.h,
+                                          })
+                                        }
+                                        className="rounded-md border border-slate-200 px-2 py-1"
+                                      />
+                                    </label>
+                                  ) : null}
                                   {item.type === "parking" ? (
                                     <label className="col-span-2 flex flex-col gap-1">
                                       Stalls
@@ -5283,6 +5310,23 @@ export default function PerformanceAIDashboard() {
                                       className="rounded-md border border-slate-200 px-2 py-1"
                                     />
                                   </label>
+                                  {SITE_OBJECT_CATALOG[item.type ?? "building"]?.defaultH !== undefined ? (
+                                    <label className="col-span-2 flex flex-col gap-1">
+                                      Elevation/Height (ft)
+                                      <input
+                                        type="number"
+                                        value={item.h ?? ""}
+                                        onChange={(event) =>
+                                          handleUpdateBuilding(item.id, {
+                                            h:
+                                              parsePositiveNumber(event.target.value) ??
+                                              item.h,
+                                          })
+                                        }
+                                        className="rounded-md border border-slate-200 px-2 py-1"
+                                      />
+                                    </label>
+                                  ) : null}
                                   {item.type === "parking" ? (
                                     <label className="col-span-2 flex flex-col gap-1">
                                       Stalls
