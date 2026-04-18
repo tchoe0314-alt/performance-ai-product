@@ -71,6 +71,7 @@ class FeatureDetectionEngine:
 
         r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
         gray = 0.299 * r + 0.587 * g + 0.114 * b
+        edge_strength = self._sobel_edges(gray)
 
         detections: List[FeatureDetection] = []
         warnings: List[str] = [
@@ -109,6 +110,7 @@ class FeatureDetectionEngine:
                     resized_height=resized_height,
                     original_width=width,
                     original_height=height,
+                    edge_strength=edge_strength,
                 )
             )
 
@@ -138,6 +140,7 @@ class FeatureDetectionEngine:
         resized_height: int,
         original_width: int,
         original_height: int,
+        edge_strength: Optional[np.ndarray],
     ) -> List[FeatureDetection]:
         detections: List[FeatureDetection] = []
         visited = np.zeros(mask.shape, dtype=bool)
@@ -186,6 +189,7 @@ class FeatureDetectionEngine:
                     resized_height=resized_height,
                     original_width=original_width,
                     original_height=original_height,
+                    edge_strength=edge_strength,
                 )
                 detections.append(
                     FeatureDetection(
@@ -264,6 +268,7 @@ class FeatureDetectionEngine:
         resized_height: int,
         original_width: int,
         original_height: int,
+        edge_strength: Optional[np.ndarray],
     ) -> Tuple[str, List[Tuple[float, float]]]:
         if not points:
             return "rect", []
@@ -296,6 +301,13 @@ class FeatureDetectionEngine:
         if contour:
             offset_x, offset_y = component_offset
             shifted = [(pt[0] + offset_x, pt[1] + offset_y) for pt in contour]
+            if edge_strength is not None:
+                shifted = self._snap_contour_to_edges(
+                    shifted,
+                    edge_strength,
+                    search_radius=2 if kind in {"building"} else 3,
+                    min_strength=18.0,
+                )
             epsilon = self._adaptive_simplify_epsilon(shifted)
             simplified = self._simplify_path(shifted, epsilon=epsilon)
             if len(simplified) >= 3:
@@ -431,6 +443,58 @@ class FeatureDetectionEngine:
         span = max(max(xs) - min(xs), max(ys) - min(ys))
         # Smaller epsilon for compact shapes (buildings), larger for wide regions.
         return max(1.0, min(4.0, span * 0.04))
+
+    @staticmethod
+    def _sobel_edges(gray: np.ndarray) -> np.ndarray:
+        padded = np.pad(gray, 1, mode="edge")
+        gx = (
+            padded[0:-2, 2:]
+            + 2 * padded[1:-1, 2:]
+            + padded[2:, 2:]
+            - padded[0:-2, 0:-2]
+            - 2 * padded[1:-1, 0:-2]
+            - padded[2:, 0:-2]
+        )
+        gy = (
+            padded[2:, 0:-2]
+            + 2 * padded[2:, 1:-1]
+            + padded[2:, 2:]
+            - padded[0:-2, 0:-2]
+            - 2 * padded[0:-2, 1:-1]
+            - padded[0:-2, 2:]
+        )
+        return np.sqrt(gx * gx + gy * gy)
+
+    @staticmethod
+    def _snap_contour_to_edges(
+        contour: List[Tuple[int, int]],
+        edge_strength: np.ndarray,
+        *,
+        search_radius: int,
+        min_strength: float,
+    ) -> List[Tuple[int, int]]:
+        height, width = edge_strength.shape
+        snapped: List[Tuple[int, int]] = []
+        for x, y in contour:
+            best_x, best_y = x, y
+            best_val = 0.0
+            for dy in range(-search_radius, search_radius + 1):
+                ny = y + dy
+                if ny < 0 or ny >= height:
+                    continue
+                for dx in range(-search_radius, search_radius + 1):
+                    nx = x + dx
+                    if nx < 0 or nx >= width:
+                        continue
+                    val = edge_strength[ny, nx]
+                    if val > best_val:
+                        best_val = val
+                        best_x, best_y = nx, ny
+            if best_val >= min_strength:
+                snapped.append((best_x, best_y))
+            else:
+                snapped.append((x, y))
+        return snapped
 
     @staticmethod
     def _fill_holes(component_mask: np.ndarray) -> np.ndarray:
