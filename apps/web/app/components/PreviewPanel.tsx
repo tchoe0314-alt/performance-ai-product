@@ -1750,6 +1750,11 @@ export default function PreviewPanel({
                                 Snap 5ft
                               </div>
                             ) : null}
+                            {isSelected && typeof item.x === "number" && typeof item.y === "number" ? (
+                              <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-600 shadow">
+                                X {item.x.toFixed(1)} ft • Y {item.y.toFixed(1)} ft
+                              </div>
+                            ) : null}
                             <div className="absolute -top-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 shadow">
                               {item.label}
                             </div>

@@ -313,7 +313,7 @@ class FeatureDetectionEngine:
             simplified = self._simplify_path(shifted, epsilon=epsilon)
             if kind == "building":
                 simplified = self._orthogonalize_polygon(simplified)
-                simplified = self._fit_rectangular_footprint(simplified)
+                simplified = self._fit_oriented_rectangle(simplified)
             if len(simplified) >= 3:
                 if simplified[0] != simplified[-1]:
                     simplified.append(simplified[0])
@@ -482,31 +482,67 @@ class FeatureDetectionEngine:
         return adjusted
 
     @staticmethod
-    def _fit_rectangular_footprint(points: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+    def _fit_oriented_rectangle(points: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
         if len(points) < 4:
             return points
         closed = points[0] == points[-1]
         seq = points[:-1] if closed else points
-        xs = [p[0] for p in seq]
-        ys = [p[1] for p in seq]
-        min_x, max_x = min(xs), max(xs)
-        min_y, max_y = min(ys), max(ys)
-        width = max_x - min_x
-        height = max_y - min_y
+        arr = np.asarray(seq, dtype=np.float32)
+        if arr.shape[0] < 3:
+            return points
+        mean = arr.mean(axis=0)
+        centered = arr - mean
+        cov = np.cov(centered.T)
+        eig_vals, eig_vecs = np.linalg.eig(cov)
+        axis = eig_vecs[:, int(np.argmax(eig_vals))]
+        angle = np.arctan2(axis[1], axis[0])
+        cos_a = float(np.cos(-angle))
+        sin_a = float(np.sin(-angle))
+        rot = np.array([[cos_a, -sin_a], [sin_a, cos_a]], dtype=np.float32)
+        rotated = centered @ rot.T
+        min_xy = rotated.min(axis=0)
+        max_xy = rotated.max(axis=0)
+        width = max_xy[0] - min_xy[0]
+        height = max_xy[1] - min_xy[1]
         if width <= 0 or height <= 0:
             return points
-        area = width * height
-        # Only snap to a rectangle if the polygon is close to rectangular already.
-        if len(seq) > 8 and area > 0:
-            bbox = [
-                (min_x, min_y),
-                (max_x, min_y),
-                (max_x, max_y),
-                (min_x, max_y),
-                (min_x, min_y),
-            ]
-            return bbox
-        return points
+        rect = np.array(
+            [
+                [min_xy[0], min_xy[1]],
+                [max_xy[0], min_xy[1]],
+                [max_xy[0], max_xy[1]],
+                [min_xy[0], max_xy[1]],
+                [min_xy[0], min_xy[1]],
+            ],
+            dtype=np.float32,
+        )
+        # Rotate back to image space
+        inv_cos = float(np.cos(angle))
+        inv_sin = float(np.sin(angle))
+        inv_rot = np.array([[inv_cos, -inv_sin], [inv_sin, inv_cos]], dtype=np.float32)
+        rect_world = rect @ inv_rot.T + mean
+        rect_points = [(int(round(x)), int(round(y))) for x, y in rect_world.tolist()]
+
+        # Only accept rectangle if polygon is already roughly rectangular.
+        poly_area = abs(self._polygon_area(seq))
+        rect_area = float(width * height)
+        if rect_area <= 0:
+            return points
+        fill_ratio = poly_area / rect_area
+        if fill_ratio < 0.7:
+            return points
+        return rect_points
+
+    @staticmethod
+    def _polygon_area(points: List[Tuple[int, int]]) -> float:
+        if len(points) < 3:
+            return 0.0
+        area = 0.0
+        for i in range(len(points)):
+            x1, y1 = points[i]
+            x2, y2 = points[(i + 1) % len(points)]
+            area += x1 * y2 - x2 * y1
+        return area / 2.0
 
     @staticmethod
     def _sobel_edges(gray: np.ndarray) -> np.ndarray:
