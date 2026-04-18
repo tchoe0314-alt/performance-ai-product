@@ -60,6 +60,67 @@ class ProjectStoreProtocol(Protocol):
 DISPLAY_LAYOUT_LAYERS = {"BUILDING", "PARKING", "PAVEMENT", "ROAD", "WALK", "FIRE", "SITE", "SETBACK", "PAD"}
 
 
+def _minimal_plan_from_payload(parsed: Dict[str, Any]) -> Dict[str, Any]:
+    lot = parsed.get("lot") if isinstance(parsed.get("lot"), dict) else {}
+    actions: list[dict[str, Any]] = []
+    meta = parsed.get("meta") if isinstance(parsed.get("meta"), dict) else {}
+    site_id = str(meta.get("site_object_id") or "").strip() or None
+    if lot and lot.get("w") and lot.get("h"):
+        actions.append(
+            {
+                "task": "rectangle",
+                "layer": "C-BOUNDARY",
+                "x": float(lot.get("x") or 0),
+                "y": float(lot.get("y") or 0),
+                "w": float(lot.get("w") or 0),
+                "h": float(lot.get("h") or 0),
+                "meta": {
+                    "preview_role": "final",
+                    "system": "layout",
+                    "entity_id": site_id,
+                    "entity_type": "site",
+                },
+                "canonical_source_id": site_id,
+                "canonical_source_type": "site",
+            }
+        )
+    buildings = parsed.get("buildings") if isinstance(parsed.get("buildings"), list) else []
+    for building in buildings:
+        if not isinstance(building, dict):
+            continue
+        x = building.get("x")
+        y = building.get("y")
+        w = building.get("w") or building.get("width")
+        d = building.get("d") or building.get("depth")
+        if x is None or y is None or w is None or d is None:
+            continue
+        entity_id = str(building.get("id") or building.get("name") or "").strip() or None
+        actions.append(
+            {
+                "task": "rectangle",
+                "layer": "C-BUILDING",
+                "x": float(x),
+                "y": float(y),
+                "w": float(w),
+                "h": float(d),
+                "meta": {
+                    "preview_role": "final",
+                    "system": "layout",
+                    "entity_id": entity_id,
+                    "entity_type": str(building.get("type") or "building"),
+                },
+                "canonical_source_id": entity_id,
+                "canonical_source_type": str(building.get("type") or "building"),
+            }
+        )
+    return {
+        "project_name": parsed.get("project_name") or "Civora Project",
+        "units": parsed.get("units") or "ft",
+        "actions": actions,
+        "meta": {"source": "project_input_minimal"},
+    }
+
+
 def _count_building_shapes(actions: list[dict[str, Any]]) -> int:
     return sum(
         1
@@ -446,10 +507,14 @@ def _display_plan_from_result(result_data: Dict[str, Any], *, enforce_export_gua
     parsed_payload = _best_display_payload(result_data)
     raw_buildings = parsed_payload.get("buildings")
     parsed_buildings = [item for item in raw_buildings if isinstance(item, dict)] if isinstance(raw_buildings, list) else []
+    actions = [action for action in list(final_plan.get("actions") or []) if isinstance(action, dict)]
+    if not actions and parsed_payload:
+        minimal = _minimal_plan_from_payload(parsed_payload)
+        if minimal.get("actions"):
+            return minimal
     if len(parsed_buildings) < 2:
         return final_plan
 
-    actions = [action for action in list(final_plan.get("actions") or []) if isinstance(action, dict)]
     if not _should_rebuild_display_plan(actions, len(parsed_buildings)):
         return final_plan
 

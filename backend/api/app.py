@@ -762,7 +762,21 @@ def build_preview(
     payload: ArtifactPayload,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    result_data = _result_from_payload(current_user, payload)
+    try:
+        result_data = _result_from_payload(current_user, payload)
+    except HTTPException as exc:
+        detail = str(exc.detail or "").lower()
+        if exc.status_code == 400 and "no saved planner result" in detail and payload.project_id:
+            project = PROJECT_STORE.get_project(
+                user_id=current_user["user_id"],
+                project_id=payload.project_id,
+            )
+            project_input = dict(project.get("project_input") or {}) if isinstance(project, dict) else {}
+            if not project_input:
+                raise
+            result_data = {"project_input": project_input, "request_metadata": {"project_input": project_input}}
+        else:
+            raise
     return application_build_preview_response(
         artifact_service=ARTIFACTS,
         result_data=result_data,

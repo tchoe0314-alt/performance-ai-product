@@ -4427,21 +4427,62 @@ export default function PerformanceAIDashboard() {
   const previewLayerList = useMemo(() => {
     const layers = new Set<string>();
     if (previewLayersEffective.buildings) {
-      ["BUILDING", "STRUCTURE", "PAD"].forEach((layer) => layers.add(layer));
+      [
+        "BUILDING",
+        "STRUCTURE",
+        "PAD",
+        "C-BUILDING",
+        "C-BOUNDARY",
+        "C-SETBACK",
+      ].forEach((layer) => layers.add(layer));
     }
     if (previewLayersEffective.roads) {
-      ["ROAD", "PAVEMENT", "PARKING", "WALK"].forEach((layer) => layers.add(layer));
+      [
+        "ROAD",
+        "PAVEMENT",
+        "PARKING",
+        "WALK",
+        "C-ROAD",
+        "C-PAVEMENT",
+        "C-PARKING",
+        "C-DRIVEWAY",
+        "C-SIDEWALK",
+        "C-CENTERLINE",
+      ].forEach((layer) => layers.add(layer));
     }
     if (previewLayersEffective.grading) {
-      ["SURFACE", "FG_CONTOUR", "EG_CONTOUR", "SPOT_FG", "DRAIN_FLOW", "FLOW_ARROW"].forEach((layer) =>
-        layers.add(layer),
-      );
+      [
+        "SURFACE",
+        "FG_CONTOUR",
+        "EG_CONTOUR",
+        "SPOT_FG",
+        "DRAIN_FLOW",
+        "FLOW_ARROW",
+        "C-CONTOUR",
+        "C-SPOT-ELEV",
+        "C-GRADING",
+        "C-CUT",
+        "C-FILL",
+      ].forEach((layer) => layers.add(layer));
     }
     if (previewLayersEffective.drainage) {
-      ["DRAIN", "PIPE", "STORM", "BASIN_BOUNDARY"].forEach((layer) => layers.add(layer));
+      [
+        "DRAIN",
+        "PIPE",
+        "STORM",
+        "BASIN_BOUNDARY",
+        "C-STRM-PIPE",
+        "C-STRM-INLET",
+        "C-STRM-MH",
+        "C-DRAIN-FLOW",
+        "C-LOW-POINT",
+        "C-POND",
+      ].forEach((layer) => layers.add(layer));
     }
     if (previewLayersEffective.utilities) {
-      ["UTILITY", "WATER", "SAN"].forEach((layer) => layers.add(layer));
+      ["UTILITY", "WATER", "SAN", "C-WATR", "C-SAN", "C-UTIL", "C-HYDRANT"].forEach((layer) =>
+        layers.add(layer),
+      );
     }
     if (previewLayersEffective.structures) {
       ["BRIDGE", "POOL", "STRUCTURE"].forEach((layer) => layers.add(layer));
