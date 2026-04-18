@@ -568,6 +568,7 @@ export default function PreviewPanel({
       window.removeEventListener("resize", handleUpdate);
     };
   }, [planPreviewUrl, previewFullscreenOpen, updateImageBounds]);
+  const showGeneratedPlan = !placementMode;
   return (
     <div className="rounded-[28px] border border-slate-200 bg-white/90 p-4 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.4)] backdrop-blur md:p-6">
       <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -896,7 +897,7 @@ export default function PreviewPanel({
               }}
             >
               <div className="relative flex h-full w-full items-center justify-center overflow-hidden">
-                {planPreviewUrl ? (
+                {showGeneratedPlan && planPreviewUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     ref={previewImageRef}
@@ -913,7 +914,7 @@ export default function PreviewPanel({
                     Add objects to start building the site. Then click Place and drop them here.
                   </div>
                 )}
-                {!planPreviewUrl && previewMode === "3d" ? (
+                {!showGeneratedPlan && previewMode === "3d" ? null : !planPreviewUrl && previewMode === "3d" ? (
                   <div className="pointer-events-none absolute left-6 top-6 rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm">
                     3D needs a preview run
                   </div>
@@ -1042,7 +1043,7 @@ export default function PreviewPanel({
                       })}
                   </div>
                 ) : null}
-                {planPreviewAnnotations?.labels?.length && previewImageBounds ? (
+                {showGeneratedPlan && planPreviewAnnotations?.labels?.length && previewImageBounds ? (
                   <div
                     className="pointer-events-none absolute"
                     style={{
