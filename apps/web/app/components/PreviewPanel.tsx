@@ -56,7 +56,9 @@ type PreviewPanelProps = {
   suggestedPlacements: BuildingPlacement[];
   selectedBuildingId: string | null;
   focusDetectedId?: string | null;
+  focusObjectId?: string | null;
   onClearFocusDetected?: () => void;
+  onClearFocusObject?: () => void;
   lotWidth: number;
   lotHeight: number;
   onUpdateBuilding: (id: string, updates: Partial<BuildingPlacement>) => void;
@@ -122,7 +124,9 @@ export default function PreviewPanel({
   suggestedPlacements,
   selectedBuildingId,
   focusDetectedId,
+  focusObjectId,
   onClearFocusDetected,
+  onClearFocusObject,
   lotWidth,
   lotHeight,
   onUpdateBuilding,
@@ -638,6 +642,27 @@ export default function PreviewPanel({
       return () => window.clearTimeout(timer);
     }
   }, [focusDetectedId, onClearFocusDetected, onSelectBuilding, suggestedPlacements]);
+
+  useEffect(() => {
+    if (!focusObjectId) return;
+    const target = buildingPlacements.find((item) => item.id === focusObjectId);
+    if (!target || !lotWidth || !lotHeight) return;
+    const minX = target.x ?? 0;
+    const minY = target.y ?? 0;
+    const maxX = minX + target.w;
+    const maxY = minY + target.d;
+    const padding = 0.15;
+    const boxW = Math.max((maxX - minX) / lotWidth, 0.02);
+    const boxH = Math.max((maxY - minY) / lotHeight, 0.02);
+    const scale = Math.min(1 / (boxW + padding), 1 / (boxH + padding));
+    const centerX = (minX + maxX) / 2 / lotWidth;
+    const centerY = (minY + maxY) / 2 / lotHeight;
+    setFocusTransform({ scale: Math.min(Math.max(scale, 1), 3), tx: centerX, ty: centerY });
+    if (onClearFocusObject) {
+      const timer = window.setTimeout(() => onClearFocusObject(), 500);
+      return () => window.clearTimeout(timer);
+    }
+  }, [focusObjectId, buildingPlacements, lotHeight, lotWidth, onClearFocusObject]);
 
   useEffect(() => {
     if (!analysisHighlight || !lotWidth || !lotHeight) return;

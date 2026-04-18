@@ -419,6 +419,7 @@ export default function PerformanceAIDashboard() {
   const [detectionScalePixels, setDetectionScalePixels] = useState("");
   const [detectionScaleFtPerPx, setDetectionScaleFtPerPx] = useState<number | null>(null);
   const [focusDetectedId, setFocusDetectedId] = useState<string | null>(null);
+  const [focusObjectId, setFocusObjectId] = useState<string | null>(null);
   const [analysisPaths, setAnalysisPaths] = useState<
     Array<{
       id: string;
@@ -4420,16 +4421,19 @@ export default function PerformanceAIDashboard() {
       };
       const acres = 10;
       const side = Math.sqrt(acres * 43560);
+      let nextSiteId: string | null = null;
       if (!hasSite) {
         setLotWidth((prev) => (prev ? prev : side.toFixed(0)));
         setLotHeight((prev) => (prev ? prev : side.toFixed(0)));
         setBuildingPlacements((prev) => {
           const filtered = prev.filter((item) => item.type !== "site");
+          const siteId = `site-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          nextSiteId = siteId;
           return [
             ...filtered,
             {
-              id: `site-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-              label: "Site Boundary",
+              id: siteId,
+              label: geocode.display_name || "Site Boundary",
               type: "site",
               w: currentLotWidth ?? side,
               d: currentLotHeight ?? side,
@@ -4451,6 +4455,9 @@ export default function PerformanceAIDashboard() {
             },
           ];
         });
+      } else {
+        const existingSite = buildingPlacements.find((item) => item.type === "site");
+        nextSiteId = existingSite?.id ?? null;
       }
       await saveProject({
         silent: true,
@@ -4474,6 +4481,9 @@ export default function PerformanceAIDashboard() {
           },
         },
       });
+      if (nextSiteId) {
+        setFocusObjectId(nextSiteId);
+      }
       setStatusMessage("Site address saved and site boundary initialized.");
     } catch (error) {
       setStatusMessage(
@@ -4859,6 +4869,7 @@ export default function PerformanceAIDashboard() {
     setDetectionScalePixels("");
     setDetectionScaleFtPerPx(null);
     setFocusDetectedId(null);
+    setFocusObjectId(null);
     setPlacementModeEnabled(false);
     setActivePlacementId(null);
     setAnalysisIssues([]);
@@ -6203,6 +6214,8 @@ export default function PerformanceAIDashboard() {
               selectedBuildingId={activePlacementId}
               focusDetectedId={focusDetectedId}
               onClearFocusDetected={() => setFocusDetectedId(null)}
+              focusObjectId={focusObjectId}
+              onClearFocusObject={() => setFocusObjectId(null)}
               lotWidth={lotBounds.w}
               lotHeight={lotBounds.h}
               onUpdateBuilding={handleUpdateBuilding}
