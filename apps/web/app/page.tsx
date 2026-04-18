@@ -1525,6 +1525,36 @@ export default function PerformanceAIDashboard() {
     ],
   );
 
+  useEffect(() => {
+    if (!activePlacementId) return;
+    const exists = buildingPlacements.some((item) => item.id === activePlacementId);
+    if (!exists) {
+      debugLog("clear-missing-selected", { id: activePlacementId });
+      setActivePlacementId(null);
+      setPlacementModeEnabled(false);
+    }
+  }, [activePlacementId, buildingPlacements, debugLog]);
+
+  useEffect(() => {
+    if (!focusObjectId) return;
+    const exists = buildingPlacements.some((item) => item.id === focusObjectId);
+    if (!exists) {
+      debugLog("clear-missing-focus", { id: focusObjectId });
+      setFocusObjectId(null);
+    }
+  }, [buildingPlacements, debugLog, focusObjectId]);
+
+  useEffect(() => {
+    if (!debugPreview) return;
+    if (placedObjectCount > buildingPlacements.length) {
+      console.warn("[debug-preview] placed-count-exceeds-canonical", {
+        placedObjectCount,
+        canonicalCount: buildingPlacements.length,
+      });
+    }
+  }, [buildingPlacements.length, debugPreview, placedObjectCount]);
+
+
   const ensureSiteBoundary = useCallback(
     (reason: string) => {
       const hasSite = buildingPlacements.some((item) => item.type === "site");
@@ -1594,6 +1624,21 @@ export default function PerformanceAIDashboard() {
     setBackendResult(null);
     debugLog("clear-generated-preview");
   }, []);
+
+  useEffect(() => {
+    if (buildingPlacements.length > 0 || detectedPlacements.length > 0) return;
+    if (backendResult) return;
+    if (!planPreviewUrl) return;
+    debugLog("clear-preview-empty-canonical");
+    clearGeneratedPreview();
+  }, [
+    backendResult,
+    buildingPlacements.length,
+    clearGeneratedPreview,
+    debugLog,
+    detectedPlacements.length,
+    planPreviewUrl,
+  ]);
 
   const handleAddObject = useCallback(
     (type: SiteObjectType) => {
@@ -1741,6 +1786,7 @@ export default function PerformanceAIDashboard() {
     setBuildingPlacements((prev) => prev.filter((item) => item.id !== id));
     setActivePlacementId((prev) => (prev === id ? null : prev));
     setPlacementModeEnabled((prev) => (activePlacementId === id ? false : prev));
+    setFocusObjectId((prev) => (prev === id ? null : prev));
     markSystemsStale();
     setStatusMessage("Object removed. Regenerate systems to reflect the new layout.");
     void ensureProjectDraftRef.current()
