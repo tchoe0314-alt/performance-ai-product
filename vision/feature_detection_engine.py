@@ -96,6 +96,9 @@ class FeatureDetectionEngine:
             ("basin", blue_mask),
             ("pool", blue_mask),
         ):
+            # Merge nearby fragments before component extraction so adjacent detections become a single shape.
+            if kind in {"road", "parking", "driveway", "sidewalk", "open_space"}:
+                mask = self._close_mask(mask, iterations=2)
             detections.extend(
                 self._components_to_detections(
                     mask=mask,
@@ -457,3 +460,24 @@ class FeatureDetectionEngine:
         area_a = aw * ah
         area_b = bw * bh
         return inter_area / max(area_a + area_b - inter_area, 1e-6)
+
+    @staticmethod
+    def _close_mask(mask: np.ndarray, iterations: int = 1) -> np.ndarray:
+        if iterations <= 0:
+            return mask
+        result = mask.copy()
+        for _ in range(iterations):
+            # Dilate
+            padded = np.pad(result, 1, mode="edge")
+            dilated = np.zeros_like(result, dtype=bool)
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    dilated |= padded[1 + dy : 1 + dy + result.shape[0], 1 + dx : 1 + dx + result.shape[1]]
+            # Erode
+            padded = np.pad(dilated, 1, mode="edge")
+            eroded = np.ones_like(result, dtype=bool)
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    eroded &= padded[1 + dy : 1 + dy + result.shape[0], 1 + dx : 1 + dx + result.shape[1]]
+            result = eroded
+        return result
