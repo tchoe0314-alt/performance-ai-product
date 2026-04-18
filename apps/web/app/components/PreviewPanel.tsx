@@ -87,6 +87,7 @@ type PreviewPanelProps = {
   alignToRoadRequest?: number;
   onSetSiteRotationDeg?: (value: number) => void;
   surveyPoints?: Array<{ x: number; y: number; z?: number }>;
+  onMapScaleUpdate?: (payload: { ftPerPx: number; source: "mapbox" }) => void;
 };
 
 export default function PreviewPanel({
@@ -152,6 +153,7 @@ export default function PreviewPanel({
   alignToRoadRequest,
   onSetSiteRotationDeg,
   surveyPoints,
+  onMapScaleUpdate,
 }: PreviewPanelProps) {
   const previewLabels = useMemo(
     () => (Array.isArray(planPreviewAnnotations?.labels) ? planPreviewAnnotations?.labels : []),
@@ -621,6 +623,19 @@ export default function PreviewPanel({
   useEffect(() => {
     if (!showMap || !mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
+    const reportScale = () => {
+      if (!onMapScaleUpdate) return;
+      const center = map.getCenter();
+      const zoom = map.getZoom();
+      const metersPerPixel = 156543.03392 * Math.cos((center.lat * Math.PI) / 180) / Math.pow(2, zoom);
+      const ftPerPx = metersPerPixel * 3.28084;
+      if (Number.isFinite(ftPerPx)) {
+        onMapScaleUpdate({ ftPerPx, source: "mapbox" });
+      }
+    };
+    reportScale();
+    map.on("moveend", reportScale);
+    map.on("zoomend", reportScale);
     const handleClick = (event: mapboxgl.MapMouseEvent) => {
       if (placementMode) {
         const container = map.getContainer();
@@ -656,8 +671,10 @@ export default function PreviewPanel({
     map.on("click", handleClick);
     return () => {
       map.off("click", handleClick);
+      map.off("moveend", reportScale);
+      map.off("zoomend", reportScale);
     };
-  }, [mapLoaded, onPlaceBuilding, onPlaceObject, placementMode, selectedBuildingId, onSelectBuilding, showMap]);
+  }, [mapLoaded, onMapScaleUpdate, onPlaceBuilding, onPlaceObject, placementMode, selectedBuildingId, onSelectBuilding, showMap]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

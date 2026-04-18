@@ -433,12 +433,16 @@ export default function PerformanceAIDashboard() {
   const [detectionScaleFeet, setDetectionScaleFeet] = useState("");
   const [detectionScalePixels, setDetectionScalePixels] = useState("");
   const [detectionScaleFtPerPx, setDetectionScaleFtPerPx] = useState<number | null>(null);
+  const [detectionScaleSource, setDetectionScaleSource] = useState<"mapbox" | "manual" | "approximate">("approximate");
+  const [siteScaleLocked, setSiteScaleLocked] = useState(false);
+  const [showAdvancedCalibration, setShowAdvancedCalibration] = useState(false);
   const [siteRotationDeg, setSiteRotationDeg] = useState(0);
   const [siteRotationInput, setSiteRotationInput] = useState("0");
   const [showSiteBounds, setShowSiteBounds] = useState(true);
   const [fitToSiteRequest, setFitToSiteRequest] = useState(0);
   const [alignToRoadRequest, setAlignToRoadRequest] = useState(0);
   const rotationSaveTimeoutRef = useRef<number | null>(null);
+  const scaleSaveTimeoutRef = useRef<number | null>(null);
   const [focusDetectedId, setFocusDetectedId] = useState<string | null>(null);
   const [focusObjectId, setFocusObjectId] = useState<string | null>(null);
   const [analysisPaths, setAnalysisPaths] = useState<
@@ -1853,6 +1857,40 @@ export default function PerformanceAIDashboard() {
         : "Placement active. Click on the canvas to drop the object.",
     );
   }, [buildingPlacements, resolveLotBounds]);
+
+  const scheduleScaleSave = useCallback(
+    (ftPerPx: number, source: "mapbox" | "manual" | "approximate") => {
+      if (scaleSaveTimeoutRef.current !== null) {
+        window.clearTimeout(scaleSaveTimeoutRef.current);
+      }
+      const currentInput = currentProject?.project_input ?? payloadPreview;
+      scaleSaveTimeoutRef.current = window.setTimeout(() => {
+        void saveProject({
+          silent: true,
+          projectInputOverride: {
+            ...currentInput,
+            input_mode: "user",
+            strict_mode: false,
+            allow_ai_fill_for_blanks: false,
+            meta: {
+              ...(currentInput?.meta ?? {}),
+              site_inputs: {
+                ...(currentInput?.meta?.site_inputs ?? {}),
+                detection_scale: {
+                  distance_ft: detectionScaleFeet ? parsePositiveNumber(detectionScaleFeet) ?? null : null,
+                  pixel_distance: detectionScalePixels ? parsePositiveNumber(detectionScalePixels) ?? null : null,
+                  scale_ft_per_px: ftPerPx,
+                  scale_source: source,
+                },
+                site_alignment_locked: siteScaleLocked,
+              },
+            },
+          },
+        });
+      }, 600);
+    },
+    [currentProject, detectionScaleFeet, detectionScalePixels, payloadPreview, saveProject, siteScaleLocked],
+  );
 
   useEffect(() => {
     const placed = buildingPlacements.filter(
@@ -3501,6 +3539,7 @@ export default function PerformanceAIDashboard() {
     const surveyFile = siteInputs?.survey_file ?? {};
     const slopeEstimate = siteInputs?.slope_estimate ?? null;
       const detectionScale = siteInputs?.detection_scale ?? {};
+      const alignmentLocked = Boolean(siteInputs?.site_alignment_locked);
     const useSurvey = siteInputs?.use_survey_for_grading;
     const storedPoints = Array.isArray(siteInputs?.survey_points) ? siteInputs?.survey_points : [];
     const detectedObjects = Array.isArray(siteInputs?.detected_objects)
@@ -3532,6 +3571,12 @@ export default function PerformanceAIDashboard() {
       setDetectionScaleFtPerPx(
         typeof detectionScale?.scale_ft_per_px === "number" ? detectionScale.scale_ft_per_px : null,
       );
+      setDetectionScaleSource(
+        detectionScale?.scale_source === "mapbox" || detectionScale?.scale_source === "manual"
+          ? detectionScale.scale_source
+          : "approximate",
+      );
+      setSiteScaleLocked(alignmentLocked);
       const rotationValue =
         typeof siteInputs?.site_rotation_deg === "number" ? siteInputs.site_rotation_deg : 0;
       setSiteRotationDeg(rotationValue);
@@ -4532,6 +4577,7 @@ export default function PerformanceAIDashboard() {
     }
     const scale = distanceFt / pixelDistance;
     setDetectionScaleFtPerPx(scale);
+    setDetectionScaleSource("manual");
     const currentInput = currentProject?.project_input ?? payloadPreview;
     const nextSiteInputs = {
       ...(currentInput?.meta?.site_inputs ?? {}),
@@ -4540,7 +4586,9 @@ export default function PerformanceAIDashboard() {
         pixel_distance: pixelDistance,
         scale_ft_per_px: scale,
         calibrated: true,
+        scale_source: "manual",
       },
+      site_alignment_locked: siteScaleLocked,
     };
     await saveProject({
       silent: true,
@@ -5176,6 +5224,12 @@ export default function PerformanceAIDashboard() {
     setDetectionScaleFeet("");
     setDetectionScalePixels("");
     setDetectionScaleFtPerPx(null);
+    setDetectionScaleSource("approximate");
+    setSiteScaleLocked(false);
+    setShowAdvancedCalibration(false);
+    setShowAdvancedCalibration(false);
+    setDetectionScaleSource("approximate");
+    setSiteScaleLocked(false);
     setSiteRotationDeg(0);
     setSiteRotationInput("0");
     setShowSiteBounds(true);
@@ -6369,6 +6423,20 @@ export default function PerformanceAIDashboard() {
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
                         Detection scale calibration
                       </p>
+                      <p className="mt-2 text-xs text-slate-500">
+                        Auto scale source: {detectionScaleSource === "mapbox" ? "Mapbox (real-world)" : "Approximate"}
+                      </p>
+                      <p className="mt-2 text-xs text-slate-500">
+                        Automatic scale is used when map context is available. Manual calibration is an advanced fallback.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setShowAdvancedCalibration((prev) => !prev)}
+                        className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                      >
+                        {showAdvancedCalibration ? "Hide Advanced" : "Advanced Calibration"}
+                      </button>
+                      {showAdvancedCalibration ? (
                       <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-slate-600">
                         <label className="flex flex-col gap-1">
                           Known distance (ft)
@@ -6398,7 +6466,7 @@ export default function PerformanceAIDashboard() {
                       </button>
                         <p className="mt-2 text-xs text-slate-500">
                           {detectionScaleFtPerPx
-                            ? `Calibrated: 1 px ≈ ${detectionScaleFtPerPx.toFixed(3)} ft`
+                            ? `Calibrated (${detectionScaleSource === "mapbox" ? "Mapbox" : "Manual"}): 1 px ≈ ${detectionScaleFtPerPx.toFixed(3)} ft`
                             : "No calibration applied. Detection sizes are approximate."}
                         </p>
                         <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
@@ -6407,7 +6475,8 @@ export default function PerformanceAIDashboard() {
                             Pick two points in the uploaded image with a known real‑world distance, measure the pixel distance between them, then enter both values and apply.
                           </p>
                         </div>
-                      </div>
+                      ) : null}
+                    </div>
 
                     <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
@@ -6450,6 +6519,35 @@ export default function PerformanceAIDashboard() {
                           className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
                         >
                           Fit to Site
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSiteScaleLocked((prev) => {
+                              const next = !prev;
+                              const currentInput = currentProject?.project_input ?? payloadPreview;
+                              void saveProject({
+                                silent: true,
+                                projectInputOverride: {
+                                  ...currentInput,
+                                  input_mode: "user",
+                                  strict_mode: false,
+                                  allow_ai_fill_for_blanks: false,
+                                  meta: {
+                                    ...(currentInput?.meta ?? {}),
+                                    site_inputs: {
+                                      ...(currentInput?.meta?.site_inputs ?? {}),
+                                      site_alignment_locked: next,
+                                    },
+                                  },
+                                },
+                              });
+                              return next;
+                            });
+                          }}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                        >
+                          {siteScaleLocked ? "Unlock Site Scale" : "Lock Site Scale"}
                         </button>
                         <button
                           type="button"
@@ -6760,6 +6858,13 @@ export default function PerformanceAIDashboard() {
                   scheduleRotationSave(value);
                 }}
                 surveyPoints={surveyPreviewPoints}
+                onMapScaleUpdate={({ ftPerPx, source }) => {
+                  if (siteScaleLocked) return;
+                  if (!Number.isFinite(ftPerPx) || ftPerPx <= 0) return;
+                  setDetectionScaleFtPerPx(ftPerPx);
+                  setDetectionScaleSource(source);
+                  scheduleScaleSave(ftPerPx, source);
+                }}
               />
               </div>
 
