@@ -1419,8 +1419,8 @@ export default function PerformanceAIDashboard() {
       max_ada_cross_slope_pct?: number;
     };
     const drainageFields = (manualFields.drainage ?? {}) as { min_pipe_slope_pct?: number };
-    const drainageForced = Array.isArray((manualFields.drainage ?? {}).forced_inlets)
-      ? (manualFields.drainage ?? {}).forced_inlets
+    const drainageForced: Array<Record<string, unknown>> = Array.isArray((manualFields.drainage ?? {}).forced_inlets)
+      ? ((manualFields.drainage ?? {}).forced_inlets as Array<Record<string, unknown>>)
       : [];
     const disciplines = toArray(manualFields.disciplines);
     const buildingsList = Array.isArray(manualFields.buildings) ? manualFields.buildings : [];
