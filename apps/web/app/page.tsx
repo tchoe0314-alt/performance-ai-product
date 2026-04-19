@@ -1292,30 +1292,6 @@ export default function PerformanceAIDashboard() {
     return undefined;
   }, [currentManualFailures, issues]);
 
-  const drainageIssueApplyLabel = useCallback(
-    (issue: Issue) => {
-      const code = (issue.code ?? "").toUpperCase();
-      if (code === "UNDER_COLLECTION") return "Add inlet";
-      if (code === "ORPHAN_INLETS") return "Connect inlet";
-      if (code === "POOR_SLOPE") return "Adjust slope";
-      if (code === "BASIN_UNREACHABLE") return "Add basin";
-      if (code === "NO_VALID_OUTFALL" || code === "NO_PONDS_DEFINED") return "Add basin";
-      return null;
-    },
-    [],
-  );
-
-  const canApplyDrainageIssue = useCallback(
-    (issue: Issue) => {
-      const code = (issue.code ?? "").toUpperCase();
-      if (code === "UNDER_COLLECTION" || code === "BASIN_UNREACHABLE" || code === "NO_VALID_OUTFALL" || code === "NO_PONDS_DEFINED") {
-        return Boolean(pickBestLowPoint());
-      }
-      if (code === "ORPHAN_INLETS" || code === "POOR_SLOPE") return true;
-      return false;
-    },
-    [pickBestLowPoint],
-  );
 
   const applyBackendResult = (data: PlanResponse) => {
     setBackendResult(data);
@@ -6185,6 +6161,31 @@ export default function PerformanceAIDashboard() {
       return currentZ < bestZ ? current : best;
     }, null as { x: number; y: number; z?: number } | null);
   }, [drainageLowPoints]);
+
+  const drainageIssueApplyLabel = useCallback(
+    (issue: Issue) => {
+      const code = (issue.code ?? "").toUpperCase();
+      if (code === "UNDER_COLLECTION") return "Add inlet";
+      if (code === "ORPHAN_INLETS") return "Connect inlet";
+      if (code === "POOR_SLOPE") return "Adjust slope";
+      if (code === "BASIN_UNREACHABLE") return "Add basin";
+      if (code === "NO_VALID_OUTFALL" || code === "NO_PONDS_DEFINED") return "Add basin";
+      return null;
+    },
+    [],
+  );
+
+  const canApplyDrainageIssue = useCallback(
+    (issue: Issue) => {
+      const code = (issue.code ?? "").toUpperCase();
+      if (code === "UNDER_COLLECTION" || code === "BASIN_UNREACHABLE" || code === "NO_VALID_OUTFALL" || code === "NO_PONDS_DEFINED") {
+        return Boolean(pickBestLowPoint());
+      }
+      if (code === "ORPHAN_INLETS" || code === "POOR_SLOPE") return true;
+      return false;
+    },
+    [pickBestLowPoint],
+  );
 
   const runDrainageAutofix = useCallback(
     async ({
