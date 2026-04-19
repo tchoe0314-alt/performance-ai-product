@@ -1530,9 +1530,10 @@ export default function PerformanceAIDashboard() {
     );
     setDrainageConnectOrphans(Boolean((manualFields.drainage ?? {}).connect_orphans));
     setDrainageAllowSlopeAdjust(Boolean((manualFields.drainage ?? {}).allow_slope_adjustment));
+    const rawMaxSlopeAdjust = (manualFields.drainage ?? {}).max_slope_adjust;
     setDrainageMaxSlopeAdjust(
-      typeof (manualFields.drainage ?? {}).max_slope_adjust === "number"
-        ? (manualFields.drainage ?? {}).max_slope_adjust
+      typeof rawMaxSlopeAdjust === "number" && Number.isFinite(rawMaxSlopeAdjust)
+        ? rawMaxSlopeAdjust
         : 0.001,
     );
     setMaxParkingSlopePct(String(gradingFields.max_parking_slope_pct ?? ""));
