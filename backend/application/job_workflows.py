@@ -1183,6 +1183,7 @@ def build_drainage_job_runner(
             connect_orphans = bool(drainage_fields.get("connect_orphans"))
             allow_slope_adjustment = bool(drainage_fields.get("allow_slope_adjustment"))
             max_slope_adjust = drainage_fields.get("max_slope_adjust")
+            autofix_action = safe_str(drainage_fields.get("autofix_action"), "")
             if forced_inlets:
                 drainage_payload = safe_dict(merged.get("drainage"))
                 if not drainage_payload:
@@ -1195,6 +1196,8 @@ def build_drainage_job_runner(
                     drainage_payload["allow_slope_adjustment"] = True
                 if max_slope_adjust is not None and drainage_payload.get("max_slope_adjust") is None:
                     drainage_payload["max_slope_adjust"] = max_slope_adjust
+                if autofix_action and not drainage_payload.get("autofix_action"):
+                    drainage_payload["autofix_action"] = autofix_action
                 merged["drainage"] = drainage_payload
             elif connect_orphans or allow_slope_adjustment:
                 drainage_payload = safe_dict(merged.get("drainage"))
@@ -1206,6 +1209,8 @@ def build_drainage_job_runner(
                     drainage_payload["allow_slope_adjustment"] = True
                 if max_slope_adjust is not None and drainage_payload.get("max_slope_adjust") is None:
                     drainage_payload["max_slope_adjust"] = max_slope_adjust
+                if autofix_action and not drainage_payload.get("autofix_action"):
+                    drainage_payload["autofix_action"] = autofix_action
                 merged["drainage"] = drainage_payload
         merged["manual_fields"] = manual_fields
         return merged
