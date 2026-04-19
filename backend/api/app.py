@@ -119,6 +119,7 @@ except Exception:
 class RegisterPayload(BaseModel):
     email: str
     password: str
+    name: str = ""
 
 
 class GeocodePayload(BaseModel):
