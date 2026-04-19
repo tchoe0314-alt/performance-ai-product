@@ -124,13 +124,17 @@ test.describe("Phase 5 drainage autofix matrix", () => {
 
     const basePayload = {
       project_id: null,
-      full_design_mode: true,
+      full_design_mode: false,
       input_mode: "user",
       strict_mode: false,
       prompt_text: null,
+      meta: {
+        requested_system: "drainage",
+      },
       manual_fields: {
         units: "ft",
         lot: { x: 0, y: 0, w: 600, h: 600 },
+        disciplines: ["drainage", "grading"],
         buildings: [
           {
             id: "b1",
