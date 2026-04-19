@@ -344,6 +344,10 @@ export type ManualFields = {
   };
   drainage?: {
     min_pipe_slope_pct?: number;
+    forced_inlets?: Array<Record<string, unknown>>;
+    connect_orphans?: boolean;
+    allow_slope_adjustment?: boolean;
+    max_slope_adjust?: number;
   };
   ponds?: Array<{
     id?: string;
