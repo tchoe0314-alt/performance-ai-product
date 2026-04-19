@@ -148,6 +148,7 @@ export default function PreviewPanel({
   onUpdateSuggested,
   onRemoveBuilding,
   onRestoreBuilding,
+  externalRectUndo,
   onSelectBuilding,
   analysisPaths,
   analysisHighlight,
