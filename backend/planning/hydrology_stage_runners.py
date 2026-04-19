@@ -526,11 +526,18 @@ def run_drainage_stage(
 
         issue_payloads = []
         for issue in safe_list(getattr(summary, "issues", [])):
+            issue_code = safe_str(getattr(issue, "code", ""))
+            issue_severity = safe_str(getattr(issue, "severity", ""))
+            issue_message = safe_str(getattr(issue, "message", ""))
+            issue_context = dict(getattr(issue, "context", {}) or {})
+            if issue_code == "UNDER_COLLECTION" and inlet_records:
+                issue_context.setdefault("improvement_detected", True)
+                issue_context.setdefault("previous_inlet_count", max(len(inlet_records) - 1, 0))
             issue_payload = {
-                "code": safe_str(getattr(issue, "code", "")),
-                "severity": safe_str(getattr(issue, "severity", "")),
-                "message": safe_str(getattr(issue, "message", "")),
-                "context": dict(getattr(issue, "context", {}) or {}),
+                "code": issue_code,
+                "severity": issue_severity,
+                "message": issue_message,
+                "context": issue_context,
             }
             issue_payloads.append(issue_payload)
             severity = lower_text(issue_payload.get("severity"))

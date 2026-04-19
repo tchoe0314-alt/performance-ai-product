@@ -43,9 +43,11 @@ from backend.application.file_workflows import (
 )
 from backend.application.health_workflows import health_response as application_health_response
 from backend.application.job_workflows import (
+    build_drainage_job_runner as application_build_drainage_job_runner,
     build_orchestrate_job_runner as application_build_orchestrate_job_runner,
     cancel_existing_job as application_cancel_existing_job,
     continue_existing_job as application_continue_existing_job,
+    queue_drainage_job as application_queue_drainage_job,
     queue_orchestrate_job as application_queue_orchestrate_job,
     revise_existing_job as application_revise_existing_job,
 )
@@ -182,6 +184,11 @@ class SaveProjectPayload(BaseModel):
 
 
 class QueueOrchestratePayload(BaseModel):
+    project_id: Optional[str] = None
+    request: OrchestratePayload
+
+
+class QueueDrainagePayload(BaseModel):
     project_id: Optional[str] = None
     request: OrchestratePayload
 
@@ -426,6 +433,13 @@ def _register_job_handlers() -> None:
             build_run_summary=_build_run_summary,
             merge_project_metadata=_merge_project_metadata,
             final_plan_from_result=application_final_plan_from_result,
+        ),
+    )
+    JOB_QUEUE.register_handler(
+        "drainage_only",
+        application_build_drainage_job_runner(
+            project_store=PROJECT_STORE,
+            update_job_progress=JOB_QUEUE.update_job_progress,
         ),
     )
 
@@ -855,6 +869,18 @@ def list_jobs(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[
 def queue_orchestrate_job(payload: QueueOrchestratePayload, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     project_id, request_payload = _queue_request_payload_with_project(payload)
     return application_queue_orchestrate_job(
+        project_store=PROJECT_STORE,
+        job_queue=JOB_QUEUE,
+        user_id=current_user["user_id"],
+        project_id=project_id,
+        request_payload=request_payload,
+    )
+
+
+@app.post("/api/jobs/drainage")
+def queue_drainage_job(payload: QueueDrainagePayload, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    project_id, request_payload = _queue_request_payload_with_project(payload)
+    return application_queue_drainage_job(
         project_store=PROJECT_STORE,
         job_queue=JOB_QUEUE,
         user_id=current_user["user_id"],

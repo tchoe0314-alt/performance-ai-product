@@ -1418,9 +1418,9 @@ export default function PerformanceAIDashboard() {
       max_road_grade_pct?: number;
       max_ada_cross_slope_pct?: number;
     };
-    const drainageFields = (manualFields.drainage ?? {}) as { min_pipe_slope_pct?: number };
-    const drainageForced: Array<Record<string, unknown>> = Array.isArray((manualFields.drainage ?? {}).forced_inlets)
-      ? ((manualFields.drainage ?? {}).forced_inlets as Array<Record<string, unknown>>)
+    const drainageFields = (manualFields.drainage ?? {}) as NonNullable<ManualFields["drainage"]>;
+    const drainageForced = Array.isArray(drainageFields?.forced_inlets)
+      ? (drainageFields?.forced_inlets as Array<Record<string, unknown>>)
       : [];
     const disciplines = toArray(manualFields.disciplines);
     const buildingsList = Array.isArray(manualFields.buildings) ? manualFields.buildings : [];
@@ -1513,7 +1513,83 @@ export default function PerformanceAIDashboard() {
         } as BuildingPlacement;
       })
       .filter(Boolean) as BuildingPlacement[];
-    setBuildingPlacements(parsedPlacements);
+
+    const pondPlacements = (Array.isArray(manualFields.ponds) ? manualFields.ponds : [])
+      .map((raw, idx) => {
+        if (!raw || typeof raw !== "object") return null;
+        const rec = raw as Record<string, unknown>;
+        const rawX = rec.x;
+        const rawY = rec.y;
+        const x = typeof rawX === "number" ? rawX : rawX !== undefined ? Number(rawX) : NaN;
+        const y = typeof rawY === "number" ? rawY : rawY !== undefined ? Number(rawY) : NaN;
+        const rawW = rec.w ?? 60;
+        const rawD = rec.d ?? 40;
+        const w = typeof rawW === "number" ? rawW : rawW !== undefined ? Number(rawW) : NaN;
+        const d = typeof rawD === "number" ? rawD : rawD !== undefined ? Number(rawD) : NaN;
+        if (!Number.isFinite(w) || !Number.isFinite(d)) return null;
+        const placed = Number.isFinite(x) && Number.isFinite(y);
+        return {
+          id: typeof rec.id === "string" ? rec.id : `basin-${Date.now()}-${idx}`,
+          label:
+            typeof rec.label === "string"
+              ? rec.label
+              : typeof rec.name === "string"
+                ? rec.name
+                : "Basin",
+          type: "basin" as SiteObjectType,
+          x: placed ? x : undefined,
+          y: placed ? y : undefined,
+          w,
+          d,
+          rotation: typeof rec.rotation === "number" ? rec.rotation : undefined,
+          locked: Boolean(rec.locked),
+          placed,
+          source: typeof rec.source === "string" ? rec.source : "generated",
+          generated: Boolean(rec.generated),
+          systemDependencies: Array.isArray(rec.systemDependencies)
+            ? (rec.systemDependencies as string[])
+            : ["drainage"],
+        } as BuildingPlacement;
+      })
+      .filter(Boolean) as BuildingPlacement[];
+
+    const inletPlacements = (Array.isArray((manualFields.drainage ?? {}).forced_inlets)
+      ? ((manualFields.drainage ?? {}).forced_inlets as Array<Record<string, unknown>>)
+      : []
+    )
+      .map((raw, idx) => {
+        if (!raw || typeof raw !== "object") return null;
+        const rec = raw as Record<string, unknown>;
+        const rawX = rec.x;
+        const rawY = rec.y;
+        const x = typeof rawX === "number" ? rawX : rawX !== undefined ? Number(rawX) : NaN;
+        const y = typeof rawY === "number" ? rawY : rawY !== undefined ? Number(rawY) : NaN;
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+        return {
+          id: typeof rec.id === "string" ? rec.id : `inlet-${Date.now()}-${idx}`,
+          label:
+            typeof rec.label === "string"
+              ? rec.label
+              : typeof rec.name === "string"
+                ? rec.name
+                : "Inlet",
+          type: "inlet" as SiteObjectType,
+          x,
+          y,
+          w: 8,
+          d: 8,
+          rotation: 0,
+          locked: Boolean(rec.locked),
+          placed: true,
+          source: typeof rec.source === "string" ? rec.source : "generated",
+          generated: Boolean(rec.generated),
+          systemDependencies: ["drainage"],
+        } as BuildingPlacement;
+      })
+      .filter(Boolean) as BuildingPlacement[];
+
+    const mergedPlacements = [...parsedPlacements, ...pondPlacements, ...inletPlacements];
+    setBuildingPlacements(mergedPlacements);
     setPlacementModeEnabled(false);
     setActivePlacementId(null);
     setParkingCount(String(sitePlan.parking_count ?? ""));
@@ -1552,6 +1628,19 @@ export default function PerformanceAIDashboard() {
     const width = parsePositiveNumber(lotWidth) ?? 0;
     const height = parsePositiveNumber(lotHeight) ?? 0;
     if (!width || !height) {
+      const manualLot =
+        currentProject?.project_input &&
+        typeof currentProject.project_input === "object" &&
+        (currentProject.project_input as { manual_fields?: { lot?: { x?: number; y?: number; w?: number; h?: number } } })
+          .manual_fields?.lot;
+      if (manualLot?.w && manualLot?.h) {
+        return {
+          x: typeof manualLot.x === "number" ? manualLot.x : 0,
+          y: typeof manualLot.y === "number" ? manualLot.y : 0,
+          w: manualLot.w,
+          h: manualLot.h,
+        };
+      }
       const site = buildingPlacements.find((item) => item.type === "site");
       if (site?.w && site?.d) {
         return { x: site.x ?? 0, y: site.y ?? 0, w: site.w, h: site.d };
@@ -6143,6 +6232,12 @@ export default function PerformanceAIDashboard() {
   const ensureSiteLocked = useCallback(
     (action: string) => {
       if (siteScaleLocked) return true;
+      const alignmentLocked =
+        currentProject?.project_input?.meta?.site_inputs &&
+        typeof currentProject.project_input.meta.site_inputs === "object"
+          ? currentProject.project_input.meta.site_inputs.site_alignment_locked
+          : null;
+      if (alignmentLocked === true) return true;
       askClarification(
         "Please lock the site alignment before running this step. Do you want me to lock the site now?",
         "lock_site_required",
@@ -6154,27 +6249,39 @@ export default function PerformanceAIDashboard() {
   );
 
   const pickBestLowPoint = useCallback(() => {
-    if (!drainageLowPoints.length) return null;
-    let best = drainageLowPoints[0];
-    for (let i = 1; i < drainageLowPoints.length; i += 1) {
-      const current = drainageLowPoints[i];
-      const bestZ = Number.isFinite(best.z) ? best.z : Number.POSITIVE_INFINITY;
-      const currentZ = Number.isFinite(current.z) ? current.z : Number.POSITIVE_INFINITY;
-      if (currentZ < bestZ) {
-        best = current;
+    if (drainageLowPoints.length) {
+      let best = drainageLowPoints[0];
+      for (let i = 1; i < drainageLowPoints.length; i += 1) {
+        const current = drainageLowPoints[i];
+        const bestZ = Number.isFinite(best.z) ? best.z : Number.POSITIVE_INFINITY;
+        const currentZ = Number.isFinite(current.z) ? current.z : Number.POSITIVE_INFINITY;
+        if (currentZ < bestZ) {
+          best = current;
+        }
       }
+      return best ?? null;
     }
-    return best ?? null;
-  }, [drainageLowPoints]);
+    const lot = resolveLotBounds();
+    if (lot.w && lot.h) {
+      return {
+        x: lot.x + lot.w / 2,
+        y: lot.y + lot.h / 2,
+        z: 0,
+      };
+    }
+    return null;
+  }, [drainageLowPoints, resolveLotBounds]);
 
   const drainageIssueApplyLabel = useCallback(
     (issue: Issue) => {
       const code = (issue.code ?? "").toUpperCase();
-      if (code === "UNDER_COLLECTION") return "Add inlet";
-      if (code === "ORPHAN_INLETS") return "Connect inlet";
-      if (code === "POOR_SLOPE") return "Adjust slope";
+      if (code === "NO_PONDS_DEFINED" || code === "NO_VALID_OUTFALL" || code === "DRAINAGE_NO_BASIN") {
+        return "Add basin";
+      }
       if (code === "BASIN_UNREACHABLE") return "Add basin";
-      if (code === "NO_VALID_OUTFALL" || code === "NO_PONDS_DEFINED") return "Add basin";
+      if (code === "POOR_SLOPE") return "Adjust slope";
+      if (code === "ORPHAN_INLETS") return "Connect inlet";
+      if (code === "UNDER_COLLECTION") return "Add inlet";
       return null;
     },
     [],
@@ -6183,7 +6290,13 @@ export default function PerformanceAIDashboard() {
   const canApplyDrainageIssue = useCallback(
     (issue: Issue) => {
       const code = (issue.code ?? "").toUpperCase();
-      if (code === "UNDER_COLLECTION" || code === "BASIN_UNREACHABLE" || code === "NO_VALID_OUTFALL" || code === "NO_PONDS_DEFINED") {
+      if (
+        code === "UNDER_COLLECTION" ||
+        code === "BASIN_UNREACHABLE" ||
+        code === "DRAINAGE_NO_BASIN" ||
+        code === "NO_VALID_OUTFALL" ||
+        code === "NO_PONDS_DEFINED"
+      ) {
         return Boolean(pickBestLowPoint());
       }
       if (code === "ORPHAN_INLETS" || code === "POOR_SLOPE") return true;
@@ -6196,11 +6309,13 @@ export default function PerformanceAIDashboard() {
     async ({
       placementsOverride,
       forcedInlets,
+      forcedBasins,
       connectOrphans,
       allowSlopeAdjust,
     }: {
       placementsOverride?: BuildingPlacement[];
       forcedInlets?: Array<Record<string, unknown>>;
+      forcedBasins?: Array<Record<string, unknown>>;
       connectOrphans?: boolean;
       allowSlopeAdjust?: boolean;
     }) => {
@@ -6216,6 +6331,10 @@ export default function PerformanceAIDashboard() {
       if (forcedInlets && forcedInlets.length) {
         nextDrainage.forced_inlets = forcedInlets;
       }
+      if (forcedBasins && forcedBasins.length) {
+        nextManualFields.ponds = forcedBasins;
+        nextDrainage.autofix_action = "add_basin";
+      }
       if (connectOrphans) {
         nextDrainage.connect_orphans = true;
       }
@@ -6226,19 +6345,60 @@ export default function PerformanceAIDashboard() {
       nextManualFields.drainage = nextDrainage;
       nextManualFields.utility_network = omitField;
 
-      await executePlanAction({
-        mode: "run",
-        requestPayload: {
-          ...requestPayload,
-          manual_fields: nextManualFields,
-          meta: {
-            ...(requestPayload.meta ?? {}),
-            requested_system: "drainage",
-          },
-          prompt_text: null,
+      const drainagePayload: PlanRequestPayload = {
+        ...requestPayload,
+        manual_fields: nextManualFields,
+        meta: {
+          ...(requestPayload.meta ?? {}),
+          requested_system: "drainage",
         },
-        assistantPrefix: "Applying drainage fix…",
-      });
+        prompt_text: null,
+      };
+
+      if (token && (projectId || currentProject?.project_id)) {
+        const targetProjectId = projectId || currentProject?.project_id || null;
+        try {
+          const queued = await postJson<{ job: JobSummary }>(
+            "/api/jobs/drainage",
+            {
+              project_id: targetProjectId,
+              request: drainagePayload,
+            },
+            { token },
+          );
+          const jobId = queued.job.job_id;
+          setActiveJobId(jobId);
+          const deadline = Date.now() + 120_000;
+          while (Date.now() < deadline) {
+            const jobState = await getJson<{ job: JobSummary }>(
+              `/api/jobs/${jobId}`,
+              { token },
+            );
+            const status = String(jobState.job?.status || "");
+            if (status === "completed") break;
+            if (status === "failed" || status === "cancelled") {
+              throw new Error(jobState.job?.error || "Drainage job failed.");
+            }
+            await new Promise((resolve) => window.setTimeout(resolve, 2000));
+          }
+          if (targetProjectId) {
+            loadProjectResultInBackground({
+              project_id: targetProjectId,
+              name: currentProject?.name || siteName || "Untitled Project",
+            } as ProjectRecord);
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Drainage autofix failed.";
+          appendChatMessage("assistant", message, "status");
+          setStatusMessage(message);
+        }
+      } else {
+        await executePlanAction({
+          mode: "run",
+          requestPayload: drainagePayload,
+          assistantPrefix: "Applying drainage fix…",
+        });
+      }
       setSystemStatuses((prev) => ({ ...prev, drainage: "fresh" }));
     },
     [
@@ -6246,7 +6406,14 @@ export default function PerformanceAIDashboard() {
       drainageMaxSlopeAdjust,
       ensureSiteLocked,
       executePlanAction,
+      token,
       projectId,
+      currentProject?.project_id,
+      currentProject?.name,
+      siteName,
+      loadProjectResultInBackground,
+      appendChatMessage,
+      setActiveJobId,
       setSystemStatuses,
     ],
   );
@@ -6462,6 +6629,7 @@ export default function PerformanceAIDashboard() {
 
       if (
         issueCode === "BASIN_UNREACHABLE" ||
+        issueCode === "DRAINAGE_NO_BASIN" ||
         issueCode === "NO_VALID_OUTFALL" ||
         issueCode === "NO_PONDS_DEFINED"
       ) {
@@ -6469,7 +6637,7 @@ export default function PerformanceAIDashboard() {
           setStatusMessage("No low points available to place a basin.");
           return;
         }
-        if (issueLocation && distanceFt(lowPoint, issueLocation) > 300) {
+        if (issueCode === "BASIN_UNREACHABLE" && issueLocation && distanceFt(lowPoint, issueLocation) > 300) {
           setStatusMessage("Closest low point is too far from the flagged area to place a basin.");
           return;
         }
@@ -6501,7 +6669,25 @@ export default function PerformanceAIDashboard() {
           ts: Date.now(),
         });
         setFocusObjectId(basinPlacement.id);
-        await runDrainageAutofix({ placementsOverride: nextPlacements });
+        const forcedBasins = nextPlacements
+          .filter((placement) => placement.type === "basin")
+          .map((placement) => ({
+            id: placement.id,
+            name: placement.label,
+            x: placement.x,
+            y: placement.y,
+            w: placement.w,
+            d: placement.d,
+            rotation: placement.rotation ?? 0,
+            locked: placement.locked,
+            source: placement.source,
+            generated: placement.generated,
+            systemDependencies: placement.systemDependencies,
+          }));
+        await runDrainageAutofix({
+          placementsOverride: nextPlacements,
+          forcedBasins,
+        });
         setStatusMessage("Applied basin placement. Drainage regenerated.");
         return;
       }
@@ -7878,43 +8064,43 @@ export default function PerformanceAIDashboard() {
                       {showAdvancedCalibration ? (
                         <div className="mt-3">
                           <div className="grid grid-cols-2 gap-3 text-xs text-slate-600">
-                        <label className="flex flex-col gap-1">
-                          Known distance (ft)
-                          <input
-                            type="number"
-                            value={detectionScaleFeet}
-                            onChange={(event) => setDetectionScaleFeet(event.target.value)}
-                            className="rounded-lg border border-slate-200 px-2 py-1"
-                          />
-                        </label>
-                        <label className="flex flex-col gap-1">
-                          Pixel distance (px)
-                          <input
-                            type="number"
-                            value={detectionScalePixels}
-                            onChange={(event) => setDetectionScalePixels(event.target.value)}
-                            className="rounded-lg border border-slate-200 px-2 py-1"
-                          />
-                        </label>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => void applyDetectionScale()}
-                          className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                        >
-                          Apply scale
-                        </button>
-                        <p className="mt-2 text-xs text-slate-500">
-                          {detectionScaleFtPerPx
-                            ? `Calibrated (${detectionScaleSource === "mapbox" ? "Mapbox" : "Manual"}): 1 px ≈ ${detectionScaleFtPerPx.toFixed(3)} ft`
-                            : "No calibration applied. Detection sizes are approximate."}
-                        </p>
-                        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
-                          <p className="font-semibold text-slate-700">How to calibrate</p>
-                          <p className="mt-1">
-                            Pick two points in the uploaded image with a known real‑world distance, measure the pixel distance between them, then enter both values and apply.
+                            <label className="flex flex-col gap-1">
+                              Known distance (ft)
+                              <input
+                                type="number"
+                                value={detectionScaleFeet}
+                                onChange={(event) => setDetectionScaleFeet(event.target.value)}
+                                className="rounded-lg border border-slate-200 px-2 py-1"
+                              />
+                            </label>
+                            <label className="flex flex-col gap-1">
+                              Pixel distance (px)
+                              <input
+                                type="number"
+                                value={detectionScalePixels}
+                                onChange={(event) => setDetectionScalePixels(event.target.value)}
+                                className="rounded-lg border border-slate-200 px-2 py-1"
+                              />
+                            </label>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void applyDetectionScale()}
+                            className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                          >
+                            Apply scale
+                          </button>
+                          <p className="mt-2 text-xs text-slate-500">
+                            {detectionScaleFtPerPx
+                              ? `Calibrated (${detectionScaleSource === "mapbox" ? "Mapbox" : "Manual"}): 1 px ≈ ${detectionScaleFtPerPx.toFixed(3)} ft`
+                              : "No calibration applied. Detection sizes are approximate."}
                           </p>
-                        </div>
+                          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+                            <p className="font-semibold text-slate-700">How to calibrate</p>
+                            <p className="mt-1">
+                              Pick two points in the uploaded image with a known real‑world distance, measure the pixel distance between them, then enter both values and apply.
+                            </p>
+                          </div>
                         </div>
                       ) : null}
                     </div>

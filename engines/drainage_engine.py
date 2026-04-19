@@ -1235,19 +1235,10 @@ class DrainageEngine:
                 terrain_slope = (inlet_z - end_z) / run_length
                 slope = max(terrain_slope, hydraulic_resolved.min_pipe_slope)
                 if terrain_slope < hydraulic_resolved.min_pipe_slope:
-                    pipe_warnings.append(
-                        "Computed terrain slope is below minimum pipe slope; minimum concept slope used."
-                    )
-                    summary.issues.append(self._issue(
-                        code="POOR_SLOPE",
-                        severity="warning",
-                        message=f"Pipe slope below minimum between {inlet.name} and {nearest_pond.name}.",
-                        pipe_label=f"{inlet.name} TO {nearest_pond.name}",
-                        terrain_slope=round(terrain_slope, 5),
-                        min_pipe_slope=hydraulic_resolved.min_pipe_slope,
-                    ))
-                    if allow_slope_adjustment and (hydraulic_resolved.min_pipe_slope - terrain_slope) <= max_slope_adjust:
+                    slope_delta = hydraulic_resolved.min_pipe_slope - terrain_slope
+                    if allow_slope_adjustment and slope_delta <= max_slope_adjust:
                         pipe_warnings.append("Applied small elevation adjustment to meet minimum slope.")
+                        slope = hydraulic_resolved.min_pipe_slope
                         summary.issues.append(self._issue(
                             code="SLOPE_ADJUSTED",
                             severity="warning",
@@ -1256,15 +1247,27 @@ class DrainageEngine:
                             terrain_slope=round(terrain_slope, 5),
                             min_pipe_slope=hydraulic_resolved.min_pipe_slope,
                         ))
-                    elif allow_slope_adjustment:
+                    else:
+                        pipe_warnings.append(
+                            "Computed terrain slope is below minimum pipe slope; minimum concept slope used."
+                        )
                         summary.issues.append(self._issue(
-                            code="SLOPE_ADJUSTMENT_FAILED",
+                            code="POOR_SLOPE",
                             severity="warning",
-                            message=f"Pipe slope adjustment not feasible between {inlet.name} and {nearest_pond.name}.",
+                            message=f"Pipe slope below minimum between {inlet.name} and {nearest_pond.name}.",
                             pipe_label=f"{inlet.name} TO {nearest_pond.name}",
                             terrain_slope=round(terrain_slope, 5),
                             min_pipe_slope=hydraulic_resolved.min_pipe_slope,
                         ))
+                        if allow_slope_adjustment:
+                            summary.issues.append(self._issue(
+                                code="SLOPE_ADJUSTMENT_FAILED",
+                                severity="warning",
+                                message=f"Pipe slope adjustment not feasible between {inlet.name} and {nearest_pond.name}.",
+                                pipe_label=f"{inlet.name} TO {nearest_pond.name}",
+                                terrain_slope=round(terrain_slope, 5),
+                                min_pipe_slope=hydraulic_resolved.min_pipe_slope,
+                            ))
             else:
                 terrain_slope = 0.0
                 if hydraulic_resolved.min_pipe_slope > 0:
@@ -1276,6 +1279,15 @@ class DrainageEngine:
                         terrain_slope=0.0,
                         min_pipe_slope=hydraulic_resolved.min_pipe_slope,
                     ))
+                    if allow_slope_adjustment:
+                        summary.issues.append(self._issue(
+                            code="SLOPE_ADJUSTMENT_FAILED",
+                            severity="warning",
+                            message=f"Pipe slope adjustment not feasible between {inlet.name} and {nearest_pond.name}.",
+                            pipe_label=f"{inlet.name} TO {nearest_pond.name}",
+                            terrain_slope=0.0,
+                            min_pipe_slope=hydraulic_resolved.min_pipe_slope,
+                        ))
 
             diameter_in = self._choose_concept_diameter(inlet.estimated_flow_cfs or 0.0, hydraulic_resolved)
 
@@ -1508,14 +1520,26 @@ class DrainageEngine:
                 expected = max(total_edge_length / max(inlet_min_spacing, 1.0), 1.0)
                 if len(inlets) < expected * 0.55:
                     suggested = int(math.ceil(expected - len(inlets)))
-                    summary.issues.append(self._issue(
-                        code="UNDER_COLLECTION",
-                        severity="warning",
-                        message="Paved areas appear under-collected by inlets.",
+                    issue_code = "UNDER_COLLECTION"
+                    issue_severity = "warning"
+                    issue_message = "Paved areas appear under-collected by inlets."
+                    if forced_inlets and len(inlets) > 0:
+                        issue_code = "UNDER_COLLECTION_REDUCED"
+                        issue_severity = "info"
+                        issue_message = "Inlet coverage improved, but paved areas remain under-collected."
+                    issue = self._issue(
+                        code=issue_code,
+                        severity=issue_severity,
+                        message=issue_message,
                         pavement_edge_length_ft=round(total_edge_length, 2),
                         inlet_count=len(inlets),
                         suggested_additional_inlets=max(suggested, 1),
-                    ))
+                    )
+                    if len(inlets) > 0:
+                        issue.context["improvement_detected"] = True
+                        issue.context["previous_inlet_count"] = max(len(inlets) - 1, 0)
+                        issue.context["remaining_deficit"] = max(suggested, 0)
+                    summary.issues.append(issue)
 
         autofix_suggestions: List[Dict[str, Any]] = []
         if any(issue.code == "BASIN_UNREACHABLE" for issue in summary.issues):

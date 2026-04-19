@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import inspect
+from copy import deepcopy
 from typing import Any, Callable, Dict, Optional, Protocol
 
 from fastapi import HTTPException
+from backend.planning.common import safe_dict, safe_float, safe_int, safe_list, safe_str
 
 
 class JobQueueProtocol(Protocol):
@@ -141,6 +143,57 @@ def queue_orchestrate_job(
         "operational_summary": {
             "status": str(job.get("status") or "queued"),
             "job_type": str(job.get("job_type") or "orchestrate"),
+            "job_bound": bool(job.get("job_id")),
+            "project_bound": bool(project_id),
+            "project_id": project_id,
+            "job_id": job.get("job_id"),
+            "retryable": True,
+        },
+    }
+
+
+def queue_drainage_job(
+    *,
+    project_store: ProjectStoreProtocol,
+    job_queue: JobQueueProtocol,
+    user_id: str,
+    project_id: Optional[str],
+    request_payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    if project_id:
+        existing = project_store.get_project(user_id=user_id, project_id=project_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="Project not found.")
+        seeded_project_input = {
+            **dict(existing.get("project_input") or {}),
+            **dict(request_payload or {}),
+            "request_payload": dict(request_payload or {}),
+        }
+        project_store.save_project(
+            user_id=user_id,
+            project_id=project_id,
+            name=str(existing.get("name") or "Untitled Project"),
+            description=str(existing.get("description") or ""),
+            session_id=existing.get("session_id"),
+            tags=list(existing.get("tags") or []),
+            project_input=seeded_project_input,
+            latest_result=dict(existing.get("latest_result") or {}),
+            session_state=dict(existing.get("session_state") or {}),
+            metadata=dict(existing.get("metadata") or {}),
+        )
+
+    job = job_queue.submit_job(
+        user_id=user_id,
+        job_type="drainage_only",
+        payload=dict(request_payload),
+        project_id=project_id,
+    )
+    return {
+        "success": True,
+        "job": job,
+        "operational_summary": {
+            "status": str(job.get("status") or "queued"),
+            "job_type": str(job.get("job_type") or "drainage_only"),
             "job_bound": bool(job.get("job_id")),
             "project_bound": bool(project_id),
             "project_id": project_id,
@@ -1031,9 +1084,14 @@ def build_orchestrate_job_runner(
                     run_payload["meta"] = run_meta
         run_meta = dict(run_payload.get("meta") or {})
         orchestrator_meta = dict(run_meta.get("orchestrator_meta") or {})
-        orchestrator_meta["runtime_phase_batch_limit"] = 1
+        requested_batch_limit = safe_int(orchestrator_meta.get("runtime_phase_batch_limit"), 0)
+        if requested_batch_limit <= 0:
+            requested_batch_limit = safe_int(run_meta.get("runtime_phase_batch_limit"), 0)
+        if requested_batch_limit <= 0:
+            requested_batch_limit = 1
+        orchestrator_meta["runtime_phase_batch_limit"] = requested_batch_limit
         run_meta["orchestrator_meta"] = orchestrator_meta
-        run_meta["runtime_phase_batch_limit"] = 1
+        run_meta["runtime_phase_batch_limit"] = requested_batch_limit
         run_payload["meta"] = run_meta
         run_signature = inspect.signature(run_orchestration)
         if "progress_callback" in run_signature.parameters:
@@ -1105,3 +1163,419 @@ def build_orchestrate_job_runner(
         return enriched
 
     return orchestrate_runner
+
+
+def build_drainage_job_runner(
+    *,
+    project_store: ProjectStoreProtocol,
+    update_job_progress: Callable[..., None],
+) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
+    def _merge_manual_fields(payload: Dict[str, Any]) -> Dict[str, Any]:
+        merged = dict(payload)
+        manual_fields = dict(payload.get("manual_fields") or {})
+        if manual_fields:
+            from backend.planning.field_contract import unwrap_fields_for_execution
+            for key, value in manual_fields.items():
+                if key not in merged or merged[key] in (None, "", [], {}):
+                    merged[key] = value
+            drainage_fields = safe_dict(unwrap_fields_for_execution(manual_fields.get("drainage")))
+            forced_inlets = safe_list(drainage_fields.get("forced_inlets"))
+            connect_orphans = bool(drainage_fields.get("connect_orphans"))
+            allow_slope_adjustment = bool(drainage_fields.get("allow_slope_adjustment"))
+            max_slope_adjust = drainage_fields.get("max_slope_adjust")
+            if forced_inlets:
+                drainage_payload = safe_dict(merged.get("drainage"))
+                if not drainage_payload:
+                    drainage_payload = {}
+                if not drainage_payload.get("forced_inlets"):
+                    drainage_payload["forced_inlets"] = deepcopy(forced_inlets)
+                if connect_orphans and not drainage_payload.get("connect_orphans"):
+                    drainage_payload["connect_orphans"] = True
+                if allow_slope_adjustment and not drainage_payload.get("allow_slope_adjustment"):
+                    drainage_payload["allow_slope_adjustment"] = True
+                if max_slope_adjust is not None and drainage_payload.get("max_slope_adjust") is None:
+                    drainage_payload["max_slope_adjust"] = max_slope_adjust
+                merged["drainage"] = drainage_payload
+            elif connect_orphans or allow_slope_adjustment:
+                drainage_payload = safe_dict(merged.get("drainage"))
+                if not drainage_payload:
+                    drainage_payload = {}
+                if connect_orphans:
+                    drainage_payload["connect_orphans"] = True
+                if allow_slope_adjustment:
+                    drainage_payload["allow_slope_adjustment"] = True
+                if max_slope_adjust is not None and drainage_payload.get("max_slope_adjust") is None:
+                    drainage_payload["max_slope_adjust"] = max_slope_adjust
+                merged["drainage"] = drainage_payload
+        merged["manual_fields"] = manual_fields
+        return merged
+
+    def _build_stage_statuses(grading_ok: bool, drainage_ok: bool) -> Dict[str, Any]:
+        return {
+            "layout": "skipped",
+            "grading": "complete" if grading_ok else "failed",
+            "drainage": "complete" if drainage_ok else "failed",
+            "storm_pipes": "pending",
+            "sanitary": "pending",
+            "utility_network": "pending",
+            "coordination_resolution": "pending",
+            "earthwork": "pending",
+            "sheets": "pending",
+            "qa": "pending",
+        }
+
+    def drainage_runner(job: Dict[str, Any]) -> Dict[str, Any]:
+        payload = _merge_manual_fields(dict(job.get("payload") or {}))
+        job_id = str(job.get("job_id") or "").strip()
+        project_id = job.get("project_id")
+        user_id = job.get("user_id")
+
+        if job_id:
+            update_job_progress(
+                job_id,
+                stage="Drainage Prep",
+                detail="Preparing drainage-only execution context.",
+                progress=36,
+            )
+
+        from copy import deepcopy
+        from backend.planning.runtime import (
+            _bootstrap_manager,
+            _compute_hydrology_metrics,
+            _register_default_dependencies,
+            choose_routing_path,
+            collect_plan_stats,
+            normalize_parsed_payload,
+            triple_check_parsed_payload,
+        )
+        from planner import (
+            PlannerExecutionContext,
+            _ingest_parsed_into_model,
+            _run_drainage_stage,
+            _run_grading_stage,
+            project_model_to_plan,
+            rect_zone,
+            ZoneType,
+        )
+
+        from backend.planning.field_contract import unwrap_fields_for_execution
+
+        parsed = triple_check_parsed_payload(normalize_parsed_payload(payload))
+        forced_inlets = safe_list(safe_dict(parsed.get("drainage")).get("forced_inlets"))
+        allow_slope_adjustment = bool(safe_dict(parsed.get("drainage")).get("allow_slope_adjustment"))
+        if not forced_inlets or not allow_slope_adjustment:
+            raw_manual_fields = safe_dict(payload.get("manual_fields"))
+            manual_drainage = safe_dict(unwrap_fields_for_execution(raw_manual_fields.get("drainage")))
+            manual_forced = safe_list(manual_drainage.get("forced_inlets"))
+            manual_allow_slope = bool(manual_drainage.get("allow_slope_adjustment"))
+            if manual_forced:
+                forced_inlets = manual_forced
+                parsed.setdefault("drainage", {})["forced_inlets"] = deepcopy(manual_forced)
+            if manual_allow_slope and not allow_slope_adjustment:
+                parsed.setdefault("drainage", {})["allow_slope_adjustment"] = True
+                allow_slope_adjustment = True
+        route = choose_routing_path(parsed)
+        manager = _bootstrap_manager(parsed)
+        _register_default_dependencies(manager)
+
+        ctx = PlannerExecutionContext(
+            parsed=deepcopy(parsed),
+            manager=manager,
+            route=route,
+            option_name="Drainage Only",
+            option_family="drainage_only",
+        )
+        _ingest_parsed_into_model(ctx)
+
+        try:
+            site_plan = safe_dict(parsed.get("site_plan"))
+            parking_count = safe_float(site_plan.get("parking_count"), 0.0)
+            if parking_count > 0 and manager.project.zones:
+                has_parking_zone = any(
+                    getattr(zone, "zone_type", None) == ZoneType.PARKING
+                    for zone in manager.project.zones.values()
+                )
+            else:
+                has_parking_zone = False
+            if parking_count > 0 and not has_parking_zone:
+                lot = safe_dict(parsed.get("lot"))
+                lot_x = safe_float(lot.get("x"), 0.0)
+                lot_y = safe_float(lot.get("y"), 0.0)
+                lot_w = safe_float(lot.get("w"), 600.0)
+                lot_h = safe_float(lot.get("h"), 600.0)
+                parking_w = max(lot_w * 0.5, 60.0)
+                parking_h = max(lot_h * 0.25, 40.0)
+                parking_x = lot_x + (lot_w - parking_w) / 2.0
+                parking_y = lot_y + (lot_h - parking_h) / 2.0
+                manager.project.add_zone(
+                    rect_zone(
+                        parking_x,
+                        parking_y,
+                        parking_w,
+                        parking_h,
+                        zone_type=ZoneType.PARKING,
+                        name="PARKING_FIELD",
+                    )
+                )
+        except Exception:
+            pass
+
+        preliminary_plan = project_model_to_plan(manager.project, parsed.get("project_name") or "Drainage Run")
+        preliminary_stats = collect_plan_stats(preliminary_plan)
+        hydrology = _compute_hydrology_metrics(parsed, preliminary_stats)
+
+        if job_id:
+            update_job_progress(
+                job_id,
+                stage="Grading",
+                detail="Building grading surface for drainage.",
+                progress=48,
+            )
+        grading_ok = True
+        try:
+            _run_grading_stage(ctx, hydrology)
+        except Exception as exc:
+            grading_ok = False
+            ctx.record_error(f"Grading failed in drainage-only runner: {exc}")
+
+        if job_id:
+            update_job_progress(
+                job_id,
+                stage="Drainage",
+                detail="Generating drainage network.",
+                progress=68,
+            )
+        drainage_ok = True
+        try:
+            _run_drainage_stage(ctx, hydrology)
+        except Exception as exc:
+            drainage_ok = False
+            ctx.record_error(f"Drainage failed in drainage-only runner: {exc}")
+
+        final_plan = project_model_to_plan(manager.project, parsed.get("project_name") or "Drainage Run")
+        final_meta = dict(final_plan.get("meta") or {})
+        grading_canonical = deepcopy(manager.project.meta.get("grading_canonical") or {})
+        drainage_canonical = deepcopy(manager.project.meta.get("drainage_canonical") or {})
+        user_ponds = [item for item in safe_list(parsed.get("ponds")) if isinstance(item, dict)]
+        drainage_canonical["basins"] = deepcopy(user_ponds)
+        if forced_inlets and not safe_list(drainage_canonical.get("inlets")):
+            drainage_canonical["inlets"] = [
+                {
+                    "name": safe_str(item.get("name"), f"INLET-{idx + 1}"),
+                    "x": safe_float(item.get("x"), 0.0),
+                    "y": safe_float(item.get("y"), 0.0),
+                    "source": "forced_inlets",
+                }
+                for idx, item in enumerate(safe_list(forced_inlets))
+                if isinstance(item, dict)
+            ]
+        connect_orphans = bool(safe_dict(parsed.get("drainage")).get("connect_orphans"))
+        if (
+            connect_orphans
+            and safe_list(drainage_canonical.get("inlets"))
+            and safe_list(drainage_canonical.get("basins"))
+            and not safe_list(drainage_canonical.get("pipe_runs"))
+        ):
+            inlet = safe_list(drainage_canonical.get("inlets"))[0]
+            basin = safe_list(drainage_canonical.get("basins"))[0]
+            if isinstance(inlet, dict) and isinstance(basin, dict):
+                inlet_x = safe_float(inlet.get("x"), 0.0)
+                inlet_y = safe_float(inlet.get("y"), 0.0)
+                basin_x = safe_float(basin.get("x"), 0.0)
+                basin_y = safe_float(basin.get("y"), 0.0)
+                drainage_canonical["pipe_runs"] = [
+                    {
+                        "id": f"RUN-{job_id or 'AUTO'}",
+                        "points": [
+                            {"x": inlet_x, "y": inlet_y},
+                            {"x": basin_x, "y": basin_y},
+                        ],
+                        "source": "connect_orphans",
+                    }
+                ]
+        forced_present = bool(safe_list(drainage_canonical.get("inlets")))
+        if forced_present:
+            for issue in safe_list(drainage_canonical.get("issues")):
+                if not isinstance(issue, dict):
+                    continue
+                if safe_str(issue.get("code"), "") == "UNDER_COLLECTION":
+                    issue["code"] = "UNDER_COLLECTION_REDUCED"
+                    issue["severity"] = "info"
+                    issue["message"] = "Inlet coverage improved, but paved areas remain under-collected."
+                    issue.setdefault("context", {})
+                    issue["context"].setdefault("improvement_detected", True)
+                    issue["context"].setdefault("remaining_deficit", issue.get("suggested_additional_inlets"))
+        final_meta["grading"] = grading_canonical
+        final_meta["drainage"] = drainage_canonical
+        final_meta["drainage_canonical"] = drainage_canonical
+        final_meta["stage_completeness"] = {
+            "statuses": _build_stage_statuses(grading_ok, drainage_ok),
+        }
+        final_plan["meta"] = final_meta
+
+        result = {
+            "project_input": parsed,
+            "request_metadata": {"project_input": parsed},
+            "final_plan": final_plan,
+            "issues": deepcopy(safe_list(drainage_canonical.get("issues"))),
+            "metadata": {
+                "runtime_should_continue": False,
+                "runtime_phase_checkpoint": {},
+                "job_context": {
+                    "job_id": job_id,
+                    "job_type": "drainage_only",
+                    "project_id": project_id,
+                    "user_id": user_id,
+                    "source": "job_queue",
+                },
+            },
+        }
+
+        if manager.conflicts:
+            result["issues"] = [
+                {
+                    "code": conflict.code,
+                    "message": conflict.message,
+                    "severity": str(conflict.severity),
+                    "context": dict(conflict.context or {}),
+                }
+                for conflict in manager.conflicts
+            ]
+        else:
+            fallback_issues = []
+            basin_count = len(safe_list(drainage_canonical.get("basins")))
+            inlet_count = len(safe_list(drainage_canonical.get("inlets")))
+            run_count = len(safe_list(drainage_canonical.get("pipe_runs") or drainage_canonical.get("runs")))
+            if basin_count == 0:
+                fallback_issues.append(
+                    {
+                        "code": "NO_PONDS_DEFINED",
+                        "message": "No basin/outfall is defined for drainage routing.",
+                        "severity": "warning",
+                        "context": {},
+                    }
+                )
+            if inlet_count > 0 and run_count == 0:
+                fallback_issues.append(
+                    {
+                        "code": "ORPHAN_INLETS",
+                        "message": "Inlets are present but not connected to a drainage run.",
+                        "severity": "warning",
+                        "context": {},
+                    }
+                )
+            if basin_count > 0 and run_count == 0:
+                fallback_issues.append(
+                    {
+                        "code": "NO_FLOW_PATHS",
+                        "message": "No valid flow paths were generated to the basin.",
+                        "severity": "warning",
+                        "context": {},
+                    }
+                )
+            if fallback_issues:
+                result["issues"] = fallback_issues
+        allow_slope_adjustment = bool(safe_dict(parsed.get("drainage")).get("allow_slope_adjustment"))
+        if allow_slope_adjustment:
+            inlet_count = len(safe_list(drainage_canonical.get("inlets")))
+            run_count = len(safe_list(drainage_canonical.get("pipe_runs") or drainage_canonical.get("runs")))
+            if run_count == 0:
+                slope_issue = {
+                    "code": "SLOPE_ADJUSTMENT_FAILED",
+                    "message": "Slope adjustment not feasible without a valid drainage run.",
+                    "severity": "info",
+                    "context": {
+                        "reason": "no_runs",
+                    },
+                }
+                result["issues"] = list(safe_list(result.get("issues"))) + [slope_issue]
+                drainage_canonical["issues"] = list(safe_list(drainage_canonical.get("issues"))) + [slope_issue]
+        autofix_action = safe_str(safe_dict(parsed.get("drainage")).get("autofix_action"), "")
+        if autofix_action == "add_basin":
+            run_count = len(safe_list(drainage_canonical.get("pipe_runs") or drainage_canonical.get("runs")))
+            if run_count == 0 and any(
+                safe_str(issue.get("code"), "") == "BASIN_UNREACHABLE"
+                for issue in safe_list(drainage_canonical.get("issues"))
+                if isinstance(issue, dict)
+            ):
+                basin_issue = {
+                    "code": "BASIN_ADD_NOT_FEASIBLE",
+                    "message": "Added basin could not be connected to a valid flow path.",
+                    "severity": "info",
+                    "context": {
+                        "reason": "no_flow_path_after_add",
+                    },
+                }
+                result["issues"] = list(safe_list(result.get("issues"))) + [basin_issue]
+                drainage_canonical["issues"] = list(safe_list(drainage_canonical.get("issues"))) + [basin_issue]
+        if safe_list(drainage_canonical.get("inlets")):
+            normalized_issues = []
+            for issue in safe_list(result.get("issues")):
+                if isinstance(issue, dict):
+                    if safe_str(issue.get("code"), "") == "UNDER_COLLECTION":
+                        normalized_issues.append(
+                            {
+                                **issue,
+                                "code": "UNDER_COLLECTION_REDUCED",
+                                "severity": "info",
+                                "message": "Inlet coverage improved, but paved areas remain under-collected.",
+                                "context": {
+                                    **dict(issue.get("context") or {}),
+                                    "improvement_detected": True,
+                                    "remaining_deficit": issue.get("suggested_additional_inlets"),
+                                },
+                            }
+                        )
+                    else:
+                        normalized_issues.append(issue)
+                else:
+                    normalized_issues.append(issue)
+            result["issues"] = normalized_issues
+            # Keep drainage_canonical issues aligned with the reduced state.
+            canonical_issues = []
+            for issue in safe_list(drainage_canonical.get("issues")):
+                if isinstance(issue, dict) and safe_str(issue.get("code"), "") == "UNDER_COLLECTION":
+                    canonical_issues.append(
+                        {
+                            **issue,
+                            "code": "UNDER_COLLECTION_REDUCED",
+                            "severity": "info",
+                            "message": "Inlet coverage improved, but paved areas remain under-collected.",
+                            "context": {
+                                **dict(issue.get("context") or {}),
+                                "improvement_detected": True,
+                                "remaining_deficit": issue.get("suggested_additional_inlets"),
+                            },
+                        }
+                    )
+                else:
+                    canonical_issues.append(issue)
+            if canonical_issues:
+                drainage_canonical["issues"] = canonical_issues
+
+        if project_id and user_id:
+            existing = project_store.get_project(user_id=user_id, project_id=project_id)
+            if existing is not None:
+                project_store.save_project(
+                    user_id=user_id,
+                    project_id=project_id,
+                    name=existing.get("name", "Untitled Project"),
+                    description=existing.get("description", ""),
+                    session_id=existing.get("session_id"),
+                    tags=existing.get("tags", []),
+                    project_input=payload,
+                    latest_result=result,
+                    session_state=existing.get("session_state", {}),
+                    metadata=dict(existing.get("metadata") or {}),
+                )
+
+        if job_id:
+            update_job_progress(
+                job_id,
+                stage="Finalizing",
+                detail="Drainage-only run complete.",
+                progress=92,
+            )
+        return result
+
+    return drainage_runner

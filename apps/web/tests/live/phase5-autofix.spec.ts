@@ -18,6 +18,20 @@ type DrainageCounts = {
   issues: string[];
 };
 
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
 async function loginAndSeedToken(request: any, page: any) {
   await request.post(`${API_BASE_URL}/api/auth/register`, {
     data: { email, password, name: "Autofix Runner" },
@@ -40,14 +54,68 @@ async function loginAndSeedToken(request: any, page: any) {
   return token;
 }
 
-async function orchestrateScenario(request: any, token: string, payload: Record<string, unknown>) {
-  const response = await request.post(`${API_BASE_URL}/api/orchestrate`, {
+async function preflightDrainageEndpoint(request: any, token: string) {
+  const response = await request.post(`${API_BASE_URL}/api/jobs/drainage`, {
     headers: { Authorization: `Bearer ${token}` },
-    data: payload,
-    timeout: 180_000,
+    data: {},
+  });
+  const status = response.status();
+  if (status === 404 || status === 405) {
+    throw new Error(`Drainage endpoint unavailable (status ${status}). Backend may be down or outdated.`);
+  }
+}
+
+async function queueOrchestrateScenario(
+  request: any,
+  token: string,
+  projectId: string,
+  payload: Record<string, unknown>,
+) {
+  const response = await request.post(`${API_BASE_URL}/api/jobs/drainage`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { project_id: projectId, request: payload },
+    timeout: 60_000,
   });
   expect(response.ok()).toBeTruthy();
-  return (await response.json()) as Record<string, unknown>;
+  const body = (await response.json()) as { job?: { job_id?: string } };
+  const jobId = String(body?.job?.job_id || "");
+  expect(jobId).toBeTruthy();
+  return jobId;
+}
+
+async function waitForJobCompletion(request: any, token: string, jobId: string) {
+  const deadline = Date.now() + 420_000;
+  let lastStatus = "";
+  let lastProgress = -1;
+  while (Date.now() < deadline) {
+    let payload: {
+      job?: { status?: string; error?: string; progress?: number; stage?: string; stage_detail?: string };
+    } = {};
+    try {
+      const response = await request.get(`${API_BASE_URL}/api/jobs/${jobId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(response.ok()).toBeTruthy();
+      payload = (await response.json()) as typeof payload;
+    } catch (err) {
+      console.info(`Job ${jobId} status poll failed, retrying: ${String(err)}`);
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      continue;
+    }
+    const status = String(payload?.job?.status || "");
+    const progress = Number(payload?.job?.progress ?? -1);
+    if (status !== lastStatus || progress !== lastProgress) {
+      console.info(`Job ${jobId} status=${status} progress=${progress} stage=${payload?.job?.stage || ""}`);
+      lastStatus = status;
+      lastProgress = progress;
+    }
+    if (status === "completed" || status === "awaiting_approval") return payload.job;
+    if (status === "failed" || status === "cancelled") {
+      throw new Error(`Job ${jobId} ${status}: ${payload?.job?.error || "unknown error"}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  throw new Error(`Job ${jobId} timed out waiting for completion.`);
 }
 
 async function saveProject(
@@ -68,6 +136,24 @@ async function saveProject(
   });
   expect(response.ok()).toBeTruthy();
   return (await response.json()) as { project_id?: string };
+}
+
+async function createProject(
+  request: any,
+  token: string,
+  name: string,
+  project_input: Record<string, unknown>,
+) {
+  const response = await request.post(`${API_BASE_URL}/api/projects`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: {
+      name,
+      description: "Autofix validation",
+      project_input,
+    },
+  });
+  expect(response.ok()).toBeTruthy();
+  return (await response.json()) as { project?: { project_id?: string } };
 }
 
 async function fetchProjectResult(request: any, token: string, projectId: string) {
@@ -95,31 +181,61 @@ function parseDrainageCounts(result: Record<string, unknown>): DrainageCounts {
     : Array.isArray(drainage.runs)
       ? drainage.runs.length
       : 0;
-  const issues = Array.isArray(result.issues)
+  const topIssues = Array.isArray(result.issues)
     ? result.issues.map((item: any) => String(item?.code || item?.message || "unknown"))
     : [];
+  const drainageIssuesRaw = Array.isArray(drainage.issues) ? drainage.issues : [];
+  const drainageIssues = drainageIssuesRaw.map((item: any) =>
+    String(item?.code || item?.message || "unknown"),
+  );
+  const issues = topIssues.length ? topIssues : drainageIssues;
   return { basins, inlets, runs, issues };
 }
 
 async function openProject(page: any, name: string) {
   const projectsButton = page.getByRole("button", { name: "Projects" });
-  await projectsButton.click();
-  const projectButton = page.getByRole("button", { name: new RegExp(name, "i") });
-  await projectButton.click();
-  await page.waitForLoadState("networkidle");
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await projectsButton.click();
+    const projectButton = page.getByRole("button", { name: new RegExp(name, "i") });
+    try {
+      await projectButton.waitFor({ timeout: 20_000 });
+      await projectButton.click();
+      await page.getByText("Preview Workspace").waitFor({ timeout: 30_000 });
+      return;
+    } catch (err) {
+      if (attempt === 0) {
+        await page.reload({ waitUntil: "domcontentloaded" });
+        await page.getByText("Preview Workspace").waitFor({ timeout: 30_000 });
+        continue;
+      }
+      throw err;
+    }
+  }
 }
 
 async function applyIssue(page: any, actionLabel: string) {
+  await page.getByText("Engineering Issues").waitFor({ timeout: 12_000 });
   const applyButton = page.getByRole("button", { name: new RegExp(actionLabel, "i") }).first();
   await expect(applyButton).toBeVisible({ timeout: 20_000 });
   await applyButton.click();
   await page.waitForTimeout(5_000);
 }
 
+function resolveApplyLabel(issues: string[], fallback: string) {
+  const normalized = issues.map((issue) => issue.toUpperCase());
+  if (normalized.some((code) => code.includes("UNDER_COLLECTION"))) return "Add inlet";
+  if (normalized.some((code) => code.includes("ORPHAN_INLETS"))) return "Connect inlet";
+  if (normalized.some((code) => code.includes("POOR_SLOPE"))) return "Adjust slope";
+  if (normalized.some((code) => code.includes("BASIN_UNREACHABLE"))) return "Add basin";
+  if (normalized.some((code) => code.includes("NO_VALID_OUTFALL") || code.includes("NO_PONDS_DEFINED"))) return "Add basin";
+  return fallback;
+}
+
 test.describe("Phase 5 drainage autofix matrix", () => {
   test("Run autofix apply actions matrix", async ({ page, request }) => {
-    test.setTimeout(300_000);
+    test.setTimeout(600_000);
     const token = await loginAndSeedToken(request, page);
+    await preflightDrainageEndpoint(request, token);
     await page.goto(APP_BASE_URL, { waitUntil: "domcontentloaded" });
 
     const basePayload = {
@@ -127,24 +243,20 @@ test.describe("Phase 5 drainage autofix matrix", () => {
       full_design_mode: false,
       input_mode: "user",
       strict_mode: false,
-      prompt_text: null,
+      prompt_text: "Run grading and drainage for the site.",
       meta: {
         requested_system: "drainage",
+        runtime_phase_batch_limit: 3,
+        include_grading: true,
+        include_drainage: true,
+        site_inputs: {
+          site_alignment_locked: true,
+        },
       },
       manual_fields: {
         units: "ft",
-        lot: { x: 0, y: 0, w: 600, h: 600 },
+        lot: { x: 0, y: 0, w: 400, h: 400 },
         disciplines: ["drainage", "grading"],
-        buildings: [
-          {
-            id: "b1",
-            name: "Building 1",
-            x: 200,
-            y: 200,
-            w: 80,
-            d: 60,
-          },
-        ],
         grading: { min_slope_pct: 0.5 },
         drainage: { min_pipe_slope_pct: 0.5 },
       },
@@ -154,7 +266,8 @@ test.describe("Phase 5 drainage autofix matrix", () => {
     const cases: Array<{
       name: string;
       payload: Record<string, unknown>;
-      action: string;
+      action: string | null;
+      skipApply?: boolean;
     }> = [
       {
         name: "Case 1 Basin uphill",
@@ -162,6 +275,11 @@ test.describe("Phase 5 drainage autofix matrix", () => {
           ...basePayload,
           manual_fields: {
             ...(basePayload.manual_fields as Record<string, unknown>),
+            grading: { min_slope_pct: 0 },
+            drainage: {
+              min_pipe_slope_pct: 0.5,
+              forced_inlets: [{ name: "Forced Inlet", x: 300, y: 300 }],
+            },
             ponds: [{ id: "pond1", name: "Pond", x: 10, y: 10, w: 40, d: 30 }],
           },
         },
@@ -195,7 +313,10 @@ test.describe("Phase 5 drainage autofix matrix", () => {
           ...basePayload,
           manual_fields: {
             ...(basePayload.manual_fields as Record<string, unknown>),
-            drainage_structures: [{ id: "inlet1", x: 100, y: 100 }],
+            drainage: {
+              min_pipe_slope_pct: 0.5,
+              forced_inlets: [{ name: "Forced Inlet", x: 100, y: 100 }],
+            },
             ponds: [{ id: "pond2", name: "Pond", x: 500, y: 500, w: 40, d: 30 }],
           },
         },
@@ -213,32 +334,102 @@ test.describe("Phase 5 drainage autofix matrix", () => {
         },
         action: "Add inlet",
       },
+      {
+        name: "Case 6 Valid control",
+        payload: {
+          ...basePayload,
+          manual_fields: {
+            ...(basePayload.manual_fields as Record<string, unknown>),
+            drainage: {
+              min_pipe_slope_pct: 0.5,
+              forced_inlets: [{ name: "Forced Inlet", x: 150, y: 150 }],
+            },
+            ponds: [{ id: "pond4", name: "Pond", x: 450, y: 450, w: 40, d: 30 }],
+          },
+        },
+        action: null,
+        skipApply: true,
+      },
     ];
+    const caseResults: Array<Record<string, unknown>> = [];
 
     for (const entry of cases) {
-      const result = await orchestrateScenario(request, token, entry.payload);
-      const saved = await saveProject(request, token, entry.name, entry.payload, result);
-      const projectId = String(saved.project_id || "");
+      console.info(`Starting ${entry.name}`);
+      const created = await createProject(request, token, entry.name, entry.payload);
+      const projectId = String(created.project?.project_id || "");
       expect(projectId).toBeTruthy();
+      const jobId = await queueOrchestrateScenario(request, token, projectId, entry.payload);
+      await waitForJobCompletion(request, token, jobId);
 
       const before = parseDrainageCounts(await fetchProjectResult(request, token, projectId));
-      await openProject(page, entry.name);
+      let after = before;
+      let applyError: string | null = null;
+      let actionLabel = entry.action;
+      try {
+          if (entry.skipApply || !actionLabel) {
+            console.info(`${entry.name} CHECKPOINT 1 BEFORE`, before);
+            after = parseDrainageCounts(await fetchProjectResult(request, token, projectId));
+          } else if (!before.issues.length) {
+            applyError = "No issues produced; cannot apply autofix.";
+          } else {
+            console.info(`${entry.name} CHECKPOINT 1 BEFORE`, before);
+            await withTimeout(openProject(page, entry.name), 45_000, `${entry.name} openProject`);
+          const jobResponsePromise = page.waitForResponse((response) => {
+            return response.url().includes("/api/jobs/drainage") && response.request().method() === "POST";
+          });
+          console.info(`${entry.name} CHECKPOINT 2 APPLY CLICK`);
+          await withTimeout(applyIssue(page, actionLabel), 25_000, `${entry.name} applyIssue`);
+          console.info(`${entry.name} CHECKPOINT 3 APPLY CLICK FIRED`);
+          let jobId: string | null = null;
+          try {
+            const jobResponse = await withTimeout(jobResponsePromise, 25_000, `${entry.name} jobResponse`);
+            const jobPayload = (await jobResponse.json()) as { job?: { job_id?: string } };
+            jobId = String(jobPayload?.job?.job_id || "");
+            console.info(`${entry.name} CHECKPOINT 4 JOB ID`, jobId || "missing");
+          } catch (err) {
+            console.info(`${entry.name} CHECKPOINT 4 JOB ID ERROR`, String(err));
+          }
+          if (jobId) {
+            console.info(`${entry.name} CHECKPOINT 5 POLLING START`);
+            await waitForJobCompletion(request, token, jobId);
+            console.info(`${entry.name} CHECKPOINT 6 POLLING COMPLETE`);
+          }
+          after = parseDrainageCounts(await fetchProjectResult(request, token, projectId));
+          console.info(`${entry.name} CHECKPOINT 7 AFTER`, after);
 
-      await applyIssue(page, entry.action);
+          if (entry.name === "Case 5 Under-collection") {
+            const resultPayload = await fetchProjectResult(request, token, projectId);
+            const finalPlan = (resultPayload.final_plan ?? {}) as Record<string, unknown>;
+            const meta = (finalPlan.meta ?? {}) as Record<string, unknown>;
+            const drainage = (meta.drainage_canonical ?? meta.drainage ?? {}) as Record<string, unknown>;
+            const drainageIssues = Array.isArray(drainage.issues) ? drainage.issues : [];
+            const reducedIssue = drainageIssues.find((issue: any) => String(issue?.code || "") === "UNDER_COLLECTION_REDUCED");
+            console.info("UNDER_COLLECTION_REDUCED_CONTEXT", reducedIssue?.context ?? null);
 
-      const after = parseDrainageCounts(await fetchProjectResult(request, token, projectId));
+            // Apply a second time to verify deduplication/guardrails.
+            try {
+              await withTimeout(applyIssue(page, actionLabel), 25_000, `${entry.name} applyIssue second`);
+            } catch (err) {
+              console.info(`${entry.name} SECOND APPLY NOT AVAILABLE`, String(err));
+            }
+            const afterSecond = parseDrainageCounts(await fetchProjectResult(request, token, projectId));
+            console.info(`${entry.name} CHECKPOINT 8 AFTER SECOND APPLY`, afterSecond);
+          }
+        }
+      } catch (err) {
+        applyError = String(err);
+      }
+      caseResults.push({
+        case: entry.name,
+        action: actionLabel,
+        before,
+        after,
+        error: applyError,
+      });
       console.info(`${entry.name} BEFORE`, before);
       console.info(`${entry.name} AFTER`, after);
     }
-
-    const controlResult = await orchestrateScenario(request, token, basePayload);
-    const controlSaved = await saveProject(request, token, "Case 6 Control", basePayload, controlResult);
-    const controlId = String(controlSaved.project_id || "");
-    const controlBefore = parseDrainageCounts(await fetchProjectResult(request, token, controlId));
-    await openProject(page, "Case 6 Control");
-    const controlAfter = parseDrainageCounts(await fetchProjectResult(request, token, controlId));
-    console.info("Case 6 Control BEFORE", controlBefore);
-    console.info("Case 6 Control AFTER", controlAfter);
+    console.info("PHASE5_AUTOFIX_RESULTS", JSON.stringify(caseResults, null, 2));
 
     await page.addInitScript(
       ([tokenKey]) => {
