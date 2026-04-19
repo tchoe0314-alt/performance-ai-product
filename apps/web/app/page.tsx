@@ -1628,11 +1628,13 @@ export default function PerformanceAIDashboard() {
     const width = parsePositiveNumber(lotWidth) ?? 0;
     const height = parsePositiveNumber(lotHeight) ?? 0;
     if (!width || !height) {
-      const manualLot =
+      const manualLotRaw =
         currentProject?.project_input &&
         typeof currentProject.project_input === "object" &&
-        (currentProject.project_input as { manual_fields?: { lot?: { x?: number; y?: number; w?: number; h?: number } } })
+        (currentProject.project_input as { manual_fields?: { lot?: { x?: number; y?: number; w?: number; h?: number } | false } })
           .manual_fields?.lot;
+      const manualLot =
+        manualLotRaw && typeof manualLotRaw === "object" ? manualLotRaw : null;
       if (manualLot?.w && manualLot?.h) {
         return {
           x: typeof manualLot.x === "number" ? manualLot.x : 0,
