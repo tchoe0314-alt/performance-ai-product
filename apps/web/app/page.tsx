@@ -6155,12 +6155,16 @@ export default function PerformanceAIDashboard() {
 
   const pickBestLowPoint = useCallback(() => {
     if (!drainageLowPoints.length) return null;
-    return drainageLowPoints.reduce((best, current) => {
-      if (!best) return current;
+    let best = drainageLowPoints[0];
+    for (let i = 1; i < drainageLowPoints.length; i += 1) {
+      const current = drainageLowPoints[i];
       const bestZ = Number.isFinite(best.z) ? best.z : Number.POSITIVE_INFINITY;
       const currentZ = Number.isFinite(current.z) ? current.z : Number.POSITIVE_INFINITY;
-      return currentZ < bestZ ? current : best;
-    }, null as { x: number; y: number; z?: number } | null);
+      if (currentZ < bestZ) {
+        best = current;
+      }
+    }
+    return best ?? null;
   }, [drainageLowPoints]);
 
   const drainageIssueApplyLabel = useCallback(
