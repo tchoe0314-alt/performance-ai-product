@@ -1475,8 +1475,10 @@ def run_grading_stage(
             max_road_grade=max(0.02, max_road_grade_pct / 100.0) if max_road_grade_pct > 0 else 0.10,
             max_walk_grade=max(0.01, max_ada_cross_slope_pct / 100.0) if max_ada_cross_slope_pct > 0 else 0.05,
         )
-        existing_surface = build_existing_surface(execution_payload)
-        project.meta["existing_surface"] = existing_surface
+        existing_surface = project.meta.get("existing_surface")
+        if existing_surface is None:
+            existing_surface = build_existing_surface(execution_payload)
+            project.meta["existing_surface"] = existing_surface
 
         engine = GradingEngine(existing_surface)
         grade_elements = build_grade_elements(project, execution_payload)

@@ -89,6 +89,7 @@ class Inlet:
     basin_sink: Optional[Tuple[int, int]] = None
     target_name: Optional[str] = None
     tributary_basin_name: Optional[str] = None
+    is_forced: bool = False
 
 
 @dataclass
@@ -105,6 +106,7 @@ class PipeRun:
     hydraulic_basis: str = "geometry_only"
     warnings: List[str] = field(default_factory=list)
     inlet_name: Optional[str] = None
+    slope_adjusted: bool = False
 
 
 @dataclass
@@ -806,6 +808,7 @@ class DrainageEngine:
         corner_snap_buffer: float = 8.0,
         segment_spacing: float = 120.0,
         segment_max_inlets: int = 4,
+        forced_inlets: Optional[List[Dict[str, Any]]] = None,
     ) -> List[Inlet]:
         lows = self.find_low_points(include_accumulation=use_flow_accumulation, min_slope=min_slope)
         basin_by_sink = {tuple(record.sink): record for record in (basin_records or []) if getattr(record, "sink", None)}
@@ -838,6 +841,28 @@ class DrainageEngine:
 
         lows = sorted(lows, key=inlet_priority)
         inlets: List[Inlet] = []
+        for rec in (forced_inlets or []):
+            raw_x = rec.get("x")
+            raw_y = rec.get("y")
+            if raw_x is None or raw_y is None:
+                continue
+            try:
+                fx = float(raw_x)
+                fy = float(raw_y)
+            except Exception:
+                continue
+            z = self._cell_z(*self._normalize_xy(fx, fy))
+            inlet = Inlet(
+                name=safe_str(rec.get("name"), f"INLET-{len(inlets)+1}"),
+                x=fx,
+                y=fy,
+                z=z,
+                contributing_cells=int(rec.get("contributing_cells") or 0),
+                contributing_area_sf=float(rec.get("contributing_area_sf") or 0.0),
+                estimated_flow_cfs=float(rec.get("estimated_flow_cfs") or 0.0) if rec.get("estimated_flow_cfs") is not None else None,
+                is_forced=True,
+            )
+            inlets.append(inlet)
 
         segment_positions: Dict[Tuple[str, int], List[float]] = {}
         segment_limits: Dict[Tuple[str, int], float] = {}
@@ -1119,6 +1144,9 @@ class DrainageEngine:
         max_steps: int = 500,
         mode: str = ASSISTED_MODE,
         hydraulic: Optional[HydraulicInputs] = None,
+        connect_orphans: bool = False,
+        allow_slope_adjustment: bool = False,
+        max_slope_adjust: float = 0.001,
     ) -> Tuple[List[PipeRun], DrainageDesignSummary]:
         summary = DrainageDesignSummary(
             mode=mode,
@@ -1178,6 +1206,18 @@ class DrainageEngine:
             slope = None
             pipe_warnings: List[str] = []
 
+            if not reached and connect_orphans:
+                path = [(inlet.x, inlet.y), (nearest_pond.x, nearest_pond.y)]
+                reached = True
+                target_reason = nearest_pond.name
+                pipe_warnings.append("Connected inlet to basin using straight-line fallback path.")
+                summary.issues.append(self._issue(
+                    code="ORPHAN_INLET_CONNECTED",
+                    severity="warning",
+                    message=f"Inlet {inlet.name} was connected using a fallback path.",
+                    pipe_label=f"{inlet.name} TO {nearest_pond.name}",
+                ))
+
             if not reached:
                 pipe_warnings.append(
                     f"Flow path did not reach basin {nearest_pond.name}; ended at {target_reason}."
@@ -1206,9 +1246,43 @@ class DrainageEngine:
                         terrain_slope=round(terrain_slope, 5),
                         min_pipe_slope=hydraulic_resolved.min_pipe_slope,
                     ))
+                    if allow_slope_adjustment and (hydraulic_resolved.min_pipe_slope - terrain_slope) <= max_slope_adjust:
+                        pipe_warnings.append("Applied small elevation adjustment to meet minimum slope.")
+                        summary.issues.append(self._issue(
+                            code="SLOPE_ADJUSTED",
+                            severity="warning",
+                            message=f"Pipe slope adjusted to meet minimum between {inlet.name} and {nearest_pond.name}.",
+                            pipe_label=f"{inlet.name} TO {nearest_pond.name}",
+                            terrain_slope=round(terrain_slope, 5),
+                            min_pipe_slope=hydraulic_resolved.min_pipe_slope,
+                        ))
+                    elif allow_slope_adjustment:
+                        summary.issues.append(self._issue(
+                            code="SLOPE_ADJUSTMENT_FAILED",
+                            severity="warning",
+                            message=f"Pipe slope adjustment not feasible between {inlet.name} and {nearest_pond.name}.",
+                            pipe_label=f"{inlet.name} TO {nearest_pond.name}",
+                            terrain_slope=round(terrain_slope, 5),
+                            min_pipe_slope=hydraulic_resolved.min_pipe_slope,
+                        ))
+            else:
+                terrain_slope = 0.0
+                if hydraulic_resolved.min_pipe_slope > 0:
+                    summary.issues.append(self._issue(
+                        code="POOR_SLOPE",
+                        severity="warning",
+                        message=f"Pipe slope below minimum between {inlet.name} and {nearest_pond.name}.",
+                        pipe_label=f"{inlet.name} TO {nearest_pond.name}",
+                        terrain_slope=0.0,
+                        min_pipe_slope=hydraulic_resolved.min_pipe_slope,
+                    ))
 
             diameter_in = self._choose_concept_diameter(inlet.estimated_flow_cfs or 0.0, hydraulic_resolved)
 
+            slope_adjusted = False
+            if allow_slope_adjustment and terrain_slope is not None:
+                if (hydraulic_resolved.min_pipe_slope - terrain_slope) <= max_slope_adjust:
+                    slope_adjusted = True
             run = PipeRun(
                 start=(inlet.x, inlet.y),
                 end=(last_x, last_y),
@@ -1222,6 +1296,7 @@ class DrainageEngine:
                 hydraulic_basis="rational_method_concept" if inlet.estimated_flow_cfs is not None else "geometry_only",
                 warnings=[*inlet_record.warnings, *pipe_warnings],
                 inlet_name=inlet.name,
+                slope_adjusted=slope_adjusted,
             )
             runs.append(run)
 
@@ -1259,6 +1334,10 @@ class DrainageEngine:
         sample_step: int = 2,
         pavement_polygons: Optional[List[List[Tuple[float, float]]]] = None,
         collector_lines: Optional[List[List[Tuple[float, float]]]] = None,
+        forced_inlets: Optional[List[Dict[str, Any]]] = None,
+        connect_orphans: bool = False,
+        allow_slope_adjustment: bool = False,
+        max_slope_adjust: float = 0.001,
     ) -> DrainageDesignSummary:
         summary = DrainageDesignSummary(
             mode=mode,
@@ -1279,6 +1358,22 @@ class DrainageEngine:
                 severity="error",
                 message="No valid basin/outfall target is available for drainage routing.",
             ))
+            summary.explain = self._build_explain(summary)
+            summary.optimize_hooks = self._build_optimize_hooks(summary)
+            summary.conflict_hooks = {
+                "autofix_suggestions": [
+                    {
+                        "strategy": "suggest_low_point_basin",
+                        "priority": "high",
+                        "message": "Add a basin at the dominant low point to create a valid outfall.",
+                    },
+                    {
+                        "strategy": "suggest_outfall_target",
+                        "priority": "high",
+                        "message": "Define an explicit outfall location for the drainage network.",
+                    },
+                ],
+            }
             return summary
 
         summary.basin_records = self.basin_records(sample_step=sample_step, min_slope=min_slope)
@@ -1305,6 +1400,7 @@ class DrainageEngine:
             min_slope=min_slope,
             pavement_polygons=pavement_polygons,
             collector_lines=collector_lines,
+            forced_inlets=forced_inlets,
         )
 
         if not inlets:
@@ -1328,6 +1424,9 @@ class DrainageEngine:
             max_steps=500,
             mode=mode,
             hydraulic=hydraulic_resolved,
+            connect_orphans=connect_orphans,
+            allow_slope_adjustment=allow_slope_adjustment,
+            max_slope_adjust=max_slope_adjust,
         )
 
         summary.provided_inputs = run_summary.provided_inputs

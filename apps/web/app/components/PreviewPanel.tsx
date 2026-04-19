@@ -57,6 +57,8 @@ type PreviewPanelProps = {
   onUpdateBuilding: (id: string, updates: Partial<BuildingPlacement>) => void;
   onUpdateSuggested: (id: string, updates: Partial<BuildingPlacement>) => void;
   onRemoveBuilding: (id: string) => void;
+  onRestoreBuilding?: (snapshot: BuildingPlacement) => void;
+  externalRectUndo?: { id: string; snapshot: BuildingPlacement; action: "update" | "delete" | "add"; ts: number } | null;
   onSelectBuilding: (id: string | null) => void;
   analysisPaths?: Array<{
     id: string;
@@ -145,6 +147,7 @@ export default function PreviewPanel({
   onUpdateBuilding,
   onUpdateSuggested,
   onRemoveBuilding,
+  onRestoreBuilding,
   onSelectBuilding,
   analysisPaths,
   analysisHighlight,
@@ -198,7 +201,28 @@ export default function PreviewPanel({
   const [previewContainerBounds, setPreviewContainerBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [cursorSitePoint, setCursorSitePoint] = useState<{ x: number; y: number } | null>(null);
   const [draggingBuildingId, setDraggingBuildingId] = useState<string | null>(null);
-  const [draggingMode, setDraggingMode] = useState<"move" | "resize" | "rotate" | null>(null);
+  const [draggingMode, setDraggingMode] = useState<"move" | "resize" | "rotate" | "vertex" | null>(null);
+  const [draggingVertex, setDraggingVertex] = useState<{ id: string; index: number } | null>(null);
+  const [hoveredVertex, setHoveredVertex] = useState<{ id: string; index: number } | null>(null);
+  const [hoveredSegment, setHoveredSegment] = useState<{ id: string; index: number } | null>(null);
+  const [polylineInsertHintDismissed, setPolylineInsertHintDismissed] = useState(false);
+  const [selectedVertex, setSelectedVertex] = useState<{ id: string; index: number } | null>(null);
+  const [lastPolylineEdit, setLastPolylineEdit] = useState<{
+    id: string;
+    geometry: Array<[number, number]>;
+    x: number;
+    y: number;
+    w: number;
+    d: number;
+    ts: number;
+  } | null>(null);
+  const [lastRectEdit, setLastRectEdit] = useState<{
+    id: string;
+    snapshot: BuildingPlacement;
+    action: "update" | "delete" | "add";
+    ts: number;
+  } | null>(null);
+  const polylineSegmentRef = useRef<SVGSVGElement | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const previewRef = useRef<HTMLDivElement | null>(null);
   const fullscreenRef = useRef<HTMLDivElement | null>(null);
@@ -281,6 +305,13 @@ export default function PreviewPanel({
         (item) => item.id === selectedBuildingId,
       ) ?? null,
     [buildingPlacements, suggestedPlacements, selectedBuildingId],
+  );
+  const accessPointsForParking = useMemo(
+    () =>
+      buildingPlacements
+        .filter((item) => item.type === "entrance" || item.type === "road" || item.type === "driveway")
+        .map((item) => ({ x: (item.x ?? 0) + item.w / 2, y: (item.y ?? 0) + item.d / 2 })),
+    [buildingPlacements],
   );
 
   useEffect(() => {
@@ -519,6 +550,37 @@ export default function PreviewPanel({
         }
         return;
       }
+      if (draggingMode === "vertex" && draggingVertex && target.geometryType === "polyline") {
+        const rawX = (localX / Math.max(bounds.width, 1)) * lotWidth;
+        const rawY = (localY / Math.max(bounds.height, 1)) * lotHeight;
+        const nextX = snapValue(clampValue(rawX, 0, lotWidth), 1);
+        const nextY = snapValue(clampValue(rawY, 0, lotHeight), 1);
+        const nextGeometry: Array<[number, number]> = Array.isArray(target.geometry)
+          ? (target.geometry as Array<[number, number]>).map((pt, idx) =>
+              idx === draggingVertex.index ? [nextX, nextY] : pt,
+            )
+          : [];
+        const xs = nextGeometry.map((pt) => pt[0]);
+        const ys = nextGeometry.map((pt) => pt[1]);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
+        const updates = {
+          geometry: nextGeometry,
+          x: minX,
+          y: minY,
+          w: Math.max(5, maxX - minX),
+          d: Math.max(5, maxY - minY),
+          placed: true,
+        };
+        if (target.source === "detected_from_image") {
+          onUpdateSuggested(draggingBuildingId, updates);
+        } else {
+          onUpdateBuilding(draggingBuildingId, updates);
+        }
+        return;
+      }
       if (draggingMode === "resize") {
         const rawW = clampValue((localX / Math.max(bounds.width, 1)) * lotWidth, 10, lotWidth);
         const rawD = clampValue((localY / Math.max(bounds.height, 1)) * lotHeight, 10, lotHeight);
@@ -550,6 +612,7 @@ export default function PreviewPanel({
       suggestedPlacements,
       dragOffset.x,
       dragOffset.y,
+      draggingVertex,
       draggingBuildingId,
       draggingMode,
       lotHeight,
@@ -559,6 +622,177 @@ export default function PreviewPanel({
       placementMode,
     ],
   );
+
+  const insertVertexOnSegment = useCallback(
+    (
+      event: React.MouseEvent<SVGLineElement>,
+      item: BuildingPlacement,
+      segmentIndex: number,
+    ) => {
+      if (!polylineSegmentRef.current || !lotWidth || !lotHeight) return;
+      if (!Array.isArray(item.geometry) || item.geometry.length < 2) return;
+      const rect = polylineSegmentRef.current.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const xPct = (event.clientX - rect.left) / rect.width;
+      const yPct = (event.clientY - rect.top) / rect.height;
+      const nextX = snapValue(clampValue(xPct * lotWidth, 0, lotWidth), 1);
+      const nextY = snapValue(clampValue(yPct * lotHeight, 0, lotHeight), 1);
+      const geometry = item.geometry as Array<[number, number]>;
+      setLastPolylineEdit({
+        id: item.id,
+        geometry: geometry.map((pt) => [pt[0], pt[1]]),
+        x: item.x ?? 0,
+        y: item.y ?? 0,
+        w: item.w,
+        d: item.d,
+        ts: Date.now(),
+      });
+      const nextGeometry = [...geometry];
+      nextGeometry.splice(segmentIndex + 1, 0, [nextX, nextY]);
+      const xs = nextGeometry.map((pt) => pt[0]);
+      const ys = nextGeometry.map((pt) => pt[1]);
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
+      const updates = {
+        geometry: nextGeometry,
+        x: minX,
+        y: minY,
+        w: Math.max(5, maxX - minX),
+        d: Math.max(5, maxY - minY),
+        placed: true,
+      };
+      if (item.source === "detected_from_image") {
+        onUpdateSuggested(item.id, updates);
+      } else {
+        onUpdateBuilding(item.id, updates);
+      }
+      setHoveredVertex({ id: item.id, index: segmentIndex + 1 });
+      setHoveredSegment({ id: item.id, index: segmentIndex });
+      setSelectedVertex({ id: item.id, index: segmentIndex + 1 });
+      setPolylineInsertHintDismissed(true);
+      onSelectBuilding(item.id);
+    },
+    [lotHeight, lotWidth, onSelectBuilding, onUpdateBuilding, onUpdateSuggested, snapValue],
+  );
+
+  const deleteSelectedVertex = useCallback(() => {
+    if (!selectedVertex) return;
+    const target =
+      buildingPlacements.find((item) => item.id === selectedVertex.id) ??
+      suggestedPlacements.find((item) => item.id === selectedVertex.id);
+    if (!target || !Array.isArray(target.geometry)) return;
+    const geometry = target.geometry as Array<[number, number]>;
+    if (geometry.length <= 2) return;
+    setLastPolylineEdit({
+      id: target.id,
+      geometry: geometry.map((pt) => [pt[0], pt[1]]),
+      x: target.x ?? 0,
+      y: target.y ?? 0,
+      w: target.w,
+      d: target.d,
+      ts: Date.now(),
+    });
+    const nextGeometry = geometry.filter((_, idx) => idx !== selectedVertex.index);
+    if (nextGeometry.length < 2) return;
+    const xs = nextGeometry.map((pt) => pt[0]);
+    const ys = nextGeometry.map((pt) => pt[1]);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const updates = {
+      geometry: nextGeometry,
+      x: minX,
+      y: minY,
+      w: Math.max(5, maxX - minX),
+      d: Math.max(5, maxY - minY),
+      placed: true,
+    };
+    if (target.source === "detected_from_image") {
+      onUpdateSuggested(target.id, updates);
+    } else {
+      onUpdateBuilding(target.id, updates);
+    }
+    setSelectedVertex(null);
+  }, [buildingPlacements, onUpdateBuilding, onUpdateSuggested, selectedVertex, suggestedPlacements]);
+
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key !== "Backspace" && event.key !== "Delete") return;
+      if (!selectedVertex) return;
+      event.preventDefault();
+      deleteSelectedVertex();
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [deleteSelectedVertex, selectedVertex]);
+
+  const applyPolylineUndo = useCallback(() => {
+    if (!lastPolylineEdit) return;
+    const target =
+      buildingPlacements.find((item) => item.id === lastPolylineEdit.id) ??
+      suggestedPlacements.find((item) => item.id === lastPolylineEdit.id);
+    if (!target) return;
+    const updates = {
+      geometry: lastPolylineEdit.geometry.map((pt) => [pt[0], pt[1]] as [number, number]),
+      x: lastPolylineEdit.x,
+      y: lastPolylineEdit.y,
+      w: lastPolylineEdit.w,
+      d: lastPolylineEdit.d,
+      placed: true,
+    };
+    if (target.source === "detected_from_image") {
+      onUpdateSuggested(target.id, updates);
+    } else {
+      onUpdateBuilding(target.id, updates);
+    }
+    setSelectedVertex(null);
+    setDraggingVertex(null);
+    setDraggingMode(null);
+    setDraggingBuildingId(null);
+    setLastPolylineEdit(null);
+  }, [buildingPlacements, lastPolylineEdit, onUpdateBuilding, onUpdateSuggested, suggestedPlacements]);
+
+  const applyRectUndo = useCallback(() => {
+    if (!lastRectEdit) return;
+    if (lastRectEdit.action === "delete") {
+      onRestoreBuilding?.(lastRectEdit.snapshot);
+    } else if (lastRectEdit.action === "add") {
+      onRemoveBuilding(lastRectEdit.id);
+    } else {
+      onUpdateBuilding(lastRectEdit.id, { ...lastRectEdit.snapshot });
+    }
+    setSelectedVertex(null);
+    setDraggingVertex(null);
+    setDraggingMode(null);
+    setDraggingBuildingId(null);
+    setLastRectEdit(null);
+  }, [lastRectEdit, onRemoveBuilding, onRestoreBuilding, onUpdateBuilding]);
+
+  useEffect(() => {
+    if (!externalRectUndo) return;
+    setLastRectEdit(externalRectUndo);
+  }, [externalRectUndo]);
+
+  useEffect(() => {
+    const handleUndo = (event: KeyboardEvent) => {
+      const isUndo = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z";
+      if (!isUndo) return;
+      if (!lastPolylineEdit && !lastRectEdit) return;
+      event.preventDefault();
+      const polyTs = lastPolylineEdit?.ts ?? 0;
+      const rectTs = lastRectEdit?.ts ?? 0;
+      if (polyTs >= rectTs) {
+        applyPolylineUndo();
+      } else {
+        applyRectUndo();
+      }
+    };
+    window.addEventListener("keydown", handleUndo);
+    return () => window.removeEventListener("keydown", handleUndo);
+  }, [applyPolylineUndo, applyRectUndo, lastPolylineEdit, lastRectEdit]);
 
   const handleBuildingMouseDown = useCallback(
     (
@@ -572,8 +806,29 @@ export default function PreviewPanel({
       if (mode === "rotate" && !caps.rotatable) return;
       event.preventDefault();
       event.stopPropagation();
+      if (building.geometryType === "polyline" && Array.isArray(building.geometry)) {
+        if (mode === "move") {
+          setLastPolylineEdit({
+            id: building.id,
+            geometry: (building.geometry as Array<[number, number]>).map((pt) => [pt[0], pt[1]]),
+            x: building.x ?? 0,
+            y: building.y ?? 0,
+            w: building.w,
+            d: building.d,
+            ts: Date.now(),
+          });
+        }
+      } else if (mode === "move" || mode === "resize" || mode === "rotate") {
+        setLastRectEdit({
+          id: building.id,
+          snapshot: { ...building },
+          action: "update",
+          ts: Date.now(),
+        });
+      }
       setDraggingBuildingId(building.id);
       setDraggingMode(mode);
+      setDraggingVertex(null);
       onSelectBuilding(building.id);
       const rect = event.currentTarget.getBoundingClientRect();
       setDragOffset({ x: event.clientX - rect.left, y: event.clientY - rect.top });
@@ -972,6 +1227,277 @@ export default function PreviewPanel({
     onSetSiteRotationDeg(normalized);
   }, [alignToRoadRequest, mapLoaded, onSetSiteRotationDeg, showMap]);
 
+  const buildParkingModules = useCallback((item: BuildingPlacement, accessPoints: Array<{ x: number; y: number }>) => {
+    const x = item.x ?? 0;
+    const y = item.y ?? 0;
+    const params = (item.meta as { parkingParams?: any })?.parkingParams ?? {};
+    const stallWidth = Number.isFinite(params.stallWidth) ? Number(params.stallWidth) : 9;
+    const stallDepth = Number.isFinite(params.stallDepth) ? Number(params.stallDepth) : 18;
+    const aisleWidth = Number.isFinite(params.aisleWidth) ? Number(params.aisleWidth) : 24;
+    const adaAisleWidth = Number.isFinite(params.adaAisleWidth) ? Number(params.adaAisleWidth) : 8;
+    const adaCount = Number.isFinite(params.adaCount) ? Number(params.adaCount) : 0;
+    const compactCount = Number.isFinite(params.compactCount) ? Number(params.compactCount) : 0;
+    const compactWidth = Number.isFinite(params.compactWidth) ? Number(params.compactWidth) : 8;
+    const angleDeg = Number.isFinite(params.angleDeg) ? Number(params.angleDeg) : 90;
+    const loading = params.loading === "single" ? "single" : "double";
+    const useMixedAngles = Boolean(params.useMixedAngles);
+    const compactZone = params.compactZone !== false;
+    const angleRad = (Math.max(Math.min(angleDeg, 89), 0) * Math.PI) / 180;
+    const depthAdj = stallDepth / Math.cos(angleRad || 0.0001);
+    const moduleDepth = depthAdj * (loading === "double" ? 2 : 1) + aisleWidth;
+    const scale = item.d < moduleDepth ? item.d / moduleDepth : 1;
+    const scaledStall = depthAdj * scale;
+    const scaledAisle = aisleWidth * scale;
+    const rows = loading === "double" ? 2 : 1;
+    const desiredStalls = Math.max(item.stallCount ?? 0, adaCount + compactCount);
+    const shift = Math.tan(angleRad || 0.0001) * scaledStall;
+    const effectiveWidth = Math.max(item.w - Math.abs(shift), stallWidth);
+    let moduleCount = 1;
+    if (desiredStalls > 0) {
+      for (let candidate = 1; candidate <= 6; candidate += 1) {
+        const moduleWidth = item.w / candidate;
+        const stallsPerRow = Math.max(1, Math.floor((moduleWidth - Math.abs(shift)) / stallWidth));
+        const capacity = stallsPerRow * rows * candidate;
+        if (capacity >= desiredStalls) {
+          moduleCount = candidate;
+          break;
+        }
+        moduleCount = candidate;
+      }
+    }
+    const modules: Array<{
+      id: string;
+      angle: number;
+      isAdaModule: boolean;
+      isCompactModule: boolean;
+      bounds: Array<[number, number]>;
+      aisleLine: Array<[number, number]>;
+      stallPolygons: Array<{ points: Array<[number, number]>; kind: "standard" | "ada" | "compact" | "ada_aisle" }>;
+      stripeLines: Array<Array<[number, number]>>;
+    }> = [];
+    const metaCols = Number((item.meta as { parkingModuleCols?: number })?.parkingModuleCols || 0);
+    const metaRows = Number((item.meta as { parkingModuleRows?: number })?.parkingModuleRows || 0);
+    const cols = metaCols > 0 ? metaCols : Math.max(1, Math.ceil(Math.sqrt(moduleCount)));
+    const rowsOfModules = metaRows > 0 ? metaRows : Math.max(1, Math.ceil(moduleCount / cols));
+    const gapScale = Math.max(0.02, Math.min(0.06, (stallWidth + aisleWidth) / Math.max(item.w, 1)));
+    const moduleGapX = Math.min(8, Math.max(3, item.w * gapScale));
+    const moduleGapY = Math.min(10, Math.max(4, item.d * gapScale));
+    const totalGapX = cols > 1 ? moduleGapX * (cols - 1) : 0;
+    const totalGapY = rowsOfModules > 1 ? moduleGapY * (rowsOfModules - 1) : 0;
+    const availableW = Math.max(item.w - totalGapX, item.w * 0.7);
+    const availableD = Math.max(item.d - totalGapY, item.d * 0.7);
+    const moduleWidth = availableW / cols;
+    const moduleDepthLocal = availableD / rowsOfModules;
+    const offsetX = x + (item.w - (moduleWidth * cols + totalGapX)) / 2;
+    const offsetY = y + (item.d - (moduleDepthLocal * rowsOfModules + totalGapY)) / 2;
+    const totalModules = cols * rowsOfModules;
+    const moduleAngles: number[] = [];
+    for (let row = 0; row < rowsOfModules; row += 1) {
+      for (let col = 0; col < cols; col += 1) {
+        if (!useMixedAngles) {
+          moduleAngles.push(angleDeg);
+          continue;
+        }
+        const edge = col === 0 || col === cols - 1;
+        const inner = col === 1 || col === cols - 2;
+        const angle = edge ? 45 : inner ? 60 : angleDeg;
+        moduleAngles.push(angle);
+      }
+    }
+    const moduleCenters: Array<{ x: number; y: number }> = [];
+    for (let r = 0; r < rowsOfModules; r += 1) {
+      for (let c = 0; c < cols; c += 1) {
+        moduleCenters.push({
+          x: offsetX + c * (moduleWidth + moduleGapX) + moduleWidth / 2,
+          y: offsetY + r * (moduleDepthLocal + moduleGapY) + moduleDepthLocal / 2,
+        });
+      }
+    }
+    const sortedModuleIdxByAccess = moduleCenters
+      .map((center, idx) => {
+        const minDist = accessPoints.length
+          ? Math.min(...accessPoints.map((pt) => Math.hypot(center.x - pt.x, center.y - pt.y)))
+          : 0;
+        return { idx, dist: minDist };
+      })
+      .sort((a, b) => a.dist - b.dist)
+      .map((entry) => entry.idx);
+    const moduleCapacities = moduleAngles.map((angle) => {
+      const angleRadModule = (Math.max(Math.min(angle, 89), 0) * Math.PI) / 180;
+      const shiftModule = Math.tan(angleRadModule || 0.0001) * scaledStall;
+      const stallsPerRow = Math.max(1, Math.floor((moduleWidth - Math.abs(shiftModule)) / stallWidth));
+      return stallsPerRow * rows;
+    });
+    const buildModuleSet = (count: number, order: number[], fromEnd = false) => {
+      const indices = fromEnd ? [...order].reverse() : order;
+      let remaining = count;
+      const set = new Set<number>();
+      indices.forEach((idx) => {
+        if (remaining <= 0) return;
+        set.add(idx);
+        remaining -= moduleCapacities[idx] ?? 0;
+      });
+      return set;
+    };
+    const adaPreferredModules = adaCount > 0 ? buildModuleSet(adaCount, sortedModuleIdxByAccess) : new Set<number>();
+    const compactPreferredModules =
+      compactCount > 0 && compactZone ? buildModuleSet(compactCount, sortedModuleIdxByAccess, true) : new Set<number>();
+    let remainingAda = adaCount;
+    let remainingCompact = compactCount;
+    for (let m = 0; m < totalModules; m += 1) {
+      const row = Math.floor(m / cols);
+      const col = m % cols;
+      const moduleX = offsetX + col * (moduleWidth + moduleGapX);
+      const moduleY = offsetY + row * (moduleDepthLocal + moduleGapY);
+      const angleForModule = moduleAngles[m] ?? angleDeg;
+      const angleRadModule = (Math.max(Math.min(angleForModule, 89), 0) * Math.PI) / 180;
+      const depthVecTop = {
+        x: Math.sin(angleRadModule) * scaledStall,
+        y: Math.cos(angleRadModule) * scaledStall,
+      };
+      const depthVecBottom = {
+        x: -Math.sin(angleRadModule) * scaledStall,
+        y: Math.cos(angleRadModule) * scaledStall,
+      };
+      const shiftModule = depthVecTop.x;
+      const stallsPerRow = Math.max(1, Math.floor((moduleWidth - Math.abs(shiftModule)) / stallWidth));
+      const stallW = (moduleWidth - Math.abs(shiftModule)) / stallsPerRow;
+      const aisleY =
+        loading === "double"
+          ? moduleY + (moduleDepthLocal - scaledAisle) / 2
+          : moduleY + scaledStall + scaledAisle / 2;
+      const aisleLine: Array<[number, number]> = [
+        [moduleX + 2, aisleY],
+        [moduleX + moduleWidth - 2, aisleY],
+      ];
+      const stallPolygons: Array<{ points: Array<[number, number]>; kind: "standard" | "ada" | "compact" | "ada_aisle" }> = [];
+      const stripeLines: Array<Array<[number, number]>> = [];
+      const moduleBounds: Array<[number, number]> = [
+        [moduleX, moduleY],
+        [moduleX + moduleWidth, moduleY],
+        [moduleX + moduleWidth, moduleY + moduleDepthLocal],
+        [moduleX, moduleY + moduleDepthLocal],
+        [moduleX, moduleY],
+      ];
+      const isAdaModule = adaPreferredModules.has(m);
+      const isCompactModule = compactZone ? compactPreferredModules.has(m) : false;
+      const depthLen = Math.hypot(depthVecTop.x, depthVecTop.y) || 1;
+      const depthUnitTop = { x: depthVecTop.x / depthLen, y: depthVecTop.y / depthLen };
+      const depthUnitBottom = { x: depthVecBottom.x / depthLen, y: depthVecBottom.y / depthLen };
+      const inset = Math.min(0.35, stallW * 0.06);
+      const clampWidth = (value: number) => Math.max(Math.min(value, stallW - inset * 2), stallW * 0.7);
+      const buildStallPoly = (
+        baseX: number,
+        baseY: number,
+        width: number,
+        depthUnit: { x: number; y: number },
+        depth: number,
+      ): Array<[number, number]> => {
+        const ux = 1;
+        const uy = 0;
+        const w = Math.max(width - inset * 2, width * 0.8);
+        const d = Math.max(depth - inset * 2, depth * 0.8);
+        const startX = baseX + inset * (ux + depthUnit.x);
+        const startY = baseY + inset * (uy + depthUnit.y);
+        const p0: [number, number] = [startX, startY];
+        const p1: [number, number] = [startX + w * ux, startY + w * uy];
+        const p2: [number, number] = [p1[0] + d * depthUnit.x, p1[1] + d * depthUnit.y];
+        const p3: [number, number] = [p0[0] + d * depthUnit.x, p0[1] + d * depthUnit.y];
+        return [p0, p1, p2, p3, p0];
+      };
+      for (let i = 0; i < stallsPerRow; i += 1) {
+        let currentWidth = stallW;
+        let useAda = false;
+        let useCompact = false;
+        let includeAdaAisle = false;
+        if (remainingAda > 0 && isAdaModule) {
+          useAda = true;
+          includeAdaAisle = true;
+          currentWidth = stallW;
+          remainingAda -= 1;
+        } else if (remainingCompact > 0 && isCompactModule) {
+          useCompact = true;
+          currentWidth = stallW;
+          remainingCompact -= 1;
+        } else if (remainingAda > 0 && !adaPreferredModules.size) {
+          useAda = true;
+          includeAdaAisle = true;
+          currentWidth = stallW;
+          remainingAda -= 1;
+        } else if (remainingCompact > 0 && !compactZone) {
+          useCompact = true;
+          currentWidth = stallW;
+          remainingCompact -= 1;
+        }
+        const rowOffsetTop = depthVecTop.x > 0 ? 0 : Math.abs(depthVecTop.x);
+        const rowOffsetBottom = depthVecBottom.x > 0 ? 0 : Math.abs(depthVecBottom.x);
+        const baseXTop = moduleX + rowOffsetTop + i * stallW;
+        const baseXBottom = moduleX + rowOffsetBottom + i * stallW;
+        const baseYTop = moduleY;
+        const baseYBottom = moduleY + moduleDepthLocal - scaledStall;
+        const stallWidthUsed = useAda ? clampWidth(stallWidth) : useCompact ? clampWidth(compactWidth) : clampWidth(stallW);
+        const topPoly = buildStallPoly(baseXTop, baseYTop, stallWidthUsed, depthUnitTop, scaledStall);
+        stallPolygons.push({
+          points: topPoly,
+          kind: useAda ? "ada" : useCompact ? "compact" : "standard",
+        });
+        stripeLines.push([
+          [baseXTop + stallWidthUsed, baseYTop],
+          [baseXTop + stallWidthUsed + depthVecTop.x, baseYTop + depthVecTop.y],
+        ]);
+        if (useAda && includeAdaAisle) {
+          const aisleWidth = Math.max(Math.min(adaAisleWidth, stallW - stallWidthUsed), 0);
+          if (aisleWidth > 0.1) {
+            const aislePoly = buildStallPoly(
+              baseXTop + stallWidthUsed,
+              baseYTop,
+              aisleWidth,
+              depthUnitTop,
+              scaledStall,
+            );
+            stallPolygons.push({ points: aislePoly, kind: "ada_aisle" });
+          }
+        }
+        if (loading === "double") {
+          const bottomPoly = buildStallPoly(baseXBottom, baseYBottom, stallWidthUsed, depthUnitBottom, scaledStall);
+          stallPolygons.push({
+            points: bottomPoly,
+            kind: useAda ? "ada" : useCompact ? "compact" : "standard",
+          });
+          stripeLines.push([
+            [baseXBottom + stallWidthUsed, baseYBottom],
+            [baseXBottom + stallWidthUsed + depthVecBottom.x, baseYBottom + depthVecBottom.y],
+          ]);
+          if (useAda && includeAdaAisle) {
+            const aisleWidth = Math.max(Math.min(adaAisleWidth, stallW - stallWidthUsed), 0);
+            if (aisleWidth > 0.1) {
+              const bottomAisle = buildStallPoly(
+                baseXBottom + stallWidthUsed,
+                baseYBottom,
+                aisleWidth,
+                depthUnitBottom,
+                scaledStall,
+              );
+              stallPolygons.push({ points: bottomAisle, kind: "ada_aisle" });
+            }
+          }
+        }
+      }
+      const moduleId = `${item.id}-module-${m}`;
+      modules.push({
+        id: moduleId,
+        angle: angleForModule,
+        isAdaModule,
+        isCompactModule,
+        bounds: moduleBounds,
+        aisleLine,
+        stallPolygons,
+        stripeLines,
+      });
+    }
+    return modules;
+  }, []);
+
   useEffect(() => {
     if (!showMap || !mapLoaded || !mapRef.current) return;
     if (!geocode?.lat || !geocode?.lng || !lotWidth || !lotHeight) return;
@@ -1010,10 +1536,29 @@ export default function PreviewPanel({
       return coords.length === corners.length ? coords : null;
     };
 
-    const buildLine = (item: BuildingPlacement) => {
-      const coords = buildPolygon(item);
-      if (!coords) return null;
-      return coords;
+    const buildPolyline = (item: BuildingPlacement) => {
+      if (item.geometryType === "polyline" && Array.isArray(item.geometry) && item.geometry.length > 1) {
+        const coords = item.geometry
+          .map((pt) => siteToLatLng(pt[0], pt[1]))
+          .filter(Boolean) as Array<[number, number]>;
+        return coords.length === item.geometry.length ? coords : null;
+      }
+      const x = item.x ?? 0;
+      const y = item.y ?? 0;
+      const isHorizontal = item.w >= item.d;
+      const fallback = isHorizontal
+        ? [
+            [x, y + item.d / 2],
+            [x + item.w, y + item.d / 2],
+          ]
+        : [
+            [x + item.w / 2, y],
+            [x + item.w / 2, y + item.d],
+          ];
+      const coords = fallback
+        .map((pt) => siteToLatLng(pt[0], pt[1]))
+        .filter(Boolean) as Array<[number, number]>;
+      return coords.length === fallback.length ? coords : null;
     };
 
     const buildSitePolygon = () => {
@@ -1034,7 +1579,7 @@ export default function PreviewPanel({
       type: "FeatureCollection",
       features: items
         .map((item) => {
-          const coords = geometry === "LineString" ? buildLine(item) : buildPolygon(item);
+          const coords = geometry === "LineString" ? buildPolyline(item) : buildPolygon(item);
           if (!coords) return null;
           return {
             type: "Feature",
@@ -1079,9 +1624,15 @@ export default function PreviewPanel({
 
     const buildings = placedObjects.filter((item) => !item.type || item.type === "building");
     const roads = placedObjects.filter((item) => item.type === "road" || item.type === "driveway");
+    const sidewalks = placedObjects.filter((item) => item.type === "sidewalk");
     const parking = placedObjects.filter((item) => item.type === "parking");
     const basins = placedObjects.filter((item) => item.type === "basin");
+    const accessPoints = placedObjects
+      .filter((item) => item.type === "entrance" || item.type === "road" || item.type === "driveway")
+      .map((item) => ({ x: (item.x ?? 0) + item.w / 2, y: (item.y ?? 0) + item.d / 2 }));
     const sitePolygon = buildSitePolygon();
+
+    const parkingModules = parking.flatMap((item) => buildParkingModules(item, accessPoints));
 
     const updateMap = (map: mapboxgl.Map | null) => {
       if (!map || !map.isStyleLoaded()) return;
@@ -1111,7 +1662,87 @@ export default function PreviewPanel({
 
       ensureSource("civora-buildings", toFeatureCollection(buildings, "Polygon"));
       ensureSource("civora-roads", toFeatureCollection(roads, "LineString"));
+      ensureSource("civora-sidewalks", toFeatureCollection(sidewalks, "LineString"));
       ensureSource("civora-parking", toFeatureCollection(parking, "Polygon"));
+      ensureSource("civora-parking-aisles", {
+        type: "FeatureCollection",
+        features: parkingModules
+          .map((module) => {
+            const coords = module.aisleLine
+              .map((pt) => siteToLatLng(pt[0], pt[1]))
+              .filter(Boolean) as Array<[number, number]>;
+            if (coords.length < 2) return null;
+            return {
+              type: "Feature",
+              geometry: { type: "LineString", coordinates: coords },
+              properties: { id: `${module.id}-aisle` },
+            };
+          })
+          .filter(Boolean),
+      });
+      ensureSource("civora-parking-stalls", {
+        type: "FeatureCollection",
+        features: parkingModules
+          .flatMap((module) =>
+            module.stallPolygons.map((stall, idx) => {
+              const coords = stall.points
+                .map((pt) => siteToLatLng(pt[0], pt[1]))
+                .filter(Boolean) as Array<[number, number]>;
+              if (coords.length < 4) return null;
+              return {
+                type: "Feature",
+                geometry: { type: "Polygon", coordinates: [coords] },
+                properties: {
+                  id: `${module.id}-stall-${idx}`,
+                  kind: stall.kind,
+                  angle: module.angle,
+                  ada: module.isAdaModule,
+                  compact: module.isCompactModule,
+                },
+              };
+            }),
+          )
+          .filter(Boolean),
+      });
+      ensureSource("civora-parking-stripes", {
+        type: "FeatureCollection",
+        features: parkingModules
+          .flatMap((module) =>
+            module.stripeLines.map((line, idx) => {
+              const coords = line
+                .map((pt) => siteToLatLng(pt[0], pt[1]))
+                .filter(Boolean) as Array<[number, number]>;
+              if (coords.length < 2) return null;
+              return {
+                type: "Feature",
+                geometry: { type: "LineString", coordinates: coords },
+                properties: { id: `${module.id}-stripe-${idx}` },
+              };
+            }),
+          )
+          .filter(Boolean),
+      });
+      ensureSource("civora-parking-modules", {
+        type: "FeatureCollection",
+        features: parkingModules
+          .map((module) => {
+            const coords = module.bounds
+              .map((pt) => siteToLatLng(pt[0], pt[1]))
+              .filter(Boolean) as Array<[number, number]>;
+            if (coords.length < 4) return null;
+            return {
+              type: "Feature",
+              geometry: { type: "Polygon", coordinates: [coords] },
+              properties: {
+                id: module.id,
+                angle: module.angle,
+                ada: module.isAdaModule,
+                compact: module.isCompactModule,
+              },
+            };
+          })
+          .filter(Boolean),
+      });
       ensureSource("civora-basins", toFeatureCollection(basins, "Polygon"));
       if (sitePolygon) {
         ensureSource("civora-site", {
@@ -1153,10 +1784,65 @@ export default function PreviewPanel({
         "line-color": "#1f2937",
         "line-width": 3,
       });
+      ensureLayer("civora-sidewalks-line", "civora-sidewalks", "line", {
+        "line-color": "#0f766e",
+        "line-width": 2,
+        "line-dasharray": [1, 1],
+      });
       ensureLayer("civora-parking-fill", "civora-parking", "fill", {
         "fill-color": "#64748b",
         "fill-opacity": 0.35,
       });
+      ensureLayer("civora-parking-stalls", "civora-parking-stalls", "fill", {
+        "fill-color": [
+          "case",
+          ["==", ["get", "kind"], "ada"],
+          "#10b981",
+          ["==", ["get", "kind"], "ada_aisle"],
+          "#34d399",
+          ["==", ["get", "kind"], "compact"],
+          "#a855f7",
+          "#94a3b8",
+        ],
+        "fill-opacity": [
+          "case",
+          ["==", ["get", "kind"], "ada"],
+          0.35,
+          ["==", ["get", "kind"], "ada_aisle"],
+          0.25,
+          ["==", ["get", "kind"], "compact"],
+          0.3,
+          0.22,
+        ],
+      });
+      ensureLayer("civora-parking-stripes", "civora-parking-stripes", "line", {
+        "line-color": "#cbd5f5",
+        "line-width": 0.8,
+        "line-opacity": 0.5,
+      });
+      ensureLayer("civora-parking-aisles", "civora-parking-aisles", "line", {
+        "line-color": "#334155",
+        "line-width": 1.6,
+      });
+      if (analysisPaths && analysisPaths.length) {
+        ensureLayer("civora-parking-modules", "civora-parking-modules", "fill", {
+          "fill-color": [
+            "case",
+            ["==", ["get", "ada"], true],
+            "#10b981",
+            ["==", ["get", "compact"], true],
+            "#a855f7",
+            ["==", ["get", "angle"], 45],
+            "#38bdf8",
+            ["==", ["get", "angle"], 60],
+            "#818cf8",
+            "#94a3b8",
+          ],
+          "fill-opacity": 0.15,
+        });
+      } else if (map.getLayer("civora-parking-modules")) {
+        map.removeLayer("civora-parking-modules");
+      }
       ensureLayer("civora-basins-fill", "civora-basins", "fill", {
         "fill-color": "#0ea5e9",
         "fill-opacity": 0.28,
@@ -1193,6 +1879,7 @@ export default function PreviewPanel({
     updateMap(fullscreenMapRef.current);
   }, [
     buildingPlacements,
+    analysisPaths,
     siteToLatLng,
     geocode?.lat,
     geocode?.lng,
@@ -1325,6 +2012,7 @@ export default function PreviewPanel({
     const centerY = (minY + maxY) / 2 / lotHeight;
     setFocusTransform({ scale: Math.min(Math.max(scale, 1), 3), tx: centerX, ty: centerY });
   }, [analysisHighlight, analysisPaths, buildingPlacements, lotHeight, lotWidth, suggestedPlacements]);
+  const showParkingAnalysis = Boolean(analysisPaths && analysisPaths.length);
   return (
     <div className="flex h-full flex-col rounded-[28px] border border-slate-200 bg-white/90 p-4 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.4)] backdrop-blur md:p-6">
       <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -1348,6 +2036,17 @@ export default function PreviewPanel({
                     : previewNextPendingPhase
                       ? `${previewNextPendingPhase.label} is still pending. Systems like drainage, storm, and utilities appear after their phases finish.`
                       : "Additional systems appear as later phases complete."}
+                </p>
+              </div>
+            </div>
+          ) : null}
+          {analysisHighlight ? (
+            <div className="inline-flex max-w-3xl items-start rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-xs text-slate-600">
+              <div>
+                <p className="font-semibold text-slate-800">Parking logic notes</p>
+                <p className="mt-1">
+                  ADA modules are placed closest to access paths, compact modules are grouped farther away, and mixed
+                  angles apply 45° at edges, 60° inside, and the main angle in core zones.
                 </p>
               </div>
             </div>
@@ -1758,6 +2457,113 @@ export default function PreviewPanel({
                         viewBox="0 0 100 100"
                         preserveAspectRatio="none"
                       >
+                        {buildingPlacements
+                          .filter((item) => item.geometryType === "polyline" && Array.isArray(item.geometry))
+                          .map((item) => {
+                            const points = (item.geometry || []).map((pt) => {
+                              const x = (pt[0] / Math.max(lotWidth, 1)) * 100;
+                              const y = (pt[1] / Math.max(lotHeight, 1)) * 100;
+                              return `${x},${y}`;
+                            });
+                            if (points.length < 2) return null;
+                            const stroke =
+                              item.type === "road" || item.type === "driveway"
+                                ? legendPalette.road
+                                : item.type === "sidewalk"
+                                  ? legendPalette.utilities
+                                  : legendPalette.building;
+                            const isSelectedPolyline = selectedBuildingId === item.id;
+                            return (
+                              <g key={`poly-${item.id}`}>
+                                {isSelectedPolyline ? (
+                                  <polyline
+                                    points={points.join(" ")}
+                                    fill="none"
+                                    stroke={previewQuality === "high" ? "#fbbf24" : "#f59e0b"}
+                                    strokeWidth={2.4}
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  />
+                                ) : null}
+                                <polyline
+                                  points={points.join(" ")}
+                                  fill="none"
+                                  stroke={stroke}
+                                  strokeWidth={1.1}
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              </g>
+                            );
+                          })}
+                        {buildingPlacements
+                          .filter((item) => item.type === "parking" && item.placed)
+                          .flatMap((item) =>
+                            buildParkingModules(item, accessPointsForParking).map((module, idx) => {
+                              const toPct = (pt: number[]) =>
+                                `${(pt[0] / Math.max(lotWidth, 1)) * 100},${(pt[1] / Math.max(lotHeight, 1)) * 100}`;
+                              const moduleFill = module.isAdaModule
+                                ? "rgba(16,185,129,0.18)"
+                                : module.isCompactModule
+                                  ? "rgba(168,85,247,0.16)"
+                                  : module.angle === 45
+                                    ? "rgba(56,189,248,0.14)"
+                                    : module.angle === 60
+                                      ? "rgba(129,140,248,0.14)"
+                                      : "rgba(148,163,184,0.1)";
+                              return (
+                                <g key={`parking-mod-${item.id}-${idx}`}>
+                                  {showParkingAnalysis ? (
+                                    <polygon
+                                      points={module.bounds.map(toPct).join(" ")}
+                                      fill={moduleFill}
+                                      stroke="rgba(15,23,42,0.15)"
+                                      strokeWidth={0.3}
+                                    />
+                                  ) : null}
+                                  {module.stallPolygons.map((stall, polyIdx) => {
+                                    const fill =
+                                      showParkingAnalysis && stall.kind === "ada"
+                                        ? "rgba(16,185,129,0.55)"
+                                        : showParkingAnalysis && stall.kind === "ada_aisle"
+                                          ? "rgba(52,211,153,0.35)"
+                                        : showParkingAnalysis && stall.kind === "compact"
+                                          ? "rgba(168,85,247,0.45)"
+                                          : legendPalette.parkingFill;
+                                    const stroke =
+                                      showParkingAnalysis && stall.kind !== "standard"
+                                        ? "#0f172a"
+                                        : legendPalette.parking;
+                                    const strokeWidth = showParkingAnalysis && stall.kind !== "standard" ? 0.55 : 0.4;
+                                    return (
+                                      <polygon
+                                        key={`stall-${polyIdx}`}
+                                        points={stall.points.map(toPct).join(" ")}
+                                        fill={fill}
+                                        stroke={stroke}
+                                        strokeWidth={strokeWidth}
+                                      />
+                                    );
+                                  })}
+                                  <polyline
+                                    points={module.aisleLine.map(toPct).join(" ")}
+                                    fill="none"
+                                    stroke={legendPalette.road}
+                                    strokeWidth={0.7}
+                                  />
+                                  {module.stripeLines.map((line, stripeIdx) => (
+                                    <polyline
+                                      key={`stripe-${stripeIdx}`}
+                                      points={line.map(toPct).join(" ")}
+                                      fill="none"
+                                      stroke="#cbd5f5"
+                                      strokeWidth={0.35}
+                                    />
+                                  ))}
+                                </g>
+                              );
+                            }),
+                          )}
                         {suggestedPlacements
                           .filter((item) => item.geometryType && Array.isArray(item.geometry))
                           .map((item) => {
@@ -1860,6 +2666,7 @@ export default function PreviewPanel({
                         const isAccessHighlight =
                           analysisHighlight &&
                           (analysisHighlight.buildingId === item.id || analysisHighlight.accessId === item.id);
+                        const isPolyline = item.geometryType === "polyline";
                         return (
                           <div
                             key={item.id}
@@ -1871,13 +2678,20 @@ export default function PreviewPanel({
                               height: `${height}%`,
                               transform: `rotate(${rotation}deg)`,
                               transformOrigin: "center",
-                              cursor: caps.movable ? "move" : "default",
+                              cursor: caps.movable ? (isPolyline ? "grab" : "move") : "default",
                             }}
-                            onMouseDown={(event) => handleBuildingMouseDown(event, item, "move")}
+                            onMouseDown={(event) => {
+                              if (draggingMode === "vertex" || hoveredSegment?.id === item.id) return;
+                              handleBuildingMouseDown(event, item, "move");
+                            }}
                             onMouseEnter={() => setHoveredObjectId(item.id)}
-                            onMouseLeave={() => setHoveredObjectId(null)}
+                            onMouseLeave={() => {
+                              setHoveredObjectId(null);
+                              setHoveredVertex(null);
+                            }}
                             onClick={(event) => {
                               event.stopPropagation();
+                              setSelectedVertex(null);
                               onSelectBuilding(item.id);
                             }}
                           >
@@ -1887,11 +2701,181 @@ export default function PreviewPanel({
                               } ${isAccessHighlight ? "ring-2 ring-rose-300" : ""}`}
                               style={{
                                 backgroundColor:
-                                  previewQuality === "high"
-                                    ? "rgba(17, 24, 39, 0.38)"
-                                    : "rgba(15, 23, 42, 0.22)",
+                                  isPolyline
+                                    ? "transparent"
+                                    : previewQuality === "high"
+                                      ? "rgba(17, 24, 39, 0.38)"
+                                      : "rgba(15, 23, 42, 0.22)",
+                                borderStyle: isPolyline ? "none" : undefined,
                               }}
                             />
+                            {isSelected && isPolyline && Array.isArray(item.geometry)
+                              ? item.geometry.map((pt, idx) => {
+                                  const handleLeft = (pt[0] / Math.max(lotWidth, 1)) * 100;
+                                  const handleTop = (pt[1] / Math.max(lotHeight, 1)) * 100;
+                                  const isDragging =
+                                    draggingMode === "vertex" &&
+                                    draggingVertex?.id === item.id &&
+                                    draggingVertex?.index === idx;
+                                  const isHovered =
+                                    hoveredVertex?.id === item.id && hoveredVertex?.index === idx;
+                                  const isSelectedVertex =
+                                    selectedVertex?.id === item.id && selectedVertex?.index === idx;
+                                  return (
+                                    <button
+                                      key={`vertex-${item.id}-${idx}`}
+                                      type="button"
+                                      className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full border shadow transition ${
+                                        isDragging
+                                          ? "h-4 w-4 border-amber-600 bg-amber-500 ring-4 ring-amber-200 cursor-grabbing"
+                                          : isHovered
+                                            ? "h-4 w-4 border-amber-500 bg-amber-400 ring-2 ring-amber-200 cursor-grab"
+                                            : isSelectedVertex
+                                              ? "h-4 w-4 border-amber-600 bg-amber-500 ring-2 ring-amber-200"
+                                              : "h-3.5 w-3.5 border-white bg-amber-300 cursor-grab"
+                                      }`}
+                                      style={{ left: `${handleLeft}%`, top: `${handleTop}%` }}
+                                      onMouseEnter={() => setHoveredVertex({ id: item.id, index: idx })}
+                                      onMouseLeave={() => setHoveredVertex(null)}
+                                      onMouseDown={(event) => {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        if (Array.isArray(item.geometry)) {
+                                          setLastPolylineEdit({
+                                            id: item.id,
+                                            geometry: (item.geometry as Array<[number, number]>).map((pt) => [
+                                              pt[0],
+                                              pt[1],
+                                            ]),
+                                            x: item.x ?? 0,
+                                            y: item.y ?? 0,
+                                            w: item.w,
+                                            d: item.d,
+                                            ts: Date.now(),
+                                          });
+                                        }
+                                        setDraggingBuildingId(item.id);
+                                        setDraggingMode("vertex");
+                                        setDraggingVertex({ id: item.id, index: idx });
+                                        setSelectedVertex({ id: item.id, index: idx });
+                                        onSelectBuilding(item.id);
+                                      }}
+                                    />
+                                  );
+                                })
+                              : null}
+                            {isSelected &&
+                            isPolyline &&
+                            Array.isArray(item.geometry) &&
+                            item.geometry.length > 1 &&
+                            (item.type === "road" || item.type === "driveway" || item.type === "sidewalk") ? (
+                              <svg
+                                ref={polylineSegmentRef}
+                                className="absolute inset-0"
+                                viewBox="0 0 100 100"
+                                preserveAspectRatio="none"
+                              >
+                                {(item.geometry ?? []).map((pt, idx, arr) => {
+                                  if (idx === arr.length - 1) return null;
+                                  const next = arr[idx + 1];
+                                  const x1 = (pt[0] / Math.max(lotWidth, 1)) * 100;
+                                  const y1 = (pt[1] / Math.max(lotHeight, 1)) * 100;
+                                  const x2 = (next[0] / Math.max(lotWidth, 1)) * 100;
+                                  const y2 = (next[1] / Math.max(lotHeight, 1)) * 100;
+                                  const isHoveredSeg =
+                                    hoveredSegment?.id === item.id && hoveredSegment?.index === idx;
+                                  return (
+                                    <g key={`seg-${item.id}-${idx}`}>
+                                      {isHoveredSeg ? (
+                                        <line
+                                          x1={x1}
+                                          y1={y1}
+                                          x2={x2}
+                                          y2={y2}
+                                          stroke="rgba(245,158,11,0.6)"
+                                          strokeWidth={2.5}
+                                          strokeLinecap="round"
+                                        />
+                                      ) : null}
+                                      <line
+                                        x1={x1}
+                                        y1={y1}
+                                        x2={x2}
+                                        y2={y2}
+                                        stroke="transparent"
+                                        strokeWidth={8}
+                                        strokeLinecap="round"
+                                        pointerEvents="stroke"
+                                        onMouseEnter={() => setHoveredSegment({ id: item.id, index: idx })}
+                                        onMouseLeave={() => setHoveredSegment(null)}
+                                        onMouseDown={(event) => event.stopPropagation()}
+                                        onClick={(event) => {
+                                          event.preventDefault();
+                                          event.stopPropagation();
+                                          insertVertexOnSegment(event, item, idx);
+                                        }}
+                                      />
+                                    </g>
+                                  );
+                                })}
+                              </svg>
+                            ) : null}
+                            {isSelected && isPolyline ? (
+                              <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-amber-700 shadow">
+                                Vertex edit
+                              </div>
+                            ) : null}
+                            {isSelected &&
+                            isPolyline &&
+                            lastPolylineEdit?.id === item.id ? (
+                              <button
+                                type="button"
+                                className="absolute -bottom-10 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-600 shadow"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  applyPolylineUndo();
+                                }}
+                              >
+                                Undo
+                              </button>
+                            ) : null}
+                            {isSelected && isPolyline && selectedVertex?.id === item.id ? (
+                              <button
+                                type="button"
+                                className="absolute -bottom-16 left-1/2 -translate-x-1/2 rounded-full border border-rose-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-rose-600 shadow"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  deleteSelectedVertex();
+                                }}
+                              >
+                                Delete vertex
+                              </button>
+                            ) : null}
+                            {isSelected &&
+                            !isPolyline &&
+                            lastRectEdit?.id === item.id ? (
+                              <button
+                                type="button"
+                                className="absolute -bottom-12 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-600 shadow"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  applyRectUndo();
+                                }}
+                              >
+                                Undo
+                              </button>
+                            ) : null}
+                            {isSelected &&
+                            isPolyline &&
+                            !polylineInsertHintDismissed &&
+                            (item.type === "road" || item.type === "driveway" || item.type === "sidewalk") ? (
+                              <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-600 shadow">
+                                Click a segment to add a vertex
+                              </div>
+                            ) : null}
                             {isSelected && caps.rotatable ? (
                               <button
                                 type="button"
@@ -1916,13 +2900,19 @@ export default function PreviewPanel({
                                 className="absolute -left-3 -top-3 h-6 w-6 rounded-full border border-rose-200 bg-white text-[10px] font-semibold text-rose-600 shadow"
                                 onClick={(event) => {
                                   event.stopPropagation();
+                                  setLastRectEdit({
+                                    id: item.id,
+                                    snapshot: { ...item },
+                                    action: "delete",
+                                    ts: Date.now(),
+                                  });
                                   onRemoveBuilding(item.id);
                                 }}
                               >
                                 ×
                               </button>
                             ) : null}
-                            {isSelected && caps.movable ? (
+                            {isSelected && caps.movable && !isPolyline ? (
                               <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow">
                                 Snap 5ft
                               </div>
@@ -2237,6 +3227,7 @@ export default function PreviewPanel({
                 onMouseUp={() => {
                   setDraggingBuildingId(null);
                   setDraggingMode(null);
+                  setDraggingVertex(null);
                 }}
                 onClick={(event) => {
                   if (placementMode) {

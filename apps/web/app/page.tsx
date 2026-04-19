@@ -390,6 +390,15 @@ export default function PerformanceAIDashboard() {
   const [buildingCount, setBuildingCount] = useState("");
   const [setback, setSetback] = useState("");
   const [parkingCount, setParkingCount] = useState("");
+  const [parkingStallWidth, setParkingStallWidth] = useState("9");
+  const [parkingStallDepth, setParkingStallDepth] = useState("18");
+  const [parkingAisleWidth, setParkingAisleWidth] = useState("24");
+  const [parkingAdaAisleWidth, setParkingAdaAisleWidth] = useState("8");
+  const [parkingAdaCount, setParkingAdaCount] = useState("0");
+  const [parkingCompactCount, setParkingCompactCount] = useState("0");
+  const [parkingCompactWidth, setParkingCompactWidth] = useState("8");
+  const [parkingAngle, setParkingAngle] = useState<"90" | "60" | "45">("90");
+  const [parkingLoading, setParkingLoading] = useState<"single" | "double">("double");
   const [minSlopePct, setMinSlopePct] = useState("");
   const [pipeMinSlopePct, setPipeMinSlopePct] = useState("");
   const [maxParkingSlopePct, setMaxParkingSlopePct] = useState("");
@@ -398,6 +407,12 @@ export default function PerformanceAIDashboard() {
   const [roads, setRoads] = useState(true);
   const [grading, setGrading] = useState(true);
   const [drainage, setDrainage] = useState(true);
+  const [drainageForcedInlets, setDrainageForcedInlets] = useState<
+    Array<{ x: number; y: number; name?: string }>
+  >([]);
+  const [drainageConnectOrphans, setDrainageConnectOrphans] = useState(false);
+  const [drainageAllowSlopeAdjust, setDrainageAllowSlopeAdjust] = useState(false);
+  const [drainageMaxSlopeAdjust, setDrainageMaxSlopeAdjust] = useState(0.001);
   const [utilities, setUtilities] = useState(true);
   const [buildingPlacements, setBuildingPlacements] = useState<BuildingPlacement[]>([]);
   const [placementModeEnabled, setPlacementModeEnabled] = useState(false);
@@ -476,6 +491,12 @@ export default function PerformanceAIDashboard() {
   const [analysisSelectedIssueId, setAnalysisSelectedIssueId] = useState<string | null>(null);
   const [analysisFocusLocked, setAnalysisFocusLocked] = useState(false);
   const [analysisEmptyReason, setAnalysisEmptyReason] = useState<string | null>(null);
+  const [externalRectUndo, setExternalRectUndo] = useState<{
+    id: string;
+    snapshot: BuildingPlacement;
+    action: "update" | "delete" | "add";
+    ts: number;
+  } | null>(null);
   const [detectionConfidenceFilter, setDetectionConfidenceFilter] = useState<"high" | "medium" | "all">("all");
   const [mapSnapshotPath, setMapSnapshotPath] = useState("");
   const [mapAnalysis, setMapAnalysis] = useState<MapAnalysis | null>(null);
@@ -658,6 +679,7 @@ export default function PerformanceAIDashboard() {
     nextGrading,
     nextDrainage,
     nextUtilities,
+    placementsOverride,
   }: {
     nextSiteName: string;
     nextFileName: string;
@@ -679,6 +701,7 @@ export default function PerformanceAIDashboard() {
     nextGrading: boolean;
     nextDrainage: boolean;
     nextUtilities: boolean;
+    placementsOverride?: BuildingPlacement[];
   }) => {
     const lotWidthValue = parsePositiveNumber(nextLotWidth);
     const lotHeightValue = parsePositiveNumber(nextLotHeight);
@@ -727,7 +750,7 @@ export default function PerformanceAIDashboard() {
       manualFields.building_depth = buildingDepthValue;
     }
 
-    const placementOverrides = buildingPlacements
+    const placementOverrides = (placementsOverride ?? buildingPlacements)
       .filter((placement) => placement.placed && Number.isFinite(placement.x) && Number.isFinite(placement.y))
       .map((placement) => ({
         id: placement.id,
@@ -860,9 +883,34 @@ export default function PerformanceAIDashboard() {
         min_pipe_slope_pct: pipeMinSlopeValue,
       };
     }
+    if (drainageForcedInlets.length) {
+      manualFields.drainage = {
+        ...(manualFields.drainage ?? {}),
+        forced_inlets: drainageForcedInlets,
+      };
+    }
+    if (drainageConnectOrphans) {
+      manualFields.drainage = {
+        ...(manualFields.drainage ?? {}),
+        connect_orphans: true,
+      };
+    }
+    if (drainageAllowSlopeAdjust) {
+      manualFields.drainage = {
+        ...(manualFields.drainage ?? {}),
+        allow_slope_adjustment: true,
+        max_slope_adjust: drainageMaxSlopeAdjust,
+      };
+    }
 
     return manualFields;
-  }, [buildingPlacements]);
+  }, [
+    buildingPlacements,
+    drainageAllowSlopeAdjust,
+    drainageConnectOrphans,
+    drainageForcedInlets,
+    drainageMaxSlopeAdjust,
+  ]);
 
   const payloadPreview = useMemo(
     () => ({
@@ -1063,6 +1111,22 @@ export default function PerformanceAIDashboard() {
   const stormSummary = useMemo<StormSummary>(() => currentPlanMeta?.storm_pipes ?? {}, [currentPlanMeta]);
   const drainageSummary = useMemo<Record<string, unknown>>(() => currentPlanMeta?.drainage ?? {}, [currentPlanMeta]);
   const gradingSummary = useMemo<Record<string, unknown>>(() => currentPlanMeta?.grading ?? {}, [currentPlanMeta]);
+  const drainageLowPoints = useMemo(() => {
+    const fromDrainage = Array.isArray((drainageSummary as Record<string, unknown>)?.low_points)
+      ? ((drainageSummary as Record<string, unknown>).low_points as Array<Record<string, unknown>>)
+      : [];
+    const fromGrading = Array.isArray((gradingSummary as Record<string, unknown>)?.low_points)
+      ? ((gradingSummary as Record<string, unknown>).low_points as Array<Record<string, unknown>>)
+      : [];
+    const candidates = fromDrainage.length ? fromDrainage : fromGrading;
+    return candidates
+      .map((item) => ({
+        x: typeof item.x === "number" ? item.x : Number(item.x),
+        y: typeof item.y === "number" ? item.y : Number(item.y),
+        z: typeof item.z === "number" ? item.z : Number(item.z),
+      }))
+      .filter((item) => Number.isFinite(item.x) && Number.isFinite(item.y));
+  }, [drainageSummary, gradingSummary]);
 
   const previewLabels = useMemo(
     () => planPreviewAnnotations?.labels ?? [],
@@ -1228,6 +1292,31 @@ export default function PerformanceAIDashboard() {
     return undefined;
   }, [currentManualFailures, issues]);
 
+  const drainageIssueApplyLabel = useCallback(
+    (issue: Issue) => {
+      const code = (issue.code ?? "").toUpperCase();
+      if (code === "UNDER_COLLECTION") return "Add inlet";
+      if (code === "ORPHAN_INLETS") return "Connect inlet";
+      if (code === "POOR_SLOPE") return "Adjust slope";
+      if (code === "BASIN_UNREACHABLE") return "Add basin";
+      if (code === "NO_VALID_OUTFALL" || code === "NO_PONDS_DEFINED") return "Add basin";
+      return null;
+    },
+    [],
+  );
+
+  const canApplyDrainageIssue = useCallback(
+    (issue: Issue) => {
+      const code = (issue.code ?? "").toUpperCase();
+      if (code === "UNDER_COLLECTION" || code === "BASIN_UNREACHABLE" || code === "NO_VALID_OUTFALL" || code === "NO_PONDS_DEFINED") {
+        return Boolean(pickBestLowPoint());
+      }
+      if (code === "ORPHAN_INLETS" || code === "POOR_SLOPE") return true;
+      return false;
+    },
+    [pickBestLowPoint],
+  );
+
   const applyBackendResult = (data: PlanResponse) => {
     setBackendResult(data);
     if (Array.isArray(data?.assumptions)) {
@@ -1250,6 +1339,8 @@ export default function PerformanceAIDashboard() {
         data.issues.map((item: BackendIssue) => ({
           severity: item.severity === "error" ? "error" : "warning",
           message: item.message ?? "Unknown issue",
+          code: typeof item.code === "string" ? item.code : undefined,
+          context: item.context && typeof item.context === "object" ? item.context : undefined,
         })),
       );
     } else {
@@ -1352,6 +1443,9 @@ export default function PerformanceAIDashboard() {
       max_ada_cross_slope_pct?: number;
     };
     const drainageFields = (manualFields.drainage ?? {}) as { min_pipe_slope_pct?: number };
+    const drainageForced = Array.isArray((manualFields.drainage ?? {}).forced_inlets)
+      ? (manualFields.drainage ?? {}).forced_inlets
+      : [];
     const disciplines = toArray(manualFields.disciplines);
     const buildingsList = Array.isArray(manualFields.buildings) ? manualFields.buildings : [];
     const restoredThread: ChatMessage[] = Array.isArray(projectInput.meta?.chat_thread)
@@ -1449,6 +1543,22 @@ export default function PerformanceAIDashboard() {
     setParkingCount(String(sitePlan.parking_count ?? ""));
     setMinSlopePct(String(gradingFields.min_slope_pct ?? ""));
     setPipeMinSlopePct(String(drainageFields.min_pipe_slope_pct ?? ""));
+    setDrainageForcedInlets(
+      drainageForced
+        .map((item) => {
+          const rec = item as { x?: number; y?: number; name?: string };
+          if (typeof rec?.x !== "number" || typeof rec?.y !== "number") return null;
+          return { x: rec.x, y: rec.y, name: typeof rec.name === "string" ? rec.name : undefined };
+        })
+        .filter(Boolean) as Array<{ x: number; y: number; name?: string }>,
+    );
+    setDrainageConnectOrphans(Boolean((manualFields.drainage ?? {}).connect_orphans));
+    setDrainageAllowSlopeAdjust(Boolean((manualFields.drainage ?? {}).allow_slope_adjustment));
+    setDrainageMaxSlopeAdjust(
+      typeof (manualFields.drainage ?? {}).max_slope_adjust === "number"
+        ? (manualFields.drainage ?? {}).max_slope_adjust
+        : 0.001,
+    );
     setMaxParkingSlopePct(String(gradingFields.max_parking_slope_pct ?? ""));
     setMaxRoadGradePct(String(gradingFields.max_road_grade_pct ?? ""));
     setMaxAdaCrossSlopePct(String(gradingFields.max_ada_cross_slope_pct ?? ""));
@@ -1644,6 +1754,118 @@ export default function PerformanceAIDashboard() {
     }));
   }, []);
 
+  const resolveParkingParams = useCallback(
+    (
+      target: BuildingPlacement,
+      overrides?: Partial<BuildingPlacement>,
+    ): {
+      stallWidth: number;
+      stallDepth: number;
+      aisleWidth: number;
+      adaAisleWidth: number;
+      adaCount: number;
+      compactCount: number;
+      compactWidth: number;
+      angleDeg: number;
+      loading: "single" | "double";
+      autoResizeToFitCount: boolean;
+      useMixedAngles: boolean;
+      compactZone: boolean;
+    } => {
+      const currentMeta = (target.meta as { parkingParams?: any })?.parkingParams ?? {};
+      const nextMeta = (overrides?.meta as { parkingParams?: any })?.parkingParams ?? {};
+      const loading =
+        nextMeta.loading === "single"
+          ? "single"
+          : nextMeta.loading === "double"
+            ? "double"
+            : currentMeta.loading === "single"
+              ? "single"
+              : "double";
+      return {
+        stallWidth: Number.isFinite(nextMeta.stallWidth) ? Number(nextMeta.stallWidth) : Number(currentMeta.stallWidth) || 9,
+        stallDepth: Number.isFinite(nextMeta.stallDepth) ? Number(nextMeta.stallDepth) : Number(currentMeta.stallDepth) || 18,
+        aisleWidth: Number.isFinite(nextMeta.aisleWidth) ? Number(nextMeta.aisleWidth) : Number(currentMeta.aisleWidth) || 24,
+        adaAisleWidth: Number.isFinite(nextMeta.adaAisleWidth) ? Number(nextMeta.adaAisleWidth) : Number(currentMeta.adaAisleWidth) || 8,
+        adaCount: Number.isFinite(nextMeta.adaCount) ? Number(nextMeta.adaCount) : Number(currentMeta.adaCount) || 0,
+        compactCount: Number.isFinite(nextMeta.compactCount) ? Number(nextMeta.compactCount) : Number(currentMeta.compactCount) || 0,
+        compactWidth: Number.isFinite(nextMeta.compactWidth) ? Number(nextMeta.compactWidth) : Number(currentMeta.compactWidth) || 8,
+        angleDeg: Number.isFinite(nextMeta.angleDeg) ? Number(nextMeta.angleDeg) : Number(currentMeta.angleDeg) || 90,
+        loading,
+        autoResizeToFitCount:
+          typeof nextMeta.autoResizeToFitCount === "boolean"
+            ? nextMeta.autoResizeToFitCount
+            : Boolean(currentMeta.autoResizeToFitCount),
+        useMixedAngles:
+          typeof nextMeta.useMixedAngles === "boolean"
+            ? nextMeta.useMixedAngles
+            : Boolean(currentMeta.useMixedAngles),
+        compactZone:
+          typeof nextMeta.compactZone === "boolean"
+            ? nextMeta.compactZone
+            : Boolean(currentMeta.compactZone),
+      };
+    },
+    [],
+  );
+
+  const computeParkingFootprint = useCallback(
+    (
+      target: BuildingPlacement,
+      params: {
+        stallWidth: number;
+        stallDepth: number;
+        aisleWidth: number;
+        adaAisleWidth: number;
+        adaCount: number;
+        compactCount: number;
+        compactWidth: number;
+        angleDeg: number;
+        loading: "single" | "double";
+      },
+      stallCount: number,
+    ) => {
+      const rows = params.loading === "double" ? 2 : 1;
+      const angleRad = (Math.max(Math.min(params.angleDeg, 89), 0) * Math.PI) / 180;
+      const depthAdj = params.stallDepth / Math.cos(angleRad || 0.0001);
+      const shift = Math.tan(angleRad || 0.0001) * depthAdj;
+      const moduleDepth = depthAdj * rows + params.aisleWidth;
+      const perModuleWidth = (stallsPerRow: number) =>
+        stallsPerRow * params.stallWidth + Math.abs(shift);
+      const totalStalls = Math.max(stallCount, params.adaCount + params.compactCount);
+      let stallsPerRow = Math.max(1, Math.ceil(totalStalls / rows));
+      let moduleWidth = perModuleWidth(stallsPerRow);
+      let modulesNeeded = Math.max(1, Math.ceil(totalStalls / (stallsPerRow * rows)));
+      let cols = Math.max(1, Math.ceil(Math.sqrt(modulesNeeded)));
+      let rowsOfModules = Math.max(1, Math.ceil(modulesNeeded / cols));
+      if (totalStalls === 0) {
+        cols = 1;
+        rowsOfModules = 1;
+      }
+      if (target.w > 0) {
+        const maxCols = Math.max(1, Math.floor(target.w / moduleWidth));
+        cols = Math.max(1, Math.min(cols, maxCols || 1));
+      }
+      if (target.d > 0) {
+        const maxRows = Math.max(1, Math.floor(target.d / moduleDepth));
+        rowsOfModules = Math.max(1, Math.min(rowsOfModules, maxRows || 1));
+      }
+      const totalCapacity = stallsPerRow * rows * cols * rowsOfModules;
+      const totalWidth = moduleWidth * cols;
+      const totalDepth = moduleDepth * rowsOfModules;
+      return {
+        w: totalWidth,
+        d: totalDepth,
+        maxStalls: totalCapacity,
+        moduleCount: cols * rowsOfModules,
+        stallsPerRow,
+        moduleCols: cols,
+        moduleRows: rowsOfModules,
+      };
+    },
+    [],
+  );
+
   const formatObjectLabel = useCallback(
     (type: SiteObjectType, count: number) => {
       const base = SITE_OBJECT_CATALOG[type]?.label ?? "Object";
@@ -1675,6 +1897,23 @@ export default function PerformanceAIDashboard() {
     detectedPlacements.length,
     planPreviewUrl,
   ]);
+
+  const buildDefaultPolyline = useCallback(
+    (target: { x: number; y: number; w: number; d: number }): Array<[number, number]> => {
+      const isHorizontal = target.w >= target.d;
+      if (isHorizontal) {
+        return [
+          [target.x, target.y + target.d / 2],
+          [target.x + target.w, target.y + target.d / 2],
+        ];
+      }
+      return [
+        [target.x + target.w / 2, target.y],
+        [target.x + target.w / 2, target.y + target.d],
+      ];
+    },
+    [],
+  );
 
   const handleAddObject = useCallback(
     (type: SiteObjectType) => {
@@ -1726,6 +1965,23 @@ export default function PerformanceAIDashboard() {
       const defaultHeight = catalog.defaultH ?? 0;
       const parkingStalls =
         type === "parking" ? parsePositiveNumber(parkingCount) ?? 0 : undefined;
+      const parkingParams =
+        type === "parking"
+          ? {
+              stallWidth: parsePositiveNumber(parkingStallWidth) ?? 9,
+              stallDepth: parsePositiveNumber(parkingStallDepth) ?? 18,
+              aisleWidth: parsePositiveNumber(parkingAisleWidth) ?? 24,
+              adaAisleWidth: parsePositiveNumber(parkingAdaAisleWidth) ?? 8,
+              adaCount: parsePositiveNumber(parkingAdaCount) ?? 0,
+              compactCount: parsePositiveNumber(parkingCompactCount) ?? 0,
+              compactWidth: parsePositiveNumber(parkingCompactWidth) ?? 8,
+              angleDeg: parsePositiveNumber(parkingAngle) ?? 90,
+              loading: parkingLoading,
+              autoResizeToFitCount: false,
+              useMixedAngles: false,
+              compactZone: true,
+            }
+          : null;
       const nextPlacement: BuildingPlacement = {
         id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         label: formatObjectLabel(type, existingCount),
@@ -1747,8 +2003,43 @@ export default function PerformanceAIDashboard() {
           deletable: true,
         },
         systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
-        meta: { category: catalog.category },
+        meta: {
+          category: catalog.category,
+          ...(parkingParams ? { parkingParams } : {}),
+        },
       };
+      if (type === "parking" && parkingParams) {
+        const totalStalls = Math.max(
+          parkingStalls ?? 0,
+          parkingParams.adaCount + parkingParams.compactCount,
+        );
+        const footprint = computeParkingFootprint(
+          nextPlacement,
+          parkingParams,
+          totalStalls,
+        );
+        nextPlacement.meta = {
+          ...nextPlacement.meta,
+          parkingCapacity: footprint.maxStalls,
+          parkingModuleCols: footprint.moduleCols,
+          parkingModuleRows: footprint.moduleRows,
+        };
+      }
+      if (["road", "driveway", "sidewalk"].includes(type)) {
+        nextPlacement.geometryType = "polyline";
+        nextPlacement.geometry = buildDefaultPolyline({
+          x: 0,
+          y: 0,
+          w: nextPlacement.w,
+          d: nextPlacement.d,
+        });
+        nextPlacement.capabilities = {
+          movable: true,
+          resizable: false,
+          rotatable: false,
+          deletable: true,
+        };
+      }
       setBuildingPlacements((prev) => [...prev, nextPlacement]);
       console.debug("[placement] add-object", {
         id: nextPlacement.id,
@@ -1770,8 +2061,16 @@ export default function PerformanceAIDashboard() {
       askClarification,
       lotHeight,
       lotWidth,
+      parkingAisleWidth,
+      parkingAngle,
+      parkingCount,
+      parkingLoading,
+      parkingStallDepth,
+      parkingStallWidth,
       resolveDefaultBuildingDims,
       resolveLotBounds,
+      buildDefaultPolyline,
+      computeParkingFootprint,
     ],
   );
 
@@ -1824,6 +2123,39 @@ export default function PerformanceAIDashboard() {
     if (typeof updates.x === "number" || typeof updates.y === "number") {
       nextUpdates.placed = true;
     }
+    if (
+      target?.geometryType === "polyline" &&
+      Array.isArray(target.geometry) &&
+      (typeof updates.x === "number" || typeof updates.y === "number")
+    ) {
+      const deltaX = (typeof updates.x === "number" ? updates.x : target.x ?? 0) - (target.x ?? 0);
+      const deltaY = (typeof updates.y === "number" ? updates.y : target.y ?? 0) - (target.y ?? 0);
+      if (Number.isFinite(deltaX) && Number.isFinite(deltaY)) {
+        nextUpdates.geometry = target.geometry.map(([px, py]) => [px + deltaX, py + deltaY]);
+      }
+    }
+    if (target?.type === "parking") {
+      const params = resolveParkingParams(target, updates);
+      const stallCount = typeof updates.stallCount === "number" ? updates.stallCount : target.stallCount ?? 0;
+      const totalStalls = Math.max(stallCount, params.adaCount + params.compactCount);
+      const footprint = computeParkingFootprint(target, params, totalStalls);
+      nextUpdates.meta = {
+        ...(target.meta ?? {}),
+        ...(updates.meta ?? {}),
+        parkingParams: {
+          ...(target.meta as { parkingParams?: any })?.parkingParams,
+          ...(updates.meta as { parkingParams?: any })?.parkingParams,
+          ...params,
+        },
+        parkingCapacity: footprint.maxStalls,
+        parkingModuleCols: footprint.moduleCols,
+        parkingModuleRows: footprint.moduleRows,
+      };
+      if (params.autoResizeToFitCount && totalStalls > 0) {
+        nextUpdates.w = footprint.w;
+        nextUpdates.d = footprint.d;
+      }
+    }
     setBuildingPlacements((prev) =>
       prev.map((item) => (item.id === id ? { ...item, ...nextUpdates } : item)),
     );
@@ -1832,7 +2164,15 @@ export default function PerformanceAIDashboard() {
     void ensureProjectDraftRef.current()
       .then(() => saveProjectRef.current({ silent: true }))
       .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object update...", track: true });
-  }, [buildingPlacements, clearGeneratedPreview, currentProject, markSystemsStale, payloadPreview]);
+  }, [
+    buildingPlacements,
+    clearGeneratedPreview,
+    computeParkingFootprint,
+    currentProject,
+    markSystemsStale,
+    payloadPreview,
+    resolveParkingParams,
+  ]);
 
   const persistDetectedPlacements = useCallback(
     (nextDetected: BuildingPlacement[]) => {
@@ -1872,6 +2212,24 @@ export default function PerformanceAIDashboard() {
       .then(() => saveProjectRef.current({ silent: true }))
       .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object removal...", track: true });
   }, [activePlacementId, clearGeneratedPreview, markSystemsStale]);
+
+  const handleRestoreBuilding = useCallback((snapshot: BuildingPlacement) => {
+    clearGeneratedPreview();
+    setBuildingPlacements((prev) => {
+      if (prev.some((item) => item.id === snapshot.id)) return prev;
+      return [...prev, { ...snapshot }];
+    });
+    markSystemsStale();
+    setStatusMessage("Undo: object restored.");
+    void ensureProjectDraftRef.current()
+      .then(() => saveProjectRef.current({ silent: true }))
+      .then(() => {
+        previewRefreshIntentRef.current = {
+          reason: "Refreshing preview after undo restore...",
+          track: true,
+        };
+      });
+  }, [clearGeneratedPreview, markSystemsStale]);
 
   const handleAcceptDetected = useCallback((id: string) => {
     clearGeneratedPreview();
@@ -1946,7 +2304,16 @@ export default function PerformanceAIDashboard() {
         setBuildingPlacements((prev) =>
           prev.map((item) =>
             item.id === activePlacementId
-              ? { ...item, x: boundedX, y: boundedY, placed: true }
+              ? {
+                  ...item,
+                  x: boundedX,
+                  y: boundedY,
+                  placed: true,
+                  geometry:
+                    item.geometryType === "polyline"
+                      ? buildDefaultPolyline({ x: boundedX, y: boundedY, w: item.w, d: item.d })
+                      : item.geometry,
+                }
               : item,
           ),
         );
@@ -2041,7 +2408,16 @@ export default function PerformanceAIDashboard() {
             d: item.d,
           });
           debugLog("place-object-commit", { id, x: boundedX, y: boundedY });
-          return { ...item, x: boundedX, y: boundedY, placed: true };
+          return {
+            ...item,
+            x: boundedX,
+            y: boundedY,
+            placed: true,
+            geometry:
+              item.geometryType === "polyline"
+                ? buildDefaultPolyline({ x: boundedX, y: boundedY, w: item.w, d: item.d })
+                : item.geometry,
+          };
         }),
       );
       setActivePlacementId((prev) => (prev === id ? null : prev));
@@ -2053,7 +2429,7 @@ export default function PerformanceAIDashboard() {
         .then(() => saveProjectRef.current({ silent: true }))
         .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object placement...", track: true });
     },
-    [clearGeneratedPreview, ensureSiteBoundary, markSystemsStale, resolveLotBounds],
+    [buildDefaultPolyline, clearGeneratedPreview, ensureSiteBoundary, markSystemsStale, resolveLotBounds],
   );
 
   const handleTogglePlacementMode = useCallback(() => {
@@ -2409,6 +2785,7 @@ export default function PerformanceAIDashboard() {
     overrides: ControlOverrides = {},
     promptOverride?: string,
     projectIdOverride?: string | null,
+    placementsOverride?: BuildingPlacement[],
   ): PlanRequestPayload => {
     const nextSiteName = overrides.siteName ?? siteName;
     const nextFileName = overrides.fileName ?? fileName;
@@ -2460,6 +2837,7 @@ export default function PerformanceAIDashboard() {
         nextGrading,
         nextDrainage,
         nextUtilities,
+        placementsOverride,
       }),
       allow_ai_fill_for_blanks: false,
     };
@@ -4903,69 +5281,125 @@ export default function PerformanceAIDashboard() {
       points?: Array<{ x: number; y: number }>;
     }> = [];
     const threshold = 150;
-    const adjacencyGap = 20;
-    const buildingAccessGap = 40;
-
-    const rectDistance = (
-      a: { x: number; y: number; w: number; d: number },
-      b: { x: number; y: number; w: number; d: number },
-    ) => {
-      const aMinX = a.x;
-      const aMaxX = a.x + a.w;
-      const aMinY = a.y;
-      const aMaxY = a.y + a.d;
-      const bMinX = b.x;
-      const bMaxX = b.x + b.w;
-      const bMinY = b.y;
-      const bMaxY = b.y + b.d;
-      const dx = Math.max(aMinX - bMaxX, bMinX - aMaxX, 0);
-      const dy = Math.max(aMinY - bMaxY, bMinY - aMaxY, 0);
-      const distance = Math.hypot(dx, dy);
-      const bCenterX = b.x + b.w / 2;
-      const bCenterY = b.y + b.d / 2;
-      const aCenterX = a.x + a.w / 2;
-      const aCenterY = a.y + a.d / 2;
-      const pointA = {
-        x: Math.min(Math.max(bCenterX, aMinX), aMaxX),
-        y: Math.min(Math.max(bCenterY, aMinY), aMaxY),
-      };
-      const pointB = {
-        x: Math.min(Math.max(aCenterX, bMinX), bMaxX),
-        y: Math.min(Math.max(aCenterY, bMinY), bMaxY),
-      };
-      return { distance, pointA, pointB };
-    };
+    const adjacencyGap = 25;
+    const buildingAccessGap = 60;
 
     type GraphEdge = { to: string; weight: number; points: Array<{ x: number; y: number }> };
     const graph: Record<string, GraphEdge[]> = {};
-    const accessMap = new Map(
-      access.map((item) => [
-        item.id,
-        {
-          id: item.id,
-          rect: { x: item.x ?? 0, y: item.y ?? 0, w: item.w, d: item.d },
-          center: { x: (item.x ?? 0) + item.w / 2, y: (item.y ?? 0) + item.d / 2 },
-        },
-      ]),
-    );
 
     const addEdge = (from: string, to: string, weight: number, points: Array<{ x: number; y: number }>) => {
       if (!graph[from]) graph[from] = [];
       graph[from].push({ to, weight, points });
     };
 
-    const accessEntries = Array.from(accessMap.values());
-    accessEntries.forEach((node, idx) => {
-      for (let j = idx + 1; j < accessEntries.length; j += 1) {
-        const other = accessEntries[j];
-        const { distance, pointA, pointB } = rectDistance(node.rect, other.rect);
-        if (distance <= adjacencyGap) {
-          const weight = Math.max(distance, 1);
-          addEdge(node.id, other.id, weight, [pointA, pointB]);
-          addEdge(other.id, node.id, weight, [pointB, pointA]);
-        }
+    const clampToRect = (pt: { x: number; y: number }, rect: { x: number; y: number; w: number; d: number }) => ({
+      x: Math.min(Math.max(pt.x, rect.x), rect.x + rect.w),
+      y: Math.min(Math.max(pt.y, rect.y), rect.y + rect.d),
+    });
+
+    const distancePointToRect = (pt: { x: number; y: number }, rect: { x: number; y: number; w: number; d: number }) => {
+      const closest = clampToRect(pt, rect);
+      const dx = pt.x - closest.x;
+      const dy = pt.y - closest.y;
+      return { distance: Math.hypot(dx, dy), closest };
+    };
+
+    const closestPointOnSegment = (
+      a: { x: number; y: number },
+      b: { x: number; y: number },
+      p: { x: number; y: number },
+    ) => {
+      const abx = b.x - a.x;
+      const aby = b.y - a.y;
+      const ab2 = abx * abx + aby * aby;
+      if (!ab2) return { x: a.x, y: a.y };
+      const t = ((p.x - a.x) * abx + (p.y - a.y) * aby) / ab2;
+      const clamped = Math.max(0, Math.min(1, t));
+      return { x: a.x + abx * clamped, y: a.y + aby * clamped };
+    };
+
+    const getAccessPolyline = (item: BuildingPlacement): Array<{ x: number; y: number }> => {
+      if (item.geometryType === "polyline" && Array.isArray(item.geometry) && item.geometry.length > 1) {
+        return item.geometry.map(([x, y]) => ({ x, y }));
+      }
+      const x = item.x ?? 0;
+      const y = item.y ?? 0;
+      const isHorizontal = item.w >= item.d;
+      if (item.type === "parking") {
+        const params = (item.meta as { parkingParams?: any })?.parkingParams ?? {};
+        const stallDepth = Number.isFinite(params.stallDepth) ? Number(params.stallDepth) : 18;
+        const aisleWidth = Number.isFinite(params.aisleWidth) ? Number(params.aisleWidth) : 24;
+        const angleDeg = Number.isFinite(params.angleDeg) ? Number(params.angleDeg) : 90;
+        const loading = params.loading === "single" ? "single" : "double";
+        const angleRad = (Math.max(Math.min(angleDeg, 89), 0) * Math.PI) / 180;
+        const depthAdj = stallDepth / Math.cos(angleRad || 0.0001);
+        const moduleDepth = depthAdj * (loading === "double" ? 2 : 1) + aisleWidth;
+        const scale = item.d < moduleDepth ? item.d / moduleDepth : 1;
+        const scaledStall = depthAdj * scale;
+        const scaledAisle = aisleWidth * scale;
+        const centerY =
+          loading === "double"
+            ? y + (item.d - scaledAisle) / 2 + scaledAisle / 2
+            : y + scaledStall + scaledAisle / 2;
+        const start = { x: x + 4, y: centerY };
+        const end = { x: x + item.w - 4, y: centerY };
+        return [start, end];
+      }
+      if (isHorizontal) {
+        return [
+          { x, y: y + item.d / 2 },
+          { x: x + item.w, y: y + item.d / 2 },
+        ];
+      }
+      return [
+        { x: x + item.w / 2, y },
+        { x: x + item.w / 2, y: y + item.d },
+      ];
+    };
+
+    const accessPaths = access.map((item) => ({
+      id: item.id,
+      type: item.type,
+      points: getAccessPolyline(item),
+    }));
+
+    accessPaths.forEach((path) => {
+      const points = path.points;
+      if (points.length < 2) return;
+      for (let i = 0; i < points.length - 1; i += 1) {
+        const a = points[i];
+        const b = points[i + 1];
+        const weight = Math.hypot(b.x - a.x, b.y - a.y);
+        const nodeA = `${path.id}-p${i}`;
+        const nodeB = `${path.id}-p${i + 1}`;
+        addEdge(nodeA, nodeB, weight, [a, b]);
+        addEdge(nodeB, nodeA, weight, [b, a]);
       }
     });
+
+    const pathEndpoints = accessPaths
+      .map((path) => {
+        const points = path.points;
+        if (points.length < 2) return null;
+        return [
+          { id: `${path.id}-p0`, point: points[0] },
+          { id: `${path.id}-p${points.length - 1}`, point: points[points.length - 1] },
+        ];
+      })
+      .flat()
+      .filter(Boolean) as Array<{ id: string; point: { x: number; y: number } }>;
+
+    for (let i = 0; i < pathEndpoints.length; i += 1) {
+      for (let j = i + 1; j < pathEndpoints.length; j += 1) {
+        const a = pathEndpoints[i];
+        const b = pathEndpoints[j];
+        const distance = Math.hypot(a.point.x - b.point.x, a.point.y - b.point.y);
+        if (distance <= adjacencyGap) {
+          addEdge(a.id, b.id, Math.max(distance, 1), [a.point, b.point]);
+          addEdge(b.id, a.id, Math.max(distance, 1), [b.point, a.point]);
+        }
+      }
+    }
 
     const buildPathPoints = (edgePoints: Array<Array<{ x: number; y: number }>>) => {
       const points: Array<{ x: number; y: number }> = [];
@@ -4991,11 +5425,31 @@ export default function PerformanceAIDashboard() {
       const buildingNodeId = `building-${building.id}`;
       const buildingRect = { x: building.x ?? 0, y: building.y ?? 0, w: building.w, d: building.d };
       graph[buildingNodeId] = [];
-      accessEntries.forEach((accessNode) => {
-        const { distance, pointA, pointB } = rectDistance(buildingRect, accessNode.rect);
-        if (distance <= buildingAccessGap) {
-          const weight = Math.max(distance, 1);
-          addEdge(buildingNodeId, accessNode.id, weight, [pointA, pointB]);
+      accessPaths.forEach((path) => {
+        const points = path.points;
+        if (points.length < 2) return;
+        let closestDistance = Number.POSITIVE_INFINITY;
+        let closestPoint: { x: number; y: number } | null = null;
+        let closestNodeId: string | null = null;
+        for (let i = 0; i < points.length - 1; i += 1) {
+          const a = points[i];
+          const b = points[i + 1];
+          const segmentPoint = closestPointOnSegment(a, b, {
+            x: buildingRect.x + buildingRect.w / 2,
+            y: buildingRect.y + buildingRect.d / 2,
+          });
+          const { distance } = distancePointToRect(segmentPoint, buildingRect);
+          if (distance < closestDistance) {
+            closestDistance = distance;
+            closestPoint = segmentPoint;
+            closestNodeId = `${path.id}-p${i}`;
+          }
+        }
+        if (closestPoint && closestNodeId && closestDistance <= buildingAccessGap) {
+          addEdge(buildingNodeId, closestNodeId, Math.max(closestDistance, 1), [
+            clampToRect(closestPoint, buildingRect),
+            closestPoint,
+          ]);
         }
       });
 
@@ -5016,7 +5470,6 @@ export default function PerformanceAIDashboard() {
         });
         if (!current) break;
         unvisited.delete(current);
-        if (current !== buildingNodeId && accessMap.has(current)) break;
         const edges = graph[current] ?? [];
         edges.forEach((edge) => {
           if (!unvisited.has(edge.to)) return;
@@ -5031,12 +5484,17 @@ export default function PerformanceAIDashboard() {
 
       let closestAccessId: string | null = null;
       let closestDistance = Number.POSITIVE_INFINITY;
-      accessEntries.forEach((accessNode) => {
-        const dist = distances.get(accessNode.id);
-        if (dist !== undefined && dist < closestDistance) {
-          closestDistance = dist;
-          closestAccessId = accessNode.id;
-        }
+      let closestNodeId: string | null = null;
+      accessPaths.forEach((path) => {
+        path.points.forEach((_, idx) => {
+          const nodeId = `${path.id}-p${idx}`;
+          const dist = distances.get(nodeId);
+          if (dist !== undefined && dist < closestDistance) {
+            closestDistance = dist;
+            closestNodeId = nodeId;
+            closestAccessId = path.id;
+          }
+        });
       });
 
       if (!closestAccessId || !Number.isFinite(closestDistance)) {
@@ -5054,7 +5512,7 @@ export default function PerformanceAIDashboard() {
       }
 
       const edgePoints: Array<Array<{ x: number; y: number }>> = [];
-      let cursor: string | null = closestAccessId;
+      let cursor: string | null = closestNodeId;
       while (cursor && cursor !== buildingNodeId) {
         const step = prev.get(cursor);
         if (!step) break;
@@ -5718,6 +6176,75 @@ export default function PerformanceAIDashboard() {
     [askClarification, siteScaleLocked],
   );
 
+  const pickBestLowPoint = useCallback(() => {
+    if (!drainageLowPoints.length) return null;
+    return drainageLowPoints.reduce((best, current) => {
+      if (!best) return current;
+      const bestZ = Number.isFinite(best.z) ? best.z : Number.POSITIVE_INFINITY;
+      const currentZ = Number.isFinite(current.z) ? current.z : Number.POSITIVE_INFINITY;
+      return currentZ < bestZ ? current : best;
+    }, null as { x: number; y: number; z?: number } | null);
+  }, [drainageLowPoints]);
+
+  const runDrainageAutofix = useCallback(
+    async ({
+      placementsOverride,
+      forcedInlets,
+      connectOrphans,
+      allowSlopeAdjust,
+    }: {
+      placementsOverride?: BuildingPlacement[];
+      forcedInlets?: Array<Record<string, unknown>>;
+      connectOrphans?: boolean;
+      allowSlopeAdjust?: boolean;
+    }) => {
+      if (!ensureSiteLocked("drainage")) return;
+      const requestPayload = buildPayloadFromOverrides({}, undefined, projectId || null, placementsOverride);
+      const omitField = { source: "omit", value: null } as const;
+      const nextManualFields = {
+        ...(requestPayload.manual_fields ?? {}),
+      } as Record<string, unknown>;
+      const nextDrainage = {
+        ...(nextManualFields.drainage ?? {}),
+      } as Record<string, unknown>;
+      if (forcedInlets && forcedInlets.length) {
+        nextDrainage.forced_inlets = forcedInlets;
+      }
+      if (connectOrphans) {
+        nextDrainage.connect_orphans = true;
+      }
+      if (allowSlopeAdjust) {
+        nextDrainage.allow_slope_adjustment = true;
+        nextDrainage.max_slope_adjust = drainageMaxSlopeAdjust;
+      }
+      nextManualFields.drainage = nextDrainage;
+      nextManualFields.utility_network = omitField;
+
+      await executePlanAction({
+        mode: "run",
+        requestPayload: {
+          ...requestPayload,
+          manual_fields: nextManualFields,
+          meta: {
+            ...(requestPayload.meta ?? {}),
+            requested_system: "drainage",
+          },
+          prompt_text: null,
+        },
+        assistantPrefix: "Applying drainage fix…",
+      });
+      setSystemStatuses((prev) => ({ ...prev, drainage: "fresh" }));
+    },
+    [
+      buildPayloadFromOverrides,
+      drainageMaxSlopeAdjust,
+      ensureSiteLocked,
+      executePlanAction,
+      projectId,
+      setSystemStatuses,
+    ],
+  );
+
   const handleGenerateSystem = useCallback(
     async (target: "roads" | "parking" | "grading" | "drainage" | "utilities" | "full") => {
       if (!hasSiteBoundary()) {
@@ -5817,6 +6344,120 @@ export default function PerformanceAIDashboard() {
       surveyFileName,
       surveySlopeEstimate?.slope_percent,
       useSurveyForGrading,
+    ],
+  );
+
+  const handleApplyDrainageIssue = useCallback(
+    async (issue: Issue) => {
+      const issueCode = (issue.code ?? "").toUpperCase();
+      const lot = resolveLotBounds();
+      const lowPoint = pickBestLowPoint();
+
+      if (issueCode === "UNDER_COLLECTION") {
+        if (!lowPoint) {
+          setStatusMessage("No low points available to place an inlet.");
+          return;
+        }
+        const forcedInlet = {
+          x: lowPoint.x,
+          y: lowPoint.y,
+          label: "Autofix inlet",
+          source: "autofix",
+        };
+        const nextForced = [...drainageForcedInlets, forcedInlet];
+        setDrainageForcedInlets(nextForced);
+        const inletPlacement: BuildingPlacement = {
+          id: `inlet-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          label: "Autofix inlet",
+          type: "inlet",
+          w: 8,
+          d: 8,
+          x: lowPoint.x - 4,
+          y: lowPoint.y - 4,
+          rotation: 0,
+          placed: true,
+          source: "generated",
+          generated: true,
+          systemDependencies: ["drainage"],
+        };
+        clearGeneratedPreview();
+        setBuildingPlacements((prev) => [...prev, inletPlacement]);
+        setExternalRectUndo({
+          id: inletPlacement.id,
+          snapshot: inletPlacement,
+          action: "add",
+          ts: Date.now(),
+        });
+        setFocusObjectId(inletPlacement.id);
+        await runDrainageAutofix({ placementsOverride: [...buildingPlacements, inletPlacement], forcedInlets: nextForced });
+        setStatusMessage("Applied inlet placement. Drainage regenerated.");
+        return;
+      }
+
+      if (issueCode === "ORPHAN_INLETS") {
+        setDrainageConnectOrphans(true);
+        await runDrainageAutofix({ connectOrphans: true });
+        setStatusMessage("Applied orphan inlet connection. Drainage regenerated.");
+        return;
+      }
+
+      if (issueCode === "POOR_SLOPE") {
+        setDrainageAllowSlopeAdjust(true);
+        await runDrainageAutofix({ allowSlopeAdjust: true });
+        setStatusMessage("Applied slope adjustment attempt. Drainage regenerated.");
+        return;
+      }
+
+      if (
+        issueCode === "BASIN_UNREACHABLE" ||
+        issueCode === "NO_VALID_OUTFALL" ||
+        issueCode === "NO_PONDS_DEFINED"
+      ) {
+        if (!lowPoint) {
+          setStatusMessage("No low points available to place a basin.");
+          return;
+        }
+        const basinPlacement: BuildingPlacement = {
+          id: `basin-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          label: "Autofix basin",
+          type: "basin",
+          w: 60,
+          d: 40,
+          x: Math.min(Math.max(lowPoint.x - 30, lot.x), lot.x + lot.w - 60),
+          y: Math.min(Math.max(lowPoint.y - 20, lot.y), lot.y + lot.h - 40),
+          rotation: 0,
+          placed: true,
+          source: "generated",
+          generated: true,
+          systemDependencies: ["drainage"],
+        };
+        clearGeneratedPreview();
+        const nextPlacements = [...buildingPlacements, basinPlacement];
+        setBuildingPlacements(nextPlacements);
+        setExternalRectUndo({
+          id: basinPlacement.id,
+          snapshot: basinPlacement,
+          action: "add",
+          ts: Date.now(),
+        });
+        setFocusObjectId(basinPlacement.id);
+        await runDrainageAutofix({ placementsOverride: nextPlacements });
+        setStatusMessage("Applied basin placement. Drainage regenerated.");
+        return;
+      }
+    },
+    [
+      buildingPlacements,
+      clearGeneratedPreview,
+      drainageForcedInlets,
+      pickBestLowPoint,
+      resolveLotBounds,
+      runDrainageAutofix,
+      setDrainageAllowSlopeAdjust,
+      setDrainageConnectOrphans,
+      setDrainageForcedInlets,
+      setFocusObjectId,
+      setStatusMessage,
     ],
   );
 
@@ -5984,6 +6625,15 @@ export default function PerformanceAIDashboard() {
     setBuildingCount("");
     setSetback("");
     setParkingCount("");
+    setParkingStallWidth("9");
+    setParkingStallDepth("18");
+    setParkingAisleWidth("24");
+    setParkingAdaAisleWidth("8");
+    setParkingAdaCount("0");
+    setParkingCompactCount("0");
+    setParkingCompactWidth("8");
+    setParkingAngle("90");
+    setParkingLoading("double");
     setMinSlopePct("");
     setPipeMinSlopePct("");
     setMaxParkingSlopePct("");
@@ -7500,6 +8150,7 @@ export default function PerformanceAIDashboard() {
                 previewLabelDensity={previewLabelDensity}
                 hasGeneratedPlan={Boolean(planPreviewUrl && backendResult)}
                 placementMode={placementModeEnabled || Boolean(activePlacementId)}
+                externalRectUndo={externalRectUndo}
               onPlaceBuilding={handlePlaceBuilding}
               onPlaceObject={handlePlaceObject}
               buildingPlacements={buildingPlacements}
@@ -7542,6 +8193,7 @@ export default function PerformanceAIDashboard() {
                 setAnalysisFocusLocked(false);
               }}
               onRemoveBuilding={handleRemoveBuilding}
+              onRestoreBuilding={handleRestoreBuilding}
               onSelectBuilding={setActivePlacementId}
                 onSetPreviewMode={setPreviewMode}
                 onSetPreviewInteraction={setPreviewInteraction}
@@ -7897,6 +8549,57 @@ export default function PerformanceAIDashboard() {
                         <p className="mt-1">{analysisEmptyReason}</p>
                       </div>
                     ) : null}
+                    {issues.length ? (
+                      <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700">
+                            Engineering Issues
+                          </p>
+                          <span className="text-[10px] uppercase tracking-[0.12em] text-slate-400">
+                            Apply fixes
+                          </span>
+                        </div>
+                        <div className="mt-3 space-y-2 text-xs text-slate-700">
+                          {issues.map((issue, idx) => {
+                            const applyLabel = drainageIssueApplyLabel(issue);
+                            const canApply = applyLabel ? canApplyDrainageIssue(issue) : false;
+                            return (
+                              <div
+                                key={`${issue.message}-${idx}`}
+                                className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2"
+                              >
+                                <div>
+                                  <p className="font-semibold text-slate-800">{issue.message}</p>
+                                  {issue.code ? (
+                                    <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-400">
+                                      {issue.code}
+                                    </p>
+                                  ) : null}
+                                </div>
+                                {applyLabel ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleApplyDrainageIssue(issue)}
+                                    disabled={!canApply}
+                                    className={`rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                      canApply
+                                        ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                        : "border-slate-200 bg-white text-slate-400 cursor-not-allowed"
+                                    }`}
+                                  >
+                                    {applyLabel}
+                                  </button>
+                                ) : (
+                                  <span className="text-[10px] uppercase tracking-[0.12em] text-slate-400">
+                                    Review
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="mt-2 max-h-72 space-y-3 overflow-y-auto pr-1">
                       <div className="flex w-full gap-3 overflow-x-auto pb-2">
                         {buildingPlacements
@@ -7978,20 +8681,319 @@ export default function PerformanceAIDashboard() {
                                     </label>
                                   ) : null}
                                   {item.type === "parking" ? (
-                                    <label className="col-span-2 flex flex-col gap-1">
-                                      Stalls
-                                      <input
-                                        type="number"
-                                        value={item.stallCount ?? ""}
-                                        onChange={(event) =>
-                                          handleUpdateBuilding(item.id, {
-                                            stallCount:
-                                              parsePositiveNumber(event.target.value) ?? 0,
-                                          })
-                                        }
-                                        className="rounded-md border border-slate-200 px-2 py-1"
-                                      />
-                                    </label>
+                                    <>
+                                      <label className="col-span-2 flex flex-col gap-1">
+                                        Stalls
+                                        <input
+                                          type="number"
+                                          value={item.stallCount ?? ""}
+                                          onChange={(event) =>
+                                            handleUpdateBuilding(item.id, {
+                                              stallCount:
+                                                parsePositiveNumber(event.target.value) ?? 0,
+                                            })
+                                          }
+                                          className="rounded-md border border-slate-200 px-2 py-1"
+                                        />
+                                      </label>
+                                      <label className="flex flex-col gap-1">
+                                        Stall W
+                                        <input
+                                          type="number"
+                                          value={String(
+                                            (item.meta as { parkingParams?: any })?.parkingParams?.stallWidth ??
+                                              parkingStallWidth,
+                                          )}
+                                          onChange={(event) =>
+                                            handleUpdateBuilding(item.id, {
+                                              meta: {
+                                                ...(item.meta ?? {}),
+                                                parkingParams: {
+                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  stallWidth:
+                                                    parsePositiveNumber(event.target.value) ??
+                                                    parsePositiveNumber(parkingStallWidth) ??
+                                                    9,
+                                                },
+                                              },
+                                            })
+                                          }
+                                          className="rounded-md border border-slate-200 px-2 py-1"
+                                        />
+                                      </label>
+                                      <label className="flex flex-col gap-1">
+                                        Stall D
+                                        <input
+                                          type="number"
+                                          value={String(
+                                            (item.meta as { parkingParams?: any })?.parkingParams?.stallDepth ??
+                                              parkingStallDepth,
+                                          )}
+                                          onChange={(event) =>
+                                            handleUpdateBuilding(item.id, {
+                                              meta: {
+                                                ...(item.meta ?? {}),
+                                                parkingParams: {
+                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  stallDepth:
+                                                    parsePositiveNumber(event.target.value) ??
+                                                    parsePositiveNumber(parkingStallDepth) ??
+                                                    18,
+                                                },
+                                              },
+                                            })
+                                          }
+                                          className="rounded-md border border-slate-200 px-2 py-1"
+                                        />
+                                      </label>
+                                      <label className="flex flex-col gap-1">
+                                        Aisle
+                                        <input
+                                          type="number"
+                                          value={String(
+                                            (item.meta as { parkingParams?: any })?.parkingParams?.aisleWidth ??
+                                              parkingAisleWidth,
+                                          )}
+                                          onChange={(event) =>
+                                            handleUpdateBuilding(item.id, {
+                                              meta: {
+                                                ...(item.meta ?? {}),
+                                                parkingParams: {
+                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  aisleWidth:
+                                                    parsePositiveNumber(event.target.value) ??
+                                                    parsePositiveNumber(parkingAisleWidth) ??
+                                                    24,
+                                                },
+                                              },
+                                            })
+                                          }
+                                          className="rounded-md border border-slate-200 px-2 py-1"
+                                        />
+                                      </label>
+                                      <label className="flex flex-col gap-1">
+                                        ADA Count
+                                        <input
+                                          type="number"
+                                          value={String(
+                                            (item.meta as { parkingParams?: any })?.parkingParams?.adaCount ??
+                                              parkingAdaCount,
+                                          )}
+                                          onChange={(event) =>
+                                            handleUpdateBuilding(item.id, {
+                                              meta: {
+                                                ...(item.meta ?? {}),
+                                                parkingParams: {
+                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  adaCount:
+                                                    parsePositiveNumber(event.target.value) ??
+                                                    parsePositiveNumber(parkingAdaCount) ??
+                                                    0,
+                                                },
+                                              },
+                                            })
+                                          }
+                                          className="rounded-md border border-slate-200 px-2 py-1"
+                                        />
+                                      </label>
+                                      <label className="flex flex-col gap-1">
+                                        ADA Aisle
+                                        <input
+                                          type="number"
+                                          value={String(
+                                            (item.meta as { parkingParams?: any })?.parkingParams?.adaAisleWidth ??
+                                              parkingAdaAisleWidth,
+                                          )}
+                                          onChange={(event) =>
+                                            handleUpdateBuilding(item.id, {
+                                              meta: {
+                                                ...(item.meta ?? {}),
+                                                parkingParams: {
+                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  adaAisleWidth:
+                                                    parsePositiveNumber(event.target.value) ??
+                                                    parsePositiveNumber(parkingAdaAisleWidth) ??
+                                                    8,
+                                                },
+                                              },
+                                            })
+                                          }
+                                          className="rounded-md border border-slate-200 px-2 py-1"
+                                        />
+                                      </label>
+                                      <label className="flex flex-col gap-1">
+                                        Compact Count
+                                        <input
+                                          type="number"
+                                          value={String(
+                                            (item.meta as { parkingParams?: any })?.parkingParams?.compactCount ??
+                                              parkingCompactCount,
+                                          )}
+                                          onChange={(event) =>
+                                            handleUpdateBuilding(item.id, {
+                                              meta: {
+                                                ...(item.meta ?? {}),
+                                                parkingParams: {
+                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  compactCount:
+                                                    parsePositiveNumber(event.target.value) ??
+                                                    parsePositiveNumber(parkingCompactCount) ??
+                                                    0,
+                                                },
+                                              },
+                                            })
+                                          }
+                                          className="rounded-md border border-slate-200 px-2 py-1"
+                                        />
+                                      </label>
+                                      <label className="flex flex-col gap-1">
+                                        Compact W
+                                        <input
+                                          type="number"
+                                          value={String(
+                                            (item.meta as { parkingParams?: any })?.parkingParams?.compactWidth ??
+                                              parkingCompactWidth,
+                                          )}
+                                          onChange={(event) =>
+                                            handleUpdateBuilding(item.id, {
+                                              meta: {
+                                                ...(item.meta ?? {}),
+                                                parkingParams: {
+                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  compactWidth:
+                                                    parsePositiveNumber(event.target.value) ??
+                                                    parsePositiveNumber(parkingCompactWidth) ??
+                                                    8,
+                                                },
+                                              },
+                                            })
+                                          }
+                                          className="rounded-md border border-slate-200 px-2 py-1"
+                                        />
+                                      </label>
+                                      <label className="flex flex-col gap-1">
+                                        Angle
+                                        <select
+                                          value={String(
+                                            (item.meta as { parkingParams?: any })?.parkingParams?.angleDeg ??
+                                              parkingAngle,
+                                          )}
+                                          onChange={(event) =>
+                                            handleUpdateBuilding(item.id, {
+                                              meta: {
+                                                ...(item.meta ?? {}),
+                                                parkingParams: {
+                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  angleDeg: parsePositiveNumber(event.target.value) ?? 90,
+                                                },
+                                              },
+                                            })
+                                          }
+                                          className="rounded-md border border-slate-200 px-2 py-1"
+                                        >
+                                          <option value="90">90°</option>
+                                          <option value="60">60°</option>
+                                          <option value="45">45°</option>
+                                        </select>
+                                      </label>
+                                      <label className="flex flex-col gap-1">
+                                        Loading
+                                        <select
+                                          value={String(
+                                            (item.meta as { parkingParams?: any })?.parkingParams?.loading ??
+                                              parkingLoading,
+                                          )}
+                                          onChange={(event) =>
+                                            handleUpdateBuilding(item.id, {
+                                              meta: {
+                                                ...(item.meta ?? {}),
+                                                parkingParams: {
+                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  loading: event.target.value === "single" ? "single" : "double",
+                                                },
+                                              },
+                                            })
+                                          }
+                                          className="rounded-md border border-slate-200 px-2 py-1"
+                                        >
+                                          <option value="double">Double</option>
+                                          <option value="single">Single</option>
+                                        </select>
+                                      </label>
+                                      <label className="col-span-2 flex items-center justify-between gap-2 rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-600">
+                                        <span>Mixed angle zones</span>
+                                        <input
+                                          type="checkbox"
+                                          checked={Boolean(
+                                            (item.meta as { parkingParams?: any })?.parkingParams?.useMixedAngles,
+                                          )}
+                                          onChange={(event) =>
+                                            handleUpdateBuilding(item.id, {
+                                              meta: {
+                                                ...(item.meta ?? {}),
+                                                parkingParams: {
+                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  useMixedAngles: event.target.checked,
+                                                },
+                                              },
+                                            })
+                                          }
+                                        />
+                                      </label>
+                                      <label className="col-span-2 flex items-center justify-between gap-2 rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-600">
+                                        <span>Compact zone grouping</span>
+                                        <input
+                                          type="checkbox"
+                                          checked={Boolean(
+                                            (item.meta as { parkingParams?: any })?.parkingParams?.compactZone ?? true,
+                                          )}
+                                          onChange={(event) =>
+                                            handleUpdateBuilding(item.id, {
+                                              meta: {
+                                                ...(item.meta ?? {}),
+                                                parkingParams: {
+                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  compactZone: event.target.checked,
+                                                },
+                                              },
+                                            })
+                                          }
+                                        />
+                                      </label>
+                                      <label className="col-span-2 flex items-center justify-between gap-2 rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-600">
+                                        <span>Auto-resize to fit count</span>
+                                        <input
+                                          type="checkbox"
+                                          checked={Boolean(
+                                            (item.meta as { parkingParams?: any })?.parkingParams?.autoResizeToFitCount,
+                                          )}
+                                          onChange={(event) =>
+                                            handleUpdateBuilding(item.id, {
+                                              meta: {
+                                                ...(item.meta ?? {}),
+                                                parkingParams: {
+                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  autoResizeToFitCount: event.target.checked,
+                                                },
+                                              },
+                                            })
+                                          }
+                                        />
+                                      </label>
+                                      {!(item.meta as { parkingParams?: any })?.parkingParams?.autoResizeToFitCount &&
+                                      typeof item.stallCount === "number" &&
+                                      typeof (item.meta as { parkingCapacity?: number })?.parkingCapacity === "number" &&
+                                      item.stallCount >
+                                        Number((item.meta as { parkingCapacity?: number })?.parkingCapacity) ? (
+                                        <div className="col-span-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] text-amber-700">
+                                          Max fits{" "}
+                                          {Number(
+                                            (item.meta as { parkingCapacity?: number })?.parkingCapacity,
+                                          )}{" "}
+                                          stalls at current size.
+                                        </div>
+                                      ) : null}
+                                    </>
                                   ) : null}
                                 </div>
                               ) : null}

@@ -92,10 +92,7 @@ def build_existing_surface(
     map_snapshot = safe_dict(site_inputs.get("map_snapshot"))
     has_map_snapshot = bool(map_snapshot.get("stored_filename") or map_snapshot.get("image_path"))
     has_address = bool(site_inputs.get("address"))
-    if has_survey:
-        profile["source_quality"] = "survey"
-        profile["source_detail"] = "Survey/topo data provided"
-    elif has_map_analysis or has_map_snapshot:
+    if has_map_analysis or has_map_snapshot:
         profile["source_quality"] = "image_inferred"
         profile["source_detail"] = "Map or image inference"
     elif has_address:
@@ -104,30 +101,6 @@ def build_existing_surface(
     else:
         profile["source_quality"] = "assumed"
         profile["source_detail"] = "Fallback assumptions"
-    geocode = safe_dict(site_inputs.get("geocode"))
-    site_rotation = safe_float(site_inputs.get("site_rotation_deg"), 0.0)
-    terrain_surface = None
-    if geocode.get("lat") is not None and geocode.get("lng") is not None:
-        terrain_surface = build_terrain_surface(
-            center_lat=safe_float(geocode.get("lat"), 0.0),
-            center_lng=safe_float(geocode.get("lng"), 0.0),
-            lot_x=safe_float(lot.get("x"), DEFAULT_LOT_X),
-            lot_y=safe_float(lot.get("y"), DEFAULT_LOT_Y),
-            lot_width_ft=safe_float(lot.get("w"), DEFAULT_LOT_WIDTH),
-            lot_height_ft=safe_float(lot.get("h"), DEFAULT_LOT_HEIGHT),
-            rotation_deg=site_rotation,
-            x_min=x_min,
-            y_min=y_min,
-            ncols=ncols,
-            nrows=nrows,
-            cell=cell,
-        )
-        if terrain_surface is not None:
-            profile["source_quality"] = "terrain_mapbox"
-            profile["source_detail"] = "Mapbox terrain-rgb"
-            profile["terrain_used"] = True
-            return normalize_surface(terrain_surface, DEFAULT_PAD_ELEV)
-
     ux, uy = normalize_vector(profile["downhill_dx"], profile["downhill_dy"])
     slope_ratio = max(0.002, safe_float(profile["slope_ratio"], 0.02))
     center_x = (x_min + x_max) / 2.0
@@ -195,6 +168,8 @@ def build_existing_surface(
                 )
                 profile["survey_point_count"] = len(parsed_points)
                 profile["survey_used"] = True
+                profile["source_quality"] = "survey"
+                profile["source_detail"] = "Survey/topo points"
                 setattr(survey_surface, "_inferred_profile", profile)
                 return survey_surface
             except Exception as exc:
@@ -203,6 +178,32 @@ def build_existing_surface(
         else:
             profile["survey_used"] = False
             profile["survey_error"] = "Survey points missing or insufficient."
+            profile["source_detail"] = "Survey points missing or insufficient"
+
+    geocode = safe_dict(site_inputs.get("geocode"))
+    site_rotation = safe_float(site_inputs.get("site_rotation_deg"), 0.0)
+    terrain_surface = None
+    if geocode.get("lat") is not None and geocode.get("lng") is not None:
+        terrain_surface = build_terrain_surface(
+            center_lat=safe_float(geocode.get("lat"), 0.0),
+            center_lng=safe_float(geocode.get("lng"), 0.0),
+            lot_x=safe_float(lot.get("x"), DEFAULT_LOT_X),
+            lot_y=safe_float(lot.get("y"), DEFAULT_LOT_Y),
+            lot_width_ft=safe_float(lot.get("w"), DEFAULT_LOT_WIDTH),
+            lot_height_ft=safe_float(lot.get("h"), DEFAULT_LOT_HEIGHT),
+            rotation_deg=site_rotation,
+            x_min=x_min,
+            y_min=y_min,
+            ncols=ncols,
+            nrows=nrows,
+            cell=cell,
+        )
+        if terrain_surface is not None:
+            profile["source_quality"] = "terrain_mapbox"
+            profile["source_detail"] = "Mapbox terrain-rgb"
+            profile["terrain_used"] = True
+            setattr(terrain_surface, "_inferred_profile", profile)
+            return normalize_surface(terrain_surface, DEFAULT_PAD_ELEV)
 
     setattr(surface, "_inferred_profile", profile)
     return surface

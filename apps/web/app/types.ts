@@ -13,11 +13,15 @@ export type Assumption = {
 export type Issue = {
   severity: "warning" | "error";
   message: string;
+  code?: string;
+  context?: Record<string, unknown>;
 };
 
 export type BackendIssue = {
   severity?: string;
   message?: string;
+  code?: string;
+  context?: Record<string, unknown>;
 };
 
 export type BackendAssumption = {

@@ -262,6 +262,10 @@ def run_drainage_stage(
             PIPE_MIN_SLOPE,
             min_pipe_slope_pct / 100.0 if min_pipe_slope_pct > 0 else PIPE_MIN_SLOPE,
         )
+        forced_inlets = safe_list(drainage_profile.get("forced_inlets"))
+        connect_orphans = bool(drainage_profile.get("connect_orphans"))
+        allow_slope_adjustment = bool(drainage_profile.get("allow_slope_adjustment"))
+        max_slope_adjust = safe_float(drainage_profile.get("max_slope_adjust"), 0.001)
         if user_supplied_geometry_available(parsed, "drainage_structures") or user_supplied_geometry_available(parsed, "pipe_network"):
             direct_actions: List[Dict[str, Any]] = []
             direct_actions.extend(actions_from_point_features(safe_list(execution_payload.get("drainage_structures")), "DRAIN"))
@@ -482,6 +486,10 @@ def run_drainage_stage(
                     min_slope=max(MIN_SLOPE, 0.001),
                     pavement_polygons=pavement_polygons or None,
                     collector_lines=collector_lines or None,
+                    forced_inlets=forced_inlets or None,
+                    connect_orphans=connect_orphans,
+                    allow_slope_adjustment=allow_slope_adjustment,
+                    max_slope_adjust=max_slope_adjust,
                 )
             except TypeError:
                 try:
