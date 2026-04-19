@@ -6352,10 +6352,48 @@ export default function PerformanceAIDashboard() {
       const issueCode = (issue.code ?? "").toUpperCase();
       const lot = resolveLotBounds();
       const lowPoint = pickBestLowPoint();
+      const issueX = typeof issue.context?.x === "number" ? issue.context.x : Number(issue.context?.x);
+      const issueY = typeof issue.context?.y === "number" ? issue.context.y : Number(issue.context?.y);
+      const issueLocation =
+        Number.isFinite(issueX) && Number.isFinite(issueY) ? { x: issueX, y: issueY } : null;
+      const distanceFt = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+        Math.hypot(a.x - b.x, a.y - b.y);
+      const findNearbyPlacement = (
+        type: SiteObjectType,
+        point: { x: number; y: number },
+        threshold: number,
+      ) =>
+        buildingPlacements.find(
+          (item) =>
+            item.type === type &&
+            item.placed &&
+            Number.isFinite(item.x) &&
+            Number.isFinite(item.y) &&
+            distanceFt({ x: item.x as number, y: item.y as number }, point) <= threshold,
+        );
 
       if (issueCode === "UNDER_COLLECTION") {
         if (!lowPoint) {
           setStatusMessage("No low points available to place an inlet.");
+          return;
+        }
+        if (issueLocation && distanceFt(lowPoint, issueLocation) > 200) {
+          setStatusMessage("Closest low point is too far from the flagged area to place an inlet.");
+          return;
+        }
+        if (findNearbyPlacement("inlet", lowPoint, 10)) {
+          setStatusMessage("An inlet already exists near the suggested location.");
+          return;
+        }
+        if (
+          drainageForcedInlets.some(
+            (item) =>
+              typeof item.x === "number" &&
+              typeof item.y === "number" &&
+              distanceFt({ x: item.x, y: item.y }, lowPoint) <= 8,
+          )
+        ) {
+          setStatusMessage("An inlet is already queued near that location.");
           return;
         }
         const forcedInlet = {
@@ -6395,6 +6433,10 @@ export default function PerformanceAIDashboard() {
       }
 
       if (issueCode === "ORPHAN_INLETS") {
+        if (drainageConnectOrphans) {
+          setStatusMessage("Orphan inlet connection already queued. Regenerate drainage to apply.");
+          return;
+        }
         setDrainageConnectOrphans(true);
         await runDrainageAutofix({ connectOrphans: true });
         setStatusMessage("Applied orphan inlet connection. Drainage regenerated.");
@@ -6402,6 +6444,10 @@ export default function PerformanceAIDashboard() {
       }
 
       if (issueCode === "POOR_SLOPE") {
+        if (drainageAllowSlopeAdjust) {
+          setStatusMessage("Slope adjustment already queued. Regenerate drainage to apply.");
+          return;
+        }
         setDrainageAllowSlopeAdjust(true);
         await runDrainageAutofix({ allowSlopeAdjust: true });
         setStatusMessage("Applied slope adjustment attempt. Drainage regenerated.");
@@ -6415,6 +6461,14 @@ export default function PerformanceAIDashboard() {
       ) {
         if (!lowPoint) {
           setStatusMessage("No low points available to place a basin.");
+          return;
+        }
+        if (issueLocation && distanceFt(lowPoint, issueLocation) > 300) {
+          setStatusMessage("Closest low point is too far from the flagged area to place a basin.");
+          return;
+        }
+        if (findNearbyPlacement("basin", lowPoint, 40)) {
+          setStatusMessage("A basin already exists near the suggested location.");
           return;
         }
         const basinPlacement: BuildingPlacement = {
