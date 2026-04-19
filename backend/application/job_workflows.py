@@ -1268,12 +1268,26 @@ def build_drainage_job_runner(
             manual_drainage = safe_dict(unwrap_fields_for_execution(raw_manual_fields.get("drainage")))
             manual_forced = safe_list(manual_drainage.get("forced_inlets"))
             manual_allow_slope = bool(manual_drainage.get("allow_slope_adjustment"))
+            manual_autofix_action = safe_str(manual_drainage.get("autofix_action"), "")
+            raw_manual_drainage = safe_dict(raw_manual_fields.get("drainage"))
+            raw_allow = raw_manual_drainage.get("allow_slope_adjustment")
+            if isinstance(raw_allow, dict):
+                raw_allow = raw_allow.get("value")
+            if raw_allow is not None:
+                manual_allow_slope = bool(raw_allow)
+            raw_autofix_action = raw_manual_drainage.get("autofix_action")
+            if isinstance(raw_autofix_action, dict):
+                raw_autofix_action = raw_autofix_action.get("value")
+            if raw_autofix_action:
+                manual_autofix_action = safe_str(raw_autofix_action, manual_autofix_action)
             if manual_forced:
                 forced_inlets = manual_forced
                 parsed.setdefault("drainage", {})["forced_inlets"] = deepcopy(manual_forced)
             if manual_allow_slope and not allow_slope_adjustment:
                 parsed.setdefault("drainage", {})["allow_slope_adjustment"] = True
                 allow_slope_adjustment = True
+            if manual_autofix_action and not safe_str(safe_dict(parsed.get("drainage")).get("autofix_action"), ""):
+                parsed.setdefault("drainage", {})["autofix_action"] = manual_autofix_action
         route = choose_routing_path(parsed)
         manager = _bootstrap_manager(parsed)
         _register_default_dependencies(manager)
@@ -1475,8 +1489,10 @@ def build_drainage_job_runner(
                 )
             if fallback_issues:
                 result["issues"] = fallback_issues
-        allow_slope_adjustment = bool(safe_dict(parsed.get("drainage")).get("allow_slope_adjustment"))
-        if allow_slope_adjustment:
+        drainage_flags = safe_dict(parsed.get("drainage"))
+        allow_slope_adjustment = bool(drainage_flags.get("allow_slope_adjustment"))
+        slope_autofix_requested = safe_str(drainage_flags.get("autofix_action"), "") == "adjust_slope"
+        if allow_slope_adjustment or slope_autofix_requested:
             inlet_count = len(safe_list(drainage_canonical.get("inlets")))
             run_count = len(safe_list(drainage_canonical.get("pipe_runs") or drainage_canonical.get("runs")))
             if run_count == 0:

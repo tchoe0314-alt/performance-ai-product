@@ -6341,6 +6341,7 @@ export default function PerformanceAIDashboard() {
       if (allowSlopeAdjust) {
         nextDrainage.allow_slope_adjustment = true;
         nextDrainage.max_slope_adjust = drainageMaxSlopeAdjust;
+        nextDrainage.autofix_action = "adjust_slope";
       }
       nextManualFields.drainage = nextDrainage;
       nextManualFields.utility_network = omitField;
