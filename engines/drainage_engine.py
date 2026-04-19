@@ -37,6 +37,17 @@ from .surface_engine import GridSurface
 EPS = 1e-9
 
 
+def safe_str(value: object, default: str = "") -> str:
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value
+    try:
+        return str(value)
+    except Exception:
+        return default
+
+
 # =====================================================
 # DATA STRUCTURES
 # =====================================================
@@ -87,10 +98,13 @@ class PipeRun:
     label: str
     path: Optional[List[Tuple[float, float]]] = None
     slope: Optional[float] = None
+    terrain_slope: Optional[float] = None
+    reached_target: bool = False
     flow_cfs: Optional[float] = None
     diameter_in: Optional[int] = None
     hydraulic_basis: str = "geometry_only"
     warnings: List[str] = field(default_factory=list)
+    inlet_name: Optional[str] = None
 
 
 @dataclass
@@ -227,9 +241,13 @@ class DrainageEngine:
 
     def add_pond_target(self, name: str, x: float, y: float, radius: float = 6.0) -> None:
         self.ponds.append(PondTarget(name=name, x=x, y=y, radius=radius))
+        self._flow_trace_cache.clear()
+        self._flow_accumulation_cache.clear()
 
     def clear_pond_targets(self) -> None:
         self.ponds.clear()
+        self._flow_trace_cache.clear()
+        self._flow_accumulation_cache.clear()
 
     def _neighbors(self, row: int, col: int) -> List[Tuple[int, int]]:
         out: List[Tuple[int, int]] = []
@@ -287,6 +305,146 @@ class DrainageEngine:
             return None
         return min(self.ponds, key=lambda p: math.hypot(x - p.x, y - p.y))
 
+    def _point_in_polygon(self, x: float, y: float, poly: Sequence[Tuple[float, float]]) -> bool:
+        inside = False
+        n = len(poly)
+        if n < 3:
+            return False
+        for i in range(n):
+            x1, y1 = poly[i]
+            x2, y2 = poly[(i + 1) % n]
+            if ((y1 > y) != (y2 > y)) and (x < (x2 - x1) * (y - y1) / ((y2 - y1) + EPS) + x1):
+                inside = not inside
+        return inside
+
+    def _dist_point_to_segment(self, px: float, py: float, ax: float, ay: float, bx: float, by: float) -> float:
+        vx = bx - ax
+        vy = by - ay
+        wx = px - ax
+        wy = py - ay
+        denom = vx * vx + vy * vy
+        if denom <= EPS:
+            return math.hypot(px - ax, py - ay)
+        t = max(0.0, min(1.0, (wx * vx + wy * vy) / denom))
+        proj_x = ax + t * vx
+        proj_y = ay + t * vy
+        return math.hypot(px - proj_x, py - proj_y)
+
+    def _polygon_edge_distance(self, x: float, y: float, poly: Sequence[Tuple[float, float]]) -> float:
+        if len(poly) < 2:
+            return float("inf")
+        min_dist = float("inf")
+        n = len(poly)
+        for i in range(n):
+            ax, ay = poly[i]
+            bx, by = poly[(i + 1) % n]
+            min_dist = min(min_dist, self._dist_point_to_segment(x, y, ax, ay, bx, by))
+        return min_dist
+
+    def _polyline_distance(self, x: float, y: float, line: Sequence[Tuple[float, float]]) -> float:
+        if len(line) < 2:
+            return float("inf")
+        min_dist = float("inf")
+        for i in range(1, len(line)):
+            ax, ay = line[i - 1]
+            bx, by = line[i]
+            min_dist = min(min_dist, self._dist_point_to_segment(x, y, ax, ay, bx, by))
+        return min_dist
+
+    def _project_point_to_segment(
+        self,
+        px: float,
+        py: float,
+        ax: float,
+        ay: float,
+        bx: float,
+        by: float,
+    ) -> Tuple[float, float]:
+        vx = bx - ax
+        vy = by - ay
+        wx = px - ax
+        wy = py - ay
+        denom = vx * vx + vy * vy
+        if denom <= EPS:
+            return ax, ay
+        t = max(0.0, min(1.0, (wx * vx + wy * vy) / denom))
+        return ax + t * vx, ay + t * vy
+
+    def _nearest_polygon_edge_projection(
+        self,
+        x: float,
+        y: float,
+        poly: Sequence[Tuple[float, float]],
+    ) -> Tuple[Tuple[float, float], Tuple[float, float], float, int]:
+        n = len(poly)
+        best = (x, y)
+        edge = (x, y)
+        min_dist = float("inf")
+        edge_idx = 0
+        for i in range(n):
+            ax, ay = poly[i]
+            bx, by = poly[(i + 1) % n]
+            proj_x, proj_y = self._project_point_to_segment(x, y, ax, ay, bx, by)
+            dist = math.hypot(x - proj_x, y - proj_y)
+            if dist < min_dist:
+                min_dist = dist
+                best = (proj_x, proj_y)
+                edge = (bx - ax, by - ay)
+                edge_idx = i
+        return best, edge, min_dist, edge_idx
+
+    def _nearest_polyline_projection(
+        self,
+        x: float,
+        y: float,
+        line: Sequence[Tuple[float, float]],
+    ) -> Tuple[Tuple[float, float], Tuple[float, float], float, int]:
+        best = (x, y)
+        edge = (x, y)
+        min_dist = float("inf")
+        edge_idx = 0
+        for i in range(1, len(line)):
+            ax, ay = line[i - 1]
+            bx, by = line[i]
+            proj_x, proj_y = self._project_point_to_segment(x, y, ax, ay, bx, by)
+            dist = math.hypot(x - proj_x, y - proj_y)
+            if dist < min_dist:
+                min_dist = dist
+                best = (proj_x, proj_y)
+                edge = (bx - ax, by - ay)
+                edge_idx = i - 1
+        return best, edge, min_dist, edge_idx
+
+    def _nearest_polygon_corner(
+        self,
+        x: float,
+        y: float,
+        poly: Sequence[Tuple[float, float]],
+    ) -> Tuple[Tuple[float, float], Tuple[float, float], float]:
+        n = len(poly)
+        best = (x, y)
+        normal = (0.0, 0.0)
+        min_dist = float("inf")
+        for i in range(n):
+            cx, cy = poly[i]
+            dist = math.hypot(x - cx, y - cy)
+            if dist < min_dist:
+                prev_x, prev_y = poly[i - 1]
+                next_x, next_y = poly[(i + 1) % n]
+                v1x, v1y = cx - prev_x, cy - prev_y
+                v2x, v2y = next_x - cx, next_y - cy
+                n1 = (-v1y, v1x)
+                n2 = (-v2y, v2x)
+                nx = n1[0] + n2[0]
+                ny = n1[1] + n2[1]
+                length = math.hypot(nx, ny)
+                if length > EPS:
+                    nx /= length
+                    ny /= length
+                best = (cx, cy)
+                normal = (nx, ny)
+                min_dist = dist
+        return best, normal, min_dist
     def _issue(self, code: str, severity: str, message: str, **context: Any) -> DrainageValidationIssue:
         return DrainageValidationIssue(code=code, severity=severity, message=message, context=dict(context))
 
@@ -635,21 +793,54 @@ class DrainageEngine:
         use_flow_accumulation: bool = True,
         min_contributing_cells: int = 1,
         min_slope: float = 0.001,
+        pavement_polygons: Optional[List[List[Tuple[float, float]]]] = None,
+        pavement_bias: float = 0.6,
+        pavement_edge_bias: float = 1.0,
+        pavement_edge_buffer: float = 12.0,
+        collector_lines: Optional[List[List[Tuple[float, float]]]] = None,
+        collector_bias: float = 1.2,
+        collector_buffer: float = 18.0,
+        edge_snap_buffer: Optional[float] = None,
+        gutter_offset: float = 2.0,
+        collector_offset: float = 3.0,
+        corner_snap_buffer: float = 8.0,
+        segment_spacing: float = 120.0,
+        segment_max_inlets: int = 4,
     ) -> List[Inlet]:
         lows = self.find_low_points(include_accumulation=use_flow_accumulation, min_slope=min_slope)
         basin_by_sink = {tuple(record.sink): record for record in (basin_records or []) if getattr(record, "sink", None)}
 
-        def inlet_priority(lp: LowPoint) -> Tuple[float, float, float, int, int]:
+        edge_snap_buffer = pavement_edge_buffer if edge_snap_buffer is None else edge_snap_buffer
+
+        def inlet_priority(lp: LowPoint) -> Tuple[float, float, float, float, float, int, int]:
             basin = basin_by_sink.get((lp.row, lp.col))
             basin_runoff = float(getattr(basin, "estimated_runoff_cfs", 0.0) or 0.0)
             basin_area = float(getattr(basin, "area_sf", 0.0) or 0.0)
             target_bonus = 1.0 if getattr(basin, "target_name", None) else 0.0
             if hydraulic is not None and basin is not None and basin_runoff <= 0.0:
                 basin_runoff = self._estimate_basin_runoff_cfs(basin, hydraulic)
-            return (-basin_runoff, -basin_area, -target_bonus, -int(lp.contributing_cells), lp.row * 10000 + lp.col)
+            pavement_score = 0.0
+            if pavement_polygons:
+                for poly in pavement_polygons:
+                    if self._point_in_polygon(lp.x, lp.y, poly):
+                        pavement_score = max(pavement_score, pavement_bias)
+                        edge_dist = self._polygon_edge_distance(lp.x, lp.y, poly)
+                        if edge_dist <= pavement_edge_buffer:
+                            pavement_score = max(pavement_score, pavement_edge_bias)
+            collector_score = 0.0
+            if collector_lines:
+                for line in collector_lines:
+                    dist = self._polyline_distance(lp.x, lp.y, line)
+                    if dist <= collector_buffer:
+                        score = collector_bias * (1.0 - (dist / max(collector_buffer, EPS)))
+                        collector_score = max(collector_score, score)
+            return (-basin_runoff, -basin_area, -target_bonus, -collector_score, -pavement_score, -int(lp.contributing_cells), lp.row * 10000 + lp.col)
 
         lows = sorted(lows, key=inlet_priority)
         inlets: List[Inlet] = []
+
+        segment_positions: Dict[Tuple[str, int], List[float]] = {}
+        segment_limits: Dict[Tuple[str, int], float] = {}
 
         for lp in lows:
             if len(inlets) >= max_inlets:
@@ -675,6 +866,100 @@ class DrainageEngine:
                     break
             if too_close:
                 continue
+
+            snap_applied = False
+            segment_key: Optional[Tuple[str, int]] = None
+            segment_start: Optional[Tuple[float, float]] = None
+            segment_end: Optional[Tuple[float, float]] = None
+            if pavement_polygons:
+                best_proj = None
+                best_edge = None
+                best_dist = float("inf")
+                best_poly = None
+                best_edge_idx = 0
+                best_corner = None
+                best_corner_normal = None
+                best_corner_dist = float("inf")
+                for poly in pavement_polygons:
+                    proj, edge_vec, dist, edge_idx = self._nearest_polygon_edge_projection(lp.x, lp.y, poly)
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_proj = proj
+                        best_edge = edge_vec
+                        best_poly = poly
+                        best_edge_idx = edge_idx
+                    corner, normal, corner_dist = self._nearest_polygon_corner(lp.x, lp.y, poly)
+                    if corner_dist < best_corner_dist:
+                        best_corner_dist = corner_dist
+                        best_corner = corner
+                        best_corner_normal = normal
+                if best_proj is not None and best_dist <= edge_snap_buffer:
+                    use_corner = best_corner is not None and best_corner_dist <= corner_snap_buffer
+                    if use_corner:
+                        cx, cy = best_corner
+                        nx, ny = best_corner_normal or (0.0, 0.0)
+                        if best_poly is not None:
+                            test_x = cx + nx * 0.5
+                            test_y = cy + ny * 0.5
+                            if not self._point_in_polygon(test_x, test_y, best_poly):
+                                nx, ny = -nx, -ny
+                        x = cx + nx * gutter_offset
+                        y = cy + ny * gutter_offset
+                        snap_applied = True
+                    else:
+                        ex, ey = best_edge
+                        elen = math.hypot(ex, ey)
+                        if elen > EPS:
+                            nx, ny = -ey / elen, ex / elen
+                            test_x = best_proj[0] + nx * 0.5
+                            test_y = best_proj[1] + ny * 0.5
+                            if best_poly is not None and not self._point_in_polygon(test_x, test_y, best_poly):
+                                nx, ny = -nx, -ny
+                            x = best_proj[0] + nx * gutter_offset
+                            y = best_proj[1] + ny * gutter_offset
+                            snap_applied = True
+                    if best_poly is not None:
+                        segment_key = ("pavement", best_edge_idx)
+                        a = best_poly[best_edge_idx]
+                        b = best_poly[(best_edge_idx + 1) % len(best_poly)]
+                        segment_start = a
+                        segment_end = b
+
+            if not snap_applied and collector_lines:
+                best_proj = None
+                best_edge = None
+                best_dist = float("inf")
+                best_edge_idx = 0
+                best_line_idx = 0
+                for line in collector_lines:
+                    proj, edge_vec, dist, edge_idx = self._nearest_polyline_projection(lp.x, lp.y, line)
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_proj = proj
+                        best_edge = edge_vec
+                        best_edge_idx = edge_idx
+                        best_line_idx = collector_lines.index(line)
+                if best_proj is not None and best_dist <= collector_buffer:
+                    ex, ey = best_edge
+                    elen = math.hypot(ex, ey)
+                    if elen > EPS:
+                        nx, ny = -ey / elen, ex / elen
+                        x = best_proj[0] + nx * collector_offset
+                        y = best_proj[1] + ny * collector_offset
+                        segment_key = ("collector", best_line_idx * 10000 + best_edge_idx)
+                        segment_start = collector_lines[best_line_idx][best_edge_idx]
+                        segment_end = collector_lines[best_line_idx][best_edge_idx + 1]
+
+            if segment_key and segment_start and segment_end:
+                seg_len = math.hypot(segment_end[0] - segment_start[0], segment_end[1] - segment_start[1])
+                segment_limits[segment_key] = seg_len
+                along = math.hypot(x - segment_start[0], y - segment_start[1])
+                existing = segment_positions.setdefault(segment_key, [])
+                if seg_len >= segment_spacing and len(existing) >= segment_max_inlets:
+                    continue
+                if seg_len >= segment_spacing and any(abs(along - prev) < segment_spacing for prev in existing):
+                    continue
+                existing.append(along)
 
             area_sf = lp.contributing_cells * (self.surface.cell_size ** 2)
             basin = basin_by_sink.get((lp.row, lp.col))
@@ -705,9 +990,11 @@ class DrainageEngine:
         nearest_pond: PondTarget,
         min_slope: float = 0.001,
         max_steps: int = 500,
-        snap_last_segment: bool = True,
-    ) -> List[Tuple[float, float]]:
+    ) -> Tuple[List[Tuple[float, float]], bool, str]:
         row, col = self._normalize_xy(inlet.x, inlet.y)
+
+        if self._inside_pond(inlet.x, inlet.y) is not None:
+            return [(inlet.x, inlet.y)], True, nearest_pond.name
 
         path, target, _ = self.trace_flow_path(
             row,
@@ -722,16 +1009,15 @@ class DrainageEngine:
 
         if not path:
             path = [(inlet.x, inlet.y)]
-
-        last_x, last_y = path[-1]
-        d_to_pond = math.hypot(last_x - nearest_pond.x, last_y - nearest_pond.y)
-
-        if snap_last_segment and d_to_pond > nearest_pond.radius:
-            path.append((nearest_pond.x, nearest_pond.y))
-        elif target is None and path[-1] != (nearest_pond.x, nearest_pond.y):
-            path.append((nearest_pond.x, nearest_pond.y))
-
-        return self._dedupe_path(path)
+        reached = target == nearest_pond.name
+        if not reached and path:
+            last_x, last_y = path[-1]
+            dist = math.hypot(last_x - nearest_pond.x, last_y - nearest_pond.y)
+            if dist <= max(self.surface.cell_size * 1.5, nearest_pond.radius):
+                reached = True
+                target = nearest_pond.name
+        reason = safe_str(target, "NO_TARGET")
+        return self._dedupe_path(path), reached, reason
 
     def _resolve_hydraulic_inputs(
         self,
@@ -871,7 +1157,7 @@ class DrainageEngine:
             summary.inlet_records.append(inlet_record)
 
             if follow_surface:
-                path = self._route_path_to_pond(
+                path, reached, target_reason = self._route_path_to_pond(
                     inlet=inlet,
                     nearest_pond=nearest_pond,
                     min_slope=min_slope,
@@ -879,32 +1165,63 @@ class DrainageEngine:
                 )
             else:
                 path = [(inlet.x, inlet.y), (nearest_pond.x, nearest_pond.y)]
+                reached = True
+                target_reason = nearest_pond.name
 
             path = self._dedupe_path(path)
             run_length = self._polyline_length(path)
 
             inlet_z = inlet.z
-            pond_z = self._cell_z(*self._normalize_xy(nearest_pond.x, nearest_pond.y))
+            last_x, last_y = path[-1]
+            end_z = self._cell_z(*self._normalize_xy(last_x, last_y))
+            terrain_slope = None
             slope = None
             pipe_warnings: List[str] = []
 
+            if not reached:
+                pipe_warnings.append(
+                    f"Flow path did not reach basin {nearest_pond.name}; ended at {target_reason}."
+                )
+                summary.issues.append(self._issue(
+                    code="BASIN_UNREACHABLE",
+                    severity="error",
+                    message=f"Surface flow from {inlet.name} did not reach basin {nearest_pond.name}.",
+                    pipe_label=f"{inlet.name} TO {nearest_pond.name}",
+                ))
+                summary.success = False
+                summary.message = "One or more basin targets are not reachable from the surface."
+
             if run_length > EPS:
-                slope = max((inlet_z - pond_z) / run_length, hydraulic_resolved.min_pipe_slope)
-                if slope < hydraulic_resolved.min_pipe_slope:
-                    pipe_warnings.append("Computed terrain slope is below minimum pipe slope; minimum concept slope used.")
+                terrain_slope = (inlet_z - end_z) / run_length
+                slope = max(terrain_slope, hydraulic_resolved.min_pipe_slope)
+                if terrain_slope < hydraulic_resolved.min_pipe_slope:
+                    pipe_warnings.append(
+                        "Computed terrain slope is below minimum pipe slope; minimum concept slope used."
+                    )
+                    summary.issues.append(self._issue(
+                        code="POOR_SLOPE",
+                        severity="warning",
+                        message=f"Pipe slope below minimum between {inlet.name} and {nearest_pond.name}.",
+                        pipe_label=f"{inlet.name} TO {nearest_pond.name}",
+                        terrain_slope=round(terrain_slope, 5),
+                        min_pipe_slope=hydraulic_resolved.min_pipe_slope,
+                    ))
 
             diameter_in = self._choose_concept_diameter(inlet.estimated_flow_cfs or 0.0, hydraulic_resolved)
 
             run = PipeRun(
                 start=(inlet.x, inlet.y),
-                end=(nearest_pond.x, nearest_pond.y),
+                end=(last_x, last_y),
                 path=path,
                 label=f"{inlet.name} TO {nearest_pond.name}",
                 slope=slope,
+                terrain_slope=terrain_slope,
+                reached_target=reached,
                 flow_cfs=inlet.estimated_flow_cfs,
                 diameter_in=diameter_in,
                 hydraulic_basis="rational_method_concept" if inlet.estimated_flow_cfs is not None else "geometry_only",
                 warnings=[*inlet_record.warnings, *pipe_warnings],
+                inlet_name=inlet.name,
             )
             runs.append(run)
 
@@ -940,6 +1257,8 @@ class DrainageEngine:
         min_contributing_cells: int = 1,
         min_slope: float = 0.001,
         sample_step: int = 2,
+        pavement_polygons: Optional[List[List[Tuple[float, float]]]] = None,
+        collector_lines: Optional[List[List[Tuple[float, float]]]] = None,
     ) -> DrainageDesignSummary:
         summary = DrainageDesignSummary(
             mode=mode,
@@ -954,6 +1273,11 @@ class DrainageEngine:
                 code="NO_PONDS_DEFINED",
                 severity="error",
                 message="Drainage design requires at least one pond/outfall target.",
+            ))
+            summary.issues.append(self._issue(
+                code="NO_VALID_OUTFALL",
+                severity="error",
+                message="No valid basin/outfall target is available for drainage routing.",
             ))
             return summary
 
@@ -979,6 +1303,8 @@ class DrainageEngine:
             use_flow_accumulation=True,
             min_contributing_cells=min_contributing_cells,
             min_slope=min_slope,
+            pavement_polygons=pavement_polygons,
+            collector_lines=collector_lines,
         )
 
         if not inlets:
@@ -1005,20 +1331,136 @@ class DrainageEngine:
         )
 
         summary.provided_inputs = run_summary.provided_inputs
+        if pavement_polygons:
+            summary.provided_inputs["pavement_bias"] = True
+            summary.provided_inputs["pavement_zone_count"] = len(pavement_polygons)
+        if collector_lines:
+            summary.provided_inputs["collector_bias"] = True
+            summary.provided_inputs["collector_line_count"] = len(collector_lines)
         summary.assumed_inputs = run_summary.assumed_inputs
         summary.inlet_records = run_summary.inlet_records
         summary.pipe_runs = runs
         summary.issues.extend(run_summary.issues)
 
-        if run_summary.error_count() > 0:
+        basin_unreachable = [issue for issue in summary.issues if issue.code == "BASIN_UNREACHABLE"]
+        if len(basin_unreachable) > 1:
+            summary.issues = [issue for issue in summary.issues if issue.code != "BASIN_UNREACHABLE"]
+            summary.issues.append(self._issue(
+                code="BASIN_UNREACHABLE",
+                severity="error",
+                message=f"{len(basin_unreachable)} inlet paths did not reach a basin target.",
+                affected_paths=len(basin_unreachable),
+            ))
+
+        # =====================================================
+        # CONFLICT DETECTION + FIRST-PASS AUTOFIX SUGGESTIONS
+        # =====================================================
+        orphan_inlets = []
+        if inlets and not runs:
+            orphan_inlets = list(inlets)
+        elif inlets:
+            run_by_inlet = {
+                safe_str(run.inlet_name, ""): run
+                for run in runs
+                if safe_str(run.inlet_name, "")
+            }
+            for inlet in inlets:
+                run = run_by_inlet.get(inlet.name)
+                if run is None:
+                    orphan_inlets.append(inlet)
+                    continue
+                path_len = len(run.path or [])
+                if path_len <= 1 and not run.reached_target:
+                    orphan_inlets.append(inlet)
+        if orphan_inlets:
+            summary.issues.append(self._issue(
+                code="ORPHAN_INLETS",
+                severity="warning",
+                message=f"{len(orphan_inlets)} inlets are not connected to a drainage path.",
+                inlet_count=len(orphan_inlets),
+                inlet_names=[inlet.name for inlet in orphan_inlets],
+            ))
+
+        unreachable_count = sum(1 for issue in summary.issues if issue.code == "BASIN_UNREACHABLE")
+        if runs and unreachable_count >= len(runs):
+            summary.issues.append(self._issue(
+                code="NO_VALID_OUTFALL",
+                severity="error",
+                message="No inlet paths reached a valid basin/outfall target.",
+                run_count=len(runs),
+            ))
+
+        if runs:
+            short_paths = [run for run in runs if len(run.path or []) <= 1]
+            if len(short_paths) == len(runs) and not any(run.reached_target for run in runs):
+                summary.issues.append(self._issue(
+                    code="NO_FLOW_PATHS",
+                    severity="error",
+                    message="No valid flow paths were traced from inlets to a target.",
+                ))
+
+        if pavement_polygons:
+            total_edge_length = 0.0
+            for poly in pavement_polygons:
+                if len(poly) < 3:
+                    continue
+                total_edge_length += self._polyline_length(list(poly) + [poly[0]])
+            if total_edge_length > EPS:
+                expected = max(total_edge_length / max(inlet_min_spacing, 1.0), 1.0)
+                if len(inlets) < expected * 0.55:
+                    suggested = int(math.ceil(expected - len(inlets)))
+                    summary.issues.append(self._issue(
+                        code="UNDER_COLLECTION",
+                        severity="warning",
+                        message="Paved areas appear under-collected by inlets.",
+                        pavement_edge_length_ft=round(total_edge_length, 2),
+                        inlet_count=len(inlets),
+                        suggested_additional_inlets=max(suggested, 1),
+                    ))
+
+        autofix_suggestions: List[Dict[str, Any]] = []
+        if any(issue.code == "BASIN_UNREACHABLE" for issue in summary.issues):
+            autofix_suggestions.append({
+                "strategy": "suggest_low_point_basin",
+                "priority": "high",
+                "message": "Consider adding or relocating a basin to the dominant low point.",
+            })
+        if any(issue.code in {"NO_VALID_OUTFALL", "NO_FLOW_PATHS"} for issue in summary.issues):
+            autofix_suggestions.append({
+                "strategy": "suggest_outfall_target",
+                "priority": "high",
+                "message": "Define a valid outfall or basin target for the drainage network.",
+            })
+        if any(issue.code == "POOR_SLOPE" for issue in summary.issues):
+            autofix_suggestions.append({
+                "strategy": "adjust_pipe_grades",
+                "priority": "medium",
+                "message": "Increase pipe slopes or adjust grading near inlets to meet minimum slopes.",
+            })
+        if any(issue.code == "ORPHAN_INLETS" for issue in summary.issues):
+            autofix_suggestions.append({
+                "strategy": "connect_orphan_inlets",
+                "priority": "medium",
+                "message": "Connect orphan inlets to the nearest viable drainage path or trunk.",
+            })
+        if any(issue.code == "UNDER_COLLECTION" for issue in summary.issues):
+            autofix_suggestions.append({
+                "strategy": "add_inlets_along_edges",
+                "priority": "low",
+                "message": "Add additional inlets along long paved edges or aisles.",
+            })
+
+        if summary.error_count() > 0:
             summary.success = False
             summary.message = "Drainage network design failed."
-        elif run_summary.warning_count() > 0:
+        elif summary.warning_count() > 0:
             summary.message = "Drainage network designed with warnings."
 
         summary.explain = self._build_explain(summary)
         summary.optimize_hooks = self._build_optimize_hooks(summary)
         summary.conflict_hooks = self._build_conflict_hooks(summary)
+        if autofix_suggestions:
+            summary.conflict_hooks["autofix_suggestions"] = list(autofix_suggestions)
         return summary
 
     # =====================================================
@@ -1088,6 +1530,8 @@ class DrainageEngine:
         include_flow_arrows: bool = True,
         include_inlets: bool = True,
         include_pipes: bool = True,
+        pavement_polygons: Optional[List[List[Tuple[float, float]]]] = None,
+        collector_lines: Optional[List[List[Tuple[float, float]]]] = None,
     ) -> List[Dict]:
         actions: List[Dict] = []
 
@@ -1102,7 +1546,15 @@ class DrainageEngine:
                 actions.extend(self.basin_label_actions(sample_step=sample_step, min_slope=min_slope, max_steps=max_steps))
 
         if include_inlets and self.ponds:
-            inlets = self.place_inlets(min_spacing=20.0, max_inlets=12, use_flow_accumulation=True, min_contributing_cells=1, min_slope=min_slope)
+            inlets = self.place_inlets(
+                min_spacing=20.0,
+                max_inlets=12,
+                use_flow_accumulation=True,
+                min_contributing_cells=1,
+                min_slope=min_slope,
+                pavement_polygons=pavement_polygons,
+                collector_lines=collector_lines,
+            )
             actions.extend(self.inlet_actions(inlets))
             if include_pipes:
                 runs, _ = self.pipe_runs(
@@ -1165,6 +1617,15 @@ class DrainageEngine:
 
     def _build_conflict_hooks(self, summary: DrainageDesignSummary) -> Dict[str, Any]:
         return {
+            "issues": [
+                {
+                    "code": issue.code,
+                    "severity": issue.severity,
+                    "message": issue.message,
+                    "context": dict(issue.context),
+                }
+                for issue in summary.issues
+            ],
             "drainage_inlets": [
                 {
                     "name": rec.inlet.name,

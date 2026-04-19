@@ -19,6 +19,7 @@ from core.config import (
 )
 from core.project_manager import ConflictRecord, ConflictSeverity, DependencyState
 from engines.drainage_engine import DrainageEngine, HydraulicInputs
+from core.geometry_core import ZoneType
 from engines.storm.hydraulic_engine import analyze_storm_hydraulics
 from engines.storm.storm_network_engine import build_storm_network
 from engines.storm.storm_types import (
@@ -316,7 +317,8 @@ def run_drainage_stage(
             surface_from_grading = bool(grading_summary)
         else:
             surface = build_existing_surface(execution_payload)
-            surface_source = "fallback"
+            surface_source = "existing_surface"
+            project.meta["existing_surface"] = surface
 
         inferred_profile = safe_dict(getattr(surface, "_inferred_profile", {})) if surface is not None else {}
         surface_quality = safe_str(grading_summary.get("grading_source_quality"), "") or safe_str(
@@ -349,7 +351,15 @@ def run_drainage_stage(
                 pass
         if engine is not None and hasattr(engine, "add_pond_target"):
             try:
-                for target in safe_list(coordination.get("preferred_targets")):
+                preferred_targets = safe_list(coordination.get("preferred_targets"))
+                if has_user_basins:
+                    user_targets = [
+                        target for target in preferred_targets
+                        if safe_str(safe_dict(target).get("source"), "") == "user_basin"
+                    ]
+                    if user_targets:
+                        preferred_targets = user_targets
+                for target in preferred_targets:
                     target_data = safe_dict(target)
                     engine.add_pond_target(
                         safe_str(target_data.get("name"), "OUTFALL_A"),
@@ -369,6 +379,93 @@ def run_drainage_stage(
                 )
             )
 
+        def _zone_to_polygon(zone: Any) -> Optional[List[Tuple[float, float]]]:
+            boundary = getattr(zone, "boundary", None)
+            points = getattr(boundary, "points", None) if boundary is not None else None
+            if not points:
+                return None
+            return [(safe_float(getattr(p, "x", 0.0), 0.0), safe_float(getattr(p, "y", 0.0), 0.0)) for p in points]
+
+        def _points_from_action(rec: Dict[str, Any]) -> List[Tuple[float, float]]:
+            pts = []
+            for pt in safe_list(rec.get("points")):
+                if isinstance(pt, (list, tuple)) and len(pt) >= 2:
+                    pts.append((safe_float(pt[0], 0.0), safe_float(pt[1], 0.0)))
+            return pts
+
+        def _rectangle_bounds(rec: Dict[str, Any]) -> Optional[Tuple[float, float, float, float]]:
+            x = rec.get("x")
+            y = rec.get("y")
+            w = rec.get("width") if rec.get("width") is not None else rec.get("w")
+            h = rec.get("height") if rec.get("height") is not None else rec.get("h")
+            if x is None or y is None or w is None or h is None:
+                return None
+            return (
+                safe_float(x, 0.0),
+                safe_float(y, 0.0),
+                safe_float(w, 0.0),
+                safe_float(h, 0.0),
+            )
+
+        def _rect_centerline(bounds: Tuple[float, float, float, float]) -> List[Tuple[float, float]]:
+            x, y, w, h = bounds
+            if w >= h:
+                cy = y + h / 2.0
+                return [(x, cy), (x + w, cy)]
+            cx = x + w / 2.0
+            return [(cx, y), (cx, y + h)]
+
+        pavement_polygons: List[List[Tuple[float, float]]] = []
+        collector_lines: List[List[Tuple[float, float]]] = []
+        try:
+            for zone in list(getattr(project, "zones", {}).values()):
+                if getattr(zone, "zone_type", None) in {ZoneType.PARKING, ZoneType.ROAD, ZoneType.ROADWAY, ZoneType.CORRIDOR}:
+                    poly = _zone_to_polygon(zone)
+                    if poly:
+                        pavement_polygons.append(poly)
+        except Exception:
+            pavement_polygons = []
+
+        expanded_actions = safe_list(safe_dict(project.meta.get("_expanded_plan")).get("actions"))
+        for action in expanded_actions:
+            rec = safe_dict(action)
+            layer = safe_str(rec.get("layer"), "").upper()
+            label = safe_str(rec.get("label"), "").upper()
+            item_type = lower_text(rec.get("type"))
+            if rec.get("task") == "polyline" and layer in {"ROAD", "FIRE", "WALK"}:
+                pts = _points_from_action(rec)
+                if len(pts) >= 2:
+                    collector_lines.append(pts)
+                continue
+            if rec.get("task") == "polyline" and any(token in label for token in ("DRIVE", "ACCESS", "FRONTAGE")):
+                pts = _points_from_action(rec)
+                if len(pts) >= 2:
+                    collector_lines.append(pts)
+                continue
+            if layer == "PAVEMENT" and item_type in {"collector_aisle", "parking_aisle", "access_drive", "frontage"}:
+                bounds = _rectangle_bounds(rec)
+                if bounds is not None:
+                    collector_lines.append(_rect_centerline(bounds))
+                continue
+            if layer == "PAVEMENT" and safe_str(rec.get("semantic_surface_role"), "") == "circulation":
+                bounds = _rectangle_bounds(rec)
+                if bounds is not None:
+                    collector_lines.append(_rect_centerline(bounds))
+
+        try:
+            for alignment in list(getattr(project, "alignments", {}).values()):
+                centerline = getattr(alignment, "centerline", None)
+                if centerline is None:
+                    continue
+                points = getattr(centerline, "points", None)
+                if not points:
+                    continue
+                pts = [(safe_float(p.x, 0.0), safe_float(p.y, 0.0)) for p in points]
+                if len(pts) >= 2:
+                    collector_lines.append(pts)
+        except Exception:
+            collector_lines = []
+
         summary = None
         if engine is not None and hasattr(engine, "design_network"):
             hydraulic = HydraulicInputs(
@@ -383,6 +480,8 @@ def run_drainage_stage(
                     hydraulic=hydraulic,
                     max_inlets=PIPE_MAX_INLETS,
                     min_slope=max(MIN_SLOPE, 0.001),
+                    pavement_polygons=pavement_polygons or None,
+                    collector_lines=collector_lines or None,
                 )
             except TypeError:
                 try:
@@ -417,6 +516,30 @@ def run_drainage_stage(
                 )
             )
 
+        issue_payloads = []
+        for issue in safe_list(getattr(summary, "issues", [])):
+            issue_payload = {
+                "code": safe_str(getattr(issue, "code", "")),
+                "severity": safe_str(getattr(issue, "severity", "")),
+                "message": safe_str(getattr(issue, "message", "")),
+                "context": dict(getattr(issue, "context", {}) or {}),
+            }
+            issue_payloads.append(issue_payload)
+            severity = lower_text(issue_payload.get("severity"))
+            if issue_payload["code"] and issue_payload["message"]:
+                manager.add_conflict(
+                    ConflictRecord(
+                        code=issue_payload["code"],
+                        message=issue_payload["message"],
+                        severity=(
+                            ConflictSeverity.ERROR
+                            if severity == "error"
+                            else ConflictSeverity.WARNING
+                        ),
+                        category="drainage",
+                    )
+                )
+
         _mark_dependency_state(manager, "grading", "drainage", DependencyState.FRESH, reason="Drainage updated from grading.")
         _mark_dependency_state(manager, "drainage", "storm_pipes", DependencyState.STALE, reason="Storm pipe network depends on drainage.")
         manager.invalidate_from("drainage")
@@ -437,6 +560,11 @@ def run_drainage_stage(
                 if lower_text(getattr(issue, "severity", "")) == "warning" and safe_str(getattr(issue, "message", ""))
             ],
         )
+        if issue_payloads:
+            canonical_drainage["issues"] = issue_payloads
+        autofix_suggestions = safe_list(safe_dict(getattr(summary, "conflict_hooks", {})).get("autofix_suggestions"))
+        if autofix_suggestions:
+            canonical_drainage["autofix_suggestions"] = deepcopy(autofix_suggestions)
         canonical_drainage = enrich_drainage_basins_with_engineering(
             canonical_drainage,
             engine=engine,
@@ -454,6 +582,11 @@ def run_drainage_stage(
             "surface_from_grading": surface_from_grading,
             "surface_source_quality": surface_quality,
             "surface_source_detail": surface_detail,
+            "surface_object_id": id(surface),
+            "pavement_bias": bool(pavement_polygons),
+            "pavement_zone_count": len(pavement_polygons),
+            "collector_bias": bool(collector_lines),
+            "collector_line_count": len(collector_lines),
         }
         primary_basin_count = len(primary_engineered_basins(canonical_drainage))
         canonical_drainage["export_validation"] = drainage_export_validation(
