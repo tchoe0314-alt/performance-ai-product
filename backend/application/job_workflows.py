@@ -1917,6 +1917,67 @@ def build_drainage_job_runner(
                 if slope_issue:
                     result["issues"] = list(safe_list(result.get("issues"))) + [deepcopy(slope_issue)]
 
+        # Final guard: ensure slope-adjustment failure is present after all
+        # normalization/guidance steps when no runs exist and adjustment was requested.
+        def _flag_from_payload(source: Any) -> tuple[bool, bool]:
+            if not isinstance(source, dict):
+                return False, False
+            if isinstance(source.get("value"), dict):
+                source = safe_dict(source.get("value"))
+            allow_flag = bool(source.get("allow_slope_adjustment"))
+            adjust_flag = safe_str(source.get("autofix_action"), "") == "adjust_slope"
+            return allow_flag, adjust_flag
+
+        force_allow = allow_slope_adjustment or slope_autofix_requested
+        if not force_allow:
+            for candidate in (
+                safe_dict(payload.get("drainage")),
+                safe_dict(raw_manual_fields.get("drainage")),
+                safe_dict(safe_dict(raw_manual_fields.get("drainage")).get("value")),
+            ):
+                cand_allow, cand_adjust = _flag_from_payload(candidate)
+                if cand_allow or cand_adjust:
+                    force_allow = True
+                    break
+
+        if force_allow:
+            run_count = len(safe_list(drainage_canonical.get("pipe_runs") or drainage_canonical.get("runs")))
+            if run_count == 0:
+                result_codes = {
+                    safe_str(issue.get("code"), "")
+                    for issue in safe_list(result.get("issues"))
+                    if isinstance(issue, dict)
+                }
+                if "SLOPE_ADJUSTMENT_FAILED" not in result_codes:
+                    slope_issue = {
+                        "code": "SLOPE_ADJUSTMENT_FAILED",
+                        "message": "Slope adjustment not feasible without a valid drainage run.",
+                        "severity": "info",
+                        "context": {"reason": "no_runs"},
+                    }
+                    result["issues"] = list(safe_list(result.get("issues"))) + [slope_issue]
+        else:
+            # Final fallback: if the payload explicitly requested adjust_slope,
+            # surface the not-feasible issue even if flags were lost upstream.
+            payload_autofix = safe_str(safe_dict(payload.get("drainage")).get("autofix_action"), "")
+            manual_autofix = safe_str(safe_dict(raw_manual_fields.get("drainage")).get("autofix_action"), "")
+            if payload_autofix == "adjust_slope" or manual_autofix == "adjust_slope":
+                run_count = len(safe_list(drainage_canonical.get("pipe_runs") or drainage_canonical.get("runs")))
+                if run_count == 0:
+                    result_codes = {
+                        safe_str(issue.get("code"), "")
+                        for issue in safe_list(result.get("issues"))
+                        if isinstance(issue, dict)
+                    }
+                    if "SLOPE_ADJUSTMENT_FAILED" not in result_codes:
+                        slope_issue = {
+                            "code": "SLOPE_ADJUSTMENT_FAILED",
+                            "message": "Slope adjustment not feasible without a valid drainage run.",
+                            "severity": "info",
+                            "context": {"reason": "no_runs"},
+                        }
+                        result["issues"] = list(safe_list(result.get("issues"))) + [slope_issue]
+
         validation_control = bool(safe_dict(raw_manual_fields.get("drainage")).get("validation_control"))
         if validation_control:
             result["issues"] = []
