@@ -1644,6 +1644,29 @@ def build_drainage_job_runner(
         if safe_str(raw_autofix, "") == "adjust_slope":
             slope_autofix_requested = True
             allow_slope_adjustment = True
+        if not allow_slope_adjustment and not slope_autofix_requested:
+            def _candidate_adjust_flag(source: Any) -> tuple[bool, bool]:
+                if not isinstance(source, dict):
+                    return False, False
+                if isinstance(source.get("value"), dict):
+                    source = safe_dict(source.get("value"))
+                allow_flag = bool(source.get("allow_slope_adjustment"))
+                adjust_flag = safe_str(source.get("autofix_action"), "") == "adjust_slope"
+                return allow_flag, adjust_flag
+
+            for candidate in (
+                payload_drainage,
+                raw_manual_drainage,
+                safe_dict(raw_manual_drainage.get("value")) if isinstance(raw_manual_drainage, dict) else {},
+            ):
+                cand_allow, cand_adjust = _candidate_adjust_flag(candidate)
+                if cand_allow:
+                    allow_slope_adjustment = True
+                if cand_adjust:
+                    slope_autofix_requested = True
+                    allow_slope_adjustment = True
+                if allow_slope_adjustment or slope_autofix_requested:
+                    break
         if allow_slope_adjustment or slope_autofix_requested:
             inlet_count = len(safe_list(drainage_canonical.get("inlets")))
             run_count = len(safe_list(drainage_canonical.get("pipe_runs") or drainage_canonical.get("runs")))

@@ -221,16 +221,6 @@ async function applyIssue(page: any, actionLabel: string) {
   await page.waitForTimeout(5_000);
 }
 
-function resolveApplyLabel(issues: string[], fallback: string) {
-  const normalized = issues.map((issue) => issue.toUpperCase());
-  if (normalized.some((code) => code.includes("UNDER_COLLECTION"))) return "Add inlet";
-  if (normalized.some((code) => code.includes("ORPHAN_INLETS"))) return "Connect inlet";
-  if (normalized.some((code) => code.includes("POOR_SLOPE"))) return "Adjust slope";
-  if (normalized.some((code) => code.includes("BASIN_UNREACHABLE"))) return "Add basin";
-  if (normalized.some((code) => code.includes("NO_VALID_OUTFALL") || code.includes("NO_PONDS_DEFINED"))) return "Add basin";
-  return fallback;
-}
-
 test.describe("Phase 5 drainage autofix matrix", () => {
   test("Run autofix apply actions matrix", async ({ page, request }) => {
     test.setTimeout(600_000);
@@ -380,35 +370,60 @@ test.describe("Phase 5 drainage autofix matrix", () => {
       let actionLabel = entry.action;
       try {
           if (entry.skipApply || !actionLabel) {
-            console.info(`${entry.name} CHECKPOINT 1 BEFORE`, before);
+            console.info(`${entry.name} BEFORE`, before);
             after = parseDrainageCounts(await fetchProjectResult(request, token, projectId));
           } else if (!before.issues.length) {
             applyError = "No issues produced; cannot apply autofix.";
           } else {
-            console.info(`${entry.name} CHECKPOINT 1 BEFORE`, before);
+            console.info(`${entry.name} BEFORE`, before);
             await withTimeout(openProject(page, entry.name), 45_000, `${entry.name} openProject`);
           const jobResponsePromise = page.waitForResponse((response) => {
             return response.url().includes("/api/jobs/drainage") && response.request().method() === "POST";
           });
-          console.info(`${entry.name} CHECKPOINT 2 APPLY CLICK`);
+          const jobRequestPromise =
+            entry.name === "Case 3 Flat site"
+              ? page.waitForRequest((request) => {
+                  return (
+                    request.url().includes("/api/jobs/drainage") && request.method() === "POST"
+                  );
+                })
+              : null;
+          console.info(`${entry.name} APPLY CLICK`);
           await withTimeout(applyIssue(page, actionLabel), 25_000, `${entry.name} applyIssue`);
-          console.info(`${entry.name} CHECKPOINT 3 APPLY CLICK FIRED`);
+          console.info(`${entry.name} APPLY CLICK FIRED`);
           let jobId: string | null = null;
           try {
+            if (jobRequestPromise) {
+              const req = await withTimeout(jobRequestPromise, 25_000, `${entry.name} jobRequest`);
+              try {
+                console.info(
+                  `${entry.name} JOB REQUEST`,
+                  JSON.stringify(req.postDataJSON(), null, 2),
+                );
+              } catch (err) {
+                console.info(`${entry.name} JOB REQUEST PARSE ERROR`, String(err));
+              }
+            }
             const jobResponse = await withTimeout(jobResponsePromise, 25_000, `${entry.name} jobResponse`);
             const jobPayload = (await jobResponse.json()) as { job?: { job_id?: string } };
             jobId = String(jobPayload?.job?.job_id || "");
-            console.info(`${entry.name} CHECKPOINT 4 JOB ID`, jobId || "missing");
+            console.info(`${entry.name} JOB ID`, jobId || "missing");
           } catch (err) {
-            console.info(`${entry.name} CHECKPOINT 4 JOB ID ERROR`, String(err));
+            console.info(`${entry.name} JOB ID ERROR`, String(err));
           }
           if (jobId) {
-            console.info(`${entry.name} CHECKPOINT 5 POLLING START`);
+            console.info(`${entry.name} POLLING START`);
             await waitForJobCompletion(request, token, jobId);
-            console.info(`${entry.name} CHECKPOINT 6 POLLING COMPLETE`);
+            console.info(`${entry.name} POLLING COMPLETE`);
           }
           after = parseDrainageCounts(await fetchProjectResult(request, token, projectId));
-          console.info(`${entry.name} CHECKPOINT 7 AFTER`, after);
+          console.info(`${entry.name} AFTER`, after);
+
+          if (entry.name === "Case 3 Flat site") {
+            await expect(
+              page.getByText(/Best next fix: Create a valid drainage path/i).first(),
+            ).toBeVisible({ timeout: 20_000 });
+          }
 
           if (entry.name === "Case 5 Under-collection") {
             const resultPayload = await fetchProjectResult(request, token, projectId);
@@ -426,7 +441,7 @@ test.describe("Phase 5 drainage autofix matrix", () => {
               console.info(`${entry.name} SECOND APPLY NOT AVAILABLE`, String(err));
             }
             const afterSecond = parseDrainageCounts(await fetchProjectResult(request, token, projectId));
-            console.info(`${entry.name} CHECKPOINT 8 AFTER SECOND APPLY`, afterSecond);
+            console.info(`${entry.name} AFTER SECOND APPLY`, afterSecond);
           }
         }
       } catch (err) {

@@ -6285,16 +6285,118 @@ export default function PerformanceAIDashboard() {
       if (code === "POOR_SLOPE") return "Adjust slope";
       if (code === "ORPHAN_INLETS") return "Connect inlet";
       if (code === "UNDER_COLLECTION") return "Add inlet";
+      if (code === "UNDER_COLLECTION_REDUCED") return "Add inlet";
       return null;
     },
     [],
   );
+
+  const getIssueGuidance = useCallback((issue: Issue) => {
+    const code = (issue.code ?? "").toUpperCase();
+    const context = issue.context && typeof issue.context === "object" ? issue.context : {};
+    const explanation =
+      typeof (context as Record<string, unknown>).explanation === "string"
+        ? String((context as Record<string, unknown>).explanation)
+        : null;
+    const bestNextFix =
+      typeof (context as Record<string, unknown>).best_next_fix === "string"
+        ? String((context as Record<string, unknown>).best_next_fix)
+        : null;
+    const suggested =
+      Array.isArray((context as Record<string, unknown>).suggested_actions)
+        ? (context as Record<string, unknown>).suggested_actions
+            .filter((item) => typeof item === "string")
+            .map((item) => String(item))
+        : null;
+    if (explanation || bestNextFix || (suggested && suggested.length)) {
+      return { explanation, bestNextFix, suggested };
+    }
+    const fallback: Record<string, { explanation: string; suggested: string[]; bestNextFix: string }> = {
+      BASIN_UNREACHABLE: {
+        explanation: "Flow cannot reach the basin from current low points.",
+        suggested: [
+          "Move the basin to a lower point.",
+          "Add an inlet near the low point.",
+          "Adjust grading to direct flow toward the basin.",
+        ],
+        bestNextFix: "Move the basin to a lower point.",
+      },
+      DRAINAGE_NO_BASIN: {
+        explanation: "No valid basin or outfall was provided for drainage.",
+        suggested: [
+          "Add a basin at a low point.",
+          "Define an outfall location.",
+          "Connect to an existing downstream system.",
+        ],
+        bestNextFix: "Add a basin at a low point.",
+      },
+      NO_VALID_OUTFALL: {
+        explanation: "No valid outlet was found for drainage discharge.",
+        suggested: [
+          "Add a basin at a low point.",
+          "Define an outfall location.",
+          "Connect to an existing downstream system.",
+        ],
+        bestNextFix: "Add a basin at a low point.",
+      },
+      NO_PONDS_DEFINED: {
+        explanation: "No basin/pond target is defined for drainage.",
+        suggested: [
+          "Add a basin at a low point.",
+          "Define an outfall location.",
+          "Connect to an existing downstream system.",
+        ],
+        bestNextFix: "Add a basin at a low point.",
+      },
+      POOR_SLOPE: {
+        explanation: "Terrain is too flat for the minimum pipe slope.",
+        suggested: [
+          "Modify grading to introduce slope.",
+          "Relocate inlets or basin to a steeper area.",
+          "Increase slope in this region.",
+        ],
+        bestNextFix: "Modify grading to introduce slope.",
+      },
+      SLOPE_ADJUSTMENT_FAILED: {
+        explanation: "Slope adjustment is not feasible with the current geometry.",
+        suggested: [
+          "Modify grading to introduce slope.",
+          "Relocate inlets or basin to a steeper area.",
+          "Increase slope in this region.",
+        ],
+        bestNextFix: "Modify grading to introduce slope.",
+      },
+      ORPHAN_INLETS: {
+        explanation: "One or more inlets are not connected to a drainage run.",
+        suggested: [
+          "Connect the inlet to the nearest run.",
+          "Reroute the pipe network to include the inlet.",
+        ],
+        bestNextFix: "Connect the inlet to the nearest run.",
+      },
+      UNDER_COLLECTION: {
+        explanation: "There are not enough inlets to collect runoff.",
+        suggested: ["Add inlets along pavement edges."],
+        bestNextFix: "Add inlets along pavement edges.",
+      },
+      UNDER_COLLECTION_REDUCED: {
+        explanation: "Inlet coverage improved, but runoff is still under-collected.",
+        suggested: ["Add inlets along pavement edges."],
+        bestNextFix: "Add inlets along pavement edges.",
+      },
+    };
+    const fallbackGuidance = fallback[code];
+    return fallbackGuidance
+      ? fallbackGuidance
+      : { explanation: null, bestNextFix: null, suggested: null };
+  }, []);
 
   const canApplyDrainageIssue = useCallback(
     (issue: Issue) => {
       const code = (issue.code ?? "").toUpperCase();
       if (
         code === "UNDER_COLLECTION" ||
+        code === "UNDER_COLLECTION_REDUCED" ||
         code === "BASIN_UNREACHABLE" ||
         code === "DRAINAGE_NO_BASIN" ||
         code === "NO_VALID_OUTFALL" ||
@@ -6341,8 +6443,10 @@ export default function PerformanceAIDashboard() {
       if (forcedInlets && forcedInlets.length) {
         nextDrainage.forced_inlets = forcedInlets;
       }
-      if (forcedBasins && forcedBasins.length) {
-        nextManualFields.ponds = forcedBasins;
+      if (forcedBasins) {
+        if (forcedBasins.length) {
+          nextManualFields.ponds = forcedBasins;
+        }
         nextDrainage.autofix_action = "add_basin";
       }
       if (connectOrphans) {
@@ -6365,6 +6469,15 @@ export default function PerformanceAIDashboard() {
         },
         prompt_text: null,
       };
+      if (allowSlopeAdjust) {
+        const existingDrainage = (requestPayload.drainage ?? {}) as Record<string, unknown>;
+        (drainagePayload as Record<string, unknown>).drainage = {
+          ...existingDrainage,
+          allow_slope_adjustment: true,
+          max_slope_adjust: drainageMaxSlopeAdjust,
+          autofix_action: "adjust_slope",
+        };
+      }
 
       if (token && (projectId || currentProject?.project_id)) {
         const targetProjectId = projectId || currentProject?.project_id || null;
@@ -6556,7 +6669,7 @@ export default function PerformanceAIDashboard() {
             distanceFt({ x: item.x as number, y: item.y as number }, point) <= threshold,
         );
 
-      if (issueCode === "UNDER_COLLECTION") {
+      if (issueCode === "UNDER_COLLECTION" || issueCode === "UNDER_COLLECTION_REDUCED") {
         if (!lowPoint) {
           setStatusMessage("No low points available to place an inlet.");
           return;
@@ -6691,7 +6804,7 @@ export default function PerformanceAIDashboard() {
             d: placement.d,
             rotation: placement.rotation ?? 0,
             locked: placement.locked,
-            source: placement.source,
+            source: "autofix",
             generated: placement.generated,
             systemDependencies: placement.systemDependencies,
           }));
@@ -8820,6 +8933,7 @@ export default function PerformanceAIDashboard() {
                           {issues.map((issue, idx) => {
                             const applyLabel = drainageIssueApplyLabel(issue);
                             const canApply = applyLabel ? canApplyDrainageIssue(issue) : false;
+                            const guidance = getIssueGuidance(issue);
                             return (
                               <div
                                 key={`${issue.message}-${idx}`}
@@ -8831,6 +8945,23 @@ export default function PerformanceAIDashboard() {
                                     <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-400">
                                       {issue.code}
                                     </p>
+                                  ) : null}
+                                  {guidance.explanation ? (
+                                    <p className="mt-2 text-[11px] text-slate-600">
+                                      {guidance.explanation}
+                                    </p>
+                                  ) : null}
+                                  {guidance.bestNextFix ? (
+                                    <p className="mt-2 text-[11px] font-semibold text-slate-700">
+                                      Best next fix: {guidance.bestNextFix}
+                                    </p>
+                                  ) : null}
+                                  {guidance.suggested && guidance.suggested.length ? (
+                                    <div className="mt-2 space-y-1 text-[11px] text-slate-600">
+                                      {guidance.suggested.map((item) => (
+                                        <p key={item}>• {item}</p>
+                                      ))}
+                                    </div>
                                   ) : null}
                                 </div>
                                 {applyLabel ? (
