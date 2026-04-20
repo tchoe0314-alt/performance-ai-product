@@ -557,13 +557,32 @@ def run_drainage_stage(
 
         grading_blocked = False
         grading_block_reason = ""
+        alt_reached = False
+        alt_codes = set()
         if (
             surface_from_grading
             and project.meta.get("proposed_surface") is not None
             and project.meta.get("existing_surface") is not None
         ):
             issue_codes = {safe_str(item.get("code"), "") for item in issue_payloads if isinstance(item, dict)}
-            if "BASIN_UNREACHABLE" in issue_codes or "NO_FLOW_PATHS" in issue_codes:
+            pipe_run_count = len(pipe_runs)
+            proposed_reached = False
+            for run in safe_list(getattr(summary, "pipe_runs", [])):
+                if not bool(getattr(run, "reached_target", False)):
+                    continue
+                path = getattr(run, "path", None)
+                # Treat trivial single-point hits (inlet already inside basin) as non-reachable
+                # for grading-blocked attribution only.
+                if isinstance(path, (list, tuple)) and len(path) <= 1:
+                    continue
+                proposed_reached = True
+                break
+            if (
+                "BASIN_UNREACHABLE" in issue_codes
+                or "NO_FLOW_PATHS" in issue_codes
+                or ("POOR_SLOPE" in issue_codes and pipe_run_count == 0)
+                or ("POOR_SLOPE" in issue_codes and pipe_run_count > 0 and not proposed_reached)
+            ):
                 try:
                     alt_engine = DrainageEngine(project.meta.get("existing_surface"))
                     preferred_targets = safe_list(coordination.get("preferred_targets"))
@@ -592,6 +611,7 @@ def run_drainage_stage(
                                 radius=max(1.0, safe_float(target_data.get("radius"), POND_RADIUS)),
                             )
                     alt_inlets = [rec.inlet for rec in inlet_records if hasattr(rec, "inlet")]
+                    alt_reached = False
                     if alt_inlets:
                         _, alt_summary = alt_engine.pipe_runs(
                             inlets=alt_inlets,
@@ -608,11 +628,30 @@ def run_drainage_stage(
                             safe_str(getattr(issue, "code", ""), "")
                             for issue in safe_list(getattr(alt_summary, "issues", []))
                         }
-                        if "BASIN_UNREACHABLE" not in alt_codes and "NO_FLOW_PATHS" not in alt_codes:
-                            grading_blocked = True
-                            grading_block_reason = "proposed_surface_blocks_flow"
+                        alt_reached = any(
+                            bool(getattr(run, "reached_target", False))
+                            for run in safe_list(getattr(alt_summary, "pipe_runs", []))
+                        )
+                        if alt_reached and "NO_FLOW_PATHS" not in alt_codes:
+                            if not proposed_reached and pipe_run_count > 0:
+                                grading_blocked = True
+                                grading_block_reason = "proposed_surface_blocks_flow"
+                            elif "BASIN_UNREACHABLE" in issue_codes or "NO_FLOW_PATHS" in issue_codes:
+                                grading_blocked = True
+                                grading_block_reason = "proposed_surface_blocks_flow"
                 except Exception:
                     grading_blocked = False
+
+            # Final attribution guard (attribution-only): if baseline reached but proposed did not, emit.
+            if (
+                not grading_blocked
+                and alt_reached
+                and "NO_FLOW_PATHS" not in alt_codes
+                and not proposed_reached
+                and pipe_run_count > 0
+            ):
+                grading_blocked = True
+                grading_block_reason = "proposed_surface_blocks_flow"
 
         if grading_blocked:
             grading_issue = {

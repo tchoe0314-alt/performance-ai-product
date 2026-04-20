@@ -7,6 +7,8 @@ from typing import Any, Callable, Dict, Optional, Protocol
 
 from fastapi import HTTPException
 from backend.planning.common import safe_dict, safe_float, safe_int, safe_list, safe_str
+from core.utils import safe_bool
+from core.config import POND_RADIUS
 
 
 class JobQueueProtocol(Protocol):
@@ -2118,6 +2120,201 @@ def build_drainage_job_runner(
                             "context": {"reason": "no_runs"},
                         }
                     ]
+
+        # Final attribution guard (drainage-only): emit grading-blocked issue when
+        # existing surface reaches but proposed surface does not (attribution-only).
+        try:
+            drainage_summary = manager.project.meta.get("drainage_summary")
+            proposed_run_count = len(safe_list(drainage_canonical.get("pipe_runs") or drainage_canonical.get("runs")))
+            proposed_reached = False
+            if drainage_summary is not None:
+                for run in safe_list(getattr(drainage_summary, "pipe_runs", [])):
+                    if not bool(getattr(run, "reached_target", False)):
+                        continue
+                    path = getattr(run, "path", None)
+                    if isinstance(path, (list, tuple)) and len(path) <= 1:
+                        continue
+                    proposed_reached = True
+                    break
+            else:
+                for run in safe_list(drainage_canonical.get("pipe_runs") or drainage_canonical.get("runs")):
+                    if not safe_bool(run.get("reached_target")):
+                        continue
+                    path = safe_list(run.get("path"))
+                    if len(path) <= 1:
+                        continue
+                    proposed_reached = True
+                    break
+            from engines.drainage_engine import DrainageEngine
+            existing_surface = None
+            try:
+                from planner import _build_existing_surface as _build_existing_surface_impl
+                existing_surface = _build_existing_surface_impl(parsed)
+            except Exception:
+                existing_surface = None
+            surface_guidance = safe_dict(drainage_canonical.get("surface_guidance"))
+            preferred_targets = safe_list(surface_guidance.get("preferred_targets"))
+            if not preferred_targets:
+                preferred_targets = [
+                    {
+                        "name": safe_str(getattr(rec, "sink_name", ""), "OUTFALL_A"),
+                        "x": safe_float(getattr(rec, "centroid_xy", (0.0, 0.0))[0], 0.0),
+                        "y": safe_float(getattr(rec, "centroid_xy", (0.0, 0.0))[1], 0.0),
+                        "radius": max(1.0, safe_float(getattr(rec, "area_sf", 0.0) ** 0.5, POND_RADIUS)),
+                    }
+                    for rec in safe_list(getattr(drainage_summary, "basin_records", []))
+                ]
+            proposed_reached_for_attribution = False
+            if preferred_targets:
+                if drainage_summary is not None:
+                    for run in safe_list(getattr(drainage_summary, "pipe_runs", [])):
+                        if not bool(getattr(run, "reached_target", False)):
+                            continue
+                        if len(safe_list(getattr(run, "path", []))) <= 1:
+                            continue
+                        proposed_reached_for_attribution = True
+                        break
+                else:
+                    for run in safe_list(drainage_canonical.get("pipe_runs") or drainage_canonical.get("runs")):
+                        if not safe_bool(run.get("reached_target")):
+                            continue
+                        if len(safe_list(run.get("path"))) <= 1:
+                            continue
+                        proposed_reached_for_attribution = True
+                        break
+            alt_reached = False
+            alt_closest_target = None
+            alt_distance = None
+            alt_engine = DrainageEngine(existing_surface) if existing_surface is not None else None
+            if alt_engine is not None and hasattr(alt_engine, "clear_pond_targets"):
+                alt_engine.clear_pond_targets()
+            if alt_engine is not None:
+                for target in preferred_targets:
+                    target_data = safe_dict(target)
+                    alt_engine.add_pond_target(
+                        safe_str(target_data.get("name"), "OUTFALL_A"),
+                        safe_float(target_data.get("x"), 0.0),
+                        safe_float(target_data.get("y"), 0.0),
+                        radius=max(1.0, safe_float(target_data.get("radius"), POND_RADIUS)),
+                    )
+            alt_inlets = []
+            if drainage_summary is not None:
+                alt_inlets = [
+                    rec.inlet
+                    for rec in safe_list(getattr(drainage_summary, "inlet_records", []))
+                    if hasattr(rec, "inlet")
+                ]
+            elif alt_engine is not None:
+                try:
+                    from engines.drainage_engine import Inlet as DrainageInlet
+                    alt_inlets = [
+                        DrainageInlet(
+                            name=safe_str(item.get("name"), f"INLET-{idx + 1}"),
+                            x=safe_float(item.get("x"), 0.0),
+                            y=safe_float(item.get("y"), 0.0),
+                            z=alt_engine._cell_z(
+                                *alt_engine._normalize_xy(
+                                    safe_float(item.get("x"), 0.0),
+                                    safe_float(item.get("y"), 0.0),
+                                )
+                            ),
+                            is_forced=True,
+                        )
+                        for idx, item in enumerate(safe_list(drainage_canonical.get("inlets")))
+                        if isinstance(item, dict)
+                    ]
+                except Exception:
+                    alt_inlets = []
+            alt_basin_records = []
+            if drainage_summary is not None:
+                alt_basin_records = safe_list(getattr(drainage_summary, "basin_records", []))
+            elif alt_engine is not None:
+                try:
+                    alt_basin_records = alt_engine.basin_records()
+                except Exception:
+                    alt_basin_records = []
+            if alt_engine is not None and alt_inlets:
+                _, alt_summary = alt_engine.pipe_runs(
+                    inlets=alt_inlets,
+                    basin_records=alt_basin_records,
+                    follow_surface=True,
+                    min_slope=0.001,
+                    max_steps=500,
+                    mode=safe_str(getattr(drainage_summary, "mode", "assisted"), "assisted") if drainage_summary else "assisted",
+                    hydraulic=None,
+                    connect_orphans=False,
+                    allow_slope_adjustment=False,
+                )
+                attribution_buffer = 5.0
+                target_cache = []
+                for target in preferred_targets:
+                    target_data = safe_dict(target)
+                    target_cache.append(
+                        (
+                            safe_float(target_data.get("x"), 0.0),
+                            safe_float(target_data.get("y"), 0.0),
+                            max(1.0, safe_float(target_data.get("radius"), POND_RADIUS)),
+                        )
+                    )
+                for run in safe_list(getattr(alt_summary, "pipe_runs", [])):
+                    path = safe_list(getattr(run, "path", []))
+                    if not path:
+                        continue
+                    end = path[-1]
+                    if not isinstance(end, (list, tuple)) or len(end) < 2:
+                        continue
+                    end_x = safe_float(end[0], 0.0)
+                    end_y = safe_float(end[1], 0.0)
+                    if bool(getattr(run, "reached_target", False)):
+                        alt_reached = True
+                        alt_closest_target = None
+                        alt_distance = 0.0
+                        break
+                    for tx, ty, radius in target_cache:
+                        dx = end_x - tx
+                        dy = end_y - ty
+                        dist = (dx * dx + dy * dy) ** 0.5
+                        if alt_distance is None or dist < alt_distance:
+                            alt_distance = dist
+                            alt_closest_target = (tx, ty, radius)
+                        if dist <= radius + attribution_buffer:
+                            alt_reached = True
+                            alt_distance = dist
+                            alt_closest_target = (tx, ty, radius)
+                            break
+                    if alt_reached:
+                        break
+                if alt_reached and not proposed_reached_for_attribution:
+                    existing_codes = {
+                        safe_str(issue.get("code"), "")
+                        for issue in safe_list(result.get("issues"))
+                        if isinstance(issue, dict)
+                    }
+                    if "DRAINAGE_BLOCKED_BY_GRADING" not in existing_codes:
+                        grading_issue = {
+                            "code": "DRAINAGE_BLOCKED_BY_GRADING",
+                            "message": "Proposed grading blocks flow paths that were reachable on existing terrain.",
+                            "severity": "warning",
+                            "context": {
+                                "reason": "proposed_surface_blocks_flow",
+                                "best_next_fix": "Introduce a grading swale toward the basin or lower the ridge between inlet and basin.",
+                                "suggested_actions": [
+                                    "Introduce a grading swale toward the basin.",
+                                    "Lower local ridge between inlet and basin.",
+                                    "Adjust pad edges to restore flow.",
+                                ],
+                            },
+                        }
+                        result["issues"] = list(safe_list(result.get("issues"))) + [grading_issue]
+                        drainage_canonical.setdefault("issues", [])
+                        drainage_canonical["issues"] = list(safe_list(drainage_canonical.get("issues"))) + [deepcopy(grading_issue)]
+                        result.setdefault("issue_details", [])
+                        result["issue_details"] = list(safe_list(result.get("issue_details"))) + [deepcopy(grading_issue)]
+                        drainage_canonical.setdefault("issue_details", [])
+                        drainage_canonical["issue_details"] = list(safe_list(drainage_canonical.get("issue_details"))) + [deepcopy(grading_issue)]
+        except Exception as exc:
+            ctx.record_error(f"ATTRIBUTION_ALT_EXCEPTION: {exc}")
+            raise
 
         if project_id and user_id:
             existing = project_store.get_project(user_id=user_id, project_id=project_id)

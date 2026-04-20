@@ -6293,18 +6293,21 @@ export default function PerformanceAIDashboard() {
 
   const getIssueGuidance = useCallback((issue: Issue) => {
     const code = (issue.code ?? "").toUpperCase();
-    const context = issue.context && typeof issue.context === "object" ? issue.context : {};
+    const context =
+      issue.context && typeof issue.context === "object"
+        ? (issue.context as Record<string, unknown>)
+        : null;
     const explanation =
-      typeof (context as Record<string, unknown>).explanation === "string"
-        ? String((context as Record<string, unknown>).explanation)
+      typeof context?.explanation === "string"
+        ? String(context.explanation)
         : null;
     const bestNextFix =
-      typeof (context as Record<string, unknown>).best_next_fix === "string"
-        ? String((context as Record<string, unknown>).best_next_fix)
+      typeof context?.best_next_fix === "string"
+        ? String(context.best_next_fix)
         : null;
     const suggested =
-      Array.isArray((context as Record<string, unknown>).suggested_actions)
-        ? (context as Record<string, unknown>).suggested_actions
+      Array.isArray(context?.suggested_actions)
+        ? context.suggested_actions
             .filter((item) => typeof item === "string")
             .map((item) => String(item))
         : null;
