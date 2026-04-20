@@ -2268,7 +2268,10 @@ export default function PreviewPanel({
           )}
           {show3D ? (
             preview3DEffectiveItems.length ? (
-              <div className="relative">
+              <div
+                className="relative cursor-pointer"
+                onClick={onOpenFullscreen}
+              >
                 <Preview3DCanvas
                   items={preview3DEffectiveItems}
                   interactive={allowEdits}
