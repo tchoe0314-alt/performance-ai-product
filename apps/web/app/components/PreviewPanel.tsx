@@ -539,6 +539,7 @@ export default function PreviewPanel({
         buildingPlacements.find((item) => item.id === draggingBuildingId) ??
         suggestedPlacements.find((item) => item.id === draggingBuildingId);
       if (!target) return;
+      if (target.locked) return;
       const caps = getEditCapabilities(target);
       if (draggingMode === "move" && !caps.movable) return;
       if (draggingMode === "resize" && !caps.resizable) return;
@@ -810,6 +811,7 @@ export default function PreviewPanel({
       mode: "move" | "resize" | "rotate" = "move",
     ) => {
       if (!allowEdits || building.type === "site") return;
+      if (building.locked) return;
       if (selectedBuildingId && selectedBuildingId !== building.id) {
         onSelectBuilding(building.id);
         return;
@@ -887,6 +889,7 @@ export default function PreviewPanel({
   const objectHoverDetails = useMemo(() => {
     if (!hoveredObject) return [];
     const type = hoveredObject.type ?? "building";
+    const name = hoveredObject.label || type;
     const dims = `${hoveredObject.w.toFixed(1)} ft x ${hoveredObject.d.toFixed(1)} ft`;
     const height =
       typeof hoveredObject.h === "number" && Number.isFinite(hoveredObject.h)
@@ -910,8 +913,8 @@ export default function PreviewPanel({
           ).toFixed(1)}%)`
         : null;
     return [
+      { label: "Name", value: name },
       { label: "Type", value: type },
-      { label: "ID", value: hoveredObject.id },
       { label: "Dimensions", value: dims },
       ...(position
         ? [
@@ -949,6 +952,24 @@ export default function PreviewPanel({
     if (!previewContainerBounds) return null;
     return previewContainerBounds;
   }, [overlayBounds, previewContainerBounds]);
+
+  useEffect(() => {
+    if (showHover) return;
+    setHoveredObjectId(null);
+    setHoveredAnnotation(null);
+    setHoverPoint(null);
+    setHoveredVertex(null);
+    setHoveredSegment(null);
+  }, [showHover]);
+
+  useEffect(() => {
+    if (previewInteraction !== "static") return;
+    setDraggingBuildingId(null);
+    setDraggingMode(null);
+    setDraggingVertex(null);
+    setRotateDragActive(false);
+    setRotateDragStart(null);
+  }, [previewInteraction]);
 
   useEffect(() => {
     if (!renderedCanonicalCount) return;
@@ -2693,7 +2714,10 @@ export default function PreviewPanel({
                               if (draggingMode === "vertex" || hoveredSegment?.id === item.id) return;
                               handleBuildingMouseDown(event, item, "move");
                             }}
-                            onMouseEnter={() => setHoveredObjectId(item.id)}
+                            onMouseEnter={() => {
+                              if (!showHover) return;
+                              setHoveredObjectId(item.id);
+                            }}
                             onMouseLeave={() => {
                               setHoveredObjectId(null);
                               setHoveredVertex(null);
@@ -2977,7 +3001,10 @@ export default function PreviewPanel({
                               cursor: "move",
                             }}
                             onMouseDown={(event) => handleBuildingMouseDown(event, item, "move")}
-                            onMouseEnter={() => setHoveredObjectId(item.id)}
+                            onMouseEnter={() => {
+                              if (!showHover) return;
+                              setHoveredObjectId(item.id);
+                            }}
                             onMouseLeave={() => setHoveredObjectId(null)}
                           >
                             <div className="h-full w-full rounded-[8px] border-2 border-dashed border-amber-400 bg-amber-200/10" />
@@ -3393,7 +3420,10 @@ export default function PreviewPanel({
                                 transformOrigin: "center",
                                 cursor: "pointer",
                               }}
-                              onMouseEnter={() => setHoveredObjectId(item.id)}
+                              onMouseEnter={() => {
+                                if (!showHover) return;
+                                setHoveredObjectId(item.id);
+                              }}
                               onMouseLeave={() => setHoveredObjectId(null)}
                               onClick={(event) => {
                                 event.stopPropagation();
