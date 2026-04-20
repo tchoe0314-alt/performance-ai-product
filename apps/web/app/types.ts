@@ -303,6 +303,7 @@ export type SiteInputs = {
   };
   site_alignment_locked?: boolean;
   site_rotation_deg?: number;
+  drainage_source_override?: "civora" | "user";
 };
 
 export type ProjectInputMeta = Record<string, unknown> & {
