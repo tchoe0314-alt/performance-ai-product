@@ -33,7 +33,7 @@ type PreviewPanelProps = {
   previewLabelDensity: "low" | "standard" | "high";
   hasGeneratedPlan: boolean;
   onSetPreviewMode: (value: "2d" | "3d") => void;
-  onSetPreviewInteraction: (value: "static" | "interactive") => void;
+  onSetPreviewInteraction: (value: "static" | "edit") => void;
   onSetPreviewQuality: (value: "standard" | "high") => void;
   onSetPreviewLabelDensity: (value: "low" | "standard" | "high") => void;
   onQueuePreviewRefresh: (reason: string) => void;
