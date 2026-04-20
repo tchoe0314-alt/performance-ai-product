@@ -2251,6 +2251,12 @@ export default function PreviewPanel({
               />
               Utilities
             </span>
+            {cursorSitePoint ? (
+              <span className="ml-auto flex items-center gap-2 text-[11px] text-slate-500">
+                <span className="font-semibold text-slate-700">Cursor</span>
+                X {cursorSitePoint.x.toFixed(1)} ft • Y {cursorSitePoint.y.toFixed(1)} ft
+              </span>
+            ) : null}
           </div>
           {(previewRefreshing || previewRefreshNote) && (
             <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
