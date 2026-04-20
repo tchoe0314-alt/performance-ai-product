@@ -519,6 +519,7 @@ export default function PerformanceAIDashboard() {
   const [previewQuality, setPreviewQuality] = useState<"standard" | "high">("standard");
   const [previewLabelDensity, setPreviewLabelDensity] = useState<"low" | "standard" | "high">("standard");
   const [previewLabelDensityTouched, setPreviewLabelDensityTouched] = useState(false);
+  const [previewHeightPx, setPreviewHeightPx] = useState(560);
   const [previewRefreshing, setPreviewRefreshing] = useState(false);
   const [previewRefreshNote, setPreviewRefreshNote] = useState<string | null>(null);
   const [approvalInFlight, setApprovalInFlight] = useState(false);
@@ -8515,11 +8516,41 @@ export default function PerformanceAIDashboard() {
 
             <div className="flex w-full flex-1 flex-col gap-6 px-4 py-6 md:px-6">
               <div className="flex w-full flex-col">
+                <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-slate-600">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    Preview height
+                  </span>
+                  <input
+                    type="range"
+                    min={360}
+                    max={900}
+                    step={10}
+                    value={previewHeightPx}
+                    onChange={(event) => {
+                      const next = Number(event.target.value);
+                      if (Number.isFinite(next)) setPreviewHeightPx(next);
+                    }}
+                    className="h-2 w-44 accent-slate-900"
+                  />
+                  <input
+                    type="number"
+                    min={360}
+                    max={900}
+                    step={10}
+                    value={previewHeightPx}
+                    onChange={(event) => {
+                      const next = Number(event.target.value);
+                      if (Number.isFinite(next)) setPreviewHeightPx(next);
+                    }}
+                    className="h-8 w-20 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                  />
+                  <span className="text-[11px] uppercase tracking-[0.12em] text-slate-400">px</span>
+                </div>
                 <div
                   className="mx-auto w-full border-2 border-black"
                   style={{
                     width: "calc(100vw - 96px)",
-                    aspectRatio: `${Math.max(lotBounds.w, 1)}/${Math.max(lotBounds.h, 1)}`,
+                    height: `${previewHeightPx}px`,
                   }}
                 >
                   <div className="h-full w-full">
