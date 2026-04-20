@@ -515,7 +515,7 @@ export default function PerformanceAIDashboard() {
   const [planPreviewAnnotations, setPlanPreviewAnnotations] =
     useState<PreviewResponse["preview_annotations"] | null>(null);
   const [previewMode, setPreviewMode] = useState<"2d" | "3d">("2d");
-  const [previewInteraction, setPreviewInteraction] = useState<"static" | "interactive">("interactive");
+  const [previewInteraction, setPreviewInteraction] = useState<"static" | "inspect" | "interactive">("interactive");
   const [previewQuality, setPreviewQuality] = useState<"standard" | "high">("standard");
   const [previewLabelDensity, setPreviewLabelDensity] = useState<"low" | "standard" | "high">("standard");
   const [previewLabelDensityTouched, setPreviewLabelDensityTouched] = useState(false);
@@ -2517,11 +2517,6 @@ export default function PerformanceAIDashboard() {
       if (next) {
         setPreviewMode("2d");
       }
-      setStatusMessage(
-        next
-          ? "Placement mode enabled. Click on the canvas to drop the selected object."
-          : "Placement mode disabled.",
-      );
       return next;
     });
   }, [activePlacementId, buildingPlacements]);
@@ -8549,7 +8544,7 @@ export default function PerformanceAIDashboard() {
                 <div
                   className="mx-auto w-full border-2 border-black"
                   style={{
-                    width: "calc(100vw - 96px)",
+                    width: activeSidePanel ? "calc(100vw - 96px - 360px)" : "calc(100vw - 96px)",
                     height: `${previewHeightPx}px`,
                   }}
                 >
@@ -8843,6 +8838,13 @@ export default function PerformanceAIDashboard() {
                         return acres ? `${acres.toFixed(2)} acres` : "Set dimensions to compute acreage";
                       })()}
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => handleAddObject("site")}
+                      className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                    >
+                      Apply Site
+                    </button>
                   </div>
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Objects</p>

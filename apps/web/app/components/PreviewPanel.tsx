@@ -28,7 +28,7 @@ type PreviewPanelProps = {
   planPreviewProjectId?: string | null;
   currentProjectId?: string | null;
   previewMode: "2d" | "3d";
-  previewInteraction: "static" | "interactive";
+  previewInteraction: "static" | "inspect" | "interactive";
   previewQuality: "standard" | "high";
   previewLabelDensity: "low" | "standard" | "high";
   hasGeneratedPlan: boolean;
@@ -257,7 +257,8 @@ export default function PreviewPanel({
     suggestedPlacements.length > 0 ||
     (surveyPoints?.length ?? 0) > 0 ||
     Boolean(lotWidth && lotHeight);
-  const showInteractive = previewInteraction === "interactive";
+  const showHover = previewInteraction !== "static";
+  const allowEdits = previewInteraction === "interactive";
   const normalPalette = {
     building: "#0f172a",
     buildingFill: "rgba(15, 23, 42, 0.12)",
@@ -269,7 +270,8 @@ export default function PreviewPanel({
     utilities: "#7c3aed",
     detectedStroke: "#f59e0b",
     detectedFill: "rgba(245, 158, 11, 0.15)",
-    siteBorder: "border-slate-300/70",
+    siteBorder: "border-slate-300/90",
+    siteFill: "bg-slate-200/40",
   } as const;
   const highPalette = {
     building: "#111827",
@@ -282,7 +284,8 @@ export default function PreviewPanel({
     utilities: "#8b5cf6",
     detectedStroke: "#f59e0b",
     detectedFill: "rgba(245, 158, 11, 0.2)",
-    siteBorder: "border-white/60",
+    siteBorder: "border-white/80",
+    siteFill: "bg-white/15",
   } as const;
   const legendPalette = previewQuality === "high" ? highPalette : normalPalette;
   const hoveredObject = useMemo(
@@ -378,7 +381,7 @@ export default function PreviewPanel({
       imageBounds: { left: number; top: number; width: number; height: number } | null,
       setPoint: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>,
     ) => {
-      if (!showInteractive || !containerRef.current || !hasInteractiveLabels) {
+      if (!showHover || !containerRef.current || !hasInteractiveLabels) {
         setHoveredAnnotation(null);
         setPoint(null);
         return;
@@ -415,7 +418,7 @@ export default function PreviewPanel({
       setHoveredAnnotation(next);
       setPoint({ x: event.clientX - rect.left, y: event.clientY - rect.top });
     },
-    [hasInteractiveLabels, previewLabels, showInteractive],
+    [hasInteractiveLabels, previewLabels, showHover],
   );
 
   const resolvePlacement = useCallback(
@@ -803,6 +806,7 @@ export default function PreviewPanel({
       building: BuildingPlacement,
       mode: "move" | "resize" | "rotate" = "move",
     ) => {
+      if (!allowEdits || building.type === "site") return;
       const caps = getEditCapabilities(building);
       if (mode === "move" && !caps.movable) return;
       if (mode === "resize" && !caps.resizable) return;
@@ -836,7 +840,7 @@ export default function PreviewPanel({
       const rect = event.currentTarget.getBoundingClientRect();
       setDragOffset({ x: event.clientX - rect.left, y: event.clientY - rect.top });
     },
-    [getEditCapabilities, onSelectBuilding],
+    [allowEdits, getEditCapabilities, onSelectBuilding],
   );
 
   const formatHoverValue = (value: number | null | undefined, suffix: string) => {
@@ -917,26 +921,13 @@ export default function PreviewPanel({
   }, [hoveredObject]);
   const overlayBounds = useMemo(() => {
     if (!previewContainerBounds) return null;
-    if (!lotWidth || !lotHeight) return previewContainerBounds;
-    const padding = 24;
-    const maxWidth = Math.max(previewContainerBounds.width - padding * 2, 1);
-    const maxHeight = Math.max(previewContainerBounds.height - padding * 2, 1);
-    const siteAspect = lotWidth / lotHeight;
-    const containerAspect = maxWidth / maxHeight;
-    let width = maxWidth;
-    let height = maxHeight;
-    if (containerAspect > siteAspect) {
-      width = maxHeight * siteAspect;
-    } else {
-      height = maxWidth / siteAspect;
-    }
     return {
-      left: (previewContainerBounds.width - width) / 2,
-      top: (previewContainerBounds.height - height) / 2,
-      width,
-      height,
+      left: 0,
+      top: 0,
+      width: previewContainerBounds.width,
+      height: previewContainerBounds.height,
     };
-  }, [lotHeight, lotWidth, previewContainerBounds]);
+  }, [previewContainerBounds]);
 
   const renderedCanonicalCount = useMemo(
     () =>
@@ -1505,7 +1496,7 @@ export default function PreviewPanel({
     if (!geocode?.lat || !geocode?.lng || !lotWidth || !lotHeight) return;
 
     const placedObjects = buildingPlacements.filter(
-      (item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y),
+      (item) => item.type !== "site" && item.placed && Number.isFinite(item.x) && Number.isFinite(item.y),
     );
 
     if (debugStats?.enabled) {
@@ -2166,6 +2157,21 @@ export default function PreviewPanel({
               <button
                 type="button"
                 onClick={() => {
+                  if (previewInteraction === "inspect") return;
+                  onQueuePreviewRefresh("Loading inspect labels...");
+                  onSetPreviewInteraction("inspect");
+                }}
+                className={`rounded-full border px-2.5 py-1 ${
+                  previewInteraction === "inspect"
+                    ? "border-slate-900 bg-slate-950 text-white"
+                    : "border-slate-200 bg-white text-slate-600"
+                }`}
+              >
+                Inspect
+              </button>
+              <button
+                type="button"
+                onClick={() => {
                   if (previewInteraction === "interactive") return;
                   onQueuePreviewRefresh("Loading interactive labels...");
                   onSetPreviewInteraction("interactive");
@@ -2244,7 +2250,13 @@ export default function PreviewPanel({
                 : previewLabelDensity.charAt(0).toUpperCase() + previewLabelDensity.slice(1)}
             </span>
             <span className="font-semibold text-slate-900">Interactive:</span>
-            <span>{previewInteraction === "interactive" ? "Hover enabled" : "Static"}</span>
+            <span>
+              {previewInteraction === "interactive"
+                ? "Edit + hover"
+                : previewInteraction === "inspect"
+                  ? "Hover only"
+                  : "Static"}
+            </span>
             {cursorSitePoint ? (
               <>
                 <span className="font-semibold text-slate-900">Cursor:</span>
@@ -2276,7 +2288,7 @@ export default function PreviewPanel({
               <div className="relative">
                 <Preview3DCanvas
                   items={preview3DEffectiveItems}
-                  interactive={previewInteraction === "interactive"}
+                  interactive={allowEdits}
                   onOpenFullscreen={onOpenFullscreen}
                 />
                 {usingAnnotation3D ? (
@@ -2316,7 +2328,7 @@ export default function PreviewPanel({
             <div
               ref={previewRef}
               className={`relative flex w-full flex-1 min-h-[320px] items-center justify-center rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] ${
-                previewInteraction === "interactive" ? "cursor-crosshair" : "cursor-default"
+                allowEdits ? "cursor-crosshair" : "cursor-default"
               }`}
               onDragOver={(event) => {
                 event.preventDefault();
@@ -2394,7 +2406,7 @@ export default function PreviewPanel({
                   resolvePlacement(event, previewRef, overlayBoundsResolved);
                   return;
                 }
-                if (!showInteractive || !hoveredAnnotation) return;
+                if (!showHover || !hoveredAnnotation) return;
                 setPinnedAnnotation((prev) =>
                   prev?.label === hoveredAnnotation.label ? null : hoveredAnnotation,
                 );
@@ -2428,7 +2440,7 @@ export default function PreviewPanel({
                     src={planPreviewUrl}
                     alt="Generated plan preview"
                   className={`h-full w-full object-contain ${
-                      previewInteraction === "interactive" ? "cursor-crosshair" : "cursor-default"
+                      allowEdits ? "cursor-crosshair" : "cursor-default"
                     }`}
                     onLoad={() => updateImageBounds(previewRef, previewImageRef, setPreviewImageBounds)}
                     onClick={onOpenFullscreen}
@@ -2455,7 +2467,7 @@ export default function PreviewPanel({
                   >
                     {lotWidth > 0 && lotHeight > 0 ? (
                       <div
-                        className={`absolute inset-0 rounded-[16px] border-2 border-dashed ${legendPalette.siteBorder}`}
+                        className={`absolute inset-0 rounded-[16px] border-2 border-dashed ${legendPalette.siteBorder} ${legendPalette.siteFill}`}
                       />
                     ) : null}
                     {(buildingPlacements.length || suggestedPlacements.length || (surveyPoints?.length ?? 0) > 0) ? (
@@ -3065,7 +3077,7 @@ export default function PreviewPanel({
                         style={buildBoundsStyle(issueHighlightBounds)}
                       />
                     ) : null}
-                    {previewInteraction === "interactive"
+                    {showHover
                       ? planPreviewAnnotations.labels.map((item, idx) => (
                           <div
                             key={`${item.label}-${idx}`}
@@ -3092,7 +3104,7 @@ export default function PreviewPanel({
                   </div>
                 ) : null}
               </div>
-              {showInteractive && activeAnnotation && hoverPoint ? (
+              {showHover && activeAnnotation && hoverPoint ? (
                 <div
                   className="pointer-events-none absolute z-20 min-w-[220px] max-w-[280px] rounded-2xl border border-slate-200 bg-white/95 p-3 text-xs text-slate-700 shadow-lg"
                   style={{
@@ -3135,16 +3147,12 @@ export default function PreviewPanel({
                   AI Layout + Generation
                 </span>
               </div>
-              {previewInteraction === "interactive" && !planPreviewAnnotations?.labels?.length ? (
+              {showHover && !planPreviewAnnotations?.labels?.length ? (
                 <div className="pointer-events-none absolute right-6 top-6 hidden rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white lg:block">
                   Hover labels pending
                 </div>
               ) : null}
-              {placementMode ? (
-                <div className="pointer-events-none absolute left-6 top-6 hidden rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-800 lg:block">
-                  Placement mode: click to drop the selected object
-                </div>
-              ) : previewInteraction === "interactive" ? (
+              {showHover ? (
                 <div
                   className="pointer-events-none absolute left-6 top-6 hidden rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white lg:block"
                 >
@@ -3241,7 +3249,7 @@ export default function PreviewPanel({
                     resolvePlacement(event, fullscreenRef, fullscreenImageBounds);
                     return;
                   }
-                  if (!showInteractive || !hoveredAnnotation) return;
+                  if (!showHover || !hoveredAnnotation) return;
                   setPinnedAnnotation((prev) =>
                     prev?.label === hoveredAnnotation.label ? null : hoveredAnnotation,
                   );
@@ -3443,7 +3451,7 @@ export default function PreviewPanel({
                         })}
                   </div>
                 ) : null}
-                {showInteractive && activeAnnotation && fullscreenHoverPoint ? (
+                {showHover && activeAnnotation && fullscreenHoverPoint ? (
                   <div
                     className="pointer-events-none absolute z-20 min-w-[220px] max-w-[280px] rounded-2xl border border-slate-200 bg-white/95 p-3 text-xs text-slate-700 shadow-lg"
                     style={{
