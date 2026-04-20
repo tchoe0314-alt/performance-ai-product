@@ -593,6 +593,7 @@ export default function PerformanceAIDashboard() {
   const previewRefreshIntentRef = useRef<{ reason: string; track?: boolean } | null>(null);
   const lastProjectResultRefreshRef = useRef<Record<string, number>>({});
   const lastJobPartialResultRefreshRef = useRef<Record<string, number>>({});
+  const handleGenerateSystemRef = useRef<((target: SystemGenerationTarget) => Promise<void>) | null>(null);
   const chatMessagesRef = useRef<ChatMessage[]>([createWelcomeMessage()]);
   const suppressProjectAutoLoadRef = useRef(false);
   const chatAutosaveTimeoutRef = useRef<number | null>(null);
@@ -5985,12 +5986,12 @@ export default function PerformanceAIDashboard() {
       }
     }
     if (detectionChoices.grading) {
-      await handleGenerateSystem("grading");
+      await handleGenerateSystemRef.current?.("grading");
     }
     if (!wantsContext && !detectionChoices.grading) {
       setStatusMessage("Select at least one detection option.");
     }
-  }, [detectionChoices, handleAnalyzeImageFeatures, handleGenerateSystem, mapSnapshotPath]);
+  }, [detectionChoices, handleAnalyzeImageFeatures, mapSnapshotPath]);
 
   useEffect(() => {
     const hasSite = buildingPlacements.some((item) => item.type === "site");
@@ -6760,6 +6761,10 @@ export default function PerformanceAIDashboard() {
       useSurveyForGrading,
     ],
   );
+
+  useEffect(() => {
+    handleGenerateSystemRef.current = handleGenerateSystem;
+  }, [handleGenerateSystem]);
 
   const handleApplyDrainageIssue = useCallback(
     async (issue: Issue) => {
