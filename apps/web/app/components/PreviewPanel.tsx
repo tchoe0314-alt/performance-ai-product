@@ -2209,27 +2209,7 @@ export default function PreviewPanel({
                 High
               </button>
             </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-              <span>Labels</span>
-              {(["low", "standard", "high"] as const).map((density) => (
-                <button
-                  key={density}
-                  type="button"
-                  onClick={() => {
-                    if (previewLabelDensity === density) return;
-                    onQueuePreviewRefresh("Updating label density...");
-                    onSetPreviewLabelDensity(density);
-                  }}
-                  className={`rounded-full border px-2.5 py-1 ${
-                    previewLabelDensity === density
-                      ? "border-slate-900 bg-slate-950 text-white"
-                      : "border-slate-200 bg-white text-slate-600"
-                  }`}
-                >
-                  {density === "standard" ? "Standard" : density.charAt(0).toUpperCase() + density.slice(1)}
-                </button>
-              ))}
-            </div>
+            {/* Labels control hidden until there is a concrete, visible effect. */}
           </div>
           <div className="mb-3 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
             <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
@@ -3156,29 +3136,7 @@ export default function PreviewPanel({
                   Hover geometry for details
                 </div>
               ) : null}
-              <div className="pointer-events-none absolute bottom-6 right-6 hidden rounded-2xl border border-white/40 bg-white/85 px-3 py-2 text-[11px] text-slate-700 shadow-sm backdrop-blur lg:block">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Status
-                </p>
-                <div className="mt-2 space-y-1">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-semibold text-slate-600">Quality:</span>
-                    <span>{previewQuality === "high" ? "High" : "Standard"}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-semibold text-slate-600">Labels:</span>
-                    <span>
-                      {previewLabelDensity === "standard"
-                        ? "Standard"
-                        : previewLabelDensity.charAt(0).toUpperCase() + previewLabelDensity.slice(1)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-semibold text-slate-600">Interaction:</span>
-                    <span>{allowEdits ? "Edit only" : "Hover only"}</span>
-                  </div>
-                </div>
-              </div>
+              {/* Status panel removed: keep preview visually clean. */}
             </div>
           )}
         </div>
