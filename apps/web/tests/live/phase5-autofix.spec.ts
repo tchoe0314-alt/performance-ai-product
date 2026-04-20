@@ -371,7 +371,8 @@ test.describe("Phase 5 drainage autofix matrix", () => {
       const jobId = await queueOrchestrateScenario(request, token, projectId, entry.payload);
       await waitForJobCompletion(request, token, jobId);
 
-      const before = parseDrainageCounts(await fetchProjectResult(request, token, projectId));
+      const beforeResultPayload = await fetchProjectResult(request, token, projectId);
+      const before = parseDrainageCounts(beforeResultPayload);
       let after = before;
       let applyError: string | null = null;
       let actionLabel = entry.action;
@@ -411,10 +412,10 @@ test.describe("Phase 5 drainage autofix matrix", () => {
                 console.info(`${entry.name} JOB REQUEST PARSE ERROR`, String(err));
               }
             }
-            const jobResponse = await withTimeout(jobResponsePromise, 25_000, `${entry.name} jobResponse`);
-            const jobPayload = (await jobResponse.json()) as { job?: { job_id?: string } };
-            jobId = String(jobPayload?.job?.job_id || "");
-            console.info(`${entry.name} JOB ID`, jobId || "missing");
+          const jobResponse = await withTimeout(jobResponsePromise, 25_000, `${entry.name} jobResponse`);
+          const jobPayload = (await jobResponse.json()) as { job?: { job_id?: string } };
+          jobId = String(jobPayload?.job?.job_id || "");
+          console.info(`${entry.name} JOB ID`, jobId || "missing");
           } catch (err) {
             console.info(`${entry.name} JOB ID ERROR`, String(err));
           }
@@ -423,7 +424,22 @@ test.describe("Phase 5 drainage autofix matrix", () => {
             await waitForJobCompletion(request, token, jobId);
             console.info(`${entry.name} POLLING COMPLETE`);
           }
-          after = parseDrainageCounts(await fetchProjectResult(request, token, projectId));
+          const afterResultPayload = await fetchProjectResult(request, token, projectId);
+          after = parseDrainageCounts(afterResultPayload);
+          if (entry.name === "Case 3 Flat site") {
+            const drainagePayload = (afterResultPayload?.final_plan ?? {}) as Record<string, unknown>;
+            const meta = (drainagePayload.meta ?? {}) as Record<string, unknown>;
+            const canonical = (meta.drainage_canonical ?? meta.drainage ?? {}) as Record<string, unknown>;
+            const canonicalIssues = Array.isArray(canonical.issues) ? canonical.issues : [];
+            const canonicalCodes = canonicalIssues.map((item: any) => String(item?.code || item?.message || "unknown"));
+            const topIssues = Array.isArray(afterResultPayload.issues)
+              ? afterResultPayload.issues.map((item: any) => String(item?.code || item?.message || "unknown"))
+              : [];
+            console.info(`${entry.name} ISSUE TRACE`, {
+              topIssues,
+              canonicalCodes,
+            });
+          }
           console.info(`${entry.name} AFTER`, after);
 
           if (entry.name === "Case 3 Flat site") {

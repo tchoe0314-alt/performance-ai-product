@@ -2088,6 +2088,29 @@ def build_drainage_job_runner(
         if validation_control:
             result["issues"] = []
             drainage_canonical["issues"] = []
+        else:
+            # Final matrix-path guard: ensure not-feasible slope adjustment is surfaced
+            # even if earlier merges dropped it.
+            final_run_count = len(safe_list(drainage_canonical.get("pipe_runs") or drainage_canonical.get("runs")))
+            if final_run_count == 0:
+                final_allow = allow_slope_adjustment or slope_autofix_requested
+                if not final_allow:
+                    final_allow = safe_str(payload_autofix, "") == "adjust_slope" or safe_str(raw_autofix, "") == "adjust_slope"
+                if final_allow:
+                    final_codes = {
+                        safe_str(issue.get("code"), "")
+                        for issue in safe_list(result.get("issues"))
+                        if isinstance(issue, dict)
+                    }
+                    if "SLOPE_ADJUSTMENT_FAILED" not in final_codes:
+                        result["issues"] = list(safe_list(result.get("issues"))) + [
+                            {
+                                "code": "SLOPE_ADJUSTMENT_FAILED",
+                                "message": "Slope adjustment not feasible without a valid drainage run.",
+                                "severity": "info",
+                                "context": {"reason": "no_runs"},
+                            }
+                        ]
 
         if project_id and user_id:
             existing = project_store.get_project(user_id=user_id, project_id=project_id)
