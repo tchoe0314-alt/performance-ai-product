@@ -445,13 +445,15 @@ export default function PreviewPanel({
         relativeX,
         relativeY,
       });
-      if (selectedBuildingId) {
-        onPlaceObject(selectedBuildingId, { x: relativeX, y: relativeY });
+      const fallback = buildingPlacements.find((item) => !item.placed && item.type !== "site");
+      const targetId = selectedBuildingId ?? fallback?.id ?? null;
+      if (targetId) {
+        onPlaceObject(targetId, { x: relativeX, y: relativeY });
         return;
       }
       onPlaceBuilding({ x: relativeX, y: relativeY });
     },
-    [onPlaceBuilding, onPlaceObject, placementMode, selectedBuildingId],
+    [buildingPlacements, onPlaceBuilding, onPlaceObject, placementMode, selectedBuildingId],
   );
 
   const clampValue = (value: number, min: number, max: number) =>
