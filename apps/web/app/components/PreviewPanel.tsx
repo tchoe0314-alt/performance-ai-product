@@ -1081,6 +1081,7 @@ export default function PreviewPanel({
     const reportViewport = () => {
       if (!onViewportFootprint) return;
       const bounds = map.getBounds();
+      if (!bounds) return;
       const north = bounds.getNorth();
       const south = bounds.getSouth();
       const east = bounds.getEast();
