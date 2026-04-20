@@ -8515,7 +8515,13 @@ export default function PerformanceAIDashboard() {
 
             <div className="flex w-full flex-1 flex-col gap-6 px-4 py-6 md:px-6">
               <div className="flex w-full flex-col">
-                <div className="mx-auto h-[560px] w-[1024px] max-w-full border-2 border-black">
+                <div
+                  className="mx-auto w-full border-2 border-black"
+                  style={{
+                    width: "calc(100vw - 96px)",
+                    aspectRatio: `${Math.max(lotBounds.w, 1)}/${Math.max(lotBounds.h, 1)}`,
+                  }}
+                >
                   <div className="h-full w-full">
                     <PreviewPanel
                 previewReview={previewReview}
