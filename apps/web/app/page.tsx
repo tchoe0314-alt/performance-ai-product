@@ -8515,7 +8515,7 @@ export default function PerformanceAIDashboard() {
 
             <div className="flex w-full flex-1 flex-col gap-6 px-4 py-6 md:px-6">
               <div className="flex w-full flex-col">
-                <div className="mx-auto w-full max-w-5xl aspect-square max-h-[70vh]">
+                <div className="mx-auto w-full max-w-5xl aspect-[1024/560] max-h-[70vh]">
                   <div className="h-full w-full">
                     <PreviewPanel
                 previewReview={previewReview}
