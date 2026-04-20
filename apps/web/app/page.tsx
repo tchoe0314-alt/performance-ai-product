@@ -515,7 +515,7 @@ export default function PerformanceAIDashboard() {
   const [planPreviewAnnotations, setPlanPreviewAnnotations] =
     useState<PreviewResponse["preview_annotations"] | null>(null);
   const [previewMode, setPreviewMode] = useState<"2d" | "3d">("2d");
-  const [previewInteraction, setPreviewInteraction] = useState<"static" | "inspect" | "interactive">("interactive");
+  const [previewInteraction, setPreviewInteraction] = useState<"static" | "edit">("static");
   const [previewQuality, setPreviewQuality] = useState<"standard" | "high">("standard");
   const [previewLabelDensity, setPreviewLabelDensity] = useState<"low" | "standard" | "high">("standard");
   const [previewLabelDensityTouched, setPreviewLabelDensityTouched] = useState(false);
@@ -5999,7 +5999,7 @@ export default function PerformanceAIDashboard() {
       ...payload,
       preview_quality: previewQuality,
       label_density: previewLabelDensity,
-      render_labels: previewInteraction === "interactive" || previewQuality === "high",
+      render_labels: previewInteraction !== "static" || previewQuality === "high",
       preview_mode: "production",
       preview_layers: previewLayerList,
     };

@@ -28,7 +28,7 @@ type PreviewPanelProps = {
   planPreviewProjectId?: string | null;
   currentProjectId?: string | null;
   previewMode: "2d" | "3d";
-  previewInteraction: "static" | "inspect" | "interactive";
+  previewInteraction: "static" | "edit";
   previewQuality: "standard" | "high";
   previewLabelDensity: "low" | "standard" | "high";
   hasGeneratedPlan: boolean;
@@ -257,8 +257,8 @@ export default function PreviewPanel({
     suggestedPlacements.length > 0 ||
     (surveyPoints?.length ?? 0) > 0 ||
     Boolean(lotWidth && lotHeight);
-  const showHover = previewInteraction !== "static";
-  const allowEdits = previewInteraction === "interactive";
+  const showHover = previewInteraction === "static";
+  const allowEdits = previewInteraction === "edit";
   const normalPalette = {
     building: "#0f172a",
     buildingFill: "rgba(15, 23, 42, 0.12)",
@@ -807,6 +807,10 @@ export default function PreviewPanel({
       mode: "move" | "resize" | "rotate" = "move",
     ) => {
       if (!allowEdits || building.type === "site") return;
+      if (selectedBuildingId && selectedBuildingId !== building.id) {
+        onSelectBuilding(building.id);
+        return;
+      }
       const caps = getEditCapabilities(building);
       if (mode === "move" && !caps.movable) return;
       if (mode === "resize" && !caps.resizable) return;
@@ -840,7 +844,7 @@ export default function PreviewPanel({
       const rect = event.currentTarget.getBoundingClientRect();
       setDragOffset({ x: event.clientX - rect.left, y: event.clientY - rect.top });
     },
-    [allowEdits, getEditCapabilities, onSelectBuilding],
+    [allowEdits, getEditCapabilities, onSelectBuilding, selectedBuildingId],
   );
 
   const formatHoverValue = (value: number | null | undefined, suffix: string) => {
@@ -2157,32 +2161,17 @@ export default function PreviewPanel({
               <button
                 type="button"
                 onClick={() => {
-                  if (previewInteraction === "inspect") return;
-                  onQueuePreviewRefresh("Loading inspect labels...");
-                  onSetPreviewInteraction("inspect");
+                  if (previewInteraction === "edit") return;
+                  onQueuePreviewRefresh("Entering edit mode...");
+                  onSetPreviewInteraction("edit");
                 }}
                 className={`rounded-full border px-2.5 py-1 ${
-                  previewInteraction === "inspect"
+                  previewInteraction === "edit"
                     ? "border-slate-900 bg-slate-950 text-white"
                     : "border-slate-200 bg-white text-slate-600"
                 }`}
               >
-                Inspect
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (previewInteraction === "interactive") return;
-                  onQueuePreviewRefresh("Loading interactive labels...");
-                  onSetPreviewInteraction("interactive");
-                }}
-                className={`rounded-full border px-2.5 py-1 ${
-                  previewInteraction === "interactive"
-                    ? "border-slate-900 bg-slate-950 text-white"
-                    : "border-slate-200 bg-white text-slate-600"
-                }`}
-              >
-                Interactive
+                Edit
               </button>
             </div>
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
@@ -2249,14 +2238,8 @@ export default function PreviewPanel({
                 ? "Standard"
                 : previewLabelDensity.charAt(0).toUpperCase() + previewLabelDensity.slice(1)}
             </span>
-            <span className="font-semibold text-slate-900">Interactive:</span>
-            <span>
-              {previewInteraction === "interactive"
-                ? "Edit + hover"
-                : previewInteraction === "inspect"
-                  ? "Hover only"
-                  : "Static"}
-            </span>
+            <span className="font-semibold text-slate-900">Interaction:</span>
+            <span>{previewInteraction === "edit" ? "Edit only" : "Hover only"}</span>
             {cursorSitePoint ? (
               <>
                 <span className="font-semibold text-slate-900">Cursor:</span>
@@ -3269,8 +3252,7 @@ export default function PreviewPanel({
                     }
                   />
                 )}
-                {previewInteraction === "interactive" &&
-                !planPreviewAnnotations?.labels?.length ? (
+                {showHover && !planPreviewAnnotations?.labels?.length ? (
                   <div className="pointer-events-none absolute right-6 top-6 rounded-2xl border border-white/20 bg-slate-900/80 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
                     No hover labels yet. Refresh the preview to generate them.
                   </div>
@@ -3300,7 +3282,7 @@ export default function PreviewPanel({
                         style={buildBoundsStyle(issueHighlightBounds)}
                       />
                     ) : null}
-                    {previewInteraction === "interactive"
+                    {showHover
                       ? planPreviewAnnotations.labels.map((item, idx) => (
                           <div
                             key={`${item.label}-${idx}`}
@@ -3489,7 +3471,7 @@ export default function PreviewPanel({
                   </div>
                 </div>
               ) : null}
-                {previewInteraction === "interactive" && showMeasurements ? (
+                {allowEdits && showMeasurements ? (
                   <div className="pointer-events-none absolute left-6 top-6 w-[240px] rounded-2xl border border-slate-200/70 bg-white/90 p-3 text-xs text-slate-700 shadow-sm backdrop-blur">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                       Measurements
@@ -3510,7 +3492,7 @@ export default function PreviewPanel({
                     </div>
                   </div>
                 ) : null}
-                {previewInteraction === "interactive" && showCalculations ? (
+                {allowEdits && showCalculations ? (
                   <div className="pointer-events-none absolute bottom-6 left-6 w-[240px] rounded-2xl border border-slate-200/70 bg-white/90 p-3 text-xs text-slate-700 shadow-sm backdrop-blur">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                       Calculations
