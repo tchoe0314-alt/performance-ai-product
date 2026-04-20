@@ -121,7 +121,7 @@ export default function AuthScreen({
                       : "text-slate-600"
                   }`}
                 >
-                  Sign In
+                  Sign In Mode
                 </button>
                 <button
                   type="button"
@@ -132,7 +132,7 @@ export default function AuthScreen({
                       : "text-slate-600"
                   }`}
                 >
-                  Create Account
+                  Create Account Mode
                 </button>
               </div>
               <div className="rounded-2xl border border-black/10 bg-slate-50 p-4 text-sm text-slate-600">
@@ -220,7 +220,7 @@ export default function AuthScreen({
                     onAuthModeChange(authMode === "register" ? "login" : "register");
                   }}
                 >
-                  {authMode === "register" ? "Have an account?" : "Need an account?"}
+                  {authMode === "register" ? "Switch to sign-in" : "Switch to sign-up"}
                 </SmallButton>
               </div>
             </CardContent>
