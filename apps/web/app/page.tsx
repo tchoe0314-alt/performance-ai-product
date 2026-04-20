@@ -2113,6 +2113,9 @@ export default function PerformanceAIDashboard() {
         };
       }
       setBuildingPlacements((prev) => [...prev, nextPlacement]);
+      setActivePlacementId(nextPlacement.id);
+      setPlacementModeEnabled(true);
+      setPreviewMode("2d");
       console.debug("[placement] add-object", {
         id: nextPlacement.id,
         type: nextPlacement.type,
