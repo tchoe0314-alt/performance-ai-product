@@ -8558,13 +8558,6 @@ export default function PerformanceAIDashboard() {
                         </p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleAddObject("site")}
-                          className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
-                        >
-                          Add Site
-                        </button>
                         {missingSite ? (
                         <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
                           Needs site
@@ -8669,13 +8662,9 @@ export default function PerformanceAIDashboard() {
                         return acres ? `${acres.toFixed(2)} acres` : "Set dimensions to compute acreage";
                       })()}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleAddObject("site")}
-                      className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                    >
-                      Apply Site
-                    </button>
+                    <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      Site is auto-fit and locked.
+                    </div>
                   </div>
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Objects</p>

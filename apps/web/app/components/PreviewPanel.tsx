@@ -290,8 +290,9 @@ export default function PreviewPanel({
   const legendPalette = previewQuality === "high" ? highPalette : normalPalette;
   const hoveredObject = useMemo(
     () =>
-      [...buildingPlacements, ...suggestedPlacements].find((item) => item.id === hoveredObjectId) ??
-      null,
+      [...buildingPlacements, ...suggestedPlacements].find(
+        (item) => item.id === hoveredObjectId && item.type !== "site",
+      ) ?? null,
     [buildingPlacements, suggestedPlacements, hoveredObjectId],
   );
   const show3D = previewMode === "3d" && Boolean(planPreviewUrl) && !showMap;
@@ -308,7 +309,7 @@ export default function PreviewPanel({
   const selectedObject = useMemo(
     () =>
       [...buildingPlacements, ...suggestedPlacements].find(
-        (item) => item.id === selectedBuildingId,
+        (item) => item.id === selectedBuildingId && item.type !== "site",
       ) ?? null,
     [buildingPlacements, suggestedPlacements, selectedBuildingId],
   );
@@ -2632,7 +2633,13 @@ export default function PreviewPanel({
                       }}
                     >
                       {buildingPlacements
-                      .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
+                      .filter(
+                        (item) =>
+                          item.type !== "site" &&
+                          item.placed &&
+                          Number.isFinite(item.x) &&
+                          Number.isFinite(item.y),
+                      )
                       .map((item) => {
                         const caps = getEditCapabilities(item);
                         const isSelected = selectedBuildingId === item.id;
