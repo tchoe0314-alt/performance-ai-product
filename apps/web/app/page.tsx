@@ -1671,30 +1671,26 @@ export default function PerformanceAIDashboard() {
   useEffect(() => {
     const site = buildingPlacements.find((item) => item.type === "site");
     if (!site) return;
-    if (site.locked === siteScaleLocked) return;
-    setBuildingPlacements((prev) =>
-      prev.map((item) =>
-        item.type === "site"
-          ? {
-              ...item,
-              locked: siteScaleLocked,
-              capabilities: {
-                ...item.capabilities,
-                movable: !siteScaleLocked,
-                resizable: !siteScaleLocked,
-                rotatable: !siteScaleLocked,
-              },
-            }
-          : item,
-      ),
-    );
-  }, [buildingPlacements, siteScaleLocked]);
-
-  useEffect(() => {
-    const site = buildingPlacements.find((item) => item.type === "site");
-    if (!site || typeof site.locked !== "boolean") return;
-    if (site.locked !== siteScaleLocked) {
-      setSiteScaleLocked(site.locked);
+    if (!siteScaleLocked) {
+      setSiteScaleLocked(true);
+    }
+    if (!site.locked) {
+      setBuildingPlacements((prev) =>
+        prev.map((item) =>
+          item.type === "site"
+            ? {
+                ...item,
+                locked: true,
+                capabilities: {
+                  ...item.capabilities,
+                  movable: false,
+                  resizable: false,
+                  rotatable: false,
+                },
+              }
+            : item,
+        ),
+      );
     }
   }, [buildingPlacements, siteScaleLocked]);
 
@@ -5696,8 +5692,8 @@ export default function PerformanceAIDashboard() {
   );
 
   const handleToggleSiteLock = useCallback(() => {
-    const next = !siteScaleLocked;
-    setSiteScaleLocked(next);
+    if (siteScaleLocked) return;
+    setSiteScaleLocked(true);
     const currentInput = currentProject?.project_input ?? payloadPreview;
     void saveProject({
       silent: true,
@@ -5710,7 +5706,7 @@ export default function PerformanceAIDashboard() {
           ...(currentInput?.meta ?? {}),
           site_inputs: {
             ...(currentInput?.meta?.site_inputs ?? {}),
-            site_alignment_locked: next,
+            site_alignment_locked: true,
           },
         },
       },
@@ -5720,19 +5716,27 @@ export default function PerformanceAIDashboard() {
         item.type === "site"
           ? {
               ...item,
-              locked: next,
+              locked: true,
               capabilities: {
                 ...item.capabilities,
-                movable: !next,
-                resizable: !next,
-                rotatable: !next,
+                movable: false,
+                resizable: false,
+                rotatable: false,
               },
             }
           : item,
       ),
     );
-    setStatusMessage(next ? "Site alignment locked." : "Site alignment unlocked.");
-  }, [currentProject, payloadPreview, saveProject]);
+    setStatusMessage("Site alignment locked.");
+  }, [currentProject, payloadPreview, saveProject, siteScaleLocked]);
+
+  useEffect(() => {
+    if (!placementModeEnabled || activePlacementId) return;
+    const pending = buildingPlacements.find((item) => !item.placed && item.type !== "site");
+    if (pending) {
+      setActivePlacementId(pending.id);
+    }
+  }, [activePlacementId, buildingPlacements, placementModeEnabled]);
 
   const estimateSurveySlope = async () => {
     if (!token || !surveyFileName) return;
@@ -5888,6 +5892,12 @@ export default function PerformanceAIDashboard() {
       height: heightPx * detectionScaleFtPerPx,
     };
   }, [activeSidePanel, detectionScaleFtPerPx, previewHeightPx]);
+
+  useEffect(() => {
+    const hasSite = buildingPlacements.some((item) => item.type === "site");
+    if (!hasSite) return;
+    setFitToSiteRequest((value) => value + 1);
+  }, [activeSidePanel, buildingPlacements, previewHeightPx]);
 
   const saveSiteAddress = async () => {
     if (!token) return;
@@ -7947,20 +7957,10 @@ export default function PerformanceAIDashboard() {
                       >
                         Save address
                       </button>
-                      <div className="mt-3 flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                      <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                         <span>
-                          Alignment:{" "}
-                          <span className="font-semibold text-slate-800">
-                            {siteScaleLocked ? "Locked" : "Unlocked"}
-                          </span>
+                          Alignment: <span className="font-semibold text-slate-800">Locked</span>
                         </span>
-                        <button
-                          type="button"
-                          onClick={handleToggleSiteLock}
-                          className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                        >
-                          {siteScaleLocked ? "Unlock Site" : "Lock Site"}
-                        </button>
                       </div>
                       {siteAddress ? (
                         <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
@@ -8135,13 +8135,9 @@ export default function PerformanceAIDashboard() {
                         >
                           Use Map Center
                         </button>
-                        <button
-                          type="button"
-                          onClick={handleToggleSiteLock}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                        >
-                          {siteScaleLocked ? "Unlock Site" : "Lock Site"}
-                        </button>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          Locked
+                        </div>
                         <button
                           type="button"
                           onClick={() => setShowSiteBounds((value) => !value)}
