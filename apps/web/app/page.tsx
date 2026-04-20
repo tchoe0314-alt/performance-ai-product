@@ -8553,6 +8553,9 @@ export default function PerformanceAIDashboard() {
                 <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-slate-600">
                   <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                     Preview height
+                    <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                      Build 2026-04-20
+                    </span>
                   </span>
                   <input
                     type="range"
