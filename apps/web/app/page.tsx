@@ -43,6 +43,8 @@ import type {
   SiteInputs,
 } from "./types";
 
+type SystemGenerationTarget = "roads" | "parking" | "grading" | "drainage" | "utilities" | "full";
+
 const ADD_MENU_SECTIONS: Array<{
   title: string;
   key: string;
@@ -593,7 +595,6 @@ export default function PerformanceAIDashboard() {
   const previewRefreshIntentRef = useRef<{ reason: string; track?: boolean } | null>(null);
   const lastProjectResultRefreshRef = useRef<Record<string, number>>({});
   const lastJobPartialResultRefreshRef = useRef<Record<string, number>>({});
-  type SystemGenerationTarget = "roads" | "parking" | "grading" | "drainage" | "utilities" | "full";
   const handleGenerateSystemRef = useRef<((target: SystemGenerationTarget) => Promise<void>) | null>(null);
   const chatMessagesRef = useRef<ChatMessage[]>([createWelcomeMessage()]);
   const suppressProjectAutoLoadRef = useRef(false);
