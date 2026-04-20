@@ -4914,9 +4914,11 @@ export default function PerformanceAIDashboard() {
           image_path: data.image_path || "",
           image_url: data.image_url || "",
         },
-        site_alignment_locked: false,
+        site_alignment_locked: true,
       };
       const hasSite = buildingPlacements.some((item) => item.type === "site");
+      let width = parsePositiveNumber(lotWidth);
+      let height = parsePositiveNumber(lotHeight);
       if (!hasSite) {
         const acres = 10;
         const baseSide = Math.sqrt(acres * 43560);
@@ -4924,41 +4926,19 @@ export default function PerformanceAIDashboard() {
           imageSize && imageSize.width > 0 && imageSize.height > 0
             ? imageSize.width / imageSize.height
             : 1;
-        const width = baseSide * Math.sqrt(aspect);
-        const height = baseSide / Math.sqrt(aspect);
-        setLotWidth((prev) => (prev ? prev : width.toFixed(0)));
-        setLotHeight((prev) => (prev ? prev : height.toFixed(0)));
-        setSiteScaleLocked(false);
-        setBuildingPlacements((prev) => {
-          const filtered = prev.filter((item) => item.type !== "site");
-          const siteId = `site-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          return [
-            {
-              id: siteId,
-              label: "Site Boundary",
-              type: "site",
-              w: width,
-              d: height,
-              x: 0,
-              y: 0,
-              rotation: 0,
-              locked: false,
-              placed: true,
-              source: "user",
-              generated: false,
-              capabilities: {
-                movable: true,
-                resizable: true,
-                rotatable: true,
-                deletable: false,
-              },
-              systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
-              meta: { category: "site" },
-            },
-            ...filtered,
-          ];
-        });
-        setFitToSiteRequest((value) => value + 1);
+        const fallbackWidth = baseSide * Math.sqrt(aspect);
+        const fallbackHeight = baseSide / Math.sqrt(aspect);
+        const scaledWidth =
+          imageSize && detectionScaleFtPerPx
+            ? imageSize.width * detectionScaleFtPerPx
+            : null;
+        const scaledHeight =
+          imageSize && detectionScaleFtPerPx
+            ? imageSize.height * detectionScaleFtPerPx
+            : null;
+        width = scaledWidth ?? fallbackWidth;
+        height = scaledHeight ?? fallbackHeight;
+        autoFitSite(width, height, "Site Boundary");
       }
       await saveProject({
         silent: true,
@@ -4971,13 +4951,20 @@ export default function PerformanceAIDashboard() {
             ...(currentInput?.meta ?? {}),
             site_inputs: nextSiteInputs,
           },
+          manual_fields: {
+            ...(currentInput?.manual_fields ?? {}),
+            lot: {
+              x: 0,
+              y: 0,
+              w: width || 0,
+              h: height || 0,
+            },
+          },
         },
       });
       setImageUploadState("uploaded");
       setImageUploadNote("Image uploaded. Ready for detection.");
       setStatusMessage("Image uploaded.");
-      const width = parsePositiveNumber(lotWidth);
-      const height = parsePositiveNumber(lotHeight);
       if (width && height) {
         setImageUploadState("detecting");
         setImageUploadNote("Detecting site features…");
@@ -5845,6 +5832,64 @@ export default function PerformanceAIDashboard() {
     }
   };
 
+  const autoFitSite = useCallback(
+    (width: number, height: number, label?: string, siteIdOverride?: string | null) => {
+      const clampedW = Math.max(width, 1);
+      const clampedH = Math.max(height, 1);
+      setLotWidth(clampedW.toFixed(0));
+      setLotHeight(clampedH.toFixed(0));
+      setSiteScaleLocked(true);
+      setBuildingPlacements((prev) => {
+        const filtered = prev.filter((item) => item.type !== "site");
+        const existingSite = prev.find((item) => item.type === "site");
+        const siteId =
+          siteIdOverride ||
+          existingSite?.id ||
+          `site-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const siteLabel = label || existingSite?.label || "Site Boundary";
+        return [
+          {
+            id: siteId,
+            label: siteLabel,
+            type: "site",
+            w: clampedW,
+            d: clampedH,
+            x: 0,
+            y: 0,
+            rotation: 0,
+            locked: true,
+            placed: true,
+            source: "user",
+            generated: false,
+            capabilities: {
+              movable: false,
+              resizable: false,
+              rotatable: false,
+              deletable: false,
+            },
+            systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+            meta: { category: "site" },
+          },
+          ...filtered,
+        ];
+      });
+      setFitToSiteRequest((value) => value + 1);
+    },
+    [],
+  );
+
+  const computeViewportSiteSize = useCallback(() => {
+    if (typeof window === "undefined") return null;
+    if (!detectionScaleFtPerPx) return null;
+    const sidePanelWidth = activeSidePanel ? 360 : 0;
+    const widthPx = Math.max(window.innerWidth - 96 - sidePanelWidth, 320);
+    const heightPx = previewHeightPx;
+    return {
+      width: widthPx * detectionScaleFtPerPx,
+      height: heightPx * detectionScaleFtPerPx,
+    };
+  }, [activeSidePanel, detectionScaleFtPerPx, previewHeightPx]);
+
   const saveSiteAddress = async () => {
     if (!token) return;
     const trimmed = siteAddress.trim();
@@ -5886,49 +5931,20 @@ export default function PerformanceAIDashboard() {
         display_name: geocode.display_name,
         provider: geocode.provider,
       };
-      nextSiteInputs.site_alignment_locked = false;
+      nextSiteInputs.site_alignment_locked = true;
       const acres = 10;
       const side = Math.sqrt(acres * 43560);
+      const viewportSize = computeViewportSiteSize();
+      const nextWidth = viewportSize?.width ?? currentLotWidth ?? side;
+      const nextHeight = viewportSize?.height ?? currentLotHeight ?? side;
       let nextSiteId: string | null = null;
       if (!hasSite) {
-        setLotWidth((prev) => (prev ? prev : side.toFixed(0)));
-        setLotHeight((prev) => (prev ? prev : side.toFixed(0)));
-        setSiteScaleLocked(false);
-        setBuildingPlacements((prev) => {
-          const filtered = prev.filter((item) => item.type !== "site");
-          const siteId = `site-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          nextSiteId = siteId;
-          return [
-            ...filtered,
-            {
-              id: siteId,
-              label: geocode.display_name || "Site Boundary",
-              type: "site",
-              w: currentLotWidth ?? side,
-              d: currentLotHeight ?? side,
-              x: 0,
-              y: 0,
-              rotation: 0,
-              locked: false,
-              placed: true,
-              source: "user",
-              generated: false,
-              capabilities: {
-                movable: true,
-                resizable: true,
-                rotatable: true,
-                deletable: false,
-              },
-              systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
-              meta: { category: "site" },
-            },
-          ];
-        });
-        setFitToSiteRequest((value) => value + 1);
+        nextSiteId = `site-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       } else {
         const existingSite = buildingPlacements.find((item) => item.type === "site");
         nextSiteId = existingSite?.id ?? null;
       }
+      autoFitSite(nextWidth, nextHeight, geocode.display_name || "Site Boundary", nextSiteId);
       await saveProject({
         silent: true,
         projectInputOverride: {
@@ -5945,8 +5961,8 @@ export default function PerformanceAIDashboard() {
             lot: {
               x: 0,
               y: 0,
-              w: currentLotWidth ?? side,
-              h: currentLotHeight ?? side,
+              w: nextWidth,
+              h: nextHeight,
             },
           },
         },
@@ -6297,20 +6313,21 @@ export default function PerformanceAIDashboard() {
 
   const getIssueGuidance = useCallback((issue: Issue) => {
     const code = (issue.code ?? "").toUpperCase();
+    const rawContext = issue.context;
     const context =
-      issue.context && typeof issue.context === "object"
-        ? (issue.context as Record<string, unknown>)
+      rawContext && typeof rawContext === "object"
+        ? (rawContext as Record<string, unknown>)
         : null;
     const explanation =
-      typeof context?.explanation === "string"
+      context && typeof context.explanation === "string"
         ? String(context.explanation)
         : null;
     const bestNextFix =
-      typeof context?.best_next_fix === "string"
+      context && typeof context.best_next_fix === "string"
         ? String(context.best_next_fix)
         : null;
     const suggested =
-      Array.isArray(context?.suggested_actions)
+      context && Array.isArray(context.suggested_actions)
         ? context.suggested_actions
             .filter((item) => typeof item === "string")
             .map((item) => String(item))

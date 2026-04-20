@@ -2453,7 +2453,11 @@ export default function PreviewPanel({
                       height: overlayBoundsResolved.height,
                     }}
                   >
-                    {null}
+                    {!siteLocked && lotWidth > 0 && lotHeight > 0 ? (
+                      <div
+                        className={`absolute inset-0 rounded-[16px] border-2 border-dashed ${legendPalette.siteBorder} ${legendPalette.siteFill}`}
+                      />
+                    ) : null}
                     {(buildingPlacements.length || suggestedPlacements.length || (surveyPoints?.length ?? 0) > 0) ? (
                       <svg
                         className="absolute inset-0"
@@ -3264,7 +3268,9 @@ export default function PreviewPanel({
                       height: fullscreenImageBounds.height,
                     }}
                   >
-                    {null}
+                    {!siteLocked && lotWidth > 0 && lotHeight > 0 ? (
+                      <div className="absolute inset-0 rounded-[16px] border-2 border-dashed border-slate-300/70" />
+                    ) : null}
                     {activeHighlightBounds ? (
                       <div
                         className="absolute rounded-[14px] border-2 border-sky-400/90 bg-sky-400/10 shadow-[0_0_0_6px_rgba(56,189,248,0.18)]"
