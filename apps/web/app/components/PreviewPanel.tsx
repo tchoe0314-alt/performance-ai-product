@@ -2451,11 +2451,7 @@ export default function PreviewPanel({
                       height: overlayBoundsResolved.height,
                     }}
                   >
-                    {lotWidth > 0 && lotHeight > 0 ? (
-                      <div
-                        className={`absolute inset-0 rounded-[16px] border-2 border-dashed ${legendPalette.siteBorder} ${legendPalette.siteFill}`}
-                      />
-                    ) : null}
+                    {null}
                     {(buildingPlacements.length || suggestedPlacements.length || (surveyPoints?.length ?? 0) > 0) ? (
                       <svg
                         className="absolute inset-0"
@@ -3147,28 +3143,24 @@ export default function PreviewPanel({
               ) : null}
               <div className="pointer-events-none absolute bottom-6 right-6 hidden rounded-2xl border border-white/40 bg-white/85 px-3 py-2 text-[11px] text-slate-700 shadow-sm backdrop-blur lg:block">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Legend
+                  Status
                 </p>
-                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full" style={{ background: legendPalette.building }} />
-                    <span>Buildings</span>
+                <div className="mt-2 space-y-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-semibold text-slate-600">Quality:</span>
+                    <span>{previewQuality === "high" ? "High" : "Standard"}</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full" style={{ background: legendPalette.parking }} />
-                    <span>Parking</span>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-semibold text-slate-600">Labels:</span>
+                    <span>
+                      {previewLabelDensity === "standard"
+                        ? "Standard"
+                        : previewLabelDensity.charAt(0).toUpperCase() + previewLabelDensity.slice(1)}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full" style={{ background: legendPalette.road }} />
-                    <span>Roads</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full" style={{ background: legendPalette.drainage }} />
-                    <span>Drainage</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full" style={{ background: legendPalette.utilities }} />
-                    <span>Utilities</span>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-semibold text-slate-600">Interaction:</span>
+                    <span>{allowEdits ? "Edit only" : "Hover only"}</span>
                   </div>
                 </div>
               </div>
@@ -3270,9 +3262,7 @@ export default function PreviewPanel({
                       height: fullscreenImageBounds.height,
                     }}
                   >
-                    {lotWidth > 0 && lotHeight > 0 ? (
-                      <div className="absolute inset-0 rounded-[16px] border-2 border-dashed border-slate-300/70" />
-                    ) : null}
+                    {null}
                     {activeHighlightBounds ? (
                       <div
                         className="absolute rounded-[14px] border-2 border-sky-400/90 bg-sky-400/10 shadow-[0_0_0_6px_rgba(56,189,248,0.18)]"
