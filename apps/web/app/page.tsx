@@ -6077,13 +6077,21 @@ export default function PerformanceAIDashboard() {
       setStatusMessage("Site address cleared.");
       return;
     }
-    if (!selectedAddressSuggestion) {
-      setStatusMessage("Select a suggested address before applying.");
-      return;
-    }
-    clearGeneratedPreview();
     try {
-      const geocode = selectedAddressSuggestion;
+      let geocode = selectedAddressSuggestion;
+      if (!geocode) {
+        geocode = await postJson<{
+          lat: number;
+          lng: number;
+          display_name: string;
+          provider?: string;
+        }>("/api/geocode", { address: trimmed }, { token });
+      }
+      if (!geocode?.lat || !geocode?.lng) {
+        setStatusMessage("Address lookup failed. Select a suggestion or try again.");
+        return;
+      }
+      clearGeneratedPreview();
       nextSiteInputs.address = geocode.display_name;
       nextSiteInputs.geocode = {
         lat: geocode.lat,
