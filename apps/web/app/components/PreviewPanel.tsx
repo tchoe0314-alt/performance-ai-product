@@ -2232,35 +2232,44 @@ export default function PreviewPanel({
             </div>
           </div>
           <div className="mb-3 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-            <span className="font-semibold text-slate-900">Quality:</span>
-            <span>{previewQuality === "high" ? "High" : "Standard"}</span>
-            <span className="font-semibold text-slate-900">Labels:</span>
-            <span>
-              {previewLabelDensity === "standard"
-                ? "Standard"
-                : previewLabelDensity.charAt(0).toUpperCase() + previewLabelDensity.slice(1)}
+            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Legend
             </span>
-            <span className="font-semibold text-slate-900">Interaction:</span>
-            <span>{previewInteraction === "edit" ? "Edit only" : "Hover only"}</span>
-            {cursorSitePoint ? (
-              <>
-                <span className="font-semibold text-slate-900">Cursor:</span>
-                <span>
-                  X {cursorSitePoint.x.toFixed(1)} ft • Y {cursorSitePoint.y.toFixed(1)} ft
-                </span>
-              </>
-            ) : null}
-            {debugStats?.enabled ? (
-              <>
-                <span className="font-semibold text-slate-900">Debug:</span>
-                <span>
-                  Canonical {debugStats.canonicalCount} • Placed {debugStats.placedCount} •
-                  Preview {debugStats.previewImageActive ? "on" : "off"} •
-                  Placement {debugStats.placementMode ? "on" : "off"} •
-                  Project {debugStats.projectId || "none"}
-                </span>
-              </>
-            ) : null}
+            <span className="flex items-center gap-2">
+              <span
+                className="h-2.5 w-2.5 rounded-full"
+                style={{ background: legendPalette.building }}
+              />
+              Buildings
+            </span>
+            <span className="flex items-center gap-2">
+              <span
+                className="h-2.5 w-2.5 rounded-full"
+                style={{ background: legendPalette.road }}
+              />
+              Roads
+            </span>
+            <span className="flex items-center gap-2">
+              <span
+                className="h-2.5 w-2.5 rounded-full"
+                style={{ background: legendPalette.parking }}
+              />
+              Parking
+            </span>
+            <span className="flex items-center gap-2">
+              <span
+                className="h-2.5 w-2.5 rounded-full"
+                style={{ background: legendPalette.drainage }}
+              />
+              Drainage
+            </span>
+            <span className="flex items-center gap-2">
+              <span
+                className="h-2.5 w-2.5 rounded-full"
+                style={{ background: legendPalette.utilities }}
+              />
+              Utilities
+            </span>
           </div>
           {(previewRefreshing || previewRefreshNote) && (
             <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
