@@ -5893,6 +5893,43 @@ export default function PerformanceAIDashboard() {
     };
   }, [activeSidePanel, detectionScaleFtPerPx, previewHeightPx]);
 
+  const handleApplySite = useCallback(async () => {
+    const width = parsePositiveNumber(lotWidth);
+    const height = parsePositiveNumber(lotHeight);
+    if (!width || !height) {
+      setStatusMessage("Set the site width and height before applying the site.");
+      return;
+    }
+    autoFitSite(width, height, "Site Boundary");
+    const currentInput = currentProject?.project_input ?? payloadPreview;
+    await saveProject({
+      silent: true,
+      projectInputOverride: {
+        ...currentInput,
+        input_mode: "user",
+        strict_mode: false,
+        allow_ai_fill_for_blanks: false,
+        meta: {
+          ...(currentInput?.meta ?? {}),
+          site_inputs: {
+            ...(currentInput?.meta?.site_inputs ?? {}),
+            site_alignment_locked: true,
+          },
+        },
+        manual_fields: {
+          ...(currentInput?.manual_fields ?? {}),
+          lot: {
+            x: 0,
+            y: 0,
+            w: width,
+            h: height,
+          },
+        },
+      },
+    });
+    setStatusMessage("Site applied and locked.");
+  }, [autoFitSite, currentProject, lotHeight, lotWidth, payloadPreview, saveProject]);
+
   useEffect(() => {
     const hasSite = buildingPlacements.some((item) => item.type === "site");
     if (!hasSite) return;
@@ -8662,9 +8699,13 @@ export default function PerformanceAIDashboard() {
                         return acres ? `${acres.toFixed(2)} acres` : "Set dimensions to compute acreage";
                       })()}
                     </div>
-                    <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                      Site is auto-fit and locked.
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleApplySite()}
+                      className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                    >
+                      Apply Site
+                    </button>
                   </div>
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Objects</p>
