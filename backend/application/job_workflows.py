@@ -1184,6 +1184,8 @@ def build_drainage_job_runner(
             allow_slope_adjustment = bool(drainage_fields.get("allow_slope_adjustment"))
             max_slope_adjust = drainage_fields.get("max_slope_adjust")
             autofix_action = safe_str(drainage_fields.get("autofix_action"), "")
+            if autofix_action == "adjust_slope" and not allow_slope_adjustment:
+                allow_slope_adjustment = True
             if forced_inlets:
                 drainage_payload = safe_dict(merged.get("drainage"))
                 if not drainage_payload:
@@ -1274,6 +1276,11 @@ def build_drainage_job_runner(
             manual_forced = safe_list(manual_drainage.get("forced_inlets"))
             manual_allow_slope = bool(manual_drainage.get("allow_slope_adjustment"))
             manual_autofix_action = safe_str(manual_drainage.get("autofix_action"), "")
+            raw_ponds = raw_manual_fields.get("ponds")
+            if isinstance(raw_ponds, dict):
+                raw_ponds = raw_ponds.get("value")
+            if raw_ponds and not safe_list(parsed.get("ponds")):
+                parsed["ponds"] = deepcopy(raw_ponds)
             raw_manual_drainage = safe_dict(raw_manual_fields.get("drainage"))
             raw_allow = raw_manual_drainage.get("allow_slope_adjustment")
             if isinstance(raw_allow, dict):
@@ -1293,6 +1300,9 @@ def build_drainage_job_runner(
                 allow_slope_adjustment = True
             if manual_autofix_action and not safe_str(safe_dict(parsed.get("drainage")).get("autofix_action"), ""):
                 parsed.setdefault("drainage", {})["autofix_action"] = manual_autofix_action
+            if manual_autofix_action == "adjust_slope":
+                parsed.setdefault("drainage", {})["allow_slope_adjustment"] = True
+                allow_slope_adjustment = True
         route = choose_routing_path(parsed)
         manager = _bootstrap_manager(parsed)
         _register_default_dependencies(manager)
