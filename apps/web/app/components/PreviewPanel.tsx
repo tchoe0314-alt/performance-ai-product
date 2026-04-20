@@ -235,6 +235,8 @@ export default function PreviewPanel({
   const fullscreenMapRef = useRef<mapboxgl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapRevision, setMapRevision] = useState(0);
+  const previewSizeRef = useRef<{ w: number; h: number } | null>(null);
+  const fullscreenSizeRef = useRef<{ w: number; h: number } | null>(null);
   const [rotateDragActive, setRotateDragActive] = useState(false);
   const [rotateDragStart, setRotateDragStart] = useState<{ x: number; value: number } | null>(null);
   const activeAnnotation = pinnedAnnotation ?? hoveredAnnotation;
@@ -1114,7 +1116,6 @@ export default function PreviewPanel({
     const handle = window.setTimeout(() => {
       mapRef.current?.resize();
       fullscreenMapRef.current?.resize();
-      setMapRevision((value) => value + 1);
       if (debugStats?.enabled) {
         console.debug("[debug-preview] map-refresh", {
           mode: previewMode,
@@ -1896,13 +1897,15 @@ export default function PreviewPanel({
   useEffect(() => {
     const handleUpdate = () => {
       updateContainerBounds();
-      if (showMap) {
-        if (previewRef.current) {
-          const rect = previewRef.current.getBoundingClientRect();
-          setPreviewImageBounds({ left: 0, top: 0, width: rect.width, height: rect.height });
+      if (showMap && previewRef.current) {
+        const rect = previewRef.current.getBoundingClientRect();
+        setPreviewImageBounds({ left: 0, top: 0, width: rect.width, height: rect.height });
+        const nextSize = { w: rect.width, h: rect.height };
+        const prev = previewSizeRef.current;
+        if (!prev || prev.w !== nextSize.w || prev.h !== nextSize.h) {
+          previewSizeRef.current = nextSize;
+          mapRef.current?.resize();
         }
-        mapRef.current?.resize();
-        fullscreenMapRef.current?.resize();
       } else if (planPreviewUrl && showGeneratedPlan) {
         updateImageBounds(previewRef, previewImageRef, setPreviewImageBounds);
       } else {
@@ -1923,12 +1926,15 @@ export default function PreviewPanel({
   useEffect(() => {
     if (!previewFullscreenOpen) return;
     const handleUpdate = () => {
-      if (showMap) {
-        if (fullscreenRef.current) {
-          const rect = fullscreenRef.current.getBoundingClientRect();
-          setFullscreenImageBounds({ left: 0, top: 0, width: rect.width, height: rect.height });
+      if (showMap && fullscreenRef.current) {
+        const rect = fullscreenRef.current.getBoundingClientRect();
+        setFullscreenImageBounds({ left: 0, top: 0, width: rect.width, height: rect.height });
+        const nextSize = { w: rect.width, h: rect.height };
+        const prev = fullscreenSizeRef.current;
+        if (!prev || prev.w !== nextSize.w || prev.h !== nextSize.h) {
+          fullscreenSizeRef.current = nextSize;
+          fullscreenMapRef.current?.resize();
         }
-        fullscreenMapRef.current?.resize();
       } else if (planPreviewUrl) {
         updateImageBounds(fullscreenRef, fullscreenImageRef, setFullscreenImageBounds);
       }
@@ -2437,7 +2443,7 @@ export default function PreviewPanel({
                     3D needs a preview run
                   </div>
                 ) : null}
-                {overlayBoundsResolved && (previewMode === "2d" || !showGeneratedPlan) ? (
+                {overlayBoundsResolved && previewMode === "2d" ? (
                   <div
                     className="pointer-events-none absolute z-10"
                     style={{

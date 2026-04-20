@@ -6570,6 +6570,15 @@ export default function PerformanceAIDashboard() {
         );
         return;
       }
+      if (target === "roads") {
+        const hasRoadAnchor = buildingPlacements.some((item) =>
+          ["road", "driveway", "entrance", "building"].includes(item.type ?? ""),
+        );
+        if (!hasRoadAnchor) {
+          setStatusMessage("Add a building or entrance before generating roads.");
+          return;
+        }
+      }
       if (target === "grading" || target === "drainage" || target === "full") {
         const hasSurvey = Boolean(surveyFileName) && useSurveyForGrading;
         const hasMapTerrain = Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng);
@@ -8505,8 +8514,10 @@ export default function PerformanceAIDashboard() {
             <WorkspaceToolbar onRefreshWorkspace={handleRefreshWorkspace} />
 
             <div className="flex w-full flex-1 flex-col gap-6 px-4 py-6 md:px-6">
-              <div className="flex h-[50vh] min-h-[50vh] flex-col">
-              <PreviewPanel
+              <div className="flex w-full flex-col">
+                <div className="mx-auto w-full max-w-5xl aspect-square max-h-[70vh]">
+                  <div className="h-full w-full">
+                    <PreviewPanel
                 previewReview={previewReview}
                 previewTotalPhaseCount={previewTotalPhaseCount}
                 previewCompletedPhaseCount={previewCompletedPhaseCount}
@@ -8623,6 +8634,8 @@ export default function PerformanceAIDashboard() {
                   selectedId: activePlacementId,
                 }}
               />
+                  </div>
+                </div>
               </div>
 
               <div className="rounded-[24px] border border-slate-200 bg-white/95 p-4 shadow-[0_12px_35px_-28px_rgba(15,23,42,0.45)]">
@@ -8671,29 +8684,38 @@ export default function PerformanceAIDashboard() {
                   </div>
                 </div>
 
-                <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Add Objects
-                      </p>
-                      <p className="mt-1 text-sm text-slate-600">
-                        Choose a category to add real, scaled site objects.
-                      </p>
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          Add Objects
+                        </p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          Choose a category to add real, scaled site objects.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleAddObject("site")}
+                          className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
+                        >
+                          Add Site
+                        </button>
+                        {missingSite ? (
+                        <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+                          Needs site
+                        </span>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => setAdvancedAddOpen((value) => !value)}
+                          className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                        >
+                          {advancedAddOpen ? "Hide Advanced" : "Show Advanced"}
+                        </button>
+                      </div>
                     </div>
-                    {missingSite ? (
-                      <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
-                        Needs site
-                      </span>
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={() => setAdvancedAddOpen((value) => !value)}
-                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                    >
-                      {advancedAddOpen ? "Hide Advanced" : "Show Advanced"}
-                    </button>
-                  </div>
                   <div className="mt-4 grid gap-4 md:grid-cols-2">
                     {ADD_MENU_SECTIONS.filter(
                       (section) => !section.collapsible || advancedAddOpen,
