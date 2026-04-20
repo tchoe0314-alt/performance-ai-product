@@ -451,6 +451,9 @@ export default function PerformanceAIDashboard() {
   const [detectionScaleSource, setDetectionScaleSource] = useState<"mapbox" | "manual" | "approximate">("approximate");
   const [siteScaleLocked, setSiteScaleLocked] = useState(false);
   const [showAdvancedCalibration, setShowAdvancedCalibration] = useState(false);
+  const [drainageSourceOverride, setDrainageSourceOverride] = useState<"civora" | "user">(
+    "civora",
+  );
   const [siteRotationDeg, setSiteRotationDeg] = useState(0);
   const [siteRotationInput, setSiteRotationInput] = useState("0");
   const [showSiteBounds, setShowSiteBounds] = useState(true);
@@ -550,7 +553,6 @@ export default function PerformanceAIDashboard() {
   const [jobClockMs, setJobClockMs] = useState(() => Date.now());
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const mapSnapshotInputRef = useRef<HTMLInputElement | null>(null);
-  const surveyInputRef = useRef<HTMLInputElement | null>(null);
   const runSubmissionRef = useRef(false);
   const directRunAbortRef = useRef<AbortController | null>(null);
   const draftProjectPromiseRef = useRef<Promise<ProjectRecord | null> | null>(null);
@@ -4495,6 +4497,9 @@ export default function PerformanceAIDashboard() {
     setUseSurveyForGrading(useSurvey !== undefined ? Boolean(useSurvey) : true);
     setSurveyPoints(storedPoints as number[][]);
     setSurveyPreviewPoints(mapSurveyPointsToSite(storedPoints as number[][]));
+    setDrainageSourceOverride(
+      siteInputs?.drainage_source_override === "user" ? "user" : "civora",
+    );
     setSurveyDiagnostics((prev) => ({
       ...(prev ?? {}),
       fileType: siteInputs?.survey_file_type ?? prev?.fileType,
@@ -7829,7 +7834,7 @@ export default function PerformanceAIDashboard() {
                     {activeSidePanel === "projects"
                       ? "Switch between projects."
                       : activeSidePanel === "site"
-                        ? "Provide address, imagery, and survey data."
+                        ? "Provide address and imagery."
                       : activeSidePanel === "docs"
                         ? "Preview docs and exports."
                         : "Conversation and updates."}
@@ -8011,30 +8016,6 @@ export default function PerformanceAIDashboard() {
                       ) : null}
                       <button
                         type="button"
-                        onClick={() => surveyInputRef.current?.click()}
-                        className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50"
-                      >
-                        <span>Upload survey / topo file</span>
-                        <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
-                          {surveyFileName ? "Ready" : "Upload"}
-                        </span>
-                      </button>
-                      <p className="text-xs text-slate-500">
-                        Supported: CSV survey points, DXF topo/contours (parsing pending).
-                      </p>
-                      <button
-                        type="button"
-                        onClick={estimateSurveySlope}
-                        disabled={!surveyFileName}
-                        className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <span>Estimate slope from survey</span>
-                        <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
-                          {surveySlopeEstimate?.slope_percent ? "Estimated" : "Compute"}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
                         onClick={analyzeMapSnapshot}
                         disabled={!mapSnapshotPath}
                         className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
@@ -8071,48 +8052,6 @@ export default function PerformanceAIDashboard() {
                           Address provides site context only. Add or confirm buildings and access objects to run analysis.
                         </p>
                       ) : null}
-                      {surveyFileName ? (
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                          <p className="font-semibold text-slate-700">Survey loaded</p>
-                          <p className="mt-1">
-                            {surveyFileName}
-                            {surveyDiagnostics?.fileType ? ` · ${surveyDiagnostics.fileType.toUpperCase()}` : ""}
-                          </p>
-                          {surveyDiagnostics?.parseSuccess !== undefined ? (
-                            <p className="mt-1">
-                              {surveyDiagnostics.parseSuccess ? "Parse success" : "Parse pending"} ·{" "}
-                              {surveyDiagnostics.pointCount ?? 0} points
-                            </p>
-                          ) : null}
-                          {surveyDiagnostics?.recognizedColumns ? (
-                            <p className="mt-1">
-                              Columns: {surveyDiagnostics.recognizedColumns.x || "x"} /{" "}
-                              {surveyDiagnostics.recognizedColumns.y || "y"} /{" "}
-                              {surveyDiagnostics.recognizedColumns.z || "z"} · Invalid rows:{" "}
-                              {surveyDiagnostics.invalidRows ?? 0}
-                            </p>
-                          ) : null}
-                          {surveyDiagnostics?.bounds ? (
-                            <p className="mt-1">
-                              Extents: [{surveyDiagnostics.bounds.min_x?.toFixed?.(1) ?? "?"},{" "}
-                              {surveyDiagnostics.bounds.min_y?.toFixed?.(1) ?? "?"}] → [
-                              {surveyDiagnostics.bounds.max_x?.toFixed?.(1) ?? "?"},{" "}
-                              {surveyDiagnostics.bounds.max_y?.toFixed?.(1) ?? "?"}]
-                            </p>
-                          ) : null}
-                          {surveyDiagnostics?.elevationRange ? (
-                            <p className="mt-1">
-                              Elevation: {surveyDiagnostics.elevationRange.min?.toFixed?.(2) ?? "?"}–{" "}
-                              {surveyDiagnostics.elevationRange.max?.toFixed?.(2) ?? "?"} ft
-                            </p>
-                          ) : null}
-                          {surveyDiagnostics?.warnings?.length ? (
-                            <p className="mt-2 text-amber-600">
-                              {surveyDiagnostics.warnings[0]}
-                            </p>
-                          ) : null}
-                        </div>
-                      ) : null}
                       {uploadedImageApiUrl || uploadedImagePreviewUrl ? (
                         <p className="text-xs text-slate-500">
                           Map snapshot loaded and ready for interpretation.
@@ -8125,117 +8064,8 @@ export default function PerformanceAIDashboard() {
                           {mapAnalysisCounts.centerlines} centerlines.
                         </p>
                       ) : null}
-                      {surveySlopeEstimate?.slope_percent ? (
-                        <p className="text-xs text-slate-500">
-                          Estimated {surveySlopeEstimate.slope_percent.toFixed(2)}% slope toward{" "}
-                          {surveySlopeEstimate.direction || "N/A"} from {surveySlopeEstimate.point_count ?? 0} points.
-                        </p>
-                      ) : null}
                     </div>
 
-                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                        Grading source
-                      </p>
-                      <p className="mt-2 text-sm font-semibold text-slate-800">
-                        {gradingSourceSummary}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        Survey data only comes from uploaded survey/topo files. Mapbox terrain is an approximate
-                        fallback when no survey is active.
-                      </p>
-                      <label className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
-                        <span>Use survey for grading</span>
-                        <input
-                          type="checkbox"
-                          checked={useSurveyForGrading}
-                          disabled={!surveyFileName}
-                          onChange={(event) => {
-                            const next = event.target.checked;
-                            setUseSurveyForGrading(next);
-                            const currentInput = currentProject?.project_input ?? payloadPreview;
-                            void saveProject({
-                              silent: true,
-                              projectInputOverride: {
-                                ...currentInput,
-                                input_mode: "user",
-                                strict_mode: false,
-                                allow_ai_fill_for_blanks: false,
-                                meta: {
-                                  ...(currentInput?.meta ?? {}),
-                                  site_inputs: {
-                                    ...(currentInput?.meta?.site_inputs ?? {}),
-                                    use_survey_for_grading: next,
-                                  },
-                                },
-                              },
-                            });
-                          }}
-                          className="h-4 w-4 accent-slate-900"
-                        />
-                      </label>
-                    </div>
-
-                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                        Detection scale calibration
-                      </p>
-                      <p className="mt-2 text-xs text-slate-500">
-                        Auto scale source: {detectionScaleSource === "mapbox" ? "Mapbox (real-world)" : "Approximate"}
-                      </p>
-                      <p className="mt-2 text-xs text-slate-500">
-                        Automatic scale is used when map context is available. Manual calibration is an advanced fallback.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => setShowAdvancedCalibration((prev) => !prev)}
-                        className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                      >
-                        {showAdvancedCalibration ? "Hide Advanced" : "Advanced Calibration"}
-                      </button>
-                      {showAdvancedCalibration ? (
-                        <div className="mt-3">
-                          <div className="grid grid-cols-2 gap-3 text-xs text-slate-600">
-                            <label className="flex flex-col gap-1">
-                              Known distance (ft)
-                              <input
-                                type="number"
-                                value={detectionScaleFeet}
-                                onChange={(event) => setDetectionScaleFeet(event.target.value)}
-                                className="rounded-lg border border-slate-200 px-2 py-1"
-                              />
-                            </label>
-                            <label className="flex flex-col gap-1">
-                              Pixel distance (px)
-                              <input
-                                type="number"
-                                value={detectionScalePixels}
-                                onChange={(event) => setDetectionScalePixels(event.target.value)}
-                                className="rounded-lg border border-slate-200 px-2 py-1"
-                              />
-                            </label>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => void applyDetectionScale()}
-                            className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                          >
-                            Apply scale
-                          </button>
-                          <p className="mt-2 text-xs text-slate-500">
-                            {detectionScaleFtPerPx
-                              ? `Calibrated (${detectionScaleSource === "mapbox" ? "Mapbox" : "Manual"}): 1 px ≈ ${detectionScaleFtPerPx.toFixed(3)} ft`
-                              : "No calibration applied. Detection sizes are approximate."}
-                          </p>
-                          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
-                            <p className="font-semibold text-slate-700">How to calibrate</p>
-                            <p className="mt-1">
-                              Pick two points in the uploaded image with a known real‑world distance, measure the pixel distance between them, then enter both values and apply.
-                            </p>
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
 
                     <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
@@ -8324,44 +8154,13 @@ export default function PerformanceAIDashboard() {
                       </p>
                     </div>
 
-                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                        Survey intake
-                      </p>
-                      <p className="mt-2 text-sm font-semibold text-slate-800">
-                        {siteInputs?.survey_point_count ? `${siteInputs.survey_point_count} points` : "No survey points parsed yet"}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        Columns: {siteInputs?.survey_point_columns?.x || "x"} / {siteInputs?.survey_point_columns?.y || "y"} / {siteInputs?.survey_point_columns?.z || "z"} ·
-                        Invalid rows: {siteInputs?.survey_invalid_rows ?? 0}
-                      </p>
-                      {surveyDiagnostics?.bounds ? (
-                        <p className="mt-1 text-xs text-slate-500">
-                          Extents: [{surveyDiagnostics.bounds.min_x?.toFixed?.(1) ?? "?"},{" "}
-                          {surveyDiagnostics.bounds.min_y?.toFixed?.(1) ?? "?"}] → [
-                          {surveyDiagnostics.bounds.max_x?.toFixed?.(1) ?? "?"},{" "}
-                          {surveyDiagnostics.bounds.max_y?.toFixed?.(1) ?? "?"}]
-                        </p>
-                      ) : null}
-                      {surveyDiagnostics?.elevationRange ? (
-                        <p className="mt-1 text-xs text-slate-500">
-                          Elevation range: {surveyDiagnostics.elevationRange.min?.toFixed?.(2) ?? "?"}–{" "}
-                          {surveyDiagnostics.elevationRange.max?.toFixed?.(2) ?? "?"} ft
-                        </p>
-                      ) : null}
-                      {Array.isArray(siteInputs?.survey_point_warnings) && siteInputs.survey_point_warnings.length ? (
-                        <p className="mt-2 text-xs text-amber-600">
-                          {siteInputs.survey_point_warnings[0]}
-                        </p>
-                      ) : null}
-                    </div>
 
                     <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                        Drainage surface usage
+                        Drainage source
                       </p>
                       <p className="mt-2 text-sm font-semibold text-slate-800">
-                        {drainageSurfaceSummary.surfaceFromGrading ? "Using grading surface" : "Surface source unknown"}
+                        {drainageSourceOverride === "user" ? "User provided" : "Civora generated"}
                       </p>
                       <p className="mt-1 text-xs text-slate-500">
                         Source: {drainageSurfaceSummary.surfaceSource}
@@ -8374,6 +8173,37 @@ export default function PerformanceAIDashboard() {
                           {drainageSurfaceSummary.surfaceDetail}
                         </p>
                       ) : null}
+                      <label className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
+                        <span>Source override</span>
+                        <select
+                          value={drainageSourceOverride}
+                          onChange={(event) => {
+                            const next = event.target.value === "user" ? "user" : "civora";
+                            setDrainageSourceOverride(next);
+                            const currentInput = currentProject?.project_input ?? payloadPreview;
+                            void saveProject({
+                              silent: true,
+                              projectInputOverride: {
+                                ...currentInput,
+                                input_mode: "user",
+                                strict_mode: false,
+                                allow_ai_fill_for_blanks: false,
+                                meta: {
+                                  ...(currentInput?.meta ?? {}),
+                                  site_inputs: {
+                                    ...(currentInput?.meta?.site_inputs ?? {}),
+                                    drainage_source_override: next,
+                                  },
+                                },
+                              },
+                            });
+                          }}
+                          className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700"
+                        >
+                          <option value="civora">Civora</option>
+                          <option value="user">User</option>
+                        </select>
+                      </label>
                     </div>
 
                     <input
@@ -8385,19 +8215,6 @@ export default function PerformanceAIDashboard() {
                         const file = event.currentTarget.files?.[0];
                         if (file) {
                           await uploadImage(file);
-                        }
-                        event.currentTarget.value = "";
-                      }}
-                    />
-                    <input
-                      ref={surveyInputRef}
-                      type="file"
-                      accept=".csv,.dxf"
-                      className="hidden"
-                      onChange={async (event) => {
-                        const file = event.currentTarget.files?.[0];
-                        if (file) {
-                          await uploadSurvey(file);
                         }
                         event.currentTarget.value = "";
                       }}
