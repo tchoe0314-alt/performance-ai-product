@@ -1390,6 +1390,52 @@ def build_drainage_job_runner(
             grading_ok = False
             ctx.record_error(f"Grading failed in drainage-only runner: {exc}")
 
+        # Ensure any provided ponds/basins are registered on the project model
+        # before running drainage so the engine can target them.
+        try:
+            from core.geometry_core import EngineeringDomain, EngineeringObject, Point3D, ZoneType, rect_zone
+
+            existing_objects = getattr(manager.project, "objects", {}) or {}
+            existing_zones = getattr(manager.project, "zones", {}) or {}
+            for pond in [item for item in safe_list(parsed.get("ponds")) if isinstance(item, dict)]:
+                pond_id = safe_str(pond.get("id"), "").strip() or f"pond-{job_id or 'auto'}"
+                if pond_id in existing_objects or pond_id in existing_zones:
+                    continue
+                basin_x = safe_float(pond.get("x"), 0.0)
+                basin_y = safe_float(pond.get("y"), 0.0)
+                basin_w = safe_float(pond.get("w"), 40.0)
+                basin_d = safe_float(pond.get("d"), 30.0)
+                basin_name = safe_str(pond.get("name"), "Basin")
+                basin_zone = rect_zone(
+                    basin_x,
+                    basin_y,
+                    basin_w,
+                    basin_d,
+                    zone_type=ZoneType.DETENTION,
+                    name=basin_name,
+                )
+                manager.project.add_zone(basin_zone)
+                manager.project.add_object(
+                    EngineeringObject(
+                        id=pond_id,
+                        kind="detention_basin",
+                        name=basin_name,
+                        anchor=Point3D(basin_x + basin_w / 2.0, basin_y + basin_d / 2.0, DEFAULT_PAD_ELEV),
+                        boundary=basin_zone.boundary,
+                        tags=["drainage", "basin"],
+                        domain=EngineeringDomain.DRAINAGE,
+                        properties={
+                            "width": basin_w,
+                            "depth": basin_d,
+                            "canonical_id": pond_id,
+                            "source": safe_str(pond.get("source"), ""),
+                            "generated": bool(pond.get("generated")),
+                        },
+                    )
+                )
+        except Exception:
+            pass
+
         # Drainage autofix: add basin at the best available low point before running drainage.
         autofix_action = safe_str(safe_dict(parsed.get("drainage")).get("autofix_action"), "")
         if not autofix_action:
@@ -1806,6 +1852,15 @@ def build_drainage_job_runner(
                 ],
                 "best_next_fix": "Connect the inlet to the nearest run.",
             },
+            "ORPHAN_INLET_CONNECT_FAILED": {
+                "explanation": "An orphan inlet could not be connected to a valid drainage run.",
+                "suggested_actions": [
+                    "Add a basin at a low point.",
+                    "Modify grading to create a downhill path.",
+                    "Relocate the inlet closer to a basin.",
+                ],
+                "best_next_fix": "Add a basin at a low point.",
+            },
             "UNDER_COLLECTION": {
                 "explanation": "There are not enough inlets to collect runoff.",
                 "suggested_actions": [
@@ -1854,6 +1909,12 @@ def build_drainage_job_runner(
                 return "Modify grading to introduce slope."
             if code == "ORPHAN_INLETS":
                 return "Connect the inlet to the nearest run."
+            if code == "ORPHAN_INLET_CONNECT_FAILED":
+                if low_point_count == 0:
+                    return "Define an outfall location."
+                if not has_basin:
+                    return "Add a basin at a low point."
+                return "Modify grading to create a downhill path."
             if code in {"UNDER_COLLECTION", "UNDER_COLLECTION_REDUCED"}:
                 return "Add inlets along pavement edges."
             return guidance.get("best_next_fix")
@@ -1977,6 +2038,30 @@ def build_drainage_job_runner(
                     "manual_autofix_action": safe_str(safe_dict(raw_manual_fields.get("drainage")).get("autofix_action"), ""),
                 },
             )
+
+        # Final guard: if connect-orphans was requested but no runs were created,
+        # surface a not-feasible issue so the action is not a silent no-op.
+        if connect_orphans:
+            run_count = len(safe_list(drainage_canonical.get("pipe_runs") or drainage_canonical.get("runs")))
+            if run_count == 0 and has_inlet:
+                existing = list(safe_list(result.get("issues")))
+                existing_codes = {safe_str(issue.get("code"), "") for issue in existing if isinstance(issue, dict)}
+                if "ORPHAN_INLET_CONNECT_FAILED" not in existing_codes:
+                    filtered = [issue for issue in existing if safe_str(issue.get("code"), "") != "ORPHAN_INLETS"]
+                    reason = "no_runs"
+                    if "BASIN_UNREACHABLE" in existing_codes:
+                        reason = "basin_unreachable"
+                    elif "NO_FLOW_PATHS" in existing_codes:
+                        reason = "no_flow_paths"
+                    filtered.append(
+                        {
+                            "code": "ORPHAN_INLET_CONNECT_FAILED",
+                            "message": "Orphan inlet could not be connected to a valid drainage run.",
+                            "severity": "info",
+                            "context": {"reason": reason},
+                        }
+                    )
+                    result["issues"] = filtered
         else:
             # Final fallback: if the payload explicitly requested adjust_slope,
             # surface the not-feasible issue even if flags were lost upstream.

@@ -303,11 +303,18 @@ test.describe("Phase 5 drainage autofix matrix", () => {
           ...basePayload,
           manual_fields: {
             ...(basePayload.manual_fields as Record<string, unknown>),
+            grading: {
+              min_slope_pct: 0.5,
+              corner_elevations: {
+                northwest: 110,
+                southeast: 100,
+              },
+            },
             drainage: {
               min_pipe_slope_pct: 0.5,
               forced_inlets: [{ name: "Forced Inlet", x: 100, y: 100 }],
             },
-            ponds: [{ id: "pond2", name: "Pond", x: 500, y: 500, w: 40, d: 30 }],
+            ponds: [{ id: "pond2", name: "Pond", x: 340, y: 340, w: 40, d: 30 }],
           },
         },
         action: "Connect inlet",
