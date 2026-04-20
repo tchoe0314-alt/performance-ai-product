@@ -555,6 +555,92 @@ def run_drainage_stage(
                     )
                 )
 
+        grading_blocked = False
+        grading_block_reason = ""
+        if (
+            surface_from_grading
+            and project.meta.get("proposed_surface") is not None
+            and project.meta.get("existing_surface") is not None
+        ):
+            issue_codes = {safe_str(item.get("code"), "") for item in issue_payloads if isinstance(item, dict)}
+            if "BASIN_UNREACHABLE" in issue_codes or "NO_FLOW_PATHS" in issue_codes:
+                try:
+                    alt_engine = DrainageEngine(project.meta.get("existing_surface"))
+                    preferred_targets = safe_list(coordination.get("preferred_targets"))
+                    if not preferred_targets and basin_records:
+                        preferred_targets = [
+                            {
+                                "name": safe_str(getattr(record, "target_name", ""), "") or safe_str(getattr(record, "sink_name", ""), "OUTFALL_A"),
+                                "x": safe_float(getattr(record, "centroid_xy", (0.0, 0.0))[0], 0.0),
+                                "y": safe_float(getattr(record, "centroid_xy", (0.0, 0.0))[1], 0.0),
+                                "radius": max(1.0, safe_float(getattr(record, "area_sf", 0.0) ** 0.5, POND_RADIUS)),
+                            }
+                            for record in safe_list(basin_records)
+                        ]
+                    if hasattr(alt_engine, "clear_pond_targets"):
+                        try:
+                            alt_engine.clear_pond_targets()
+                        except Exception:
+                            pass
+                    if hasattr(alt_engine, "add_pond_target"):
+                        for target in preferred_targets:
+                            target_data = safe_dict(target)
+                            alt_engine.add_pond_target(
+                                safe_str(target_data.get("name"), "OUTFALL_A"),
+                                safe_float(target_data.get("x"), 0.0),
+                                safe_float(target_data.get("y"), 0.0),
+                                radius=max(1.0, safe_float(target_data.get("radius"), POND_RADIUS)),
+                            )
+                    alt_inlets = [rec.inlet for rec in inlet_records if hasattr(rec, "inlet")]
+                    if alt_inlets:
+                        _, alt_summary = alt_engine.pipe_runs(
+                            inlets=alt_inlets,
+                            basin_records=basin_records,
+                            follow_surface=True,
+                            min_slope=min_slope,
+                            max_steps=500,
+                            mode=safe_str(getattr(summary, "mode", "assisted"), "assisted"),
+                            hydraulic=None,
+                            connect_orphans=False,
+                            allow_slope_adjustment=False,
+                        )
+                        alt_codes = {
+                            safe_str(getattr(issue, "code", ""), "")
+                            for issue in safe_list(getattr(alt_summary, "issues", []))
+                        }
+                        if "BASIN_UNREACHABLE" not in alt_codes and "NO_FLOW_PATHS" not in alt_codes:
+                            grading_blocked = True
+                            grading_block_reason = "proposed_surface_blocks_flow"
+                except Exception:
+                    grading_blocked = False
+
+        if grading_blocked:
+            grading_issue = {
+                "code": "DRAINAGE_BLOCKED_BY_GRADING",
+                "severity": "warning",
+                "message": "Proposed grading blocks flow paths that were reachable on existing terrain.",
+                "context": {
+                    "reason": grading_block_reason or "grading_blocked",
+                    "surface_source": surface_source,
+                    "surface_from_grading": surface_from_grading,
+                    "best_next_fix": "Introduce a grading swale toward the basin.",
+                    "suggested_actions": [
+                        "Introduce a grading swale toward the basin.",
+                        "Lower local ridge between inlet and basin.",
+                        "Adjust pad edges to restore flow.",
+                    ],
+                },
+            }
+            issue_payloads.append(grading_issue)
+            manager.add_conflict(
+                ConflictRecord(
+                    code=grading_issue["code"],
+                    message=grading_issue["message"],
+                    severity=ConflictSeverity.WARNING,
+                    category="drainage",
+                )
+            )
+
         _mark_dependency_state(manager, "grading", "drainage", DependencyState.FRESH, reason="Drainage updated from grading.")
         _mark_dependency_state(manager, "drainage", "storm_pipes", DependencyState.STALE, reason="Storm pipe network depends on drainage.")
         manager.invalidate_from("drainage")
