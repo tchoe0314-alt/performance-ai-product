@@ -2697,6 +2697,7 @@ export default function PreviewPanel({
                           analysisHighlight &&
                           (analysisHighlight.buildingId === item.id || analysisHighlight.accessId === item.id);
                         const isPolyline = item.geometryType === "polyline";
+                        const showBox = !isPolyline;
                         return (
                           <div
                             key={item.id}
@@ -2729,17 +2730,18 @@ export default function PreviewPanel({
                             }}
                           >
                             <div
-                              className={`h-full w-full rounded-[8px] border-2 shadow-sm transition ${borderColor} ${
-                                isSelected ? "ring-2 ring-amber-300" : ""
-                              } ${isAccessHighlight ? "ring-2 ring-rose-300" : ""}`}
+                              className={`h-full w-full rounded-[8px] shadow-sm transition ${
+                                showBox ? `border-2 ${borderColor}` : ""
+                              } ${
+                                showBox && isSelected ? "ring-2 ring-amber-300" : ""
+                              } ${showBox && isAccessHighlight ? "ring-2 ring-rose-300" : ""}`}
                               style={{
                                 backgroundColor:
-                                  isPolyline
-                                    ? "transparent"
-                                    : previewQuality === "high"
+                                  showBox
+                                    ? previewQuality === "high"
                                       ? "rgba(17, 24, 39, 0.38)"
-                                      : "rgba(15, 23, 42, 0.22)",
-                                borderStyle: isPolyline ? "none" : undefined,
+                                      : "rgba(15, 23, 42, 0.22)"
+                                    : "transparent",
                               }}
                             />
                             {isSelected && isPolyline && Array.isArray(item.geometry)
