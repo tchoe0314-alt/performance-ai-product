@@ -553,10 +553,19 @@ export default function PreviewPanel({
           clampValue(((localY - dragOffset.y) / Math.max(bounds.height, 1)) * lotHeight, 0, Math.max(lotHeight - target.d, 0)),
           5,
         );
+        const deltaX = x - (target.x ?? 0);
+        const deltaY = y - (target.y ?? 0);
+        const updates: Partial<BuildingPlacement> = { x, y, placed: true };
+        if (target.geometryType === "polyline" && Array.isArray(target.geometry)) {
+          updates.geometry = (target.geometry as Array<[number, number]>).map((pt) => [
+            pt[0] + deltaX,
+            pt[1] + deltaY,
+          ]);
+        }
         if (target.source === "detected_from_image") {
-          onUpdateSuggested(draggingBuildingId, { x, y, placed: true });
+          onUpdateSuggested(draggingBuildingId, updates);
         } else {
-          onUpdateBuilding(draggingBuildingId, { x, y, placed: true });
+          onUpdateBuilding(draggingBuildingId, updates);
         }
         return;
       }
