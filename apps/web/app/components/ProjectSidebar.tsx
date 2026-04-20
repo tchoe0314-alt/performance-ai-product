@@ -55,7 +55,7 @@ type ProjectSidebarProps = {
   previewRerunSignals: string[];
   issues: IssueItem[];
   issueTargets: IssueTarget[];
-  previewInteraction: "static" | "interactive";
+  previewInteraction: "static" | "edit";
   selectedIssueId: string | null;
   onSelectIssue: (value: string) => void;
   totalPipeLength: number | null;
@@ -442,15 +442,15 @@ export default function ProjectSidebar({
                     key={`${issue.message}-${idx}`}
                     type="button"
                     onClick={() => {
-                      if (previewInteraction !== "interactive") return;
+                      if (previewInteraction !== "edit") return;
                       onSelectIssue(`${issue.message}-${idx}`);
                     }}
-                    disabled={previewInteraction !== "interactive"}
+                    disabled={previewInteraction !== "edit"}
                     className={`flex w-full items-start justify-between gap-3 rounded-2xl border px-3 py-2 text-left transition ${
                       selectedIssueId === `${issue.message}-${idx}`
                         ? "border-slate-900 bg-slate-950 text-white"
                         : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                    } ${previewInteraction !== "interactive" ? "cursor-not-allowed opacity-60" : ""}`}
+                    } ${previewInteraction !== "edit" ? "cursor-not-allowed opacity-60" : ""}`}
                   >
                     <div className="text-left">
                       <span className="font-medium">{issue.message}</span>

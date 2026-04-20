@@ -879,7 +879,6 @@ export default function PreviewPanel({
       : "Unknown";
     const inferredLabel = meta.inferred ? "Inferred" : "";
     const entries = [
-      { label: "Entity ID", value: meta.entity_id },
       { label: "System", value: meta.system },
       { label: "Layer", value: activeAnnotation.layer },
       { label: "Type", value: meta.entity_type },
@@ -1105,6 +1104,7 @@ export default function PreviewPanel({
     map.on("zoomend", reportViewport);
     const handleClick = (event: mapboxgl.MapMouseEvent) => {
       if (placementMode) {
+        if (!allowEdits) return;
         const sitePoint = latLngToSite(event.lngLat.lat, event.lngLat.lng);
         if (!sitePoint || !lotWidth || !lotHeight) {
           return;
@@ -2266,60 +2266,36 @@ export default function PreviewPanel({
                 High
               </button>
             </div>
-            {/* Labels control hidden until there is a concrete, visible effect. */}
-          </div>
-          <div className="mb-3 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-              Legend
-            </span>
-            <span className="flex items-center gap-2">
-              <span
-                className="h-2.5 w-2.5 rounded-full"
-                style={{ background: legendPalette.building }}
-              />
-              Buildings
-            </span>
-            <span className="flex items-center gap-2">
-              <span
-                className="h-2.5 w-2.5 rounded-full"
-                style={{ background: legendPalette.road }}
-              />
-              Roads
-            </span>
-            <span className="flex items-center gap-2">
-              <span
-                className="h-2.5 w-2.5 rounded-full"
-                style={{ background: legendPalette.parking }}
-              />
-              Parking
-            </span>
-            <span className="flex items-center gap-2">
-              <span
-                className="h-2.5 w-2.5 rounded-full"
-                style={{ background: legendPalette.drainage }}
-              />
-              Drainage
-            </span>
-            <span className="flex items-center gap-2">
-              <span
-                className="h-2.5 w-2.5 rounded-full"
-                style={{ background: legendPalette.utilities }}
-              />
-              Utilities
-            </span>
-            {cursorSitePoint ? (
-              <span className="ml-auto flex items-center gap-2 text-[11px] text-slate-500">
-                <span className="font-semibold text-slate-700">Cursor</span>
-                X {cursorSitePoint.x.toFixed(1)} ft • Y {cursorSitePoint.y.toFixed(1)} ft
+            <div className="flex flex-wrap items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              <span>Legend</span>
+              <span className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ background: legendPalette.building }} />
+                Buildings
               </span>
-            ) : null}
-          </div>
-          {(previewRefreshing || previewRefreshNote) && (
-            <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-              <span>{previewRefreshNote || "Refreshing preview..."}</span>
+              <span className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ background: legendPalette.road }} />
+                Roads
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ background: legendPalette.parking }} />
+                Parking
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ background: legendPalette.drainage }} />
+                Drainage
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ background: legendPalette.utilities }} />
+                Utilities
+              </span>
+              {cursorSitePoint ? (
+                <span className="ml-2 flex items-center gap-2 text-[11px] text-slate-500">
+                  <span className="font-semibold text-slate-700">Cursor</span>
+                  X {cursorSitePoint.x.toFixed(1)} ft • Y {cursorSitePoint.y.toFixed(1)} ft
+                </span>
+              ) : null}
             </div>
-          )}
+          </div>
           {show3D ? (
             preview3DEffectiveItems.length ? (
               <div
@@ -2407,8 +2383,14 @@ export default function PreviewPanel({
                 if (overlayBoundsResolved) {
                   updateDraggedBuilding(event, overlayBoundsResolved);
                 }
-                resolveHover(event, previewRef, overlayBoundsResolved, setHoverPoint);
-                if (overlayBoundsResolved && lotWidth > 0 && lotHeight > 0 && previewRef.current) {
+                if (showHover) {
+                  resolveHover(event, previewRef, overlayBoundsResolved, setHoverPoint);
+                } else {
+                  if (hoverPoint) setHoverPoint(null);
+                  if (hoveredObjectId) setHoveredObjectId(null);
+                  if (hoveredAnnotation) setHoveredAnnotation(null);
+                }
+                if (showHover && overlayBoundsResolved && lotWidth > 0 && lotHeight > 0 && previewRef.current) {
                   const rect = previewRef.current.getBoundingClientRect();
                   const relX =
                     (event.clientX - rect.left - overlayBoundsResolved.left) /
@@ -2424,6 +2406,8 @@ export default function PreviewPanel({
                   } else {
                     setCursorSitePoint(null);
                   }
+                } else if (!showHover) {
+                  setCursorSitePoint(null);
                 } else {
                   setCursorSitePoint(null);
                 }
@@ -2443,6 +2427,7 @@ export default function PreviewPanel({
               }}
               onClick={(event) => {
                 if (placementMode) {
+                  if (!allowEdits) return;
                   resolvePlacement(event, previewRef, overlayBoundsResolved);
                   return;
                 }
@@ -2505,7 +2490,7 @@ export default function PreviewPanel({
                       height: overlayBoundsResolved.height,
                     }}
                   >
-                    {!siteLocked && lotWidth > 0 && lotHeight > 0 ? (
+                    {!siteLocked && showSiteBounds && lotWidth > 0 && lotHeight > 0 ? (
                       <div
                         className={`absolute inset-0 rounded-[16px] border-2 border-dashed ${legendPalette.siteBorder} ${legendPalette.siteFill}`}
                       />

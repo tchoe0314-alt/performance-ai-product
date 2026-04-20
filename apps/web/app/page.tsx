@@ -455,7 +455,7 @@ export default function PerformanceAIDashboard() {
   );
   const [siteRotationDeg, setSiteRotationDeg] = useState(0);
   const [siteRotationInput, setSiteRotationInput] = useState("0");
-  const [showSiteBounds, setShowSiteBounds] = useState(true);
+  const [showSiteBounds, setShowSiteBounds] = useState(false);
   const [fitToSiteRequest, setFitToSiteRequest] = useState(0);
   const [mapCenterRequest, setMapCenterRequest] = useState(0);
   const [alignToRoadRequest, setAlignToRoadRequest] = useState(0);
@@ -593,6 +593,7 @@ export default function PerformanceAIDashboard() {
   const previewRefreshIntentRef = useRef<{ reason: string; track?: boolean } | null>(null);
   const lastProjectResultRefreshRef = useRef<Record<string, number>>({});
   const lastJobPartialResultRefreshRef = useRef<Record<string, number>>({});
+  type SystemGenerationTarget = "roads" | "parking" | "grading" | "drainage" | "utilities" | "full";
   const handleGenerateSystemRef = useRef<((target: SystemGenerationTarget) => Promise<void>) | null>(null);
   const chatMessagesRef = useRef<ChatMessage[]>([createWelcomeMessage()]);
   const suppressProjectAutoLoadRef = useRef(false);
@@ -1687,10 +1688,7 @@ export default function PerformanceAIDashboard() {
   useEffect(() => {
     const site = buildingPlacements.find((item) => item.type === "site");
     if (!site) return;
-    if (!siteScaleLocked) {
-      setSiteScaleLocked(true);
-    }
-    if (!site.locked) {
+    if (siteScaleLocked && !site.locked) {
       setBuildingPlacements((prev) =>
         prev.map((item) =>
           item.type === "site"
@@ -1708,6 +1706,12 @@ export default function PerformanceAIDashboard() {
         ),
       );
     }
+  }, [buildingPlacements, siteScaleLocked]);
+
+  useEffect(() => {
+    const hasSite = buildingPlacements.some((item) => item.type === "site");
+    if (!hasSite) return;
+    setShowSiteBounds(!siteScaleLocked);
   }, [buildingPlacements, siteScaleLocked]);
 
   const resolveDefaultBuildingDims = useCallback(() => {
@@ -4950,6 +4954,9 @@ export default function PerformanceAIDashboard() {
         width = scaledWidth ?? fallbackWidth;
         height = scaledHeight ?? fallbackHeight;
         autoFitSite(width, height, "Site Boundary");
+        setShowSiteBounds(false);
+        setSiteScaleLocked(true);
+        setSiteSelectionMode(false);
       }
       await saveProject({
         silent: true,
@@ -5710,6 +5717,7 @@ export default function PerformanceAIDashboard() {
   const handleToggleSiteLock = useCallback(() => {
     if (siteScaleLocked) return;
     setSiteScaleLocked(true);
+    setShowSiteBounds(false);
     const currentInput = currentProject?.project_input ?? payloadPreview;
     void saveProject({
       silent: true,
@@ -5746,13 +5754,53 @@ export default function PerformanceAIDashboard() {
     setStatusMessage("Site alignment locked.");
   }, [currentProject, payloadPreview, saveProject, siteScaleLocked]);
 
+  const handleUnlockSite = useCallback(() => {
+    if (!siteScaleLocked) return;
+    setSiteScaleLocked(false);
+    setShowSiteBounds(true);
+    const currentInput = currentProject?.project_input ?? payloadPreview;
+    void saveProject({
+      silent: true,
+      projectInputOverride: {
+        ...currentInput,
+        input_mode: "user",
+        strict_mode: false,
+        allow_ai_fill_for_blanks: false,
+        meta: {
+          ...(currentInput?.meta ?? {}),
+          site_inputs: {
+            ...(currentInput?.meta?.site_inputs ?? {}),
+            site_alignment_locked: false,
+          },
+        },
+      },
+    });
+    setBuildingPlacements((prevPlacements) =>
+      prevPlacements.map((item) =>
+        item.type === "site"
+          ? {
+              ...item,
+              locked: false,
+              capabilities: {
+                ...item.capabilities,
+                movable: true,
+                resizable: true,
+                rotatable: true,
+              },
+            }
+          : item,
+      ),
+    );
+    setStatusMessage("Site unlocked for editing.");
+  }, [currentProject, payloadPreview, saveProject, siteScaleLocked]);
+
   useEffect(() => {
-    if (!placementModeEnabled || activePlacementId) return;
+    if (activePlacementId) return;
     const pending = buildingPlacements.find((item) => !item.placed && item.type !== "site");
     if (pending) {
       setActivePlacementId(pending.id);
     }
-  }, [activePlacementId, buildingPlacements, placementModeEnabled]);
+  }, [activePlacementId, buildingPlacements]);
 
   const estimateSurveySlope = async () => {
     if (!token || !surveyFileName) return;
@@ -5946,6 +5994,8 @@ export default function PerformanceAIDashboard() {
       return;
     }
     autoFitSite(width, height, "Site Boundary");
+    setShowSiteBounds(false);
+    setSiteScaleLocked(true);
     const currentInput = currentProject?.project_input ?? payloadPreview;
     await saveProject({
       silent: true,
@@ -6040,6 +6090,8 @@ export default function PerformanceAIDashboard() {
         display_name: geocode.display_name,
         provider: geocode.provider ?? "nominatim",
       };
+      nextSiteInputs.site_alignment_locked = true;
+      const viewportSize = viewportFootprint ?? computeViewportSiteSize();
       await saveProject({
         silent: true,
         projectInputOverride: {
@@ -6051,11 +6103,22 @@ export default function PerformanceAIDashboard() {
             ...(currentInput?.meta ?? {}),
             site_inputs: nextSiteInputs,
           },
+          manual_fields: {
+            ...(currentInput?.manual_fields ?? {}),
+            lot: viewportSize
+              ? { x: 0, y: 0, w: viewportSize.width, h: viewportSize.height }
+              : currentInput?.manual_fields?.lot,
+          },
         },
       });
+      if (viewportSize?.width && viewportSize?.height) {
+        autoFitSite(viewportSize.width, viewportSize.height, "Site Boundary");
+        setShowSiteBounds(false);
+        setSiteScaleLocked(true);
+      }
       setPreviewQuality("high");
-      setSiteSelectionMode(true);
-      setStatusMessage("Address applied. Zoom/pan to frame the site, then Apply Site.");
+      setSiteSelectionMode(false);
+      setStatusMessage("Address applied. Site auto-fit and locked.");
       setSelectedAddressSuggestion(geocode);
     } catch (error) {
       setStatusMessage(
@@ -8062,11 +8125,6 @@ export default function PerformanceAIDashboard() {
                       >
                         Apply address
                       </button>
-                      <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                        <span>
-                          Alignment: <span className="font-semibold text-slate-800">Locked</span>
-                        </span>
-                      </div>
                     </div>
 
                   <div className="space-y-2 text-sm text-slate-700">
@@ -8106,12 +8164,12 @@ export default function PerformanceAIDashboard() {
                       <button
                         type="button"
                         onClick={() => void handleApplySite()}
-                        disabled={!siteSelectionMode}
+                        disabled={siteScaleLocked}
                         className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         <span>Apply site</span>
                         <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
-                          {siteSelectionMode ? "Select area" : "Ready"}
+                          {siteScaleLocked ? "Locked" : "Apply"}
                         </span>
                       </button>
                       <button
@@ -8221,17 +8279,19 @@ export default function PerformanceAIDashboard() {
                           min={-180}
                           max={180}
                           value={siteRotationDeg}
+                          disabled={siteScaleLocked}
                           onChange={(event) => {
                             const value = Number(event.target.value);
                             setSiteRotationDeg(value);
                             setSiteRotationInput(String(value));
                             scheduleRotationSave(value);
                           }}
-                          className="w-full"
+                          className="w-full disabled:cursor-not-allowed disabled:opacity-50"
                         />
                         <input
                           type="number"
                           value={siteRotationInput}
+                          disabled={siteScaleLocked}
                           onChange={(event) => {
                             setSiteRotationInput(event.target.value);
                             const value = Number(event.target.value);
@@ -8240,7 +8300,7 @@ export default function PerformanceAIDashboard() {
                               scheduleRotationSave(value);
                             }
                           }}
-                          className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                          className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                         />
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
@@ -8260,16 +8320,6 @@ export default function PerformanceAIDashboard() {
                         >
                           Use Map Center
                         </button>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                          Locked
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setShowSiteBounds((value) => !value)}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                        >
-                          {showSiteBounds ? "Hide Site Bounds" : "Show Site Bounds"}
-                        </button>
                         <button
                           type="button"
                           onClick={() => setAlignToRoadRequest((value) => value + 1)}
@@ -8288,10 +8338,29 @@ export default function PerformanceAIDashboard() {
                         >
                           Reset Rotation
                         </button>
+                        {siteScaleLocked ? (
+                          <button
+                            type="button"
+                            onClick={handleUnlockSite}
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                          >
+                            Edit Site
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handleToggleSiteLock}
+                            className="rounded-xl border border-slate-200 bg-slate-950 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white"
+                          >
+                            Lock Site
+                          </button>
+                        )}
                       </div>
-                      <p className="mt-2 text-xs text-slate-500">
-                        Hold <span className="font-semibold">R</span> and drag the canvas to rotate the site.
-                      </p>
+                      {!siteScaleLocked ? (
+                        <p className="mt-2 text-xs text-slate-500">
+                          Hold <span className="font-semibold">R</span> and drag the canvas to rotate the site.
+                        </p>
+                      ) : null}
                     </div>
 
 
@@ -8638,17 +8707,6 @@ export default function PerformanceAIDashboard() {
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={handleTogglePlacementMode}
-                      className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition ${
-                        placementModeEnabled
-                          ? "border-slate-900 bg-slate-950 text-white"
-                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                      }`}
-                    >
-                      {placementModeEnabled ? "Placement On" : "Placement Off"}
-                    </button>
                     <button
                       type="button"
                       onClick={handleAutoPlaceBuildings}
