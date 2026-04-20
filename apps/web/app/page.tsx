@@ -503,6 +503,14 @@ export default function PerformanceAIDashboard() {
   const [mapSnapshotPath, setMapSnapshotPath] = useState("");
   const [mapAnalysis, setMapAnalysis] = useState<MapAnalysis | null>(null);
   const [siteAddress, setSiteAddress] = useState("");
+  const [siteSelectionMode, setSiteSelectionMode] = useState(false);
+  const [viewportFootprint, setViewportFootprint] = useState<{ widthFt: number; heightFt: number } | null>(null);
+  const [detectionChoices, setDetectionChoices] = useState({
+    roads: true,
+    buildings: true,
+    parking: true,
+    grading: false,
+  });
   const [addressSuggestions, setAddressSuggestions] = useState<
     Array<{ lat: number; lng: number; display_name: string; provider?: string }>
   >([]);
@@ -5930,8 +5938,8 @@ export default function PerformanceAIDashboard() {
   }, [siteAddress, token]);
 
   const handleApplySite = useCallback(async () => {
-    const width = parsePositiveNumber(lotWidth);
-    const height = parsePositiveNumber(lotHeight);
+    const width = viewportFootprint?.widthFt ?? parsePositiveNumber(lotWidth);
+    const height = viewportFootprint?.heightFt ?? parsePositiveNumber(lotHeight);
     if (!width || !height) {
       setStatusMessage("Set the site width and height before applying the site.");
       return;
@@ -5963,8 +5971,26 @@ export default function PerformanceAIDashboard() {
         },
       },
     });
+    setSiteSelectionMode(false);
     setStatusMessage("Site applied and locked.");
-  }, [autoFitSite, currentProject, lotHeight, lotWidth, payloadPreview, saveProject]);
+  }, [autoFitSite, currentProject, lotHeight, lotWidth, payloadPreview, saveProject, viewportFootprint]);
+
+  const runSelectedDetections = useCallback(async () => {
+    const wantsContext = detectionChoices.roads || detectionChoices.buildings || detectionChoices.parking;
+    if (wantsContext) {
+      if (!mapSnapshotPath) {
+        setStatusMessage("Upload a map snapshot to detect existing context.");
+      } else {
+        await handleAnalyzeImageFeatures();
+      }
+    }
+    if (detectionChoices.grading) {
+      await handleGenerateSystem("grading");
+    }
+    if (!wantsContext && !detectionChoices.grading) {
+      setStatusMessage("Select at least one detection option.");
+    }
+  }, [detectionChoices, handleAnalyzeImageFeatures, handleGenerateSystem, mapSnapshotPath]);
 
   useEffect(() => {
     const hasSite = buildingPlacements.some((item) => item.type === "site");
@@ -5975,10 +6001,7 @@ export default function PerformanceAIDashboard() {
   const saveSiteAddress = async () => {
     if (!token) return;
     const trimmed = siteAddress.trim();
-    const hasSite = buildingPlacements.some((item) => item.type === "site");
     const currentInput = currentProject?.project_input ?? payloadPreview;
-    const currentLotWidth = parsePositiveNumber(lotWidth);
-    const currentLotHeight = parsePositiveNumber(lotHeight);
     const nextSiteInputs = {
       ...(currentInput?.meta?.site_inputs ?? {}),
       address: trimmed || undefined,
@@ -6016,20 +6039,6 @@ export default function PerformanceAIDashboard() {
         display_name: geocode.display_name,
         provider: geocode.provider ?? "nominatim",
       };
-      nextSiteInputs.site_alignment_locked = true;
-      const acres = 10;
-      const side = Math.sqrt(acres * 43560);
-      const viewportSize = computeViewportSiteSize();
-      const nextWidth = viewportSize?.width ?? currentLotWidth ?? side;
-      const nextHeight = viewportSize?.height ?? currentLotHeight ?? side;
-      let nextSiteId: string | null = null;
-      if (!hasSite) {
-        nextSiteId = `site-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      } else {
-        const existingSite = buildingPlacements.find((item) => item.type === "site");
-        nextSiteId = existingSite?.id ?? null;
-      }
-      autoFitSite(nextWidth, nextHeight, geocode.display_name || "Site Boundary", nextSiteId);
       await saveProject({
         silent: true,
         projectInputOverride: {
@@ -6041,22 +6050,11 @@ export default function PerformanceAIDashboard() {
             ...(currentInput?.meta ?? {}),
             site_inputs: nextSiteInputs,
           },
-          manual_fields: {
-            ...(currentInput?.manual_fields ?? {}),
-            lot: {
-              x: 0,
-              y: 0,
-              w: nextWidth,
-              h: nextHeight,
-            },
-          },
         },
       });
-      if (nextSiteId) {
-        setFocusObjectId(nextSiteId);
-      }
-      setFitToSiteRequest((value) => value + 1);
-      setStatusMessage("Address applied. Site boundary initialized.");
+      setPreviewQuality("high");
+      setSiteSelectionMode(true);
+      setStatusMessage("Address applied. Zoom/pan to frame the site, then Apply Site.");
       setSelectedAddressSuggestion(geocode);
     } catch (error) {
       setStatusMessage(
@@ -8066,7 +8064,7 @@ export default function PerformanceAIDashboard() {
                       </div>
                     </div>
 
-                    <div className="space-y-2 text-sm text-slate-700">
+                  <div className="space-y-2 text-sm text-slate-700">
                       <button
                         type="button"
                         onClick={() => mapSnapshotInputRef.current?.click()}
@@ -8102,6 +8100,17 @@ export default function PerformanceAIDashboard() {
                       </button>
                       <button
                         type="button"
+                        onClick={() => void handleApplySite()}
+                        disabled={!siteSelectionMode}
+                        className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <span>Apply site</span>
+                        <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
+                          {siteSelectionMode ? "Select area" : "Ready"}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => handleGenerateSystem("grading")}
                         disabled={missingSite || !hasTerrainSource}
                         className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
@@ -8122,6 +8131,50 @@ export default function PerformanceAIDashboard() {
                           {missingImage ? "Needs image" : detectedPlacements.length ? "Detected" : "Run"}
                         </span>
                       </button>
+                      {!siteSelectionMode && buildingPlacements.some((item) => item.type === "site") ? (
+                        <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-xs text-slate-600">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                            Detect existing context
+                          </p>
+                          <div className="mt-2 grid gap-2">
+                            {(["roads", "buildings", "parking"] as const).map((key) => (
+                              <label key={key} className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={detectionChoices[key]}
+                                  onChange={(event) =>
+                                    setDetectionChoices((prev) => ({
+                                      ...prev,
+                                      [key]: event.target.checked,
+                                    }))
+                                  }
+                                />
+                                <span className="capitalize">{key}</span>
+                              </label>
+                            ))}
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={detectionChoices.grading}
+                                onChange={(event) =>
+                                  setDetectionChoices((prev) => ({
+                                    ...prev,
+                                    grading: event.target.checked,
+                                  }))
+                                }
+                              />
+                              <span>Detect grading</span>
+                            </label>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void runSelectedDetections()}
+                            className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                          >
+                            Run selected detection
+                          </button>
+                        </div>
+                      ) : null}
                       <button
                         type="button"
                         onClick={handleAnalyzeSiteAccess}
@@ -8476,6 +8529,7 @@ export default function PerformanceAIDashboard() {
               onClearFocusObject={() => setFocusObjectId(null)}
               lotWidth={lotBounds.w}
               lotHeight={lotBounds.h}
+              onViewportFootprint={(value) => setViewportFootprint(value)}
               onUpdateBuilding={handleUpdateBuilding}
               onUpdateSuggested={(id, updates) => {
                 setDetectedPlacements((prev) => {

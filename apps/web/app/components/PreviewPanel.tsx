@@ -94,6 +94,7 @@ type PreviewPanelProps = {
   onMapScaleUpdate?: (payload: { ftPerPx: number; source: "mapbox" }) => void;
   mapCenterRequest?: number;
   onMapCenter?: (payload: { lat: number; lng: number }) => void;
+  onViewportFootprint?: (value: { widthFt: number; heightFt: number }) => void;
   siteLocked?: boolean;
   debugStats?: {
     enabled: boolean;
@@ -176,6 +177,7 @@ export default function PreviewPanel({
   onMapScaleUpdate,
   mapCenterRequest,
   onMapCenter,
+  onViewportFootprint,
   siteLocked,
   debugStats,
 }: PreviewPanelProps) {
@@ -1076,9 +1078,30 @@ export default function PreviewPanel({
         onMapScaleUpdate({ ftPerPx, source: "mapbox" });
       }
     };
+    const reportViewport = () => {
+      if (!onViewportFootprint) return;
+      const bounds = map.getBounds();
+      const north = bounds.getNorth();
+      const south = bounds.getSouth();
+      const east = bounds.getEast();
+      const west = bounds.getWest();
+      const centerLat = (north + south) / 2;
+      const metersPerDegLat = 111320;
+      const metersPerDegLng = 111320 * Math.cos((centerLat * Math.PI) / 180);
+      const widthM = Math.abs(east - west) * metersPerDegLng;
+      const heightM = Math.abs(north - south) * metersPerDegLat;
+      if (!Number.isFinite(widthM) || !Number.isFinite(heightM)) return;
+      onViewportFootprint({
+        widthFt: widthM / 0.3048,
+        heightFt: heightM / 0.3048,
+      });
+    };
     reportScale();
+    reportViewport();
     map.on("moveend", reportScale);
     map.on("zoomend", reportScale);
+    map.on("moveend", reportViewport);
+    map.on("zoomend", reportViewport);
     const handleClick = (event: mapboxgl.MapMouseEvent) => {
       if (placementMode) {
         const sitePoint = latLngToSite(event.lngLat.lat, event.lngLat.lng);
@@ -1116,7 +1139,7 @@ export default function PreviewPanel({
     };
     map.on("click", handleClick);
     const handleMouseMove = (event: mapboxgl.MapMouseEvent) => {
-      if (!lotWidth || !lotHeight) return;
+      if (!showHover || !lotWidth || !lotHeight) return;
       const sitePoint = latLngToSite(event.lngLat.lat, event.lngLat.lng);
       if (!sitePoint) return;
       setCursorSitePoint(sitePoint);
@@ -1127,8 +1150,10 @@ export default function PreviewPanel({
       map.off("mousemove", handleMouseMove);
       map.off("moveend", reportScale);
       map.off("zoomend", reportScale);
+      map.off("moveend", reportViewport);
+      map.off("zoomend", reportViewport);
     };
-  }, [latLngToSite, lotHeight, lotWidth, mapLoaded, onMapScaleUpdate, onPlaceBuilding, onPlaceObject, placementMode, selectedBuildingId, onSelectBuilding, showMap]);
+  }, [latLngToSite, lotHeight, lotWidth, mapLoaded, onMapScaleUpdate, onPlaceBuilding, onPlaceObject, placementMode, selectedBuildingId, onSelectBuilding, showHover, showMap, onViewportFootprint]);
 
   useEffect(() => {
     if (!showMap || !mapLoaded || !mapRef.current) return;
