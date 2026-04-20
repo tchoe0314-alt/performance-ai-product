@@ -8134,7 +8134,7 @@ export default function PerformanceAIDashboard() {
                       <button
                         type="button"
                         onClick={() => void saveSiteAddress()}
-                        disabled={!selectedAddressSuggestion}
+                        disabled={!siteAddress.trim()}
                         className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Apply address
