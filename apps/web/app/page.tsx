@@ -6093,6 +6093,10 @@ export default function PerformanceAIDashboard() {
       };
       nextSiteInputs.site_alignment_locked = true;
       const viewportSize = viewportFootprint ?? computeViewportSiteSize();
+      const viewportWidth =
+        viewportSize && "width" in viewportSize ? viewportSize.width : viewportSize?.widthFt;
+      const viewportHeight =
+        viewportSize && "height" in viewportSize ? viewportSize.height : viewportSize?.heightFt;
       await saveProject({
         silent: true,
         projectInputOverride: {
@@ -6106,14 +6110,15 @@ export default function PerformanceAIDashboard() {
           },
           manual_fields: {
             ...(currentInput?.manual_fields ?? {}),
-            lot: viewportSize
-              ? { x: 0, y: 0, w: viewportSize.width, h: viewportSize.height }
-              : currentInput?.manual_fields?.lot,
+            lot:
+              typeof viewportWidth === "number" && typeof viewportHeight === "number"
+                ? { x: 0, y: 0, w: viewportWidth, h: viewportHeight }
+                : currentInput?.manual_fields?.lot,
           },
         },
       });
-      if (viewportSize?.width && viewportSize?.height) {
-        autoFitSite(viewportSize.width, viewportSize.height, "Site Boundary");
+      if (typeof viewportWidth === "number" && typeof viewportHeight === "number") {
+        autoFitSite(viewportWidth, viewportHeight, "Site Boundary");
         setShowSiteBounds(false);
         setSiteScaleLocked(true);
       }
