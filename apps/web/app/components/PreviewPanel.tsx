@@ -299,6 +299,12 @@ export default function PreviewPanel({
   );
   const show3D = previewMode === "3d" && Boolean(planPreviewUrl) && !showMap;
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    (window as Record<string, unknown>).__civoraGeocode = geocode ?? null;
+    (window as Record<string, unknown>).__civoraShowMap = showMap;
+    (window as Record<string, unknown>).__civoraPreviewQuality = previewQuality;
+  }, [geocode, showMap, previewQuality]);
+  useEffect(() => {
     if (previewMode === "3d" && (!planPreviewUrl || preview3DEffectiveItems.length === 0 || showMap)) {
       onSetPreviewMode("2d");
     }
