@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import os
 from copy import deepcopy
 from typing import Any, Callable, Dict, Optional, Protocol
 
@@ -1940,6 +1941,16 @@ def build_drainage_job_runner(
                     force_allow = True
                     break
 
+        if force_allow and os.environ.get("DRAINAGE_DEBUG") == "1":
+            print(
+                "[drainage-debug] slope guard allow=True",
+                {
+                    "allow_slope_adjustment": allow_slope_adjustment,
+                    "slope_autofix_requested": slope_autofix_requested,
+                    "payload_autofix_action": safe_str(safe_dict(payload.get("drainage")).get("autofix_action"), ""),
+                    "manual_autofix_action": safe_str(safe_dict(raw_manual_fields.get("drainage")).get("autofix_action"), ""),
+                },
+            )
         if force_allow:
             run_count = len(safe_list(drainage_canonical.get("pipe_runs") or drainage_canonical.get("runs")))
             if run_count == 0:
@@ -1956,6 +1967,16 @@ def build_drainage_job_runner(
                         "context": {"reason": "no_runs"},
                     }
                     result["issues"] = list(safe_list(result.get("issues"))) + [slope_issue]
+        elif os.environ.get("DRAINAGE_DEBUG") == "1":
+            print(
+                "[drainage-debug] slope guard allow=False",
+                {
+                    "allow_slope_adjustment": allow_slope_adjustment,
+                    "slope_autofix_requested": slope_autofix_requested,
+                    "payload_autofix_action": safe_str(safe_dict(payload.get("drainage")).get("autofix_action"), ""),
+                    "manual_autofix_action": safe_str(safe_dict(raw_manual_fields.get("drainage")).get("autofix_action"), ""),
+                },
+            )
         else:
             # Final fallback: if the payload explicitly requested adjust_slope,
             # surface the not-feasible issue even if flags were lost upstream.
