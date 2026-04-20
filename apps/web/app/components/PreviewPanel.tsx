@@ -3183,8 +3183,8 @@ export default function PreviewPanel({
         </div>
 
       {previewFullscreenOpen && (planPreviewUrl || showMap) ? (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/88 p-4 backdrop-blur-sm">
-          <div className="flex h-full w-full max-w-[96vw] flex-col rounded-[28px] border border-slate-700/60 bg-slate-950 shadow-[0_30px_90px_-40px_rgba(15,23,42,0.95)]">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/92 backdrop-blur-sm">
+          <div className="flex h-full w-full flex-col bg-slate-950">
             <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-5 py-4 text-white">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
@@ -3203,7 +3203,7 @@ export default function PreviewPanel({
                 Close
               </button>
             </div>
-            <div className="flex min-h-0 flex-1 items-center justify-center p-4">
+            <div className="flex min-h-0 flex-1 items-center justify-center p-0">
               <div
                 ref={fullscreenRef}
                 className="relative h-full w-full"
@@ -3248,14 +3248,14 @@ export default function PreviewPanel({
                 }}
               >
                 {showMap ? (
-                  <div ref={fullscreenMapContainerRef} className="absolute inset-0 overflow-hidden rounded-[20px]" />
+                  <div ref={fullscreenMapContainerRef} className="absolute inset-0 overflow-hidden" />
                 ) : (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     ref={fullscreenImageRef}
                     src={planPreviewUrl}
                     alt="Generated plan preview fullscreen"
-                    className="h-full w-full rounded-[20px] bg-white object-contain shadow-2xl"
+                    className="h-full w-full bg-white object-contain"
                     onLoad={() =>
                       updateImageBounds(fullscreenRef, fullscreenImageRef, setFullscreenImageBounds)
                     }
