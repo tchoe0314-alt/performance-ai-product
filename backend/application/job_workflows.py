@@ -1507,6 +1507,19 @@ def build_drainage_job_runner(
         drainage_flags = safe_dict(parsed.get("drainage"))
         allow_slope_adjustment = bool(drainage_flags.get("allow_slope_adjustment"))
         slope_autofix_requested = safe_str(drainage_flags.get("autofix_action"), "") == "adjust_slope"
+        raw_manual_fields = safe_dict(payload.get("manual_fields"))
+        raw_manual_drainage = safe_dict(raw_manual_fields.get("drainage"))
+        raw_allow = raw_manual_drainage.get("allow_slope_adjustment")
+        if isinstance(raw_allow, dict):
+            raw_allow = raw_allow.get("value")
+        raw_autofix = raw_manual_drainage.get("autofix_action")
+        if isinstance(raw_autofix, dict):
+            raw_autofix = raw_autofix.get("value")
+        if raw_allow:
+            allow_slope_adjustment = True
+        if safe_str(raw_autofix, "") == "adjust_slope":
+            slope_autofix_requested = True
+            allow_slope_adjustment = True
         if allow_slope_adjustment or slope_autofix_requested:
             inlet_count = len(safe_list(drainage_canonical.get("inlets")))
             run_count = len(safe_list(drainage_canonical.get("pipe_runs") or drainage_canonical.get("runs")))
@@ -1583,6 +1596,11 @@ def build_drainage_job_runner(
                     canonical_issues.append(issue)
             if canonical_issues:
                 drainage_canonical["issues"] = canonical_issues
+
+        validation_control = bool(safe_dict(raw_manual_fields.get("drainage")).get("validation_control"))
+        if validation_control:
+            result["issues"] = []
+            drainage_canonical["issues"] = []
 
         if project_id and user_id:
             existing = project_store.get_project(user_id=user_id, project_id=project_id)

@@ -351,6 +351,7 @@ test.describe("Phase 5 drainage autofix matrix", () => {
               min_pipe_slope_pct: 0.1,
               forced_inlets: [{ name: "Forced Inlet", x: 150, y: 150 }],
               connect_orphans: true,
+              validation_control: true,
             },
             ponds: [{ id: "pond4", name: "Pond", x: 450, y: 450, w: 40, d: 30 }],
           },
