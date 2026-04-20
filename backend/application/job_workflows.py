@@ -1279,8 +1279,30 @@ def build_drainage_job_runner(
             raw_ponds = raw_manual_fields.get("ponds")
             if isinstance(raw_ponds, dict):
                 raw_ponds = raw_ponds.get("value")
-            if raw_ponds and not safe_list(parsed.get("ponds")):
-                parsed["ponds"] = deepcopy(raw_ponds)
+            if raw_ponds:
+                incoming = [safe_dict(item) for item in safe_list(raw_ponds) if isinstance(item, dict)]
+                existing = [safe_dict(item) for item in safe_list(parsed.get("ponds")) if isinstance(item, dict)]
+                seen_ids = {safe_str(item.get("id"), "") for item in existing if safe_str(item.get("id"), "")}
+                merged = list(existing)
+                for pond in incoming:
+                    pond_id = safe_str(pond.get("id"), "")
+                    if pond_id and pond_id in seen_ids:
+                        continue
+                    if not pond_id:
+                        # Avoid duplicate coordinates.
+                        if any(
+                            safe_float(p.get("x"), 0.0) == safe_float(pond.get("x"), 0.0)
+                            and safe_float(p.get("y"), 0.0) == safe_float(pond.get("y"), 0.0)
+                            and safe_float(p.get("w"), 0.0) == safe_float(pond.get("w"), 0.0)
+                            and safe_float(p.get("d"), 0.0) == safe_float(pond.get("d"), 0.0)
+                            for p in merged
+                        ):
+                            continue
+                    merged.append(pond)
+                    if pond_id:
+                        seen_ids.add(pond_id)
+                if merged:
+                    parsed["ponds"] = merged
             raw_manual_drainage = safe_dict(raw_manual_fields.get("drainage"))
             raw_allow = raw_manual_drainage.get("allow_slope_adjustment")
             if isinstance(raw_allow, dict):
@@ -1367,6 +1389,103 @@ def build_drainage_job_runner(
             grading_ok = False
             ctx.record_error(f"Grading failed in drainage-only runner: {exc}")
 
+        # Drainage autofix: add basin at the best available low point before running drainage.
+        autofix_action = safe_str(safe_dict(parsed.get("drainage")).get("autofix_action"), "")
+        if not autofix_action:
+            payload_drainage = safe_dict(payload.get("drainage"))
+            raw_autofix = payload_drainage.get("autofix_action")
+            if isinstance(raw_autofix, dict):
+                raw_autofix = raw_autofix.get("value")
+            autofix_action = safe_str(raw_autofix, "")
+        if not autofix_action:
+            raw_manual_fields = safe_dict(payload.get("manual_fields"))
+            manual_drainage = safe_dict(unwrap_fields_for_execution(raw_manual_fields.get("drainage")))
+            raw_autofix = manual_drainage.get("autofix_action")
+            if isinstance(raw_autofix, dict):
+                raw_autofix = raw_autofix.get("value")
+            autofix_action = safe_str(raw_autofix, "")
+        if autofix_action and safe_str(safe_dict(parsed.get("drainage")).get("autofix_action"), "") != autofix_action:
+            parsed.setdefault("drainage", {})["autofix_action"] = autofix_action
+            ctx.parsed.setdefault("drainage", {})["autofix_action"] = autofix_action
+        if autofix_action == "add_basin":
+            ponds = [item for item in safe_list(parsed.get("ponds")) if isinstance(item, dict)]
+            has_autofix = any(
+                safe_str(pond.get("source"), "") == "autofix"
+                or safe_str(pond.get("id"), "").startswith("autofix-basin")
+                for pond in ponds
+                if isinstance(pond, dict)
+            )
+            if not has_autofix:
+                grading_meta = safe_dict(manager.project.meta.get("grading_canonical") or manager.project.meta.get("grading"))
+                low_points = safe_list(grading_meta.get("low_points") or grading_meta.get("low_points_xy"))
+                ranked = [
+                    safe_dict(item) for item in low_points if isinstance(item, dict) and item.get("x") is not None and item.get("y") is not None
+                ]
+                if ranked:
+                    ranked.sort(key=lambda item: safe_float(item.get("z"), 0.0))
+                    target = ranked[0]
+                    basin_x = safe_float(target.get("x"), 0.0)
+                    basin_y = safe_float(target.get("y"), 0.0)
+                else:
+                    lot = safe_dict(parsed.get("lot"))
+                    lot_x = safe_float(lot.get("x"), 0.0)
+                    lot_y = safe_float(lot.get("y"), 0.0)
+                    lot_w = safe_float(lot.get("w"), 600.0)
+                    lot_h = safe_float(lot.get("h"), 600.0)
+                    basin_x = lot_x + lot_w * 0.8
+                    basin_y = lot_y + lot_h * 0.8
+
+                basin_w = 40.0
+                basin_d = 30.0
+                basin_id = f"autofix-basin-{job_id or 'auto'}"
+                basin_name = "Autofix Basin"
+                new_basin = {
+                    "id": basin_id,
+                    "name": basin_name,
+                    "x": basin_x,
+                    "y": basin_y,
+                    "w": basin_w,
+                    "d": basin_d,
+                    "source": "autofix",
+                    "generated": True,
+                }
+                ponds.append(new_basin)
+                parsed["ponds"] = ponds
+                ctx.parsed["ponds"] = ponds
+
+                try:
+                    from core.geometry_core import EngineeringDomain, EngineeringObject, Point3D, ZoneType, rect_zone
+
+                    basin_zone = rect_zone(
+                        basin_x,
+                        basin_y,
+                        basin_w,
+                        basin_d,
+                        zone_type=ZoneType.DETENTION,
+                        name=basin_name,
+                    )
+                    manager.project.add_zone(basin_zone)
+                    manager.project.add_object(
+                        EngineeringObject(
+                            id=basin_id,
+                            kind="detention_basin",
+                            name=basin_name,
+                            anchor=Point3D(basin_x + basin_w / 2.0, basin_y + basin_d / 2.0, DEFAULT_PAD_ELEV),
+                            boundary=basin_zone.boundary,
+                            tags=["drainage", "basin"],
+                            domain=EngineeringDomain.DRAINAGE,
+                            properties={
+                                "width": basin_w,
+                                "depth": basin_d,
+                                "canonical_id": basin_id,
+                                "source": "autofix",
+                                "generated": True,
+                            },
+                        )
+                    )
+                except Exception:
+                    pass
+
         if job_id:
             update_job_progress(
                 job_id,
@@ -1422,18 +1541,6 @@ def build_drainage_job_runner(
                         "source": "connect_orphans",
                     }
                 ]
-        forced_present = bool(safe_list(drainage_canonical.get("inlets")))
-        if forced_present:
-            for issue in safe_list(drainage_canonical.get("issues")):
-                if not isinstance(issue, dict):
-                    continue
-                if safe_str(issue.get("code"), "") == "UNDER_COLLECTION":
-                    issue["code"] = "UNDER_COLLECTION_REDUCED"
-                    issue["severity"] = "info"
-                    issue["message"] = "Inlet coverage improved, but paved areas remain under-collected."
-                    issue.setdefault("context", {})
-                    issue["context"].setdefault("improvement_detected", True)
-                    issue["context"].setdefault("remaining_deficit", issue.get("suggested_additional_inlets"))
         final_meta["grading"] = grading_canonical
         final_meta["drainage"] = drainage_canonical
         final_meta["drainage_canonical"] = drainage_canonical
@@ -1515,6 +1622,23 @@ def build_drainage_job_runner(
         raw_autofix = raw_manual_drainage.get("autofix_action")
         if isinstance(raw_autofix, dict):
             raw_autofix = raw_autofix.get("value")
+        if isinstance(raw_manual_drainage.get("value"), dict):
+            value_drainage = safe_dict(raw_manual_drainage.get("value"))
+            if raw_allow is None:
+                raw_allow = value_drainage.get("allow_slope_adjustment")
+            if not raw_autofix:
+                raw_autofix = value_drainage.get("autofix_action")
+        payload_drainage = safe_dict(payload.get("drainage"))
+        payload_autofix = payload_drainage.get("autofix_action")
+        if isinstance(payload_autofix, dict):
+            payload_autofix = payload_autofix.get("value")
+        if not raw_autofix and payload_autofix:
+            raw_autofix = payload_autofix
+        payload_allow = payload_drainage.get("allow_slope_adjustment")
+        if isinstance(payload_allow, dict):
+            payload_allow = payload_allow.get("value")
+        if raw_allow is None and payload_allow is not None:
+            raw_allow = payload_allow
         if raw_allow:
             allow_slope_adjustment = True
         if safe_str(raw_autofix, "") == "adjust_slope":
@@ -1532,8 +1656,15 @@ def build_drainage_job_runner(
                         "reason": "no_runs",
                     },
                 }
-                result["issues"] = list(safe_list(result.get("issues"))) + [slope_issue]
-                drainage_canonical["issues"] = list(safe_list(drainage_canonical.get("issues"))) + [slope_issue]
+                def _has_issue(issue_list, code: str) -> bool:
+                    return any(
+                        isinstance(item, dict) and safe_str(item.get("code"), "") == code
+                        for item in safe_list(issue_list)
+                    )
+                if not _has_issue(result.get("issues"), slope_issue["code"]):
+                    result["issues"] = list(safe_list(result.get("issues"))) + [slope_issue]
+                if not _has_issue(drainage_canonical.get("issues"), slope_issue["code"]):
+                    drainage_canonical["issues"] = list(safe_list(drainage_canonical.get("issues"))) + [slope_issue]
         autofix_action = safe_str(safe_dict(parsed.get("drainage")).get("autofix_action"), "")
         if autofix_action == "add_basin":
             run_count = len(safe_list(drainage_canonical.get("pipe_runs") or drainage_canonical.get("runs")))
@@ -1550,36 +1681,23 @@ def build_drainage_job_runner(
                         "reason": "no_flow_path_after_add",
                     },
                 }
-                result["issues"] = list(safe_list(result.get("issues"))) + [basin_issue]
-                drainage_canonical["issues"] = list(safe_list(drainage_canonical.get("issues"))) + [basin_issue]
-        if safe_list(drainage_canonical.get("inlets")):
-            normalized_issues = []
-            for issue in safe_list(result.get("issues")):
-                if isinstance(issue, dict):
-                    if safe_str(issue.get("code"), "") == "UNDER_COLLECTION":
-                        normalized_issues.append(
-                            {
-                                **issue,
-                                "code": "UNDER_COLLECTION_REDUCED",
-                                "severity": "info",
-                                "message": "Inlet coverage improved, but paved areas remain under-collected.",
-                                "context": {
-                                    **dict(issue.get("context") or {}),
-                                    "improvement_detected": True,
-                                    "remaining_deficit": issue.get("suggested_additional_inlets"),
-                                },
-                            }
-                        )
-                    else:
-                        normalized_issues.append(issue)
-                else:
-                    normalized_issues.append(issue)
-            result["issues"] = normalized_issues
-            # Keep drainage_canonical issues aligned with the reduced state.
-            canonical_issues = []
-            for issue in safe_list(drainage_canonical.get("issues")):
+                def _has_issue(issue_list, code: str) -> bool:
+                    return any(
+                        isinstance(item, dict) and safe_str(item.get("code"), "") == code
+                        for item in safe_list(issue_list)
+                    )
+                if not _has_issue(result.get("issues"), basin_issue["code"]):
+                    result["issues"] = list(safe_list(result.get("issues"))) + [basin_issue]
+                if not _has_issue(drainage_canonical.get("issues"), basin_issue["code"]):
+                    drainage_canonical["issues"] = list(safe_list(drainage_canonical.get("issues"))) + [basin_issue]
+
+        def _normalize_under_collection(issue_list, has_inlets: bool):
+            if not has_inlets:
+                return list(safe_list(issue_list))
+            normalized = []
+            for issue in safe_list(issue_list):
                 if isinstance(issue, dict) and safe_str(issue.get("code"), "") == "UNDER_COLLECTION":
-                    canonical_issues.append(
+                    normalized.append(
                         {
                             **issue,
                             "code": "UNDER_COLLECTION_REDUCED",
@@ -1593,9 +1711,188 @@ def build_drainage_job_runner(
                         }
                     )
                 else:
-                    canonical_issues.append(issue)
-            if canonical_issues:
-                drainage_canonical["issues"] = canonical_issues
+                    normalized.append(issue)
+            return normalized
+
+        has_inlets_for_reduction = bool(safe_list(drainage_canonical.get("inlets")))
+        if has_inlets_for_reduction:
+            result["issues"] = _normalize_under_collection(result.get("issues"), True)
+            drainage_canonical["issues"] = _normalize_under_collection(drainage_canonical.get("issues"), True)
+
+        guidance_map = {
+            "BASIN_UNREACHABLE": {
+                "explanation": "Flow cannot reach the basin from current low points.",
+                "suggested_actions": [
+                    "Move the basin to a lower point.",
+                    "Add an inlet near the low point.",
+                    "Adjust grading to direct flow toward the basin.",
+                ],
+                "best_next_fix": "Move the basin to a lower point.",
+            },
+            "DRAINAGE_NO_BASIN": {
+                "explanation": "No valid basin or outfall was provided for drainage.",
+                "suggested_actions": [
+                    "Add a basin at a low point.",
+                    "Define an outfall location.",
+                    "Connect to an existing downstream system.",
+                ],
+                "best_next_fix": "Add a basin at a low point.",
+            },
+            "NO_VALID_OUTFALL": {
+                "explanation": "No valid outlet was found for drainage discharge.",
+                "suggested_actions": [
+                    "Add a basin at a low point.",
+                    "Define an outfall location.",
+                    "Connect to an existing downstream system.",
+                ],
+                "best_next_fix": "Add a basin at a low point.",
+            },
+            "NO_PONDS_DEFINED": {
+                "explanation": "No basin/pond target is defined for drainage.",
+                "suggested_actions": [
+                    "Add a basin at a low point.",
+                    "Define an outfall location.",
+                    "Connect to an existing downstream system.",
+                ],
+                "best_next_fix": "Add a basin at a low point.",
+            },
+            "POOR_SLOPE": {
+                "explanation": "Terrain is too flat for the minimum pipe slope.",
+                "suggested_actions": [
+                    "Modify grading to introduce slope.",
+                    "Relocate inlets or basin to a steeper area.",
+                    "Increase slope in this region.",
+                ],
+                "best_next_fix": "Modify grading to introduce slope.",
+            },
+            "SLOPE_ADJUSTMENT_FAILED": {
+                "explanation": "Slope adjustment is not feasible with the current geometry.",
+                "suggested_actions": [
+                    "Modify grading to introduce slope.",
+                    "Relocate inlets or basin to a steeper area.",
+                    "Increase slope in this region.",
+                ],
+                "best_next_fix": "Modify grading to introduce slope.",
+            },
+            "ORPHAN_INLETS": {
+                "explanation": "One or more inlets are not connected to a drainage run.",
+                "suggested_actions": [
+                    "Connect the inlet to the nearest run.",
+                    "Reroute the pipe network to include the inlet.",
+                ],
+                "best_next_fix": "Connect the inlet to the nearest run.",
+            },
+            "UNDER_COLLECTION": {
+                "explanation": "There are not enough inlets to collect runoff.",
+                "suggested_actions": [
+                    "Add inlets along pavement edges.",
+                ],
+                "best_next_fix": "Add inlets along pavement edges.",
+            },
+            "UNDER_COLLECTION_REDUCED": {
+                "explanation": "Inlet coverage improved, but runoff is still under-collected.",
+                "suggested_actions": [
+                    "Add inlets along pavement edges.",
+                ],
+                "best_next_fix": "Add inlets along pavement edges.",
+            },
+        }
+
+        final_plan = dict(result.get("final_plan") or {})
+        meta = dict(final_plan.get("meta") or {})
+        low_points = safe_list(
+            meta.get("drainage_low_points")
+            or drainage_canonical.get("low_points")
+            or drainage_canonical.get("low_points_xy")
+        )
+        low_point_count = len(low_points)
+        has_basin = len(safe_list(drainage_canonical.get("basins"))) > 0
+        has_inlet = len(safe_list(drainage_canonical.get("inlets"))) > 0
+        has_run = len(safe_list(drainage_canonical.get("pipe_runs") or drainage_canonical.get("runs"))) > 0
+
+        def _resolve_best_next_fix(code: str, context: dict | None) -> str | None:
+            guidance = guidance_map.get(code)
+            if not guidance:
+                return None
+            if code in {"DRAINAGE_NO_BASIN", "NO_VALID_OUTFALL", "NO_PONDS_DEFINED"}:
+                if low_point_count == 0:
+                    return "Define an outfall location."
+                return "Add a basin at a low point."
+            if code == "BASIN_UNREACHABLE":
+                if low_point_count and not has_inlet:
+                    return "Add an inlet near the low point."
+                if has_basin:
+                    return "Move the basin to a lower point."
+                return "Add a basin at a low point."
+            if code in {"POOR_SLOPE", "SLOPE_ADJUSTMENT_FAILED"}:
+                if not has_run:
+                    return "Create a valid drainage path (add basin and connect inlets)."
+                return "Modify grading to introduce slope."
+            if code == "ORPHAN_INLETS":
+                return "Connect the inlet to the nearest run."
+            if code in {"UNDER_COLLECTION", "UNDER_COLLECTION_REDUCED"}:
+                return "Add inlets along pavement edges."
+            return guidance.get("best_next_fix")
+
+        def _apply_guidance(issue_list):
+            enriched = []
+            for issue in safe_list(issue_list):
+                if not isinstance(issue, dict):
+                    enriched.append(issue)
+                    continue
+                code = safe_str(issue.get("code"), "")
+                guidance = guidance_map.get(code)
+                if guidance:
+                    context = dict(issue.get("context") or {})
+                    if "explanation" not in context:
+                        context["explanation"] = guidance["explanation"]
+                    if "suggested_actions" not in context:
+                        context["suggested_actions"] = guidance["suggested_actions"]
+                    if "best_next_fix" not in context:
+                        context["best_next_fix"] = _resolve_best_next_fix(code, context)
+                    if code in {"POOR_SLOPE", "SLOPE_ADJUSTMENT_FAILED"} and not has_run:
+                        context.setdefault("best_next_fix_reason", "no_runs")
+                    if code in {"DRAINAGE_NO_BASIN", "NO_VALID_OUTFALL", "NO_PONDS_DEFINED"} and low_point_count == 0:
+                        context.setdefault("best_next_fix_reason", "no_low_points")
+                    enriched.append({**issue, "context": context})
+                else:
+                    enriched.append(issue)
+            return enriched
+
+        if safe_list(result.get("issues")):
+            result["issues"] = _apply_guidance(result.get("issues"))
+        if safe_list(drainage_canonical.get("issues")):
+            drainage_canonical["issues"] = _apply_guidance(drainage_canonical.get("issues"))
+
+        if safe_list(result.get("issues")) and not safe_list(drainage_canonical.get("issues")):
+            drainage_canonical["issues"] = deepcopy(safe_list(result.get("issues")))
+        elif safe_list(drainage_canonical.get("issues")) and not safe_list(result.get("issues")):
+            result["issues"] = deepcopy(safe_list(drainage_canonical.get("issues")))
+        else:
+            # Ensure slope adjustment failures are visible in the top-level issues list
+            # even when other issues already exist (matrix path relies on result.issues).
+            canonical_codes = {
+                safe_str(issue.get("code"), "")
+                for issue in safe_list(drainage_canonical.get("issues"))
+                if isinstance(issue, dict)
+            }
+            result_codes = {
+                safe_str(issue.get("code"), "")
+                for issue in safe_list(result.get("issues"))
+                if isinstance(issue, dict)
+            }
+            if "SLOPE_ADJUSTMENT_FAILED" in canonical_codes and "SLOPE_ADJUSTMENT_FAILED" not in result_codes:
+                slope_issue = next(
+                    (
+                        issue
+                        for issue in safe_list(drainage_canonical.get("issues"))
+                        if isinstance(issue, dict)
+                        and safe_str(issue.get("code"), "") == "SLOPE_ADJUSTMENT_FAILED"
+                    ),
+                    None,
+                )
+                if slope_issue:
+                    result["issues"] = list(safe_list(result.get("issues"))) + [deepcopy(slope_issue)]
 
         validation_control = bool(safe_dict(raw_manual_fields.get("drainage")).get("validation_control"))
         if validation_control:
