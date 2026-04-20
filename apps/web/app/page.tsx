@@ -503,6 +503,13 @@ export default function PerformanceAIDashboard() {
   const [mapSnapshotPath, setMapSnapshotPath] = useState("");
   const [mapAnalysis, setMapAnalysis] = useState<MapAnalysis | null>(null);
   const [siteAddress, setSiteAddress] = useState("");
+  const [addressSuggestions, setAddressSuggestions] = useState<
+    Array<{ lat: number; lng: number; display_name: string; provider?: string }>
+  >([]);
+  const [selectedAddressSuggestion, setSelectedAddressSuggestion] = useState<
+    { lat: number; lng: number; display_name: string; provider?: string } | null
+  >(null);
+  const addressSuggestTimeoutRef = useRef<number | null>(null);
   const [imageUploadState, setImageUploadState] = useState<"idle" | "uploading" | "uploaded" | "detecting" | "failed">("idle");
   const [imageUploadNote, setImageUploadNote] = useState<string | null>(null);
   const [pendingClarification, setPendingClarification] = useState<{
@@ -5893,6 +5900,35 @@ export default function PerformanceAIDashboard() {
     };
   }, [activeSidePanel, detectionScaleFtPerPx, previewHeightPx]);
 
+  useEffect(() => {
+    if (addressSuggestTimeoutRef.current) {
+      window.clearTimeout(addressSuggestTimeoutRef.current);
+    }
+    const trimmed = siteAddress.trim();
+    if (!trimmed || trimmed.length < 4 || !token) {
+      setAddressSuggestions([]);
+      return;
+    }
+    addressSuggestTimeoutRef.current = window.setTimeout(() => {
+      void postJson<{ lat: number; lng: number; display_name: string; provider: string }>(
+        "/api/geocode",
+        { address: trimmed },
+        { token },
+      )
+        .then((result) => {
+          setAddressSuggestions(result ? [result] : []);
+        })
+        .catch(() => {
+          setAddressSuggestions([]);
+        });
+    }, 350);
+    return () => {
+      if (addressSuggestTimeoutRef.current) {
+        window.clearTimeout(addressSuggestTimeoutRef.current);
+      }
+    };
+  }, [siteAddress, token]);
+
   const handleApplySite = useCallback(async () => {
     const width = parsePositiveNumber(lotWidth);
     const height = parsePositiveNumber(lotHeight);
@@ -5948,6 +5984,8 @@ export default function PerformanceAIDashboard() {
       address: trimmed || undefined,
     };
     if (!trimmed) {
+      setSelectedAddressSuggestion(null);
+      setAddressSuggestions([]);
       await saveProject({
         silent: true,
         projectInputOverride: {
@@ -5964,18 +6002,19 @@ export default function PerformanceAIDashboard() {
       setStatusMessage("Site address cleared.");
       return;
     }
+    if (!selectedAddressSuggestion) {
+      setStatusMessage("Select a suggested address before applying.");
+      return;
+    }
     clearGeneratedPreview();
     try {
-      const geocode = await postJson<{ lat: number; lng: number; display_name: string; provider: string }>(
-        "/api/geocode",
-        { address: trimmed },
-        { token },
-      );
+      const geocode = selectedAddressSuggestion;
+      nextSiteInputs.address = geocode.display_name;
       nextSiteInputs.geocode = {
         lat: geocode.lat,
         lng: geocode.lng,
         display_name: geocode.display_name,
-        provider: geocode.provider,
+        provider: geocode.provider ?? "nominatim",
       };
       nextSiteInputs.site_alignment_locked = true;
       const acres = 10;
@@ -6017,7 +6056,8 @@ export default function PerformanceAIDashboard() {
         setFocusObjectId(nextSiteId);
       }
       setFitToSiteRequest((value) => value + 1);
-      setStatusMessage("Site address saved and site boundary initialized.");
+      setStatusMessage("Address applied. Site boundary initialized.");
+      setSelectedAddressSuggestion(geocode);
     } catch (error) {
       setStatusMessage(
         error instanceof Error ? error.message : "Geocoding failed.",
@@ -7982,69 +8022,48 @@ export default function PerformanceAIDashboard() {
                       </label>
                       <input
                         value={siteAddress}
-                        onChange={(event) => setSiteAddress(event.target.value)}
-                        onBlur={() => void saveSiteAddress()}
+                        onChange={(event) => {
+                          setSiteAddress(event.target.value);
+                          setSelectedAddressSuggestion(null);
+                        }}
                         placeholder="123 Main St, City, State"
                         className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none"
                       />
+                      {addressSuggestions.length ? (
+                        <div className="mt-2 rounded-2xl border border-slate-200 bg-white p-2 text-xs text-slate-600">
+                          {addressSuggestions.map((suggestion) => (
+                            <button
+                              key={`${suggestion.lat}-${suggestion.lng}`}
+                              type="button"
+                              onClick={() => {
+                                setSelectedAddressSuggestion(suggestion);
+                                setSiteAddress(suggestion.display_name);
+                                setAddressSuggestions([]);
+                              }}
+                              className={`w-full rounded-xl px-3 py-2 text-left text-[12px] transition ${
+                                selectedAddressSuggestion?.display_name === suggestion.display_name
+                                  ? "bg-slate-900 text-white"
+                                  : "hover:bg-slate-50"
+                              }`}
+                            >
+                              {suggestion.display_name}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => void saveSiteAddress()}
-                        className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                        disabled={!selectedAddressSuggestion}
+                        className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Save address
+                        Apply address
                       </button>
                       <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                         <span>
                           Alignment: <span className="font-semibold text-slate-800">Locked</span>
                         </span>
                       </div>
-                      {siteAddress ? (
-                        <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                          <p className="font-semibold text-slate-700">Next steps</p>
-                          <p className="mt-1 text-[11px] text-slate-500">
-                            Address adds context only. Create the site boundary or detect features to start modeling.
-                          </p>
-                          <div className="mt-2 flex flex-col gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleAddObject("site")}
-                              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                            >
-                              Create site boundary
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleAddObject("building")}
-                              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                            >
-                              Add building
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleAddObject("road")}
-                              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                            >
-                              Add road/access
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleAnalyzeImageFeatures()}
-                              disabled={!mapSnapshotPath}
-                              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              Detect site features
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setStatusMessage("Adjust the site boundary by editing width/height above.")}
-                              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                            >
-                              Adjust site boundary
-                            </button>
-                          </div>
-                        </div>
-                      ) : null}
                     </div>
 
                     <div className="space-y-2 text-sm text-slate-700">
@@ -8079,6 +8098,17 @@ export default function PerformanceAIDashboard() {
                         <span>Analyze map snapshot</span>
                         <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
                           {mapAnalysis?.success ? "Ready" : "Analyze"}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateSystem("grading")}
+                        disabled={missingSite || !hasTerrainSource}
+                        className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <span>Detect grading</span>
+                        <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
+                          {missingSite ? "Needs site" : !hasTerrainSource ? "Needs terrain" : "Run"}
                         </span>
                       </button>
                       <button

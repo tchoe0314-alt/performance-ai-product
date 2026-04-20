@@ -2751,6 +2751,14 @@ export default function PreviewPanel({
                                       ? "rgba(17, 24, 39, 0.38)"
                                       : "rgba(15, 23, 42, 0.22)"
                                     : "transparent",
+                                backgroundImage:
+                                  showBox && previewQuality === "high"
+                                    ? "linear-gradient(135deg, rgba(255,255,255,0.08), rgba(0,0,0,0.18))"
+                                    : undefined,
+                                boxShadow:
+                                  showBox && previewQuality === "high"
+                                    ? "0 6px 18px rgba(15,23,42,0.25)"
+                                    : undefined,
                               }}
                             />
                             {isSelected && isPolyline && Array.isArray(item.geometry)
