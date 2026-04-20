@@ -519,7 +519,7 @@ export default function PerformanceAIDashboard() {
   const [previewQuality, setPreviewQuality] = useState<"standard" | "high">("standard");
   const [previewLabelDensity, setPreviewLabelDensity] = useState<"low" | "standard" | "high">("standard");
   const [previewLabelDensityTouched, setPreviewLabelDensityTouched] = useState(false);
-  const [previewHeightPx, setPreviewHeightPx] = useState(560);
+  const [previewHeightPx, setPreviewHeightPx] = useState(590);
   const [previewRefreshing, setPreviewRefreshing] = useState(false);
   const [previewRefreshNote, setPreviewRefreshNote] = useState<string | null>(null);
   const [approvalInFlight, setApprovalInFlight] = useState(false);
@@ -8517,8 +8517,8 @@ export default function PerformanceAIDashboard() {
                   </span>
                   <input
                     type="range"
-                    min={360}
-                    max={900}
+                    min={590}
+                    max={1200}
                     step={10}
                     value={previewHeightPx}
                     onChange={(event) => {
@@ -8529,8 +8529,8 @@ export default function PerformanceAIDashboard() {
                   />
                   <input
                     type="number"
-                    min={360}
-                    max={900}
+                    min={590}
+                    max={1200}
                     step={10}
                     value={previewHeightPx}
                     onChange={(event) => {
