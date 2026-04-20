@@ -1631,9 +1631,10 @@ export default function PerformanceAIDashboard() {
       const manualLotRaw =
         currentProject?.project_input &&
         typeof currentProject.project_input === "object" &&
-        (currentProject.project_input as { manual_fields?: { lot?: { x?: number; y?: number; w?: number; h?: number } | false } })
-          .manual_fields?.lot;
-      const manualLot =
+        (currentProject.project_input as {
+          manual_fields?: { lot?: { x?: number; y?: number; w?: number; h?: number } | false };
+        }).manual_fields?.lot;
+      const manualLot: { x?: number; y?: number; w?: number; h?: number } | null =
         manualLotRaw && typeof manualLotRaw === "object" ? manualLotRaw : null;
       if (manualLot?.w && manualLot?.h) {
         return {
@@ -6327,8 +6328,15 @@ export default function PerformanceAIDashboard() {
       const nextManualFields = {
         ...(requestPayload.manual_fields ?? {}),
       } as Record<string, unknown>;
+      const rawDrainage = nextManualFields.drainage;
+      const unwrappedDrainage =
+        rawDrainage &&
+        typeof rawDrainage === "object" &&
+        "value" in (rawDrainage as Record<string, unknown>)
+          ? ((rawDrainage as Record<string, unknown>).value ?? {})
+          : rawDrainage ?? {};
       const nextDrainage = {
-        ...(nextManualFields.drainage ?? {}),
+        ...(typeof unwrappedDrainage === "object" && unwrappedDrainage !== null ? unwrappedDrainage : {}),
       } as Record<string, unknown>;
       if (forcedInlets && forcedInlets.length) {
         nextDrainage.forced_inlets = forcedInlets;

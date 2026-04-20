@@ -360,9 +360,13 @@ test.describe("Phase 5 drainage autofix matrix", () => {
         skipApply: true,
       },
     ];
+    const onlyCase = String(process.env.PHASE5_ONLY || "").trim();
+    const selectedCases = onlyCase
+      ? cases.filter((entry) => entry.name.toLowerCase().includes(onlyCase.toLowerCase()))
+      : cases;
     const caseResults: Array<Record<string, unknown>> = [];
 
-    for (const entry of cases) {
+    for (const entry of selectedCases) {
       console.info(`Starting ${entry.name}`);
       const created = await createProject(request, token, entry.name, entry.payload);
       const projectId = String(created.project?.project_id || "");
