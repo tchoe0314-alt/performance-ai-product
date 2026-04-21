@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import time
 import uuid
+import urllib.parse
 from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
@@ -625,30 +626,38 @@ def geocode_address(
     address = str(payload.address or "").strip()
     if not address:
         raise HTTPException(status_code=400, detail="Address is required.")
+    token = os.getenv("MAPBOX_TOKEN") or os.getenv("NEXT_PUBLIC_MAPBOX_TOKEN")
+    if not token:
+        raise HTTPException(status_code=500, detail="Mapbox token is not configured.")
     try:
         with httpx.Client(timeout=8.0) as client:
             resp = client.get(
-                "https://nominatim.openstreetmap.org/search",
-                params={"q": address, "format": "json", "limit": 1, "addressdetails": 1},
+                f"https://api.mapbox.com/geocoding/v5/mapbox.places/{urllib.parse.quote(address)}.json",
+                params={"access_token": token, "limit": 1},
                 headers={"User-Agent": "CivoraAI/0.1 (contact: support@civora.ai)"},
             )
             resp.raise_for_status()
             data = resp.json()
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Geocoding failed: {exc}") from exc
-    if not data:
+    features = data.get("features") if isinstance(data, dict) else None
+    if not features:
         raise HTTPException(status_code=404, detail="Address could not be geocoded.")
-    first = data[0]
+    first = features[0] if isinstance(features, list) else None
     try:
-        lat = float(first.get("lat"))
-        lng = float(first.get("lon"))
+        center = first.get("center") if isinstance(first, dict) else None
+        if not center or len(center) < 2:
+            raise ValueError("Missing center")
+        lng = float(center[0])
+        lat = float(center[1])
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Invalid geocode response: {exc}") from exc
+    display_name = str(first.get("place_name") or address) if isinstance(first, dict) else address
     return GeocodeResponse(
         lat=lat,
         lng=lng,
-        display_name=str(first.get("display_name") or address),
-        provider="nominatim",
+        display_name=display_name,
+        provider="mapbox",
         confidence=None,
     )
 
