@@ -6024,6 +6024,10 @@ export default function PerformanceAIDashboard() {
   }, [siteAddress, token]);
 
   const handleApplySite = useCallback(async () => {
+    if (siteScaleLocked) {
+      setStatusMessage("Site is already locked.");
+      return;
+    }
     const width = viewportFootprint?.widthFt ?? parsePositiveNumber(lotWidth);
     const height = viewportFootprint?.heightFt ?? parsePositiveNumber(lotHeight);
     if (!width || !height) {
