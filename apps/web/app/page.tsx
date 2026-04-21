@@ -538,7 +538,7 @@ export default function PerformanceAIDashboard() {
   const [previewQuality, setPreviewQuality] = useState<"standard" | "high">("standard");
   const [previewLabelDensity, setPreviewLabelDensity] = useState<"low" | "standard" | "high">("standard");
   const [previewLabelDensityTouched, setPreviewLabelDensityTouched] = useState(false);
-  const [previewHeightPx, setPreviewHeightPx] = useState(590);
+  const [previewHeightPx, setPreviewHeightPx] = useState(900);
   const [previewRefreshing, setPreviewRefreshing] = useState(false);
   const [previewRefreshNote, setPreviewRefreshNote] = useState<string | null>(null);
   const [approvalInFlight, setApprovalInFlight] = useState(false);
