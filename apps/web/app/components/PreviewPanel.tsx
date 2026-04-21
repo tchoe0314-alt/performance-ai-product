@@ -1253,6 +1253,7 @@ export default function PreviewPanel({
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() === "r") {
+        if (previewInteraction !== "edit" || siteLocked) return;
         setRotateDragActive(true);
       }
     };
@@ -1269,6 +1270,13 @@ export default function PreviewPanel({
       window.removeEventListener("keyup", handleKeyUp);
     };
   }, []);
+
+  useEffect(() => {
+    if (previewInteraction !== "edit" || siteLocked) {
+      setRotateDragActive(false);
+      setRotateDragStart(null);
+    }
+  }, [previewInteraction, siteLocked]);
 
   useEffect(() => {
     if (!showMap || !previewFullscreenOpen) return;
@@ -1295,6 +1303,13 @@ export default function PreviewPanel({
       setMapRevision((value) => value + 1);
     });
   }, [mapboxToken, previewFullscreenOpen, showMap]);
+
+  useEffect(() => {
+    if (previewFullscreenOpen) return;
+    if (!fullscreenMapRef.current) return;
+    fullscreenMapRef.current.remove();
+    fullscreenMapRef.current = null;
+  }, [previewFullscreenOpen]);
 
   useEffect(() => {
     if (!showMap) return;
