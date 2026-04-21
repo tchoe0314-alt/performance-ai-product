@@ -420,6 +420,7 @@ export default function PerformanceAIDashboard() {
   const [activePlacementId, setActivePlacementId] = useState<string | null>(null);
   const [placementSuggestions, setPlacementSuggestions] = useState<BuildingPlacement[][]>([]);
   const [advancedAddOpen, setAdvancedAddOpen] = useState(false);
+  const [objectPrompt, setObjectPrompt] = useState("");
   const [systemStatuses, setSystemStatuses] = useState(DEFAULT_SYSTEM_STATUS);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
 
@@ -2003,8 +2004,38 @@ export default function PerformanceAIDashboard() {
     [],
   );
 
+  const parsePromptToObject = useCallback(
+    (value: string) => {
+      const normalized = value.trim().toLowerCase();
+      if (!normalized) return null;
+      const typeMap: Array<{ keys: string[]; type: SiteObjectType; label: string }> = [
+        { keys: ["building", "office", "retail", "industrial", "warehouse", "house"], type: "building", label: "Building" },
+        { keys: ["road", "street", "drive", "driveway"], type: "road", label: "Road" },
+        { keys: ["parking", "lot", "garage"], type: "parking", label: "Parking" },
+        { keys: ["basin", "pond", "detention"], type: "basin", label: "Basin" },
+        { keys: ["sidewalk", "path", "trail"], type: "sidewalk", label: "Path" },
+      ];
+      const matched = typeMap.find((item) => item.keys.some((key) => normalized.includes(key)));
+      if (!matched) return null;
+      const colors = ["red", "blue", "green", "white", "black", "gray", "grey", "tan", "brown"];
+      const materials = ["brick", "glass", "concrete", "asphalt", "gravel", "metal", "wood"];
+      const color = colors.find((c) => normalized.includes(c));
+      const material = materials.find((m) => normalized.includes(m));
+      const style: Record<string, string> = {};
+      if (color) style.color = color;
+      if (material) style.material = material;
+      const styleLabel = [color, material].filter(Boolean).join(" ");
+      return {
+        type: matched.type,
+        label: styleLabel ? `${matched.label} — ${styleLabel}` : matched.label,
+        style: Object.keys(style).length ? style : undefined,
+      };
+    },
+    [],
+  );
+
   const handleAddObject = useCallback(
-    (type: SiteObjectType) => {
+    (type: SiteObjectType, options?: { label?: string; style?: Record<string, string> }) => {
       const catalog = SITE_OBJECT_CATALOG[type];
       if (!catalog) return;
       clearGeneratedPreview();
@@ -2072,7 +2103,7 @@ export default function PerformanceAIDashboard() {
           : null;
       const nextPlacement: BuildingPlacement = {
         id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        label: formatObjectLabel(type, existingCount),
+        label: options?.label ?? formatObjectLabel(type, existingCount),
         type,
         use: catalog.use,
         w: defaults.w,
@@ -2094,6 +2125,7 @@ export default function PerformanceAIDashboard() {
         meta: {
           category: catalog.category,
           ...(parkingParams ? { parkingParams } : {}),
+          ...(options?.style ? { style: options.style } : {}),
         },
       };
       if (type === "parking" && parkingParams) {
@@ -2164,6 +2196,16 @@ export default function PerformanceAIDashboard() {
       computeParkingFootprint,
     ],
   );
+
+  const handlePromptAddObject = useCallback(() => {
+    const parsed = parsePromptToObject(objectPrompt);
+    if (!parsed) {
+      setStatusMessage("Describe a building, road, parking, or basin to add.");
+      return;
+    }
+    handleAddObject(parsed.type, { label: parsed.label, style: parsed.style });
+    setObjectPrompt("");
+  }, [handleAddObject, objectPrompt, parsePromptToObject, setStatusMessage]);
 
   const handleUpdateBuilding = useCallback((id: string, updates: Partial<BuildingPlacement>) => {
     clearGeneratedPreview();
@@ -8787,6 +8829,37 @@ export default function PerformanceAIDashboard() {
                     </button>
                   </div>
                 </div>
+
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      Add by Prompt
+                    </p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Describe what you want to add.
+                    </p>
+                    <div className="mt-3 flex flex-col gap-2">
+                      <input
+                        value={objectPrompt}
+                        onChange={(event) => setObjectPrompt(event.target.value)}
+                        placeholder="Describe what you want to add..."
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={handlePromptAddObject}
+                        disabled={!objectPrompt.trim()}
+                        className="w-full rounded-2xl border border-slate-900 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Add Object
+                      </button>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">red brick building</span>
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">parking lot behind building</span>
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">two-lane road</span>
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">detention basin</span>
+                    </div>
+                  </div>
 
                   <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
                     <div className="flex items-center justify-between">
