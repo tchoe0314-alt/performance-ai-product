@@ -2502,9 +2502,13 @@ export default function PreviewPanel({
                   }
                 }}
               >
-                {showMap ? (
-                  <div ref={mapContainerRef} className="absolute inset-0 overflow-hidden rounded-[24px]" />
-                ) : null}
+                <div
+                  ref={mapContainerRef}
+                  className={`absolute inset-0 overflow-hidden rounded-[24px] ${
+                    showMap ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
+                  }`}
+                  style={{ width: "100%", height: "100%" }}
+                />
                 {debugStats?.enabled ? (
                   <div className="pointer-events-none absolute left-5 top-5 z-30 rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-[11px] text-slate-700 shadow-sm">
                     <div className="font-semibold">Map Debug</div>
