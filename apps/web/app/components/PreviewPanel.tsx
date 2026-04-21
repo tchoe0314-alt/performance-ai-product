@@ -2001,6 +2001,10 @@ export default function PreviewPanel({
       updateContainerBounds();
       if (showMap && previewRef.current) {
         const rect = previewRef.current.getBoundingClientRect();
+        if (mapContainerRef.current) {
+          mapContainerRef.current.style.width = `${rect.width}px`;
+          mapContainerRef.current.style.height = `${rect.height}px`;
+        }
         setPreviewImageBounds({ left: 0, top: 0, width: rect.width, height: rect.height });
         const nextSize = { w: rect.width, h: rect.height };
         const prev = previewSizeRef.current;
