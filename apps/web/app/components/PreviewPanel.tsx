@@ -254,6 +254,8 @@ export default function PreviewPanel({
   const [mapLocked, setMapLocked] = useState(false);
   const previewSizeRef = useRef<{ w: number; h: number } | null>(null);
   const fullscreenSizeRef = useRef<{ w: number; h: number } | null>(null);
+  const previewResizeRafRef = useRef<number | null>(null);
+  const fullscreenResizeRafRef = useRef<number | null>(null);
   const [rotateDragActive, setRotateDragActive] = useState(false);
   const [rotateDragStart, setRotateDragStart] = useState<{ x: number; value: number } | null>(null);
   const activeAnnotation = pinnedAnnotation ?? hoveredAnnotation;
@@ -278,6 +280,7 @@ export default function PreviewPanel({
     Boolean(lotWidth && lotHeight);
   const showHover = previewInteraction === "static" && !allowMapInteraction;
   const allowEdits = previewInteraction === "edit";
+  const overlayPointerEvents = allowMapInteraction ? "pointer-events-none" : "pointer-events-auto";
   const normalPalette = {
     building: "#0f172a",
     buildingFill: "rgba(15, 23, 42, 0.12)",
@@ -1096,22 +1099,27 @@ export default function PreviewPanel({
   }, [mapboxToken, showMap]);
 
   useEffect(() => {
-    if (!showMap || !mapLoaded || !mapRef.current) return;
-    if (allowMapInteraction) {
-      mapRef.current.dragPan.enable();
-      mapRef.current.scrollZoom.enable();
-      mapRef.current.boxZoom.enable();
-      mapRef.current.doubleClickZoom.enable();
-      mapRef.current.keyboard.enable();
-      mapRef.current.touchZoomRotate.enable();
-    } else {
-      mapRef.current.dragPan.disable();
-      mapRef.current.scrollZoom.disable();
-      mapRef.current.boxZoom.disable();
-      mapRef.current.doubleClickZoom.disable();
-      mapRef.current.keyboard.disable();
-      mapRef.current.touchZoomRotate.disable();
-    }
+    if (!showMap || !mapLoaded) return;
+    const targets = [mapRef.current, fullscreenMapRef.current].filter(
+      (map): map is mapboxgl.Map => Boolean(map),
+    );
+    targets.forEach((map) => {
+      if (allowMapInteraction) {
+        map.dragPan.enable();
+        map.scrollZoom.enable();
+        map.boxZoom.enable();
+        map.doubleClickZoom.enable();
+        map.keyboard.enable();
+        map.touchZoomRotate.enable();
+      } else {
+        map.dragPan.disable();
+        map.scrollZoom.disable();
+        map.boxZoom.disable();
+        map.doubleClickZoom.disable();
+        map.keyboard.disable();
+        map.touchZoomRotate.disable();
+      }
+    });
   }, [allowMapInteraction, mapLoaded, showMap]);
 
   useEffect(() => {
@@ -2054,26 +2062,26 @@ export default function PreviewPanel({
 
   useEffect(() => {
     const handleUpdate = () => {
-      updateContainerBounds();
-      if (showMap && previewRef.current) {
-        const rect = previewRef.current.getBoundingClientRect();
-        if (mapContainerRef.current) {
-          mapContainerRef.current.style.width = `${rect.width}px`;
-          mapContainerRef.current.style.height = `${rect.height}px`;
+      if (previewResizeRafRef.current !== null) return;
+      previewResizeRafRef.current = window.requestAnimationFrame(() => {
+        previewResizeRafRef.current = null;
+        updateContainerBounds();
+        if (showMap && previewRef.current) {
+          const rect = previewRef.current.getBoundingClientRect();
+          setPreviewImageBounds({ left: 0, top: 0, width: rect.width, height: rect.height });
+          const nextSize = { w: Math.round(rect.width), h: Math.round(rect.height) };
+          const prev = previewSizeRef.current;
+          if (!prev || prev.w !== nextSize.w || prev.h !== nextSize.h) {
+            previewSizeRef.current = nextSize;
+            lastMapResizeRef.current = Date.now();
+            mapRef.current?.resize();
+          }
+        } else if (planPreviewUrl && showGeneratedPlan) {
+          updateImageBounds(previewRef, previewImageRef, setPreviewImageBounds);
+        } else {
+          setPreviewImageBounds(null);
         }
-        setPreviewImageBounds({ left: 0, top: 0, width: rect.width, height: rect.height });
-        const nextSize = { w: rect.width, h: rect.height };
-        const prev = previewSizeRef.current;
-        if (!prev || prev.w !== nextSize.w || prev.h !== nextSize.h) {
-          previewSizeRef.current = nextSize;
-          lastMapResizeRef.current = Date.now();
-          mapRef.current?.resize();
-        }
-      } else if (planPreviewUrl && showGeneratedPlan) {
-        updateImageBounds(previewRef, previewImageRef, setPreviewImageBounds);
-      } else {
-        setPreviewImageBounds(null);
-      }
+      });
     };
     handleUpdate();
     if (!previewRef.current) return;
@@ -2083,24 +2091,32 @@ export default function PreviewPanel({
     return () => {
       if (observer) observer.disconnect();
       window.removeEventListener("resize", handleUpdate);
+      if (previewResizeRafRef.current !== null) {
+        cancelAnimationFrame(previewResizeRafRef.current);
+        previewResizeRafRef.current = null;
+      }
     };
   }, [planPreviewUrl, previewMode, showGeneratedPlan, showMap, updateContainerBounds, updateImageBounds]);
 
   useEffect(() => {
     if (!previewFullscreenOpen) return;
     const handleUpdate = () => {
-      if (showMap && fullscreenRef.current) {
-        const rect = fullscreenRef.current.getBoundingClientRect();
-        setFullscreenImageBounds({ left: 0, top: 0, width: rect.width, height: rect.height });
-        const nextSize = { w: rect.width, h: rect.height };
-        const prev = fullscreenSizeRef.current;
-        if (!prev || prev.w !== nextSize.w || prev.h !== nextSize.h) {
-          fullscreenSizeRef.current = nextSize;
-          fullscreenMapRef.current?.resize();
+      if (fullscreenResizeRafRef.current !== null) return;
+      fullscreenResizeRafRef.current = window.requestAnimationFrame(() => {
+        fullscreenResizeRafRef.current = null;
+        if (showMap && fullscreenRef.current) {
+          const rect = fullscreenRef.current.getBoundingClientRect();
+          setFullscreenImageBounds({ left: 0, top: 0, width: rect.width, height: rect.height });
+          const nextSize = { w: Math.round(rect.width), h: Math.round(rect.height) };
+          const prev = fullscreenSizeRef.current;
+          if (!prev || prev.w !== nextSize.w || prev.h !== nextSize.h) {
+            fullscreenSizeRef.current = nextSize;
+            fullscreenMapRef.current?.resize();
+          }
+        } else if (planPreviewUrl) {
+          updateImageBounds(fullscreenRef, fullscreenImageRef, setFullscreenImageBounds);
         }
-      } else if (planPreviewUrl) {
-        updateImageBounds(fullscreenRef, fullscreenImageRef, setFullscreenImageBounds);
-      }
+      });
     };
     handleUpdate();
     if (!fullscreenRef.current) return;
@@ -2110,6 +2126,10 @@ export default function PreviewPanel({
     return () => {
       if (observer) observer.disconnect();
       window.removeEventListener("resize", handleUpdate);
+      if (fullscreenResizeRafRef.current !== null) {
+        cancelAnimationFrame(fullscreenResizeRafRef.current);
+        fullscreenResizeRafRef.current = null;
+      }
     };
   }, [planPreviewUrl, previewFullscreenOpen, showMap, updateImageBounds]);
   const [focusTransform, setFocusTransform] = useState<{ scale: number; tx: number; ty: number } | null>(null);
@@ -2869,7 +2889,7 @@ export default function PreviewPanel({
                       </svg>
                     ) : null}
                     <div
-                      className="pointer-events-auto absolute inset-0 z-[30]"
+                      className={`${overlayPointerEvents} absolute inset-0 z-[30]`}
                       style={{
                         transformOrigin: "top left",
                         transform: focusTransform
@@ -2920,10 +2940,13 @@ export default function PreviewPanel({
                           (analysisHighlight.buildingId === item.id || analysisHighlight.accessId === item.id);
                         const isPolyline = item.geometryType === "polyline";
                         const showBox = !isPolyline;
+                        const isSite = item.type === "site";
+                        const allowItemInteraction =
+                          !isSite || (previewInteraction === "edit" && !siteLocked);
                         return (
                           <div
                             key={item.id}
-                            className="pointer-events-auto absolute z-[30]"
+                            className={`${allowItemInteraction ? "pointer-events-auto" : "pointer-events-none"} absolute z-[30]`}
                             style={{
                               left: `${left}%`,
                               top: `${top}%`,
@@ -2934,10 +2957,12 @@ export default function PreviewPanel({
                               cursor: caps.movable ? (isPolyline ? "grab" : "move") : "default",
                             }}
                             onMouseDown={(event) => {
+                              if (!allowItemInteraction) return;
                               if (draggingMode === "vertex" || hoveredSegment?.id === item.id) return;
                               handleBuildingMouseDown(event, item, "move");
                             }}
                             onMouseEnter={() => {
+                              if (!allowItemInteraction) return;
                               if (!showHover) return;
                               setHoveredObjectId(item.id);
                             }}
@@ -2946,6 +2971,7 @@ export default function PreviewPanel({
                               setHoveredVertex(null);
                             }}
                             onClick={(event) => {
+                              if (!allowItemInteraction) return;
                               event.stopPropagation();
                               setSelectedVertex(null);
                               onSelectBuilding(item.id);
@@ -3451,6 +3477,7 @@ export default function PreviewPanel({
                   });
                 }}
                 onMouseMove={(event) => {
+                  if (allowMapInteraction) return;
                   if (fullscreenImageBounds) {
                     updateDraggedBuilding(event, fullscreenImageBounds);
                   }
@@ -3468,6 +3495,7 @@ export default function PreviewPanel({
                   setDraggingVertex(null);
                 }}
                 onClick={(event) => {
+                  if (allowMapInteraction) return;
                   if (placementMode) {
                     resolvePlacement(event, fullscreenRef, fullscreenImageBounds);
                     return;
@@ -3561,6 +3589,9 @@ export default function PreviewPanel({
                         const width = (displayW / Math.max(lotWidth, 1)) * 100;
                         const height = (displayD / Math.max(lotHeight, 1)) * 100;
                         const rotation = item.rotation ?? 0;
+                        const isSite = item.type === "site";
+                        const allowItemInteraction =
+                          !isSite || (previewInteraction === "edit" && !siteLocked);
                         const borderColorMap: Record<string, string> = {
                           site: "border-slate-400",
                           setback_zone: "border-slate-300",
@@ -3579,7 +3610,7 @@ export default function PreviewPanel({
                         return (
                           <div
                             key={item.id}
-                            className="pointer-events-auto absolute"
+                            className={`${allowMapInteraction || !allowItemInteraction ? "pointer-events-none" : "pointer-events-auto"} absolute`}
                             style={{
                               left: `${left}%`,
                               top: `${top}%`,
@@ -3589,8 +3620,12 @@ export default function PreviewPanel({
                               transformOrigin: "center",
                               cursor: placementMode ? "move" : "default",
                             }}
-                            onMouseDown={(event) => handleBuildingMouseDown(event, item, "move")}
+                            onMouseDown={(event) => {
+                              if (allowMapInteraction || !allowItemInteraction) return;
+                              handleBuildingMouseDown(event, item, "move");
+                            }}
                             onClick={(event) => {
+                              if (allowMapInteraction || !allowItemInteraction) return;
                               if (!placementMode) return;
                               event.stopPropagation();
                               onSelectBuilding(item.id);

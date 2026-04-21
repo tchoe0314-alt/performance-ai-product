@@ -605,6 +605,8 @@ export default function PerformanceAIDashboard() {
   const previewRecoveryKeyRef = useRef("");
   const lastSiteInputProjectRef = useRef("");
   const controlAutosaveTimeoutRef = useRef<number | null>(null);
+  const lastAppliedSiteRef = useRef<{ w: number; h: number } | null>(null);
+  const applyingSiteRef = useRef(false);
 
   const {
     projects,
@@ -1179,6 +1181,8 @@ export default function PerformanceAIDashboard() {
       };
     });
   }, [issues, previewLabels]);
+
+  const [debugGradingFixtureLoaded, setDebugGradingFixtureLoaded] = useState(false);
 
   const gradingBlocker = useMemo(() => {
     const issue = issues.find(
@@ -6099,14 +6103,23 @@ export default function PerformanceAIDashboard() {
   }, [siteAddress, token]);
 
   const handleApplySite = useCallback(async () => {
+    if (applyingSiteRef.current) return;
     if (siteScaleLocked) {
       setStatusMessage("Site is already locked.");
       return;
     }
+    applyingSiteRef.current = true;
     const width = viewportFootprint?.widthFt ?? parsePositiveNumber(lotWidth);
     const height = viewportFootprint?.heightFt ?? parsePositiveNumber(lotHeight);
     if (!width || !height) {
       setStatusMessage("Set the site width and height before applying the site.");
+      applyingSiteRef.current = false;
+      return;
+    }
+    const lastApplied = lastAppliedSiteRef.current;
+    if (lastApplied && Math.abs(lastApplied.w - width) < 1 && Math.abs(lastApplied.h - height) < 1) {
+      setStatusMessage("Site already matches the current viewport.");
+      applyingSiteRef.current = false;
       return;
     }
     autoFitSite(width, height, "Site Boundary");
@@ -6140,6 +6153,8 @@ export default function PerformanceAIDashboard() {
     });
     setSiteSelectionMode(false);
     setStatusMessage("Site applied and locked.");
+    lastAppliedSiteRef.current = { w: width, h: height };
+    applyingSiteRef.current = false;
   }, [autoFitSite, currentProject, lotHeight, lotWidth, payloadPreview, saveProject, viewportFootprint]);
 
   const runSelectedDetections = useCallback(async () => {
@@ -7909,6 +7924,54 @@ export default function PerformanceAIDashboard() {
     }
     return "Fallback assumptions";
   }, [siteInputs]);
+
+  useEffect(() => {
+    if (debugGradingFixtureLoaded) return;
+    if (typeof window === "undefined") return;
+    if (process.env.NODE_ENV === "production") return;
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("debugGradingBlocked")) return;
+    const lotW = lotBounds.w || 200;
+    const lotH = lotBounds.h || 200;
+    const source = { x: lotBounds.x + lotW * 0.2, y: lotBounds.y + lotH * 0.2 };
+    const target = { x: lotBounds.x + lotW * 0.8, y: lotBounds.y + lotH * 0.8 };
+    const blocker = { x: lotBounds.x + lotW * 0.5, y: lotBounds.y + lotH * 0.5, approximate: true };
+    const fixZone = {
+      x: lotBounds.x + lotW * 0.25,
+      y: lotBounds.y + lotH * 0.25,
+      w: lotW * 0.5,
+      h: lotH * 0.5,
+      approximate: true,
+    };
+    const fixture = {
+      code: "DRAINAGE_BLOCKED_BY_GRADING",
+      severity: "warning" as const,
+      message: "Proposed grading blocks flow paths that were reachable on existing terrain.",
+      context: {
+        explanation: "Proposed grading blocks flow paths that would otherwise reach the basin.",
+        reason: "proposed_surface_blocks_flow",
+        best_next_fix: "Introduce a grading swale toward the basin or lower the ridge between inlet and basin.",
+        suggested_actions: [
+          "Introduce a grading swale toward the basin.",
+          "Lower local ridge between inlet and basin.",
+          "Adjust pad edges to restore flow.",
+        ],
+        blocker_type: "ridge",
+        source_point: source,
+        blocked_target: target,
+        blocker_location: blocker,
+        suggested_fix_zone: fixZone,
+        approximate: true,
+      },
+    };
+    setIssues((prev) => {
+      if (prev.some((issue) => (issue.code ?? "").toUpperCase() === "DRAINAGE_BLOCKED_BY_GRADING")) {
+        return prev;
+      }
+      return [...prev, fixture];
+    });
+    setDebugGradingFixtureLoaded(true);
+  }, [debugGradingFixtureLoaded, lotBounds.h, lotBounds.w, lotBounds.x, lotBounds.y]);
   const drainageSurfaceSummary = useMemo(() => {
     if (!drainageSummary || typeof drainageSummary !== "object") {
       return {
