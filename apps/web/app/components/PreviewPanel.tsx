@@ -239,6 +239,9 @@ export default function PreviewPanel({
   const [mapRevision, setMapRevision] = useState(0);
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapboxRequestCount, setMapboxRequestCount] = useState(0);
+  const [mapboxTileCount, setMapboxTileCount] = useState(0);
+  const [mapCanvasSize, setMapCanvasSize] = useState<{ w: number; h: number } | null>(null);
+  const [mapContainerSize, setMapContainerSize] = useState<{ w: number; h: number } | null>(null);
   const previewSizeRef = useRef<{ w: number; h: number } | null>(null);
   const fullscreenSizeRef = useRef<{ w: number; h: number } | null>(null);
   const [rotateDragActive, setRotateDragActive] = useState(false);
@@ -1083,11 +1086,28 @@ export default function PreviewPanel({
   useEffect(() => {
     if (!debugStats?.enabled || !showMap) return;
     const handle = window.setInterval(() => {
-      const count = performance
-        .getEntriesByType("resource")
-        .filter((entry) => entry.name.includes("mapbox"))
-        .length;
+      const resources = performance.getEntriesByType("resource");
+      const count = resources.filter((entry) => entry.name.includes("mapbox")).length;
+      const tileCount = resources.filter(
+        (entry) =>
+          entry.name.includes("mapbox") &&
+          (entry.name.includes("/styles/") ||
+            entry.name.includes("/tiles/") ||
+            entry.name.includes("sprite") ||
+            entry.name.includes("glyphs")),
+      ).length;
       setMapboxRequestCount(count);
+      setMapboxTileCount(tileCount);
+      const canvas = mapRef.current?.getCanvas?.();
+      if (canvas) {
+        setMapCanvasSize({ w: canvas.width, h: canvas.height });
+      }
+      if (mapContainerRef.current) {
+        setMapContainerSize({
+          w: mapContainerRef.current.clientWidth,
+          h: mapContainerRef.current.clientHeight,
+        });
+      }
     }, 1500);
     return () => window.clearInterval(handle);
   }, [debugStats?.enabled, showMap]);
@@ -2489,6 +2509,13 @@ export default function PreviewPanel({
                     <div>quality: {previewQuality}</div>
                     <div>mapLoaded: {mapLoaded ? "true" : "false"}</div>
                     <div>mapbox requests: {mapboxRequestCount}</div>
+                    <div>mapbox tiles: {mapboxTileCount}</div>
+                    <div>
+                      container: {mapContainerSize ? `${mapContainerSize.w}×${mapContainerSize.h}` : "null"}
+                    </div>
+                    <div>
+                      canvas: {mapCanvasSize ? `${mapCanvasSize.w}×${mapCanvasSize.h}` : "null"}
+                    </div>
                     {mapError ? <div className="text-rose-600">error: {mapError}</div> : null}
                   </div>
                 ) : null}
