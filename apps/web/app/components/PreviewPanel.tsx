@@ -243,6 +243,7 @@ export default function PreviewPanel({
   const [mapCanvasSize, setMapCanvasSize] = useState<{ w: number; h: number } | null>(null);
   const [mapContainerSize, setMapContainerSize] = useState<{ w: number; h: number } | null>(null);
   const lastMapResizeRef = useRef<number>(0);
+  const [mapLocked, setMapLocked] = useState(false);
   const previewSizeRef = useRef<{ w: number; h: number } | null>(null);
   const fullscreenSizeRef = useRef<{ w: number; h: number } | null>(null);
   const [rotateDragActive, setRotateDragActive] = useState(false);
@@ -254,7 +255,7 @@ export default function PreviewPanel({
     previewQuality === "high" &&
     Boolean(geocode?.lat && geocode?.lng);
   const allowMapInteraction =
-    showMap && previewInteraction === "static" && !placementMode && !rotateDragStart;
+    showMap && previewInteraction === "static" && !placementMode && !rotateDragStart && !mapLocked;
   const showGeneratedPlan =
     !showMap &&
     hasGeneratedPlan &&
@@ -267,7 +268,7 @@ export default function PreviewPanel({
     suggestedPlacements.length > 0 ||
     (surveyPoints?.length ?? 0) > 0 ||
     Boolean(lotWidth && lotHeight);
-  const showHover = previewInteraction === "static";
+  const showHover = previewInteraction === "static" && !allowMapInteraction;
   const allowEdits = previewInteraction === "edit";
   const normalPalette = {
     building: "#0f172a",
@@ -1236,23 +1237,18 @@ export default function PreviewPanel({
   }, [mapCenterRequest, mapLoaded, onMapCenter, showMap]);
 
   useEffect(() => {
-    if (!showMap) return;
+    if (!showMap || !mapLoaded) return;
     const handle = window.setTimeout(() => {
       const now = Date.now();
       if (now - lastMapResizeRef.current < 140) return;
       lastMapResizeRef.current = now;
       mapRef.current?.resize();
-      fullscreenMapRef.current?.resize();
-      if (debugStats?.enabled) {
-        console.debug("[debug-preview] map-refresh", {
-          mode: previewMode,
-          interaction: previewInteraction,
-          quality: previewQuality,
-        });
+      if (previewFullscreenOpen) {
+        fullscreenMapRef.current?.resize();
       }
-    }, 150);
+    }, 160);
     return () => window.clearTimeout(handle);
-  }, [debugStats?.enabled, previewInteraction, previewMode, previewQuality, showMap]);
+  }, [mapLoaded, previewFullscreenOpen, showMap]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -2202,7 +2198,20 @@ export default function PreviewPanel({
             </div>
           ) : null}
         </div>
-        <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2">
+          {showMap ? (
+            <button
+              type="button"
+              onClick={() => setMapLocked((prev) => !prev)}
+              className={`rounded-xl border px-3 py-2 text-sm font-medium transition ${
+                mapLocked
+                  ? "border-slate-900 bg-slate-950 text-white"
+                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              {mapLocked ? "Unlock Map" : "Lock Map"}
+            </button>
+          ) : null}
           {analysisHighlight ? (
             <button
               type="button"
@@ -2461,6 +2470,7 @@ export default function PreviewPanel({
                 });
               }}
               onMouseMove={(event) => {
+                if (allowMapInteraction) return;
                 if (rotateDragStart && previewContainerBounds && onSetSiteRotationDeg) {
                   const deltaX = event.clientX - rotateDragStart.x;
                   const width = Math.max(previewContainerBounds.width, 1);
@@ -2515,6 +2525,7 @@ export default function PreviewPanel({
                 setRotateDragStart(null);
               }}
               onClick={(event) => {
+                if (allowMapInteraction) return;
                 if (placementMode) {
                   if (!allowEdits) return;
                   resolvePlacement(event, previewRef, overlayBoundsResolved);
@@ -2529,6 +2540,7 @@ export default function PreviewPanel({
               <div
                 className="relative flex h-full w-full items-center justify-center overflow-hidden"
                 onMouseDown={(event) => {
+                  if (allowMapInteraction) return;
                   if (rotateDragActive && onSetSiteRotationDeg) {
                     event.preventDefault();
                     event.stopPropagation();
@@ -3388,7 +3400,11 @@ export default function PreviewPanel({
                 }}
               >
                 {showMap ? (
-                  <div ref={fullscreenMapContainerRef} className="absolute inset-0 overflow-hidden" />
+                  <div
+                    ref={fullscreenMapContainerRef}
+                    className="absolute inset-0 overflow-hidden"
+                    style={{ width: "100%", height: "100%" }}
+                  />
                 ) : (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
