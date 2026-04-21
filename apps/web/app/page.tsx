@@ -5963,21 +5963,57 @@ export default function PerformanceAIDashboard() {
       window.clearTimeout(addressSuggestTimeoutRef.current);
     }
     const trimmed = siteAddress.trim();
-    if (!trimmed || trimmed.length < 4 || !token) {
+    if (!trimmed || trimmed.length < 4) {
       setAddressSuggestions([]);
       return;
     }
     addressSuggestTimeoutRef.current = window.setTimeout(() => {
+      const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+      const fallbackToMapbox = () => {
+        if (!mapboxToken) {
+          setAddressSuggestions([]);
+          return;
+        }
+        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(trimmed)}.json?access_token=${mapboxToken}&autocomplete=true&limit=5`;
+        fetch(url)
+          .then((resp) => resp.json())
+          .then((data) => {
+            const features = Array.isArray(data?.features) ? data.features : [];
+            const suggestions = features
+              .map((feature: { center?: [number, number]; place_name?: string }) => {
+                if (!feature?.center || feature.center.length < 2) return null;
+                return {
+                  lat: feature.center[1],
+                  lng: feature.center[0],
+                  display_name: feature.place_name || trimmed,
+                  provider: "mapbox",
+                };
+              })
+              .filter(Boolean) as { lat: number; lng: number; display_name: string; provider: string }[];
+            setAddressSuggestions(suggestions);
+          })
+          .catch(() => {
+            setAddressSuggestions([]);
+          });
+      };
+      if (!token) {
+        fallbackToMapbox();
+        return;
+      }
       void postJson<{ lat: number; lng: number; display_name: string; provider: string }>(
         "/api/geocode",
         { address: trimmed },
         { token },
       )
         .then((result) => {
-          setAddressSuggestions(result ? [result] : []);
+          if (result) {
+            setAddressSuggestions([result]);
+          } else {
+            fallbackToMapbox();
+          }
         })
         .catch(() => {
-          setAddressSuggestions([]);
+          fallbackToMapbox();
         });
     }, 350);
     return () => {
