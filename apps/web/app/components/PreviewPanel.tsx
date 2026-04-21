@@ -242,6 +242,7 @@ export default function PreviewPanel({
   const [mapboxTileCount, setMapboxTileCount] = useState(0);
   const [mapCanvasSize, setMapCanvasSize] = useState<{ w: number; h: number } | null>(null);
   const [mapContainerSize, setMapContainerSize] = useState<{ w: number; h: number } | null>(null);
+  const lastMapResizeRef = useRef<number>(0);
   const previewSizeRef = useRef<{ w: number; h: number } | null>(null);
   const fullscreenSizeRef = useRef<{ w: number; h: number } | null>(null);
   const [rotateDragActive, setRotateDragActive] = useState(false);
@@ -252,6 +253,8 @@ export default function PreviewPanel({
     Boolean(mapboxToken) &&
     previewQuality === "high" &&
     Boolean(geocode?.lat && geocode?.lng);
+  const allowMapInteraction =
+    showMap && previewInteraction === "static" && !placementMode && !rotateDragStart;
   const showGeneratedPlan =
     !showMap &&
     hasGeneratedPlan &&
@@ -1084,6 +1087,25 @@ export default function PreviewPanel({
   }, [mapboxToken, showMap]);
 
   useEffect(() => {
+    if (!showMap || !mapLoaded || !mapRef.current) return;
+    if (allowMapInteraction) {
+      mapRef.current.dragPan.enable();
+      mapRef.current.scrollZoom.enable();
+      mapRef.current.boxZoom.enable();
+      mapRef.current.doubleClickZoom.enable();
+      mapRef.current.keyboard.enable();
+      mapRef.current.touchZoomRotate.enable();
+    } else {
+      mapRef.current.dragPan.disable();
+      mapRef.current.scrollZoom.disable();
+      mapRef.current.boxZoom.disable();
+      mapRef.current.doubleClickZoom.disable();
+      mapRef.current.keyboard.disable();
+      mapRef.current.touchZoomRotate.disable();
+    }
+  }, [allowMapInteraction, mapLoaded, showMap]);
+
+  useEffect(() => {
     if (!debugStats?.enabled || !showMap) return;
     const handle = window.setInterval(() => {
       const resources = performance.getEntriesByType("resource");
@@ -1216,6 +1238,9 @@ export default function PreviewPanel({
   useEffect(() => {
     if (!showMap) return;
     const handle = window.setTimeout(() => {
+      const now = Date.now();
+      if (now - lastMapResizeRef.current < 140) return;
+      lastMapResizeRef.current = now;
       mapRef.current?.resize();
       fullscreenMapRef.current?.resize();
       if (debugStats?.enabled) {
@@ -1253,11 +1278,13 @@ export default function PreviewPanel({
     if (!showMap || !previewFullscreenOpen) return;
     if (!fullscreenMapContainerRef.current || fullscreenMapRef.current) return;
     mapboxgl.accessToken = mapboxToken || "";
+    const center = mapRef.current?.getCenter();
+    const zoom = mapRef.current?.getZoom();
     fullscreenMapRef.current = new mapboxgl.Map({
       container: fullscreenMapContainerRef.current,
       style: "mapbox://styles/mapbox/satellite-streets-v12",
-      center: [-95.9345, 41.2565],
-      zoom: 16,
+      center: center ? [center.lng, center.lat] : [-95.9345, 41.2565],
+      zoom: typeof zoom === "number" ? zoom : 16,
       attributionControl: false,
     });
     fullscreenMapRef.current.on("load", () => {
@@ -1272,6 +1299,15 @@ export default function PreviewPanel({
       setMapRevision((value) => value + 1);
     });
   }, [mapboxToken, previewFullscreenOpen, showMap]);
+
+  useEffect(() => {
+    if (!showMap) return;
+    if (previewFullscreenOpen) return;
+    if (!fullscreenMapRef.current || !mapRef.current) return;
+    const center = fullscreenMapRef.current.getCenter();
+    const zoom = fullscreenMapRef.current.getZoom();
+    mapRef.current.jumpTo({ center: [center.lng, center.lat], zoom });
+  }, [previewFullscreenOpen, showMap]);
 
   useEffect(() => {
     if (!showMap) return;
@@ -2010,6 +2046,7 @@ export default function PreviewPanel({
         const prev = previewSizeRef.current;
         if (!prev || prev.w !== nextSize.w || prev.h !== nextSize.h) {
           previewSizeRef.current = nextSize;
+          lastMapResizeRef.current = Date.now();
           mapRef.current?.resize();
         }
       } else if (planPreviewUrl && showGeneratedPlan) {
