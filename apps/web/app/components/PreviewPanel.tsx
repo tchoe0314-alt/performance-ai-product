@@ -237,6 +237,8 @@ export default function PreviewPanel({
   const fullscreenMapRef = useRef<mapboxgl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapRevision, setMapRevision] = useState(0);
+  const [mapError, setMapError] = useState<string | null>(null);
+  const [mapboxRequestCount, setMapboxRequestCount] = useState(0);
   const previewSizeRef = useRef<{ w: number; h: number } | null>(null);
   const fullscreenSizeRef = useRef<{ w: number; h: number } | null>(null);
   const [rotateDragActive, setRotateDragActive] = useState(false);
@@ -1058,6 +1060,13 @@ export default function PreviewPanel({
       zoom: 16,
       attributionControl: false,
     });
+    mapRef.current.on("error", (event) => {
+      const message =
+        (event as { error?: { message?: string } })?.error?.message ||
+        (event as { message?: string })?.message ||
+        "Mapbox error";
+      setMapError(message);
+    });
     mapRef.current.on("load", () => {
       mapRef.current?.addSource("mapbox-dem", {
         type: "raster-dem",
@@ -1070,6 +1079,18 @@ export default function PreviewPanel({
       setMapRevision((value) => value + 1);
     });
   }, [mapboxToken, showMap]);
+
+  useEffect(() => {
+    if (!debugStats?.enabled || !showMap) return;
+    const handle = window.setInterval(() => {
+      const count = performance
+        .getEntriesByType("resource")
+        .filter((entry) => entry.name.includes("mapbox"))
+        .length;
+      setMapboxRequestCount(count);
+    }, 1500);
+    return () => window.clearInterval(handle);
+  }, [debugStats?.enabled, showMap]);
 
   useEffect(() => {
     if (!showMap || !mapLoaded || !mapRef.current) return;
@@ -2467,6 +2488,8 @@ export default function PreviewPanel({
                     <div>showMap: {showMap ? "true" : "false"}</div>
                     <div>quality: {previewQuality}</div>
                     <div>mapLoaded: {mapLoaded ? "true" : "false"}</div>
+                    <div>mapbox requests: {mapboxRequestCount}</div>
+                    {mapError ? <div className="text-rose-600">error: {mapError}</div> : null}
                   </div>
                 ) : null}
                 {showMap ? (
