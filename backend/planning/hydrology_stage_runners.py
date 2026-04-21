@@ -701,6 +701,7 @@ def run_drainage_stage(
                 "severity": "warning",
                 "message": "Proposed grading blocks flow paths that were reachable on existing terrain.",
                 "context": {
+                    "explanation": "Proposed grading blocks flow paths that would otherwise reach the basin.",
                     "reason": grading_block_reason or "grading_blocked",
                     "surface_source": surface_source,
                     "surface_from_grading": surface_from_grading,

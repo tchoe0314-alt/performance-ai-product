@@ -2334,6 +2334,7 @@ def build_drainage_job_runner(
                             "message": "Proposed grading blocks flow paths that were reachable on existing terrain.",
                             "severity": "warning",
                             "context": {
+                                "explanation": "Proposed grading blocks flow paths that would otherwise reach the basin.",
                                 "reason": "proposed_surface_blocks_flow",
                                 "best_next_fix": "Introduce a grading swale toward the basin or lower the ridge between inlet and basin.",
                                 "suggested_actions": [
