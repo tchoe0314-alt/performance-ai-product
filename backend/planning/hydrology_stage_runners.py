@@ -654,6 +654,48 @@ def run_drainage_stage(
                 grading_block_reason = "proposed_surface_blocks_flow"
 
         if grading_blocked:
+            def _pick_point(records: list) -> tuple[float, float] | None:
+                for rec in records:
+                    if not isinstance(rec, dict):
+                        continue
+                    x_val = safe_float(rec.get("x"), None)
+                    y_val = safe_float(rec.get("y"), None)
+                    if x_val is None or y_val is None:
+                        continue
+                    return x_val, y_val
+                return None
+
+            source_point = _pick_point(inlet_records) or _pick_point(low_point_records)
+            target_point = _pick_point(basin_records)
+            if target_point is None:
+                for target in safe_list(coordination.get("preferred_targets")):
+                    if not isinstance(target, dict):
+                        continue
+                    tx = safe_float(target.get("x"), None)
+                    ty = safe_float(target.get("y"), None)
+                    if tx is None or ty is None:
+                        continue
+                    target_point = (tx, ty)
+                    break
+
+            blocker_location = None
+            suggested_fix_zone = None
+            if source_point and target_point:
+                sx, sy = source_point
+                tx, ty = target_point
+                mid_x = (sx + tx) / 2.0
+                mid_y = (sy + ty) / 2.0
+                zone_w = max(abs(tx - sx) * 0.6, 40.0)
+                zone_h = max(abs(ty - sy) * 0.6, 40.0)
+                blocker_location = {"x": mid_x, "y": mid_y, "approximate": True}
+                suggested_fix_zone = {
+                    "x": mid_x - zone_w / 2.0,
+                    "y": mid_y - zone_h / 2.0,
+                    "w": zone_w,
+                    "h": zone_h,
+                    "approximate": True,
+                }
+
             grading_issue = {
                 "code": "DRAINAGE_BLOCKED_BY_GRADING",
                 "severity": "warning",
@@ -668,6 +710,12 @@ def run_drainage_stage(
                         "Lower local ridge between inlet and basin.",
                         "Adjust pad edges to restore flow.",
                     ],
+                    "blocker_type": "ridge" if surface_from_grading else "unknown",
+                    "source_point": {"x": source_point[0], "y": source_point[1]} if source_point else None,
+                    "blocked_target": {"x": target_point[0], "y": target_point[1]} if target_point else None,
+                    "blocker_location": blocker_location,
+                    "suggested_fix_zone": suggested_fix_zone,
+                    "approximate": True,
                 },
             }
             issue_payloads.append(grading_issue)

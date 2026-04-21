@@ -2285,6 +2285,44 @@ def build_drainage_job_runner(
                     if alt_reached:
                         break
                 if alt_reached and not proposed_reached_for_attribution:
+                    source_point = None
+                    blocked_target = None
+                    suggested_fix_zone = None
+                    inlet_records = safe_list(drainage_canonical.get("inlets"))
+                    basin_records = safe_list(drainage_canonical.get("basins"))
+                    for rec in inlet_records:
+                        if not isinstance(rec, dict):
+                            continue
+                        sx = safe_float(rec.get("x"), None)
+                        sy = safe_float(rec.get("y"), None)
+                        if sx is None or sy is None:
+                            continue
+                        source_point = (sx, sy)
+                        break
+                    for rec in basin_records:
+                        if not isinstance(rec, dict):
+                            continue
+                        bx = safe_float(rec.get("x"), None)
+                        by = safe_float(rec.get("y"), None)
+                        if bx is None or by is None:
+                            continue
+                        blocked_target = (bx, by)
+                        break
+                    if source_point and blocked_target:
+                        sx, sy = source_point
+                        tx, ty = blocked_target
+                        mid_x = (sx + tx) / 2.0
+                        mid_y = (sy + ty) / 2.0
+                        zone_w = max(abs(tx - sx) * 0.6, 40.0)
+                        zone_h = max(abs(ty - sy) * 0.6, 40.0)
+                        suggested_fix_zone = {
+                            "x": mid_x - zone_w / 2.0,
+                            "y": mid_y - zone_h / 2.0,
+                            "w": zone_w,
+                            "h": zone_h,
+                            "approximate": True,
+                        }
+
                     existing_codes = {
                         safe_str(issue.get("code"), "")
                         for issue in safe_list(result.get("issues"))
@@ -2303,6 +2341,16 @@ def build_drainage_job_runner(
                                     "Lower local ridge between inlet and basin.",
                                     "Adjust pad edges to restore flow.",
                                 ],
+                                "blocker_type": "ridge",
+                                "source_point": {"x": source_point[0], "y": source_point[1]} if source_point else None,
+                                "blocked_target": {"x": blocked_target[0], "y": blocked_target[1]} if blocked_target else None,
+                                "blocker_location": (
+                                    {"x": (source_point[0] + blocked_target[0]) / 2.0, "y": (source_point[1] + blocked_target[1]) / 2.0, "approximate": True}
+                                    if source_point and blocked_target
+                                    else None
+                                ),
+                                "suggested_fix_zone": suggested_fix_zone,
+                                "approximate": True,
                             },
                         }
                         result["issues"] = list(safe_list(result.get("issues"))) + [grading_issue]

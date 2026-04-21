@@ -96,6 +96,13 @@ type PreviewPanelProps = {
   onMapCenter?: (payload: { lat: number; lng: number }) => void;
   onViewportFootprint?: (value: { widthFt: number; heightFt: number }) => void;
   siteLocked?: boolean;
+  gradingBlocker?: {
+    sourcePoint: { x: number; y: number } | null;
+    blockedTarget: { x: number; y: number } | null;
+    blockerLocation: { x: number; y: number } | null;
+    suggestedFixZone: { x: number; y: number; w: number; h: number } | null;
+    approximate?: boolean;
+  } | null;
   debugStats?: {
     enabled: boolean;
     projectId: string;
@@ -179,6 +186,7 @@ export default function PreviewPanel({
   onMapCenter,
   onViewportFootprint,
   siteLocked,
+  gradingBlocker,
   debugStats,
 }: PreviewPanelProps) {
   const previewLabels = useMemo(
@@ -2640,6 +2648,61 @@ export default function PreviewPanel({
                         viewBox="0 0 100 100"
                         preserveAspectRatio="none"
                       >
+                        {gradingBlocker ? (
+                          (() => {
+                            const toPct = (pt: { x: number; y: number }) => ({
+                              x: (pt.x / Math.max(lotWidth, 1)) * 100,
+                              y: (pt.y / Math.max(lotHeight, 1)) * 100,
+                            });
+                            const source = gradingBlocker.sourcePoint ? toPct(gradingBlocker.sourcePoint) : null;
+                            const target = gradingBlocker.blockedTarget ? toPct(gradingBlocker.blockedTarget) : null;
+                            const blocker = gradingBlocker.blockerLocation ? toPct(gradingBlocker.blockerLocation) : null;
+                            const zone = gradingBlocker.suggestedFixZone
+                              ? {
+                                  x: (gradingBlocker.suggestedFixZone.x / Math.max(lotWidth, 1)) * 100,
+                                  y: (gradingBlocker.suggestedFixZone.y / Math.max(lotHeight, 1)) * 100,
+                                  w: (gradingBlocker.suggestedFixZone.w / Math.max(lotWidth, 1)) * 100,
+                                  h: (gradingBlocker.suggestedFixZone.h / Math.max(lotHeight, 1)) * 100,
+                                }
+                              : null;
+                            return (
+                              <g>
+                                {zone ? (
+                                  <rect
+                                    x={zone.x}
+                                    y={zone.y}
+                                    width={zone.w}
+                                    height={zone.h}
+                                    fill="rgba(248,113,113,0.12)"
+                                    stroke="rgba(248,113,113,0.8)"
+                                    strokeDasharray="2 2"
+                                    strokeWidth={0.8}
+                                  />
+                                ) : null}
+                                {source && target ? (
+                                  <line
+                                    x1={source.x}
+                                    y1={source.y}
+                                    x2={target.x}
+                                    y2={target.y}
+                                    stroke="rgba(14,116,144,0.75)"
+                                    strokeWidth={0.8}
+                                    strokeDasharray="3 3"
+                                  />
+                                ) : null}
+                                {source ? (
+                                  <circle cx={source.x} cy={source.y} r={1.2} fill="#10b981" />
+                                ) : null}
+                                {target ? (
+                                  <circle cx={target.x} cy={target.y} r={1.2} fill="#3b82f6" />
+                                ) : null}
+                                {blocker ? (
+                                  <circle cx={blocker.x} cy={blocker.y} r={1.1} fill="#f97316" />
+                                ) : null}
+                              </g>
+                            );
+                          })()
+                        ) : null}
                         {buildingPlacements
                           .filter((item) => item.geometryType === "polyline" && Array.isArray(item.geometry))
                           .map((item) => {

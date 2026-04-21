@@ -1180,6 +1180,39 @@ export default function PerformanceAIDashboard() {
     });
   }, [issues, previewLabels]);
 
+  const gradingBlocker = useMemo(() => {
+    const issue = issues.find(
+      (item) => (item.code ?? "").toUpperCase() === "DRAINAGE_BLOCKED_BY_GRADING",
+    );
+    if (!issue?.context || typeof issue.context !== "object") return null;
+    const ctx = issue.context as Record<string, unknown>;
+    const toPoint = (value: unknown) => {
+      if (!value || typeof value !== "object") return null;
+      const rec = value as Record<string, unknown>;
+      const x = typeof rec.x === "number" ? rec.x : Number(rec.x);
+      const y = typeof rec.y === "number" ? rec.y : Number(rec.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      return { x, y };
+    };
+    const toZone = (value: unknown) => {
+      if (!value || typeof value !== "object") return null;
+      const rec = value as Record<string, unknown>;
+      const x = typeof rec.x === "number" ? rec.x : Number(rec.x);
+      const y = typeof rec.y === "number" ? rec.y : Number(rec.y);
+      const w = typeof rec.w === "number" ? rec.w : Number(rec.w);
+      const h = typeof rec.h === "number" ? rec.h : Number(rec.h);
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) return null;
+      return { x, y, w, h };
+    };
+    return {
+      sourcePoint: toPoint(ctx.source_point),
+      blockedTarget: toPoint(ctx.blocked_target),
+      blockerLocation: toPoint(ctx.blocker_location),
+      suggestedFixZone: toZone(ctx.suggested_fix_zone),
+      approximate: Boolean(ctx.approximate),
+    };
+  }, [issues]);
+
   const selectedIssueLabel = issueTargets.find((item) => item.id === selectedIssueId)?.label ?? "";
 
   const pipeSegments = useMemo<PipeSegment[]>(() => {
@@ -8763,6 +8796,7 @@ export default function PerformanceAIDashboard() {
                 geocode={siteInputs?.geocode ?? null}
                 siteRotationDeg={siteInputs?.site_rotation_deg ?? 0}
                 showSiteBounds={showSiteBounds}
+                gradingBlocker={gradingBlocker}
                 fitToSiteRequest={fitToSiteRequest}
                 mapCenterRequest={mapCenterRequest}
                 alignToRoadRequest={alignToRoadRequest}
