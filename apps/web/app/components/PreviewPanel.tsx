@@ -211,6 +211,7 @@ export default function PreviewPanel({
   const [fullscreenHoverPoint, setFullscreenHoverPoint] = useState<{ x: number; y: number } | null>(null);
   const [previewImageBounds, setPreviewImageBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [fullscreenImageBounds, setFullscreenImageBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const [fullscreenContainerReady, setFullscreenContainerReady] = useState(false);
   const [previewContainerBounds, setPreviewContainerBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [cursorSitePoint, setCursorSitePoint] = useState<{ x: number; y: number } | null>(null);
   const [draggingBuildingId, setDraggingBuildingId] = useState<string | null>(null);
@@ -1307,6 +1308,7 @@ export default function PreviewPanel({
 
   useEffect(() => {
     if (!showMap || !previewFullscreenOpen) return;
+    if (!fullscreenContainerReady) return;
     if (!fullscreenMapContainerRef.current || fullscreenMapRef.current) return;
     mapboxgl.accessToken = mapboxToken || "";
     const center = mapRef.current?.getCenter();
@@ -1329,7 +1331,7 @@ export default function PreviewPanel({
       fullscreenMapRef.current?.resize();
       setMapRevision((value) => value + 1);
     });
-  }, [mapboxToken, previewFullscreenOpen, showMap]);
+  }, [fullscreenContainerReady, mapboxToken, previewFullscreenOpen, showMap]);
 
   useEffect(() => {
     if (previewFullscreenOpen) return;
@@ -2083,8 +2085,11 @@ export default function PreviewPanel({
           const prev = previewSizeRef.current;
           if (!prev || prev.w !== nextSize.w || prev.h !== nextSize.h) {
             previewSizeRef.current = nextSize;
-            lastMapResizeRef.current = Date.now();
-            mapRef.current?.resize();
+            const now = Date.now();
+            if (now - lastMapResizeRef.current > 120) {
+              lastMapResizeRef.current = now;
+              mapRef.current?.resize();
+            }
           }
         } else if (planPreviewUrl && showGeneratedPlan) {
           updateImageBounds(previewRef, previewImageRef, setPreviewImageBounds);
@@ -2121,7 +2126,11 @@ export default function PreviewPanel({
           const prev = fullscreenSizeRef.current;
           if (!prev || prev.w !== nextSize.w || prev.h !== nextSize.h) {
             fullscreenSizeRef.current = nextSize;
-            fullscreenMapRef.current?.resize();
+            const now = Date.now();
+            if (now - lastMapResizeRef.current > 120) {
+              lastMapResizeRef.current = now;
+              fullscreenMapRef.current?.resize();
+            }
           }
         } else if (planPreviewUrl) {
           updateImageBounds(fullscreenRef, fullscreenImageRef, setFullscreenImageBounds);
@@ -3522,7 +3531,10 @@ export default function PreviewPanel({
               >
                 {showMap ? (
                   <div
-                    ref={fullscreenMapContainerRef}
+                    ref={(node) => {
+                      fullscreenMapContainerRef.current = node;
+                      setFullscreenContainerReady(Boolean(node));
+                    }}
                     className="absolute inset-0 overflow-hidden"
                     style={{ width: "100%", height: "100%" }}
                   />
