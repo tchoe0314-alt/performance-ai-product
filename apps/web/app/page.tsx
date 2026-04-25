@@ -6963,10 +6963,12 @@ export default function PerformanceAIDashboard() {
       }
 
       const systemLabel = target === "full" ? "full site systems" : target;
+      const directRun = target === "grading";
       await executePlanAction({
         mode: "run",
         requestPayload: {
           ...requestPayload,
+          full_design_mode: directRun ? false : requestPayload.full_design_mode,
           manual_fields: nextManualFields,
           meta: {
             ...(requestPayload.meta ?? {}),
