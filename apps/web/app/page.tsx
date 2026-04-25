@@ -3028,6 +3028,7 @@ export default function PerformanceAIDashboard() {
     clearPromptOnSuccess = false,
     signal,
     timeoutMs,
+    allowQueueFallback = true,
   }: {
     mode: PlanToolMode;
     requestPayload: PlanRequestPayload;
@@ -3036,6 +3037,7 @@ export default function PerformanceAIDashboard() {
     clearPromptOnSuccess?: boolean;
     signal?: AbortSignal;
     timeoutMs?: number;
+    allowQueueFallback?: boolean;
   }) => {
     setBusy(true);
     setActivePlanTool(mode);
@@ -3126,7 +3128,7 @@ export default function PerformanceAIDashboard() {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "";
-      if (timedOut && token) {
+      if (timedOut && token && allowQueueFallback) {
         try {
           const queued = await postJson<{ job: JobSummary }>(
             "/api/jobs/orchestrate",
@@ -3173,7 +3175,7 @@ export default function PerformanceAIDashboard() {
         return;
       }
       const looksLikeConnectivityFailure = isConnectivityFailureMessage(errorMessage);
-      if (looksLikeConnectivityFailure && token) {
+      if (looksLikeConnectivityFailure && token && allowQueueFallback) {
         try {
           const queued = await postJson<{ job: JobSummary }>(
             "/api/jobs/orchestrate",
@@ -6979,7 +6981,8 @@ export default function PerformanceAIDashboard() {
           prompt_text: null,
         },
         assistantPrefix: `Generating ${systemLabel} around your placed layout...`,
-        timeoutMs: directRun ? 45_000 : undefined,
+        timeoutMs: directRun ? 90_000 : undefined,
+        allowQueueFallback: !directRun,
       });
       setSystemStatuses((prev) => {
         if (target === "full") {
