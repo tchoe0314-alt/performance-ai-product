@@ -94,6 +94,7 @@ type PreviewPanelProps = {
   onMapScaleUpdate?: (payload: { ftPerPx: number; source: "mapbox" }) => void;
   mapCenterRequest?: number;
   onMapCenter?: (payload: { lat: number; lng: number }) => void;
+  onViewportCenter?: (payload: { lat: number; lng: number }) => void;
   onViewportFootprint?: (value: { widthFt: number; heightFt: number }) => void;
   siteLocked?: boolean;
   gradingBlocker?: {
@@ -184,6 +185,7 @@ export default function PreviewPanel({
   onMapScaleUpdate,
   mapCenterRequest,
   onMapCenter,
+  onViewportCenter,
   onViewportFootprint,
   siteLocked,
   gradingBlocker,
@@ -1184,12 +1186,20 @@ export default function PreviewPanel({
         heightFt: heightM / 0.3048,
       });
     };
+    const reportCenter = () => {
+      if (!onViewportCenter) return;
+      const center = map.getCenter();
+      onViewportCenter({ lat: center.lat, lng: center.lng });
+    };
     reportScale();
     reportViewport();
+    reportCenter();
     map.on("moveend", reportScale);
     map.on("zoomend", reportScale);
     map.on("moveend", reportViewport);
     map.on("zoomend", reportViewport);
+    map.on("moveend", reportCenter);
+    map.on("zoomend", reportCenter);
     const handleClick = (event: mapboxgl.MapMouseEvent) => {
       if (placementMode) {
         if (!allowEdits) return;
@@ -2935,6 +2945,9 @@ export default function PreviewPanel({
                         };
                         const borderColor =
                           (item.type && borderColorMap[item.type]) || "border-slate-900/70";
+                        const outlineColor =
+                          (item.meta as { style?: { outline_color?: string } } | undefined)?.style
+                            ?.outline_color;
                         const isAccessHighlight =
                           analysisHighlight &&
                           (analysisHighlight.buildingId === item.id || analysisHighlight.accessId === item.id);
@@ -2990,6 +3003,7 @@ export default function PreviewPanel({
                                       ? "rgba(17, 24, 39, 0.38)"
                                       : "rgba(15, 23, 42, 0.22)"
                                     : "transparent",
+                                borderColor: outlineColor || undefined,
                                 backgroundImage:
                                   showBox && previewQuality === "high"
                                     ? "linear-gradient(135deg, rgba(255,255,255,0.08), rgba(0,0,0,0.18))"
@@ -3607,6 +3621,9 @@ export default function PreviewPanel({
                         };
                         const borderColor =
                           (item.type && borderColorMap[item.type]) || "border-slate-900/70";
+                        const outlineColor =
+                          (item.meta as { style?: { outline_color?: string } } | undefined)?.style
+                            ?.outline_color;
                         return (
                           <div
                             key={item.id}
@@ -3631,7 +3648,10 @@ export default function PreviewPanel({
                               onSelectBuilding(item.id);
                             }}
                           >
-                            <div className={`h-full w-full rounded-[8px] border-2 bg-slate-900/10 transition ${borderColor}`} />
+                            <div
+                              className={`h-full w-full rounded-[8px] border-2 bg-slate-900/10 transition ${borderColor}`}
+                              style={outlineColor ? { borderColor: outlineColor } : undefined}
+                            />
                             <button
                               type="button"
                               className="absolute -right-3 -top-3 h-6 w-6 rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 shadow"

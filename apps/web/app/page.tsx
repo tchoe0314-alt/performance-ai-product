@@ -508,6 +508,7 @@ export default function PerformanceAIDashboard() {
   const [siteAddress, setSiteAddress] = useState("");
   const [siteSelectionMode, setSiteSelectionMode] = useState(false);
   const [viewportFootprint, setViewportFootprint] = useState<{ widthFt: number; heightFt: number } | null>(null);
+  const [viewportCenter, setViewportCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [detectionChoices, setDetectionChoices] = useState({
     roads: true,
     buildings: true,
@@ -540,6 +541,7 @@ export default function PerformanceAIDashboard() {
   const [previewLabelDensity, setPreviewLabelDensity] = useState<"low" | "standard" | "high">("standard");
   const [previewLabelDensityTouched, setPreviewLabelDensityTouched] = useState(false);
   const [previewHeightPx, setPreviewHeightPx] = useState(900);
+  const [objectOutlineColor, setObjectOutlineColor] = useState("#1f2937");
   const [previewRefreshing, setPreviewRefreshing] = useState(false);
   const [previewRefreshNote, setPreviewRefreshNote] = useState<string | null>(null);
   const [approvalInFlight, setApprovalInFlight] = useState(false);
@@ -605,7 +607,7 @@ export default function PerformanceAIDashboard() {
   const previewRecoveryKeyRef = useRef("");
   const lastSiteInputProjectRef = useRef("");
   const controlAutosaveTimeoutRef = useRef<number | null>(null);
-  const lastAppliedSiteRef = useRef<{ w: number; h: number } | null>(null);
+  const lastAppliedSiteRef = useRef<{ w: number; h: number; lat?: number; lng?: number } | null>(null);
   const applyingSiteRef = useRef(false);
 
   const {
@@ -2240,9 +2242,13 @@ export default function PerformanceAIDashboard() {
       setStatusMessage("Describe a building, road, parking, or basin to add.");
       return;
     }
-    handleAddObject(parsed.type, { label: parsed.label, style: parsed.style });
+    const style = {
+      ...(parsed.style ?? {}),
+      outline_color: objectOutlineColor,
+    };
+    handleAddObject(parsed.type, { label: parsed.label, style });
     setObjectPrompt("");
-  }, [handleAddObject, objectPrompt, parsePromptToObject, setStatusMessage]);
+  }, [handleAddObject, objectOutlineColor, objectPrompt, parsePromptToObject, setStatusMessage]);
 
   const handleUpdateBuilding = useCallback((id: string, updates: Partial<BuildingPlacement>) => {
     clearGeneratedPreview();
@@ -6117,7 +6123,14 @@ export default function PerformanceAIDashboard() {
       return;
     }
     const lastApplied = lastAppliedSiteRef.current;
-    if (lastApplied && Math.abs(lastApplied.w - width) < 1 && Math.abs(lastApplied.h - height) < 1) {
+    if (
+      lastApplied &&
+      Math.abs(lastApplied.w - width) < 1 &&
+      Math.abs(lastApplied.h - height) < 1 &&
+      (!viewportCenter ||
+        (Math.abs((lastApplied.lat ?? 0) - viewportCenter.lat) < 1e-6 &&
+          Math.abs((lastApplied.lng ?? 0) - viewportCenter.lng) < 1e-6))
+    ) {
       setStatusMessage("Site already matches the current viewport.");
       applyingSiteRef.current = false;
       return;
@@ -6126,6 +6139,21 @@ export default function PerformanceAIDashboard() {
     setShowSiteBounds(false);
     setSiteScaleLocked(true);
     const currentInput = currentProject?.project_input ?? payloadPreview;
+    const nextSiteInputs = {
+      ...(currentInput?.meta?.site_inputs ?? {}),
+      site_alignment_locked: true,
+      ...(viewportCenter
+        ? {
+            geocode: {
+              ...(currentInput?.meta?.site_inputs?.geocode ?? {}),
+              lat: viewportCenter.lat,
+              lng: viewportCenter.lng,
+              display_name:
+                currentInput?.meta?.site_inputs?.geocode?.display_name ?? "Map center",
+            },
+          }
+        : {}),
+    };
     await saveProject({
       silent: true,
       projectInputOverride: {
@@ -6135,10 +6163,7 @@ export default function PerformanceAIDashboard() {
         allow_ai_fill_for_blanks: false,
         meta: {
           ...(currentInput?.meta ?? {}),
-          site_inputs: {
-            ...(currentInput?.meta?.site_inputs ?? {}),
-            site_alignment_locked: true,
-          },
+          site_inputs: nextSiteInputs,
         },
         manual_fields: {
           ...(currentInput?.manual_fields ?? {}),
@@ -6153,9 +6178,23 @@ export default function PerformanceAIDashboard() {
     });
     setSiteSelectionMode(false);
     setStatusMessage("Site applied and locked.");
-    lastAppliedSiteRef.current = { w: width, h: height };
+    lastAppliedSiteRef.current = {
+      w: width,
+      h: height,
+      lat: viewportCenter?.lat,
+      lng: viewportCenter?.lng,
+    };
     applyingSiteRef.current = false;
-  }, [autoFitSite, currentProject, lotHeight, lotWidth, payloadPreview, saveProject, viewportFootprint]);
+  }, [
+    autoFitSite,
+    currentProject,
+    lotHeight,
+    lotWidth,
+    payloadPreview,
+    saveProject,
+    viewportCenter,
+    viewportFootprint,
+  ]);
 
   const runSelectedDetections = useCallback(async () => {
     const wantsContext = detectionChoices.roads || detectionChoices.buildings || detectionChoices.parking;
@@ -8786,6 +8825,7 @@ export default function PerformanceAIDashboard() {
                 previewLabelDensity={previewLabelDensity}
                 hasGeneratedPlan={Boolean(planPreviewUrl && backendResult)}
                 placementMode={placementModeEnabled || Boolean(activePlacementId)}
+                onViewportCenter={setViewportCenter}
                 externalRectUndo={externalRectUndo}
               onPlaceBuilding={handlePlaceBuilding}
               onPlaceObject={handlePlaceObject}
@@ -8893,43 +8933,9 @@ export default function PerformanceAIDashboard() {
               </div>
 
               <div className="rounded-[24px] border border-slate-200 bg-white/95 p-4 shadow-[0_12px_35px_-28px_rgba(15,23,42,0.45)]">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Object Tray
-                    </p>
-                    <p className="mt-1 text-sm text-slate-600">
-                      Drag objects onto the site. Place the site first, then add buildings and anchors.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={handleAutoPlaceBuildings}
-                      className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                    >
-                      Auto-place
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSuggestLayouts}
-                      className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                    >
-                      Suggest Layouts
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleNextSuggestion}
-                      className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                    >
-                      Next Suggestion
-                    </button>
-                  </div>
-                </div>
-
-                  <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                      Add by Prompt
+                      Create Objects
                     </p>
                     <p className="mt-1 text-sm text-slate-600">
                       Describe what you want to add.
@@ -8941,14 +8947,25 @@ export default function PerformanceAIDashboard() {
                         placeholder="Describe what you want to add..."
                         className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none"
                       />
-                      <button
-                        type="button"
-                        onClick={handlePromptAddObject}
-                        disabled={!objectPrompt.trim()}
-                        className="w-full rounded-2xl border border-slate-900 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Add Object
-                      </button>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <label className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          Outline
+                          <input
+                            type="color"
+                            value={objectOutlineColor}
+                            onChange={(event) => setObjectOutlineColor(event.target.value)}
+                            className="h-9 w-10 rounded-lg border border-slate-200 bg-white"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handlePromptAddObject}
+                          disabled={!objectPrompt.trim()}
+                          className="flex-1 rounded-2xl border border-slate-900 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Add Object
+                        </button>
+                      </div>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-500">
                       <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">red brick building</span>
@@ -8957,59 +8974,6 @@ export default function PerformanceAIDashboard() {
                       <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">detention basin</span>
                     </div>
                   </div>
-
-                  <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          Add Objects
-                        </p>
-                        <p className="mt-1 text-sm text-slate-600">
-                          Choose a category to add real, scaled site objects.
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {missingSite ? (
-                        <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
-                          Needs site
-                        </span>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => setAdvancedAddOpen((value) => !value)}
-                          className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                        >
-                          {advancedAddOpen ? "Hide Advanced" : "Show Advanced"}
-                        </button>
-                      </div>
-                    </div>
-                  <div className="mt-4 grid gap-4 md:grid-cols-2">
-                    {ADD_MENU_SECTIONS.filter(
-                      (section) => !section.collapsible || advancedAddOpen,
-                    ).map((section) => (
-                      <div key={section.key} className="rounded-2xl border border-slate-200 bg-white p-3">
-                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                          {section.title}
-                        </p>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {section.items.map((itemType) => {
-                            const label = SITE_OBJECT_CATALOG[itemType]?.label ?? "Object";
-                            return (
-                              <button
-                                key={itemType}
-                                type="button"
-                                onClick={() => handleAddObject(itemType)}
-                                className="rounded-full border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                              >
-                                {label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
 
                 <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr,2fr]">
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
