@@ -3027,6 +3027,7 @@ export default function PerformanceAIDashboard() {
     assistantPrefix,
     clearPromptOnSuccess = false,
     signal,
+    timeoutMs,
   }: {
     mode: PlanToolMode;
     requestPayload: PlanRequestPayload;
@@ -3034,6 +3035,7 @@ export default function PerformanceAIDashboard() {
     assistantPrefix?: string | null;
     clearPromptOnSuccess?: boolean;
     signal?: AbortSignal;
+    timeoutMs?: number;
   }) => {
     setBusy(true);
     setActivePlanTool(mode);
@@ -3085,7 +3087,7 @@ export default function PerformanceAIDashboard() {
       }
     }
     const liveRunController = new AbortController();
-    const liveRunTimeoutMs = 12_000;
+    const liveRunTimeoutMs = typeof timeoutMs === "number" ? timeoutMs : 12_000;
     let timedOut = false;
     const handleAbort = () => liveRunController.abort();
     signal?.addEventListener("abort", handleAbort, { once: true });
@@ -6977,6 +6979,7 @@ export default function PerformanceAIDashboard() {
           prompt_text: null,
         },
         assistantPrefix: `Generating ${systemLabel} around your placed layout...`,
+        timeoutMs: directRun ? 45_000 : undefined,
       });
       setSystemStatuses((prev) => {
         if (target === "full") {
