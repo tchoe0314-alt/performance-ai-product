@@ -5977,6 +5977,7 @@ export default function PerformanceAIDashboard() {
     }
     setSiteScaleLocked(true);
     setShowSiteBounds(false);
+    setFitToSiteRequest((value) => value + 1);
     const currentInput = currentProject?.project_input ?? payloadPreview;
     void saveProject({
       silent: true,
