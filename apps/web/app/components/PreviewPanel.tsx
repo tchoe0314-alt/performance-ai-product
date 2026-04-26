@@ -255,6 +255,8 @@ export default function PreviewPanel({
   const [mapContainerSize, setMapContainerSize] = useState<{ w: number; h: number } | null>(null);
   const lastMapResizeRef = useRef<number>(0);
   const [mapLocked, setMapLocked] = useState(false);
+  const mapDragRef = useRef<{ x: number; y: number } | null>(null);
+  const mapDragActiveRef = useRef(false);
   const previewSizeRef = useRef<{ w: number; h: number } | null>(null);
   const fullscreenSizeRef = useRef<{ w: number; h: number } | null>(null);
   const previewResizeRafRef = useRef<number | null>(null);
@@ -281,7 +283,7 @@ export default function PreviewPanel({
     suggestedPlacements.length > 0 ||
     (surveyPoints?.length ?? 0) > 0 ||
     Boolean(lotWidth && lotHeight);
-  const showHover = previewInteraction === "static" && !allowMapInteraction;
+  const showHover = previewInteraction === "static";
   const allowEdits = previewInteraction === "edit";
   const overlayPointerEvents = allowMapInteraction ? "pointer-events-none" : "pointer-events-auto";
   const normalPalette = {
@@ -1153,6 +1155,30 @@ export default function PreviewPanel({
     }, 1500);
     return () => window.clearInterval(handle);
   }, [debugStats?.enabled, showMap]);
+
+  useEffect(() => {
+    if (!showMap || mapLocked) return;
+    if (previewInteraction !== "edit") return;
+    const handleMove = (event: MouseEvent) => {
+      if (!mapDragActiveRef.current || !mapDragRef.current) return;
+      const map = mapRef.current;
+      if (!map) return;
+      const deltaX = event.clientX - mapDragRef.current.x;
+      const deltaY = event.clientY - mapDragRef.current.y;
+      mapDragRef.current = { x: event.clientX, y: event.clientY };
+      map.panBy([deltaX, deltaY], { animate: false });
+    };
+    const handleUp = () => {
+      mapDragActiveRef.current = false;
+      mapDragRef.current = null;
+    };
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, [mapLocked, previewInteraction, showMap]);
 
   useEffect(() => {
     if (!showMap || !mapLoaded || !mapRef.current) return;
@@ -2914,6 +2940,24 @@ export default function PreviewPanel({
                           ? `translate(50%, 50%) scale(${focusTransform.scale}) translate(-${focusTransform.tx * 100}%, -${focusTransform.ty * 100}%)`
                           : undefined,
                       }}
+                      onMouseDown={(event) => {
+                        if (!showMap || mapLocked) return;
+                        if (previewInteraction !== "edit") return;
+                        if (placementMode) return;
+                        if ((event.target as HTMLElement)?.closest?.("[data-object-overlay]")) return;
+                        mapDragActiveRef.current = true;
+                        mapDragRef.current = { x: event.clientX, y: event.clientY };
+                      }}
+                      onWheel={(event) => {
+                        if (!showMap || mapLocked) return;
+                        if (previewInteraction !== "edit") return;
+                        if (!mapRef.current) return;
+                        event.preventDefault();
+                        const map = mapRef.current;
+                        const zoom = map.getZoom();
+                        const nextZoom = zoom + (event.deltaY < 0 ? 0.4 : -0.4);
+                        map.zoomTo(nextZoom, { animate: false });
+                      }}
                       onClick={() => {
                         if (analysisFocusLocked) return;
                         onClearHighlights?.();
@@ -2967,6 +3011,7 @@ export default function PreviewPanel({
                         return (
                           <div
                             key={item.id}
+                            data-object-overlay
                             className={`${allowItemInteraction ? "pointer-events-auto" : "pointer-events-none"} absolute z-[30]`}
                             style={{
                               left: `${left}%`,
@@ -3638,6 +3683,7 @@ export default function PreviewPanel({
                         return (
                           <div
                             key={item.id}
+                            data-object-overlay
                             className={`${allowMapInteraction || !allowItemInteraction ? "pointer-events-none" : "pointer-events-auto"} absolute`}
                             style={{
                               left: `${left}%`,
