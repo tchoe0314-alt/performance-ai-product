@@ -1169,7 +1169,6 @@ export default function PreviewPanel({
     };
     const reportViewport = () => {
       if (!onViewportFootprint) return;
-      if (siteLocked) return;
       const bounds = map.getBounds();
       if (!bounds) return;
       const north = bounds.getNorth();
