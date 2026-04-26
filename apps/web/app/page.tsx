@@ -5810,90 +5810,6 @@ export default function PerformanceAIDashboard() {
     [persistSiteRotation],
   );
 
-  const handleToggleSiteLock = useCallback(() => {
-    if (siteScaleLocked) return;
-    const lastApplied = lastAppliedSiteRef.current;
-    if (lastApplied?.w && lastApplied?.h) {
-      autoFitSite(lastApplied.w, lastApplied.h, "Site Boundary", undefined, false);
-    }
-    setSiteScaleLocked(true);
-    setShowSiteBounds(false);
-    const currentInput = currentProject?.project_input ?? payloadPreview;
-    void saveProject({
-      silent: true,
-      projectInputOverride: {
-        ...currentInput,
-        input_mode: "user",
-        strict_mode: false,
-        allow_ai_fill_for_blanks: false,
-        meta: {
-          ...(currentInput?.meta ?? {}),
-          site_inputs: {
-            ...(currentInput?.meta?.site_inputs ?? {}),
-            site_alignment_locked: true,
-          },
-        },
-      },
-    });
-    setBuildingPlacements((prevPlacements) =>
-      prevPlacements.map((item) =>
-        item.type === "site"
-          ? {
-              ...item,
-              locked: true,
-              capabilities: {
-                ...item.capabilities,
-                movable: false,
-                resizable: false,
-                rotatable: false,
-              },
-            }
-          : item,
-      ),
-    );
-    setStatusMessage("Site alignment locked.");
-  }, [autoFitSite, currentProject, payloadPreview, saveProject, siteScaleLocked]);
-
-  const handleUnlockSite = useCallback(() => {
-    if (!siteScaleLocked) return;
-    setSiteScaleLocked(false);
-    setShowSiteBounds(true);
-    const currentInput = currentProject?.project_input ?? payloadPreview;
-    void saveProject({
-      silent: true,
-      projectInputOverride: {
-        ...currentInput,
-        input_mode: "user",
-        strict_mode: false,
-        allow_ai_fill_for_blanks: false,
-        meta: {
-          ...(currentInput?.meta ?? {}),
-          site_inputs: {
-            ...(currentInput?.meta?.site_inputs ?? {}),
-            site_alignment_locked: false,
-          },
-        },
-      },
-    });
-    setBuildingPlacements((prevPlacements) =>
-      prevPlacements.map((item) =>
-        item.type === "site"
-          ? {
-              ...item,
-              locked: false,
-              capabilities: {
-                ...item.capabilities,
-                movable: true,
-                resizable: true,
-                rotatable: true,
-              },
-            }
-          : item,
-      ),
-    );
-    setStatusMessage("Site unlocked for editing.");
-  }, [currentProject, payloadPreview, saveProject, siteScaleLocked]);
-
   useEffect(() => {
     if (activePlacementId) return;
     const pending = buildingPlacements.find((item) => !item.placed && item.type !== "site");
@@ -6052,6 +5968,90 @@ export default function PerformanceAIDashboard() {
     },
     [],
   );
+
+  const handleToggleSiteLock = useCallback(() => {
+    if (siteScaleLocked) return;
+    const lastApplied = lastAppliedSiteRef.current;
+    if (lastApplied?.w && lastApplied?.h) {
+      autoFitSite(lastApplied.w, lastApplied.h, "Site Boundary", undefined, false);
+    }
+    setSiteScaleLocked(true);
+    setShowSiteBounds(false);
+    const currentInput = currentProject?.project_input ?? payloadPreview;
+    void saveProject({
+      silent: true,
+      projectInputOverride: {
+        ...currentInput,
+        input_mode: "user",
+        strict_mode: false,
+        allow_ai_fill_for_blanks: false,
+        meta: {
+          ...(currentInput?.meta ?? {}),
+          site_inputs: {
+            ...(currentInput?.meta?.site_inputs ?? {}),
+            site_alignment_locked: true,
+          },
+        },
+      },
+    });
+    setBuildingPlacements((prevPlacements) =>
+      prevPlacements.map((item) =>
+        item.type === "site"
+          ? {
+              ...item,
+              locked: true,
+              capabilities: {
+                ...item.capabilities,
+                movable: false,
+                resizable: false,
+                rotatable: false,
+              },
+            }
+          : item,
+      ),
+    );
+    setStatusMessage("Site alignment locked.");
+  }, [autoFitSite, currentProject, payloadPreview, saveProject, siteScaleLocked]);
+
+  const handleUnlockSite = useCallback(() => {
+    if (!siteScaleLocked) return;
+    setSiteScaleLocked(false);
+    setShowSiteBounds(true);
+    const currentInput = currentProject?.project_input ?? payloadPreview;
+    void saveProject({
+      silent: true,
+      projectInputOverride: {
+        ...currentInput,
+        input_mode: "user",
+        strict_mode: false,
+        allow_ai_fill_for_blanks: false,
+        meta: {
+          ...(currentInput?.meta ?? {}),
+          site_inputs: {
+            ...(currentInput?.meta?.site_inputs ?? {}),
+            site_alignment_locked: false,
+          },
+        },
+      },
+    });
+    setBuildingPlacements((prevPlacements) =>
+      prevPlacements.map((item) =>
+        item.type === "site"
+          ? {
+              ...item,
+              locked: false,
+              capabilities: {
+                ...item.capabilities,
+                movable: true,
+                resizable: true,
+                rotatable: true,
+              },
+            }
+          : item,
+      ),
+    );
+    setStatusMessage("Site unlocked for editing.");
+  }, [currentProject, payloadPreview, saveProject, siteScaleLocked]);
 
   const computeViewportSiteSize = useCallback(() => {
     if (typeof window === "undefined") return null;
