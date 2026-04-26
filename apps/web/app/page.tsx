@@ -7976,7 +7976,8 @@ export default function PerformanceAIDashboard() {
   const hasTerrainSource =
     (Boolean(surveyFileName) && useSurveyForGrading) ||
     Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng) ||
-    Boolean(surveySlopeEstimate?.slope_percent);
+    Boolean(surveySlopeEstimate?.slope_percent) ||
+    Boolean(siteInputs?.address || siteAddress.trim());
   const gradingSourceSummary = useMemo(() => {
     const hasSurvey = Boolean(siteInputs?.survey_file?.stored_filename || siteInputs?.survey_file?.survey_url);
     const hasMapAnalysis = Boolean(siteInputs?.map_analysis);
