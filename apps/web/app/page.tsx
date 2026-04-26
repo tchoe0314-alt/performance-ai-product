@@ -6282,10 +6282,7 @@ export default function PerformanceAIDashboard() {
         provider: geocode.provider ?? "nominatim",
       };
       nextSiteInputs.site_alignment_locked = true;
-      const hasSiteBoundaryNow = hasSiteBoundary();
-      if (!hasSiteBoundaryNow || siteSelectionMode) {
-        setActiveSidePanel("site");
-      }
+      setActiveSidePanel("site");
       const viewportSize = viewportFootprint ?? computeViewportSiteSize();
       const viewportWidth =
         viewportSize && "width" in viewportSize ? viewportSize.width : viewportSize?.widthFt;
