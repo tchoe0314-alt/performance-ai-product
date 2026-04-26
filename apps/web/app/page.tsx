@@ -9024,6 +9024,32 @@ export default function PerformanceAIDashboard() {
                       <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">two-lane road</span>
                       <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">detention basin</span>
                     </div>
+                    <div className="mt-4 grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-600 sm:grid-cols-2 lg:grid-cols-4">
+                      <div>
+                        <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">Site width</p>
+                        <p data-testid="site-width" className="mt-1 font-semibold text-slate-800">
+                          {lotBounds.w ? `${lotBounds.w.toFixed(0)} ft` : "Not set"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">Site length</p>
+                        <p data-testid="site-length" className="mt-1 font-semibold text-slate-800">
+                          {lotBounds.h ? `${lotBounds.h.toFixed(0)} ft` : "Not set"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">Status</p>
+                        <p data-testid="site-status" className="mt-1 font-semibold text-slate-800">
+                          {siteScaleLocked ? "Site Locked" : "Selecting Site"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">Detect grading</p>
+                        <p data-testid="grading-readiness" className="mt-1 font-semibold text-slate-800">
+                          {missingSite ? "Needs Site" : "Ready"}
+                        </p>
+                      </div>
+                    </div>
                   </div>
 
                 <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr,2fr]">
