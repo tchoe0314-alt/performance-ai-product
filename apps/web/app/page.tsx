@@ -5812,6 +5812,10 @@ export default function PerformanceAIDashboard() {
 
   const handleToggleSiteLock = useCallback(() => {
     if (siteScaleLocked) return;
+    const lastApplied = lastAppliedSiteRef.current;
+    if (lastApplied?.w && lastApplied?.h) {
+      autoFitSite(lastApplied.w, lastApplied.h, "Site Boundary", undefined, false);
+    }
     setSiteScaleLocked(true);
     setShowSiteBounds(false);
     const currentInput = currentProject?.project_input ?? payloadPreview;
@@ -5848,7 +5852,7 @@ export default function PerformanceAIDashboard() {
       ),
     );
     setStatusMessage("Site alignment locked.");
-  }, [currentProject, payloadPreview, saveProject, siteScaleLocked]);
+  }, [autoFitSite, currentProject, payloadPreview, saveProject, siteScaleLocked]);
 
   const handleUnlockSite = useCallback(() => {
     if (!siteScaleLocked) return;
@@ -5996,7 +6000,13 @@ export default function PerformanceAIDashboard() {
   };
 
   const autoFitSite = useCallback(
-    (width: number, height: number, label?: string, siteIdOverride?: string | null) => {
+    (
+      width: number,
+      height: number,
+      label?: string,
+      siteIdOverride?: string | null,
+      fitMap: boolean = true,
+    ) => {
       const clampedW = Math.max(width, 1);
       const clampedH = Math.max(height, 1);
       setLotWidth(clampedW.toFixed(0));
@@ -6036,7 +6046,9 @@ export default function PerformanceAIDashboard() {
           ...filtered,
         ];
       });
-      setFitToSiteRequest((value) => value + 1);
+      if (fitMap) {
+        setFitToSiteRequest((value) => value + 1);
+      }
     },
     [],
   );
@@ -6148,7 +6160,7 @@ export default function PerformanceAIDashboard() {
       applyingSiteRef.current = false;
       return;
     }
-    autoFitSite(width, height, "Site Boundary");
+    autoFitSite(width, height, "Site Boundary", undefined, false);
     setShowSiteBounds(false);
     setSiteScaleLocked(true);
     const currentInput = currentProject?.project_input ?? payloadPreview;
