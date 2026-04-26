@@ -4634,7 +4634,13 @@ export default function PerformanceAIDashboard() {
           : "approximate",
       );
       if (alignmentLocked !== null) {
-        setSiteScaleLocked(alignmentLocked);
+        const lotW = parsePositiveNumber(lotWidth);
+        const lotH = parsePositiveNumber(lotHeight);
+        if (alignmentLocked && (!lotW || !lotH)) {
+          setSiteScaleLocked(false);
+        } else {
+          setSiteScaleLocked(alignmentLocked);
+        }
       }
       const rotationValue =
         typeof siteInputs?.site_rotation_deg === "number" ? siteInputs.site_rotation_deg : 0;
@@ -6115,8 +6121,11 @@ export default function PerformanceAIDashboard() {
   const handleApplySite = useCallback(async () => {
     if (applyingSiteRef.current) return;
     if (siteScaleLocked) {
-      setStatusMessage("Site is already locked.");
-      return;
+      if (hasSiteBoundary()) {
+        setStatusMessage("Site is already locked.");
+        return;
+      }
+      setSiteScaleLocked(false);
     }
     applyingSiteRef.current = true;
     const width = viewportFootprint?.widthFt ?? parsePositiveNumber(lotWidth);
