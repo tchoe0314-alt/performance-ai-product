@@ -9,10 +9,6 @@ import time
 import uuid
 import shutil
 
-import report_builder
-from output.dxf_exporter import save_dxf
-from output.preview import render_plan_preview_png
-
 PREVIEW_RENDER_VERSION = "2026-04-17-preview-modes-v1"
 
 
@@ -111,6 +107,8 @@ class ArtifactService:
         density = label_density
         if not density:
             density = "high" if quality_key == "high" else "standard"
+        from output.preview import render_plan_preview_png
+
         png_bytes = render_plan_preview_png(
             final_plan,
             render_labels=render_labels,
@@ -127,6 +125,8 @@ class ArtifactService:
         return png_bytes
 
     def export_dxf(self, *, user_id: str, final_plan: Dict[str, Any], stem: Optional[str] = None) -> Path:
+        from output.dxf_exporter import save_dxf
+
         path = self._user_dir(user_id) / self._artifact_name(stem, "dxf")
         save_dxf(final_plan, filename=str(path))
         return path
@@ -138,6 +138,8 @@ class ArtifactService:
         result_data: Dict[str, Any],
         stem: Optional[str] = None,
     ) -> Path:
+        import report_builder
+
         final_plan = dict(result_data.get("final_plan") or {})
         report = report_builder.build_report(
             final_plan=final_plan,

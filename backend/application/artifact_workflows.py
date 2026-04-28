@@ -10,7 +10,6 @@ from backend.application.design_workflows import build_run_summary, final_plan_f
 from backend.application.protocols import ArtifactServiceProtocol
 from backend.application.project_workflows import artifact_summary, save_project_workflow_update
 from geometry.layout_engine import _build_expanded_plan
-from output.preview import build_preview_annotations
 
 
 class ProjectStoreProtocol(Protocol):
@@ -866,6 +865,8 @@ def build_preview_response(
         include_layers=preview_layers,
         preview_mode=preview_mode,
     )
+    from output.preview import build_preview_annotations
+
     preview_annotations = build_preview_annotations(
         final_plan,
         include_layers=set(preview_layers or []) if preview_layers else None,

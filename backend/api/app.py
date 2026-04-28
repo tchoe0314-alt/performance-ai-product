@@ -43,6 +43,7 @@ from backend.application.file_workflows import (
     upload_survey_file as application_upload_survey_file,
 )
 from backend.application.health_workflows import health_response as application_health_response
+from backend.application.memory_logging import log_memory
 from backend.application.job_workflows import (
     build_drainage_job_runner as application_build_drainage_job_runner,
     build_orchestrate_job_runner as application_build_orchestrate_job_runner,
@@ -323,11 +324,17 @@ def get_current_user(authorization: Optional[str] = Header(default=None)) -> Dic
 
 
 def _run_orchestration(payload_data: Dict[str, Any]) -> Dict[str, Any]:
-    return application_run_orchestration(
-        payload_data,
-        load_orchestrator=_load_orchestrator,
-        assess_design_readiness=assess_design_readiness,
-    )
+    project_id = str(payload_data.get("project_id") or "")
+    target = str(payload_data.get("meta", {}).get("generation_target") or payload_data.get("plan_type_hint") or "")
+    log_memory("orchestration_start", project_id=project_id, target=target)
+    try:
+        return application_run_orchestration(
+            payload_data,
+            load_orchestrator=_load_orchestrator,
+            assess_design_readiness=assess_design_readiness,
+        )
+    finally:
+        log_memory("orchestration_end", project_id=project_id, target=target)
 
 def _result_from_payload(current_user: Dict[str, Any], payload: ArtifactPayload) -> Dict[str, Any]:
     return application_result_from_payload(
@@ -425,6 +432,7 @@ def _final_plan_from_result(result_data: Dict[str, Any]) -> Dict[str, Any]:
 
 @app.on_event("startup")
 def _register_job_handlers() -> None:
+    log_memory("startup_begin")
     JOB_QUEUE.register_handler(
         "orchestrate",
         application_build_orchestrate_job_runner(
@@ -443,6 +451,7 @@ def _register_job_handlers() -> None:
             update_job_progress=JOB_QUEUE.update_job_progress,
         ),
     )
+    log_memory("startup_complete")
 
 
 @app.get("/api/health")
@@ -556,6 +565,7 @@ def analyze_image(
     payload: ImageAnalysisPayload,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
+    log_memory("image_analyze_start", image_path=payload.image_path)
     try:
         from vision.image_analysis_engine import ImageAnalysisEngine
     except Exception as exc:
@@ -574,13 +584,16 @@ def analyze_image(
         }
     )
     result = engine.analyze(analysis_input)
-    return {
-        "success": result.success,
-        "message": result.message,
-        "counts": result.counts,
-        "warnings": result.warnings,
-        "meta": result.meta,
-    }
+    try:
+        return {
+            "success": result.success,
+            "message": result.message,
+            "counts": result.counts,
+            "warnings": result.warnings,
+            "meta": result.meta,
+        }
+    finally:
+        log_memory("image_analyze_end", image_path=payload.image_path)
 
 
 @app.post("/api/image/detect-features")
@@ -588,6 +601,7 @@ def detect_image_features(
     payload: ImageDetectPayload,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
+    log_memory("image_detect_start", image_path=payload.image_path)
     try:
         from vision.feature_detection_engine import FeatureDetectionEngine
     except Exception as exc:
@@ -598,24 +612,27 @@ def detect_image_features(
 
     engine = FeatureDetectionEngine()
     result = engine.detect(payload.image_path)
-    return {
-        "success": result.success,
-        "message": result.message,
-        "image_width": result.image_width,
-        "image_height": result.image_height,
-        "detections": [
-            {
-                "kind": det.kind,
-                "bbox": det.bbox,
-                "confidence": det.confidence,
-                "geometry_type": det.geometry_type,
-                "geometry": det.geometry,
-            }
-            for det in result.detections
-        ],
-        "warnings": result.warnings,
-        "meta": result.meta,
-    }
+    try:
+        return {
+            "success": result.success,
+            "message": result.message,
+            "image_width": result.image_width,
+            "image_height": result.image_height,
+            "detections": [
+                {
+                    "kind": det.kind,
+                    "bbox": det.bbox,
+                    "confidence": det.confidence,
+                    "geometry_type": det.geometry_type,
+                    "geometry": det.geometry,
+                }
+                for det in result.detections
+            ],
+            "warnings": result.warnings,
+            "meta": result.meta,
+        }
+    finally:
+        log_memory("image_detect_end", image_path=payload.image_path)
 
 
 @app.post("/api/geocode", response_model=GeocodeResponse)
