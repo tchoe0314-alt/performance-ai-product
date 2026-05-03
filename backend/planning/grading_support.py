@@ -28,6 +28,9 @@ from .terrain_provider import build_terrain_surface, normalize_surface
 from .common import safe_dict, safe_float, safe_int, safe_list, safe_str
 from .field_contract import field_path_is_omitted
 
+MAX_TERRAIN_GRID_CELLS = 12000
+MAX_TERRAIN_GRID_AXIS = 140
+
 
 def _preview_meta_for_action(layer: str, task: str) -> Dict[str, Any]:
     raw_layer = safe_str(layer, "").upper()
@@ -79,15 +82,29 @@ def build_existing_surface(
     x_max = safe_float(lot.get("x"), DEFAULT_LOT_X) + safe_float(lot.get("w"), DEFAULT_LOT_WIDTH) + SURFACE_PADDING
     y_max = safe_float(lot.get("y"), DEFAULT_LOT_Y) + safe_float(lot.get("h"), DEFAULT_LOT_HEIGHT) + SURFACE_PADDING
     cell = max(1.0, safe_float(CELL_SIZE, 5.0))
-
-    ncols = max(2, int(round((x_max - x_min) / cell)) + 1)
-    nrows = max(2, int(round((y_max - y_min) / cell)) + 1)
     profile = infer_surface_profile(parsed)
     meta = safe_dict(parsed.get("meta"))
     site_inputs = safe_dict(meta.get("site_inputs"))
     survey_file = safe_dict(site_inputs.get("survey_file"))
     use_survey = bool(site_inputs.get("use_survey_for_grading", True))
     has_survey = use_survey and bool(survey_file.get("stored_filename") or survey_file.get("survey_url"))
+    geocode_for_terrain = safe_dict(site_inputs.get("geocode"))
+    has_terrain_geocode = geocode_for_terrain.get("lat") is not None and geocode_for_terrain.get("lng") is not None
+    if has_terrain_geocode and not has_survey:
+        span_x = max(1.0, x_max - x_min)
+        span_y = max(1.0, y_max - y_min)
+        axis_cell = max(span_x / max(1, MAX_TERRAIN_GRID_AXIS - 1), span_y / max(1, MAX_TERRAIN_GRID_AXIS - 1))
+        area_cell = ((span_x * span_y) / max(1, MAX_TERRAIN_GRID_CELLS - 1)) ** 0.5
+        terrain_cell = max(cell, axis_cell, area_cell)
+        if terrain_cell > cell:
+            cell = terrain_cell
+            profile["terrain_grid_coarsened"] = True
+            profile["terrain_grid_cell_size_ft"] = round(cell, 3)
+            profile["terrain_grid_max_cells"] = MAX_TERRAIN_GRID_CELLS
+            profile["terrain_grid_reason"] = "bounded_runtime_for_detect_grading"
+
+    ncols = max(2, int(round((x_max - x_min) / cell)) + 1)
+    nrows = max(2, int(round((y_max - y_min) / cell)) + 1)
     has_map_analysis = bool(site_inputs.get("map_analysis"))
     map_snapshot = safe_dict(site_inputs.get("map_snapshot"))
     has_map_snapshot = bool(map_snapshot.get("stored_filename") or map_snapshot.get("image_path"))
