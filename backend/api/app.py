@@ -454,6 +454,11 @@ def _register_job_handlers() -> None:
     log_memory("startup_complete")
 
 
+@app.get("/")
+def root() -> Dict[str, str]:
+    return {"status": "ok"}
+
+
 @app.get("/api/health")
 def health() -> Dict[str, Any]:
     connection = DB.connect()
