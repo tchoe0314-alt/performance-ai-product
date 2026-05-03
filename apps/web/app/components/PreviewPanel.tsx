@@ -340,7 +340,8 @@ export default function PreviewPanel({
     debugWindow.__civoraGeocode = geocode ?? null;
     debugWindow.__civoraShowMap = showMap;
     debugWindow.__civoraPreviewQuality = previewQuality;
-  }, [geocode, showMap, previewQuality]);
+    debugWindow.__civoraMapLoaded = mapLoaded;
+  }, [geocode, mapLoaded, showMap, previewQuality]);
   useEffect(() => {
     if (previewMode === "3d" && (!planPreviewUrl || preview3DEffectiveItems.length === 0 || showMap)) {
       onSetPreviewMode("2d");
@@ -1087,31 +1088,47 @@ export default function PreviewPanel({
     if (!showMap) return;
     if (!mapContainerRef.current || mapRef.current) return;
     mapboxgl.accessToken = mapboxToken || "";
-    mapRef.current = new mapboxgl.Map({
+    const map = new mapboxgl.Map({
       container: mapContainerRef.current,
       style: "mapbox://styles/mapbox/satellite-streets-v12",
       center: [-95.9345, 41.2565],
       zoom: 16,
       attributionControl: false,
     });
-    mapRef.current.on("error", (event) => {
+    mapRef.current = map;
+    const markMapReady = () => {
+      if (!mapRef.current) return;
+      map.resize();
+      setMapLoaded(true);
+      setMapRevision((value) => value + 1);
+    };
+    map.on("error", (event) => {
       const message =
         (event as { error?: { message?: string } })?.error?.message ||
         (event as { message?: string })?.message ||
         "Mapbox error";
       setMapError(message);
+      markMapReady();
     });
-    mapRef.current.on("load", () => {
-      mapRef.current?.addSource("mapbox-dem", {
-        type: "raster-dem",
-        url: "mapbox://mapbox.terrain-rgb",
-        tileSize: 512,
-        maxzoom: 14,
-      });
-      mapRef.current?.setTerrain({ source: "mapbox-dem", exaggeration: 1.0 });
-      setMapLoaded(true);
-      setMapRevision((value) => value + 1);
+    map.once("load", () => {
+      try {
+        if (!map.getSource("mapbox-dem")) {
+          map.addSource("mapbox-dem", {
+            type: "raster-dem",
+            url: "mapbox://mapbox.terrain-rgb",
+            tileSize: 512,
+            maxzoom: 14,
+          });
+        }
+        map.setTerrain({ source: "mapbox-dem", exaggeration: 1.0 });
+      } catch (error) {
+        setMapError(error instanceof Error ? error.message : "Map terrain setup failed");
+      }
+      markMapReady();
     });
+    map.once("style.load", markMapReady);
+    map.once("render", markMapReady);
+    window.setTimeout(markMapReady, 500);
   }, [mapboxToken, showMap]);
 
   useEffect(() => {
