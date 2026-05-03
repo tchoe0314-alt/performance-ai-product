@@ -137,6 +137,8 @@ class GeocodeResponse(BaseModel):
     provider: str
     confidence: Optional[float] = None
     name: str = ""
+    formatted_address: str = ""
+    place_name: str = ""
 
 
 class LoginPayload(BaseModel):
@@ -430,9 +432,40 @@ def _final_plan_from_result(result_data: Dict[str, Any]) -> Dict[str, Any]:
     return application_final_plan_from_result(result_data)
 
 
+def _safe_token_prefix(token: str) -> str:
+    if not token:
+        return ""
+    return f"{token[:6]}..."
+
+
+def _mapbox_token() -> tuple[Optional[str], str]:
+    for source in ("MAPBOX_TOKEN", "NEXT_PUBLIC_MAPBOX_TOKEN"):
+        token = (os.getenv(source) or "").strip()
+        if token:
+            return source, token
+    return None, ""
+
+
+def _log_mapbox_token_config() -> None:
+    source, token = _mapbox_token()
+    print(
+        json.dumps(
+            {
+                "event": "mapbox_token_config",
+                "present": bool(token),
+                "source": source,
+                "prefix": _safe_token_prefix(token),
+                "using_public_fallback": source == "NEXT_PUBLIC_MAPBOX_TOKEN",
+            }
+        ),
+        flush=True,
+    )
+
+
 @app.on_event("startup")
 def _register_job_handlers() -> None:
     log_memory("startup_begin")
+    _log_mapbox_token_config()
     JOB_QUEUE.register_handler(
         "orchestrate",
         application_build_orchestrate_job_runner(
@@ -648,7 +681,7 @@ def geocode_address(
     address = str(payload.address or "").strip()
     if not address:
         raise HTTPException(status_code=400, detail="Address is required.")
-    token = os.getenv("MAPBOX_TOKEN") or os.getenv("NEXT_PUBLIC_MAPBOX_TOKEN")
+    token_source, token = _mapbox_token()
     if not token:
         raise HTTPException(status_code=500, detail="Mapbox token is not configured.")
     try:
@@ -660,8 +693,28 @@ def geocode_address(
             )
             resp.raise_for_status()
             data = resp.json()
+    except httpx.HTTPStatusError as exc:
+        status_code = exc.response.status_code if exc.response is not None else "unknown"
+        if status_code == 403:
+            detail = (
+                "Mapbox geocoding returned 403 Forbidden. "
+                f"token_source={token_source}; token_prefix={_safe_token_prefix(token)}. "
+                "Configure backend MAPBOX_TOKEN with Geocoding access."
+            )
+        else:
+            detail = (
+                f"Mapbox geocoding returned HTTP {status_code}. "
+                f"token_source={token_source}; token_prefix={_safe_token_prefix(token)}."
+            )
+        raise HTTPException(status_code=502, detail=detail) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Geocoding failed: {exc}") from exc
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Geocoding failed before a valid Mapbox response was parsed. "
+                f"token_source={token_source}; token_prefix={_safe_token_prefix(token)}."
+            ),
+        ) from exc
     features = data.get("features") if isinstance(data, dict) else None
     if not features:
         raise HTTPException(status_code=404, detail="Address could not be geocoded.")
@@ -681,6 +734,8 @@ def geocode_address(
         display_name=display_name,
         provider="mapbox",
         confidence=None,
+        formatted_address=display_name,
+        place_name=display_name,
     )
 
 
