@@ -45,6 +45,17 @@ import type {
 
 type SystemGenerationTarget = "roads" | "parking" | "grading" | "drainage" | "utilities" | "full";
 
+const SQFT_PER_ACRE = 43_560;
+const SITE_WARNING_ACRES = 250;
+const SITE_GRADING_HARD_BLOCK_ACRES = 500;
+const OVERSIZED_SITE_MESSAGE =
+  "Selected site is very large. Zoom in or reduce site area before grading.";
+
+const siteAreaAcresFromSize = (widthFt?: number | null, heightFt?: number | null) => {
+  if (!widthFt || !heightFt) return 0;
+  return (widthFt * heightFt) / SQFT_PER_ACRE;
+};
+
 const ADD_MENU_SECTIONS: Array<{
   title: string;
   key: string;
@@ -6177,6 +6188,12 @@ export default function PerformanceAIDashboard() {
       applyingSiteRef.current = false;
       return;
     }
+    const selectedAreaAcres = siteAreaAcresFromSize(width, height);
+    if (selectedAreaAcres > SITE_WARNING_ACRES) {
+      setStatusMessage(OVERSIZED_SITE_MESSAGE);
+      applyingSiteRef.current = false;
+      return;
+    }
     const lastApplied = lastAppliedSiteRef.current;
     if (
       lastApplied &&
@@ -6999,6 +7016,12 @@ export default function PerformanceAIDashboard() {
         }
       }
       if (target === "grading" || target === "drainage" || target === "full") {
+        const lot = resolveLotBounds();
+        const siteAreaAcres = siteAreaAcresFromSize(lot.w, lot.h);
+        if (target === "grading" && siteAreaAcres > SITE_GRADING_HARD_BLOCK_ACRES) {
+          setStatusMessage(OVERSIZED_SITE_MESSAGE);
+          return;
+        }
         const hasSurvey = Boolean(surveyFileName) && useSurveyForGrading;
         const hasMapTerrain = Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng);
         if (!hasSurvey && !hasMapTerrain && !surveySlopeEstimate?.slope_percent) {
@@ -7071,6 +7094,7 @@ export default function PerformanceAIDashboard() {
       hasSiteBoundary,
       ensureSiteLocked,
       projectId,
+      resolveLotBounds,
       siteInputs?.geocode?.lat,
       siteInputs?.geocode?.lng,
       surveyFileName,
@@ -8011,6 +8035,9 @@ export default function PerformanceAIDashboard() {
   const usingAnnotation3D =
     preview3DItems.length === 0 && preview3DAnnotationItems.length > 0;
   const lotBounds = resolveLotBounds();
+  const siteAreaAcres = siteAreaAcresFromSize(lotBounds.w, lotBounds.h);
+  const siteTooLargeForWarning = siteAreaAcres > SITE_WARNING_ACRES;
+  const siteTooLargeForGrading = siteAreaAcres > SITE_GRADING_HARD_BLOCK_ACRES;
   const missingSite = !(lotBounds.w && lotBounds.h);
   const missingImage = !mapSnapshotPath;
   const hasBasinPlaced = buildingPlacements.some((item) => item.type === "basin" && item.placed);
@@ -8495,16 +8522,27 @@ export default function PerformanceAIDashboard() {
                         <p className="mt-1 text-xs text-slate-500">
                           Status: {siteScaleLocked ? "Site Locked" : "Selecting Site"}
                         </p>
+                        {siteTooLargeForWarning ? (
+                          <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-700">
+                            {OVERSIZED_SITE_MESSAGE}
+                          </p>
+                        ) : null}
                       </div>
                       <button
                         type="button"
                         onClick={() => handleGenerateSystem("grading")}
-                        disabled={missingSite || !hasTerrainSource}
+                        disabled={missingSite || !hasTerrainSource || siteTooLargeForGrading}
                         className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         <span>Detect grading</span>
                         <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
-                          {missingSite ? "Needs site" : !hasTerrainSource ? "Needs terrain" : "Run"}
+                          {missingSite
+                            ? "Needs site"
+                            : !hasTerrainSource
+                              ? "Needs terrain"
+                              : siteTooLargeForGrading
+                                ? "Too large"
+                                : "Run"}
                         </span>
                       </button>
                       <button
@@ -9071,9 +9109,14 @@ export default function PerformanceAIDashboard() {
                       <div>
                         <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">Detect grading</p>
                         <p data-testid="grading-readiness" className="mt-1 font-semibold text-slate-800">
-                          {missingSite ? "Needs Site" : "Ready"}
+                          {missingSite ? "Needs Site" : siteTooLargeForGrading ? "Too Large" : "Ready"}
                         </p>
                       </div>
+                      {siteTooLargeForWarning ? (
+                        <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 font-semibold text-amber-700 sm:col-span-2 lg:col-span-4">
+                          {OVERSIZED_SITE_MESSAGE}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
 
@@ -9976,6 +10019,8 @@ export default function PerformanceAIDashboard() {
                           <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Needs site</span>
                         ) : !hasTerrainSource ? (
                           <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Needs terrain</span>
+                        ) : siteTooLargeForGrading ? (
+                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Too large</span>
                         ) : null}
                       </div>
                     </button>
