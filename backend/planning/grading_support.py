@@ -181,6 +181,7 @@ def build_existing_surface(
             profile["source_detail"] = "Survey points missing or insufficient"
 
     geocode = safe_dict(site_inputs.get("geocode"))
+    viewport_bounds = safe_dict(site_inputs.get("viewport_bounds"))
     site_rotation = safe_float(site_inputs.get("site_rotation_deg"), 0.0)
     terrain_surface = None
     if geocode.get("lat") is not None and geocode.get("lng") is not None:
@@ -197,11 +198,14 @@ def build_existing_surface(
             ncols=ncols,
             nrows=nrows,
             cell=cell,
+            lat_lng_bounds=viewport_bounds,
         )
         if terrain_surface is not None:
-            profile["source_quality"] = "terrain_mapbox"
-            profile["source_detail"] = "Mapbox terrain-rgb"
+            profile["source_quality"] = "terrain"
+            profile["source_detail"] = "Mapbox Terrain-RGB"
             profile["terrain_used"] = True
+            profile["terrain_bounds_used"] = bool(viewport_bounds)
+            profile["terrain_stats"] = deepcopy(getattr(terrain_surface, "_terrain_sample_stats", {}))
             setattr(terrain_surface, "_inferred_profile", profile)
             return normalize_surface(terrain_surface, DEFAULT_PAD_ELEV)
 
@@ -222,6 +226,40 @@ def surface_range(surface: Optional[GridSurface]) -> Tuple[float, float]:
     if min_z == float("inf") or max_z == float("-inf"):
         return 0.0, 0.0
     return min_z, max_z
+
+
+def surface_extreme_points(
+    surface: Optional[GridSurface],
+    *,
+    highest: bool,
+    limit: int = 5,
+) -> List[Dict[str, Any]]:
+    if surface is None or not getattr(surface, "values", None):
+        return []
+    points: List[Tuple[float, int, int]] = []
+    for row_index, row in enumerate(getattr(surface, "values", []) or []):
+        for col_index, value in enumerate(row):
+            z = safe_float(value, 0.0)
+            points.append((z, row_index, col_index))
+    points.sort(key=lambda item: item[0], reverse=highest)
+    output: List[Dict[str, Any]] = []
+    for z, row_index, col_index in points[: max(0, limit)]:
+        try:
+            x = surface.x_at(col_index)
+            y = surface.y_at(row_index)
+        except Exception:
+            x = safe_float(getattr(surface, "x_min", 0.0), 0.0)
+            y = safe_float(getattr(surface, "y_min", 0.0), 0.0)
+        output.append(
+            {
+                "x": round(safe_float(x, 0.0), 3),
+                "y": round(safe_float(y, 0.0), 3),
+                "z": round(z, 3),
+                "row": row_index,
+                "col": col_index,
+            }
+        )
+    return output
 
 
 def surface_actions_from_grid(surface: Optional[GridSurface], *, layer: str, note_prefix: str, sample_lines: int = 6) -> List[Dict[str, Any]]:
@@ -566,6 +604,8 @@ def canonical_grading_payload(
     flow_samples = safe_list(getattr(result, "flow_samples", []))
     existing_min, existing_max = surface_range(existing_surface)
     proposed_min, proposed_max = surface_range(proposed_surface)
+    existing_high_points = surface_extreme_points(existing_surface, highest=True, limit=5)
+    existing_low_points = surface_extreme_points(existing_surface, highest=False, limit=5)
     inferred_profile = getattr(existing_surface, "_inferred_profile", {}) if existing_surface is not None else {}
     inferred_profile_dict = safe_dict(inferred_profile)
     if flow_samples:
@@ -609,6 +649,8 @@ def canonical_grading_payload(
             "range_z": round(existing_max - existing_min, 3),
             "terrain_inferred": bool(inferred_profile_dict.get("inferred")),
             "terrain_profile": deepcopy(inferred_profile_dict),
+            "high_points": existing_high_points,
+            "low_points": existing_low_points,
         },
         "proposed_surface": {
             "nrows": safe_int(getattr(proposed_surface, "nrows", 0), 0) if proposed_surface is not None else 0,

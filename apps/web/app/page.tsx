@@ -507,7 +507,18 @@ export default function PerformanceAIDashboard() {
   const [mapAnalysis, setMapAnalysis] = useState<MapAnalysis | null>(null);
   const [siteAddress, setSiteAddress] = useState("");
   const [siteSelectionMode, setSiteSelectionMode] = useState(false);
-  const [viewportFootprint, setViewportFootprint] = useState<{ widthFt: number; heightFt: number } | null>(null);
+  const [viewportFootprint, setViewportFootprint] = useState<{
+    widthFt: number;
+    heightFt: number;
+    bounds?: {
+      north: number;
+      south: number;
+      east: number;
+      west: number;
+      centerLat: number;
+      centerLng: number;
+    };
+  } | null>(null);
   const [viewportCenter, setViewportCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [detectionChoices, setDetectionChoices] = useState({
     roads: true,
@@ -6186,6 +6197,20 @@ export default function PerformanceAIDashboard() {
     const nextSiteInputs = {
       ...(currentInput?.meta?.site_inputs ?? {}),
       site_alignment_locked: true,
+      ...(viewportFootprint?.bounds
+        ? {
+            viewport_bounds: {
+              north: viewportFootprint.bounds.north,
+              south: viewportFootprint.bounds.south,
+              east: viewportFootprint.bounds.east,
+              west: viewportFootprint.bounds.west,
+              center_lat: viewportFootprint.bounds.centerLat,
+              center_lng: viewportFootprint.bounds.centerLng,
+              width_ft: width,
+              height_ft: height,
+            },
+          }
+        : {}),
       ...(viewportCenter
         ? {
             geocode: {

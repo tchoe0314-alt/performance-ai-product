@@ -275,6 +275,16 @@ export type SiteInputs = {
     display_name?: string;
     provider?: string;
   };
+  viewport_bounds?: {
+    north?: number;
+    south?: number;
+    east?: number;
+    west?: number;
+    center_lat?: number;
+    center_lng?: number;
+    width_ft?: number;
+    height_ft?: number;
+  };
   map_snapshot?: MapSnapshotInput;
   map_analysis?: MapAnalysis;
   survey_file?: SurveyFileInput;

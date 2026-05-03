@@ -95,7 +95,18 @@ type PreviewPanelProps = {
   mapCenterRequest?: number;
   onMapCenter?: (payload: { lat: number; lng: number }) => void;
   onViewportCenter?: (payload: { lat: number; lng: number }) => void;
-  onViewportFootprint?: (value: { widthFt: number; heightFt: number }) => void;
+  onViewportFootprint?: (value: {
+    widthFt: number;
+    heightFt: number;
+    bounds?: {
+      north: number;
+      south: number;
+      east: number;
+      west: number;
+      centerLat: number;
+      centerLng: number;
+    };
+  }) => void;
   siteLocked?: boolean;
   gradingBlocker?: {
     sourcePoint: { x: number; y: number } | null;
@@ -1211,6 +1222,14 @@ export default function PreviewPanel({
       onViewportFootprint({
         widthFt: widthM / 0.3048,
         heightFt: heightM / 0.3048,
+        bounds: {
+          north,
+          south,
+          east,
+          west,
+          centerLat,
+          centerLng: (east + west) / 2,
+        },
       });
     };
     const reportCenter = () => {

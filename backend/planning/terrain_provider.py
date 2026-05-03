@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import math
 import os
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import requests
 from PIL import Image
@@ -47,7 +47,10 @@ def _fetch_tile(
     if cached is not None:
         return cached
     url = _tile_url(tile_x, tile_y, zoom, token)
-    response = requests.get(url, timeout=10)
+    try:
+        response = requests.get(url, timeout=10)
+    except requests.RequestException:
+        return None
     if response.status_code != 200:
         return None
     image = Image.open(io.BytesIO(response.content))
@@ -80,6 +83,7 @@ def build_terrain_surface(
     ncols: int,
     nrows: int,
     cell: float,
+    lat_lng_bounds: Optional[Dict[str, Any]] = None,
 ) -> Optional[GridSurface]:
     token = os.getenv("MAPBOX_TOKEN") or os.getenv("NEXT_PUBLIC_MAPBOX_TOKEN")
     if not token:
@@ -94,29 +98,48 @@ def build_terrain_surface(
     values: list[list[float]] = []
     center_x = lot_x + lot_width_ft / 2.0
     center_y = lot_y + lot_height_ft / 2.0
+    bounds = _normalize_bounds(lat_lng_bounds)
+    sample_count = 0
+    missing_count = 0
     for row in range(nrows):
         y = y_min + row * cell
         row_vals: list[float] = []
         for col in range(ncols):
             x = x_min + col * cell
-            dx_ft = x - center_x
-            dy_ft = center_y - y
-            dx_rot = dx_ft * math.cos(theta) - dy_ft * math.sin(theta)
-            dy_rot = dx_ft * math.sin(theta) + dy_ft * math.cos(theta)
-            dx_m = dx_rot * 0.3048
-            dy_m = dy_rot * 0.3048
-            lng = center_lng + dx_m / meters_per_deg_lng
-            lat = center_lat + dy_m / meters_per_deg_lat
+            if bounds is not None:
+                lng, lat = _site_xy_to_bounds_lat_lng(
+                    x=x,
+                    y=y,
+                    lot_x=lot_x,
+                    lot_y=lot_y,
+                    lot_width_ft=lot_width_ft,
+                    lot_height_ft=lot_height_ft,
+                    bounds=bounds,
+                )
+            else:
+                dx_ft = x - center_x
+                dy_ft = center_y - y
+                dx_rot = dx_ft * math.cos(theta) - dy_ft * math.sin(theta)
+                dy_rot = dx_ft * math.sin(theta) + dy_ft * math.cos(theta)
+                dx_m = dx_rot * 0.3048
+                dy_m = dy_rot * 0.3048
+                lng = center_lng + dx_m / meters_per_deg_lng
+                lat = center_lat + dy_m / meters_per_deg_lat
             tile_x, tile_y, px, py = _lat_lng_to_tile(lat, lng, 14, 512)
             image = _fetch_tile(token, tile_x, tile_y, 14, cache)
             if image is None:
                 row_vals.append(float("nan"))
+                missing_count += 1
                 continue
             r, g, b = image.getpixel((px, py))
             row_vals.append(_elevation_from_rgb(r, g, b))
+            sample_count += 1
         values.append(row_vals)
 
-    return GridSurface(
+    if sample_count <= 0:
+        return None
+
+    surface = GridSurface(
         x_min=x_min,
         y_min=y_min,
         x_max=x_min + (ncols - 1) * cell,
@@ -126,11 +149,71 @@ def build_terrain_surface(
         nrows=nrows,
         values=values,
     )
+    setattr(
+        surface,
+        "_terrain_sample_stats",
+        {
+            "source": "mapbox.terrain-rgb",
+            "zoom": 14,
+            "sample_count": sample_count,
+            "missing_count": missing_count,
+            "bounds_used": bounds is not None,
+        },
+    )
+    return surface
+
+
+def _normalize_bounds(bounds: Optional[Dict[str, Any]]) -> Optional[Dict[str, float]]:
+    if not isinstance(bounds, dict):
+        return None
+    try:
+        north = float(bounds.get("north"))
+        south = float(bounds.get("south"))
+        east = float(bounds.get("east"))
+        west = float(bounds.get("west"))
+    except (TypeError, ValueError):
+        return None
+    if not all(math.isfinite(value) for value in (north, south, east, west)):
+        return None
+    if abs(north - south) < 1e-9 or abs(east - west) < 1e-9:
+        return None
+    return {
+        "north": max(north, south),
+        "south": min(north, south),
+        "east": max(east, west),
+        "west": min(east, west),
+    }
+
+
+def _site_xy_to_bounds_lat_lng(
+    *,
+    x: float,
+    y: float,
+    lot_x: float,
+    lot_y: float,
+    lot_width_ft: float,
+    lot_height_ft: float,
+    bounds: Dict[str, float],
+) -> Tuple[float, float]:
+    width = max(lot_width_ft, 1.0)
+    height = max(lot_height_ft, 1.0)
+    x_ratio = (x - lot_x) / width
+    y_ratio = (y - lot_y) / height
+    lng = bounds["west"] + x_ratio * (bounds["east"] - bounds["west"])
+    lat = bounds["south"] + y_ratio * (bounds["north"] - bounds["south"])
+    return lng, lat
 
 
 def normalize_surface(surface: GridSurface, default: float) -> GridSurface:
+    finite_values = [
+        val
+        for row in surface.values
+        for val in row
+        if isinstance(val, (int, float)) and math.isfinite(val)
+    ]
+    fill_value = sum(finite_values) / len(finite_values) if finite_values else default
     values = []
     for row in surface.values:
-        values.append([default if not math.isfinite(val) else val for val in row])
+        values.append([fill_value if not math.isfinite(val) else val for val in row])
     surface.values = values
     return surface
