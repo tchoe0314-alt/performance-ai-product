@@ -85,6 +85,8 @@ def build_existing_surface(
     profile = infer_surface_profile(parsed)
     meta = safe_dict(parsed.get("meta"))
     site_inputs = safe_dict(meta.get("site_inputs"))
+    if not site_inputs:
+        site_inputs = safe_dict(safe_dict(meta.get("orchestrator_meta")).get("site_inputs"))
     survey_file = safe_dict(site_inputs.get("survey_file"))
     use_survey = bool(site_inputs.get("use_survey_for_grading", True))
     has_survey = use_survey and bool(survey_file.get("stored_filename") or survey_file.get("survey_url"))
