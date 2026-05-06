@@ -1176,6 +1176,54 @@ export default function PerformanceAIDashboard() {
       .filter((item) => Number.isFinite(item.x) && Number.isFinite(item.y));
   }, [drainageSummary, gradingSummary]);
 
+  const gradingResultSummary = useMemo(() => {
+    const record = gradingSummary && typeof gradingSummary === "object" ? gradingSummary : {};
+    const existingSurface =
+      record.existing_surface && typeof record.existing_surface === "object"
+        ? (record.existing_surface as Record<string, unknown>)
+        : {};
+    const terrainProfile =
+      existingSurface.terrain_profile && typeof existingSurface.terrain_profile === "object"
+        ? (existingSurface.terrain_profile as Record<string, unknown>)
+        : {};
+    const surfaceControls =
+      record.surface_controls && typeof record.surface_controls === "object"
+        ? (record.surface_controls as Record<string, unknown>)
+        : {};
+    const downhillVector =
+      surfaceControls.downhill_vector && typeof surfaceControls.downhill_vector === "object"
+        ? (surfaceControls.downhill_vector as Record<string, unknown>)
+        : {};
+    const highPoints = Array.isArray(existingSurface.high_points)
+      ? (existingSurface.high_points as unknown[])
+      : [];
+    const lowPoints = Array.isArray(record.low_points)
+      ? (record.low_points as unknown[])
+      : Array.isArray(existingSurface.low_points)
+        ? (existingSurface.low_points as unknown[])
+        : [];
+    const rangeValue =
+      typeof existingSurface.range_z === "number"
+        ? existingSurface.range_z
+        : Number(existingSurface.range_z ?? 0);
+    const dx = Number(downhillVector.dx ?? terrainProfile.downhill_dx ?? 0);
+    const dy = Number(downhillVector.dy ?? terrainProfile.downhill_dy ?? 0);
+    const eastWest = Math.abs(dx) > 0.05 ? (dx > 0 ? "east" : "west") : "";
+    const northSouth = Math.abs(dy) > 0.05 ? (dy > 0 ? "north" : "south") : "";
+    const slopeDirection = [northSouth, eastWest].filter(Boolean).join("-") || "not established";
+    const sourceQuality = String(record.grading_source_quality || terrainProfile.source_quality || "");
+    const sourceDetail = String(record.grading_source_detail || terrainProfile.source_detail || "");
+    return {
+      hasResult: Boolean(sourceQuality || sourceDetail || highPoints.length || lowPoints.length || rangeValue),
+      sourceQuality,
+      sourceDetail,
+      elevationRange: Number.isFinite(rangeValue) ? rangeValue : 0,
+      highPointCount: highPoints.length,
+      lowPointCount: lowPoints.length,
+      slopeSummary: slopeDirection === "not established" ? "Slope direction not established." : `Slope direction trends ${slopeDirection}.`,
+    };
+  }, [gradingSummary]);
+
   const previewLabels = useMemo(
     () => planPreviewAnnotations?.labels ?? [],
     [planPreviewAnnotations],
@@ -9121,6 +9169,34 @@ export default function PerformanceAIDashboard() {
                         </p>
                       ) : null}
                     </div>
+                    {gradingResultSummary.hasResult ? (
+                      <div
+                        data-testid="grading-result"
+                        className="mt-3 grid gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-xs text-emerald-900 sm:grid-cols-2 lg:grid-cols-3"
+                      >
+                        <p className="font-semibold uppercase tracking-[0.14em] text-emerald-600 sm:col-span-2 lg:col-span-3">
+                          Grading Result
+                        </p>
+                        <p data-testid="grading-source-quality">
+                          source_quality = {gradingResultSummary.sourceQuality || "pending"}
+                        </p>
+                        <p data-testid="grading-source-detail">
+                          source_detail = {gradingResultSummary.sourceDetail || "pending"}
+                        </p>
+                        <p data-testid="grading-elevation-range">
+                          elevation range = {gradingResultSummary.elevationRange.toFixed(2)} ft
+                        </p>
+                        <p data-testid="grading-high-points">
+                          high_points = {gradingResultSummary.highPointCount}
+                        </p>
+                        <p data-testid="grading-low-points">
+                          low_points = {gradingResultSummary.lowPointCount}
+                        </p>
+                        <p data-testid="grading-slope-summary">
+                          slope summary = {gradingResultSummary.slopeSummary}
+                        </p>
+                      </div>
+                    ) : null}
                   </div>
 
                 <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr,2fr]">

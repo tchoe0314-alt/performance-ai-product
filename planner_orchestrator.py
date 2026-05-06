@@ -1153,6 +1153,9 @@ def _should_use_multi_option(parsed_payload: Dict[str, Any], req: PlannerOrchest
         return False
     if req.strict_mode:
         return False
+    requested_system = _lower(_safe_dict(req.meta).get("requested_system"))
+    if requested_system in {"roads", "parking", "grading", "drainage", "utilities", "full"}:
+        return False
 
     prompt_text = _safe_str(req.prompt_text)
     lowered_prompt = prompt_text.lower()
