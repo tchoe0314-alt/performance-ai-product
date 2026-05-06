@@ -97,10 +97,13 @@ class JobQueueService:
         raw_worker_count = str(os.getenv("PERFORMANCE_AI_JOB_WORKERS") or "").strip()
         if worker_count is None:
             try:
-                worker_count = int(raw_worker_count) if raw_worker_count else 3
+                worker_count = int(raw_worker_count) if raw_worker_count else 1
             except Exception:
-                worker_count = 3
+                worker_count = 1
         self._worker_count = max(1, int(worker_count or 1))
+        self._resume_pending_jobs = str(
+            os.getenv("PERFORMANCE_AI_RESUME_PENDING_JOBS") or ""
+        ).strip().lower() in {"1", "true", "yes", "on"}
         self._workers: List[threading.Thread] = []
         self._heartbeat_interval_sec = max(0.5, float(heartbeat_interval_sec or 10.0))
         self._ensure_workers_alive()
@@ -121,7 +124,18 @@ class JobQueueService:
     def register_handler(self, job_type: str, runner: JobRunner) -> None:
         self._handlers[job_type] = runner
         self._ensure_workers_alive()
-        self._enqueue_pending_jobs(job_type)
+        if self._resume_pending_jobs:
+            self._enqueue_pending_jobs(job_type)
+
+    def runtime_stats(self) -> Dict[str, Any]:
+        self._ensure_workers_alive()
+        return {
+            "worker_count": self._worker_count,
+            "alive_workers": len([worker for worker in self._workers if worker.is_alive()]),
+            "queued_in_memory": self._queue.qsize(),
+            "resume_pending_jobs": self._resume_pending_jobs,
+            "registered_handlers": sorted(self._handlers.keys()),
+        }
 
     def submit_job(
         self,
@@ -584,6 +598,8 @@ class JobQueueService:
             try:
                 job_id = self._queue.get(timeout=0.25)
             except Empty:
+                if not self._resume_pending_jobs:
+                    continue
                 job_id = self._find_next_pending_job_id()
                 if not job_id:
                     continue

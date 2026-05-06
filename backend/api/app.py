@@ -479,6 +479,7 @@ def _runtime_debug_payload() -> Dict[str, Any]:
         "mapbox_token_present": bool(token),
         "mapbox_token_prefix": _safe_token_prefix(token),
         "port": os.getenv("PORT"),
+        "job_queue": JOB_QUEUE.runtime_stats(),
     }
 
 
