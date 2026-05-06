@@ -1186,6 +1186,10 @@ export default function PerformanceAIDashboard() {
       existingSurface.terrain_profile && typeof existingSurface.terrain_profile === "object"
         ? (existingSurface.terrain_profile as Record<string, unknown>)
         : {};
+    const terrainStats =
+      terrainProfile.terrain_stats && typeof terrainProfile.terrain_stats === "object"
+        ? (terrainProfile.terrain_stats as Record<string, unknown>)
+        : {};
     const surfaceControls =
       record.surface_controls && typeof record.surface_controls === "object"
         ? (record.surface_controls as Record<string, unknown>)
@@ -1206,6 +1210,8 @@ export default function PerformanceAIDashboard() {
       typeof existingSurface.range_z === "number"
         ? existingSurface.range_z
         : Number(existingSurface.range_z ?? 0);
+    const sampleCount = Number(terrainStats.sample_count ?? 0);
+    const missingCount = Number(terrainStats.missing_count ?? 0);
     const dx = Number(downhillVector.dx ?? terrainProfile.downhill_dx ?? 0);
     const dy = Number(downhillVector.dy ?? terrainProfile.downhill_dy ?? 0);
     const eastWest = Math.abs(dx) > 0.05 ? (dx > 0 ? "east" : "west") : "";
@@ -1217,6 +1223,8 @@ export default function PerformanceAIDashboard() {
       hasResult: Boolean(sourceQuality || sourceDetail || highPoints.length || lowPoints.length || rangeValue),
       sourceQuality,
       sourceDetail,
+      sampleCount: Number.isFinite(sampleCount) ? sampleCount : 0,
+      missingCount: Number.isFinite(missingCount) ? missingCount : 0,
       elevationRange: Number.isFinite(rangeValue) ? rangeValue : 0,
       highPointCount: highPoints.length,
       lowPointCount: lowPoints.length,
@@ -9182,6 +9190,12 @@ export default function PerformanceAIDashboard() {
                         </p>
                         <p data-testid="grading-source-detail">
                           source_detail = {gradingResultSummary.sourceDetail || "pending"}
+                        </p>
+                        <p data-testid="grading-sample-count">
+                          sample_count = {gradingResultSummary.sampleCount}
+                        </p>
+                        <p data-testid="grading-missing-count">
+                          missing_count = {gradingResultSummary.missingCount}
                         </p>
                         <p data-testid="grading-elevation-range">
                           elevation range = {gradingResultSummary.elevationRange.toFixed(2)} ft
