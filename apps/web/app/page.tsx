@@ -6181,8 +6181,10 @@ export default function PerformanceAIDashboard() {
       setSiteScaleLocked(false);
     }
     applyingSiteRef.current = true;
-    const width = viewportFootprint?.widthFt ?? parsePositiveNumber(lotWidth);
-    const height = viewportFootprint?.heightFt ?? parsePositiveNumber(lotHeight);
+    const visibleWidth = parsePositiveNumber(lotWidth);
+    const visibleHeight = parsePositiveNumber(lotHeight);
+    const width = visibleWidth ?? viewportFootprint?.widthFt;
+    const height = visibleHeight ?? viewportFootprint?.heightFt;
     if (!width || !height) {
       setStatusMessage("Set the site width and height before applying the site.");
       applyingSiteRef.current = false;
@@ -6300,10 +6302,11 @@ export default function PerformanceAIDashboard() {
   }, [detectionChoices, handleAnalyzeImageFeatures, mapSnapshotPath]);
 
   useEffect(() => {
+    if (!siteScaleLocked) return;
     const hasSite = buildingPlacements.some((item) => item.type === "site");
     if (!hasSite) return;
     setFitToSiteRequest((value) => value + 1);
-  }, [activeSidePanel, buildingPlacements, previewHeightPx]);
+  }, [activeSidePanel, buildingPlacements, previewHeightPx, siteScaleLocked]);
 
   const saveSiteAddress = async () => {
     if (!token) return;
