@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import signal
 import time
 import uuid
 import urllib.parse
@@ -43,7 +44,7 @@ from backend.application.file_workflows import (
     upload_survey_file as application_upload_survey_file,
 )
 from backend.application.health_workflows import health_response as application_health_response
-from backend.application.memory_logging import log_memory
+from backend.application.memory_logging import current_rss_mb, log_memory
 from backend.application.job_workflows import (
     build_drainage_job_runner as application_build_drainage_job_runner,
     build_orchestrate_job_runner as application_build_orchestrate_job_runner,
@@ -88,6 +89,7 @@ STORAGE_DIR = Path(
 UPLOAD_DIR = STORAGE_DIR / "uploads"
 DATA_DIR = STORAGE_DIR
 DB_PATH = DATA_DIR / "performance_ai.db"
+START_TIME = time.time()
 ARTIFACT_DIR = DATA_DIR / "artifacts"
 CHAT_LEARNING_PATH = DATA_DIR / "chat_learning.jsonl"
 CHAT_TRAINING_PATH = DATA_DIR / "chat_training.jsonl"
@@ -462,9 +464,56 @@ def _log_mapbox_token_config() -> None:
     )
 
 
+def _runtime_debug_payload() -> Dict[str, Any]:
+    token_source, token = _mapbox_token()
+    return {
+        "status": "ok",
+        "pid": os.getpid(),
+        "uptime_seconds": round(time.time() - START_TIME, 3),
+        "rss_mb": round(current_rss_mb(), 1),
+        "storage_dir": str(STORAGE_DIR),
+        "storage_dir_exists": STORAGE_DIR.exists(),
+        "storage_kind": DB.storage_kind,
+        "mapbox_token_source": token_source,
+        "mapbox_token_present": bool(token),
+        "mapbox_token_prefix": _safe_token_prefix(token),
+        "port": os.getenv("PORT"),
+    }
+
+
+def _log_runtime_event(event: str, **fields: Any) -> None:
+    print(
+        json.dumps(
+            {
+                "event": event,
+                "pid": os.getpid(),
+                "uptime_seconds": round(time.time() - START_TIME, 3),
+                "rss_mb": _runtime_debug_payload()["rss_mb"],
+                **fields,
+            }
+        ),
+        flush=True,
+    )
+
+
+def _install_signal_handlers() -> None:
+    def _handler(signum: int, _frame: Any) -> None:
+        signal_name = signal.Signals(signum).name
+        _log_runtime_event("process_signal", signal=signal_name)
+        raise SystemExit(0)
+
+    for signal_name in ("SIGTERM", "SIGINT"):
+        try:
+            signal.signal(getattr(signal, signal_name), _handler)
+        except Exception:
+            continue
+
+
 @app.on_event("startup")
 def _register_job_handlers() -> None:
     log_memory("startup_begin")
+    _install_signal_handlers()
+    _log_runtime_event("startup_runtime", storage_dir=str(STORAGE_DIR), port=os.getenv("PORT"))
     _log_mapbox_token_config()
     JOB_QUEUE.register_handler(
         "orchestrate",
@@ -487,6 +536,11 @@ def _register_job_handlers() -> None:
     log_memory("startup_complete")
 
 
+@app.on_event("shutdown")
+def _log_shutdown() -> None:
+    _log_runtime_event("shutdown")
+
+
 @app.get("/")
 def root() -> Dict[str, str]:
     return {"status": "ok"}
@@ -506,6 +560,11 @@ def health() -> Dict[str, Any]:
         user_count=user_count,
         storage=DB.storage_kind,
     )
+
+
+@app.get("/api/debug/runtime")
+def debug_runtime() -> Dict[str, Any]:
+    return _runtime_debug_payload()
 
 
 @app.get("/api/auth/status")
