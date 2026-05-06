@@ -12,10 +12,29 @@ LOGGER = logging.getLogger("uvicorn.error")
 def current_rss_mb() -> float:
     """Return current resident memory when available.
 
-    Linux reports ru_maxrss in kilobytes, while macOS reports bytes. Railway
-    runs Linux, but local dev often runs macOS, so normalize both for readable
-    diagnostics.
+    Linux exposes current RSS in /proc/self/status. Fall back to ru_maxrss,
+    which is peak RSS rather than current RSS, when /proc is unavailable.
     """
+    status_path = "/proc/self/status"
+    if os.path.exists(status_path):
+        try:
+            with open(status_path, "r", encoding="utf-8") as handle:
+                for line in handle:
+                    if line.startswith("VmRSS:"):
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            return float(parts[1]) / 1024.0
+        except OSError:
+            pass
+
+    rss = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    if os.uname().sysname == "Darwin":
+        rss = rss / 1024.0
+    return rss / 1024.0
+
+
+def peak_rss_mb() -> float:
+    """Return peak resident memory for diagnostics."""
     rss = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
     if os.uname().sysname == "Darwin":
         rss = rss / 1024.0

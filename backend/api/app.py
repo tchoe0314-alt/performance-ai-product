@@ -44,7 +44,7 @@ from backend.application.file_workflows import (
     upload_survey_file as application_upload_survey_file,
 )
 from backend.application.health_workflows import health_response as application_health_response
-from backend.application.memory_logging import current_rss_mb, log_memory
+from backend.application.memory_logging import current_rss_mb, log_memory, peak_rss_mb
 from backend.application.job_workflows import (
     build_drainage_job_runner as application_build_drainage_job_runner,
     build_orchestrate_job_runner as application_build_orchestrate_job_runner,
@@ -471,6 +471,7 @@ def _runtime_debug_payload() -> Dict[str, Any]:
         "pid": os.getpid(),
         "uptime_seconds": round(time.time() - START_TIME, 3),
         "rss_mb": round(current_rss_mb(), 1),
+        "peak_rss_mb": round(peak_rss_mb(), 1),
         "storage_dir": str(STORAGE_DIR),
         "storage_dir_exists": STORAGE_DIR.exists(),
         "storage_kind": DB.storage_kind,
