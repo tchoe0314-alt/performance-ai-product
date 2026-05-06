@@ -368,21 +368,45 @@ def run_orchestration(
             },
         )
         if readiness_issue:
+            missing_requirements = list(readiness_issue.get("missing_requirements") or [])
+            missing_fields = [
+                str(item.get("field") or item.get("name") or item) if isinstance(item, dict) else str(item)
+                for item in missing_requirements
+            ]
+            structured_missing = {
+                "missing_fields": missing_fields,
+                "why_needed": {
+                    str(item.get("field") or item.get("name") or item): str(
+                        item.get("why_needed") or item.get("reason") or "Required to complete the engineering step."
+                    )
+                    for item in missing_requirements
+                    if isinstance(item, dict)
+                },
+                "suggested_next_actions": [
+                    "Add the missing information.",
+                    "Turn on Assisted to let Civora infer reasonable, clearly labeled assumptions.",
+                ],
+                "can_assist_if_enabled": True,
+            }
             return {
                 "success": False,
-                "message": str(readiness_issue.get("assistant_message") or "Manual mode needs more information before design can start."),
+                "message": str(
+                    readiness_issue.get("assistant_message")
+                    or "Civora needs more information before it can complete this step. Add the missing details, or turn on Assisted to let Civora infer reasonable, clearly labeled assumptions."
+                ),
                 "parsed_payload": dict(payload_data),
                 "final_plan": {},
                 "warnings": [],
                 "errors": [str(readiness_issue.get("reason") or "Minimum engineering design context is incomplete")],
                 "issues": [],
                 "assumptions": [],
+                "missing_requirements": structured_missing,
                 "metadata": {
                     "_workflow_run_id": new_workflow_id("run"),
                     "input_mode": payload_data.get("input_mode", "manual"),
                     "needs_clarification": True,
                     "clarification_reason": readiness_issue.get("reason"),
-                    "missing_requirements": list(readiness_issue.get("missing_requirements") or []),
+                    "missing_requirements": structured_missing,
                 },
             }
 
@@ -415,6 +439,8 @@ def run_orchestration(
     }
     result_payload["metadata"].setdefault("_workflow_run_id", new_workflow_id("run"))
     result_payload["metadata"].setdefault("input_mode", payload_data.get("input_mode", "assisted"))
+    if isinstance(result_payload["metadata"].get("missing_requirements"), dict):
+        result_payload["missing_requirements"] = dict(result_payload["metadata"]["missing_requirements"])
     return result_payload
 
 

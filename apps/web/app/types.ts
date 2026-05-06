@@ -236,6 +236,7 @@ export type PlanAction = {
 };
 
 export type PlanResponse = {
+  success?: boolean;
   final_plan?: {
     meta?: PlanMeta;
     actions?: PlanAction[];
@@ -243,8 +244,20 @@ export type PlanResponse = {
   assumptions?: BackendAssumption[];
   issues?: BackendIssue[];
   message?: string;
+  missing_requirements?: {
+    missing_fields?: string[];
+    why_needed?: Record<string, string>;
+    suggested_next_actions?: string[];
+    can_assist_if_enabled?: boolean;
+  };
   metadata?: {
     iterations?: IterationRecord[];
+    missing_requirements?: {
+      missing_fields?: string[];
+      why_needed?: Record<string, string>;
+      suggested_next_actions?: string[];
+      can_assist_if_enabled?: boolean;
+    };
   };
   job_progress?: {
     stage?: string;
@@ -694,7 +707,7 @@ export type SiteObjectType =
 export type SiteObjectPlacement = BuildingPlacement & {
   type: SiteObjectType;
 };
-export type StrategyMode = "user";
+export type StrategyMode = "user" | "assisted";
 export type ControlOverrides = Partial<{
   projectType: string;
   units: string;

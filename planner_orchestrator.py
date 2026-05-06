@@ -564,6 +564,59 @@ def _manual_plan_failed(final_plan: Dict[str, Any]) -> bool:
     return bool(manual_validation.get("failed"))
 
 
+def _missing_requirements_from_plan(final_plan: Dict[str, Any]) -> Dict[str, Any]:
+    meta = _safe_dict(final_plan.get("meta"))
+    manual_validation = _safe_dict(meta.get("manual_validation"))
+    failures = [item for item in _safe_list(manual_validation.get("failures")) if isinstance(item, dict)]
+    missing_fields: List[str] = []
+    why_needed: Dict[str, str] = {}
+    suggested_next_actions: List[str] = []
+
+    for failure in failures:
+        field = (
+            _safe_str(failure.get("system"))
+            or _safe_str(failure.get("rule"))
+            or _safe_str(failure.get("missing_computation"))
+            or _safe_str(failure.get("code"))
+        )
+        field = field.replace("_gate", "").replace("_", " ").strip() or "required engineering input"
+        message = _safe_str(failure.get("message"), "Required engineering information is missing.")
+        if field not in missing_fields:
+            missing_fields.append(field)
+            why_needed[field] = message
+            suggested_next_actions.append(f"Provide {field}, or turn on Assisted so Civora can infer a clearly labeled assumption.")
+
+    if not missing_fields:
+        missing_fields = ["site boundary", "grading source", "drainage outlet"]
+        why_needed = {
+            "site boundary": "Civora needs a locked site boundary to size and locate the design.",
+            "grading source": "Civora needs survey, terrain, or an assisted assumption before grading/drainage can be completed.",
+            "drainage outlet": "Civora needs a basin or outfall target before drainage can be completed.",
+        }
+        suggested_next_actions = [
+            "Lock the site boundary.",
+            "Provide survey/terrain context or turn on Assisted.",
+            "Add a basin/outfall or turn on Assisted.",
+        ]
+
+    return {
+        "missing_fields": missing_fields,
+        "why_needed": why_needed,
+        "suggested_next_actions": suggested_next_actions,
+        "can_assist_if_enabled": True,
+    }
+
+
+def _friendly_missing_requirements_message(missing: Dict[str, Any]) -> str:
+    fields = [_safe_str(item) for item in _safe_list(missing.get("missing_fields")) if _safe_str(item)]
+    if not fields:
+        fields = ["site boundary", "grading source", "drainage outlet"]
+    return (
+        f"Civora needs {', '.join(fields[:3])} before it can complete this step. "
+        "Add those details, or turn on Assisted to let Civora infer reasonable, clearly labeled assumptions."
+    )
+
+
 def _candidate_to_alt(option: Any) -> Dict[str, Any]:
     return {
         "candidate_id": getattr(option, "candidate_id", None),
@@ -1041,12 +1094,13 @@ def _single_plan_flow(
     final_plan = planner.build_plan(parsed_payload, progress_callback=progress_callback)
     warnings, errors = _collect_warnings_errors(final_plan)
     success = not _manual_plan_failed(final_plan)
+    missing_requirements = _missing_requirements_from_plan(final_plan) if not success else {}
     runtime_checkpoint = _safe_dict(_safe_dict(final_plan.get("meta")).get("runtime_phase_checkpoint"))
     runtime_should_continue = bool(runtime_checkpoint.get("yielded"))
     if runtime_should_continue:
         message = _safe_str(runtime_checkpoint.get("message"), "Saved a phase checkpoint and prepared the next engineering phase.")
     else:
-        message = "Generated coordinated plan." if success else "Manual-mode validation failed."
+        message = "Generated coordinated plan." if success else _friendly_missing_requirements_message(missing_requirements)
 
     return PlannerOrchestratorResult(
         success=success,
@@ -1065,6 +1119,7 @@ def _single_plan_flow(
             "recommended_score": _planner_score_from_plan(final_plan),
             "runtime_should_continue": runtime_should_continue,
             "runtime_phase_checkpoint": deepcopy(runtime_checkpoint),
+            **({"missing_requirements": missing_requirements, "needs_clarification": True} if not success else {}),
         },
     )
 
@@ -1320,7 +1375,7 @@ def _run_full_design_loop(parsed_payload: Dict[str, Any], req: PlannerOrchestrat
         if _is_iteration_clean_enough(current_result):
             notes.append("Iteration is clean enough.")
         elif _lower(req.input_mode) == "manual" and not current_result.success:
-            notes.append("Manual mode returned a failed engineering-validation result.")
+            notes.append("Assisted off returned a failed engineering-validation result.")
         elif current_result.errors:
             notes.append("Errors remain; continuing hardening loop.")
         elif current_result.warnings:
@@ -1354,7 +1409,7 @@ def _run_full_design_loop(parsed_payload: Dict[str, Any], req: PlannerOrchestrat
         message=(
             "Full design workflow completed."
             if final_plan and not _manual_plan_failed(final_plan)
-            else "Manual-mode validation failed."
+            else _friendly_missing_requirements_message(_missing_requirements_from_plan(final_plan))
             if final_plan and _manual_plan_failed(final_plan)
             else "Full design workflow did not produce a viable final plan."
         ),
@@ -1370,6 +1425,9 @@ def _run_full_design_loop(parsed_payload: Dict[str, Any], req: PlannerOrchestrat
     )
 
     result.metadata["workflow"] = "full_design_loop"
+    if final_plan and _manual_plan_failed(final_plan):
+        result.metadata["missing_requirements"] = _missing_requirements_from_plan(final_plan)
+        result.metadata["needs_clarification"] = True
     result.metadata["best_score"] = state.best_score
     result.metadata["best_option_name"] = state.best_option_name
     result.metadata["best_candidate_id"] = state.best_candidate_id
@@ -1395,6 +1453,7 @@ def orchestrate_plan(req: PlannerOrchestratorRequest) -> PlannerOrchestratorResu
     parsed_payload["meta"]["strict_mode"] = req.strict_mode
     parsed_payload["meta"]["persist_trace_metadata"] = req.persist_trace_metadata
     parsed_payload["meta"]["allow_ai_fill_for_blanks"] = req.allow_ai_fill_for_blanks
+    parsed_payload["meta"]["assisted_enabled"] = bool(req.allow_ai_fill_for_blanks)
     parsed_payload["meta"]["orchestrator_meta"] = deepcopy(req.meta)
     parsed_payload["meta"]["input_mode"] = req.input_mode
     parsed_payload["meta"]["manual_mode"] = _lower(req.input_mode) == "manual"

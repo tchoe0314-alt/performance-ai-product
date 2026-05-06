@@ -143,6 +143,33 @@ export function summarizePlanResponse(
   data: PlanResponse,
   mode: PlanToolMode,
 ): string {
+  const missingRequirements =
+    data?.missing_requirements ?? data?.metadata?.missing_requirements ?? null;
+  if (missingRequirements && data?.success === false) {
+    const missingFields = Array.isArray(missingRequirements.missing_fields)
+      ? missingRequirements.missing_fields
+          .map((item) => String(item || "").trim())
+          .filter(Boolean)
+      : [];
+    const suggestedActions = Array.isArray(missingRequirements.suggested_next_actions)
+      ? missingRequirements.suggested_next_actions
+          .map((item) => String(item || "").trim())
+          .filter(Boolean)
+      : [];
+    const headline =
+      typeof data?.message === "string" && data.message.trim()
+        ? data.message.trim()
+        : missingFields.length
+          ? `Civora needs ${joinNatural(missingFields.slice(0, 3))} before it can complete this step.`
+          : "Civora needs more information before it can complete this step.";
+    const nextAction = suggestedActions.length
+      ? `Next: ${suggestedActions.slice(0, 2).join(" ")}`
+      : missingRequirements.can_assist_if_enabled
+        ? "Next: add the missing details, or turn on Assisted to let Civora infer clearly labeled assumptions."
+        : null;
+    return [headline, nextAction].filter(Boolean).join(" ");
+  }
+
   const plan = data?.final_plan ?? {};
   const meta = plan?.meta ?? {};
   const explanation = meta?.explanation;

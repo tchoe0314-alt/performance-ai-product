@@ -419,6 +419,7 @@ export default function PerformanceAIDashboard() {
   const [roads, setRoads] = useState(true);
   const [grading, setGrading] = useState(true);
   const [drainage, setDrainage] = useState(true);
+  const [assistedEnabled, setAssistedEnabled] = useState(false);
   const [drainageForcedInlets, setDrainageForcedInlets] = useState<
     Array<{ x: number; y: number; name?: string }>
   >([]);
@@ -964,7 +965,7 @@ export default function PerformanceAIDashboard() {
     () => ({
       project_id: projectId || null,
       full_design_mode: true,
-      input_mode: "user",
+      input_mode: assistedEnabled ? "assisted" : "user",
       strict_mode: false,
       prompt_text: prompt || null,
       image_path: imageName || null,
@@ -973,6 +974,7 @@ export default function PerformanceAIDashboard() {
         site_inputs: currentProject?.project_input?.meta?.site_inputs ?? {},
         system_dirty_state: systemStatuses,
         site_object_id: buildingPlacements.find((item) => item.type === "site")?.id ?? null,
+        assisted_enabled: assistedEnabled,
       },
       manual_fields: buildManualFields({
         nextSiteName: siteName,
@@ -996,7 +998,7 @@ export default function PerformanceAIDashboard() {
         nextDrainage: drainage,
         nextUtilities: utilities,
       }),
-      allow_ai_fill_for_blanks: false,
+      allow_ai_fill_for_blanks: assistedEnabled,
     }),
     [
       buildingPlacements,
@@ -1024,6 +1026,7 @@ export default function PerformanceAIDashboard() {
       drainage,
       utilities,
       systemStatuses,
+      assistedEnabled,
       currentProject,
       buildManualFields,
     ],
@@ -3056,7 +3059,7 @@ export default function PerformanceAIDashboard() {
       project_id:
         projectIdOverride !== undefined ? projectIdOverride : projectId || null,
       full_design_mode: true,
-      input_mode: "user",
+      input_mode: assistedEnabled ? "assisted" : "user",
       strict_mode: false,
       prompt_text: (promptOverride ?? prompt) || null,
       image_path: imageName || null,
@@ -3065,6 +3068,7 @@ export default function PerformanceAIDashboard() {
         site_inputs: currentProject?.project_input?.meta?.site_inputs ?? {},
         system_dirty_state: systemStatuses,
         site_object_id: buildingPlacements.find((item) => item.type === "site")?.id ?? null,
+        assisted_enabled: assistedEnabled,
       },
       manual_fields: buildManualFields({
         nextSiteName,
@@ -3089,7 +3093,7 @@ export default function PerformanceAIDashboard() {
         nextUtilities,
         placementsOverride,
       }),
-      allow_ai_fill_for_blanks: false,
+      allow_ai_fill_for_blanks: assistedEnabled,
     };
   };
 
@@ -7386,7 +7390,7 @@ export default function PerformanceAIDashboard() {
       currentManualFailures.length
         ? `Current blockers: ${currentManualFailures
             .slice(0, 3)
-            .map((failure) => failure.code || failure.message || "manual validation issue")
+            .map((failure) => failure.code || failure.message || "missing information issue")
             .join(", ")}.`
         : null,
       issues.length
@@ -9113,6 +9117,20 @@ export default function PerformanceAIDashboard() {
                     <p className="mt-1 text-sm text-slate-600">
                       Describe what you want to add.
                     </p>
+                    <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+                      <label className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-800">
+                        <span>Assisted</span>
+                        <input
+                          type="checkbox"
+                          checked={assistedEnabled}
+                          onChange={(event) => setAssistedEnabled(event.target.checked)}
+                          className="h-4 w-4 accent-slate-950"
+                        />
+                      </label>
+                      <p className="mt-1 text-xs text-slate-500">
+                        When on, Civora can infer missing details using clearly labeled assumptions.
+                      </p>
+                    </div>
                     <div className="mt-3 flex flex-col gap-2">
                       <input
                         value={objectPrompt}
