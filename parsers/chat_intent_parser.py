@@ -23,7 +23,7 @@ CHAT_DECISION_SCHEMA: Dict[str, Any] = {
             "type": "object",
             "additionalProperties": False,
             "properties": {
-                "strategyMode": {"type": "string", "enum": ["manual", "assisted"]},
+                "strategyMode": {"type": "string", "enum": ["user", "assisted"]},
                 "projectType": {"type": "string"},
                 "units": {"type": "string"},
                 "roads": {"type": "boolean"},
@@ -431,9 +431,9 @@ def _extract_control_overrides(message: str, context: Dict[str, Any]) -> Dict[st
     lowered = _normalized_chat_text(message)
     overrides: Dict[str, Any] = {}
 
-    if re.search(r"\bmanual mode\b|\buse manual\b|\bswitch to manual\b", lowered):
-        overrides["strategyMode"] = "manual"
-    elif re.search(r"\bassisted mode\b|\buse assisted\b|\bswitch to assisted\b", lowered):
+    if re.search(r"\bmanual mode\b|\buse manual\b|\bswitch to manual\b|\bassisted off\b|\bturn off assisted\b|\bdisable assisted\b", lowered):
+        overrides["strategyMode"] = "user"
+    elif re.search(r"\bassisted mode\b|\buse assisted\b|\bswitch to assisted\b|\bassisted on\b|\bturn on assisted\b|\benable assisted\b", lowered):
         overrides["strategyMode"] = "assisted"
 
     for field, patterns in {
@@ -990,7 +990,7 @@ def _conversation_reply(message: str, context: Dict[str, Any]) -> str:
 def _settings_reply(overrides: Dict[str, Any]) -> str:
     parts: List[str] = []
     if "strategyMode" in overrides:
-        parts.append(f"switched to {overrides['strategyMode']} mode")
+        parts.append("switched Assisted on" if overrides["strategyMode"] == "assisted" else "switched Assisted off")
     for key, label in [
         ("roads", "roads"),
         ("grading", "grading"),
@@ -2323,7 +2323,7 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             control_overrides=overrides,
         )
 
-    if strategy_mode == "manual":
+    if strategy_mode in {"manual", "user"}:
         reference_text = _recent_user_context_text(context, message)
         analysis_text = f"{reference_text}\n{message}".strip() if reference_text else message
         lowered_manual = _normalized_chat_text(analysis_text)
@@ -2335,7 +2335,7 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
                 assistant_message=_revision_acknowledgement(message, context),
                 run_mode="run",
                 design_prompt=message,
-                reason="Manual mode reused prior design context",
+                reason="Assisted off reused prior design context",
                 confidence=0.84,
                 control_overrides=overrides,
             )
@@ -2361,7 +2361,7 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
                 inferred_project_type=inferred_project_type,
             ),
             needs_clarification=True,
-            reason="Manual mode conservative fallback",
+            reason="Assisted off conservative fallback",
             confidence=0.72,
             control_overrides=overrides,
         )
@@ -2399,11 +2399,11 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         "You are deciding how to handle the user's latest chat message inside a live design workspace. "
         "You must choose one intent: conversation, settings, design, explain, fix, or improve. "
         "Only choose design when the user is clearly asking to create or modify the plan. "
-        "Choose settings when the user is changing workflow controls like manual/assisted mode, disciplines, names, dimensions, or counts without asking for a run. "
+        "Choose settings when the user is changing workflow controls like the Assisted toggle, disciplines, names, dimensions, or counts without asking for a run. "
         "Choose conversation for greetings, casual chat, or general questions that should not trigger a plan run. "
         "Choose explain when the user wants an explanation of the current plan. "
         "Choose fix or improve only when the user is explicitly asking for that action. "
-        "In manual mode, be conservative and ask for clarification unless the design request is explicit. "
+        "When Assisted is off, be conservative and ask for clarification unless the design request is explicit. "
         "If the user is asking for a design but the request is underspecified, do not bluff or invent a full plan. "
         "Set needs_clarification=true and write a short, natural assistant message that asks for the next most important missing details. "
         "Ask at most two questions and avoid long lists. "

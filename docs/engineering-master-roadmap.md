@@ -16,7 +16,7 @@ Rules:
 
 ### Goal
 
-Make the backend trustworthy enough that manual mode means real engineering validation instead of best-effort output.
+Make the backend trustworthy enough that Assisted-off operation means real engineering validation instead of best-effort output.
 
 ### Deliverables
 
@@ -33,7 +33,7 @@ Make the backend trustworthy enough that manual mode means real engineering vali
   - Only the best accepted state is committed
   - Failed candidates cannot partially corrupt the main state
 - Explicit failure reasoning
-  - Manual-mode failures identify exact system, rule, location, and why resolution failed
+  - Assisted-off failures identify exact system, rule, location, and why resolution failed
 - Multi-candidate conflict-cluster solver
   - Solve related conflicts as clusters, not only as isolated signatures
   - Evaluate multiple candidate orders/strategies per cluster
@@ -50,8 +50,8 @@ Make the backend trustworthy enough that manual mode means real engineering vali
   - Canonical sanitary segments and manholes
   - Slope/connectivity/service checks
   - Post-reroute sanitary sizing/checking
-- Manual-mode hard gates
-  - Manual mode fails on unresolved conflicts, incomplete hydraulics, incomplete sanitary, inconsistent quantities, and missing requested deliverables
+- Assisted-off hard gates
+  - Assisted-off validation asks for missing information on unresolved conflicts, incomplete hydraulics, incomplete sanitary, inconsistent quantities, and missing requested deliverables
 - Quantities / QA / export consistency
   - Quantities read canonical state first
   - QA reads canonical state first
@@ -73,7 +73,7 @@ Make the backend trustworthy enough that manual mode means real engineering vali
 
 ### Acceptance Criteria
 
-- Manual mode fails with structured failure reasoning when engineering truth is incomplete.
+- Assisted-off validation returns structured missing-information reasoning when engineering truth is incomplete.
 - Accepted conflict-resolution candidates are snapshot-isolated and rollback-safe.
 - Conflict resolution reports cluster-level chosen candidate and best near-valid fallback.
 - Storm summary always exposes aggregate hydraulic metrics when storm geometry exists.
@@ -84,7 +84,7 @@ Make the backend trustworthy enough that manual mode means real engineering vali
 ### Regression Tests
 
 - Dependency-aware rerun tests
-- Manual-mode failure reasoning tests
+- Assisted-off missing-information reasoning tests
 - Conflict resolution engine tests
 - Cluster grouping / cluster solver tests
 - Coordination-to-quantities consistency tests
@@ -94,7 +94,7 @@ Make the backend trustworthy enough that manual mode means real engineering vali
 
 Do not start Phase 2 until all of these are true:
 
-- Manual mode has zero hidden fallback behavior for critical engineering systems.
+- Assisted-off validation has zero hidden fallback behavior for critical engineering systems.
 - Conflict solving is cluster-aware, rollback-safe, and reports explicit failure reasons.
 - Storm hydraulics and sanitary completeness are available in canonical summaries.
 - QA, quantities, and export all reflect the chosen solved state.
@@ -230,5 +230,5 @@ Current implementation priority inside Phase 1:
 2. Dependency-aware reruns and rollback safety
 3. Cluster-aware conflict solving
 4. Storm / sanitary post-reroute truth
-5. Manual-mode failure truth
+5. Assisted-off failure truth
 6. QA / quantities / export consistency

@@ -350,11 +350,12 @@ def run_orchestration(
         progress_callback=progress_callback,
     )
 
-    if str(req.input_mode or "assisted").strip().lower() == "manual" and str(req.prompt_text or "").strip():
+    assisted_enabled = bool(req.allow_ai_fill_for_blanks)
+    if not assisted_enabled and str(req.prompt_text or "").strip():
         readiness_issue = assess_design_readiness(
             str(req.prompt_text),
             {
-                "strategy_mode": "manual",
+                "strategy_mode": "user",
                 "project_type": (req.manual_fields or {}).get("project_type") or (req.meta or {}).get("project_type"),
                 "lot_width": ((req.manual_fields or {}).get("lot") or {}).get("w"),
                 "lot_height": ((req.manual_fields or {}).get("lot") or {}).get("h"),
@@ -403,7 +404,7 @@ def run_orchestration(
                 "missing_requirements": structured_missing,
                 "metadata": {
                     "_workflow_run_id": new_workflow_id("run"),
-                    "input_mode": payload_data.get("input_mode", "manual"),
+                    "input_mode": payload_data.get("input_mode", "user"),
                     "needs_clarification": True,
                     "clarification_reason": readiness_issue.get("reason"),
                     "missing_requirements": structured_missing,
