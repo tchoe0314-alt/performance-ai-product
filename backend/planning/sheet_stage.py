@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from core.config import DEFAULT_PAD_ELEV
 
-from .common import dedupe_keep_order, polyline_length, safe_dict, safe_float, safe_int, safe_list, safe_str
+from .common import canonical_stage_output, dedupe_keep_order, polyline_length, safe_dict, safe_float, safe_int, safe_list, safe_str
 from .field_contract import unwrap_fields_for_execution
 from .runtime import PlannerExecutionContext
 
@@ -95,15 +95,15 @@ def run_sheet_stage(
 
     try:
         manager.mark_system_running("sheets", "Generating profile and cross-section deliverables.")
-        grading = safe_dict(manager.latest_outputs.get("grading", project.meta.get("grading_summary", {})))
+        grading = safe_dict(canonical_stage_output(project, manager, "grading"))
         existing_surface = grading.get("existing_surface") or build_existing_surface(unwrap_fields_for_execution(parsed))
         proposed_surface = grading.get("proposed_surface") or existing_surface
 
         alignments: List[Dict[str, Any]] = []
         protected_zones = expanded_obstacle_rectangles(project)
-        drainage_meta = safe_dict(manager.latest_outputs.get("drainage", project.meta.get("drainage_summary", {})))
-        storm_meta = safe_dict(manager.latest_outputs.get("storm_pipe_summary", project.meta.get("storm_pipe_summary", {})))
-        sanitary_meta = safe_dict(manager.latest_outputs.get("sanitary", project.meta.get("sanitary_summary", {})))
+        drainage_meta = safe_dict(canonical_stage_output(project, manager, "drainage"))
+        storm_meta = safe_dict(canonical_stage_output(project, manager, "storm_pipes"))
+        sanitary_meta = safe_dict(canonical_stage_output(project, manager, "sanitary"))
         structure_lookup: Dict[str, Dict[str, Any]] = {}
         for structure in safe_list(drainage_meta.get("structures")):
             rec = safe_dict(structure)

@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Dict, Optional, Sequence
 
-from .common import safe_dict, safe_int, safe_list, safe_str
+from .common import canonical_stage_output, safe_dict, safe_int, safe_list, safe_str
 
 
 def new_coordination_metrics() -> Dict[str, Any]:
@@ -58,12 +58,12 @@ def coordination_record_prune(metrics: Optional[Dict[str, Any]], reason: str, am
 
 
 def snapshot_coordination_state(project: Any, manager: Any) -> Dict[str, Any]:
-    drainage = safe_dict(manager.latest_outputs.get("drainage", project.meta.get("drainage_canonical", {})))
-    grading = safe_dict(project.meta.get("grading_summary", manager.latest_outputs.get("grading", {})))
+    drainage = safe_dict(canonical_stage_output(project, manager, "drainage"))
+    grading = safe_dict(canonical_stage_output(project, manager, "grading"))
     return {
-        "storm": deepcopy(safe_dict(manager.latest_outputs.get("storm_pipe_summary", project.meta.get("storm_pipe_summary", {})))),
-        "sanitary": deepcopy(safe_dict(manager.latest_outputs.get("sanitary", project.meta.get("sanitary_summary", {})))),
-        "utilities": deepcopy(safe_dict(manager.latest_outputs.get("utilities", project.meta.get("utility_summary", {})))),
+        "storm": deepcopy(safe_dict(canonical_stage_output(project, manager, "storm_pipes"))),
+        "sanitary": deepcopy(safe_dict(canonical_stage_output(project, manager, "sanitary"))),
+        "utilities": deepcopy(safe_dict(canonical_stage_output(project, manager, "utilities"))),
         "grading": deepcopy(grading),
         "drainage_mutable": {
             "structures": deepcopy(safe_list(drainage.get("structures"))),

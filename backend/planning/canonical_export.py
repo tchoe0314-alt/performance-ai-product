@@ -952,6 +952,8 @@ def canonical_utility_actions(project: ProjectModel) -> List[Dict[str, Any]]:
             continue
         name = safe_str(rec.get("name"), f"{layer}-{index}")
         source_id = safe_str(rec.get("id"), name)
+        diameter = rec.get("diameter_in")
+        slope = rec.get("slope_ft_ft")
         actions.append(
             canonical_action(
                 {

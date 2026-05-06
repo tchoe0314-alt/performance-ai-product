@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+from copy import deepcopy
 from typing import Any, Dict, Iterable, List, Sequence
 
 
@@ -36,6 +37,67 @@ def safe_dict(value: Any) -> Dict[str, Any]:
 
 def safe_list(value: Any) -> List[Any]:
     return value if isinstance(value, list) else []
+
+
+_CANONICAL_STAGE_KEYS: Dict[str, tuple[str, str]] = {
+    "grading": ("grading_summary", "grading"),
+    "drainage": ("drainage_canonical", "drainage"),
+    "storm": ("storm_pipe_summary", "storm_pipe_summary"),
+    "storm_pipes": ("storm_pipe_summary", "storm_pipe_summary"),
+    "storm_pipe_summary": ("storm_pipe_summary", "storm_pipe_summary"),
+    "sanitary": ("sanitary_summary", "sanitary"),
+    "utilities": ("utility_summary", "utilities"),
+    "utility_network": ("utility_summary", "utilities"),
+    "coordination": ("coordination_summary", "coordination"),
+    "parking_program": ("parking_program", "parking_program"),
+    "profiles": ("profiles", "profiles"),
+    "cross_sections": ("cross_sections", "cross_sections"),
+    "alignments": ("alignments", "alignments"),
+}
+
+
+def canonical_stage_output(project: Any, manager: Any, stage: str) -> Any:
+    """Return accepted canonical stage state.
+
+    ProjectModel.meta is authoritative. ProjectManager.latest_outputs is a
+    convenience cache and is only used when project.meta does not contain an
+    accepted value yet.
+    """
+
+    stage_key = safe_str(stage)
+    meta_key, cache_key = _CANONICAL_STAGE_KEYS.get(stage_key, (stage_key, stage_key))
+    project_meta = safe_dict(getattr(project, "meta", {}))
+    latest_outputs = safe_dict(getattr(manager, "latest_outputs", {}))
+    has_meta_value = meta_key in project_meta and project_meta.get(meta_key) is not None
+    has_cache_value = cache_key in latest_outputs and latest_outputs.get(cache_key) is not None
+
+    if has_meta_value:
+        canonical_value = project_meta.get(meta_key)
+        if has_cache_value and latest_outputs.get(cache_key) != canonical_value:
+            warnings = project_meta.setdefault("canonical_state_warnings", {})
+            warnings[stage_key] = {
+                "stage": stage_key,
+                "canonical_meta_key": meta_key,
+                "cache_key": cache_key,
+                "cache_differs": True,
+                "message": "manager.latest_outputs differs from project.meta; using project.meta as canonical accepted state.",
+            }
+        else:
+            safe_dict(project_meta.get("canonical_state_warnings")).pop(stage_key, None)
+        return deepcopy(canonical_value)
+
+    if has_cache_value:
+        warnings = project_meta.setdefault("canonical_state_warnings", {})
+        warnings[stage_key] = {
+            "stage": stage_key,
+            "canonical_meta_key": meta_key,
+            "cache_key": cache_key,
+            "cache_only": True,
+            "message": "project.meta has no accepted stage summary; using manager.latest_outputs cache fallback.",
+        }
+        return deepcopy(latest_outputs.get(cache_key))
+
+    return [] if stage_key in {"profiles", "cross_sections", "alignments"} else {}
 
 
 def lower_text(value: Any) -> str:

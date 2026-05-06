@@ -17,7 +17,7 @@ from core.project_manager import ConflictRecord, ConflictSeverity, DependencySta
 from engines.autofix_engine import autofix_site_layout
 from engines.error_check_engine import run_plan_checks
 
-from .common import dedupe_keep_order, lower_text, safe_dict, safe_float, safe_int, safe_list, safe_str
+from .common import canonical_stage_output, dedupe_keep_order, lower_text, safe_dict, safe_float, safe_int, safe_list, safe_str
 from .field_contract import FIELD_SOURCE_INFER, field_path_is_omitted, omission_flags_from_parsed, unwrap_fields_for_execution
 from .runtime import PlannerExecutionContext, PlanQualityReport, _lot_area, _mark_dependency_state, collect_plan_stats
 
@@ -70,17 +70,15 @@ def run_qa_stage(
         plan = project_model_to_plan(project, parsed.get("project_name") or "Generated Plan")
         plan.setdefault("meta", {})
         plan["meta"]["manager_export"] = manager.export_metrics() if hasattr(manager, "export_metrics") else {}
-        plan["meta"]["grading"] = deepcopy(manager.latest_outputs.get("grading", {}))
-        plan["meta"]["drainage"] = deepcopy(manager.latest_outputs.get("drainage", {}))
-        plan["meta"]["storm_pipes"] = deepcopy(
-            manager.latest_outputs.get("storm_pipe_summary", manager.project.meta.get("storm_pipe_summary", {}))
-        )
-        plan["meta"]["sanitary"] = deepcopy(manager.latest_outputs.get("sanitary", manager.project.meta.get("sanitary_summary", {})))
-        plan["meta"]["parking_program"] = deepcopy(manager.latest_outputs.get("parking_program", manager.project.meta.get("parking_program", {})))
-        plan["meta"]["utilities"] = deepcopy(manager.latest_outputs.get("utilities", manager.project.meta.get("utility_summary", {})))
-        plan["meta"]["coordination"] = deepcopy(manager.latest_outputs.get("coordination", manager.project.meta.get("coordination_summary", {})))
-        plan["meta"]["profiles"] = deepcopy(manager.latest_outputs.get("profiles", manager.project.meta.get("profiles", [])))
-        plan["meta"]["cross_sections"] = deepcopy(manager.latest_outputs.get("cross_sections", manager.project.meta.get("cross_sections", [])))
+        plan["meta"]["grading"] = canonical_stage_output(project, manager, "grading")
+        plan["meta"]["drainage"] = canonical_stage_output(project, manager, "drainage")
+        plan["meta"]["storm_pipes"] = canonical_stage_output(project, manager, "storm_pipes")
+        plan["meta"]["sanitary"] = canonical_stage_output(project, manager, "sanitary")
+        plan["meta"]["parking_program"] = canonical_stage_output(project, manager, "parking_program")
+        plan["meta"]["utilities"] = canonical_stage_output(project, manager, "utilities")
+        plan["meta"]["coordination"] = canonical_stage_output(project, manager, "coordination")
+        plan["meta"]["profiles"] = canonical_stage_output(project, manager, "profiles")
+        plan["meta"]["cross_sections"] = canonical_stage_output(project, manager, "cross_sections")
         stats = collect_plan_stats(plan)
         report.stats = stats
 

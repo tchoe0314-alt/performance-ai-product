@@ -126,6 +126,7 @@ from backend.planning.common import (
     _call_with_compatible_kwargs,
     _install_rect_obstacle_compatibility,
     clamp,
+    canonical_stage_output,
     dedupe_keep_order,
     lower_text,
     polyline_length,
@@ -721,15 +722,7 @@ def _manual_gate_plan(ctx: PlannerExecutionContext) -> Dict[str, Any]:
     plan.setdefault("meta", {})
     manager_export = ctx.manager.export_metrics() if hasattr(ctx.manager, "export_metrics") else {}
     plan["meta"]["manager_export"] = manager_export
-    plan["meta"]["grading"] = deepcopy(ctx.manager.latest_outputs.get("grading", ctx.manager.project.meta.get("grading_summary", {})))
-    plan["meta"]["drainage"] = deepcopy(ctx.manager.latest_outputs.get("drainage", ctx.manager.project.meta.get("drainage_canonical", {})))
-    plan["meta"]["storm_pipes"] = deepcopy(ctx.manager.latest_outputs.get("storm_pipe_summary", ctx.manager.project.meta.get("storm_pipe_summary", {})))
-    plan["meta"]["sanitary"] = deepcopy(ctx.manager.latest_outputs.get("sanitary", ctx.manager.project.meta.get("sanitary_summary", {})))
-    plan["meta"]["utilities"] = deepcopy(ctx.manager.latest_outputs.get("utilities", ctx.manager.project.meta.get("utility_summary", {})))
-    plan["meta"]["coordination"] = deepcopy(ctx.manager.latest_outputs.get("coordination", ctx.manager.project.meta.get("coordination_summary", {})))
-    plan["meta"]["parking_program"] = deepcopy(ctx.manager.latest_outputs.get("parking_program", ctx.manager.project.meta.get("parking_program", {})))
-    plan["meta"]["profiles"] = deepcopy(ctx.manager.latest_outputs.get("profiles", ctx.manager.project.meta.get("profiles", [])))
-    plan["meta"]["cross_sections"] = deepcopy(ctx.manager.latest_outputs.get("cross_sections", ctx.manager.project.meta.get("cross_sections", [])))
+    _attach_canonical_stage_outputs(plan, ctx.manager.project, ctx.manager)
     wants_profile, wants_sections = _requested_profile_or_sections(ctx.parsed)
     if (wants_profile and not safe_list(plan["meta"].get("profiles"))) or (wants_sections and not safe_list(plan["meta"].get("cross_sections"))):
         _ensure_canonical_sheet_metadata(plan, _export_profiles(plan), _export_cross_sections(plan))
@@ -748,6 +741,19 @@ def _manual_gate_plan(ctx: PlannerExecutionContext) -> Dict[str, Any]:
         plan["meta"]["quantities"] = {"success": False, "message": f"Quantity computation failed: {exc}", "totals": {}}
     plan["meta"]["stats"] = collect_plan_stats(plan)
     return plan
+
+
+def _attach_canonical_stage_outputs(plan: Dict[str, Any], project: ProjectModel, manager: ProjectManager) -> None:
+    meta = plan.setdefault("meta", {})
+    meta["grading"] = canonical_stage_output(project, manager, "grading")
+    meta["drainage"] = canonical_stage_output(project, manager, "drainage")
+    meta["storm_pipes"] = canonical_stage_output(project, manager, "storm_pipes")
+    meta["sanitary"] = canonical_stage_output(project, manager, "sanitary")
+    meta["utilities"] = canonical_stage_output(project, manager, "utilities")
+    meta["coordination"] = canonical_stage_output(project, manager, "coordination")
+    meta["parking_program"] = canonical_stage_output(project, manager, "parking_program")
+    meta["profiles"] = canonical_stage_output(project, manager, "profiles")
+    meta["cross_sections"] = canonical_stage_output(project, manager, "cross_sections")
 
 
 def _parking_program_context(parsed: Dict[str, Any], plan: Dict[str, Any]) -> Dict[str, Any]:
@@ -8025,16 +8031,8 @@ def _run_model_first_workflow(
         if safe_dict(s.meta).get("fallback_used")
     ]
     plan["meta"]["manager_export"] = manager_export
-    plan["meta"]["grading"] = deepcopy(manager.latest_outputs.get("grading", manager.project.meta.get("grading_summary", {})))
-    plan["meta"]["drainage"] = deepcopy(manager.latest_outputs.get("drainage", manager.project.meta.get("drainage_canonical", {})))
-    plan["meta"]["storm_pipes"] = deepcopy(manager.latest_outputs.get("storm_pipe_summary", manager.project.meta.get("storm_pipe_summary", {})))
-    plan["meta"]["sanitary"] = deepcopy(manager.latest_outputs.get("sanitary", manager.project.meta.get("sanitary_summary", {})))
-    plan["meta"]["utilities"] = deepcopy(manager.latest_outputs.get("utilities", manager.project.meta.get("utility_summary", {})))
-    plan["meta"]["coordination"] = deepcopy(manager.latest_outputs.get("coordination", manager.project.meta.get("coordination_summary", {})))
+    _attach_canonical_stage_outputs(plan, manager.project, manager)
     plan["meta"]["preferred_corridors"] = deepcopy(manager.project.meta.get("preferred_corridors", {}))
-    plan["meta"]["parking_program"] = deepcopy(manager.latest_outputs.get("parking_program", manager.project.meta.get("parking_program", {})))
-    plan["meta"]["profiles"] = deepcopy(manager.latest_outputs.get("profiles", manager.project.meta.get("profiles", [])))
-    plan["meta"]["cross_sections"] = deepcopy(manager.latest_outputs.get("cross_sections", manager.project.meta.get("cross_sections", [])))
     wants_profile, wants_sections = _requested_profile_or_sections(parsed)
     if (wants_profile and not safe_list(plan["meta"].get("profiles"))) or (wants_sections and not safe_list(plan["meta"].get("cross_sections"))):
         _ensure_canonical_sheet_metadata(plan, _export_profiles(plan), _export_cross_sections(plan))
