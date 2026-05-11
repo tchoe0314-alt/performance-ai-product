@@ -42,7 +42,7 @@ PLANNER_STAGE_DEPENDENCIES: Dict[str, List[str]] = {
     "utility_network": ["storm_pipes", "sanitary", "grading"],
     "coordination_resolution": ["storm_pipes", "sanitary", "utility_network", "grading"],
     "earthwork": ["utility_network", "grading", "coordination_resolution"],
-    "sheets": ["grading", "storm_pipes", "sanitary"],
+    "sheets": ["grading", "storm_pipes", "sanitary", "coordination_resolution"],
     "qa": ["layout", "grading", "drainage", "storm_pipes", "sanitary", "utility_network", "earthwork", "coordination_resolution"],
 }
 
@@ -641,6 +641,10 @@ def _register_default_dependencies(manager: ProjectManager) -> None:
         ("sanitary", "utility_network"),
         ("storm_pipes", "utility_network"),
         ("grading", "utility_network"),
+        ("grading", "coordination_resolution"),
+        ("storm_pipes", "coordination_resolution"),
+        ("sanitary", "coordination_resolution"),
+        ("utility_network", "coordination_resolution"),
         ("storm_pipes", "sheets"),
         ("sanitary", "sheets"),
         ("grading", "sheets"),

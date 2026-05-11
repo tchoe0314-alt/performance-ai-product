@@ -1,49 +1,69 @@
 import unittest
-from unittest.mock import patch
 
-from backend.planning.runtime import PlanQualityReport
-from planner import build_plan
+from backend.planning.execution_control import stage_dirty_reasons, stage_should_run
+from backend.planning.runtime import PLANNER_STAGE_ORDER, PlannerExecutionContext, RoutingDecision
+
+
+class _DirtyStateManager:
+    def __init__(self) -> None:
+        self.system_dirty_state = {}
+
+    def is_system_dirty(self, name: str) -> bool:
+        row = self.system_dirty_state.get(name) or {}
+        return str(row.get("state", "")).lower() == "dirty"
 
 
 class DependencyAwareRerunTest(unittest.TestCase):
-    def test_second_pass_reruns_only_dirty_stage(self) -> None:
-        payload = {
-            "project_name": "Selective Rerun Test",
-            "units": "ft",
-            "mode": "site_plan",
-            "project_type": "commercial_pad",
-            "site_type": "commercial_pad",
-            "lot": {"x": 0.0, "y": 0.0, "w": 140.0, "h": 110.0},
-            "setback": 10.0,
-            "street_edge": "bottom",
-            "layout_strategy": "front_parking",
-            "site_plan": {"parking_count": 24},
-            "meta": {"input_mode": "assisted", "source_input_mode": "assisted", "manual_mode": False, "planner_passes": 2},
-        }
+    def _ctx(self) -> PlannerExecutionContext:
+        manager = _DirtyStateManager()
+        ctx = PlannerExecutionContext(
+            parsed={},
+            manager=manager,
+            route=RoutingDecision(path="test", reasons=[]),
+            pass_index=2,
+        )
+        for stage_name in PLANNER_STAGE_ORDER:
+            manager.system_dirty_state[stage_name] = {"state": "clean", "reasons": []}
+            ctx.add_stage(
+                stage_name,
+                True,
+                f"{stage_name} completed on pass 1.",
+                pass_index=1,
+                action="run",
+            )
+        return ctx
 
-        def fake_qa(ctx):
-            report = PlanQualityReport()
-            if ctx.pass_index == 1:
-                for idx in range(5):
-                    report.add(f"PASS1_WARN_{idx}", "warning", f"pass1 warning {idx}")
-            return report
+    def _mark_ran_this_pass(self, ctx: PlannerExecutionContext, stage_name: str) -> None:
+        ctx.manager.system_dirty_state[stage_name] = {"state": "clean", "reasons": []}
+        ctx.add_stage(
+            stage_name,
+            True,
+            f"{stage_name} completed on pass {ctx.pass_index}.",
+            pass_index=ctx.pass_index,
+            action="run",
+        )
 
-        def fake_fix(ctx, report):
-            ctx.manager.mark_system_dirty("qa", reason="Targeted QA-only rerun for regression.")
-            ctx.add_stage("fix", True, "Applied targeted QA-only rerun.", changed_targets=["qa"])
+    def test_second_pass_skips_clean_unrelated_stages(self) -> None:
+        ctx = self._ctx()
+        ctx.manager.system_dirty_state["qa"] = {"state": "dirty", "reasons": ["Targeted QA rerun."]}
 
-        with patch("planner._run_qa_stage", side_effect=fake_qa), patch("planner._apply_fix_pass", side_effect=fake_fix):
-            plan = build_plan(payload)
+        self.assertFalse(stage_should_run(ctx, "layout"))
+        self.assertFalse(stage_should_run(ctx, "grading"))
+        self.assertTrue(stage_should_run(ctx, "qa"))
 
-        rerun_history = (plan.get("meta") or {}).get("rerun_history") or []
-        layout_runs = [row for row in rerun_history if row.get("stage_name") == "layout"]
-        qa_runs = [row for row in rerun_history if row.get("stage_name") == "qa"]
+    def test_dependency_rerun_reason_flows_after_upstream_reruns_clean(self) -> None:
+        ctx = self._ctx()
+        ctx.manager.system_dirty_state["grading"] = {"state": "dirty", "reasons": ["Grading changed."]}
 
-        self.assertGreaterEqual(len(layout_runs), 2)
-        self.assertEqual(layout_runs[0]["action"], "run")
-        self.assertEqual(layout_runs[1]["action"], "skipped_clean")
-        self.assertEqual(qa_runs[0]["action"], "run")
-        self.assertEqual(qa_runs[1]["action"], "run")
+        self.assertTrue(stage_should_run(ctx, "grading"))
+        self._mark_ran_this_pass(ctx, "grading")
+
+        self.assertTrue(stage_should_run(ctx, "drainage"))
+        self.assertIn("Dependency 'grading' reran this pass.", stage_dirty_reasons(ctx, "drainage"))
+        self._mark_ran_this_pass(ctx, "drainage")
+
+        self.assertTrue(stage_should_run(ctx, "storm_pipes"))
+        self.assertIn("Dependency 'drainage' reran this pass.", stage_dirty_reasons(ctx, "storm_pipes"))
 
 
 if __name__ == "__main__":

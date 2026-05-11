@@ -14,6 +14,14 @@ def latest_stage_result(ctx: PlannerExecutionContext, stage_name: str) -> Option
     return None
 
 
+def _stage_ran_successfully_this_pass(ctx: PlannerExecutionContext, stage_name: str) -> bool:
+    result = latest_stage_result(ctx, stage_name)
+    if result is None or not bool(result.success):
+        return False
+    meta = safe_dict(result.meta)
+    return safe_int(meta.get("pass_index"), -1) == safe_int(ctx.pass_index, -2) and safe_str(meta.get("action")).lower() == "run"
+
+
 def stage_dirty_reasons(ctx: PlannerExecutionContext, stage_name: str) -> List[str]:
     manager = ctx.manager
     reasons: List[str] = []
@@ -24,6 +32,8 @@ def stage_dirty_reasons(ctx: PlannerExecutionContext, stage_name: str) -> List[s
         dep_row = safe_dict(dirty_map.get(dep_name))
         if safe_str(dep_row.get("state")).lower() == "dirty":
             reasons.append(f"Dependency '{dep_name}' is dirty.")
+        elif _stage_ran_successfully_this_pass(ctx, dep_name):
+            reasons.append(f"Dependency '{dep_name}' reran this pass.")
     return dedupe_keep_order([item for item in reasons if item])
 
 
