@@ -22,11 +22,13 @@ def run_conflict_resolution_stage(
     group_conflict_clusters: Callable[..., List[Dict[str, Any]]],
     group_cluster_groups: Callable[[Sequence[Dict[str, Any]]], List[Dict[str, Any]]],
     snapshot_coordination_state: Callable[..., Dict[str, Any]],
+    full_coordination_state_snapshot: Callable[..., Dict[str, Any]],
     cluster_group_remaining_conflicts: Callable[..., List[Dict[str, Any]]],
     solve_conflict_cluster_group: Callable[..., Dict[str, Any]],
     refresh_conflict_resolved_state: Callable[..., None],
     coordination_metric_inc: Callable[..., None],
     restore_coordination_state: Callable[..., None],
+    restore_full_coordination_state: Callable[..., None],
     conflict_cluster_id: Callable[[Dict[str, Any]], str],
     post_reroute_validations: Callable[..., Dict[str, Any]],
     count_conflicts_by_type: Callable[[Sequence[Dict[str, Any]]], Dict[str, int]],
@@ -52,6 +54,7 @@ def run_conflict_resolution_stage(
     changed_systems: set[str] = set()
     best_iteration = 0
     best_state = snapshot_coordination_state(project, manager)
+    best_full_state = full_coordination_state_snapshot(project, manager)
     best_unresolved = len(before)
     iterations_used = 0
     unresolved_clusters: List[Dict[str, Any]] = []
@@ -69,6 +72,7 @@ def run_conflict_resolution_stage(
         unresolved = []
         for cluster_group in cluster_groups:
             snapshot = snapshot_coordination_state(project, manager)
+            full_snapshot = full_coordination_state_snapshot(project, manager)
             pre_all = detect_coordination_conflicts(project, manager)
             pre_related = cluster_group_remaining_conflicts(pre_all, cluster_group)
             resolution = solve_conflict_cluster_group(
@@ -122,7 +126,7 @@ def run_conflict_resolution_stage(
                     )
                 else:
                     coordination_metric_inc(coordination_metrics, ["rollbacks"])
-                    restore_coordination_state(project, manager, snapshot)
+                    restore_full_coordination_state(project, manager, full_snapshot)
                     if assisted_mode:
                         resolution["assumed"] = True
                         assumptions.append(
@@ -206,6 +210,7 @@ def run_conflict_resolution_stage(
             next_conflicts = sorted(detect_coordination_conflicts(project, manager), key=conflict_priority_key)
             if len(next_conflicts) < best_unresolved:
                 best_state = snapshot_coordination_state(project, manager)
+                best_full_state = full_coordination_state_snapshot(project, manager)
                 best_unresolved = len(next_conflicts)
                 best_iteration = iteration_index
             unresolved = next_conflicts
@@ -215,7 +220,7 @@ def run_conflict_resolution_stage(
             break
 
     if unresolved and best_state:
-        restore_coordination_state(project, manager, best_state)
+        restore_full_coordination_state(project, manager, best_full_state)
         refresh_conflict_resolved_state(project, manager, None)
         unresolved = sorted(detect_coordination_conflicts(project, manager), key=conflict_priority_key)
 

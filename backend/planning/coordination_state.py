@@ -57,6 +57,51 @@ def coordination_record_prune(metrics: Optional[Dict[str, Any]], reason: str, am
     metrics["prune_reasons"] = prune_reasons
 
 
+def full_coordination_state_snapshot(project: Any, manager: Any) -> Dict[str, Any]:
+    """Capture full manager/project state for candidate isolation.
+
+    The narrow coordination snapshot is useful for engineering deltas, but
+    candidate rollback must include project.meta, latest_outputs, metrics,
+    conflicts, dirty state, and audit state.
+    """
+
+    if hasattr(manager, "_export_state_bundle"):
+        state = manager._export_state_bundle(  # noqa: SLF001 - internal snapshot is intentional here.
+            include_snapshots=True,
+            include_variants=True,
+            include_audit_log=True,
+        )
+    elif hasattr(manager, "to_dict"):
+        state = manager.to_dict()
+    else:
+        state = {
+            "project": project.to_dict() if hasattr(project, "to_dict") else deepcopy(getattr(project, "__dict__", {})),
+            "state": deepcopy(getattr(manager, "state", {})),
+        }
+    return {
+        "state": deepcopy(state),
+        "transaction_snapshots": deepcopy(getattr(manager, "_transaction_snapshots", {})),
+    }
+
+
+def restore_full_coordination_state(project: Any, manager: Any, snapshot: Dict[str, Any]) -> None:
+    payload = deepcopy(safe_dict(snapshot).get("state"))
+    if not payload:
+        return
+    from core.project_manager import ProjectManager
+
+    restored = ProjectManager.from_dict(payload, assume_isolated=True)
+    if hasattr(project, "__dict__") and hasattr(restored.project, "__dict__"):
+        project.__dict__.clear()
+        project.__dict__.update(deepcopy(restored.project.__dict__))
+        manager.project = project
+    else:
+        manager.project = restored.project
+    manager.state = restored.state
+    if hasattr(manager, "_transaction_snapshots"):
+        manager._transaction_snapshots = deepcopy(safe_dict(snapshot).get("transaction_snapshots"))
+
+
 def snapshot_coordination_state(project: Any, manager: Any) -> Dict[str, Any]:
     drainage = safe_dict(canonical_stage_output(project, manager, "drainage"))
     grading = safe_dict(canonical_stage_output(project, manager, "grading"))

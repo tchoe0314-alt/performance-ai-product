@@ -251,8 +251,10 @@ from backend.planning.coordination_state import (
     add_grading_adjustment as _add_grading_adjustment_impl,
     coordination_metric_inc as _coordination_metric_inc_impl,
     coordination_record_prune as _coordination_record_prune_impl,
+    full_coordination_state_snapshot as _full_coordination_state_snapshot_impl,
     grading_local_adjustments as _grading_local_adjustments_impl,
     new_coordination_metrics as _new_coordination_metrics_impl,
+    restore_full_coordination_state as _restore_full_coordination_state_impl,
     restore_coordination_state as _restore_coordination_state_impl,
     snapshot_coordination_state as _snapshot_coordination_state_impl,
     sync_drainage_mutable_state as _sync_drainage_mutable_state_impl,
@@ -4968,6 +4970,14 @@ def _restore_coordination_state(project: ProjectModel, manager: ProjectManager, 
     _restore_coordination_state_impl(project, manager, snapshot)
 
 
+def _full_coordination_state_snapshot(project: ProjectModel, manager: ProjectManager) -> Dict[str, Any]:
+    return _full_coordination_state_snapshot_impl(project, manager)
+
+
+def _restore_full_coordination_state(project: ProjectModel, manager: ProjectManager, snapshot: Dict[str, Any]) -> None:
+    _restore_full_coordination_state_impl(project, manager, snapshot)
+
+
 def _sync_drainage_mutable_state(
     project: ProjectModel,
     manager: ProjectManager,
@@ -5774,10 +5784,12 @@ def _apply_conflict_resolution(
         return resolution
 
     base_snapshot = _snapshot_coordination_state(project, manager)
+    base_full_snapshot = _full_coordination_state_snapshot(project, manager)
     pre_all = _detect_coordination_conflicts(project, manager)
     pre_related = _matching_conflicts(pre_all, conflict)
     protected_zones = _expanded_obstacle_rectangles(project)
     best_snapshot: Optional[Dict[str, Any]] = None
+    best_full_snapshot: Optional[Dict[str, Any]] = None
     best_choice: Optional[Dict[str, Any]] = None
     best_near_valid: Optional[Dict[str, Any]] = None
     evaluated_candidates: List[Dict[str, Any]] = []
@@ -5932,7 +5944,7 @@ def _apply_conflict_resolution(
             if step_key in seen_steps:
                 continue
             seen_steps.add(step_key)
-            _restore_coordination_state(project, manager, base_snapshot)
+            _restore_full_coordination_state(project, manager, base_full_snapshot)
             target = _find_summary_segment(project, manager, names[0] if safe_str(target_system) == safe_str(primary[0] if primary else "") else names[1])
             if target is None:
                 continue
@@ -6039,7 +6051,7 @@ def _apply_conflict_resolution(
                 candidate_paths = _prune_geometry_candidate_rows(candidate_paths, route_path, metrics=metrics, breadth_cap=4)
                 for candidate_row in candidate_paths:
                     _coordination_metric_inc(metrics, ["rollbacks"])
-                    _restore_coordination_state(project, manager, base_snapshot)
+                    _restore_full_coordination_state(project, manager, base_full_snapshot)
                     refreshed = _find_summary_segment(project, manager, names[0] if safe_str(target_system) == safe_str(primary[0] if primary else "") else names[1])
                     if refreshed is None:
                         continue
@@ -6092,6 +6104,7 @@ def _apply_conflict_resolution(
                     if candidate["valid"] and (best_choice is None or safe_float(candidate.get("score"), 0.0) < safe_float(best_choice.get("score"), 1e9)):
                         best_choice = candidate
                         best_snapshot = _snapshot_coordination_state(project, manager)
+                        best_full_snapshot = _full_coordination_state_snapshot(project, manager)
                     elif best_near_valid is None or safe_float(candidate.get("score"), 0.0) < safe_float(best_near_valid.get("score"), 1e9):
                         best_near_valid = candidate
                 continue
@@ -6099,6 +6112,7 @@ def _apply_conflict_resolution(
             if candidate["valid"] and (best_choice is None or safe_float(candidate.get("score"), 0.0) < safe_float(best_choice.get("score"), 1e9)):
                 best_choice = candidate
                 best_snapshot = _snapshot_coordination_state(project, manager)
+                best_full_snapshot = _full_coordination_state_snapshot(project, manager)
             elif best_near_valid is None or safe_float(candidate.get("score"), 0.0) < safe_float(best_near_valid.get("score"), 1e9):
                 best_near_valid = candidate
 
@@ -6129,7 +6143,7 @@ def _apply_conflict_resolution(
                 for candidate_row in candidate_paths:
                     candidate_path = deepcopy(safe_list(candidate_row.get("path")))
                     _coordination_metric_inc(metrics, ["rollbacks"])
-                    _restore_coordination_state(project, manager, base_snapshot)
+                    _restore_full_coordination_state(project, manager, base_full_snapshot)
                     refreshed = _find_summary_segment(project, manager, names[0])
                     if refreshed is None:
                         continue
@@ -6180,13 +6194,14 @@ def _apply_conflict_resolution(
                     if candidate["valid"] and (best_choice is None or safe_float(candidate.get("score"), 0.0) < safe_float(best_choice.get("score"), 1e9)):
                         best_choice = candidate
                         best_snapshot = _snapshot_coordination_state(project, manager)
+                        best_full_snapshot = _full_coordination_state_snapshot(project, manager)
                     elif best_near_valid is None or safe_float(candidate.get("score"), 0.0) < safe_float(best_near_valid.get("score"), 1e9):
                         best_near_valid = candidate
 
     elif conflict_type == "pipe_cover_violation":
         target = _find_summary_segment(project, manager, names[0])
         if target is not None:
-            _restore_coordination_state(project, manager, base_snapshot)
+            _restore_full_coordination_state(project, manager, base_full_snapshot)
             target = _find_summary_segment(project, manager, names[0])
             if target is not None:
                 target_system, rec = target
@@ -6213,13 +6228,14 @@ def _apply_conflict_resolution(
                 if candidate["valid"]:
                     best_choice = candidate
                     best_snapshot = _snapshot_coordination_state(project, manager)
+                    best_full_snapshot = _full_coordination_state_snapshot(project, manager)
                 else:
                     best_near_valid = candidate
 
     elif conflict_type == "slope_violation":
         target = _find_summary_segment(project, manager, names[0])
         if target is not None:
-            _restore_coordination_state(project, manager, base_snapshot)
+            _restore_full_coordination_state(project, manager, base_full_snapshot)
             target = _find_summary_segment(project, manager, names[0])
             if target is not None:
                 target_system, rec = target
@@ -6252,12 +6268,16 @@ def _apply_conflict_resolution(
                 if candidate["valid"]:
                     best_choice = candidate
                     best_snapshot = _snapshot_coordination_state(project, manager)
+                    best_full_snapshot = _full_coordination_state_snapshot(project, manager)
                 else:
                     best_near_valid = candidate
 
     _coordination_metric_inc(metrics, ["timings_ms", "apply_conflict_resolution"], round((perf_counter() - started) * 1000.0, 3))
     if best_snapshot is not None and best_choice is not None:
-        _restore_coordination_state(project, manager, best_snapshot)
+        if best_full_snapshot is not None:
+            _restore_full_coordination_state(project, manager, best_full_snapshot)
+        else:
+            _restore_coordination_state(project, manager, best_snapshot)
         resolution.update(
             {
                 "success": True,
@@ -6272,7 +6292,7 @@ def _apply_conflict_resolution(
         )
         return resolution
 
-    _restore_coordination_state(project, manager, base_snapshot)
+    _restore_full_coordination_state(project, manager, base_full_snapshot)
     resolution["best_near_valid_candidate"] = deepcopy(safe_dict(best_near_valid or {}))
     resolution["failure_reason"] = safe_str(safe_dict(best_near_valid or {}).get("why_failed")) or "No safe candidate reduced this conflict cluster without violating downstream engineering checks."
     resolution["notes"].append(resolution["failure_reason"])
@@ -6940,6 +6960,7 @@ def _solve_conflict_cluster(
 ) -> Dict[str, Any]:
     started = perf_counter()
     base_snapshot = _snapshot_coordination_state(project, manager)
+    base_full_snapshot = _full_coordination_state_snapshot(project, manager)
     initial_conflicts = _detect_coordination_conflicts(project, manager)
     initial_related = _cluster_remaining_conflicts(initial_conflicts, cluster)
     candidate_orders = _cluster_candidate_orders(cluster)
@@ -6968,11 +6989,12 @@ def _solve_conflict_cluster(
     _coordination_metric_inc(metrics, ["candidate_counts", "cluster_orders_kept"], len(candidate_orders))
     best_valid: Optional[Dict[str, Any]] = None
     best_valid_snapshot: Optional[Dict[str, Any]] = None
+    best_valid_full_snapshot: Optional[Dict[str, Any]] = None
     best_near_valid: Optional[Dict[str, Any]] = None
     candidate_summaries: List[Dict[str, Any]] = []
 
     for order in candidate_orders:
-        _restore_coordination_state(project, manager, base_snapshot)
+        _restore_full_coordination_state(project, manager, base_full_snapshot)
         candidate_changed_systems: set[str] = set()
         candidate_resolution_rows: List[Dict[str, Any]] = []
         candidate_assumptions: List[Dict[str, Any]] = []
@@ -7103,12 +7125,16 @@ def _solve_conflict_cluster(
             if best_valid is None or safe_float(candidate.get("score"), 0.0) < safe_float(best_valid.get("score"), 1e9):
                 best_valid = candidate
                 best_valid_snapshot = _snapshot_coordination_state(project, manager)
+                best_valid_full_snapshot = _full_coordination_state_snapshot(project, manager)
         elif best_near_valid is None or safe_float(candidate.get("score"), 0.0) < safe_float(best_near_valid.get("score"), 1e9):
             best_near_valid = candidate
 
     if best_valid is not None and best_valid_snapshot is not None:
         _coordination_metric_inc(metrics, ["timings_ms", "solve_conflict_cluster"], round((perf_counter() - started) * 1000.0, 3))
-        _restore_coordination_state(project, manager, best_valid_snapshot)
+        if best_valid_full_snapshot is not None:
+            _restore_full_coordination_state(project, manager, best_valid_full_snapshot)
+        else:
+            _restore_coordination_state(project, manager, best_valid_snapshot)
         return {
             "success": True,
             "cluster_id": safe_str(cluster.get("cluster_id")),
@@ -7134,7 +7160,7 @@ def _solve_conflict_cluster(
             "crossing_strategy": safe_str(crossing_strategy),
         }
 
-    _restore_coordination_state(project, manager, base_snapshot)
+    _restore_full_coordination_state(project, manager, base_full_snapshot)
     _coordination_metric_inc(metrics, ["timings_ms", "solve_conflict_cluster"], round((perf_counter() - started) * 1000.0, 3))
     return {
         "success": False,
@@ -7194,6 +7220,7 @@ def _solve_conflict_cluster_group(
         return result
 
     base_snapshot = _snapshot_coordination_state(project, manager)
+    base_full_snapshot = _full_coordination_state_snapshot(project, manager)
     initial_conflicts = _detect_coordination_conflicts(project, manager)
     initial_related = _cluster_group_remaining_conflicts(initial_conflicts, group)
     group_plans = _cluster_group_candidate_plans(project, manager, group)
@@ -7221,7 +7248,7 @@ def _solve_conflict_cluster_group(
     candidate_summaries: List[Dict[str, Any]] = []
 
     for plan in group_plans:
-        _restore_coordination_state(project, manager, base_snapshot)
+        _restore_full_coordination_state(project, manager, base_full_snapshot)
         changed_systems: set[str] = set()
         cluster_results: List[Dict[str, Any]] = []
         cluster_rows: List[Dict[str, Any]] = []
@@ -7391,12 +7418,16 @@ def _solve_conflict_cluster_group(
             if best_valid is None or safe_float(candidate.get("score"), 0.0) < safe_float(best_valid.get("score"), 1e9):
                 best_valid = candidate
                 best_valid_snapshot = _snapshot_coordination_state(project, manager)
+                best_valid_full_snapshot = _full_coordination_state_snapshot(project, manager)
         elif best_near_valid is None or safe_float(candidate.get("score"), 0.0) < safe_float(best_near_valid.get("score"), 1e9):
             best_near_valid = candidate
 
     if best_valid is not None and best_valid_snapshot is not None:
         _coordination_metric_inc(metrics, ["timings_ms", "solve_conflict_cluster_group"], round((perf_counter() - started) * 1000.0, 3))
-        _restore_coordination_state(project, manager, best_valid_snapshot)
+        if best_valid_full_snapshot is not None:
+            _restore_full_coordination_state(project, manager, best_valid_full_snapshot)
+        else:
+            _restore_coordination_state(project, manager, best_valid_snapshot)
         return {
             "success": True,
             "cluster_group_id": safe_str(group.get("cluster_group_id")),
@@ -7427,7 +7458,7 @@ def _solve_conflict_cluster_group(
             ),
         }
 
-    _restore_coordination_state(project, manager, base_snapshot)
+    _restore_full_coordination_state(project, manager, base_full_snapshot)
     _coordination_metric_inc(metrics, ["timings_ms", "solve_conflict_cluster_group"], round((perf_counter() - started) * 1000.0, 3))
     return {
         "success": False,
@@ -7464,11 +7495,13 @@ def _run_conflict_resolution_stage(ctx: PlannerExecutionContext, hydrology: Dict
         group_conflict_clusters=_group_conflict_clusters,
         group_cluster_groups=_group_cluster_groups,
         snapshot_coordination_state=_snapshot_coordination_state,
+        full_coordination_state_snapshot=_full_coordination_state_snapshot,
         cluster_group_remaining_conflicts=_cluster_group_remaining_conflicts,
         solve_conflict_cluster_group=_solve_conflict_cluster_group,
         refresh_conflict_resolved_state=_refresh_conflict_resolved_state,
         coordination_metric_inc=_coordination_metric_inc,
         restore_coordination_state=_restore_coordination_state,
+        restore_full_coordination_state=_restore_full_coordination_state,
         conflict_cluster_id=_conflict_cluster_id,
         post_reroute_validations=_post_reroute_validations,
         count_conflicts_by_type=_count_conflicts_by_type,
