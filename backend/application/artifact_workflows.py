@@ -902,6 +902,9 @@ def export_dxf_artifact(
         project_id=project_id,
     )
     final_plan = _display_plan_from_result(result_data, enforce_export_guards=False)
+    from output.dxf_exporter import finalize_export_metadata
+
+    finalize_export_metadata(final_plan)
     stem = filename_stem or str(final_plan.get("project_name") or "civora-ai-plan")
     path = artifact_service.export_dxf(
         user_id=user_id,

@@ -3643,6 +3643,49 @@ def _remap_doc_layers(doc) -> None:
             remap_entity(entity)
 
 
+def _export_sheet_context(plan: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[List[Dict[str, Any]]], List[Dict[str, Any]]]:
+    profiles = _export_profiles(plan)
+    sections = _export_cross_sections(plan)
+    _ensure_canonical_sheet_metadata(plan, profiles, sections)
+    section_groups = _group_sections_for_sheets(sections)
+    sheet_registry = _build_sheet_registry(plan, profiles, section_groups)
+    return profiles, sections, section_groups, sheet_registry
+
+
+def finalize_export_metadata(plan: Dict[str, Any]) -> Dict[str, Any]:
+    """Attach the same sheet/export metadata that DXF export will use.
+
+    This is intentionally a dry-run metadata finalizer: it creates the export
+    layouts in memory so final_plan.meta reflects the artifact metadata before
+    a DXF file is written.
+    """
+
+    actions = safe_list(plan.get("actions"))
+    if not actions:
+        raise ValueError("No actions found in plan.")
+
+    profiles, _sections, section_groups, sheet_registry = _export_sheet_context(plan)
+    meta = plan.setdefault("meta", {})
+    meta["sheet_registry"] = [deepcopy(safe_dict(item)) for item in sheet_registry]
+
+    doc = ezdxf.new("R2010")
+    ensure_layers(doc)
+    ensure_text_styles(doc)
+    ensure_blocks(doc)
+    site_sheet = next((safe_dict(item) for item in sheet_registry if safe_text(item.get("sheet_kind")) == "site_plan"), {})
+    _add_site_plan_layout(doc, plan, actions, site_sheet)
+    _add_profile_layouts(doc, plan, profiles, sheet_registry)
+    _add_cross_section_layouts(doc, plan, section_groups, sheet_registry)
+    _prune_default_layouts(doc)
+
+    modelspace_actions = _prepare_modelspace_actions(plan, actions)
+    meta["export_audit"] = _build_export_audit(doc, plan, modelspace_actions, profiles, section_groups, sheet_registry)
+    return {
+        "sheet_registry": deepcopy(meta["sheet_registry"]),
+        "export_audit": deepcopy(meta["export_audit"]),
+    }
+
+
 def save_dxf(plan: Dict[str, Any], filename: str | None = None) -> str:
     actions = safe_list(plan.get("actions"))
     if not actions:
@@ -3650,6 +3693,8 @@ def save_dxf(plan: Dict[str, Any], filename: str | None = None) -> str:
 
     if filename is None:
         filename = timestamped_filename("output", "dxf")
+
+    finalize_export_metadata(plan)
 
     doc = ezdxf.new("R2010")
     ensure_layers(doc)
@@ -3670,13 +3715,9 @@ def save_dxf(plan: Dict[str, Any], filename: str | None = None) -> str:
         _draw_plan_pipe_annotations(msp, plan)
         _draw_basin_annotations(msp, plan)
 
-    profiles = _export_profiles(plan)
-    sections = _export_cross_sections(plan)
-    _ensure_canonical_sheet_metadata(plan, profiles, sections)
-    section_groups = _group_sections_for_sheets(sections)
-    sheet_registry = _build_sheet_registry(plan, profiles, section_groups)
+    profiles, _sections, section_groups, sheet_registry = _export_sheet_context(plan)
     plan.setdefault("meta", {})
-    plan["meta"]["sheet_registry"] = [dict(item) for item in sheet_registry]
+    plan["meta"]["sheet_registry"] = [deepcopy(safe_dict(item)) for item in sheet_registry]
 
     site_sheet = next((safe_dict(item) for item in sheet_registry if safe_text(item.get("sheet_kind")) == "site_plan"), {})
     _add_site_plan_layout(doc, plan, actions, site_sheet)

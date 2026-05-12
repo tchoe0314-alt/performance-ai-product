@@ -1,0 +1,101 @@
+from __future__ import annotations
+
+import tempfile
+import unittest
+from copy import deepcopy
+from pathlib import Path
+
+from output.dxf_exporter import finalize_export_metadata, save_dxf
+
+
+def _export_plan() -> dict:
+    return {
+        "project_name": "Slice 6D Export Metadata",
+        "units": "ft",
+        "actions": [
+            {
+                "task": "rectangle",
+                "layer": "SITE",
+                "origin": [0.0, 0.0],
+                "width": 120.0,
+                "height": 90.0,
+                "label": "Site Boundary",
+                "canonical_source_id": "site-1",
+                "canonical_source_type": "site",
+            },
+            {
+                "task": "polyline",
+                "layer": "PIPE",
+                "points": [[10.0, 10.0], [80.0, 40.0]],
+                "label": "STORM-1",
+                "canonical_source_id": "storm-1",
+                "canonical_source_type": "storm_pipe",
+            },
+        ],
+        "meta": {
+            "revision": "T1",
+            "issue_date": "2026-05-11",
+            "deliverables": {
+                "requested": ["storm_pipe_plan"],
+                "produced": ["site_plan", "storm_pipe_plan"],
+            },
+            "storm_pipes": {
+                "segments": [{"id": "storm-1", "name": "STORM-1", "length_ft": 76.158}],
+                "pipe_count": 1,
+                "total_length_ft": 76.158,
+            },
+        },
+    }
+
+
+class Phase1Slice6DExportMetadataTest(unittest.TestCase):
+    def test_finalize_export_metadata_populates_sheet_registry_and_export_audit_before_save(self) -> None:
+        plan = _export_plan()
+
+        self.assertNotIn("sheet_registry", plan["meta"])
+        self.assertNotIn("export_audit", plan["meta"])
+
+        metadata = finalize_export_metadata(plan)
+
+        self.assertTrue(plan["meta"]["sheet_registry"])
+        self.assertTrue(plan["meta"]["export_audit"])
+        self.assertEqual(metadata["sheet_registry"], plan["meta"]["sheet_registry"])
+        self.assertEqual(metadata["export_audit"], plan["meta"]["export_audit"])
+        self.assertTrue(plan["meta"]["export_audit"]["sheet_registry_meta_matches_plan"])
+
+    def test_save_dxf_uses_matching_pre_finalized_metadata(self) -> None:
+        plan = _export_plan()
+        finalize_export_metadata(plan)
+        before_registry = deepcopy(plan["meta"]["sheet_registry"])
+        before_audit = deepcopy(plan["meta"]["export_audit"])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            save_dxf(plan, filename=str(Path(tmpdir) / "slice-6d.dxf"))
+
+        self.assertEqual(plan["meta"]["sheet_registry"], before_registry)
+        self.assertEqual(plan["meta"]["export_audit"]["sheet_registry"], before_audit["sheet_registry"])
+        self.assertEqual(plan["meta"]["export_audit"]["sheet_total"], before_audit["sheet_total"])
+        self.assertTrue(plan["meta"]["export_audit"]["sheet_registry_meta_matches_plan"])
+
+    def test_stale_export_metadata_is_recomputed_from_current_plan(self) -> None:
+        plan = _export_plan()
+        plan["meta"]["sheet_registry"] = [
+            {
+                "layout_name": "STALE",
+                "sheet_kind": "stale",
+                "sheet_number": 99,
+                "sheet_total": 99,
+            }
+        ]
+        plan["meta"]["export_audit"] = {"success": False, "sheet_total": 99, "sheet_registry": deepcopy(plan["meta"]["sheet_registry"])}
+
+        metadata = finalize_export_metadata(plan)
+
+        self.assertNotEqual(plan["meta"]["sheet_registry"], [{"layout_name": "STALE", "sheet_kind": "stale", "sheet_number": 99, "sheet_total": 99}])
+        self.assertEqual(plan["meta"]["sheet_registry"][0]["layout_name"], "SITE PLAN")
+        self.assertEqual(plan["meta"]["export_audit"], metadata["export_audit"])
+        self.assertTrue(plan["meta"]["export_audit"]["sheet_registry_meta_matches_plan"])
+
+
+if __name__ == "__main__":
+    unittest.main()
