@@ -166,7 +166,9 @@ _PLAN_META_KEYS = {
     "engineering_status",
     "truth_audit",
     "manual_validation",
+    "qa",
     "coordination",
+    "coordination_realism",
     "convergence_summary",
     "optimization_summary",
     "manager_export",
@@ -204,6 +206,16 @@ _MANAGER_EXPORT_METRIC_KEYS = {
 }
 
 _COORDINATION_KEYS = {
+    "success",
+    "detected_conflicts",
+    "resolved_conflicts",
+    "unresolved_conflicts",
+    "unresolved_clusters",
+    "assumption_resolutions",
+    "resolved_count",
+    "unresolved_count",
+    "changed_systems",
+    "coordination_realism",
     "selected_group_strategy",
     "selected_candidate_mode",
     "post_validation_valid",

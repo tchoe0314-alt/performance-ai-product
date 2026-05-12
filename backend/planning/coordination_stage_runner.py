@@ -8,6 +8,7 @@ from core.config import PIPE_INTENSITY_IN_HR, PIPE_RUNOFF_C
 from core.project_manager import ConflictRecord, ConflictSeverity
 
 from .common import safe_dict, safe_float, safe_int, safe_list, safe_str, lower_text
+from .coordination_realism import coordination_realism_from_summary
 from .runtime import PlannerExecutionContext
 
 
@@ -143,6 +144,12 @@ def run_conflict_resolution_stage(
                                 or resolution.get("failure_breakdown")
                             )
                         )
+                        realism = deepcopy(
+                            safe_dict(
+                                safe_dict(resolution.get("best_near_valid_candidate")).get("coordination_realism")
+                                or resolution.get("coordination_realism")
+                            )
+                        )
                         unresolved.append(
                             {
                                 **deepcopy(safe_dict(conflict)),
@@ -161,6 +168,7 @@ def run_conflict_resolution_stage(
                                 "resolution_attempted": safe_str(resolution.get("selected_order")),
                                 "resolution_reason": safe_str(resolution.get("failure_reason"), "No candidate improved canonical state without creating equal or worse conflicts."),
                                 "failure_breakdown": failure_breakdown,
+                                "coordination_realism": realism,
                             }
                         )
                     unresolved_report_map[safe_str(cluster_group.get("cluster_group_id"))] = {
@@ -172,6 +180,12 @@ def run_conflict_resolution_stage(
                             safe_dict(
                                 safe_dict(resolution.get("best_near_valid_candidate")).get("failure_breakdown")
                                 or resolution.get("failure_breakdown")
+                            )
+                        ),
+                        "coordination_realism": deepcopy(
+                            safe_dict(
+                                safe_dict(resolution.get("best_near_valid_candidate")).get("coordination_realism")
+                                or resolution.get("coordination_realism")
                             )
                         ),
                         "selected_group_strategy": safe_str(resolution.get("selected_group_strategy") or resolution.get("crossing_strategy")),
@@ -195,6 +209,12 @@ def run_conflict_resolution_stage(
                             or resolution.get("failure_breakdown")
                         )
                     )
+                    realism = deepcopy(
+                        safe_dict(
+                            safe_dict(resolution.get("best_near_valid_candidate")).get("coordination_realism")
+                            or resolution.get("coordination_realism")
+                        )
+                    )
                     unresolved.append(
                         {
                             **deepcopy(safe_dict(conflict)),
@@ -213,6 +233,7 @@ def run_conflict_resolution_stage(
                             "resolution_attempted": safe_str(resolution.get("selected_order")),
                             "resolution_reason": safe_str(resolution.get("failure_reason"), "No safe cluster candidate was available for this conflict group."),
                             "failure_breakdown": failure_breakdown,
+                            "coordination_realism": realism,
                         }
                     )
                 unresolved_report_map[safe_str(cluster_group.get("cluster_group_id"))] = {
@@ -224,6 +245,12 @@ def run_conflict_resolution_stage(
                         safe_dict(
                             safe_dict(resolution.get("best_near_valid_candidate")).get("failure_breakdown")
                             or resolution.get("failure_breakdown")
+                        )
+                    ),
+                    "coordination_realism": deepcopy(
+                        safe_dict(
+                            safe_dict(resolution.get("best_near_valid_candidate")).get("coordination_realism")
+                            or resolution.get("coordination_realism")
                         )
                     ),
                     "selected_group_strategy": safe_str(resolution.get("selected_group_strategy") or resolution.get("crossing_strategy")),
@@ -270,6 +297,7 @@ def run_conflict_resolution_stage(
                 "candidate_family_failures": deepcopy(safe_list(prior_report.get("candidate_summaries"))),
                 "failure_tags": deepcopy(safe_list(prior_report.get("failure_tags"))),
                 "failure_breakdown": deepcopy(safe_dict(prior_report.get("failure_breakdown") or conflict.get("failure_breakdown"))),
+                "coordination_realism": deepcopy(safe_dict(prior_report.get("coordination_realism") or conflict.get("coordination_realism"))),
                 "attempted_group_strategy": safe_str(prior_report.get("selected_group_strategy")),
                 "attempted_geometry_strategy": safe_str(prior_report.get("geometry_strategy")),
                 "exact_reason": safe_str(prior_report.get("resolution_reason"), safe_str(conflict.get("resolution_reason"), "No valid candidate satisfied this conflict cluster.")),
@@ -331,6 +359,7 @@ def run_conflict_resolution_stage(
             "intensity_in_hr": safe_float(hydrology.get("intensity_in_hr"), PIPE_INTENSITY_IN_HR),
         },
     }
+    coordination_summary["coordination_realism"] = coordination_realism_from_summary(coordination_summary)
     manager.latest_outputs["coordination"] = deepcopy(coordination_summary)
     project.meta["coordination_summary"] = deepcopy(coordination_summary)
     for system_name in changed_systems_list:

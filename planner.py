@@ -247,6 +247,10 @@ from backend.planning.infrastructure_stage_runners import (
 from backend.planning.coordination_stage_runner import (
     run_conflict_resolution_stage as _run_conflict_resolution_stage_impl,
 )
+from backend.planning.coordination_realism import (
+    coordination_realism_from_summary as _coordination_realism_from_summary_impl,
+    coordination_realism_summary as _coordination_realism_summary_impl,
+)
 from backend.planning.coordination_state import (
     add_grading_adjustment as _add_grading_adjustment_impl,
     coordination_metric_inc as _coordination_metric_inc_impl,
@@ -756,6 +760,7 @@ def _attach_canonical_stage_outputs(plan: Dict[str, Any], project: ProjectModel,
     meta["sanitary"] = canonical_stage_output(project, manager, "sanitary")
     meta["utilities"] = canonical_stage_output(project, manager, "utilities")
     meta["coordination"] = canonical_stage_output(project, manager, "coordination")
+    meta["coordination_realism"] = _coordination_realism_from_summary_impl(safe_dict(meta.get("coordination")))
     meta["parking_program"] = canonical_stage_output(project, manager, "parking_program")
     meta["profiles"] = canonical_stage_output(project, manager, "profiles")
     meta["cross_sections"] = canonical_stage_output(project, manager, "cross_sections")
@@ -6011,11 +6016,13 @@ def _apply_conflict_resolution(
             "corridor_penalty": round(corridor_penalty, 3),
             "protected_zone_hits": deepcopy(protected_hits),
             "crossing_hierarchy": deepcopy(crossing_eval),
+            "ownership_class": ownership_class,
             "notes": deepcopy(notes or []),
             "why_failed": safe_str(why_failed),
         }
         if valid:
             candidate["why_failed"] = ""
+        candidate["coordination_realism"] = _coordination_realism_summary_impl(candidate, conflict=conflict)
         candidate["failure_breakdown"] = _coordination_failure_breakdown(
             remaining_conflicts=post_related,
             post_validation=validations,
@@ -6036,6 +6043,7 @@ def _apply_conflict_resolution(
                 "grading_blocked": bool(grading_eval.get("blocked")),
                 "crossing_blocked": bool(crossing_eval.get("blocked")),
                 "crossing_penalty": round(safe_float(crossing_eval.get("penalty"), 0.0), 3),
+                "coordination_realism": deepcopy(safe_dict(candidate.get("coordination_realism"))),
                 "failure_breakdown": deepcopy(safe_dict(candidate.get("failure_breakdown"))),
             }
         )
@@ -6218,6 +6226,7 @@ def _apply_conflict_resolution(
                     )
                     candidate["grading_repair"] = grading_note
                     candidate["inserted_structures"] = structure_info
+                    candidate["coordination_realism"] = _coordination_realism_summary_impl(candidate, conflict=conflict)
                     if candidate["valid"] and (best_choice is None or safe_float(candidate.get("score"), 0.0) < safe_float(best_choice.get("score"), 1e9)):
                         best_choice = candidate
                         best_snapshot = _snapshot_coordination_state(project, manager)
@@ -6226,6 +6235,7 @@ def _apply_conflict_resolution(
                         best_near_valid = candidate
                 continue
             candidate["grading_repair"] = grading_note
+            candidate["coordination_realism"] = _coordination_realism_summary_impl(candidate, conflict=conflict)
             if candidate["valid"] and (best_choice is None or safe_float(candidate.get("score"), 0.0) < safe_float(best_choice.get("score"), 1e9)):
                 best_choice = candidate
                 best_snapshot = _snapshot_coordination_state(project, manager)
@@ -6308,6 +6318,7 @@ def _apply_conflict_resolution(
                     )
                     candidate["grading_repair"] = grading_note
                     candidate["inserted_structures"] = structure_info
+                    candidate["coordination_realism"] = _coordination_realism_summary_impl(candidate, conflict=conflict)
                     if candidate["valid"] and (best_choice is None or safe_float(candidate.get("score"), 0.0) < safe_float(best_choice.get("score"), 1e9)):
                         best_choice = candidate
                         best_snapshot = _snapshot_coordination_state(project, manager)
@@ -6342,6 +6353,7 @@ def _apply_conflict_resolution(
                     grading_note=grading_note,
                 )
                 candidate["grading_repair"] = grading_note
+                candidate["coordination_realism"] = _coordination_realism_summary_impl(candidate, conflict=conflict)
                 if candidate["valid"]:
                     best_choice = candidate
                     best_snapshot = _snapshot_coordination_state(project, manager)
@@ -6382,6 +6394,7 @@ def _apply_conflict_resolution(
                 )
                 candidate["grading_repair"] = grading_note
                 candidate["inserted_structures"] = structure_info
+                candidate["coordination_realism"] = _coordination_realism_summary_impl(candidate, conflict=conflict)
                 if candidate["valid"]:
                     best_choice = candidate
                     best_snapshot = _snapshot_coordination_state(project, manager)
@@ -6404,6 +6417,7 @@ def _apply_conflict_resolution(
                 "constructability": deepcopy(safe_dict(best_choice.get("constructability"))),
                 "engineering_deltas": deepcopy(safe_dict(best_choice.get("engineering_deltas"))),
                 "best_near_valid_candidate": deepcopy(safe_dict(best_near_valid or {})),
+                "coordination_realism": deepcopy(safe_dict(best_choice.get("coordination_realism"))),
                 "evaluated_candidates": deepcopy(evaluated_candidates),
             }
         )
@@ -7333,6 +7347,7 @@ def _solve_conflict_cluster(
             "post_validation": validations,
             "why_failed": failed_reason or ("Cluster still had related conflicts after candidate application." if remaining_related else "Cluster candidate failed downstream validation."),
         }
+        candidate["coordination_realism"] = _coordination_realism_summary_impl(candidate, group=cluster)
         candidate["failure_breakdown"] = _coordination_failure_breakdown(
             remaining_conflicts=remaining_related,
             post_validation=validations,
@@ -7352,6 +7367,7 @@ def _solve_conflict_cluster(
                 "crossing_blocked": bool(safe_dict(safe_dict(overall_deltas.get("crossing_hierarchy")).get("blocked"))),
                 "grading_blocked": bool(safe_dict(safe_dict(overall_deltas.get("grading_impact")).get("blocked"))),
                 "protected_zone_penalty": safe_float(safe_dict(safe_dict(overall_deltas.get("protected_zone_impact")).get("penalty")), 0.0),
+                "coordination_realism": deepcopy(safe_dict(candidate.get("coordination_realism"))),
                 "failure_reason": safe_str(candidate.get("why_failed")),
                 "failure_breakdown": deepcopy(safe_dict(candidate.get("failure_breakdown"))),
             }
@@ -7381,6 +7397,7 @@ def _solve_conflict_cluster(
             "constructability_score": safe_float(best_valid.get("constructability_score"), 0.0),
             "engineering_deltas": deepcopy(safe_dict(best_valid.get("engineering_deltas"))),
             "best_near_valid_candidate": deepcopy(safe_dict(best_near_valid or {})),
+            "coordination_realism": deepcopy(safe_dict(best_valid.get("coordination_realism"))),
             "post_validation": deepcopy(safe_dict(best_valid.get("post_validation"))),
             "remaining_cluster_conflicts": [],
             "score": safe_float(best_valid.get("score"), 0.0),
@@ -7408,6 +7425,7 @@ def _solve_conflict_cluster(
         "constructability_score": 0.0,
         "engineering_deltas": {},
         "best_near_valid_candidate": deepcopy(safe_dict(best_near_valid or {})),
+        "coordination_realism": deepcopy(safe_dict(safe_dict(best_near_valid or {}).get("coordination_realism"))),
         "post_validation": deepcopy(safe_dict(safe_dict(best_near_valid or {}).get("post_validation"))),
         "remaining_cluster_conflicts": deepcopy(initial_related),
         "score": safe_float(safe_dict(best_near_valid or {}).get("score"), 0.0),
@@ -7631,6 +7649,7 @@ def _solve_conflict_cluster_group(
             "remaining_cluster_conflicts": deepcopy(remaining_related),
             "why_failed": failed_reason or ("Trench-group candidate left related conflicts unresolved." if remaining_related else "Trench-group candidate failed downstream validation."),
         }
+        candidate["coordination_realism"] = _coordination_realism_summary_impl(candidate, group=group)
         candidate["failure_breakdown"] = _coordination_failure_breakdown(
             remaining_conflicts=remaining_related,
             post_validation=validations,
@@ -7655,6 +7674,7 @@ def _solve_conflict_cluster_group(
                 "crossing_blocked": bool(safe_dict(safe_dict(overall_deltas.get("crossing_hierarchy")).get("blocked"))),
                 "grading_blocked": bool(safe_dict(safe_dict(overall_deltas.get("grading_impact")).get("blocked"))),
                 "protected_zone_penalty": safe_float(safe_dict(safe_dict(overall_deltas.get("protected_zone_impact")).get("penalty")), 0.0),
+                "coordination_realism": deepcopy(safe_dict(candidate.get("coordination_realism"))),
                 "failure_reason": safe_str(candidate.get("why_failed")),
                 "failure_breakdown": deepcopy(safe_dict(candidate.get("failure_breakdown"))),
             }
@@ -7688,6 +7708,7 @@ def _solve_conflict_cluster_group(
             "engineering_deltas": deepcopy(safe_dict(best_valid.get("engineering_deltas"))),
             "cluster_group_summary": deepcopy(safe_dict(best_valid.get("cluster_group_summary"))),
             "best_near_valid_candidate": deepcopy(safe_dict(best_near_valid or {})),
+            "coordination_realism": deepcopy(safe_dict(best_valid.get("coordination_realism"))),
             "post_validation": deepcopy(safe_dict(best_valid.get("post_validation"))),
             "remaining_cluster_conflicts": [],
             "score": safe_float(best_valid.get("score"), 0.0),
@@ -7720,6 +7741,7 @@ def _solve_conflict_cluster_group(
         "engineering_deltas": {},
         "cluster_group_summary": {},
         "best_near_valid_candidate": deepcopy(safe_dict(best_near_valid or {})),
+        "coordination_realism": deepcopy(safe_dict(safe_dict(best_near_valid or {}).get("coordination_realism"))),
         "post_validation": deepcopy(safe_dict(safe_dict(best_near_valid or {}).get("post_validation"))),
         "remaining_cluster_conflicts": deepcopy(initial_related),
         "score": safe_float(safe_dict(best_near_valid or {}).get("score"), 0.0),
