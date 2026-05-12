@@ -1,7 +1,8 @@
 import unittest
 
-from backend.planning.execution_control import mark_stage_skipped_clean, stage_should_run
+from backend.planning.execution_control import canonical_state_diff, canonical_state_snapshot, mark_stage_skipped_clean, stage_should_run
 from backend.planning.runtime import PLANNER_STAGE_DEPENDENCIES, PLANNER_STAGE_ORDER, PlannerExecutionContext, RoutingDecision, _register_default_dependencies
+from core.geometry_core import ProjectModel
 from core.project_manager import ProjectManager
 
 
@@ -120,6 +121,76 @@ class ExecutionControlTest(unittest.TestCase):
         self.assertTrue(stage_should_run(ctx, "earthwork"))
         self.assertTrue(stage_should_run(ctx, "qa"))
         self.assertFalse(stage_should_run(ctx, "layout"))
+
+    def test_canonical_state_snapshot_prefers_project_meta_over_stale_latest_outputs(self):
+        project = ProjectModel(name="Slice 6C Snapshot")
+        manager = ProjectManager(project)
+        project.meta["grading_summary"] = {
+            "local_adjustments": [{"id": "canonical-grade"}],
+            "proposed_surface": {"source": "canonical"},
+        }
+        project.meta["drainage_canonical"] = {
+            "structures": [{"id": "canonical-inlet"}],
+            "basins": [{"id": "canonical-basin"}],
+            "pipe_runs": [{"id": "canonical-run"}],
+        }
+        project.meta["storm_pipe_summary"] = {
+            "segments": [{"id": "canonical-storm", "length_ft": 100.0}],
+            "total_length_ft": 100.0,
+        }
+        project.meta["sanitary_summary"] = {
+            "segments": [{"id": "canonical-san", "length_ft": 80.0}],
+            "manholes": [{"id": "canonical-mh"}],
+            "total_length_ft": 80.0,
+        }
+        project.meta["utility_summary"] = {
+            "conflict_hooks": {
+                "utility_segments": [{"id": "canonical-util", "length_ft": 40.0}],
+            },
+            "structures": [{"id": "canonical-valve"}],
+            "total_length_ft": 40.0,
+        }
+        manager.latest_outputs["grading"] = {"local_adjustments": [{"id": "stale-grade"}], "proposed_surface": {}}
+        manager.latest_outputs["drainage"] = {
+            "structures": [{"id": "stale-inlet"}],
+            "basins": [],
+            "pipe_runs": [],
+        }
+        manager.latest_outputs["storm_pipe_summary"] = {
+            "segments": [{"id": "stale-storm", "length_ft": 999.0}],
+            "total_length_ft": 999.0,
+        }
+        manager.latest_outputs["sanitary"] = {
+            "segments": [{"id": "stale-san", "length_ft": 888.0}],
+            "manholes": [],
+            "total_length_ft": 888.0,
+        }
+        manager.latest_outputs["utilities"] = {
+            "conflict_hooks": {
+                "utility_segments": [{"id": "stale-util", "length_ft": 777.0}],
+            },
+            "structures": [],
+            "total_length_ft": 777.0,
+        }
+
+        snapshot = canonical_state_snapshot(project, manager)
+
+        self.assertEqual(snapshot["drainage_structure_count"], 1)
+        self.assertEqual(snapshot["drainage_basin_count"], 1)
+        self.assertEqual(snapshot["drainage_pipe_run_count"], 1)
+        self.assertEqual(snapshot["storm_segment_count"], 1)
+        self.assertEqual(snapshot["storm_total_length_ft"], 100.0)
+        self.assertEqual(snapshot["sanitary_segment_count"], 1)
+        self.assertEqual(snapshot["sanitary_manhole_count"], 1)
+        self.assertEqual(snapshot["sanitary_total_length_ft"], 80.0)
+        self.assertEqual(snapshot["utility_segment_count"], 1)
+        self.assertEqual(snapshot["utility_structure_count"], 1)
+        self.assertEqual(snapshot["utility_total_length_ft"], 40.0)
+        self.assertEqual(snapshot["grading_adjustment_count"], 1)
+        self.assertTrue(snapshot["has_proposed_surface"])
+
+        diff = canonical_state_diff(snapshot, canonical_state_snapshot(project, manager))
+        self.assertEqual(diff["changed_count"], 0)
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from .common import dedupe_keep_order, safe_dict, safe_float, safe_int, safe_list, safe_str
+from .common import canonical_stage_output, dedupe_keep_order, safe_dict, safe_float, safe_int, safe_list, safe_str
 from .runtime import PLANNER_STAGE_ORDER, PlannerExecutionContext, PlannerStageResult, declared_stage_dependencies
 
 
@@ -77,11 +77,11 @@ def mark_stage_skipped_clean(ctx: PlannerExecutionContext, stage_name: str) -> N
 
 
 def canonical_state_snapshot(project: Any, manager: Any) -> Dict[str, Any]:
-    drainage = safe_dict(manager.latest_outputs.get("drainage", project.meta.get("drainage_canonical", {})))
-    storm = safe_dict(manager.latest_outputs.get("storm_pipe_summary", project.meta.get("storm_pipe_summary", {})))
-    sanitary = safe_dict(manager.latest_outputs.get("sanitary", project.meta.get("sanitary_summary", {})))
-    utilities = safe_dict(manager.latest_outputs.get("utilities", project.meta.get("utility_summary", {})))
-    grading = safe_dict(manager.latest_outputs.get("grading", project.meta.get("grading_summary", {})))
+    drainage = safe_dict(canonical_stage_output(project, manager, "drainage"))
+    storm = safe_dict(canonical_stage_output(project, manager, "storm_pipes"))
+    sanitary = safe_dict(canonical_stage_output(project, manager, "sanitary"))
+    utilities = safe_dict(canonical_stage_output(project, manager, "utilities"))
+    grading = safe_dict(canonical_stage_output(project, manager, "grading"))
     expanded_actions = safe_list(safe_dict(project.meta.get("_expanded_plan")).get("actions"))
     return {
         "project_object_count": len(getattr(project, "objects", {}) or {}),
