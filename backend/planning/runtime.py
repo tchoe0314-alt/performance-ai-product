@@ -424,6 +424,45 @@ def collect_plan_stats(plan: Dict[str, Any]) -> Dict[str, Any]:
     def metric_value(name: str, default: float = 0.0) -> float:
         return safe_float(safe_dict(manager_metrics.get(name)).get("value"), default)
 
+    def has_quantity_value(name: str) -> bool:
+        return name in quantity_totals and quantity_totals.get(name) is not None
+
+    def metric_fallback(final_value: float, metric_name: str, *, canonical_present: bool = False) -> float:
+        final_number = safe_float(final_value, 0.0)
+        if final_number > 0.0 or canonical_present:
+            return final_number
+        return metric_value(metric_name, 0.0)
+
+    def segment_total_length(segments: Any) -> float:
+        total = 0.0
+        for segment in safe_list(segments):
+            record = safe_dict(segment)
+            length = safe_float(record.get("length_ft"), 0.0)
+            if length <= 0.0:
+                points = safe_list(record.get("path") or record.get("route_points") or record.get("points"))
+                if len(points) >= 2:
+                    length = polyline_length(points)
+            total += max(0.0, length)
+        return total
+
+    storm_summary = safe_dict(meta.get("storm_pipes") or meta.get("storm_pipe_summary"))
+    storm_stats = safe_dict(storm_summary.get("stats"))
+    canonical_storm_length = max(
+        safe_float(storm_summary.get("total_length_ft"), 0.0),
+        safe_float(storm_stats.get("total_length_ft"), 0.0),
+        safe_float(storm_stats.get("total_pipe_length_ft"), 0.0),
+        segment_total_length(storm_summary.get("segments")),
+    )
+    utility_summary = safe_dict(meta.get("utilities"))
+    utility_stats = safe_dict(utility_summary.get("stats"))
+    utility_hooks = safe_dict(utility_summary.get("conflict_hooks"))
+    canonical_utility_length = max(
+        safe_float(utility_summary.get("total_length_ft"), 0.0),
+        safe_float(utility_stats.get("total_length_ft"), 0.0),
+        segment_total_length(utility_summary.get("segments")),
+        segment_total_length(utility_hooks.get("utility_segments")),
+    )
+
     actions = safe_list(plan.get("actions"))
     stats["action_count"] = len(actions)
     building_rects: List[Tuple[float, float, float, float]] = []
@@ -478,40 +517,67 @@ def collect_plan_stats(plan: Dict[str, Any]) -> Dict[str, Any]:
     )
     stats["estimated_impervious_area_sf"] = round(max(area_total, safe_float(stats["estimated_impervious_area_sf"])), 3)
 
-    stats["action_count"] = max(
+    final_action_count = max(
         int(stats["action_count"]),
         int(round(safe_float(quantity_totals.get("action_count"), stats["action_count"]))),
-        int(round(metric_value("layout_action_count", stats["action_count"]))),
     )
-    stats["estimated_building_area_sf"] = max(
+    stats["action_count"] = final_action_count if final_action_count > 0 or has_quantity_value("action_count") else int(round(metric_value("layout_action_count", 0.0)))
+
+    final_building_area = max(
         safe_float(stats["estimated_building_area_sf"]),
         safe_float(quantity_totals.get("building_area_sf"), 0.0),
-        metric_value("layout_building_area_sf", 0.0),
     )
-    stats["estimated_parking_area_sf"] = max(
+    stats["estimated_building_area_sf"] = metric_fallback(
+        final_building_area,
+        "layout_building_area_sf",
+        canonical_present=has_quantity_value("building_area_sf") or bool(building_rects),
+    )
+    final_parking_area = max(
         safe_float(stats["estimated_parking_area_sf"]),
         safe_float(quantity_totals.get("parking_area_sf"), 0.0),
-        metric_value("layout_parking_area_sf", 0.0),
     )
-    stats["estimated_road_area_sf"] = max(
+    stats["estimated_parking_area_sf"] = metric_fallback(
+        final_parking_area,
+        "layout_parking_area_sf",
+        canonical_present=has_quantity_value("parking_area_sf") or bool(parking_rects),
+    )
+    final_road_area = max(
         safe_float(stats["estimated_road_area_sf"]),
         safe_float(quantity_totals.get("road_area_sf"), 0.0),
-        metric_value("layout_road_area_sf", 0.0),
     )
-    stats["estimated_pipe_length_ft"] = max(
+    stats["estimated_road_area_sf"] = metric_fallback(
+        final_road_area,
+        "layout_road_area_sf",
+        canonical_present=has_quantity_value("road_area_sf") or bool(road_rects),
+    )
+    final_pipe_length = max(
         safe_float(stats["estimated_pipe_length_ft"]),
         safe_float(quantity_totals.get("pipe_length_ft"), 0.0),
-        metric_value("storm_pipe_length_ft", 0.0),
+        canonical_storm_length,
     )
-    stats["estimated_utility_length_ft"] = max(
+    stats["estimated_pipe_length_ft"] = metric_fallback(
+        final_pipe_length,
+        "storm_pipe_length_ft",
+        canonical_present=bool(storm_summary) or has_quantity_value("pipe_length_ft"),
+    )
+    final_utility_length = max(
         safe_float(stats["estimated_utility_length_ft"]),
         safe_float(quantity_totals.get("utility_length_ft"), 0.0),
-        metric_value("utility_total_length_ft", 0.0),
+        canonical_utility_length,
     )
-    stats["estimated_impervious_area_sf"] = max(
+    stats["estimated_utility_length_ft"] = metric_fallback(
+        final_utility_length,
+        "utility_total_length_ft",
+        canonical_present=bool(utility_summary) or has_quantity_value("utility_length_ft"),
+    )
+    final_impervious_area = max(
         safe_float(stats["estimated_impervious_area_sf"]),
         safe_float(quantity_totals.get("estimated_impervious_area_sf"), 0.0),
-        metric_value("layout_impervious_area_sf", 0.0),
+    )
+    stats["estimated_impervious_area_sf"] = metric_fallback(
+        final_impervious_area,
+        "layout_impervious_area_sf",
+        canonical_present=has_quantity_value("estimated_impervious_area_sf") or area_total > 0.0,
     )
 
     for key in list(stats.keys()):

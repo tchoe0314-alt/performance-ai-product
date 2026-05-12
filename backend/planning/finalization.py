@@ -6,7 +6,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from core.project_manager import ProjectManager
 
-from .common import dedupe_keep_order, lower_text, safe_dict, safe_float, safe_int, safe_list, safe_str
+from .common import dedupe_keep_order, lower_text, polyline_length, safe_dict, safe_float, safe_int, safe_list, safe_str
 from .field_contract import unwrap_fields_for_execution
 from .runtime import _lot_area
 
@@ -344,41 +344,97 @@ def canonical_truth_audit(
             ]
         )
 
+    manager_metrics = safe_dict(safe_dict(meta.get("manager_export")).get("metrics", {}))
+
+    def segment_total_length(segments: Any) -> float:
+        total = 0.0
+        for segment in safe_list(segments):
+            record = safe_dict(segment)
+            length = safe_float(record.get("length_ft"), 0.0)
+            if length <= 0.0:
+                points = safe_list(record.get("path") or record.get("route_points") or record.get("points"))
+                if len(points) >= 2:
+                    length = polyline_length(points)
+            total += max(0.0, length)
+        return total
+
+    def first_truth_value(candidates: Sequence[Tuple[str, Any]]) -> Tuple[float, str]:
+        for source, value in candidates:
+            number = safe_float(value, 0.0)
+            if number > 0.0:
+                return number, source
+        return 0.0, "missing"
+
     qty_pipe = safe_float(qty_totals.get("pipe_length_ft"), 0.0)
     qa_pipe = safe_float(qa_stats.get("estimated_pipe_length_ft"), 0.0)
-    storm_pipe_metric = safe_float(safe_dict(safe_dict(meta.get("manager_export")).get("metrics", {})).get("storm_pipe_length_ft", {}).get("value"), 0.0)
-    storm_truth = max(
-        storm_pipe_metric,
-        safe_float(storm.get("total_length_ft"), 0.0),
-        safe_float(safe_dict(safe_dict(storm).get("stats")).get("total_length_ft"), 0.0),
+    storm_pipe_metric = safe_float(safe_dict(manager_metrics.get("storm_pipe_length_ft")).get("value"), 0.0)
+    storm_stats = safe_dict(storm.get("stats"))
+    storm_truth, storm_truth_source = first_truth_value(
+        [
+            ("storm_pipes.total_length_ft", storm.get("total_length_ft")),
+            ("storm_pipes.stats.total_length_ft", storm_stats.get("total_length_ft")),
+            ("storm_pipes.stats.total_pipe_length_ft", storm_stats.get("total_pipe_length_ft")),
+            ("storm_pipes.segments", segment_total_length(storm.get("segments"))),
+            ("quantities.pipe_length_ft", qty_pipe),
+            ("qa.estimated_pipe_length_ft", qa_pipe),
+            ("manager_export.metrics.storm_pipe_length_ft", storm_pipe_metric),
+        ]
     )
     checks.append(
         {
             "code": "PIPE_LENGTH_CONSISTENT",
             "ok": not (storm_truth > 0.0 and (qty_pipe <= 0.0 or qa_pipe <= 0.0)),
             "severity": "error",
-            "message": "Pipe length totals must agree across quantities, QA, and manager metrics.",
+            "message": "Pipe length totals must agree across canonical storm, quantities, and QA state.",
+            "context": {
+                "truth_length_ft": round(storm_truth, 3),
+                "truth_source": storm_truth_source,
+                "quantity_pipe_length_ft": round(qty_pipe, 3),
+                "qa_pipe_length_ft": round(qa_pipe, 3),
+            },
         }
     )
     qty_utility = safe_float(qty_totals.get("utility_length_ft"), 0.0)
     qa_utility = safe_float(qa_stats.get("estimated_utility_length_ft"), 0.0)
-    utility_metric = safe_float(safe_dict(safe_dict(meta.get("manager_export")).get("metrics", {})).get("utility_total_length_ft", {}).get("value"), 0.0)
-    utility_truth = max(
-        utility_metric,
-        safe_float(utilities.get("total_length_ft"), 0.0),
+    utility_metric = safe_float(safe_dict(manager_metrics.get("utility_total_length_ft")).get("value"), 0.0)
+    utility_stats = safe_dict(utilities.get("stats"))
+    utility_hooks = safe_dict(utilities.get("conflict_hooks"))
+    utility_truth, utility_truth_source = first_truth_value(
+        [
+            ("utilities.total_length_ft", utilities.get("total_length_ft")),
+            ("utilities.stats.total_length_ft", utility_stats.get("total_length_ft")),
+            ("utilities.segments", segment_total_length(utilities.get("segments"))),
+            ("utilities.conflict_hooks.utility_segments", segment_total_length(utility_hooks.get("utility_segments"))),
+            ("quantities.utility_length_ft", qty_utility),
+            ("qa.estimated_utility_length_ft", qa_utility),
+            ("manager_export.metrics.utility_total_length_ft", utility_metric),
+        ]
     )
     checks.append(
         {
             "code": "UTILITY_LENGTH_CONSISTENT",
             "ok": not (utility_truth > 0.0 and (qty_utility <= 0.0 or qa_utility <= 0.0)),
             "severity": "error",
-            "message": "Utility length totals must agree across quantities, QA, and manager metrics.",
+            "message": "Utility length totals must agree across canonical utility, quantities, and QA state.",
+            "context": {
+                "truth_length_ft": round(utility_truth, 3),
+                "truth_source": utility_truth_source,
+                "quantity_utility_length_ft": round(qty_utility, 3),
+                "qa_utility_length_ft": round(qa_utility, 3),
+            },
         }
     )
     qty_sanitary = safe_float(qty_totals.get("sanitary_length_ft"), 0.0)
-    sanitary_truth = max(
-        safe_float(safe_dict(safe_dict(meta.get("manager_export")).get("metrics", {})).get("sanitary_total_length_ft", {}).get("value"), 0.0),
-        safe_float(safe_dict(sanitary.get("stats")).get("total_length_ft"), 0.0),
+    sanitary_stats = safe_dict(sanitary.get("stats"))
+    sanitary_metric = safe_float(safe_dict(manager_metrics.get("sanitary_total_length_ft")).get("value"), 0.0)
+    sanitary_truth, sanitary_truth_source = first_truth_value(
+        [
+            ("sanitary.total_length_ft", sanitary.get("total_length_ft")),
+            ("sanitary.stats.total_length_ft", sanitary_stats.get("total_length_ft")),
+            ("sanitary.segments", segment_total_length(sanitary.get("segments"))),
+            ("quantities.sanitary_length_ft", qty_sanitary),
+            ("manager_export.metrics.sanitary_total_length_ft", sanitary_metric),
+        ]
     )
     checks.append(
         {
@@ -386,6 +442,11 @@ def canonical_truth_audit(
             "ok": not (sanitary_truth > 0.0 and qty_sanitary <= 0.0),
             "severity": "error",
             "message": "Sanitary quantities must reflect canonical sanitary geometry.",
+            "context": {
+                "truth_length_ft": round(sanitary_truth, 3),
+                "truth_source": sanitary_truth_source,
+                "quantity_sanitary_length_ft": round(qty_sanitary, 3),
+            },
         }
     )
     checks.extend(
@@ -508,13 +569,13 @@ def canonical_area_accounting(parsed: Dict[str, Any], plan: Dict[str, Any]) -> D
         safe_float(qty_totals.get("lot_area_sf"), 0.0),
     )
 
-    impervious_candidates = [
+    canonical_impervious_candidates = [
         safe_float(stats.get("estimated_impervious_area_sf"), 0.0),
         safe_float(qa_stats.get("estimated_impervious_area_sf"), 0.0),
         safe_float(qty_totals.get("estimated_impervious_area_sf"), 0.0),
-        safe_float(safe_dict(manager_metrics.get("layout_impervious_area_sf")).get("value"), 0.0),
     ]
-    impervious_area = max(impervious_candidates) if impervious_candidates else 0.0
+    manager_impervious = safe_float(safe_dict(manager_metrics.get("layout_impervious_area_sf")).get("value"), 0.0)
+    impervious_area = max(canonical_impervious_candidates) if canonical_impervious_candidates else 0.0
 
     rect_keys: Dict[Tuple[float, float, float, float], int] = {}
     impervious_rects: List[Tuple[float, float, float, float]] = []
@@ -564,7 +625,13 @@ def canonical_area_accounting(parsed: Dict[str, Any], plan: Dict[str, Any]) -> D
                 else:
                     merged.append((y1, y2))
             impervious_by_action += (x_right - x_left) * sum(max(0.0, y2 - y1) for y1, y2 in merged)
-    value_span = (max(impervious_candidates) - min(impervious_candidates)) if impervious_candidates else 0.0
+    impervious_candidates = list(canonical_impervious_candidates)
+    if impervious_by_action > 0.0:
+        impervious_candidates.append(impervious_by_action)
+    authoritative_impervious = max(impervious_candidates) if impervious_candidates else 0.0
+    impervious_area = authoritative_impervious if authoritative_impervious > 0.0 else manager_impervious
+    span_candidates = impervious_candidates if authoritative_impervious > 0.0 else [manager_impervious]
+    value_span = (max(span_candidates) - min(span_candidates)) if span_candidates else 0.0
     if lot_area <= 0.0:
         reason_class = "missing_lot_area"
     elif impervious_area <= lot_area and impervious_by_action <= lot_area * 1.02:
