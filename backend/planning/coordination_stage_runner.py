@@ -137,6 +137,12 @@ def run_conflict_resolution_stage(
                             }
                         )
                     for conflict in safe_list(cluster_group.get("conflicts")):
+                        failure_breakdown = deepcopy(
+                            safe_dict(
+                                safe_dict(resolution.get("best_near_valid_candidate")).get("failure_breakdown")
+                                or resolution.get("failure_breakdown")
+                            )
+                        )
                         unresolved.append(
                             {
                                 **deepcopy(safe_dict(conflict)),
@@ -154,6 +160,7 @@ def run_conflict_resolution_stage(
                                 "best_near_valid_candidate": deepcopy(safe_dict(resolution.get("best_near_valid_candidate"))),
                                 "resolution_attempted": safe_str(resolution.get("selected_order")),
                                 "resolution_reason": safe_str(resolution.get("failure_reason"), "No candidate improved canonical state without creating equal or worse conflicts."),
+                                "failure_breakdown": failure_breakdown,
                             }
                         )
                     unresolved_report_map[safe_str(cluster_group.get("cluster_group_id"))] = {
@@ -161,6 +168,12 @@ def run_conflict_resolution_stage(
                         "resolution_reason": safe_str(resolution.get("failure_reason")),
                         "candidate_summaries": deepcopy(safe_list(resolution.get("candidate_summaries"))),
                         "failure_tags": deepcopy(safe_list(resolution.get("failure_tags"))),
+                        "failure_breakdown": deepcopy(
+                            safe_dict(
+                                safe_dict(resolution.get("best_near_valid_candidate")).get("failure_breakdown")
+                                or resolution.get("failure_breakdown")
+                            )
+                        ),
                         "selected_group_strategy": safe_str(resolution.get("selected_group_strategy") or resolution.get("crossing_strategy")),
                         "geometry_strategy": safe_str(safe_dict(resolution.get("cluster_group_summary")).get("geometry_strategy")),
                     }
@@ -176,6 +189,12 @@ def run_conflict_resolution_stage(
                         }
                     )
                 for conflict in safe_list(cluster_group.get("conflicts")):
+                    failure_breakdown = deepcopy(
+                        safe_dict(
+                            safe_dict(resolution.get("best_near_valid_candidate")).get("failure_breakdown")
+                            or resolution.get("failure_breakdown")
+                        )
+                    )
                     unresolved.append(
                         {
                             **deepcopy(safe_dict(conflict)),
@@ -193,6 +212,7 @@ def run_conflict_resolution_stage(
                             "best_near_valid_candidate": deepcopy(safe_dict(resolution.get("best_near_valid_candidate"))),
                             "resolution_attempted": safe_str(resolution.get("selected_order")),
                             "resolution_reason": safe_str(resolution.get("failure_reason"), "No safe cluster candidate was available for this conflict group."),
+                            "failure_breakdown": failure_breakdown,
                         }
                     )
                 unresolved_report_map[safe_str(cluster_group.get("cluster_group_id"))] = {
@@ -200,6 +220,12 @@ def run_conflict_resolution_stage(
                     "resolution_reason": safe_str(resolution.get("failure_reason")),
                     "candidate_summaries": deepcopy(safe_list(resolution.get("candidate_summaries"))),
                     "failure_tags": deepcopy(safe_list(resolution.get("failure_tags"))),
+                    "failure_breakdown": deepcopy(
+                        safe_dict(
+                            safe_dict(resolution.get("best_near_valid_candidate")).get("failure_breakdown")
+                            or resolution.get("failure_breakdown")
+                        )
+                    ),
                     "selected_group_strategy": safe_str(resolution.get("selected_group_strategy") or resolution.get("crossing_strategy")),
                     "geometry_strategy": safe_str(safe_dict(resolution.get("cluster_group_summary")).get("geometry_strategy")),
                 }
@@ -243,6 +269,7 @@ def run_conflict_resolution_stage(
                 "best_near_valid_candidate": deepcopy(safe_dict(prior_report.get("best_near_valid_candidate") or conflict.get("best_near_valid_candidate"))),
                 "candidate_family_failures": deepcopy(safe_list(prior_report.get("candidate_summaries"))),
                 "failure_tags": deepcopy(safe_list(prior_report.get("failure_tags"))),
+                "failure_breakdown": deepcopy(safe_dict(prior_report.get("failure_breakdown") or conflict.get("failure_breakdown"))),
                 "attempted_group_strategy": safe_str(prior_report.get("selected_group_strategy")),
                 "attempted_geometry_strategy": safe_str(prior_report.get("geometry_strategy")),
                 "exact_reason": safe_str(prior_report.get("resolution_reason"), safe_str(conflict.get("resolution_reason"), "No valid candidate satisfied this conflict cluster.")),

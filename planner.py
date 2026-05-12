@@ -576,6 +576,7 @@ def _manual_failure_reasoning(failure: Dict[str, Any]) -> Dict[str, Any]:
     context = safe_dict(rec.get("context"))
     unresolved = safe_list(context.get("unresolved_conflicts"))
     first_conflict = safe_dict(unresolved[0]) if unresolved else {}
+    failure_breakdown = safe_dict(first_conflict.get("failure_breakdown") or context.get("failure_breakdown"))
     location = context.get("location", first_conflict.get("location"))
     rule = (
         safe_str(context.get("rule"))
@@ -584,7 +585,8 @@ def _manual_failure_reasoning(failure: Dict[str, Any]) -> Dict[str, Any]:
         or safe_str(rec.get("code"))
     )
     why_unresolved = (
-        safe_str(context.get("why_unresolved"))
+        safe_str(failure_breakdown.get("rejected_reason"))
+        or safe_str(context.get("why_unresolved"))
         or safe_str(first_conflict.get("resolution_reason"))
         or safe_str(context.get("failure_reason"))
         or safe_str(rec.get("message"))
@@ -598,6 +600,7 @@ def _manual_failure_reasoning(failure: Dict[str, Any]) -> Dict[str, Any]:
         "why_unresolved": why_unresolved,
         "failure_type": safe_str(rec.get("failure_type")),
         "reason_class": safe_str(rec.get("reason_class")),
+        "failure_breakdown": deepcopy(failure_breakdown),
     }
 
 
@@ -6010,6 +6013,13 @@ def _apply_conflict_resolution(
         }
         if valid:
             candidate["why_failed"] = ""
+        candidate["failure_breakdown"] = _coordination_failure_breakdown(
+            remaining_conflicts=post_related,
+            post_validation=validations,
+            protected_zone_hits=protected_hits,
+            engineering_deltas=deltas,
+            rejected_reason=safe_str(candidate.get("why_failed")),
+        )
         evaluated_candidates.append(
             {
                 "strategy": strategy,
@@ -6023,6 +6033,7 @@ def _apply_conflict_resolution(
                 "grading_blocked": bool(grading_eval.get("blocked")),
                 "crossing_blocked": bool(crossing_eval.get("blocked")),
                 "crossing_penalty": round(safe_float(crossing_eval.get("penalty"), 0.0), 3),
+                "failure_breakdown": deepcopy(safe_dict(candidate.get("failure_breakdown"))),
             }
         )
         return candidate
@@ -6952,6 +6963,116 @@ def _coordination_failure_tags(candidate_summaries: Sequence[Dict[str, Any]], be
     return dedupe_keep_order(tags)
 
 
+def _coordination_conflict_report_id(conflict: Dict[str, Any]) -> str:
+    rec = safe_dict(conflict)
+    signature = _conflict_signature(rec)
+    location = _conflict_location(rec)
+    station = safe_float(rec.get("station_ft"), 0.0)
+    return "::".join(
+        [
+            safe_str(signature[0], "conflict"),
+            "-".join(signature[1]) or "unknown",
+            f"{location[0]:.1f},{location[1]:.1f}",
+            f"{station:.1f}",
+        ]
+    )
+
+
+def _coordination_conflict_rule(conflict: Dict[str, Any]) -> Dict[str, Any]:
+    rec = safe_dict(conflict)
+    rule_keys = (
+        "required_horizontal_clearance_ft",
+        "actual_horizontal_clearance_ft",
+        "required_vertical_clearance_ft",
+        "actual_vertical_clearance_ft",
+        "required_clearance_ft",
+        "actual_clearance_ft",
+        "required_slope_ft_ft",
+        "actual_slope_ft_ft",
+        "preferred_lower_system",
+        "preferred_crossing_angle_deg",
+        "crossing_angle_deg",
+        "interaction_type",
+    )
+    return {
+        "conflict_id": _coordination_conflict_report_id(rec),
+        "conflict_type": safe_str(rec.get("conflict_type")),
+        "systems": deepcopy(safe_list(rec.get("systems"))),
+        "involved_objects": deepcopy(safe_list(rec.get("involved_objects"))),
+        "severity": safe_str(rec.get("severity")),
+        "location": deepcopy(_conflict_location(rec)),
+        "rules": {key: deepcopy(rec.get(key)) for key in rule_keys if key in rec},
+    }
+
+
+def _coordination_post_validation_failures(post_validation: Dict[str, Any]) -> List[Dict[str, Any]]:
+    validation = safe_dict(post_validation)
+    failures: List[Dict[str, Any]] = []
+    for system_name, payload in safe_dict(validation.get("systems")).items():
+        rec = safe_dict(payload)
+        if rec and not bool(rec.get("valid", True)):
+            failures.append({"system": safe_str(system_name), "details": deepcopy(rec)})
+    for field_name, value in safe_dict(validation.get("consistency")).items():
+        if not bool(value):
+            failures.append({"system": "consistency", "field": safe_str(field_name), "details": {"valid": False}})
+    if validation and not bool(validation.get("valid", True)) and not failures:
+        failures.append({"system": "post_validation", "details": deepcopy(validation)})
+    return failures
+
+
+def _coordination_failure_breakdown(
+    *,
+    remaining_conflicts: Sequence[Dict[str, Any]] = (),
+    post_validation: Optional[Dict[str, Any]] = None,
+    protected_zone_hits: Sequence[Dict[str, Any]] = (),
+    engineering_deltas: Optional[Dict[str, Any]] = None,
+    assumption_used: bool = False,
+    rejected_reason: str = "",
+) -> Dict[str, Any]:
+    remaining = [safe_dict(item) for item in safe_list(remaining_conflicts) if safe_dict(item)]
+    deltas = safe_dict(engineering_deltas)
+    protected_impact = safe_dict(deltas.get("protected_zone_impact"))
+    grading_impact = safe_dict(deltas.get("grading_impact"))
+    crossing_hierarchy = safe_dict(deltas.get("crossing_hierarchy"))
+    constructability = safe_dict(deltas.get("constructability_impact"))
+    hits = [safe_dict(item) for item in safe_list(protected_zone_hits) if safe_dict(item)]
+    if not hits and safe_int(protected_impact.get("hit_count"), 0) > 0:
+        hits = [
+            {
+                "kind": safe_str(kind),
+                "penalty": safe_float(protected_impact.get("penalty"), 0.0),
+            }
+            for kind in safe_list(protected_impact.get("hit_kinds"))
+            if safe_str(kind)
+        ]
+    post_failures = _coordination_post_validation_failures(safe_dict(post_validation or {}))
+    return {
+        "remaining_conflict_ids": [_coordination_conflict_report_id(item) for item in remaining],
+        "remaining_conflict_rules": [_coordination_conflict_rule(item) for item in remaining],
+        "post_validation_failures": post_failures,
+        "protected_zone_hits": deepcopy(hits),
+        "grading_blocked": bool(grading_impact.get("blocked")),
+        "crossing_hierarchy_blocked": bool(crossing_hierarchy.get("blocked")),
+        "assumption_used": bool(assumption_used),
+        "constructability_penalties": {
+            "score": round(safe_float(constructability.get("score"), 0.0), 3),
+            "bend_complexity": safe_int(constructability.get("bend_complexity"), 0),
+            "protected_zone_penalty": round(safe_float(constructability.get("protected_zone_penalty"), safe_float(protected_impact.get("penalty"), 0.0)), 3),
+            "corridor_switch_count": safe_int(deltas.get("corridor_switch_count"), 0),
+            "fragmentation_penalty": round(safe_float(deltas.get("fragmentation_penalty"), 0.0), 3),
+        },
+        "unresolved_systems": sorted(
+            {
+                safe_str(system)
+                for conflict in remaining
+                for system in safe_list(conflict.get("systems"))
+                if safe_str(system)
+            }
+        ),
+        "rejected_reason": safe_str(rejected_reason),
+    }
+
+
 def _apply_group_crossing_strategy_prefit(project: ProjectModel, manager: ProjectManager, group: Dict[str, Any], crossing_strategy: str) -> Dict[str, Any]:
     strategy_name = safe_str(crossing_strategy)
     if strategy_name not in {"upper_reroute_first", "parallel_shift_first"}:
@@ -7209,6 +7330,13 @@ def _solve_conflict_cluster(
             "post_validation": validations,
             "why_failed": failed_reason or ("Cluster still had related conflicts after candidate application." if remaining_related else "Cluster candidate failed downstream validation."),
         }
+        candidate["failure_breakdown"] = _coordination_failure_breakdown(
+            remaining_conflicts=remaining_related,
+            post_validation=validations,
+            engineering_deltas=overall_deltas,
+            assumption_used=bool(candidate_assumptions),
+            rejected_reason=safe_str(candidate.get("why_failed")),
+        )
         candidate_summaries.append(
             {
                 "order_name": safe_str(candidate.get("order_name")),
@@ -7222,6 +7350,7 @@ def _solve_conflict_cluster(
                 "grading_blocked": bool(safe_dict(safe_dict(overall_deltas.get("grading_impact")).get("blocked"))),
                 "protected_zone_penalty": safe_float(safe_dict(safe_dict(overall_deltas.get("protected_zone_impact")).get("penalty")), 0.0),
                 "failure_reason": safe_str(candidate.get("why_failed")),
+                "failure_breakdown": deepcopy(safe_dict(candidate.get("failure_breakdown"))),
             }
         )
         if candidate["valid"]:
@@ -7482,6 +7611,8 @@ def _solve_conflict_cluster_group(
             "crossing_strategy_prefit_reroutes": crossing_prefit_reroutes,
             "geometry_strategy_prefit_reroutes": len(safe_list(geometry_prefit.get("rerouted_segments"))),
         }
+        overall_deltas["corridor_switch_count"] = corridor_switch_count
+        overall_deltas["fragmentation_penalty"] = round(fragmentation_penalty, 3)
         candidate = {
             "cluster_group_id": safe_str(group.get("cluster_group_id")),
             "plan_name": safe_str(plan.get("name")),
@@ -7497,6 +7628,13 @@ def _solve_conflict_cluster_group(
             "remaining_cluster_conflicts": deepcopy(remaining_related),
             "why_failed": failed_reason or ("Trench-group candidate left related conflicts unresolved." if remaining_related else "Trench-group candidate failed downstream validation."),
         }
+        candidate["failure_breakdown"] = _coordination_failure_breakdown(
+            remaining_conflicts=remaining_related,
+            post_validation=validations,
+            engineering_deltas=overall_deltas,
+            assumption_used=bool(assumptions),
+            rejected_reason=safe_str(candidate.get("why_failed")),
+        )
         candidate_summaries.append(
             {
                 "plan_name": safe_str(candidate.get("plan_name")),
@@ -7515,6 +7653,7 @@ def _solve_conflict_cluster_group(
                 "grading_blocked": bool(safe_dict(safe_dict(overall_deltas.get("grading_impact")).get("blocked"))),
                 "protected_zone_penalty": safe_float(safe_dict(safe_dict(overall_deltas.get("protected_zone_impact")).get("penalty")), 0.0),
                 "failure_reason": safe_str(candidate.get("why_failed")),
+                "failure_breakdown": deepcopy(safe_dict(candidate.get("failure_breakdown"))),
             }
         )
         if candidate["valid"]:

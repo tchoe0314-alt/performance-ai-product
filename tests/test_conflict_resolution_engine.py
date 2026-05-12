@@ -10,6 +10,7 @@ from planner import (
     _detect_coordination_conflicts,
     _group_cluster_groups,
     _group_conflict_clusters,
+    _manual_failure_reasoning,
     _path_hits_buffered_rect,
     _point_inside_buffered_rect,
     _refresh_conflict_resolved_state,
@@ -506,6 +507,7 @@ class ConflictResolutionEngineTest(unittest.TestCase):
         naive = next(row for row in result["evaluated_candidates"] if "ada_path" in row["protected_zone_hit_kinds"])
         chosen_row = next(row for row in result["evaluated_candidates"] if row["valid"] and row["score"] == min(item["score"] for item in result["evaluated_candidates"] if item["valid"]))
         self.assertIn("ada_path", naive["protected_zone_hit_kinds"])
+        self.assertTrue(naive["failure_breakdown"]["protected_zone_hits"])
         self.assertLess(chosen_row["score"], naive["score"])
 
     def test_crossing_hierarchy_prefers_moving_the_upper_system(self) -> None:
@@ -607,6 +609,197 @@ class ConflictResolutionEngineTest(unittest.TestCase):
             result = _apply_conflict_resolution(project, manager, geometry, assisted_mode=False, candidate_mode="protected_zone_bias")
         self.assertFalse(result["success"])
         self.assertTrue(any(row["grading_blocked"] for row in result["evaluated_candidates"]))
+        self.assertTrue(result["best_near_valid_candidate"]["failure_breakdown"]["grading_blocked"])
+
+    def test_failed_cluster_candidate_reports_remaining_conflict_rules(self) -> None:
+        project, manager = _manager_with_summaries()
+        storm = {
+            "segments": [
+                {
+                    "pipe": "STORM-1",
+                    "from": "INLET-1",
+                    "to": "J-1",
+                    "path": [[0.0, 0.0], [20.0, 0.0]],
+                    "diameter_in": 12.0,
+                    "start_invert": 100.0,
+                    "end_invert": 99.0,
+                    "cover_start_ft": 3.0,
+                    "cover_end_ft": 3.0,
+                    "flow_cfs": 0.5,
+                    "capacity_cfs": 4.0,
+                    "capacity_ratio": 0.125,
+                    "slope_pct": 5.0,
+                }
+            ]
+        }
+        sanitary = {
+            "segments": [
+                {
+                    "name": "SAN-MAIN-1",
+                    "segment_role": "main",
+                    "route_points": [[10.0, -10.0], [10.0, 10.0]],
+                    "diameter_in": 8.0,
+                    "start_invert_ft": 99.2,
+                    "end_invert_ft": 98.8,
+                    "slope_ft_ft": 0.02,
+                    "start_name": "SMH-1",
+                    "end_name": "SMH-2",
+                }
+            ],
+            "manholes": [],
+            "stats": {},
+        }
+        manager.latest_outputs["storm_pipe_summary"] = deepcopy(storm)
+        project.meta["storm_pipe_summary"] = deepcopy(storm)
+        manager.latest_outputs["sanitary"] = deepcopy(sanitary)
+        project.meta["sanitary_summary"] = deepcopy(sanitary)
+        manager.latest_outputs["utilities"] = {"conflict_hooks": {"utility_segments": []}}
+        project.meta["utility_summary"] = {"conflict_hooks": {"utility_segments": []}}
+        conflicts = _detect_coordination_conflicts(project, manager)
+        cluster = _group_conflict_clusters(conflicts, project)[0]
+
+        with patch(
+            "planner._apply_conflict_resolution",
+            return_value={
+                "success": True,
+                "changed_systems": [],
+                "strategy": "forced_noop",
+                "notes": [],
+                "constructability": {},
+                "engineering_deltas": {},
+            },
+        ):
+            result = _solve_conflict_cluster(project, manager, cluster, assisted_mode=False)
+
+        self.assertFalse(result["success"])
+        breakdown = result["best_near_valid_candidate"]["failure_breakdown"]
+        self.assertTrue(breakdown["remaining_conflict_ids"])
+        self.assertEqual(breakdown["remaining_conflict_rules"][0]["conflict_type"], "sanitary_storm_clearance")
+        self.assertIn("required_vertical_clearance_ft", breakdown["remaining_conflict_rules"][0]["rules"])
+        self.assertTrue(result["candidate_summaries"][0]["failure_breakdown"]["remaining_conflict_ids"])
+
+    def test_failed_cluster_candidate_reports_assumption_used(self) -> None:
+        project, manager = _manager_with_summaries()
+        storm = {
+            "segments": [
+                {
+                    "pipe": "STORM-1",
+                    "from": "INLET-1",
+                    "to": "J-1",
+                    "path": [[0.0, 0.0], [20.0, 0.0]],
+                    "diameter_in": 12.0,
+                    "start_invert": 100.0,
+                    "end_invert": 99.0,
+                    "cover_start_ft": 3.0,
+                    "cover_end_ft": 3.0,
+                    "flow_cfs": 0.5,
+                    "capacity_cfs": 4.0,
+                    "capacity_ratio": 0.125,
+                    "slope_pct": 5.0,
+                }
+            ]
+        }
+        sanitary = {
+            "segments": [
+                {
+                    "name": "SAN-MAIN-1",
+                    "segment_role": "main",
+                    "route_points": [[10.0, -10.0], [10.0, 10.0]],
+                    "diameter_in": 8.0,
+                    "start_invert_ft": 99.2,
+                    "end_invert_ft": 98.8,
+                    "slope_ft_ft": 0.02,
+                    "start_name": "SMH-1",
+                    "end_name": "SMH-2",
+                }
+            ],
+            "manholes": [],
+            "stats": {},
+        }
+        manager.latest_outputs["storm_pipe_summary"] = deepcopy(storm)
+        project.meta["storm_pipe_summary"] = deepcopy(storm)
+        manager.latest_outputs["sanitary"] = deepcopy(sanitary)
+        project.meta["sanitary_summary"] = deepcopy(sanitary)
+        manager.latest_outputs["utilities"] = {"conflict_hooks": {"utility_segments": []}}
+        project.meta["utility_summary"] = {"conflict_hooks": {"utility_segments": []}}
+        cluster = _group_conflict_clusters(_detect_coordination_conflicts(project, manager), project)[0]
+
+        with patch(
+            "planner._apply_conflict_resolution",
+            return_value={"success": False, "assumed": True, "failure_reason": "Assumed reroute was not deterministic enough."},
+        ):
+            result = _solve_conflict_cluster(project, manager, cluster, assisted_mode=True)
+
+        self.assertFalse(result["success"])
+        self.assertTrue(result["best_near_valid_candidate"]["failure_breakdown"]["assumption_used"])
+        self.assertTrue(result["candidate_summaries"][0]["failure_breakdown"]["assumption_used"])
+
+    def test_failed_group_candidate_reports_post_validation_failures(self) -> None:
+        project, manager = _manager_with_summaries()
+        conflict = {
+            "conflict_type": "storm_sanitary_clearance",
+            "involved_objects": ["STORM-1", "SAN-1"],
+            "systems": ["storm", "sanitary"],
+            "location": [10.0, 0.0],
+            "severity": "error",
+            "required_vertical_clearance_ft": 1.5,
+            "actual_vertical_clearance_ft": 0.4,
+        }
+        group = {
+            "cluster_group_id": "cluster_bundle::test",
+            "clusters": [
+                {
+                    "cluster_id": "cluster_group::test",
+                    "conflicts": [deepcopy(conflict)],
+                    "systems": ["storm", "sanitary"],
+                    "objects": ["STORM-1", "SAN-1"],
+                }
+            ],
+            "conflicts": [deepcopy(conflict)],
+            "systems": ["storm", "sanitary"],
+            "objects": ["STORM-1", "SAN-1"],
+            "trench_like": True,
+        }
+        invalid_validation = {
+            "valid": False,
+            "systems": {"storm": {"valid": False, "missing_data_segments": ["STORM-1"]}},
+            "consistency": {"storm_summary_current": False},
+        }
+
+        with patch("planner._detect_coordination_conflicts", return_value=[deepcopy(conflict)]), patch(
+            "planner._cluster_group_candidate_plans",
+            return_value=[
+                {
+                    "name": "controlled_group_plan",
+                    "clusters": deepcopy(group["clusters"]),
+                    "allowed_candidate_modes": ["balanced"],
+                    "group_prefit_mode": "balanced",
+                    "crossing_strategy": "hierarchy_first",
+                    "geometry_strategy": "",
+                }
+            ],
+        ), patch(
+            "planner._solve_conflict_cluster",
+            return_value={
+                "success": True,
+                "cluster_id": "cluster_group::test",
+                "changed_systems": ["storm"],
+                "resolution_rows": [{"strategy": "vertical_adjustment"}],
+                "engineering_deltas": {},
+                "constructability_score": 0.0,
+                "selected_candidate_mode": "balanced",
+            },
+        ), patch("planner._cluster_group_remaining_conflicts", return_value=[]), patch(
+            "planner._post_reroute_validations",
+            return_value=invalid_validation,
+        ):
+            result = _solve_conflict_cluster_group(project, manager, group, assisted_mode=False)
+
+        self.assertFalse(result["success"])
+        breakdown = result["best_near_valid_candidate"]["failure_breakdown"]
+        self.assertEqual(breakdown["post_validation_failures"][0]["system"], "storm")
+        self.assertTrue(any(item.get("field") == "storm_summary_current" for item in breakdown["post_validation_failures"]))
+        self.assertTrue(result["candidate_summaries"][0]["failure_breakdown"]["post_validation_failures"])
 
     def test_selected_candidate_reasoning_reflects_real_tradeoff(self) -> None:
         project, manager = _manager_with_summaries()
@@ -1093,6 +1286,46 @@ class ConflictResolutionEngineTest(unittest.TestCase):
         with patch("planner._run_conflict_resolution_stage", side_effect=fake_coordination):
             plan = build_plan(_manual_payload())
         self.assertIn("MANUAL_COORDINATION_UNRESOLVED", _failure_codes(plan))
+
+    def test_assisted_off_coordination_reasoning_surfaces_failure_breakdown(self) -> None:
+        failure_breakdown = {
+            "remaining_conflict_ids": ["storm_sanitary_clearance::STORM-1-SAN-1::10.0,0.0::0.0"],
+            "remaining_conflict_rules": [
+                {
+                    "conflict_id": "storm_sanitary_clearance::STORM-1-SAN-1::10.0,0.0::0.0",
+                    "conflict_type": "storm_sanitary_clearance",
+                    "rules": {"required_vertical_clearance_ft": 1.5, "actual_vertical_clearance_ft": 0.4},
+                }
+            ],
+            "post_validation_failures": [],
+            "protected_zone_hits": [],
+            "grading_blocked": False,
+            "crossing_hierarchy_blocked": False,
+            "assumption_used": False,
+            "constructability_penalties": {"score": 0.0},
+            "unresolved_systems": ["sanitary", "storm"],
+            "rejected_reason": "No candidate satisfied the storm/sanitary clearance rule.",
+        }
+        reasoning = _manual_failure_reasoning(
+            {
+                "stage_name": "coordination",
+                "code": "MANUAL_COORDINATION_UNRESOLVED",
+                "engine": "coordination_resolution",
+                "message": "Assisted off requires conflicts to be resolved.",
+                "failure_type": "incomplete_postprocessing",
+                "reason_class": "unresolved_conflicts",
+                "context": {
+                    "unresolved_conflicts": [
+                        {
+                            "conflict_type": "storm_sanitary_clearance",
+                            "failure_breakdown": failure_breakdown,
+                        }
+                    ]
+                },
+            }
+        )
+        self.assertEqual(reasoning["why_unresolved"], "No candidate satisfied the storm/sanitary clearance rule.")
+        self.assertEqual(reasoning["failure_breakdown"]["remaining_conflict_ids"], failure_breakdown["remaining_conflict_ids"])
 
     def test_assisted_mode_qa_reports_resolved_vs_unresolved_conflicts(self) -> None:
         def fake_coordination(ctx, hydrology):
