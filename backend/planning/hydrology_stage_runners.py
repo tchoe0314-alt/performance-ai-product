@@ -193,6 +193,8 @@ def _synthesize_storm_pipe_summary(
     summary = {
         "success": True,
         "source": "surface_fallback",
+        "hydraulic_source": "fallback",
+        "source_detail": "surface_fallback",
         "pipe_count": len(segments),
         "segments": segments,
         "nodes": nodes,
@@ -938,6 +940,17 @@ def run_storm_pipe_stage(
                 validate_network_graph=validate_network_graph,
                 validate_storm_hydraulics=validate_storm_hydraulics,
             ) or storm_pipe_summary
+        if not safe_str(storm_pipe_summary.get("hydraulic_source")):
+            source = safe_str(storm_pipe_summary.get("source")).lower()
+            storm_pipe_summary["hydraulic_source"] = (
+                "fallback" if source in {"surface_fallback", "fallback", "synthesized"} else "engine"
+            )
+        if not safe_str(storm_pipe_summary.get("source_detail")):
+            storm_pipe_summary["source_detail"] = (
+                "surface_fallback"
+                if safe_str(storm_pipe_summary.get("hydraulic_source")).lower() == "fallback"
+                else "storm_network_engine+hydraulic_engine"
+            )
         selected_outfall_name = safe_str(safe_dict(storm_pipe_summary.get("explain")).get("selected_outfall_name"), "")
         selected_outfall = next(
             (

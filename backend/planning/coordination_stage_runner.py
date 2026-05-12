@@ -264,6 +264,8 @@ def run_conflict_resolution_stage(
         )
 
     changed_systems_list = sorted(changed_systems)
+    if changed_systems_list:
+        refresh_conflict_resolved_state(project, manager, changed_systems_list)
     final_validations = post_reroute_validations(project, manager, changed_systems_list)
     coordination_metric_inc(coordination_metrics, ["timings_ms", "conflict_resolution_stage"], round((perf_counter() - stage_started) * 1000.0, 3))
     structure_metrics = safe_dict(coordination_metrics.get("structure_insertion"))

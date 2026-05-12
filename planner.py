@@ -1037,6 +1037,8 @@ def _run_manual_gate(ctx: PlannerExecutionContext, gate_name: str, plan: Optiona
                     "controlling_segment",
                     "max_capacity_ratio",
                     "missing_data_segments",
+                    "hydraulic_source",
+                    "source_detail",
                     "pipe_count",
                 }
                 if (
@@ -1122,13 +1124,58 @@ def _run_manual_gate(ctx: PlannerExecutionContext, gate_name: str, plan: Optiona
         if _sanitary_requested(parsed):
             sanitary = safe_dict(manager.latest_outputs.get("sanitary", project.meta.get("sanitary_summary", {})))
             if sanitary and safe_list(sanitary.get("segments")):
-                if not safe_dict(sanitary.get("graph_validation")) or not safe_dict(sanitary.get("network_validation")):
+                required_keys = {
+                    "manhole_count",
+                    "disconnected_segments",
+                    "missing_data_segments",
+                    "total_system_capacity_cfs",
+                    "max_capacity_ratio",
+                    "controlling_segment",
+                }
+                if (
+                    not safe_dict(sanitary.get("graph_validation"))
+                    or not safe_dict(sanitary.get("network_validation"))
+                    or any(key not in sanitary for key in required_keys)
+                ):
                     _recompute_sanitary_summary(project, manager)
                     sanitary = safe_dict(manager.latest_outputs.get("sanitary", project.meta.get("sanitary_summary", {})))
                 if not safe_dict(sanitary.get("graph_validation")):
                     sanitary["graph_validation"] = _validate_network_graph(sanitary, "sanitary")
                 if not safe_dict(sanitary.get("network_validation")):
                     sanitary["network_validation"] = _validate_sanitary_network(sanitary)
+                missing_keys = sorted(key for key in required_keys if key not in sanitary)
+                if missing_keys:
+                    failures.append(
+                        _manual_failure(
+                            gate_name,
+                            "sanitary",
+                            "MANUAL_SANITARY_CANONICAL_FIELDS_MISSING",
+                            "Assisted off requires complete canonical sanitary sizing, capacity, connectivity, and missing-data fields.",
+                            engine="sanitary_engine",
+                            missing_computation="sanitary_canonical_summary",
+                            source_fields=["sanitary", "site_plan", "utility_network", "grading"],
+                            failure_type="incomplete_postprocessing",
+                            reason_class="canonical_fields_missing",
+                            category="sanitary",
+                            context={"missing_keys": missing_keys},
+                        )
+                    )
+                if safe_list(sanitary.get("missing_data_segments")):
+                    failures.append(
+                        _manual_failure(
+                            gate_name,
+                            "sanitary",
+                            "MANUAL_SANITARY_SEGMENT_DATA_MISSING",
+                            "Assisted off requires per-segment sanitary capacity, slope, cover, and node data.",
+                            engine="sanitary_engine",
+                            missing_computation="per_segment_sanitary_reporting",
+                            source_fields=["sanitary", "site_plan", "utility_network", "grading"],
+                            failure_type="incomplete_postprocessing",
+                            reason_class="segment_data_missing",
+                            category="sanitary",
+                            context={"missing_data_segments": safe_list(sanitary.get("missing_data_segments"))},
+                        )
+                    )
             if not sanitary or not bool(sanitary.get("success", False)):
                 failures.append(
                     _manual_failure(
@@ -5260,7 +5307,7 @@ def _recompute_storm_summary(project: ProjectModel, manager: ProjectManager) -> 
     prior_graph_validation = deepcopy(safe_dict(storm.get("graph_validation")))
     prior_hydraulic_validation = deepcopy(safe_dict(storm.get("hydraulic_validation")))
     segments = [safe_dict(item) for item in safe_list(storm.get("segments"))]
-    missing: List[str] = []
+    missing: List[Dict[str, Any]] = []
     resized_segments: List[Dict[str, Any]] = []
     total_length = 0.0
     total_capacity = 0.0
@@ -5305,8 +5352,17 @@ def _recompute_storm_summary(project: ProjectModel, manager: ProjectManager) -> 
         for key in ("flow_cfs", "capacity_cfs", "slope_ft_ft", "contributing_area_ac"):
             if safe_float(rec.get(key), 0.0) <= 0.0:
                 missing_fields.append(key)
-        if safe_float(rec.get("cover_start_ft"), 0.0) <= 0.0 or safe_float(rec.get("cover_end_ft"), 0.0) <= 0.0 or missing_fields:
-            missing.append(safe_str(rec.get("pipe"), safe_str(rec.get("name"), "PIPE")))
+        if "cover_start_ft" in rec and safe_float(rec.get("cover_start_ft"), 0.0) <= 0.0:
+            missing_fields.append("cover_start_ft")
+        if "cover_end_ft" in rec and safe_float(rec.get("cover_end_ft"), 0.0) <= 0.0:
+            missing_fields.append("cover_end_ft")
+        if missing_fields:
+            missing.append(
+                {
+                    "segment": safe_str(rec.get("pipe"), safe_str(rec.get("name"), "PIPE")),
+                    "missing_fields": dedupe_keep_order(missing_fields),
+                }
+            )
         total_length += length_ft
         total_capacity += capacity
         total_flow += flow
@@ -5320,7 +5376,13 @@ def _recompute_storm_summary(project: ProjectModel, manager: ProjectManager) -> 
     storm["total_system_capacity_cfs"] = round(total_capacity, 3)
     storm["controlling_segment"] = controlling
     storm["max_capacity_ratio"] = round(max_ratio, 3)
-    storm["missing_data_segments"] = dedupe_keep_order(missing)
+    storm["missing_data_segments"] = missing
+    storm["hydraulic_source"] = safe_str(storm.get("hydraulic_source")) or (
+        "fallback" if lower_text(storm.get("source")) in {"surface_fallback", "fallback", "synthesized"} else "engine"
+    )
+    storm["source_detail"] = safe_str(storm.get("source_detail")) or (
+        "surface_fallback" if storm["hydraulic_source"] == "fallback" else "storm_network_engine+hydraulic_engine"
+    )
     storm["pipe_slope_invert_consistency"] = all(safe_float(rec.get("slope_pct"), 0.0) > 0.0 for rec in segments)
     storm["resized_segments"] = resized_segments
     storm["graph_validation"] = _merge_validation_payload(
@@ -5376,13 +5438,23 @@ def _recompute_sanitary_summary(project: ProjectModel, manager: ProjectManager) 
     segments = [safe_dict(item) for item in safe_list(summary.get("segments"))]
     slope_violations: List[Dict[str, Any]] = []
     resized_segments: List[Dict[str, Any]] = []
+    missing_data_segments: List[Dict[str, Any]] = []
     total_length = 0.0
+    total_capacity = 0.0
     main_length = 0.0
     lateral_length = 0.0
     service_length = 0.0
+    max_ratio = 0.0
+    controlling: Optional[str] = None
     for rec in segments:
         path = [[safe_float(pt[0], 0.0), safe_float(pt[1], 0.0)] for pt in safe_list(rec.get("route_points")) if isinstance(pt, (list, tuple)) and len(pt) >= 2]
         if len(path) < 2:
+            missing_data_segments.append(
+                {
+                    "segment": safe_str(rec.get("name"), "SAN"),
+                    "missing_fields": ["route_points"],
+                }
+            )
             continue
         length_ft = polyline_length(path)
         start_invert = safe_float(rec.get("start_invert_ft"), DEFAULT_PAD_ELEV - 5.0)
@@ -5404,6 +5476,10 @@ def _recompute_sanitary_summary(project: ProjectModel, manager: ProjectManager) 
         rec["capacity_cfs"] = round(capacity_cfs, 3)
         rec["capacity_ratio"] = round(flow_cfs / max(capacity_cfs, 1e-9), 3) if flow_cfs > 0.0 else 0.0
         total_length += length_ft
+        total_capacity += capacity_cfs
+        if safe_float(rec.get("capacity_ratio"), 0.0) >= max_ratio:
+            max_ratio = safe_float(rec.get("capacity_ratio"), 0.0)
+            controlling = safe_str(rec.get("name"), "SAN")
         if role == "main":
             main_length += length_ft
         elif role == "lateral":
@@ -5428,6 +5504,25 @@ def _recompute_sanitary_summary(project: ProjectModel, manager: ProjectManager) 
     ]
     if len(filtered_manholes) != len(manholes):
         segments, manholes, nodes = _bind_sanitary_graph_nodes(segments, filtered_manholes)
+    for rec in segments:
+        missing_fields: List[str] = []
+        for key in ("start_name", "end_name"):
+            if not safe_str(rec.get(key)):
+                missing_fields.append(key)
+        for key in ("length_ft", "slope_ft_ft", "capacity_cfs"):
+            if safe_float(rec.get(key), 0.0) <= 0.0:
+                missing_fields.append(key)
+        if "cover_start_ft" in rec and safe_float(rec.get("cover_start_ft"), 0.0) <= 0.0:
+            missing_fields.append("cover_start_ft")
+        if "cover_end_ft" in rec and safe_float(rec.get("cover_end_ft"), 0.0) <= 0.0:
+            missing_fields.append("cover_end_ft")
+        if missing_fields:
+            missing_data_segments.append(
+                {
+                    "segment": safe_str(rec.get("name"), "SAN"),
+                    "missing_fields": dedupe_keep_order(missing_fields),
+                }
+            )
     summary["segments"] = segments
     summary["manholes"] = manholes
     summary["nodes"] = nodes
@@ -5436,6 +5531,11 @@ def _recompute_sanitary_summary(project: ProjectModel, manager: ProjectManager) 
     summary["main_length_ft"] = round(main_length, 3)
     summary["lateral_length_ft"] = round(lateral_length, 3)
     summary["service_connection_length_ft"] = round(service_length, 3)
+    summary["manhole_count"] = len(manholes)
+    summary["total_system_capacity_cfs"] = round(total_capacity, 3)
+    summary["max_capacity_ratio"] = round(max_ratio, 3)
+    summary["controlling_segment"] = controlling
+    summary["missing_data_segments"] = missing_data_segments
     summary["stats"] = {
         **safe_dict(summary.get("stats")),
         "segment_count": len(segments),
@@ -5444,13 +5544,16 @@ def _recompute_sanitary_summary(project: ProjectModel, manager: ProjectManager) 
         "main_length_ft": round(main_length, 3),
         "lateral_length_ft": round(lateral_length, 3),
         "service_connection_length_ft": round(service_length, 3),
-        "manhole_count": safe_int(summary.get("manhole_count"), 0),
+        "manhole_count": len(manholes),
+        "total_system_capacity_cfs": round(total_capacity, 3),
+        "max_capacity_ratio": round(max_ratio, 3),
         "storm_conflict_count": len(safe_list(summary.get("storm_conflicts"))),
     }
     summary["resized_segments"] = resized_segments
     summary["cover_repairs"] = repairs
     summary["graph_validation"] = _validate_network_graph(summary, "sanitary")
     summary["network_validation"] = _validate_sanitary_network(summary)
+    summary["disconnected_segments"] = deepcopy(safe_list(safe_dict(summary["network_validation"]).get("disconnected_services")))
     summary["success"] = bool(summary["graph_validation"].get("valid")) and bool(summary["network_validation"].get("valid"))
     manager.latest_outputs["sanitary"] = deepcopy(summary)
     project.meta["sanitary_summary"] = deepcopy(summary)
