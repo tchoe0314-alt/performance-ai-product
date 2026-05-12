@@ -124,11 +124,19 @@ def _drainage_meta(plan: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _storm_meta(plan: Dict[str, Any]) -> Dict[str, Any]:
-    return _safe_dict(_safe_dict(plan.get("meta")).get("storm_pipe_summary"))
+    meta = _safe_dict(plan.get("meta"))
+    storm_pipes = _safe_dict(meta.get("storm_pipes"))
+    if storm_pipes:
+        return storm_pipes
+    return _safe_dict(meta.get("storm_pipe_summary"))
 
 
 def _sanitary_meta(plan: Dict[str, Any]) -> Dict[str, Any]:
     return _safe_dict(_safe_dict(plan.get("meta")).get("sanitary"))
+
+
+def _utilities_meta(plan: Dict[str, Any]) -> Dict[str, Any]:
+    return _safe_dict(_safe_dict(plan.get("meta")).get("utilities"))
 
 
 def _coordination_meta(plan: Dict[str, Any]) -> Dict[str, Any]:
@@ -317,9 +325,12 @@ class QuantityEngine:
         drainage_meta = _drainage_meta(plan)
         sanitary_meta = _sanitary_meta(plan)
         storm_meta = _storm_meta(plan)
+        utilities_meta = _utilities_meta(plan)
         coordination_meta = _coordination_meta(plan)
         drainage_stats = _safe_dict(drainage_meta.get("stats"))
         sanitary_stats = _safe_dict(sanitary_meta.get("stats"))
+        storm_stats = _safe_dict(storm_meta.get("stats"))
+        utilities_stats = _safe_dict(utilities_meta.get("stats"))
         primary_basins = _primary_engineered_basins(drainage_meta)
         drainage_export_validation = _safe_dict(drainage_meta.get("export_validation"))
         if primary_basins and not drainage_export_validation:
@@ -335,7 +346,7 @@ class QuantityEngine:
             }
         warnings: List[str] = []
         assumptions: List[str] = [
-            "Quantities prefer canonical ProjectManager metrics when available and fall back to action geometry proxies where needed.",
+            "Quantities prefer accepted canonical stage summaries and use ProjectManager metrics only as fallback where canonical values are missing.",
             "Where widths are not explicit for linear features, discipline defaults are used.",
         ]
 
@@ -606,22 +617,26 @@ class QuantityEngine:
                 counts["building_count"],
                 _safe_int(1 if _metric_value(manager_metrics, "layout_building_area_sf", 0.0) > 0 else 0, counts["building_count"]),
             )
-            counts["pipe_feature_count"] = max(
-                counts["pipe_feature_count"],
-                _safe_int(_metric_value(manager_metrics, "storm_pipe_count", 0.0), counts["pipe_feature_count"]),
-            )
-            counts["utility_feature_count"] = max(
-                counts["utility_feature_count"],
-                _safe_int(_metric_value(manager_metrics, "utility_route_count", 0.0), counts["utility_feature_count"]),
-            )
-            counts["sanitary_feature_count"] = max(
-                counts["sanitary_feature_count"],
-                _safe_int(_metric_value(manager_metrics, "sanitary_route_count", 0.0), counts["sanitary_feature_count"]),
-            )
-            counts["drainage_feature_count"] = max(
-                counts["drainage_feature_count"],
-                _safe_int(_metric_value(manager_metrics, "drainage_pipe_count", 0.0), counts["drainage_feature_count"]),
-            )
+            if not storm_meta:
+                counts["pipe_feature_count"] = max(
+                    counts["pipe_feature_count"],
+                    _safe_int(_metric_value(manager_metrics, "storm_pipe_count", 0.0), counts["pipe_feature_count"]),
+                )
+            if not utilities_meta:
+                counts["utility_feature_count"] = max(
+                    counts["utility_feature_count"],
+                    _safe_int(_metric_value(manager_metrics, "utility_route_count", 0.0), counts["utility_feature_count"]),
+                )
+            if not sanitary_meta:
+                counts["sanitary_feature_count"] = max(
+                    counts["sanitary_feature_count"],
+                    _safe_int(_metric_value(manager_metrics, "sanitary_route_count", 0.0), counts["sanitary_feature_count"]),
+                )
+            if not drainage_meta:
+                counts["drainage_feature_count"] = max(
+                    counts["drainage_feature_count"],
+                    _safe_int(_metric_value(manager_metrics, "drainage_pipe_count", 0.0), counts["drainage_feature_count"]),
+                )
             counts["grading_feature_count"] = max(
                 counts["grading_feature_count"],
                 _safe_int(_metric_value(manager_metrics, "grading_low_point_count", 0.0), counts["grading_feature_count"]),
@@ -636,16 +651,21 @@ class QuantityEngine:
                 _metric_value(manager_metrics, "layout_impervious_area_sf", 0.0),
             )
 
-            lengths["pipe_length_ft"] = max(lengths["pipe_length_ft"], _metric_value(manager_metrics, "storm_pipe_length_ft", 0.0))
-            lengths["utility_length_ft"] = max(lengths["utility_length_ft"], _metric_value(manager_metrics, "utility_total_length_ft", 0.0))
-            lengths["sanitary_length_ft"] = max(lengths["sanitary_length_ft"], _metric_value(manager_metrics, "sanitary_total_length_ft", 0.0))
-            lengths["sanitary_main_length_ft"] = max(lengths["sanitary_main_length_ft"], _metric_value(manager_metrics, "sanitary_main_length_ft", 0.0))
-            lengths["sanitary_lateral_length_ft"] = max(lengths["sanitary_lateral_length_ft"], _metric_value(manager_metrics, "sanitary_lateral_length_ft", 0.0))
+            if not storm_meta:
+                lengths["pipe_length_ft"] = max(lengths["pipe_length_ft"], _metric_value(manager_metrics, "storm_pipe_length_ft", 0.0))
+            if not utilities_meta:
+                lengths["utility_length_ft"] = max(lengths["utility_length_ft"], _metric_value(manager_metrics, "utility_total_length_ft", 0.0))
+            if not sanitary_meta:
+                lengths["sanitary_length_ft"] = max(lengths["sanitary_length_ft"], _metric_value(manager_metrics, "sanitary_total_length_ft", 0.0))
+                lengths["sanitary_main_length_ft"] = max(lengths["sanitary_main_length_ft"], _metric_value(manager_metrics, "sanitary_main_length_ft", 0.0))
+                lengths["sanitary_lateral_length_ft"] = max(lengths["sanitary_lateral_length_ft"], _metric_value(manager_metrics, "sanitary_lateral_length_ft", 0.0))
 
-            unit_counts["inlet_count"] = max(unit_counts["inlet_count"], _safe_int(_metric_value(manager_metrics, "drainage_low_point_count", 0.0)))
-            unit_counts["pond_count"] = max(unit_counts["pond_count"], _safe_int(_metric_value(manager_metrics, "drainage_basin_count", 0.0)))
-            unit_counts["sanitary_manhole_count"] = max(unit_counts["sanitary_manhole_count"], _safe_int(_metric_value(manager_metrics, "sanitary_manhole_count", 0.0)))
-            unit_counts["sanitary_service_count"] = max(unit_counts["sanitary_service_count"], _safe_int(_metric_value(manager_metrics, "sanitary_service_count", 0.0)))
+            if not drainage_meta:
+                unit_counts["inlet_count"] = max(unit_counts["inlet_count"], _safe_int(_metric_value(manager_metrics, "drainage_low_point_count", 0.0)))
+                unit_counts["pond_count"] = max(unit_counts["pond_count"], _safe_int(_metric_value(manager_metrics, "drainage_basin_count", 0.0)))
+            if not sanitary_meta:
+                unit_counts["sanitary_manhole_count"] = max(unit_counts["sanitary_manhole_count"], _safe_int(_metric_value(manager_metrics, "sanitary_manhole_count", 0.0)))
+                unit_counts["sanitary_service_count"] = max(unit_counts["sanitary_service_count"], _safe_int(_metric_value(manager_metrics, "sanitary_service_count", 0.0)))
 
         if drainage_meta:
             counts["drainage_feature_count"] = max(
@@ -688,6 +708,36 @@ class QuantityEngine:
                     "assumptions_involved": False,
                 }
 
+        if storm_meta:
+            storm_segments = [_safe_dict(item) for item in _safe_list(storm_meta.get("segments"))]
+            if storm_segments:
+                canonical_pipe_length = max(
+                    _safe_float(storm_meta.get("total_length_ft"), 0.0),
+                    _safe_float(storm_stats.get("total_length_ft"), 0.0),
+                    sum(
+                        _safe_float(item.get("length_ft"), 0.0)
+                        or _polyline_length(_safe_list(item.get("path") or item.get("route_points")))
+                        for item in storm_segments
+                    ),
+                )
+                counts["pipe_feature_count"] = len(storm_segments)
+                if canonical_pipe_length > 0.0:
+                    lengths["pipe_length_ft"] = canonical_pipe_length
+                quantity_audit["pipe_length_ft"] = {
+                    "source_object_ids": [
+                        _safe_str(item.get("id"), _safe_str(item.get("pipe") or item.get("name"), "PIPE"))
+                        for item in storm_segments
+                        if _safe_str(item.get("id") or item.get("pipe") or item.get("name"))
+                    ],
+                    "source_object_types": [
+                        "storm_pipe_segment"
+                        for item in storm_segments
+                        if _safe_str(item.get("id") or item.get("pipe") or item.get("name"))
+                    ],
+                    "derivation_method": "sum_canonical_storm_segments",
+                    "assumptions_involved": False,
+                }
+
         if sanitary_meta:
             counts["sanitary_feature_count"] = max(counts["sanitary_feature_count"], _safe_int(sanitary_stats.get("segment_count"), 0))
             counts["utility_feature_count"] = max(counts["utility_feature_count"], _safe_int(sanitary_meta.get("route_count"), 0))
@@ -722,6 +772,42 @@ class QuantityEngine:
                     "source_object_ids": [_safe_str(item.get("id"), _safe_str(item.get("name"), "SMH")) for item in manholes if _safe_str(item.get("id") or item.get("name"))],
                     "source_object_types": ["sanitary_manhole" for item in manholes if _safe_str(item.get("id") or item.get("name"))],
                     "derivation_method": "count_canonical_sanitary_manholes",
+                    "assumptions_involved": False,
+                }
+
+        if utilities_meta:
+            utility_segments = [
+                _safe_dict(item)
+                for item in _safe_list(_safe_dict(utilities_meta.get("conflict_hooks")).get("utility_segments"))
+                if _safe_dict(item)
+            ]
+            if not utility_segments:
+                utility_segments = [_safe_dict(item) for item in _safe_list(utilities_meta.get("segments")) if _safe_dict(item)]
+            canonical_utility_length = max(
+                _safe_float(utilities_meta.get("total_length_ft"), 0.0),
+                _safe_float(utilities_stats.get("total_length_ft"), 0.0),
+                sum(
+                    _safe_float(item.get("length_ft"), 0.0)
+                    or _polyline_length(_safe_list(item.get("route_points") or item.get("path")))
+                    for item in utility_segments
+                ),
+            )
+            if utility_segments:
+                counts["utility_feature_count"] = len(utility_segments)
+                if canonical_utility_length > 0.0:
+                    lengths["utility_length_ft"] = canonical_utility_length
+                quantity_audit["utility_length_ft"] = {
+                    "source_object_ids": [
+                        _safe_str(item.get("id"), _safe_str(item.get("name"), "UTILITY"))
+                        for item in utility_segments
+                        if _safe_str(item.get("id") or item.get("name"))
+                    ],
+                    "source_object_types": [
+                        _safe_str(item.get("system_type"), "utility_segment")
+                        for item in utility_segments
+                        if _safe_str(item.get("id") or item.get("name"))
+                    ],
+                    "derivation_method": "sum_canonical_utility_segments",
                     "assumptions_involved": False,
                 }
 
@@ -900,7 +986,7 @@ class QuantityEngine:
         explain = {
             "method": "concept_quantity_takeoff",
             "key_logic": [
-                "Read canonical manager metrics first, then supplemented with classified plan actions by layer, label, text, and task type.",
+                "Read accepted canonical stage summaries first, then use manager metrics only when canonical values are missing.",
                 "Computed rectangle and circle areas directly from geometry.",
                 "Computed polyline lengths directly from points.",
                 "Estimated parking stalls from explicit text first, then parking area proxy if needed.",
