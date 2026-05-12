@@ -844,6 +844,9 @@ def _run_manual_gate(ctx: PlannerExecutionContext, gate_name: str, plan: Optiona
     project = manager.project
     failures: List[Dict[str, Any]] = []
 
+    def gate_stage(stage: str) -> Dict[str, Any]:
+        return safe_dict(canonical_stage_output(project, manager, stage))
+
     if gate_name == "layout_gate":
         if _lot_area(parsed) <= 0.0:
             failures.append(
@@ -901,7 +904,7 @@ def _run_manual_gate(ctx: PlannerExecutionContext, gate_name: str, plan: Optiona
 
     elif gate_name == "grading_gate":
         if not field_path_is_omitted(parsed, "grading"):
-            grading = safe_dict(manager.latest_outputs.get("grading", project.meta.get("grading_summary", {})))
+            grading = gate_stage("grading")
             stage = _latest_stage_result(ctx, "grading")
             stage_meta = safe_dict(getattr(stage, "meta", {}))
             derived = safe_dict(grading.get("derived_actions"))
@@ -977,7 +980,7 @@ def _run_manual_gate(ctx: PlannerExecutionContext, gate_name: str, plan: Optiona
 
     elif gate_name == "drainage_gate":
         if not field_path_is_omitted(parsed, "drainage"):
-            drainage = safe_dict(manager.latest_outputs.get("drainage", project.meta.get("drainage_canonical", {})))
+            drainage = gate_stage("drainage")
             stats = safe_dict(drainage.get("stats"))
             coordination = safe_dict(drainage.get("coordination"))
             if not drainage or not bool(drainage.get("success", False)):
@@ -1011,7 +1014,7 @@ def _run_manual_gate(ctx: PlannerExecutionContext, gate_name: str, plan: Optiona
                         context=stats,
                     )
                 )
-            if safe_dict(manager.latest_outputs.get("grading", {})) and (
+            if gate_stage("grading") and (
                 not safe_dict(coordination.get("preferred_outfall")) or not safe_list(coordination.get("preferred_targets"))
             ):
                 failures.append(
@@ -1031,7 +1034,7 @@ def _run_manual_gate(ctx: PlannerExecutionContext, gate_name: str, plan: Optiona
 
     elif gate_name == "storm_pipe_gate":
         if not field_path_is_omitted(parsed, "drainage"):
-            storm = safe_dict(manager.latest_outputs.get("storm_pipe_summary", project.meta.get("storm_pipe_summary", {})))
+            storm = gate_stage("storm_pipes")
             segments = safe_list(storm.get("segments"))
             if segments:
                 required_keys = {
@@ -1050,7 +1053,7 @@ def _run_manual_gate(ctx: PlannerExecutionContext, gate_name: str, plan: Optiona
                     or any(key not in storm for key in required_keys)
                 ):
                     _recompute_storm_summary(project, manager)
-                    storm = safe_dict(manager.latest_outputs.get("storm_pipe_summary", project.meta.get("storm_pipe_summary", {})))
+                    storm = gate_stage("storm_pipes")
                     segments = safe_list(storm.get("segments"))
                 if not safe_dict(storm.get("graph_validation")):
                     storm["graph_validation"] = _validate_network_graph({"segments": segments}, "storm")
@@ -1125,7 +1128,7 @@ def _run_manual_gate(ctx: PlannerExecutionContext, gate_name: str, plan: Optiona
 
     elif gate_name == "sanitary_gate":
         if _sanitary_requested(parsed):
-            sanitary = safe_dict(manager.latest_outputs.get("sanitary", project.meta.get("sanitary_summary", {})))
+            sanitary = gate_stage("sanitary")
             if sanitary and safe_list(sanitary.get("segments")):
                 required_keys = {
                     "manhole_count",
@@ -1141,7 +1144,7 @@ def _run_manual_gate(ctx: PlannerExecutionContext, gate_name: str, plan: Optiona
                     or any(key not in sanitary for key in required_keys)
                 ):
                     _recompute_sanitary_summary(project, manager)
-                    sanitary = safe_dict(manager.latest_outputs.get("sanitary", project.meta.get("sanitary_summary", {})))
+                    sanitary = gate_stage("sanitary")
                 if not safe_dict(sanitary.get("graph_validation")):
                     sanitary["graph_validation"] = _validate_network_graph(sanitary, "sanitary")
                 if not safe_dict(sanitary.get("network_validation")):
@@ -1341,7 +1344,7 @@ def _run_manual_gate(ctx: PlannerExecutionContext, gate_name: str, plan: Optiona
 
     elif gate_name == "utility_gate":
         if not field_path_is_omitted(parsed, "utility_network"):
-            utilities = safe_dict(manager.latest_outputs.get("utilities", project.meta.get("utility_summary", {})))
+            utilities = gate_stage("utilities")
             stage = _latest_stage_result(ctx, "utility_network")
             if safe_dict(getattr(stage, "meta", {})).get("fallback_used") or bool(utilities.get("fallback_used")):
                 failures.append(
