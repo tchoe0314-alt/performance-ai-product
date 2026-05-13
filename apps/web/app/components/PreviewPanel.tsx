@@ -276,10 +276,10 @@ export default function PreviewPanel({
   const [rotateDragStart, setRotateDragStart] = useState<{ x: number; value: number } | null>(null);
   const activeAnnotation = pinnedAnnotation ?? hoveredAnnotation;
   const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-  const showMap =
+  const mapAvailable =
     Boolean(mapboxToken) &&
-    previewQuality === "high" &&
     Boolean(geocode?.lat && geocode?.lng);
+  const showMap = mapAvailable && previewQuality === "high";
   const allowMapInteraction =
     showMap && previewInteraction === "static" && !placementMode && !rotateDragStart && !mapLocked;
   const showGeneratedPlan =
@@ -1085,7 +1085,7 @@ export default function PreviewPanel({
   );
 
   useEffect(() => {
-    if (!showMap) return;
+    if (!mapAvailable) return;
     if (!mapContainerRef.current || mapRef.current) return;
     mapboxgl.accessToken = mapboxToken || "";
     const map = new mapboxgl.Map({
@@ -1097,7 +1097,7 @@ export default function PreviewPanel({
     });
     mapRef.current = map;
     const markMapReady = () => {
-      if (!mapRef.current) return;
+      if (mapRef.current !== map) return;
       map.resize();
       setMapLoaded(true);
       setMapRevision((value) => value + 1);
@@ -1129,10 +1129,16 @@ export default function PreviewPanel({
     map.once("style.load", markMapReady);
     map.once("render", markMapReady);
     window.setTimeout(markMapReady, 500);
-  }, [mapboxToken, showMap]);
+    return () => {
+      if (mapRef.current !== map) return;
+      map.remove();
+      mapRef.current = null;
+      setMapLoaded(false);
+    };
+  }, [mapAvailable, mapboxToken]);
 
   useEffect(() => {
-    if (!showMap || !mapLoaded) return;
+    if (!mapAvailable || !mapLoaded) return;
     const targets = [mapRef.current, fullscreenMapRef.current].filter(
       (map): map is mapboxgl.Map => Boolean(map),
     );
@@ -1153,7 +1159,7 @@ export default function PreviewPanel({
         map.touchZoomRotate.disable();
       }
     });
-  }, [allowMapInteraction, mapLoaded, showMap]);
+  }, [allowMapInteraction, mapAvailable, mapLoaded]);
 
   useEffect(() => {
     if (!debugStats?.enabled || !showMap) return;
@@ -1209,7 +1215,7 @@ export default function PreviewPanel({
   }, [mapLocked, previewInteraction, showMap]);
 
   useEffect(() => {
-    if (!showMap || !mapLoaded || !mapRef.current) return;
+    if (!mapAvailable || !mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
     const reportScale = () => {
       if (!onMapScaleUpdate) return;
@@ -1315,19 +1321,19 @@ export default function PreviewPanel({
       map.off("moveend", reportViewport);
       map.off("zoomend", reportViewport);
     };
-  }, [latLngToSite, lotHeight, lotWidth, mapLoaded, onMapScaleUpdate, onPlaceBuilding, onPlaceObject, placementMode, selectedBuildingId, onSelectBuilding, showHover, showMap, onViewportFootprint]);
+  }, [latLngToSite, lotHeight, lotWidth, mapAvailable, mapLoaded, onMapScaleUpdate, onPlaceBuilding, onPlaceObject, placementMode, selectedBuildingId, onSelectBuilding, showHover, onViewportFootprint]);
 
   useEffect(() => {
-    if (!showMap || !mapLoaded || !mapRef.current) return;
+    if (!mapAvailable || !mapLoaded || !mapRef.current) return;
     if (!mapCenterRequest) return;
     const center = mapRef.current.getCenter();
     if (onMapCenter) {
       onMapCenter({ lat: center.lat, lng: center.lng });
     }
-  }, [mapCenterRequest, mapLoaded, onMapCenter, showMap]);
+  }, [mapAvailable, mapCenterRequest, mapLoaded, onMapCenter]);
 
   useEffect(() => {
-    if (!showMap || !mapLoaded) return;
+    if (!mapAvailable || !mapLoaded) return;
     const handle = window.setTimeout(() => {
       const now = Date.now();
       if (now - lastMapResizeRef.current < 140) return;
@@ -1338,7 +1344,7 @@ export default function PreviewPanel({
       }
     }, 160);
     return () => window.clearTimeout(handle);
-  }, [mapLoaded, previewFullscreenOpen, showMap]);
+  }, [mapAvailable, mapLoaded, previewFullscreenOpen]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1412,15 +1418,15 @@ export default function PreviewPanel({
   }, [previewFullscreenOpen, showMap]);
 
   useEffect(() => {
-    if (!showMap) return;
+    if (!mapAvailable) return;
     if (!geocode?.lng || !geocode?.lat) return;
     const center: [number, number] = [geocode.lng, geocode.lat];
     mapRef.current?.flyTo({ center, zoom: 17 });
     fullscreenMapRef.current?.flyTo({ center, zoom: 17 });
-  }, [geocode?.lat, geocode?.lng, showMap]);
+  }, [geocode?.lat, geocode?.lng, mapAvailable]);
 
   useEffect(() => {
-    if (!showMap || !mapLoaded || !mapRef.current || !geocode?.lat || !geocode?.lng) return;
+    if (!mapAvailable || !mapLoaded || !mapRef.current || !geocode?.lat || !geocode?.lng) return;
     if (!fitToSiteRequest || !lotWidth || !lotHeight) return;
     const corners = [
       siteToLatLng(0, 0),
@@ -1434,10 +1440,10 @@ export default function PreviewPanel({
       new mapboxgl.LngLatBounds(corners[0], corners[0]),
     );
     mapRef.current.fitBounds(bounds, { padding: 80, duration: 650 });
-  }, [siteToLatLng, fitToSiteRequest, geocode?.lat, geocode?.lng, lotHeight, lotWidth, mapLoaded, showMap]);
+  }, [siteToLatLng, fitToSiteRequest, geocode?.lat, geocode?.lng, lotHeight, lotWidth, mapAvailable, mapLoaded]);
 
   useEffect(() => {
-    if (!showMap || !mapLoaded || !mapRef.current) return;
+    if (!mapAvailable || !mapLoaded || !mapRef.current) return;
     if (!alignToRoadRequest || !onSetSiteRotationDeg) return;
     const map = mapRef.current;
     const centerPoint = map.project(map.getCenter());
@@ -1467,7 +1473,7 @@ export default function PreviewPanel({
     const dominant = bearings.reduce((acc, item) => (item.weight > acc.weight ? item : acc), bearings[0]);
     const normalized = ((90 - dominant.bearing + 540) % 360) - 180;
     onSetSiteRotationDeg(normalized);
-  }, [alignToRoadRequest, mapLoaded, onSetSiteRotationDeg, showMap]);
+  }, [alignToRoadRequest, mapAvailable, mapLoaded, onSetSiteRotationDeg]);
 
   const buildParkingModules = useCallback((item: BuildingPlacement, accessPoints: Array<{ x: number; y: number }>) => {
     const x = item.x ?? 0;
