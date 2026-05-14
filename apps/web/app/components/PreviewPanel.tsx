@@ -2573,6 +2573,10 @@ export default function PreviewPanel({
             <div
               ref={previewRef}
               className={`relative flex w-full flex-1 min-h-[320px] items-center justify-center rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] ${
+                previewFullscreenOpen && showMap
+                  ? "fixed inset-0 z-[120] rounded-none bg-slate-950 p-0"
+                  : ""
+              } ${
                 allowEdits ? "cursor-crosshair" : "cursor-default"
               }`}
               onDragOver={(event) => {
@@ -3545,11 +3549,31 @@ export default function PreviewPanel({
                 </div>
               ) : null}
               {/* Status panel removed: keep preview visually clean. */}
+              {previewFullscreenOpen && showMap ? (
+                <div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 flex items-center justify-between gap-3 border-b border-white/10 bg-slate-950/88 px-5 py-4 text-white backdrop-blur">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      Fullscreen Preview
+                    </p>
+                    <p className="mt-1 text-sm text-slate-200">
+                      Inspect the live map without rebuilding the preview.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onCloseFullscreen}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-100 transition hover:bg-slate-800"
+                  >
+                    <X className="h-4 w-4" />
+                    Close
+                  </button>
+                </div>
+              ) : null}
             </div>
           )}
         </div>
 
-      {previewFullscreenOpen && (planPreviewUrl || showMap) ? (
+      {previewFullscreenOpen && planPreviewUrl && !showMap ? (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/92 backdrop-blur-sm">
           <div className="flex h-full w-full flex-col bg-slate-950">
             <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-5 py-4 text-white">
