@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { deleteJson, getJson, postBinary, postForm, postJson } from "../lib/api";
+import { workspaceNavItems } from "./design-system";
 
 import type {
   Assumption,
@@ -8370,7 +8371,7 @@ export default function PerformanceAIDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-[#e9eaee] text-slate-950">
+    <div className="civora-app-bg min-h-screen text-[var(--civora-text)]">
       <div className="flex min-h-screen flex-col">
         <AppHeader
           userEmail={user.email}
@@ -8381,12 +8382,47 @@ export default function PerformanceAIDashboard() {
           onLogout={handleLogout}
         />
 
-        <div className="flex min-h-screen">
+        <div className="flex min-h-[calc(100vh-4rem)]">
+          <aside className="hidden w-[88px] shrink-0 border-r border-[var(--civora-border)] bg-[var(--civora-surface)] px-3 py-4 backdrop-blur-xl lg:flex lg:flex-col lg:items-center">
+            <div className="flex w-full flex-col gap-2">
+              {workspaceNavItems.map((item) => {
+                const target =
+                  item === "Data"
+                    ? "projects"
+                    : item === "Reports" || item === "Quantities" || item === "Sheets"
+                      ? "docs"
+                      : item === "Settings"
+                        ? "docs"
+                        : "site";
+                const isActive =
+                  (target === "projects" && activeSidePanel === "projects") ||
+                  (target === "docs" && activeSidePanel === "docs") ||
+                  (target === "site" && activeSidePanel === "site");
+                return (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => setActiveSidePanel(target)}
+                    className={`flex min-h-14 flex-col items-center justify-center rounded-2xl px-2 py-2 text-[11px] font-semibold transition ${
+                      isActive
+                        ? "bg-[var(--civora-accent-soft)] text-[var(--civora-accent)]"
+                        : "text-[var(--civora-text-muted)] hover:bg-[var(--civora-surface-muted)] hover:text-[var(--civora-text)]"
+                    }`}
+                  >
+                    <span className="mb-1 inline-flex h-5 w-5 items-center justify-center rounded-md border border-current/20 text-[10px]">
+                      {item.slice(0, 1)}
+                    </span>
+                    <span>{item}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </aside>
           {activeSidePanel ? (
-            <aside className="flex w-[360px] flex-col border-r border-slate-200 bg-white/95">
-              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4">
+            <aside className="order-3 m-3 ml-0 flex w-[360px] shrink-0 flex-col overflow-hidden rounded-[28px] border border-[var(--civora-border)] bg-[var(--civora-surface)] shadow-[var(--civora-shadow-panel)] backdrop-blur-xl">
+              <div className="flex items-center justify-between border-b border-[var(--civora-border)] px-4 py-4">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  <p className="civora-muted-label">
                     {activeSidePanel === "projects"
                       ? "Projects"
                       : activeSidePanel === "site"
@@ -8395,7 +8431,7 @@ export default function PerformanceAIDashboard() {
                         ? "Docs"
                         : "Chat"}
                   </p>
-                  <p className="mt-1 text-sm text-slate-700">
+                  <p className="mt-1 text-sm text-[var(--civora-text-muted)]">
                     {activeSidePanel === "projects"
                       ? "Switch between projects."
                       : activeSidePanel === "site"
@@ -8408,7 +8444,7 @@ export default function PerformanceAIDashboard() {
                 <button
                   type="button"
                   onClick={() => setActiveSidePanel(null)}
-                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 hover:bg-slate-50"
+                  className="civora-control px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--civora-text-muted)]"
                 >
                   Close
                 </button>
@@ -8914,8 +8950,8 @@ export default function PerformanceAIDashboard() {
               </div>
             </aside>
           ) : null}
-          <main className="flex min-w-0 flex-1 flex-col">
-            <div className="border-b border-slate-200 bg-white/85">
+          <main className="order-2 flex min-w-0 flex-1 flex-col">
+            <div className="border-b border-[var(--civora-border)] bg-[var(--civora-surface)]/80 backdrop-blur-xl">
               <div className="mx-auto w-full max-w-7xl px-4 py-5 md:px-6">
                 <ProjectControls
                   siteName={siteName}
@@ -8942,12 +8978,12 @@ export default function PerformanceAIDashboard() {
               </div>
             </div>
 
-            <div className="flex w-full flex-1 flex-col gap-6 px-4 py-6 md:px-6">
+            <div className="flex w-full flex-1 flex-col gap-5 px-4 py-5 md:px-6">
               <div className="flex w-full flex-col">
                 <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-slate-600">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  <span className="civora-muted-label">
                     Preview height
-                    <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    <span className="ml-2 rounded-full bg-[var(--civora-surface-muted)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--civora-text-soft)]">
                       Build 2026-04-20c
                     </span>
                   </span>
@@ -8978,7 +9014,7 @@ export default function PerformanceAIDashboard() {
                   <span className="text-[11px] uppercase tracking-[0.12em] text-slate-400">px</span>
                 </div>
                 <div
-                  className="mx-auto w-full border-2 border-black"
+                  className="civora-canvas mx-auto w-full overflow-hidden p-1"
                   style={{
                     width: activeSidePanel ? "calc(100vw - 96px - 360px)" : "calc(100vw - 96px)",
                     height: `${previewHeightPx}px`,

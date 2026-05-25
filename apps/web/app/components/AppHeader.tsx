@@ -1,5 +1,9 @@
 "use client";
 
+import { Bell, CircleHelp, RotateCcw, Undo2 } from "lucide-react";
+
+import { workflowSteps } from "../design-system";
+
 type AppHeaderProps = {
   userEmail: string;
   onOpenProjects: () => void;
@@ -18,57 +22,79 @@ export default function AppHeader({
   onLogout,
 }: AppHeaderProps) {
   return (
-    <header className="w-full bg-[radial-gradient(circle_at_top,#1f2937_0%,#0b1120_55%,#0a0f1d_100%)] text-white">
-      <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-4">
-        <div className="flex items-center gap-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-white/10 text-lg font-semibold">
+    <header className="civora-glass sticky top-0 z-50 w-full rounded-none border-x-0 border-t-0">
+      <div className="flex h-16 w-full items-center justify-between gap-4 px-5">
+        <div className="flex min-w-0 items-center gap-4">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--civora-border)] bg-[var(--civora-surface-solid)] text-lg font-bold text-[var(--civora-text)] shadow-[0_12px_30px_-24px_rgba(18,25,38,0.5)]">
             C
           </div>
-          <div>
-            <p className="text-lg font-semibold tracking-tight">Civora AI</p>
-            <p className="text-xs uppercase tracking-[0.3em] text-white/60">Autonomous Civil</p>
+          <div className="hidden sm:block">
+            <p className="text-[15px] font-semibold tracking-tight text-[var(--civora-text)]">Civora</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.26em] text-[var(--civora-text-soft)]">Civil AI</p>
           </div>
-        </div>
-        <nav className="relative hidden items-center gap-6 text-sm font-medium text-white/80 md:flex">
           <button
             type="button"
             onClick={onOpenProjects}
-            className="text-white/70 transition hover:text-white"
+            className="civora-control hidden min-w-[172px] items-center justify-between gap-3 px-3 py-2 text-left text-sm font-medium md:flex"
           >
-            Projects
+            <span className="truncate">Workspace</span>
+            <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--civora-text-soft)]">Select</span>
           </button>
           <button
             type="button"
             onClick={onOpenSiteInputs}
-            className="text-white/70 transition hover:text-white"
+            className="civora-control hidden px-3 py-2 text-sm font-semibold text-[var(--civora-text)] md:inline-flex"
           >
             Site
           </button>
-          <button
-            type="button"
-            onClick={onOpenDocs}
-            className="text-white/70 transition hover:text-white"
-          >
-            Docs
+        </div>
+
+        <nav className="hidden flex-1 items-center justify-center gap-2 lg:flex">
+          {workflowSteps.map((step, index) => {
+            const state = index === 0 ? "complete" : index === 1 ? "active" : "idle";
+            return (
+              <div key={step} className="flex items-center gap-2">
+                <span
+                  data-state={state}
+                  className="civora-step inline-flex h-6 w-6 items-center justify-center text-[11px] font-semibold"
+                >
+                  {state === "complete" ? "✓" : index + 1}
+                </span>
+                <span className={`text-xs font-semibold ${state === "active" ? "text-[var(--civora-text)]" : "text-[var(--civora-text-muted)]"}`}>
+                  {step}
+                </span>
+              </div>
+            );
+          })}
+        </nav>
+
+        <div className="flex items-center gap-2">
+          <button type="button" className="civora-control hidden h-9 w-9 items-center justify-center md:inline-flex" aria-label="Undo">
+            <Undo2 className="h-4 w-4" />
+          </button>
+          <button type="button" className="civora-control hidden h-9 w-9 items-center justify-center md:inline-flex" aria-label="Redo">
+            <RotateCcw className="h-4 w-4" />
+          </button>
+          <button type="button" className="civora-control hidden h-9 w-9 items-center justify-center md:inline-flex" aria-label="Notifications">
+            <Bell className="h-4 w-4" />
+          </button>
+          <button type="button" onClick={onOpenDocs} className="civora-control hidden h-9 w-9 items-center justify-center md:inline-flex" aria-label="Help">
+            <CircleHelp className="h-4 w-4" />
           </button>
           <button
             type="button"
             onClick={onOpenChat}
-            className="text-white/70 transition hover:text-white"
+            className="civora-control hidden px-3 py-2 text-xs font-semibold text-[var(--civora-text-muted)] xl:inline-flex"
           >
-            Chat
+            AI
           </button>
-        </nav>
-        <div className="flex items-center gap-3">
-          <span className="hidden rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white/70 md:inline-flex">
-            {userEmail}
-          </span>
           <button
             type="button"
             onClick={onLogout}
-            className="rounded-full border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/80 transition hover:bg-white/20"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--civora-border)] bg-[var(--civora-surface-solid)] text-xs font-bold text-[var(--civora-text)] shadow-[0_12px_30px_-24px_rgba(18,25,38,0.5)]"
+            title={`Sign out ${userEmail}`}
           >
-            Sign Out
+            {userEmail.slice(0, 1).toUpperCase()}
           </button>
         </div>
       </div>
