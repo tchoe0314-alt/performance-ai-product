@@ -9,7 +9,7 @@ export function Card({
 }) {
   return (
     <div
-      className={`rounded-[28px] border border-slate-200/80 bg-white/92 shadow-[0_20px_60px_-28px_rgba(15,23,42,0.28)] backdrop-blur ${className}`}
+      className={`civora-panel ${className}`}
     >
       {children}
     </div>
@@ -56,7 +56,7 @@ export function SectionTitle({
 
 export function Pill({ children }: { children: React.ReactNode }) {
   return (
-    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
+    <span className="rounded-full border border-[var(--civora-border)] bg-[var(--civora-surface-muted)] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--civora-text-muted)]">
       {children}
     </span>
   );
@@ -75,15 +75,15 @@ export function SmallButton({
 }) {
   const styles =
     variant === "primary"
-      ? "border border-slate-900 bg-slate-950 text-white hover:bg-slate-800"
-      : "border border-slate-200 bg-white text-slate-900 hover:border-slate-300 hover:bg-slate-50";
+      ? "border border-[var(--civora-accent)] bg-[var(--civora-accent)] text-white hover:bg-blue-700"
+      : "civora-control text-[var(--civora-text)]";
 
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex items-center rounded-2xl px-4 py-2.5 text-sm font-medium shadow-[0_12px_30px_-22px_rgba(15,23,42,0.55)] transition duration-200 ${styles} ${
+      className={`inline-flex items-center rounded-[var(--civora-radius-md)] px-4 py-2.5 text-sm font-medium shadow-[0_12px_30px_-22px_rgba(15,23,42,0.55)] transition duration-200 ${styles} ${
         disabled ? "cursor-not-allowed opacity-60" : "hover:-translate-y-0.5"
       }`}
     >
@@ -101,7 +101,7 @@ export function Field({
 }) {
   return (
     <div className="space-y-2">
-      <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+      <label className="civora-muted-label">
         {label}
       </label>
       {children}
@@ -113,7 +113,7 @@ export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
-      className={`w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] placeholder:text-slate-400 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70 ${
+      className={`w-full rounded-[var(--civora-radius-md)] border border-[var(--civora-border)] bg-[var(--civora-surface-solid)] px-4 py-3 text-sm text-[var(--civora-text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] placeholder:text-[var(--civora-text-soft)] outline-none transition focus:border-[var(--civora-border-strong)] focus:ring-4 focus:ring-[var(--civora-accent-soft)] ${
         props.className ?? ""
       }`}
     />
@@ -124,7 +124,7 @@ export function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement
   return (
     <textarea
       {...props}
-      className={`min-h-[168px] max-h-[280px] w-full resize-none overflow-y-auto rounded-[24px] border border-slate-200 bg-white px-4 py-3.5 text-sm leading-6 text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] placeholder:text-slate-400 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70 ${
+      className={`min-h-[168px] max-h-[280px] w-full resize-none overflow-y-auto rounded-[var(--civora-radius-lg)] border border-[var(--civora-border)] bg-[var(--civora-surface-solid)] px-4 py-3.5 text-sm leading-6 text-[var(--civora-text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] placeholder:text-[var(--civora-text-soft)] outline-none transition focus:border-[var(--civora-border-strong)] focus:ring-4 focus:ring-[var(--civora-accent-soft)] ${
         props.className ?? ""
       }`}
     />
