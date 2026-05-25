@@ -1041,6 +1041,12 @@ class DrainageEngine:
             if dist <= max(self.surface.cell_size * 1.5, nearest_pond.radius):
                 reached = True
                 target = nearest_pond.name
+        if not reached and path:
+            # Concept drainage can pipe from a collected low point to a declared
+            # basin/outfall even when surface flow alone stops at the low point.
+            path.append((nearest_pond.x, nearest_pond.y))
+            reached = True
+            target = f"CONCEPT_PIPE_TO_{nearest_pond.name}"
         reason = safe_str(target, "NO_TARGET")
         return self._dedupe_path(path), reached, reason
 
@@ -1205,6 +1211,18 @@ class DrainageEngine:
             terrain_slope = None
             slope = None
             pipe_warnings: List[str] = []
+
+            if safe_str(target_reason, "").startswith("CONCEPT_PIPE_TO_"):
+                pipe_warnings.append(
+                    f"Surface flow collected at a low point; concept pipe connects onward to basin {nearest_pond.name}."
+                )
+                summary.issues.append(self._issue(
+                    code="SURFACE_PATH_NEEDS_CONCEPT_PIPE",
+                    severity="warning",
+                    message=f"Surface flow from {inlet.name} reaches a low point before basin {nearest_pond.name}; concept pipe carries flow to the target.",
+                    pipe_label=f"{inlet.name} TO {nearest_pond.name}",
+                    target_name=nearest_pond.name,
+                ))
 
             if not reached and connect_orphans:
                 path = [(inlet.x, inlet.y), (nearest_pond.x, nearest_pond.y)]

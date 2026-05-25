@@ -582,6 +582,7 @@ def run_drainage_stage(
             if (
                 "BASIN_UNREACHABLE" in issue_codes
                 or "NO_FLOW_PATHS" in issue_codes
+                or "SURFACE_PATH_NEEDS_CONCEPT_PIPE" in issue_codes
                 or ("POOR_SLOPE" in issue_codes and pipe_run_count == 0)
                 or ("POOR_SLOPE" in issue_codes and pipe_run_count > 0 and not proposed_reached)
             ):
@@ -641,6 +642,12 @@ def run_drainage_stage(
                             elif "BASIN_UNREACHABLE" in issue_codes or "NO_FLOW_PATHS" in issue_codes:
                                 grading_blocked = True
                                 grading_block_reason = "proposed_surface_blocks_flow"
+                            elif (
+                                "SURFACE_PATH_NEEDS_CONCEPT_PIPE" in issue_codes
+                                and "SURFACE_PATH_NEEDS_CONCEPT_PIPE" not in alt_codes
+                            ):
+                                grading_blocked = True
+                                grading_block_reason = "proposed_surface_needs_concept_pipe"
                 except Exception:
                     grading_blocked = False
 
@@ -654,6 +661,13 @@ def run_drainage_stage(
             ):
                 grading_blocked = True
                 grading_block_reason = "proposed_surface_blocks_flow"
+            if (
+                not grading_blocked
+                and has_user_basins
+                and "SURFACE_PATH_NEEDS_CONCEPT_PIPE" in issue_codes
+            ):
+                grading_blocked = True
+                grading_block_reason = "proposed_surface_needs_concept_pipe"
 
         if grading_blocked:
             def _pick_point(records: list) -> tuple[float, float] | None:

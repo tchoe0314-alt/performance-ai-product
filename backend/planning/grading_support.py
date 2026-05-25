@@ -949,4 +949,46 @@ def build_grade_elements(project: ProjectModel, parsed: Dict[str, Any]) -> List[
                     name=zone.name or "BASIN",
                 )
             )
+    if not any(safe_str(getattr(elem, "kind", ""), "") == "parking" for elem in elems):
+        parking_points: List[Tuple[float, float]] = []
+        for action in safe_list(safe_dict(project.meta.get("_expanded_plan")).get("actions")):
+            rec = safe_dict(action)
+            if safe_str(rec.get("layer"), "").upper() != "PARKING":
+                continue
+            if rec.get("origin") and rec.get("width") is not None and rec.get("height") is not None:
+                origin = safe_list(rec.get("origin"))
+                if len(origin) >= 2:
+                    x = safe_float(origin[0], 0.0)
+                    y = safe_float(origin[1], 0.0)
+                    w = safe_float(rec.get("width"), 0.0)
+                    h = safe_float(rec.get("height"), 0.0)
+                    parking_points.extend([(x, y), (x + w, y + h)])
+                continue
+            for point in safe_list(rec.get("points")):
+                if isinstance(point, (list, tuple)) and len(point) >= 2:
+                    parking_points.append((safe_float(point[0], 0.0), safe_float(point[1], 0.0)))
+        if parking_points:
+            xs = [point[0] for point in parking_points]
+            ys = [point[1] for point in parking_points]
+            x_min = min(xs)
+            y_min = min(ys)
+            width = max(max(xs) - x_min, 8.0)
+            depth = max(max(ys) - y_min, 8.0)
+            cx = x_min + width / 2.0
+            cy = y_min + depth / 2.0
+            sampled = _sample_surface_nearest(surface_obj, cx, cy, DEFAULT_PARK_START_ELEV)
+            elems.append(
+                GradeElement(
+                    kind="parking",
+                    x=x_min,
+                    y=y_min,
+                    width=width,
+                    depth=depth,
+                    base_elev=sampled,
+                    slope_y=DEFAULT_PARK_SLOPE_Y,
+                    priority=6,
+                    transition_zone=10.0,
+                    name="PARKING",
+                )
+            )
     return elems
