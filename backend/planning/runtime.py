@@ -161,6 +161,9 @@ _PLAN_META_KEYS = {
     "routing",
     "strict_mode",
     "planner_score",
+    "warnings",
+    "errors",
+    "fallbacks",
     "stats",
     "quantities",
     "deliverables",
@@ -327,9 +330,46 @@ _DISCIPLINE_KEYS = {
         "selected_basin_adequacy_status",
         "missing_requirements",
     },
-    "sanitary": {"segments", "manholes", "total_length_ft", "manhole_count", "service_count"},
-    "utilities": {
+    "sanitary": {
+        "success",
+        "message",
+        "source",
+        "fallback_used",
         "route_count",
+        "service_count",
+        "served_building_count",
+        "total_length_ft",
+        "main_length_ft",
+        "lateral_length_ft",
+        "service_connection_length_ft",
+        "manhole_count",
+        "segments",
+        "manholes",
+        "nodes",
+        "missing_service_buildings",
+        "slope_violations",
+        "disconnected_segments",
+        "storm_conflicts",
+        "missing_manhole_points",
+        "missing_data_segments",
+        "total_system_capacity_cfs",
+        "max_capacity_ratio",
+        "controlling_segment",
+        "graph_validation",
+        "network_validation",
+        "stats",
+    },
+    "utilities": {
+        "success",
+        "message",
+        "fallback_used",
+        "fallback_error",
+        "route_count",
+        "total_length_ft",
+        "warning_count",
+        "warnings",
+        "segments",
+        "conflict_hooks",
         "min_horizontal_separation_ft",
         "min_vertical_separation_ft",
         "min_cover_ft",
@@ -405,12 +445,31 @@ def _sanitize_discipline_meta(key: str, value: Any) -> Dict[str, Any]:
     payload = safe_dict(value)
     allowed = _DISCIPLINE_KEYS.get(key, set())
     clean: Dict[str, Any] = {}
+    large_list_limits = {
+        "segments": 320,
+        "nodes": 320,
+        "manholes": 320,
+        "structures": 320,
+        "basins": 120,
+        "pipes": 320,
+        "low_points": 160,
+        "flow_paths": 160,
+        "flow_samples": 160,
+    }
     for subkey in allowed:
         if subkey in payload:
             if key == "utilities" and subkey == "coordination":
                 clean[subkey] = _sanitize_coordination(payload.get(subkey))
+            elif subkey in large_list_limits:
+                rows = safe_list(payload.get(subkey))
+                clean[subkey] = _snapshot_serialize(rows[: large_list_limits[subkey]])
+                if len(rows) > large_list_limits[subkey]:
+                    clean[f"{subkey}_total_count"] = len(rows)
+                    clean[f"{subkey}_truncated"] = True
             else:
                 clean[subkey] = _snapshot_serialize(payload.get(subkey))
+    if not clean:
+        return {}
     return preserve_field_states(clean)
 
 

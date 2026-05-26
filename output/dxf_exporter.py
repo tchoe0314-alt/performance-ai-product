@@ -204,6 +204,36 @@ STANDARD_LAYER_LINEWEIGHTS = {
     "C-LABEL": 18,
 }
 
+LEGACY_LAYER_COLORS = {
+    "SITE": 7,
+    "SETBACK": 8,
+    "BUILDING": 2,
+    "PAVEMENT": 6,
+    "PARKING": 30,
+    "ROAD": 4,
+    "FIRE": 1,
+    "WALK": 3,
+    "EG_CONTOUR": 8,
+    "FG_CONTOUR": 8,
+    "SPOT_EG": 2,
+    "SPOT_FG": 2,
+    "DRAIN_FLOW": 5,
+    "LOW_POINTS": 1,
+    "PIPE": 4,
+    "STORM": 4,
+    "DRAIN": 6,
+    "BASIN_BOUNDARY": 6,
+    "SAN": 1,
+    "WATER": 5,
+    "UTILITY": 5,
+    "TITLE": 7,
+    "GRID": 2,
+    "DIM": 2,
+    "LABEL": 7,
+    "ANNO": 7,
+}
+USE_STANDARD_DXF_LAYER_NAMES = False
+
 
 PAGE_WIDTH_MM = 420.0
 PAGE_HEIGHT_MM = 297.0
@@ -265,6 +295,8 @@ def get_layer(action: Dict[str, Any], fallback: str) -> str:
 
 def _legacy_to_standard_layer(layer: str, action: Optional[Dict[str, Any]] = None) -> str:
     layer = safe_text(layer, "SITE").upper().strip()
+    if not USE_STANDARD_DXF_LAYER_NAMES:
+        return LAYER_ALIASES.get(layer, layer if layer in LEGACY_LAYERS else "ANNO")
     action = safe_dict(action or {})
     label = clean_label(action.get("label"), "").upper()
     text = safe_text(action.get("text"), "").upper()
@@ -364,6 +396,13 @@ def _legacy_to_standard_layer(layer: str, action: Optional[Dict[str, Any]] = Non
 
 
 def ensure_layers(doc) -> None:
+    for layer_name in sorted(LEGACY_LAYERS):
+        if layer_name not in doc.layers:
+            doc.layers.add(
+                name=layer_name,
+                color=LEGACY_LAYER_COLORS.get(layer_name, 7),
+                lineweight=STANDARD_LAYER_LINEWEIGHTS.get(LAYER_ALIASES.get(layer_name, ""), 18),
+            )
     for layer_name in sorted(STANDARD_LAYERS):
         if layer_name not in doc.layers:
             doc.layers.add(
@@ -1125,6 +1164,7 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
             layout_first_modelspace
             and layer in MODELSPACE_DETAIL_LAYERS
             and repr(rec) not in curated_engineering_overlay_keys
+            and not (engineering_profile == "storm" and layer in {"PIPE", "STORM", "STRUCTURE", "BASIN_BOUNDARY", "DRAIN_FLOW"})
         ):
             continue
         if layout_first_modelspace and layer == "ROUTE":
@@ -1133,6 +1173,7 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
             layout_first_modelspace
             and layer in {"PIPE", "STORM", "SAN", "UTILITY", "WATER", "STRUCTURE", "BASIN_BOUNDARY"}
             and repr(rec) not in curated_engineering_overlay_keys
+            and not (engineering_profile == "storm" and layer in {"PIPE", "STORM", "STRUCTURE", "BASIN_BOUNDARY"})
         ):
             continue
         if engineering_profile in {"storm", "utilities", "complete"} and layer in {"EG_CONTOUR", "SPOT_EG"}:
@@ -1158,6 +1199,11 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
         prepared.append(rec)
     if use_surface_contours:
         prepared.extend(_surface_contour_actions(plan, engineering_profile=engineering_profile))
+    if engineering_profile == "storm" and not any(get_layer(action, "SITE") == "DRAIN_FLOW" for action in prepared):
+        for action in prepared:
+            if get_layer(action, "SITE") in {"PIPE", "STORM"} and safe_text(action.get("task"), "").lower() == "polyline":
+                prepared.append({**action, "layer": "DRAIN_FLOW", "label": None})
+                break
     seen: set[str] = set()
     deduped: List[Dict[str, Any]] = []
     for rec in prepared:
@@ -2247,9 +2293,13 @@ def _draw_structure_callouts(space, plan: Dict[str, Any], map_to_sheet, view_x0:
         target_x = max(view_x0 + 8.0, min(view_x1 - 52.0, target_x))
         target_y = max(view_y0 + 10.0, min(view_y1 - 12.0, target_y))
         _, text_height, text_layer = _label_text("structure", "")
-        while any(abs(target_x - ox) < 28.0 and abs(target_y - oy) < 9.0 for ox, oy in occupied):
+        attempts = 0
+        while any(abs(target_x - ox) < 28.0 and abs(target_y - oy) < 9.0 for ox, oy in occupied) and attempts < 24:
             target_y += 7.0 if target_y < (view_y0 + view_y1) / 2.0 else -7.0
             target_y = max(view_y0 + 10.0, min(view_y1 - 12.0, target_y))
+            attempts += 1
+        if attempts >= 24:
+            target_y = max(view_y0 + 10.0, min(view_y1 - 12.0, target_y + ((idx % 5) - 2) * 4.0))
         occupied.append((target_x, target_y))
 
         elbow_x = anchor_x + side * 8.0
@@ -3619,6 +3669,9 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
 
 
 def _remap_doc_layers(doc) -> None:
+    if not USE_STANDARD_DXF_LAYER_NAMES:
+        return
+
     def remap_entity(entity) -> None:
         try:
             layer = safe_text(entity.dxf.layer, "").upper()

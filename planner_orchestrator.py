@@ -47,6 +47,55 @@ FIELD_SOURCE_OMIT = "omit"
 FIELD_SOURCES = {FIELD_SOURCE_USER, FIELD_SOURCE_INFER, FIELD_SOURCE_OMIT}
 
 
+def _clone_payload(value: Any, *, max_depth: int = 18, max_items: int = 5000) -> Any:
+    """Bounded copy for orchestrator payloads.
+
+    Planner results can contain engine objects and occasionally cyclic metadata.
+    Returning those through the orchestrator should not require an unbounded
+    deepcopy; this keeps API/result packaging deterministic and crash-safe.
+    """
+
+    seen: set[int] = set()
+
+    def clone(node: Any, depth: int) -> Any:
+        if node is None or isinstance(node, (str, int, float, bool)):
+            return node
+        if depth > max_depth:
+            return {"truncated": True, "type": type(node).__name__}
+        node_id = id(node)
+        if isinstance(node, (dict, list, tuple, set)):
+            if node_id in seen:
+                return {"cycle": True, "type": type(node).__name__}
+            seen.add(node_id)
+            if isinstance(node, dict):
+                out: Dict[str, Any] = {}
+                for idx, (key, item) in enumerate(node.items()):
+                    if idx >= max_items:
+                        out["__truncated_items__"] = max(0, len(node) - max_items)
+                        break
+                    out[str(key)] = clone(item, depth + 1)
+                seen.discard(node_id)
+                return out
+            seq = list(node)
+            out_list = [clone(item, depth + 1) for item in seq[:max_items]]
+            if len(seq) > max_items:
+                out_list.append({"truncated_items": len(seq) - max_items})
+            seen.discard(node_id)
+            return out_list
+        to_dict = getattr(node, "to_dict", None)
+        if callable(to_dict):
+            try:
+                return clone(to_dict(), depth + 1)
+            except Exception:
+                pass
+        if hasattr(node, "__dict__"):
+            public = {key: item for key, item in vars(node).items() if not str(key).startswith("_")}
+            return clone(public, depth + 1)
+        return repr(node)
+
+    return clone(value, 0)
+
+
 def _is_field_wrapper(value: Any) -> bool:
     return isinstance(value, dict) and "source" in value and "value" in value
 
@@ -976,7 +1025,7 @@ def _parse_from_prompt(req: PlannerOrchestratorRequest) -> Dict[str, Any]:
         return _fast_parse_from_prompt(req)
 
     if command_mode is None:
-        payload = deepcopy(req.manual_fields)
+        payload = _clone_payload(req.manual_fields)
         payload.setdefault("meta", {})
         payload["meta"]["prompt_parse_unavailable"] = True
         payload["meta"]["source_input_mode"] = "prompt"
@@ -1003,7 +1052,7 @@ def _parse_from_manual(req: PlannerOrchestratorRequest) -> Dict[str, Any]:
 
 
 def _parse_from_sketch(req: PlannerOrchestratorRequest) -> Dict[str, Any]:
-    payload = deepcopy(req.manual_fields)
+    payload = _clone_payload(req.manual_fields)
     payload.setdefault("units", req.units)
     payload.setdefault("meta", {})
     payload["meta"]["source_input_mode"] = "sketch"
@@ -1027,7 +1076,7 @@ def _parse_from_sketch(req: PlannerOrchestratorRequest) -> Dict[str, Any]:
 
 
 def _parse_from_image(req: PlannerOrchestratorRequest) -> Dict[str, Any]:
-    payload = deepcopy(req.manual_fields)
+    payload = _clone_payload(req.manual_fields)
     payload.setdefault("units", req.units)
     payload.setdefault("meta", {})
     payload["meta"]["source_input_mode"] = "image"
@@ -1105,9 +1154,9 @@ def _single_plan_flow(
     return PlannerOrchestratorResult(
         success=success,
         message=message,
-        parsed_payload=deepcopy(parsed_payload),
-        final_plan=deepcopy(final_plan),
-        alternatives=deepcopy(_safe_dict(_safe_dict(final_plan.get("meta")).get("multi_option")).get("alternatives", [])),
+        parsed_payload=_clone_payload(parsed_payload),
+        final_plan=_clone_payload(final_plan),
+        alternatives=_clone_payload(_safe_dict(_safe_dict(final_plan.get("meta")).get("multi_option")).get("alternatives", [])),
         option_summaries=[],
         warnings=warnings,
         errors=errors,
@@ -1115,10 +1164,10 @@ def _single_plan_flow(
         assumptions=_collect_assumptions(parsed_payload, final_plan),
         metadata={
             "workflow": "single_plan",
-            "route": deepcopy(_safe_dict(_safe_dict(final_plan.get("meta")).get("routing"))),
+            "route": _clone_payload(_safe_dict(_safe_dict(final_plan.get("meta")).get("routing"))),
             "recommended_score": _planner_score_from_plan(final_plan),
             "runtime_should_continue": runtime_should_continue,
-            "runtime_phase_checkpoint": deepcopy(runtime_checkpoint),
+            "runtime_phase_checkpoint": _clone_payload(runtime_checkpoint),
             **({"missing_requirements": missing_requirements, "needs_clarification": True} if not success else {}),
         },
     )
@@ -1144,7 +1193,7 @@ def _multi_option_flow(parsed_payload: Dict[str, Any], req: PlannerOrchestratorR
         return PlannerOrchestratorResult(
             success=False,
             message="No viable planning options were generated.",
-            parsed_payload=deepcopy(parsed_payload),
+            parsed_payload=_clone_payload(parsed_payload),
             final_plan={},
             alternatives=[],
             option_summaries=[],
@@ -1155,11 +1204,11 @@ def _multi_option_flow(parsed_payload: Dict[str, Any], req: PlannerOrchestratorR
             metadata={
                 "workflow": "multi_option",
                 "result_success": False,
-                "preferences": deepcopy(preferences),
+                "preferences": _clone_payload(preferences),
             },
         )
 
-    final_plan = deepcopy(result.recommended.plan)
+    final_plan = _clone_payload(result.recommended.plan)
     warnings, errors = _collect_warnings_errors(final_plan)
 
     alternatives = [_candidate_to_alt(option) for option in result.top_options[1:]]
@@ -1167,10 +1216,10 @@ def _multi_option_flow(parsed_payload: Dict[str, Any], req: PlannerOrchestratorR
 
     metadata = {
         "workflow": "multi_option",
-        "option_groups": deepcopy(result.option_groups),
-        "questions": [deepcopy(q.__dict__) for q in result.questions],
-        "actions": [deepcopy(a.__dict__) for a in result.actions],
-        "rejected_summary": deepcopy(result.rejected_summary),
+        "option_groups": _clone_payload(result.option_groups),
+        "questions": [_clone_payload(q.__dict__) for q in result.questions],
+        "actions": [_clone_payload(a.__dict__) for a in result.actions],
+        "rejected_summary": _clone_payload(result.rejected_summary),
         "saved_options": [_candidate_to_alt(opt) for opt in result.saved_options],
         "recommended_option_name": result.recommended.option_name,
         "recommended_candidate_id": result.recommended.candidate_id,
@@ -1178,16 +1227,16 @@ def _multi_option_flow(parsed_payload: Dict[str, Any], req: PlannerOrchestratorR
         "recommended_family": result.recommended.option_family,
         "recommended_pros": list(result.recommended.pros),
         "recommended_cons": list(result.recommended.cons),
-        "comparison_summary": deepcopy(_safe_dict(result.metadata).get("comparison_summary", {})),
+        "comparison_summary": _clone_payload(_safe_dict(result.metadata).get("comparison_summary", {})),
         "candidate_count": _safe_dict(result.metadata).get("candidate_count", len(result.top_options)),
         "requested_top_k": _safe_dict(result.metadata).get("requested_top_k", req.top_k),
-        "preferences": deepcopy(_safe_dict(result.metadata).get("preferences", preferences)),
+        "preferences": _clone_payload(_safe_dict(result.metadata).get("preferences", preferences)),
     }
 
     return PlannerOrchestratorResult(
         success=True,
         message=result.message,
-        parsed_payload=deepcopy(parsed_payload),
+        parsed_payload=_clone_payload(parsed_payload),
         final_plan=final_plan,
         alternatives=alternatives,
         option_summaries=option_summaries,
@@ -1401,7 +1450,7 @@ def _run_full_design_loop(parsed_payload: Dict[str, Any], req: PlannerOrchestrat
         current_payload = _preserve_field_intent(_deep_merge(current_payload, changes_applied))
         state.iterations[-1].changes_applied = deepcopy(changes_applied)
 
-    final_plan = deepcopy(state.best_plan) if state.best_plan else {}
+    final_plan = _clone_payload(state.best_plan) if state.best_plan else {}
     warnings, errors = _collect_warnings_errors(final_plan)
 
     result = PlannerOrchestratorResult(
@@ -1413,15 +1462,15 @@ def _run_full_design_loop(parsed_payload: Dict[str, Any], req: PlannerOrchestrat
             if final_plan and _manual_plan_failed(final_plan)
             else "Full design workflow did not produce a viable final plan."
         ),
-        parsed_payload=deepcopy(state.best_parsed_payload if state.best_parsed_payload else parsed_payload),
+        parsed_payload=_clone_payload(state.best_parsed_payload if state.best_parsed_payload else parsed_payload),
         final_plan=final_plan,
-        alternatives=deepcopy(_safe_list(state.best_result_metadata.get("alternatives"))),
+        alternatives=_clone_payload(_safe_list(state.best_result_metadata.get("alternatives"))),
         option_summaries=[],
         warnings=warnings,
         errors=errors,
         issues=_collect_issues(final_plan),
         assumptions=_collect_assumptions(state.best_parsed_payload if state.best_parsed_payload else parsed_payload, final_plan) if final_plan else [],
-        metadata=deepcopy(state.best_result_metadata),
+        metadata=_clone_payload(state.best_result_metadata),
     )
 
     result.metadata["workflow"] = "full_design_loop"
@@ -1454,7 +1503,7 @@ def orchestrate_plan(req: PlannerOrchestratorRequest) -> PlannerOrchestratorResu
     parsed_payload["meta"]["persist_trace_metadata"] = req.persist_trace_metadata
     parsed_payload["meta"]["allow_ai_fill_for_blanks"] = req.allow_ai_fill_for_blanks
     parsed_payload["meta"]["assisted_enabled"] = bool(req.allow_ai_fill_for_blanks)
-    parsed_payload["meta"]["orchestrator_meta"] = deepcopy(req.meta)
+    parsed_payload["meta"]["orchestrator_meta"] = _clone_payload(req.meta)
     parsed_payload["meta"]["input_mode"] = req.input_mode
     parsed_payload["meta"]["manual_mode"] = _lower(req.input_mode) == "manual"
     parsed_payload["meta"]["optimize_goal"] = req.optimize_goal
@@ -1481,8 +1530,8 @@ def orchestrate_plan(req: PlannerOrchestratorRequest) -> PlannerOrchestratorResu
     result.option_summaries = _summarize_option_blocks(result)
 
     if req.persist_trace_metadata:
-        result.metadata["parsed_payload_meta"] = deepcopy(_safe_dict(parsed_payload.get("meta")))
-        result.metadata["final_plan_meta"] = deepcopy(_safe_dict(result.final_plan.get("meta")))
+        result.metadata["parsed_payload_meta"] = _clone_payload(_safe_dict(parsed_payload.get("meta")))
+        result.metadata["final_plan_meta"] = _clone_payload(_safe_dict(result.final_plan.get("meta")))
 
     return result
 
@@ -1505,7 +1554,7 @@ def orchestrate_prompt(
         prompt_text=prompt_text,
         plan_type_hint=plan_type_hint,
         units=units,
-        meta=deepcopy(meta) if isinstance(meta, dict) else {},
+        meta=_clone_payload(meta) if isinstance(meta, dict) else {},
     )
     return orchestrate_plan(req)
 
@@ -1526,7 +1575,7 @@ def orchestrate_manual(
     optimize_goal = wrapper.get("optimize_goal", optimize_goal)
     plan_type_hint = _safe_str(wrapper.get("plan_type_hint"), plan_type_hint) if wrapper.get("plan_type_hint") is not None else plan_type_hint
     units = _safe_str(wrapper.get("units"), units) if wrapper.get("units") is not None else units
-    merged_meta = deepcopy(meta) if isinstance(meta, dict) else {}
+    merged_meta = _clone_payload(meta) if isinstance(meta, dict) else {}
     if isinstance(wrapper.get("meta"), dict):
         merged_meta = _deep_merge(merged_meta, _safe_dict(wrapper.get("meta")))
     req = PlannerOrchestratorRequest(
@@ -1534,7 +1583,7 @@ def orchestrate_manual(
         strict_mode=strict_mode,
         full_design_mode=full_design_mode,
         optimize_goal=optimize_goal,
-        manual_fields=deepcopy(normalized_manual_fields),
+        manual_fields=_clone_payload(normalized_manual_fields),
         plan_type_hint=plan_type_hint,
         units=units,
         meta=merged_meta,

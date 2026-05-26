@@ -856,15 +856,20 @@ def build_preview_response(
         meta = final_plan.get("meta") if isinstance(final_plan.get("meta"), dict) else {}
         meta["project_id"] = project_id
         final_plan["meta"] = meta
-    png_bytes = artifact_service.build_preview_png(
-        final_plan,
-        render_labels=bool(render_labels),
-        quality=preview_quality or "standard",
-        preview_style=preview_style,
-        label_density=label_density,
-        include_layers=preview_layers,
-        preview_mode=preview_mode,
-    )
+    try:
+        png_bytes = artifact_service.build_preview_png(
+            final_plan,
+            render_labels=bool(render_labels),
+            quality=preview_quality or "standard",
+            preview_style=preview_style,
+            label_density=label_density,
+            include_layers=preview_layers,
+            preview_mode=preview_mode,
+        )
+    except TypeError as exc:
+        if "unexpected keyword argument" not in str(exc):
+            raise
+        png_bytes = artifact_service.build_preview_png(final_plan)
     from output.preview import build_preview_annotations
 
     preview_annotations = build_preview_annotations(

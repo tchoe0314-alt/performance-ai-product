@@ -1434,6 +1434,7 @@ def run_grading_stage(
     install_minimum_grading_actions: Callable[[Any, Dict[str, Any]], int],
     merge_actions_into_expanded_plan: Callable[[Any, Any], None],
     call_with_compatible_kwargs: Callable[..., Any],
+    grading_engine_cls: Callable[..., Any] = GradingEngine,
 ) -> None:
     manager = ctx.manager
     project = manager.project
@@ -1460,13 +1461,12 @@ def run_grading_stage(
             record_strict_stage_failure(
                 ctx,
                 "grading",
-                "STRICT_GRADING_INPUTS_MISSING",
-                "STRICT mode requires explicit grading inputs (terrain text or corner elevations).",
+                "STRICT_GRADING_FALLBACK_BLOCKED",
+                "STRICT mode blocked grading fallback because explicit grading inputs are missing (terrain text or corner elevations).",
                 category="grading",
                 dependency="grading_engine",
                 computation_step="input_validation",
             )
-            ctx.add_stage("grading", False, "Grading blocked: missing explicit grading inputs.")
             return
         grading_request = GradingRequest(
             create_project_objects=False,
@@ -1483,7 +1483,7 @@ def run_grading_stage(
             existing_surface = build_existing_surface(execution_payload)
             project.meta["existing_surface"] = existing_surface
 
-        engine = GradingEngine(existing_surface)
+        engine = grading_engine_cls(existing_surface)
         grade_elements = build_grade_elements(project, execution_payload)
 
         if hasattr(engine, "extend_elements"):

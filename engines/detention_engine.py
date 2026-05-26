@@ -44,6 +44,8 @@ DEFAULT_BOTTOM_LENGTH_WIDTH_RATIO = 1.5
 DEFAULT_STAGE_INCREMENT_FT = 0.5
 DEFAULT_MIN_BOTTOM_DIM_FT = 12.0
 DEFAULT_MAX_DRAWDOWN_HOURS = 48.0
+DEFAULT_MAX_STORAGE_CF = 5_000_000.0
+DEFAULT_MAX_BASIN_DIM_FT = 2_500.0
 
 
 # =============================================================================
@@ -122,7 +124,8 @@ def _safe_float(value: object, default: float = 0.0) -> float:
     try:
         if value is None:
             return float(default)
-        return float(value)
+        result = float(value)
+        return result if math.isfinite(result) else float(default)
     except Exception:
         return float(default)
 
@@ -143,9 +146,9 @@ def _frustum_volume_cf(bottom_area_sf: float, top_area_sf: float, depth_ft: floa
 
 def _basin_area_at_depth(bottom_length_ft: float, bottom_width_ft: float, side_slope_h_to_1v: float, depth_ft: float) -> float:
     if depth_ft <= 0.0:
-        return max(0.0, bottom_length_ft) * max(0.0, bottom_width_ft)
-    top_length = bottom_length_ft + 2.0 * side_slope_h_to_1v * depth_ft
-    top_width = bottom_width_ft + 2.0 * side_slope_h_to_1v * depth_ft
+        return _clamp(bottom_length_ft, 0.0, DEFAULT_MAX_BASIN_DIM_FT) * _clamp(bottom_width_ft, 0.0, DEFAULT_MAX_BASIN_DIM_FT)
+    top_length = _clamp(bottom_length_ft + 2.0 * side_slope_h_to_1v * depth_ft, 0.0, DEFAULT_MAX_BASIN_DIM_FT)
+    top_width = _clamp(bottom_width_ft + 2.0 * side_slope_h_to_1v * depth_ft, 0.0, DEFAULT_MAX_BASIN_DIM_FT)
     return max(0.0, top_length) * max(0.0, top_width)
 
 
@@ -257,7 +260,7 @@ def recommend_basin_geometry(
     length_width_ratio: float = DEFAULT_BOTTOM_LENGTH_WIDTH_RATIO,
     freeboard_ft: float = DEFAULT_FREEBOARD_FT,
 ) -> BasinGeometry:
-    required_storage_cf = max(0.0, _safe_float(required_storage_cf, 0.0))
+    required_storage_cf = _clamp(_safe_float(required_storage_cf, 0.0), 0.0, DEFAULT_MAX_STORAGE_CF)
     max_depth_ft = max(1.0, _safe_float(max_depth_ft, DEFAULT_MAX_DEPTH_FT))
     side_slope_h_to_1v = max(1.0, _safe_float(side_slope_h_to_1v, DEFAULT_SIDE_SLOPE_H))
     length_width_ratio = max(1.0, _safe_float(length_width_ratio, DEFAULT_BOTTOM_LENGTH_WIDTH_RATIO))
@@ -273,10 +276,10 @@ def recommend_basin_geometry(
 
     target_depth = max_depth_ft
     lo = DEFAULT_MIN_BOTTOM_DIM_FT
-    hi = math.sqrt(required_storage_cf) * 5.0 + 200.0
+    hi = min(DEFAULT_MAX_BASIN_DIM_FT, math.sqrt(required_storage_cf) * 5.0 + 200.0)
 
     best_width = hi
-    for _ in range(80):
+    for _ in range(40):
         width = (lo + hi) / 2.0
         length = width * length_width_ratio
         storage = basin_storage_cf(length, width, target_depth, side_slope_h_to_1v)

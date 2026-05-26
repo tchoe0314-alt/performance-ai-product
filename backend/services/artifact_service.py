@@ -12,6 +12,13 @@ import shutil
 PREVIEW_RENDER_VERSION = "2026-04-17-preview-modes-v1"
 
 
+def render_plan_preview_png(final_plan: Dict[str, Any], **kwargs: Any) -> bytes:
+    """Module-level hook kept patchable for preview cache tests."""
+    from output.preview import render_plan_preview_png as _render_plan_preview_png
+
+    return _render_plan_preview_png(final_plan, **kwargs)
+
+
 def _slugify(value: str, default: str = "artifact") -> str:
     text = re.sub(r"[^a-z0-9]+", "-", str(value or "").strip().lower()).strip("-")
     return text or default
@@ -107,8 +114,6 @@ class ArtifactService:
         density = label_density
         if not density:
             density = "high" if quality_key == "high" else "standard"
-        from output.preview import render_plan_preview_png
-
         png_bytes = render_plan_preview_png(
             final_plan,
             render_labels=render_labels,

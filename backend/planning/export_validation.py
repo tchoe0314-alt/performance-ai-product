@@ -19,12 +19,16 @@ def drainage_surface_alignment(
     grading: Dict[str, Any],
     drainage: Dict[str, Any],
 ) -> Dict[str, Any]:
-    grading_low_points = [
-        safe_dict(item) for item in safe_list(grading.get("low_points")) if safe_dict(item)
+    grading_low_point_count = len(safe_list(grading.get("low_points")))
+    drainage_low_point_count = len(safe_list(drainage.get("low_points")))
+    grading_low_points_all = [
+        safe_dict(item) for item in safe_list(grading.get("low_points"))[:120] if safe_dict(item)
     ]
-    drainage_low_points = [
-        safe_dict(item) for item in safe_list(drainage.get("low_points")) if safe_dict(item)
+    drainage_low_points_all = [
+        safe_dict(item) for item in safe_list(drainage.get("low_points"))[:240] if safe_dict(item)
     ]
+    grading_low_points = grading_low_points_all[:120]
+    drainage_low_points = drainage_low_points_all[:240]
     grading_stats = safe_dict(grading.get("stats"))
     threshold_ft = max(
         20.0,
@@ -59,8 +63,10 @@ def drainage_surface_alignment(
                 remaining.pop(best_index)
 
     return {
-        "grading_low_point_count": len(grading_low_points),
-        "drainage_low_point_count": len(drainage_low_points),
+        "grading_low_point_count": grading_low_point_count,
+        "drainage_low_point_count": drainage_low_point_count,
+        "sampled_grading_low_point_count": len(grading_low_points),
+        "sampled_drainage_low_point_count": len(drainage_low_points),
         "grading_flow_sample_count": safe_int(grading_stats.get("flow_sample_count"), 0),
         "threshold_ft": round(threshold_ft, 3),
         "matched_low_points": matched_pairs,

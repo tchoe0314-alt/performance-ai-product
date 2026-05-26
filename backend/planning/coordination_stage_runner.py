@@ -48,14 +48,35 @@ def run_conflict_resolution_stage(
 
     before = sorted(detect_coordination_conflicts(project, manager), key=conflict_priority_key)
     detected = deepcopy(before)
+    breadth_guard_limit = 80
+    breadth_guard_active = len(before) > breadth_guard_limit
+    if breadth_guard_active:
+        coordination_metrics.setdefault("prune_reasons", {})["coordination_breadth_guard"] = len(before) - breadth_guard_limit
+        max_iterations = 0
     resolved: List[Dict[str, Any]] = []
-    unresolved: List[Dict[str, Any]] = []
+    unresolved: List[Dict[str, Any]] = [
+        {
+            **deepcopy(safe_dict(conflict)),
+            "status": "unresolved",
+            "resolution_reason": (
+                "Coordination produced too many conflicts for safe automatic solving in one pass; "
+                "review high-priority conflicts or split the site into smaller coordination areas."
+            ),
+            "failure_breakdown": {
+                "remaining_conflict_ids": [safe_str(conflict.get("id") or conflict.get("conflict_id") or conflict.get("conflict_type"))],
+                "remaining_conflict_rules": [safe_str(conflict.get("conflict_type"))],
+                "unresolved_systems": safe_list(conflict.get("systems")),
+                "rejected_reason": "coordination_breadth_guard",
+            },
+        }
+        for conflict in before[:breadth_guard_limit]
+    ] if breadth_guard_active else []
     assumptions: List[Dict[str, Any]] = []
     resolution_history: List[Dict[str, Any]] = []
     changed_systems: set[str] = set()
     best_iteration = 0
-    best_state = snapshot_coordination_state(project, manager)
-    best_full_state = full_coordination_state_snapshot(project, manager)
+    best_state = {} if breadth_guard_active else snapshot_coordination_state(project, manager)
+    best_full_state = {} if breadth_guard_active else full_coordination_state_snapshot(project, manager)
     best_unresolved = len(before)
     iterations_used = 0
     unresolved_clusters: List[Dict[str, Any]] = []

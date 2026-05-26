@@ -534,6 +534,7 @@ def run_utility_stage(
     utility_export_validation: Callable[..., Dict[str, Any]],
     record_strict_stage_failure: Callable[..., None],
     preferred_route_between: Callable[..., List[List[float]]],
+    utility_engine_cls: Callable[..., Any] = UtilityEngine,
 ) -> None:
     manager = ctx.manager
     project = manager.project
@@ -640,7 +641,7 @@ def run_utility_stage(
         utility_preference = safe_dict(corridor_preferences.get("water") or corridor_preferences.get("generic"))
 
         try:
-            engine = UtilityEngine(level=safe_str(parsed.get("level"), "") or None)
+            engine = utility_engine_cls(level=safe_str(parsed.get("level"), "") or None)
             request = UtilityRequest(
                 system_type="generic_utility",
                 source=source,
@@ -774,7 +775,7 @@ def run_utility_stage(
         _mark_dependency_state(manager, "utility_network", "earthwork", DependencyState.STALE, reason="Earthwork may depend on utility network.")
         manager.invalidate_from("utility_network")
 
-        fallback_used = any("fallback" in lower_text(warning) for warning in warnings)
+        fallback_used = bool(utility_summary.get("fallback_used")) or any("fallback" in lower_text(warning) for warning in warnings)
         ctx.add_stage(
             "utility_network",
             success,

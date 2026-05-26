@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import importlib
 import inspect
-from copy import deepcopy
 from typing import Any, Dict, Iterable, List, Sequence
 
 
@@ -56,6 +55,53 @@ _CANONICAL_STAGE_KEYS: Dict[str, tuple[str, str]] = {
 }
 
 
+def bounded_copy(value: Any, *, max_depth: int = 8, max_items: int = 600) -> Any:
+    """Copy JSON-like stage payloads without chasing huge/cyclic graphs.
+
+    Canonical stage summaries can include rich engine metadata. During
+    coordination solving these summaries are read repeatedly for candidate
+    snapshots, so an unbounded ``deepcopy`` can become the bottleneck or hang on
+    accidental cycles. This helper preserves normal scalar/list/dict payloads
+    while placing a hard ceiling on traversal.
+    """
+
+    seen: set[int] = set()
+
+    def _copy(item: Any, depth: int) -> Any:
+        if item is None or isinstance(item, (str, int, float, bool)):
+            return item
+        if depth <= 0:
+            return "<truncated>"
+        item_id = id(item)
+        if item_id in seen:
+            return "<cycle>"
+        if isinstance(item, dict):
+            seen.add(item_id)
+            out: Dict[Any, Any] = {}
+            for index, (key, nested) in enumerate(item.items()):
+                if index >= max_items:
+                    out["__truncated__"] = True
+                    out["__truncated_count__"] = max(0, len(item) - max_items)
+                    break
+                out[key] = _copy(nested, depth - 1)
+            seen.discard(item_id)
+            return out
+        if isinstance(item, (list, tuple)):
+            seen.add(item_id)
+            out = [_copy(nested, depth - 1) for nested in list(item)[:max_items]]
+            if len(item) > max_items:
+                out.append({"__truncated__": True, "__truncated_count__": len(item) - max_items})
+            seen.discard(item_id)
+            return out
+        return str(item)
+
+    return _copy(value, max_depth)
+
+
+def _bounded_differs(left: Any, right: Any) -> bool:
+    return bounded_copy(left, max_depth=3, max_items=80) != bounded_copy(right, max_depth=3, max_items=80)
+
+
 def canonical_stage_output(project: Any, manager: Any, stage: str) -> Any:
     """Return accepted canonical stage state.
 
@@ -73,7 +119,7 @@ def canonical_stage_output(project: Any, manager: Any, stage: str) -> Any:
 
     if has_meta_value:
         canonical_value = project_meta.get(meta_key)
-        if has_cache_value and latest_outputs.get(cache_key) != canonical_value:
+        if has_cache_value and _bounded_differs(latest_outputs.get(cache_key), canonical_value):
             warnings = project_meta.setdefault("canonical_state_warnings", {})
             warnings[stage_key] = {
                 "stage": stage_key,
@@ -84,7 +130,7 @@ def canonical_stage_output(project: Any, manager: Any, stage: str) -> Any:
             }
         else:
             safe_dict(project_meta.get("canonical_state_warnings")).pop(stage_key, None)
-        return deepcopy(canonical_value)
+        return bounded_copy(canonical_value)
 
     if has_cache_value:
         warnings = project_meta.setdefault("canonical_state_warnings", {})
@@ -95,7 +141,7 @@ def canonical_stage_output(project: Any, manager: Any, stage: str) -> Any:
             "cache_only": True,
             "message": "project.meta has no accepted stage summary; using manager.latest_outputs cache fallback.",
         }
-        return deepcopy(latest_outputs.get(cache_key))
+        return bounded_copy(latest_outputs.get(cache_key))
 
     return [] if stage_key in {"profiles", "cross_sections", "alignments"} else {}
 

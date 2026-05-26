@@ -291,6 +291,58 @@ def surface_actions_from_grid(surface: Optional[GridSurface], *, layer: str, not
     interval = max(0.5, safe_float(CONTOUR_INTERVAL, 2.0))
     segs_by_level = contour_segments(surface, interval=interval)
     actions: List[Dict[str, Any]] = []
+    if not any(segs for segs in segs_by_level.values()):
+        flat_values = [
+            safe_float(value, DEFAULT_PAD_ELEV)
+            for row in safe_list(getattr(surface, "values", []))
+            for value in safe_list(row)
+        ]
+        flat_elev = sum(flat_values) / len(flat_values) if flat_values else DEFAULT_PAD_ELEV
+        x_min = safe_float(getattr(surface, "x_min", 0.0), 0.0)
+        x_max = safe_float(getattr(surface, "x_max", x_min), x_min)
+        y_min = safe_float(getattr(surface, "y_min", 0.0), 0.0)
+        y_max = safe_float(getattr(surface, "y_max", y_min), y_min)
+        line_count = max(1, min(max(1, sample_lines), nrows - 1))
+        for idx in range(line_count):
+            fraction = (idx + 1) / (line_count + 1)
+            y = y_min + (y_max - y_min) * fraction
+            points = [[float(x_min), float(y)], [float(x_max), float(y)]]
+            actions.append({
+                "task": "polyline",
+                "origin": None,
+                "points": points,
+                "closed": False,
+                "width": None,
+                "height": None,
+                "label": None,
+                "layer": layer,
+                "text": None,
+                "text_height": None,
+                "center": None,
+                "radius": None,
+                "start_angle": None,
+                "end_angle": None,
+                "meta": {**_preview_meta_for_action(layer, "polyline"), "flat_surface_contour": True},
+            })
+        if note_prefix:
+            actions.append({
+                "task": "text_note",
+                "origin": [float((x_min + x_max) / 2.0), float((y_min + y_max) / 2.0)],
+                "points": None,
+                "closed": None,
+                "width": None,
+                "height": None,
+                "label": None,
+                "layer": layer,
+                "text": f"{note_prefix} {float(flat_elev):.2f}",
+                "text_height": TEXT_HEIGHT_SMALL,
+                "center": None,
+                "radius": None,
+                "start_angle": None,
+                "end_angle": None,
+                "meta": {**_preview_meta_for_action(layer, "text_note"), "flat_surface_contour": True},
+            })
+        return actions
     for level, segs in segs_by_level.items():
         if not segs:
             continue

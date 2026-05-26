@@ -3,14 +3,13 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Dict, Optional, Sequence
 
-from .common import canonical_stage_output, safe_dict, safe_int, safe_list, safe_str
+from .common import safe_dict, safe_int, safe_list, safe_str
 
 _COORDINATION_LATEST_OUTPUT_KEYS = {
     "storm_pipe_summary",
     "sanitary",
     "utilities",
     "grading",
-    "drainage",
 }
 
 _COORDINATION_PROJECT_META_KEYS = {
@@ -20,18 +19,79 @@ _COORDINATION_PROJECT_META_KEYS = {
     "storm_pipe_segments",
     "sanitary_summary",
     "utility_summary",
-    "drainage_canonical",
-    "drainage_summary",
     "grading_summary",
     "coordination_summary",
 }
+
+
+def _canonical_stage_ref(project: Any, manager: Any, stage: str) -> Any:
+    meta = safe_dict(getattr(project, "meta", {}))
+    latest = safe_dict(getattr(manager, "latest_outputs", {}))
+    mapping = {
+        "grading": ("grading_summary", "grading"),
+        "drainage": ("drainage_canonical", "drainage"),
+        "storm_pipes": ("storm_pipe_summary", "storm_pipe_summary"),
+        "sanitary": ("sanitary_summary", "sanitary"),
+        "utilities": ("utility_summary", "utilities"),
+    }
+    meta_key, cache_key = mapping.get(stage, (stage, stage))
+    if meta.get(meta_key) is not None:
+        return meta.get(meta_key)
+    return latest.get(cache_key)
+
+
+def _bounded_copy(value: Any, *, max_depth: int = 4, max_items: int = 120) -> Any:
+    seen: set[int] = set()
+
+    def clone(node: Any, depth: int) -> Any:
+        if node is None or isinstance(node, (str, int, float, bool)):
+            return node
+        if depth > max_depth:
+            return {"truncated": True, "type": type(node).__name__}
+        if isinstance(node, dict):
+            node_id = id(node)
+            if node_id in seen:
+                return {"cycle": True, "type": "dict"}
+            seen.add(node_id)
+            out: Dict[str, Any] = {}
+            for idx, (key, item) in enumerate(node.items()):
+                if idx >= max_items:
+                    out["__truncated_items__"] = max(0, len(node) - max_items)
+                    break
+                out[str(key)] = clone(item, depth + 1)
+            seen.discard(node_id)
+            return out
+        if isinstance(node, (list, tuple, set)):
+            node_id = id(node)
+            if node_id in seen:
+                return {"cycle": True, "type": type(node).__name__}
+            seen.add(node_id)
+            seq = list(node)
+            out = [clone(item, depth + 1) for item in seq[:max_items]]
+            if len(seq) > max_items:
+                out.append({"truncated_items": len(seq) - max_items})
+            seen.discard(node_id)
+            return out
+        to_dict = getattr(node, "to_dict", None)
+        if callable(to_dict):
+            try:
+                return clone(to_dict(), depth + 1)
+            except Exception:
+                pass
+        if hasattr(node, "__dict__"):
+            if type(node).__module__.startswith("core.") or type(node).__module__.startswith("engines."):
+                return repr(node)
+            return clone({key: item for key, item in vars(node).items() if not str(key).startswith("_")}, depth + 1)
+        return repr(node)
+
+    return clone(value, 0)
 
 
 def _restore_manager_meta_snapshot(meta_snapshot: Dict[str, Any]) -> Dict[str, Any]:
     restored: Dict[str, Any] = {}
     for key, value in safe_dict(meta_snapshot).items():
         if key != "latest_outputs":
-            restored[key] = deepcopy(value)
+            restored[key] = _bounded_copy(value)
             continue
         latest: Dict[str, Any] = {}
         for latest_key, latest_value in safe_dict(value).items():
@@ -40,32 +100,67 @@ def _restore_manager_meta_snapshot(meta_snapshot: Dict[str, Any]) -> Dict[str, A
     return restored
 
 
+def _copy_segment_list(value: Any) -> list[Dict[str, Any]]:
+    copied: list[Dict[str, Any]] = []
+    for row in safe_list(value):
+        rec = safe_dict(row)
+        out: Dict[str, Any] = {}
+        for key, item in rec.items():
+            if key in {"path", "route_points", "points"}:
+                out[key] = [
+                    [float(pt[0]), float(pt[1])] if isinstance(pt, (list, tuple)) and len(pt) >= 2 else _bounded_copy(pt)
+                    for pt in safe_list(item)
+                ]
+            elif isinstance(item, (dict, list, tuple, set)):
+                out[key] = _bounded_copy(item)
+            else:
+                out[key] = item
+        copied.append(out)
+    return copied
+
+
 def _copy_coordination_payload(key: str, value: Any) -> Any:
     if key in {"grading", "grading_summary"}:
         rec = dict(safe_dict(value))
         if "local_adjustments" in rec:
-            rec["local_adjustments"] = deepcopy(safe_list(rec.get("local_adjustments")))
+            rec["local_adjustments"] = _bounded_copy(safe_list(rec.get("local_adjustments")))
         return rec
     if key in {"drainage", "drainage_canonical", "drainage_summary"}:
         rec = dict(safe_dict(value))
         for field in ("structures", "stats", "export_validation", "issues", "coordination"):
             if field in rec:
-                rec[field] = deepcopy(rec[field])
+                rec[field] = _bounded_copy(rec[field])
         return rec
-    return deepcopy(value)
+    rec = dict(safe_dict(value))
+    for field in ("segments", "pipes", "structures", "manholes", "nodes"):
+        if field in rec:
+            rec[field] = _copy_segment_list(rec.get(field))
+    if "conflict_hooks" in rec:
+        hooks = dict(safe_dict(rec.get("conflict_hooks")))
+        if "utility_segments" in hooks:
+            hooks["utility_segments"] = _copy_segment_list(hooks.get("utility_segments"))
+        if "storm_segments" in hooks:
+            hooks["storm_segments"] = _copy_segment_list(hooks.get("storm_segments"))
+        rec["conflict_hooks"] = hooks
+    for field in ("graph_validation", "network_validation", "hydraulic_validation", "stats", "export_validation", "coordination"):
+        if field in rec:
+            rec[field] = _bounded_copy(rec.get(field))
+    return rec
 
 
 def _snapshot_project_meta(meta: Dict[str, Any]) -> Dict[str, Any]:
     return {
-        key: _copy_coordination_payload(key, value) if key in _COORDINATION_PROJECT_META_KEYS else value
+        key: _copy_coordination_payload(key, value)
         for key, value in safe_dict(meta).items()
+        if key in _COORDINATION_PROJECT_META_KEYS
     }
 
 
 def _restore_project_meta_snapshot(meta_snapshot: Dict[str, Any]) -> Dict[str, Any]:
     return {
-        key: _copy_coordination_payload(key, value) if key in _COORDINATION_PROJECT_META_KEYS else value
+        key: _copy_coordination_payload(key, value)
         for key, value in safe_dict(meta_snapshot).items()
+        if key in _COORDINATION_PROJECT_META_KEYS
     }
 
 
@@ -140,43 +235,47 @@ def full_coordination_state_snapshot(project: Any, manager: Any) -> Dict[str, An
         for key, value in latest_outputs.items()
     }
     manager_meta_snapshot = {
-        key: (latest_outputs_snapshot if key == "latest_outputs" else deepcopy(value))
+        key: (latest_outputs_snapshot if key == "latest_outputs" else _bounded_copy(value))
         for key, value in meta.items()
     }
     return {
         "project_meta": _snapshot_project_meta(getattr(project, "meta", {})),
         "project_drawing_entities": list(getattr(project, "drawing_entities", []) or []),
-        "project_review_issues": deepcopy(getattr(project, "review_issues", [])),
+        "project_review_issues": _bounded_copy(getattr(project, "review_issues", [])),
         "manager_state_parts": {
-            "dependencies": deepcopy(getattr(state, "dependencies", {})),
-            "conflicts": deepcopy(getattr(state, "conflicts", {})),
-            "systems": deepcopy(getattr(state, "systems", {})),
-            "metrics": deepcopy(getattr(state, "metrics", {})),
-            "audit_log": deepcopy(getattr(state, "audit_log", [])),
+            "dependencies": dict(getattr(state, "dependencies", {}) or {}),
+            "conflicts": dict(getattr(state, "conflicts", {}) or {}),
+            "systems": dict(getattr(state, "systems", {}) or {}),
+            "metrics": dict(getattr(state, "metrics", {}) or {}),
+            "audit_log": list(getattr(state, "audit_log", []) or []),
             "meta": manager_meta_snapshot,
         },
-        "transaction_snapshots": deepcopy(getattr(manager, "_transaction_snapshots", {})),
+        "transaction_snapshots": _bounded_copy(getattr(manager, "_transaction_snapshots", {})),
     }
 
 
 def restore_full_coordination_state(project: Any, manager: Any, snapshot: Dict[str, Any]) -> None:
     if "manager_state_parts" in safe_dict(snapshot):
         if hasattr(project, "meta"):
-            project.meta = _restore_project_meta_snapshot(safe_dict(snapshot).get("project_meta"))
+            restored_meta = safe_dict(getattr(project, "meta", {}))
+            for key in _COORDINATION_PROJECT_META_KEYS:
+                restored_meta.pop(key, None)
+            restored_meta.update(_restore_project_meta_snapshot(safe_dict(snapshot).get("project_meta")))
+            project.meta = restored_meta
         if hasattr(project, "drawing_entities"):
             project.drawing_entities = list(snapshot.get("project_drawing_entities") or [])
         if hasattr(project, "review_issues"):
-            project.review_issues = deepcopy(safe_list(snapshot.get("project_review_issues")))
+            project.review_issues = _bounded_copy(safe_list(snapshot.get("project_review_issues")))
         manager.project = project
         state_parts = safe_dict(snapshot.get("manager_state_parts"))
-        manager.state.dependencies = deepcopy(safe_dict(state_parts.get("dependencies")))
-        manager.state.conflicts = deepcopy(safe_dict(state_parts.get("conflicts")))
-        manager.state.systems = deepcopy(safe_dict(state_parts.get("systems")))
-        manager.state.metrics = deepcopy(safe_dict(state_parts.get("metrics")))
-        manager.state.audit_log = deepcopy(safe_list(state_parts.get("audit_log")))
+        manager.state.dependencies = dict(safe_dict(state_parts.get("dependencies")))
+        manager.state.conflicts = dict(safe_dict(state_parts.get("conflicts")))
+        manager.state.systems = dict(safe_dict(state_parts.get("systems")))
+        manager.state.metrics = dict(safe_dict(state_parts.get("metrics")))
+        manager.state.audit_log = list(safe_list(state_parts.get("audit_log")))
         manager.state.meta = _restore_manager_meta_snapshot(safe_dict(state_parts.get("meta")))
         if hasattr(manager, "_transaction_snapshots"):
-            manager._transaction_snapshots = deepcopy(safe_dict(snapshot).get("transaction_snapshots"))
+            manager._transaction_snapshots = _bounded_copy(safe_dict(snapshot).get("transaction_snapshots"))
         return
 
     if "manager_state" in safe_dict(snapshot):
@@ -218,20 +317,20 @@ def restore_full_coordination_state(project: Any, manager: Any, snapshot: Dict[s
 
 
 def snapshot_coordination_state(project: Any, manager: Any) -> Dict[str, Any]:
-    drainage = safe_dict(canonical_stage_output(project, manager, "drainage"))
-    grading = safe_dict(canonical_stage_output(project, manager, "grading"))
+    drainage = safe_dict(_canonical_stage_ref(project, manager, "drainage"))
+    grading = safe_dict(_canonical_stage_ref(project, manager, "grading"))
     return {
-        "storm": deepcopy(safe_dict(canonical_stage_output(project, manager, "storm_pipes"))),
-        "sanitary": deepcopy(safe_dict(canonical_stage_output(project, manager, "sanitary"))),
-        "utilities": deepcopy(safe_dict(canonical_stage_output(project, manager, "utilities"))),
-        "grading": deepcopy(grading),
+        "storm": _copy_coordination_payload("storm_pipe_summary", _canonical_stage_ref(project, manager, "storm_pipes")),
+        "sanitary": _copy_coordination_payload("sanitary", _canonical_stage_ref(project, manager, "sanitary")),
+        "utilities": _copy_coordination_payload("utilities", _canonical_stage_ref(project, manager, "utilities")),
+        "grading": _copy_coordination_payload("grading", grading),
         "drainage_mutable": {
-            "structures": deepcopy(safe_list(drainage.get("structures"))),
-            "stats": deepcopy(safe_dict(drainage.get("stats"))),
-            "export_validation": deepcopy(safe_dict(drainage.get("export_validation"))),
+            "structures": _bounded_copy(safe_list(drainage.get("structures")), max_depth=3, max_items=80),
+            "stats": _bounded_copy(safe_dict(drainage.get("stats")), max_depth=2, max_items=40),
+            "export_validation": _bounded_copy(safe_dict(drainage.get("export_validation")), max_depth=2, max_items=40),
         },
         "grading_mutable": {
-            "local_adjustments": deepcopy(safe_list(grading.get("local_adjustments"))),
+            "local_adjustments": _bounded_copy(safe_list(grading.get("local_adjustments")), max_depth=3, max_items=80),
         },
     }
 

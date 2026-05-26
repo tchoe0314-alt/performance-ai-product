@@ -537,7 +537,7 @@ def canonical_drainage_pipe_actions(project: ProjectModel) -> List[Dict[str, Any
                     "width": None,
                     "height": None,
                     "label": name,
-                    "layer": "PIPE",
+                    "layer": "DRAIN",
                     "text": None,
                     "text_height": None,
                     "center": None,
