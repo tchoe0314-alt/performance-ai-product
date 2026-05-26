@@ -1,6 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
+import planner
 from backend.planning.production_depth import (
     build_cad_interop_metadata,
     build_grading_detail_controls,
@@ -123,6 +124,47 @@ class ProductionDepthArtifactTests(unittest.TestCase):
 
         self.assertIn(("optimization", "committed_alternatives"), gaps)
         self.assertIn(("cad_interop", "civil3d_landxml"), gaps)
+
+    def test_assisted_site_smoke_produces_coordinated_canonical_engineering_truth(self) -> None:
+        plan = planner.build_plan(
+            {
+                "project_name": "Engine Readiness Smoke",
+                "units": "ft",
+                "mode": "site_plan",
+                "assisted": True,
+                "lot": {"x": 0.0, "y": 0.0, "w": 520.0, "h": 420.0},
+                "site_plan": {
+                    "building_width": 110.0,
+                    "building_depth": 58.0,
+                    "parking_count": 90,
+                    "building_count": 3,
+                },
+                "drainage": {"runoff_c": 0.85, "intensity_in_hr": 4.0},
+                "project_type": "mixed_use",
+            }
+        )
+        meta = plan.get("meta") or {}
+        grading = meta.get("grading") or {}
+        storm = meta.get("storm_pipes") or {}
+        drainage = meta.get("drainage") or {}
+        sanitary = meta.get("sanitary") or {}
+        readiness = meta.get("civil_design_readiness") or {}
+
+        self.assertTrue(grading.get("success"))
+        self.assertTrue(grading.get("road_crown_controls"))
+        self.assertTrue(grading.get("curb_gutter_controls"))
+        self.assertTrue(grading.get("ada_path_checks"))
+        self.assertTrue(grading.get("pad_tie_ins"))
+        self.assertTrue(grading.get("contours"))
+        self.assertTrue(drainage.get("detention_routing"))
+        self.assertTrue(storm.get("hgl_profile"))
+        self.assertTrue(storm.get("egl_profile"))
+        self.assertTrue(storm.get("inlet_capacity_checks"))
+        self.assertTrue(sanitary.get("success"))
+        self.assertFalse((meta.get("coordination") or {}).get("unresolved_conflicts") or [])
+        self.assertFalse(readiness.get("critical_blockers") or [])
+        self.assertEqual(readiness.get("status"), "needs_engineering_review")
+        self.assertFalse(readiness.get("production_ready"))
 
 
 if __name__ == "__main__":

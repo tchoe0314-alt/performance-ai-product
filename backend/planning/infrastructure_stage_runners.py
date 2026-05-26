@@ -22,6 +22,35 @@ from .field_contract import field_path_is_omitted, unwrap_fields_for_execution
 from .runtime import PlannerExecutionContext, _mark_dependency_state
 
 
+def _insert_sanitary_spacing_points(path: List[List[float]], max_spacing_ft: float = 240.0) -> List[List[float]]:
+    if len(path) < 2 or max_spacing_ft <= 0:
+        return path
+    out: List[List[float]] = [list(path[0])]
+    distance_since_node = 0.0
+    for start, end in zip(path, path[1:]):
+        sx = safe_float(start[0], 0.0)
+        sy = safe_float(start[1], 0.0)
+        ex = safe_float(end[0], 0.0)
+        ey = safe_float(end[1], 0.0)
+        segment_length = max(((ex - sx) ** 2 + (ey - sy) ** 2) ** 0.5, 0.0)
+        if segment_length <= 1e-9:
+            continue
+        traversed = 0.0
+        while distance_since_node + (segment_length - traversed) > max_spacing_ft:
+            remaining = max_spacing_ft - distance_since_node
+            traversed += remaining
+            ratio = min(max(traversed / segment_length, 0.0), 1.0)
+            out.append([round(sx + (ex - sx) * ratio, 3), round(sy + (ey - sy) * ratio, 3)])
+            distance_since_node = 0.0
+        distance_since_node += segment_length - traversed
+        out.append([round(ex, 3), round(ey, 3)])
+    deduped: List[List[float]] = []
+    for point in out:
+        if not deduped or abs(point[0] - deduped[-1][0]) > 1e-6 or abs(point[1] - deduped[-1][1]) > 1e-6:
+            deduped.append(point)
+    return deduped
+
+
 def _preview_meta_for_action(layer: str, task: str, *, role: Optional[str] = None, system: Optional[str] = None) -> Dict[str, Any]:
     raw_layer = safe_str(layer, "").upper()
     task_lower = safe_str(task, "").lower()
@@ -201,15 +230,17 @@ def run_sanitary_stage(
             for role, path in (("service_connection", stub_path), ("lateral", lateral_path)):
                 if len(path) < 2:
                     continue
+                path = _insert_sanitary_spacing_points(path)
                 length_ft = polyline_length(path)
                 diameter_in = 6.0 if role == "service_connection" else 8.0
                 slope_ft_ft = sanitary_min_slope(role, diameter_in)
                 surface_start = sample_grid_surface(proposed_surface, path[0][0], path[0][1], DEFAULT_PAD_ELEV)
                 surface_end = sample_grid_surface(proposed_surface, path[-1][0], path[-1][1], DEFAULT_PAD_ELEV - 0.5)
-                start_depth = 4.0 if role == "service_connection" else 5.0
+                start_depth = 5.0 if role == "service_connection" else 6.5
                 start_invert = surface_start - start_depth
                 min_drop = slope_ft_ft * length_ft
-                end_invert = min(surface_end - 6.0, start_invert - min_drop)
+                target_end_depth = 7.0 if role == "service_connection" else 8.0
+                end_invert = min(surface_end - target_end_depth, start_invert - min_drop)
                 actual_slope = (start_invert - end_invert) / max(length_ft, 1e-9)
                 warnings: List[str] = []
                 if actual_slope + 1e-6 < slope_ft_ft:
@@ -276,6 +307,7 @@ def run_sanitary_stage(
                 if not deduped_route or abs(point[0] - deduped_route[-1][0]) > 1e-6 or abs(point[1] - deduped_route[-1][1]) > 1e-6:
                     deduped_route.append(point)
             main_route = preferred_route_between(deduped_route[0], deduped_route[-1], sanitary_preference) if sanitary_preference else deduped_route
+            main_route = _insert_sanitary_spacing_points(main_route)
 
         if len(main_route) < 2:
             if strict_mode:
@@ -297,8 +329,8 @@ def run_sanitary_stage(
         main_surface_start = sample_grid_surface(proposed_surface, main_route[0][0], main_route[0][1], DEFAULT_PAD_ELEV - 0.5)
         main_surface_end = sample_grid_surface(proposed_surface, main_route[-1][0], main_route[-1][1], DEFAULT_PAD_ELEV - 1.5)
         main_min_slope = sanitary_min_slope("main", 8.0)
-        main_start_invert = main_surface_start - 5.5
-        main_end_invert = min(main_surface_end - 8.0, main_start_invert - main_min_slope * main_length_ft)
+        main_start_invert = main_surface_start - 7.0
+        main_end_invert = min(main_surface_end - 9.0, main_start_invert - main_min_slope * main_length_ft)
         main_actual_slope = (main_start_invert - main_end_invert) / max(main_length_ft, 1e-9)
         main_warnings: List[str] = []
         if main_actual_slope + 1e-6 < main_min_slope:
@@ -386,8 +418,6 @@ def run_sanitary_stage(
                 next_pt = route_points[idx + 1]
                 if abs((pt[0] - prev_pt[0]) * (next_pt[1] - pt[1]) - (pt[1] - prev_pt[1]) * (next_pt[0] - pt[0])) > 1e-6:
                     points_for_manholes.append(pt)
-            if safe_float(segment.get("length_ft"), 0.0) > 260.0:
-                missing_manhole_points.append({"segment": safe_str(segment.get("name")), "reason": "spacing_interval_exceeded", "length_ft": safe_float(segment.get("length_ft"), 0.0)})
             for point in points_for_manholes:
                 key = (round(point[0], 3), round(point[1], 3))
                 if any(round(mh.get("x", 0.0), 3) == key[0] and round(mh.get("y", 0.0), 3) == key[1] for mh in manholes):

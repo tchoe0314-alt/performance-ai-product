@@ -512,11 +512,13 @@ def check_cad_interop_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
     warnings: List[str] = []
     gaps: List[Dict[str, Any]] = []
     export_audit = _safe_dict(meta.get("export_audit"))
-    sheet_registry = _safe_dict(meta.get("sheet_registry"))
+    sheet_registry_raw = meta.get("sheet_registry")
+    sheet_registry = _safe_dict(sheet_registry_raw)
+    has_sheet_registry = bool(sheet_registry) or bool(_safe_list(sheet_registry_raw))
     cad = _safe_dict(meta.get("cad_interop") or meta.get("export_interop"))
     if not export_audit:
         gaps.append(_production_gap("cad_interop", "export_audit", "Export truth needs an audit before production deliverables.", "Finalize export metadata before artifact generation."))
-    if not sheet_registry:
+    if not has_sheet_registry:
         gaps.append(_production_gap("cad_interop", "sheet_registry", "Production sheets need a sheet registry matching final canonical state.", "Finalize sheet registry before export."))
     interop_ready = (
         cad.get("civil3d") is True
@@ -539,7 +541,7 @@ def check_cad_interop_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
         status="ready" if not gaps else "needs_production_input",
         source=_safe_str(cad.get("source"), "dxf_concept_export"),
         warnings=warnings,
-        metrics={"production_gaps": gaps, "gap_count": len(gaps), "has_export_audit": bool(export_audit), "has_sheet_registry": bool(sheet_registry)},
+        metrics={"production_gaps": gaps, "gap_count": len(gaps), "has_export_audit": bool(export_audit), "has_sheet_registry": has_sheet_registry},
     )
 
 

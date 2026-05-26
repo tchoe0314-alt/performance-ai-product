@@ -946,6 +946,67 @@ def build_grade_elements(project: ProjectModel, parsed: Dict[str, Any]) -> List[
     surface_obj = project.meta.get("existing_surface")
     grading_profile = safe_dict(parsed.get("grading"))
     basin_depth = safe_float(grading_profile.get("basin_depth_ft"), 3.0)
+
+    def _action_bbox_points(layer_names: set[str]) -> List[Tuple[float, float]]:
+        points: List[Tuple[float, float]] = []
+        for action in safe_list(safe_dict(project.meta.get("_expanded_plan")).get("actions")):
+            rec = safe_dict(action)
+            if safe_str(rec.get("layer"), "").upper() not in layer_names:
+                continue
+            if rec.get("origin") and rec.get("width") is not None and rec.get("height") is not None:
+                origin = safe_list(rec.get("origin"))
+                if len(origin) >= 2:
+                    x = safe_float(origin[0], 0.0)
+                    y = safe_float(origin[1], 0.0)
+                    w = safe_float(rec.get("width"), 0.0)
+                    h = safe_float(rec.get("height"), 0.0)
+                    points.extend([(x, y), (x + w, y + h)])
+                continue
+            if rec.get("x") is not None and rec.get("y") is not None and (rec.get("w") is not None or rec.get("width") is not None):
+                x = safe_float(rec.get("x"), 0.0)
+                y = safe_float(rec.get("y"), 0.0)
+                w = safe_float(rec.get("w"), safe_float(rec.get("width"), 0.0))
+                h = safe_float(rec.get("h"), safe_float(rec.get("height"), 0.0))
+                points.extend([(x, y), (x + w, y + h)])
+                continue
+            for point in safe_list(rec.get("points")):
+                if isinstance(point, (list, tuple)) and len(point) >= 2:
+                    points.append((safe_float(point[0], 0.0), safe_float(point[1], 0.0)))
+        return points
+
+    def _append_bbox_element(kind: str, layer_names: set[str], *, min_size: float, slope_x: float = 0.0, slope_y: float = 0.0, priority: int = 5, name: str) -> None:
+        if any(safe_str(getattr(elem, "kind", ""), "") == kind for elem in elems):
+            return
+        points = _action_bbox_points(layer_names)
+        if not points:
+            return
+        xs = [point[0] for point in points]
+        ys = [point[1] for point in points]
+        x_min = min(xs)
+        y_min = min(ys)
+        width = max(max(xs) - x_min, min_size)
+        depth = max(max(ys) - y_min, min_size)
+        cx = x_min + width / 2.0
+        cy = y_min + depth / 2.0
+        sampled = _sample_surface_nearest(surface_obj, cx, cy, DEFAULT_PAD_ELEV)
+        elems.append(
+            GradeElement(
+                kind=kind,
+                x=x_min,
+                y=y_min,
+                width=width,
+                depth=depth,
+                base_elev=sampled,
+                slope_x=slope_x,
+                slope_y=slope_y,
+                crown=0.02 if kind == "road" else None,
+                priority=priority,
+                transition_zone=12.0 if kind == "road" else 6.0,
+                orientation="x" if width >= depth else "y",
+                name=name,
+            )
+        )
+
     for zone in project.zones.values():
         bbox = zone.boundary.bbox
         zt = zone.zone_type
@@ -1016,23 +1077,7 @@ def build_grade_elements(project: ProjectModel, parsed: Dict[str, Any]) -> List[
                 )
             )
     if not any(safe_str(getattr(elem, "kind", ""), "") == "parking" for elem in elems):
-        parking_points: List[Tuple[float, float]] = []
-        for action in safe_list(safe_dict(project.meta.get("_expanded_plan")).get("actions")):
-            rec = safe_dict(action)
-            if safe_str(rec.get("layer"), "").upper() != "PARKING":
-                continue
-            if rec.get("origin") and rec.get("width") is not None and rec.get("height") is not None:
-                origin = safe_list(rec.get("origin"))
-                if len(origin) >= 2:
-                    x = safe_float(origin[0], 0.0)
-                    y = safe_float(origin[1], 0.0)
-                    w = safe_float(rec.get("width"), 0.0)
-                    h = safe_float(rec.get("height"), 0.0)
-                    parking_points.extend([(x, y), (x + w, y + h)])
-                continue
-            for point in safe_list(rec.get("points")):
-                if isinstance(point, (list, tuple)) and len(point) >= 2:
-                    parking_points.append((safe_float(point[0], 0.0), safe_float(point[1], 0.0)))
+        parking_points = _action_bbox_points({"PARKING"})
         if parking_points:
             xs = [point[0] for point in parking_points]
             ys = [point[1] for point in parking_points]
@@ -1057,4 +1102,6 @@ def build_grade_elements(project: ProjectModel, parsed: Dict[str, Any]) -> List[
                     name="PARKING",
                 )
             )
+    _append_bbox_element("road", {"ROAD", "FIRE", "PAVEMENT"}, min_size=16.0, slope_x=DEFAULT_ROAD_SLOPE_X, priority=8, name="ROAD_NETWORK")
+    _append_bbox_element("sidewalk", {"WALK", "SIDEWALK"}, min_size=5.0, slope_x=0.01, slope_y=0.01, priority=5, name="ADA_PATH_NETWORK")
     return elems

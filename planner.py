@@ -119,6 +119,7 @@ from output.dxf_exporter import (
     _ensure_canonical_sheet_metadata,
     _export_cross_sections,
     _export_profiles,
+    finalize_export_metadata,
     save_dxf,
 )
 from output.preview import preview_plan
@@ -394,10 +395,20 @@ def _sanitary_requested(parsed: Dict[str, Any]) -> bool:
             return True
 
     sanitary_meta = safe_dict(safe_dict(parsed.get("meta")).get("sanitary"))
-    return any(
+    if any(
         bool(sanitary_meta.get(key))
         for key in ("requested", "required", "enabled", "generate")
-    )
+    ):
+        return True
+
+    site_plan = safe_dict(unwrap_fields_for_execution(parsed.get("site_plan")))
+    has_building_program = (
+        safe_float(site_plan.get("building_width"), 0.0) > 0.0
+        and safe_float(site_plan.get("building_depth"), 0.0) > 0.0
+    ) or safe_int(site_plan.get("building_count"), 0) > 0
+    if has_building_program and not field_path_is_omitted(parsed, "sanitary"):
+        return True
+    return False
 
 
 def _storm_requested(parsed: Dict[str, Any]) -> bool:
@@ -3779,8 +3790,8 @@ def _normalized_summary_segments(project: ProjectModel, manager: ProjectManager)
                 "path": path,
                 "length_ft": round(polyline_length(path), 3),
                 "diameter_in": safe_float(rec.get("diameter_in"), 12.0),
-                "start_invert_ft": safe_float(rec.get("start_invert"), DEFAULT_PAD_ELEV - 4.0),
-                "end_invert_ft": safe_float(rec.get("end_invert"), DEFAULT_PAD_ELEV - 5.0),
+                "start_invert_ft": safe_float(rec.get("start_invert_ft"), safe_float(rec.get("start_invert"), DEFAULT_PAD_ELEV - 4.0)),
+                "end_invert_ft": safe_float(rec.get("end_invert_ft"), safe_float(rec.get("end_invert"), DEFAULT_PAD_ELEV - 5.0)),
                 "cover_start_ft": safe_float(rec.get("cover_start_ft"), PIPE_MIN_COVER_FT),
                 "cover_end_ft": safe_float(rec.get("cover_end_ft"), PIPE_MIN_COVER_FT),
                 "min_cover_ft": PIPE_MIN_COVER_FT,
@@ -3827,6 +3838,7 @@ def _normalized_summary_segments(project: ProjectModel, manager: ProjectManager)
                 "from_name": safe_str(rec.get("start_name"), ""),
                 "to_name": safe_str(rec.get("end_name"), ""),
                 "segment_role": safe_str(rec.get("segment_role"), ""),
+                "served_building": safe_str(rec.get("served_building"), ""),
                 "flow_cfs": safe_float(rec.get("flow_cfs"), 0.0),
                 "capacity_cfs": safe_float(rec.get("capacity_cfs"), 0.0),
                 "capacity_ratio": safe_float(rec.get("capacity_ratio"), 0.0),
@@ -5182,6 +5194,20 @@ def _detect_coordination_conflicts(project: ProjectModel, manager: ProjectManage
             if not bool(rect.get("avoid")):
                 continue
             path = safe_list(segment.get("path"))
+            if safe_str(rect.get("kind")) == "building_pad" and system_name in {"storm", "sanitary", "water"}:
+                endpoint_inside = bool(path) and (
+                    _point_inside_buffered_rect(path[0], rect)
+                    or _point_inside_buffered_rect(path[-1], rect)
+                )
+                if endpoint_inside:
+                    # Service laterals, roof-drain laterals, and water services are
+                    # allowed to enter a building/pad at their endpoint. They should
+                    # still be flagged if they cut through a pad away from the
+                    # service endpoint, but not simply for connecting to the served
+                    # building.
+                    interior_points = path[1:-1]
+                    if not any(_point_inside_buffered_rect(point, rect) for point in interior_points):
+                        continue
             if any(_point_inside_buffered_rect(point, rect) for point in path) or any(
                 _segment_hits_buffered_rect(path[idx - 1], path[idx], rect) for idx in range(1, len(path))
             ):
@@ -5407,6 +5433,130 @@ def _repair_sanitary_segment_covers(
         rec["cover_start_ft"] = round(start_surface - repaired_start, 3)
         rec["cover_end_ft"] = round(end_surface - repaired_end, 3)
     return repairs
+
+
+def _precoordinate_vertical_hierarchy(project: ProjectModel, manager: ProjectManager) -> None:
+    """Set a deterministic concept-depth stack before geometric conflict solving.
+
+    This does not waive any clearance rule; it gives the solver a realistic
+    starting point: water shallow, sanitary below water, storm deepest.
+    """
+
+    grading = safe_dict(canonical_stage_output(project, manager, "grading"))
+    proposed_surface = grading.get("proposed_surface")
+
+    def _surface_at(path: List[List[float]], index: int, default: float = DEFAULT_PAD_ELEV) -> float:
+        if not path:
+            return default
+        point = path[index]
+        return _sample_grid_surface(proposed_surface, point[0], point[1], default)
+
+    storm = safe_dict(manager.latest_outputs.get("storm_pipe_summary", project.meta.get("storm_pipe_summary", {})))
+    storm_changed = False
+    building_pads = [
+        rect for rect in _expanded_obstacle_rectangles(project)
+        if safe_str(rect.get("kind")) == "building_pad" and bool(rect.get("avoid"))
+    ]
+
+    def _path_hits_rect(path: List[List[float]], rect: Dict[str, Any]) -> bool:
+        return any(
+            _segment_hits_buffered_rect(path[idx - 1], path[idx], rect)
+            for idx in range(1, len(path))
+        )
+
+    def _reroute_around_rect(path: List[List[float]], rect: Dict[str, Any]) -> List[List[float]]:
+        if len(path) < 2 or not _path_hits_rect(path, rect):
+            return path
+        start = path[0]
+        end = path[-1]
+        buffer_ft = max(6.0, safe_float(rect.get("buffer_ft"), 0.0) + 4.0)
+        left_x = safe_float(rect.get("x"), 0.0) - buffer_ft
+        right_x = safe_float(rect.get("x"), 0.0) + safe_float(rect.get("w"), 0.0) + buffer_ft
+        below_y = safe_float(rect.get("y"), 0.0) - buffer_ft
+        above_y = safe_float(rect.get("y"), 0.0) + safe_float(rect.get("h"), 0.0) + buffer_ft
+        candidates = [
+            [start, [left_x, start[1]], [left_x, end[1]], end],
+            [start, [right_x, start[1]], [right_x, end[1]], end],
+            [start, [start[0], below_y], [end[0], below_y], end],
+            [start, [start[0], above_y], [end[0], above_y], end],
+        ]
+        clean = [
+            candidate for candidate in candidates
+            if not _path_hits_rect([[round(pt[0], 3), round(pt[1], 3)] for pt in candidate], rect)
+        ]
+        if not clean:
+            return path
+        best = min(clean, key=polyline_length)
+        deduped: List[List[float]] = []
+        for pt in best:
+            rounded = [round(safe_float(pt[0], 0.0), 3), round(safe_float(pt[1], 0.0), 3)]
+            if not deduped or abs(deduped[-1][0] - rounded[0]) > 1e-6 or abs(deduped[-1][1] - rounded[1]) > 1e-6:
+                deduped.append(rounded)
+        return deduped
+
+    for rec in safe_list(storm.get("segments")):
+        row = safe_dict(rec)
+        path = [[safe_float(pt[0], 0.0), safe_float(pt[1], 0.0)] for pt in safe_list(row.get("path") or row.get("route_points")) if isinstance(pt, (list, tuple)) and len(pt) >= 2]
+        if len(path) < 2:
+            continue
+        original_path = deepcopy(path)
+        for rect in building_pads:
+            path = _reroute_around_rect(path, rect)
+        if path != original_path:
+            row["path"] = deepcopy(path)
+            row["route_points"] = deepcopy(path)
+            row["length_ft"] = round(polyline_length(path), 3)
+            row.setdefault("routing_adjustments", []).append(
+                {
+                    "type": "building_pad_avoidance",
+                    "source": "precoordination_reroute",
+                    "truth_label": "storm route adjusted to avoid building pad before coordination validation.",
+                }
+            )
+            storm_changed = True
+        target_start = _surface_at(path, 0) - 5.5
+        target_end = _surface_at(path, -1) - 5.5
+        current_start = safe_float(row.get("start_invert_ft", row.get("start_invert")), target_start)
+        current_end = safe_float(row.get("end_invert_ft", row.get("end_invert")), target_end)
+        new_start = min(current_start, target_start)
+        new_end = min(current_end, target_end, new_start - PIPE_MIN_SLOPE * max(polyline_length(path), 1.0))
+        if abs(new_start - current_start) > 1e-6 or abs(new_end - current_end) > 1e-6:
+            row["start_invert"] = row["start_invert_ft"] = round(new_start, 3)
+            row["end_invert"] = row["end_invert_ft"] = round(new_end, 3)
+            row["cover_start_ft"] = round(_surface_at(path, 0) - new_start, 3)
+            row["cover_end_ft"] = round(_surface_at(path, -1) - new_end, 3)
+            storm_changed = True
+    if storm_changed:
+        storm.setdefault("vertical_coordination", {})["depth_stack"] = "storm_below_sanitary_below_water"
+        manager.latest_outputs["storm_pipe_summary"] = deepcopy(storm)
+        project.meta["storm_pipe_summary"] = deepcopy(storm)
+
+    sanitary = safe_dict(manager.latest_outputs.get("sanitary", project.meta.get("sanitary_summary", {})))
+    sanitary_changed = False
+    for rec in safe_list(sanitary.get("segments")):
+        row = safe_dict(rec)
+        path = [[safe_float(pt[0], 0.0), safe_float(pt[1], 0.0)] for pt in safe_list(row.get("route_points")) if isinstance(pt, (list, tuple)) and len(pt) >= 2]
+        if len(path) < 2:
+            continue
+        role = safe_str(row.get("segment_role"), "main")
+        target_cover = 5.5 if role == "service_connection" else 7.0
+        target_start = _surface_at(path, 0) - target_cover
+        target_end = _surface_at(path, -1) - max(target_cover, 7.5)
+        current_start = safe_float(row.get("start_invert_ft"), target_start)
+        current_end = safe_float(row.get("end_invert_ft"), target_end)
+        new_start = min(current_start, target_start)
+        new_end = min(current_end, target_end, new_start - _sanitary_min_slope(role, safe_float(row.get("diameter_in"), 8.0)) * max(polyline_length(path), 1.0))
+        if abs(new_start - current_start) > 1e-6 or abs(new_end - current_end) > 1e-6:
+            row["start_invert_ft"] = round(new_start, 3)
+            row["end_invert_ft"] = round(new_end, 3)
+            row["cover_start_ft"] = round(_surface_at(path, 0) - new_start, 3)
+            row["cover_end_ft"] = round(_surface_at(path, -1) - new_end, 3)
+            row["slope_ft_ft"] = round(max((new_start - new_end) / max(polyline_length(path), 1.0), 0.0), 5)
+            sanitary_changed = True
+    if sanitary_changed:
+        sanitary.setdefault("vertical_coordination", {})["depth_stack"] = "sanitary_below_water_above_storm"
+        manager.latest_outputs["sanitary"] = deepcopy(sanitary)
+        project.meta["sanitary_summary"] = deepcopy(sanitary)
 
 
 def _bind_sanitary_graph_nodes(
@@ -8002,6 +8152,7 @@ def _solve_conflict_cluster_group(
 
 
 def _run_conflict_resolution_stage(ctx: PlannerExecutionContext, hydrology: Dict[str, Any]) -> None:
+    _precoordinate_vertical_hierarchy(ctx.manager.project, ctx.manager)
     _run_conflict_resolution_stage_impl(
         ctx,
         hydrology,
@@ -9046,6 +9197,10 @@ def finalize_plan(plan: Dict[str, Any], *, parsed: Dict[str, Any], route: Routin
     final["meta"].setdefault("parsed_mode", lower_text(parsed.get("mode")))
     final["meta"].setdefault("project_type", lower_text(parsed.get("project_type")))
     final["meta"].setdefault("stats", collect_plan_stats(final))
+    try:
+        finalize_export_metadata(final)
+    except Exception as exc:
+        final["meta"].setdefault("export_audit", {"ready": False, "error": safe_str(exc)})
     final["meta"]["civil_design_readiness"] = civil_design_readiness(final)
     return final
 

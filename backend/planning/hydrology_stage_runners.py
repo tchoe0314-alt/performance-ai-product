@@ -989,7 +989,7 @@ def run_storm_pipe_stage(
                 default_pipe_material="RCP",
                 default_mannings_n=PIPE_MANNINGS_N,
                 min_pipe_slope=min_pipe_slope,
-                min_cover_ft=PIPE_MIN_COVER_FT,
+                min_cover_ft=max(PIPE_MIN_COVER_FT, 5.5),
                 min_diameter_in=12.0,
                 auto_route=True,
                 route_system_type="storm",
