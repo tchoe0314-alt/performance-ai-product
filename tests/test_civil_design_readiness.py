@@ -21,6 +21,7 @@ def _complete_meta() -> dict:
             "high_points": [{"x": 0.0, "y": 10.0, "z": 104.0}],
             "slope_summary": {"direction": "southeast", "average_slope": 0.025},
         },
+        "site_boundary": {"w": 220.0, "h": 160.0, "area_sf": 35200.0},
         "drainage": {
             "success": True,
             "source": "drainage_engine",
@@ -59,6 +60,7 @@ def _complete_meta() -> dict:
             "success": True,
             "source": "sanitary_engine",
             "route_count": 1,
+            "service_count": 1,
             "segments": [{"name": "SAN-1", "length_ft": 90.0, "slope": 0.01}],
             "manholes": [{"name": "MH-1", "x": 0.0, "y": 0.0}, {"name": "MH-2", "x": 90.0, "y": 0.0}],
             "graph_validation": {"valid": True},
@@ -89,6 +91,8 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertTrue(readiness["success"])
         self.assertIn(readiness["status"], {"ready", "needs_engineering_review"})
         self.assertEqual(readiness["truth_sources"]["grading"], "terrain")
+        self.assertGreaterEqual(readiness["score"], 80.0)
+        self.assertIn(readiness["real_world_readiness"], {"concept_design_ready", "production_review_candidate"})
         self.assertEqual(readiness["systems"]["storm_pipes"]["metrics"]["segment_count"], 1)
         self.assertEqual(readiness["systems"]["sanitary"]["metrics"]["manhole_count"], 2)
         self.assertFalse(readiness["critical_blockers"])
@@ -101,6 +105,7 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertTrue(readiness["missing_requirements"])
         fields = {(item["system"], item["field"]) for item in readiness["missing_requirements"]}
         self.assertIn(("grading", "low_points"), fields)
+        self.assertIn(("site", "site_boundary"), fields)
         self.assertIn(("drainage", "basin_or_outfall"), fields)
         self.assertIn(("storm_pipes", "selected_outfall"), fields)
         self.assertTrue(readiness["can_assist_if_enabled"])
@@ -126,6 +131,27 @@ class CivilDesignReadinessTests(unittest.TestCase):
         rule = utility_pairing_rule("water", "sanitary")
         self.assertEqual(rule["priority"], "pressure_utility_protected")
         self.assertGreaterEqual(rule["horizontal_separation_ft"], 10.0)
+
+    def test_capacity_cover_and_service_gaps_are_reported_without_fake_success(self) -> None:
+        meta = _complete_meta()
+        meta["storm_pipes"]["max_capacity_ratio"] = 1.12
+        meta["storm_pipes"]["segments"][0]["capacity_ratio"] = 1.12
+        meta["sanitary"]["service_count"] = 0
+        meta["sanitary"]["max_capacity_ratio"] = 0.92
+        meta["utilities"]["segments"] = [
+            {"name": "W-1", "system": "water", "cover_ft": 2.0, "path": [[0.0, 0.0], [100.0, 0.0]]},
+            {"name": "SAN-1", "system": "sanitary", "cover_ft": 4.0, "path": [[0.0, 4.0], [100.0, 4.0]]},
+        ]
+
+        readiness = civil_design_readiness({"meta": meta})
+        fields = {(item["system"], item["field"]) for item in readiness["missing_requirements"]}
+
+        self.assertFalse(readiness["success"])
+        self.assertIn(("storm_pipes", "max_capacity_ratio"), fields)
+        self.assertIn(("sanitary", "service_count"), fields)
+        self.assertIn(("sanitary", "max_capacity_ratio"), fields)
+        self.assertIn(("utilities", "cover_ft"), fields)
+        self.assertGreater(readiness["systems"]["utilities"]["metrics"]["separation_warning_count"], 0)
 
     def test_build_plan_attaches_civil_design_readiness_without_fake_success(self) -> None:
         plan = planner.build_plan(

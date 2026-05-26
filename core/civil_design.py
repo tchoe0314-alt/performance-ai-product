@@ -45,6 +45,24 @@ def _truthy_mapping(value: Any) -> bool:
     return bool(_safe_dict(value))
 
 
+def _first_number(*values: Any, default: float = 0.0) -> float:
+    for value in values:
+        number = _safe_float(value, float("nan"))
+        if number == number:
+            return number
+    return float(default)
+
+
+def _has_number(value: Any) -> bool:
+    try:
+        if value is None:
+            return False
+        float(value)
+        return True
+    except Exception:
+        return False
+
+
 @dataclass(frozen=True)
 class CivilDesignStandards:
     """Concept-level civil design standards used for deterministic engine checks.
@@ -68,6 +86,11 @@ class CivilDesignStandards:
     min_vertical_crossing_separation_ft: float = 1.5
     max_sanitary_manhole_spacing_ft: float = 400.0
     max_storm_structure_spacing_ft: float = 400.0
+    min_detention_freeboard_ft: float = 1.0
+    max_detention_drawdown_hours: float = 72.0
+    min_emergency_overflow_freeboard_ft: float = 0.5
+    max_sanitary_capacity_ratio: float = 0.85
+    min_water_sanitary_vertical_separation_ft: float = 1.5
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -195,6 +218,62 @@ def rect_from_action(action: Dict[str, Any]) -> Optional[Tuple[float, float, flo
     return None
 
 
+def rect_area(rect: Optional[Tuple[float, float, float, float]]) -> float:
+    if rect is None:
+        return 0.0
+    x1, y1, x2, y2 = rect
+    return max(0.0, abs(x2 - x1)) * max(0.0, abs(y2 - y1))
+
+
+def action_path(action: Dict[str, Any]) -> List[Point]:
+    for key in ("points", "path", "route_points", "polyline"):
+        path = coerce_path(action.get(key))
+        if path:
+            return path
+    rect = rect_from_action(action)
+    if rect is not None:
+        x1, y1, x2, y2 = rect
+        return [(x1, y1), (x2, y2)]
+    center = coerce_point(action.get("center"))
+    return [center] if center else []
+
+
+def segment_path(record: Dict[str, Any]) -> List[Point]:
+    for key in ("route_points", "path", "points", "polyline"):
+        path = coerce_path(record.get(key))
+        if path:
+            return path
+    start = coerce_point(record.get("start") or record.get("from_point") or record.get("upstream_point"))
+    end = coerce_point(record.get("end") or record.get("to_point") or record.get("downstream_point"))
+    if start and end:
+        return [start, end]
+    return []
+
+
+def max_spacing_along_path(points: Sequence[Point], structures: Sequence[Dict[str, Any]]) -> float:
+    if len(points) < 2 or len(structures) < 2:
+        return path_length(points)
+    stations: List[float] = []
+    total = path_length(points)
+    samples = sample_path(points, spacing_ft=max(total / 80.0, 1.0), max_samples=90)
+    running: Dict[Point, float] = {}
+    cumulative = 0.0
+    for index, point in enumerate(samples):
+        if index > 0:
+            cumulative += hypot(point[0] - samples[index - 1][0], point[1] - samples[index - 1][1])
+        running[point] = cumulative
+    for structure in structures:
+        p = coerce_point(structure)
+        if not p:
+            continue
+        nearest = min(samples, key=lambda item: hypot(item[0] - p[0], item[1] - p[1]))
+        stations.append(running.get(nearest, 0.0))
+    if len(stations) < 2:
+        return total
+    stations = sorted(max(0.0, min(total, station)) for station in stations)
+    return max(stations[index] - stations[index - 1] for index in range(1, len(stations)))
+
+
 def classify_action_system(action: Dict[str, Any]) -> str:
     layer = _safe_str(action.get("layer")).lower()
     label = _safe_str(action.get("label")).lower()
@@ -294,12 +373,32 @@ def check_grading_truth(grading: Dict[str, Any]) -> Dict[str, Any]:
         missing.append(_missing("grading", "slope_summary", "Civil checks need slope direction and surface controls.", "Run grading analysis from terrain or survey."))
     if source in {"assumed", "fallback", "synthetic"}:
         warnings.append(f"Grading source is {source}; do not treat it as survey.")
+    slope_value = _first_number(
+        _safe_dict(grading.get("slope_summary")).get("average_slope"),
+        _safe_dict(grading.get("surface_controls")).get("average_slope"),
+        grading.get("average_slope"),
+        default=0.0,
+    )
+    if slope_value > 0.0 and slope_value < DEFAULT_STANDARDS.min_site_slope:
+        warnings.append("Average surface slope is below concept minimum; drainage may pond without local grading controls.")
+    if slope_value > DEFAULT_STANDARDS.max_road_grade:
+        warnings.append("Average site slope exceeds concept road-grade limit; road/pad tie-ins need detailed grading.")
+    earthwork = _safe_dict(grading.get("earthwork"))
+    if earthwork and not any(key in earthwork for key in ("cut_cf", "fill_cf", "net_cf")):
+        warnings.append("Earthwork exists but cut/fill/net quantities are incomplete.")
     return _system_result(
         status="ready" if not missing else "missing",
         source=source,
         missing=missing,
         warnings=warnings,
-        metrics={"low_point_count": len(low_points), "high_point_count": len(high_points)},
+        metrics={
+            "low_point_count": len(low_points),
+            "high_point_count": len(high_points),
+            "average_slope": round(slope_value, 6),
+            "cut_cf": _safe_float(earthwork.get("cut_cf"), 0.0),
+            "fill_cf": _safe_float(earthwork.get("fill_cf"), 0.0),
+            "net_cf": _safe_float(earthwork.get("net_cf"), 0.0),
+        },
     )
 
 
@@ -320,6 +419,21 @@ def check_drainage_truth(drainage: Dict[str, Any]) -> Dict[str, Any]:
         missing.append(_missing("drainage", "low_points", "Drainage routing needs surface low points.", "Run terrain-based grading first."))
     if not flow_paths:
         missing.append(_missing("drainage", "flow_paths", "Drainage needs flow paths to connect inlets to basins/outfalls.", "Run drainage on the current surface."))
+    if not (source and source != "missing"):
+        missing.append(_missing("drainage", "surface_source", "Drainage needs to state whether it used survey, terrain, or assumptions.", "Run drainage from the canonical grading surface."))
+    stats = _safe_dict(drainage.get("stats"))
+    if not any(_has_number(stats.get(key)) for key in ("total_basin_runoff_cfs", "total_estimated_inlet_flow_cfs", "total_contributing_area_sf")):
+        warnings.append("Drainage runoff/tributary demand metrics are incomplete.")
+    for basin in basins:
+        detention = _safe_dict(_safe_dict(basin).get("detention_design"))
+        if detention:
+            provided = _safe_float(detention.get("provided_storage_cf"), 0.0)
+            required = _safe_float(detention.get("required_storage_cf"), 0.0)
+            if required > 0.0 and provided < required:
+                missing.append(_missing("drainage", "detention_storage", "Detention basin storage is below required concept storage.", "Resize basin or revise release/outlet assumptions."))
+            drawdown = _safe_float(detention.get("drawdown_hours"), 0.0)
+            if drawdown > DEFAULT_STANDARDS.max_detention_drawdown_hours:
+                warnings.append("Detention drawdown exceeds concept maximum; outlet design needs review.")
     issue_codes = {_safe_str(item.get("code")) for item in _safe_list(drainage.get("issues")) if isinstance(item, dict)}
     if "DRAINAGE_BLOCKED_BY_GRADING" in issue_codes:
         warnings.append("Drainage is blocked by grading and needs a spatial grading fix before final storm design.")
@@ -328,7 +442,15 @@ def check_drainage_truth(drainage: Dict[str, Any]) -> Dict[str, Any]:
         source=source,
         missing=missing,
         warnings=warnings,
-        metrics={"structure_count": len(structures), "basin_count": len(basins), "low_point_count": len(low_points), "flow_path_count": len(flow_paths)},
+        metrics={
+            "structure_count": len(structures),
+            "basin_count": len(basins),
+            "low_point_count": len(low_points),
+            "flow_path_count": len(flow_paths),
+            "total_contributing_area_sf": _safe_float(stats.get("total_contributing_area_sf"), 0.0),
+            "total_estimated_inlet_flow_cfs": _safe_float(stats.get("total_estimated_inlet_flow_cfs"), 0.0),
+            "total_basin_runoff_cfs": _safe_float(stats.get("total_basin_runoff_cfs"), 0.0),
+        },
     )
 
 
@@ -344,6 +466,22 @@ def check_storm_truth(storm: Dict[str, Any]) -> Dict[str, Any]:
     for field in ("total_system_flow_cfs", "total_system_capacity_cfs", "controlling_segment", "max_capacity_ratio"):
         if field not in storm:
             missing.append(_missing("storm_pipes", field, f"Storm hydraulic truth requires {field}.", "Run storm hydraulic sizing/checking."))
+    max_capacity_ratio = _safe_float(storm.get("max_capacity_ratio"), 0.0)
+    if max_capacity_ratio > DEFAULT_STANDARDS.max_pipe_capacity_ratio:
+        missing.append(_missing("storm_pipes", "max_capacity_ratio", "Storm pipe utilization exceeds concept capacity threshold.", "Upsize controlling pipe or revise catchments/outfall."))
+    incomplete_segments: List[Dict[str, Any]] = []
+    for segment in segments:
+        rec = _safe_dict(segment)
+        missing_fields = [
+            field
+            for field in ("length_ft", "slope", "capacity_cfs", "flow_cfs", "capacity_ratio")
+            if not _has_number(rec.get(field))
+        ]
+        if missing_fields:
+            incomplete_segments.append({"segment": _safe_str(rec.get("pipe") or rec.get("name"), "unnamed"), "missing_fields": missing_fields})
+        ratio = _safe_float(rec.get("capacity_ratio"), 0.0)
+        if ratio > DEFAULT_STANDARDS.max_pipe_capacity_ratio:
+            missing.append(_missing("storm_pipes", f"segment.{_safe_str(rec.get('pipe') or rec.get('name'), 'unnamed')}.capacity_ratio", "Storm segment exceeds concept capacity utilization.", "Upsize pipe or reduce tributary demand."))
     graph = _safe_dict(storm.get("graph_validation"))
     hydraulics = _safe_dict(storm.get("hydraulic_validation"))
     if segments and not bool(graph.get("valid", False)):
@@ -351,6 +489,8 @@ def check_storm_truth(storm: Dict[str, Any]) -> Dict[str, Any]:
     if segments and not bool(hydraulics.get("valid", False)):
         missing.append(_missing("storm_pipes", "hydraulic_validation", "Storm pipe capacities and slopes must be checked.", "Run hydraulic validation."))
     missing_segments = _safe_list(storm.get("missing_data_segments"))
+    if incomplete_segments and not missing_segments:
+        missing_segments = incomplete_segments
     if missing_segments:
         warnings.append("Storm has segments with missing hydraulic fields.")
     return _system_result(
@@ -358,7 +498,13 @@ def check_storm_truth(storm: Dict[str, Any]) -> Dict[str, Any]:
         source=source,
         missing=missing,
         warnings=warnings,
-        metrics={"segment_count": len(segments), "missing_data_segment_count": len(missing_segments), "max_capacity_ratio": _safe_float(storm.get("max_capacity_ratio"), 0.0)},
+        metrics={
+            "segment_count": len(segments),
+            "missing_data_segment_count": len(missing_segments),
+            "max_capacity_ratio": max_capacity_ratio,
+            "total_system_flow_cfs": _safe_float(storm.get("total_system_flow_cfs"), 0.0),
+            "total_system_capacity_cfs": _safe_float(storm.get("total_system_capacity_cfs"), 0.0),
+        },
     )
 
 
@@ -384,12 +530,35 @@ def check_sanitary_truth(sanitary: Dict[str, Any]) -> Dict[str, Any]:
         missing.append(_missing("sanitary", "missing_service_buildings", "All served buildings need sanitary service coverage.", "Add missing services or mark buildings unserved."))
     if _safe_list(sanitary.get("missing_data_segments")):
         warnings.append("Sanitary has segments with missing design fields.")
+    max_capacity_ratio = _safe_float(sanitary.get("max_capacity_ratio"), 0.0)
+    if max_capacity_ratio > DEFAULT_STANDARDS.max_sanitary_capacity_ratio:
+        missing.append(_missing("sanitary", "max_capacity_ratio", "Sanitary utilization exceeds concept design threshold.", "Upsize sanitary pipe or split contributing service area."))
+    service_count = _safe_int(sanitary.get("service_count"), 0)
+    if service_count <= 0 and segments:
+        missing.append(_missing("sanitary", "service_count", "Sanitary readiness needs service laterals/building coverage count.", "Run sanitary service generation/validation."))
+    slope_violations = _safe_list(sanitary.get("slope_violations"))
+    if slope_violations:
+        missing.append(_missing("sanitary", "slope_violations", "Sanitary gravity pipes must satisfy minimum slope.", "Adjust inverts or reroute sanitary runs."))
+    longest_spacing = 0.0
+    for segment in segments:
+        path = segment_path(_safe_dict(segment))
+        if path:
+            longest_spacing = max(longest_spacing, max_spacing_along_path(path, manholes))
+    if longest_spacing > DEFAULT_STANDARDS.max_sanitary_manhole_spacing_ft:
+        warnings.append("Sanitary manhole spacing exceeds concept maximum; add intermediate manholes.")
     return _system_result(
         status="ready" if not missing else "missing",
         source=source,
         missing=missing,
         warnings=warnings,
-        metrics={"segment_count": len(segments), "manhole_count": len(manholes), "route_count": _safe_int(sanitary.get("route_count"), len(segments))},
+        metrics={
+            "segment_count": len(segments),
+            "manhole_count": len(manholes),
+            "route_count": _safe_int(sanitary.get("route_count"), len(segments)),
+            "service_count": service_count,
+            "max_capacity_ratio": max_capacity_ratio,
+            "max_manhole_spacing_ft": round(longest_spacing, 3),
+        },
     )
 
 
@@ -408,12 +577,55 @@ def check_utility_truth(utilities: Dict[str, Any]) -> Dict[str, Any]:
         warnings.append("Utilities still have unresolved conflicts.")
     if _safe_float(utilities.get("min_cover_ft"), 999.0) < DEFAULT_STANDARDS.min_utility_cover_ft:
         warnings.append("Utility cover is below concept minimum.")
+    shallow_segments = [
+        _safe_str(_safe_dict(segment).get("name"), f"utility_{idx}")
+        for idx, segment in enumerate(segments, start=1)
+        if _has_number(_safe_dict(segment).get("cover_ft"))
+        and _safe_float(_safe_dict(segment).get("cover_ft"), 0.0) < DEFAULT_STANDARDS.min_utility_cover_ft
+    ]
+    if shallow_segments:
+        missing.append(_missing("utilities", "cover_ft", "One or more utilities are below concept minimum cover.", "Lower shallow utilities or revise finished grade."))
+    separation_warnings: List[Dict[str, Any]] = []
+    for index, left in enumerate(segments):
+        left_rec = _safe_dict(left)
+        left_system = _safe_str(left_rec.get("system") or left_rec.get("utility_type") or left_rec.get("type"), "utility")
+        left_path = segment_path(left_rec)
+        if not left_path:
+            continue
+        for right in segments[index + 1 :]:
+            right_rec = _safe_dict(right)
+            right_system = _safe_str(right_rec.get("system") or right_rec.get("utility_type") or right_rec.get("type"), "utility")
+            if left_system == right_system:
+                continue
+            right_path = segment_path(right_rec)
+            if not right_path:
+                continue
+            rule = utility_pairing_rule(left_system, right_system)
+            clearance = path_clearance(left_path, right_path)
+            if clearance < _safe_float(rule.get("horizontal_separation_ft"), 0.0):
+                separation_warnings.append(
+                    {
+                        "left": _safe_str(left_rec.get("name"), left_system),
+                        "right": _safe_str(right_rec.get("name"), right_system),
+                        "clearance_ft": round(clearance, 3),
+                        "required_ft": rule.get("horizontal_separation_ft"),
+                        "priority": rule.get("priority"),
+                    }
+                )
+    if separation_warnings:
+        warnings.append("Utility horizontal separation needs review for one or more pairings.")
     return _system_result(
         status="ready" if not missing else "missing",
         source=source,
         missing=missing,
         warnings=warnings,
-        metrics={"segment_count": len(segments), "unresolved_conflict_count": _safe_int(coordination.get("unresolved_conflict_count"), 0)},
+        metrics={
+            "segment_count": len(segments),
+            "unresolved_conflict_count": _safe_int(coordination.get("unresolved_conflict_count"), 0),
+            "shallow_segment_count": len(shallow_segments),
+            "separation_warning_count": len(separation_warnings),
+            "separation_warnings": separation_warnings[:12],
+        },
     )
 
 
@@ -441,9 +653,59 @@ def check_coordination_truth(coordination: Dict[str, Any]) -> Dict[str, Any]:
     )
 
 
+def check_site_truth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
+    plan = plan_or_meta if "actions" in plan_or_meta else {}
+    meta = _safe_dict(plan_or_meta.get("meta")) if "meta" in plan_or_meta else _safe_dict(plan_or_meta)
+    actions = _safe_list(plan.get("actions"))
+    missing: List[Dict[str, Any]] = []
+    warnings: List[str] = []
+    site_rects = [rect_from_action(_safe_dict(action)) for action in actions if classify_action_system(_safe_dict(action)) == "site"]
+    building_rects = [rect_from_action(_safe_dict(action)) for action in actions if classify_action_system(_safe_dict(action)) == "building"]
+    site_area = max([rect_area(rect) for rect in site_rects if rect] or [0.0])
+    if site_area <= 0.0:
+        lot = _safe_dict(meta.get("lot") or meta.get("site_boundary"))
+        site_area = _safe_float(lot.get("area_sf"), 0.0) or (_safe_float(lot.get("w"), 0.0) * _safe_float(lot.get("h"), 0.0))
+    if site_area <= 0.0:
+        missing.append(_missing("site", "site_boundary", "All civil systems need a real site boundary.", "Apply/Lock Site from map viewport or import a survey boundary."))
+    if not building_rects and actions:
+        warnings.append("No building/pad footprint was found in canonical actions.")
+    return _system_result(
+        status="ready" if not missing else "missing",
+        source="canonical_actions" if actions else "meta",
+        missing=missing,
+        warnings=warnings,
+        metrics={"site_area_sf": round(site_area, 3), "building_count": len([rect for rect in building_rects if rect])},
+    )
+
+
+def readiness_score(systems: Dict[str, Dict[str, Any]], warnings: Sequence[Dict[str, Any]]) -> float:
+    weights = {
+        "site": 1.0,
+        "grading": 1.25,
+        "drainage": 1.25,
+        "storm_pipes": 1.25,
+        "sanitary": 1.0,
+        "utilities": 1.0,
+        "coordination": 1.25,
+    }
+    total_weight = sum(weights.values())
+    score = 0.0
+    for system, weight in weights.items():
+        status = _safe_str(_safe_dict(systems.get(system)).get("status"))
+        if status == "ready":
+            score += weight
+        elif status in {"not_run", "missing"}:
+            score += 0.0
+        else:
+            score += weight * 0.4
+    penalty = min(len(warnings) * 0.02, 0.18)
+    return round(max(0.0, min(1.0, score / max(total_weight, 1e-9) - penalty)) * 100.0, 1)
+
+
 def civil_design_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesignStandards = DEFAULT_STANDARDS) -> Dict[str, Any]:
     meta = _safe_dict(plan_or_meta.get("meta")) if "meta" in plan_or_meta else _safe_dict(plan_or_meta)
     systems = {
+        "site": check_site_truth(plan_or_meta),
         "grading": check_grading_truth(_safe_dict(meta.get("grading") or meta.get("grading_summary"))),
         "drainage": check_drainage_truth(_safe_dict(meta.get("drainage") or meta.get("drainage_canonical"))),
         "storm_pipes": check_storm_truth(_safe_dict(meta.get("storm_pipes") or meta.get("storm_pipe_summary"))),
@@ -462,16 +724,25 @@ def civil_design_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
     critical_blockers = [
         item
         for item in missing_requirements
-        if item.get("system") in {"grading", "drainage", "storm_pipes", "sanitary", "coordination"}
+        if item.get("system") in {"site", "grading", "drainage", "storm_pipes", "sanitary", "coordination"}
     ]
     ready_systems = [system for system, result in systems.items() if result.get("status") == "ready"]
     success = not critical_blockers
     status = "ready" if success else "blocked"
     if success and warnings:
         status = "needs_engineering_review"
+    score = readiness_score(systems, warnings)
     return {
         "success": success,
         "status": status,
+        "score": score,
+        "real_world_readiness": (
+            "production_review_candidate"
+            if score >= 85.0 and success
+            else "concept_design_ready"
+            if score >= 65.0
+            else "engineering_inputs_incomplete"
+        ),
         "standards_version": standards.version,
         "standards": standards.to_dict(),
         "systems": systems,
@@ -486,6 +757,7 @@ def civil_design_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
             if success
             else "Civora needs additional canonical engineering inputs before this is final-design ready."
         ),
+        "next_actions": [item.get("suggested_next_action") for item in missing_requirements[:8] if item.get("suggested_next_action")],
     }
 
 
@@ -497,6 +769,7 @@ __all__ = [
     "check_drainage_truth",
     "check_grading_truth",
     "check_sanitary_truth",
+    "check_site_truth",
     "check_storm_truth",
     "check_utility_truth",
     "classify_action_system",
@@ -505,7 +778,9 @@ __all__ = [
     "path_bbox",
     "path_clearance",
     "path_length",
+    "readiness_score",
     "rect_from_action",
+    "segment_path",
     "sample_path",
     "station_point",
     "utility_pairing_rule",
