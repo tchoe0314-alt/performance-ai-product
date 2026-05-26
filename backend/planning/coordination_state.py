@@ -5,6 +5,69 @@ from typing import Any, Dict, Optional, Sequence
 
 from .common import canonical_stage_output, safe_dict, safe_int, safe_list, safe_str
 
+_COORDINATION_LATEST_OUTPUT_KEYS = {
+    "storm_pipe_summary",
+    "sanitary",
+    "utilities",
+    "grading",
+    "drainage",
+}
+
+_COORDINATION_PROJECT_META_KEYS = {
+    "preferred_corridors",
+    "system_dirty_state",
+    "storm_pipe_summary",
+    "storm_pipe_segments",
+    "sanitary_summary",
+    "utility_summary",
+    "drainage_canonical",
+    "drainage_summary",
+    "grading_summary",
+    "coordination_summary",
+}
+
+
+def _restore_manager_meta_snapshot(meta_snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    restored: Dict[str, Any] = {}
+    for key, value in safe_dict(meta_snapshot).items():
+        if key != "latest_outputs":
+            restored[key] = deepcopy(value)
+            continue
+        latest: Dict[str, Any] = {}
+        for latest_key, latest_value in safe_dict(value).items():
+            latest[latest_key] = _copy_coordination_payload(latest_key, latest_value) if latest_key in _COORDINATION_LATEST_OUTPUT_KEYS else latest_value
+        restored[key] = latest
+    return restored
+
+
+def _copy_coordination_payload(key: str, value: Any) -> Any:
+    if key in {"grading", "grading_summary"}:
+        rec = dict(safe_dict(value))
+        if "local_adjustments" in rec:
+            rec["local_adjustments"] = deepcopy(safe_list(rec.get("local_adjustments")))
+        return rec
+    if key in {"drainage", "drainage_canonical", "drainage_summary"}:
+        rec = dict(safe_dict(value))
+        for field in ("structures", "stats", "export_validation", "issues", "coordination"):
+            if field in rec:
+                rec[field] = deepcopy(rec[field])
+        return rec
+    return deepcopy(value)
+
+
+def _snapshot_project_meta(meta: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        key: _copy_coordination_payload(key, value) if key in _COORDINATION_PROJECT_META_KEYS else value
+        for key, value in safe_dict(meta).items()
+    }
+
+
+def _restore_project_meta_snapshot(meta_snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        key: _copy_coordination_payload(key, value) if key in _COORDINATION_PROJECT_META_KEYS else value
+        for key, value in safe_dict(meta_snapshot).items()
+    }
+
 
 def new_coordination_metrics() -> Dict[str, Any]:
     return {
@@ -65,35 +128,87 @@ def full_coordination_state_snapshot(project: Any, manager: Any) -> Dict[str, An
     conflicts, dirty state, and audit state.
     """
 
-    if hasattr(manager, "_export_state_bundle"):
-        state = manager._export_state_bundle(  # noqa: SLF001 - internal snapshot is intentional here.
-            include_snapshots=True,
-            include_variants=True,
-            include_audit_log=True,
-        )
-    elif hasattr(manager, "to_dict"):
-        state = manager.to_dict()
-    else:
-        state = {
-            "project": project.to_dict() if hasattr(project, "to_dict") else deepcopy(getattr(project, "__dict__", {})),
-            "state": deepcopy(getattr(manager, "state", {})),
-        }
+    # This is an in-process rollback guard, not a persisted interchange format.
+    # Coordination candidates mutate canonical summaries in project.meta plus
+    # manager state/latest_outputs. Avoid serializing the entire ProjectModel
+    # because drawing/entity geometry can be very large during full planner runs.
+    state = getattr(manager, "state", None)
+    meta = safe_dict(getattr(state, "meta", {}))
+    latest_outputs = safe_dict(meta.get("latest_outputs"))
+    latest_outputs_snapshot = {
+        key: _copy_coordination_payload(key, value) if key in _COORDINATION_LATEST_OUTPUT_KEYS else value
+        for key, value in latest_outputs.items()
+    }
+    manager_meta_snapshot = {
+        key: (latest_outputs_snapshot if key == "latest_outputs" else deepcopy(value))
+        for key, value in meta.items()
+    }
     return {
-        "state": deepcopy(state),
+        "project_meta": _snapshot_project_meta(getattr(project, "meta", {})),
+        "project_drawing_entities": list(getattr(project, "drawing_entities", []) or []),
+        "project_review_issues": deepcopy(getattr(project, "review_issues", [])),
+        "manager_state_parts": {
+            "dependencies": deepcopy(getattr(state, "dependencies", {})),
+            "conflicts": deepcopy(getattr(state, "conflicts", {})),
+            "systems": deepcopy(getattr(state, "systems", {})),
+            "metrics": deepcopy(getattr(state, "metrics", {})),
+            "audit_log": deepcopy(getattr(state, "audit_log", [])),
+            "meta": manager_meta_snapshot,
+        },
         "transaction_snapshots": deepcopy(getattr(manager, "_transaction_snapshots", {})),
     }
 
 
 def restore_full_coordination_state(project: Any, manager: Any, snapshot: Dict[str, Any]) -> None:
-    payload = deepcopy(safe_dict(snapshot).get("state"))
+    if "manager_state_parts" in safe_dict(snapshot):
+        if hasattr(project, "meta"):
+            project.meta = _restore_project_meta_snapshot(safe_dict(snapshot).get("project_meta"))
+        if hasattr(project, "drawing_entities"):
+            project.drawing_entities = list(snapshot.get("project_drawing_entities") or [])
+        if hasattr(project, "review_issues"):
+            project.review_issues = deepcopy(safe_list(snapshot.get("project_review_issues")))
+        manager.project = project
+        state_parts = safe_dict(snapshot.get("manager_state_parts"))
+        manager.state.dependencies = deepcopy(safe_dict(state_parts.get("dependencies")))
+        manager.state.conflicts = deepcopy(safe_dict(state_parts.get("conflicts")))
+        manager.state.systems = deepcopy(safe_dict(state_parts.get("systems")))
+        manager.state.metrics = deepcopy(safe_dict(state_parts.get("metrics")))
+        manager.state.audit_log = deepcopy(safe_list(state_parts.get("audit_log")))
+        manager.state.meta = _restore_manager_meta_snapshot(safe_dict(state_parts.get("meta")))
+        if hasattr(manager, "_transaction_snapshots"):
+            manager._transaction_snapshots = deepcopy(safe_dict(snapshot).get("transaction_snapshots"))
+        return
+
+    if "manager_state" in safe_dict(snapshot):
+        if hasattr(project, "meta"):
+            project.meta = deepcopy(safe_dict(snapshot).get("project_meta"))
+        if hasattr(project, "drawing_entities"):
+            project.drawing_entities = list(snapshot.get("project_drawing_entities") or [])
+        if hasattr(project, "review_issues"):
+            project.review_issues = deepcopy(safe_list(snapshot.get("project_review_issues")))
+        manager.project = project
+        manager.state = deepcopy(snapshot.get("manager_state"))
+        if hasattr(manager, "_transaction_snapshots"):
+            manager._transaction_snapshots = deepcopy(safe_dict(snapshot).get("transaction_snapshots"))
+        return
+
+    # Backward-compatible restore for older serialized snapshots.
+    payload = safe_dict(snapshot).get("state")
     if not payload:
         return
     from core.project_manager import ProjectManager
 
-    restored = ProjectManager.from_dict(payload, assume_isolated=True)
+    # Restore must never share nested dictionaries/lists with the stored
+    # snapshot. Candidate attempts mutate manager.latest_outputs, project.meta,
+    # metrics, and dirty state in place; sharing those objects would corrupt the
+    # rollback point itself and let failed candidates leak into canonical state.
+    restored = ProjectManager.from_dict(deepcopy(payload), assume_isolated=True)
+    restored.state.snapshots = safe_dict(snapshot.get("snapshots"))
+    restored.state.variants = safe_dict(snapshot.get("variants"))
+    restored.state.audit_log = deepcopy(safe_list(snapshot.get("audit_log")))
     if hasattr(project, "__dict__") and hasattr(restored.project, "__dict__"):
         project.__dict__.clear()
-        project.__dict__.update(deepcopy(restored.project.__dict__))
+        project.__dict__.update(restored.project.__dict__)
         manager.project = project
     else:
         manager.project = restored.project

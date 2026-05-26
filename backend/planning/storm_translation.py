@@ -299,7 +299,7 @@ def storm_summary_from_network_result(
         if safe_str(getattr(node, "name", ""), "")
     }
     segments: List[Dict[str, Any]] = []
-    missing_data_segments: List[str] = []
+    missing_data_segments: List[Dict[str, Any]] = []
     total_length = 0.0
     total_capacity = 0.0
     total_flow = 0.0
@@ -339,13 +339,26 @@ def storm_summary_from_network_result(
             controlling_segment = safe_str(
                 getattr(pipe, "name", ""), controlling_segment or ""
             )
-        if (
-            design_flow <= 0.0
-            or full_capacity <= 0.0
-            or safe_float(getattr(pipe, "slope", 0.0), 0.0) <= 0.0
-            or length_ft <= 0.0
-        ):
-            missing_data_segments.append(safe_str(getattr(pipe, "name", ""), "PIPE"))
+        missing_fields: List[str] = []
+        if design_flow <= 0.0:
+            missing_fields.append("flow_cfs")
+        if full_capacity <= 0.0:
+            missing_fields.append("capacity_cfs")
+        if safe_float(getattr(pipe, "slope", 0.0), 0.0) <= 0.0:
+            missing_fields.append("slope_ft_ft")
+        if length_ft <= 0.0:
+            missing_fields.append("length_ft")
+        if not safe_str(getattr(pipe, "upstream_node_name", ""), ""):
+            missing_fields.append("from")
+        if not safe_str(getattr(pipe, "downstream_node_name", ""), ""):
+            missing_fields.append("to")
+        if missing_fields:
+            missing_data_segments.append(
+                {
+                    "segment": safe_str(getattr(pipe, "name", ""), "PIPE"),
+                    "missing_fields": sorted(set(missing_fields)),
+                }
+            )
 
         upstream_node = node_lookup.get(
             safe_str(getattr(pipe, "upstream_node_name", ""), "")
@@ -659,7 +672,7 @@ def storm_summary_from_network_result(
         "total_system_capacity_cfs": round(total_capacity, 3),
         "controlling_segment": controlling_segment,
         "max_capacity_ratio": round(max_ratio, 3),
-        "missing_data_segments": sorted(set(missing_data_segments)),
+        "missing_data_segments": missing_data_segments,
         "pipe_slope_invert_consistency": all(
             safe_float(seg.get("start_invert_ft"), 0.0)
             > safe_float(seg.get("end_invert_ft"), 0.0)
@@ -677,6 +690,8 @@ def storm_summary_from_network_result(
         ),
         "errors": [],
         "explain": explain,
+        "selected_outfall": selected_outfall_name,
+        "target_outfall_name": selected_outfall_name,
         "hydraulic_summary": hydraulic_summary,
         "stats": {
             "trunk_count": sum(

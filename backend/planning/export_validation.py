@@ -438,7 +438,7 @@ def storm_export_validation(
         reasons.append("storm_graph_invalid")
     if not storm_exportable and not bool(safe_dict(storm.get("hydraulic_validation")).get("valid", False)):
         reasons.append("storm_hydraulics_invalid")
-    if not storm_exportable and bool(safe_dict(storm.get("explain")).get("implied_target_used")):
+    if bool(safe_dict(storm.get("explain")).get("implied_target_used")) and not bool(drainage_validation.get("ready")):
         reasons.append("storm_downstream_target_implied")
     if not storm_exportable and safe_list(storm.get("missing_data_segments")):
         reasons.append("storm_segments_incomplete")

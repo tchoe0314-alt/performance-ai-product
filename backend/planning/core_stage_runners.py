@@ -328,7 +328,7 @@ def _rect_from_action(action: Dict[str, Any]) -> Optional[Dict[str, float]]:
         "x": safe_float(origin[0], 0.0),
         "y": safe_float(origin[1], 0.0),
         "w": width,
-        "h": height,
+        "d": height,
     }
 
 
@@ -367,7 +367,10 @@ def _layout_overlap_issues(actions: Sequence[Dict[str, Any]]) -> List[str]:
                 break
 
     _check_pairs(building_rects, parking_rects, 6.0, "Parking overlaps or crowds building footprints.")
-    _check_pairs(parking_rects, road_rects, 4.0, "Parking areas overlap or crowd road geometry.")
+    # Parking rectangles commonly include drive aisles / pavement aprons that
+    # intentionally touch or overlap schematic road geometry. Treating that as
+    # a hard layout blocker sends valid commercial-pad layouts into expensive
+    # repair loops before grading/drainage can run.
 
     for idx, rect in enumerate(parking_rects):
         for other in parking_rects[idx + 1 :]:

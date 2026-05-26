@@ -30,7 +30,7 @@ from engines.storm.storm_types import (
     StormPoint,
 )
 
-from .common import lower_text, polyline_length, safe_dict, safe_float, safe_int, safe_list, safe_str
+from .common import canonical_stage_output, lower_text, polyline_length, safe_dict, safe_float, safe_int, safe_list, safe_str
 from .field_contract import field_path_is_omitted, unwrap_fields_for_execution
 from .runtime import PlannerExecutionContext, _mark_dependency_state
 
@@ -81,6 +81,7 @@ def _synthesize_storm_pipe_summary(
 
     target_name = safe_str(getattr(target, "name", ""), "") or selected_target_name or "OUTFALL"
     target_type = "basin_connection" if storm_basins else "outfall"
+    explicit_target_used = bool(storm_basins or safe_str(selected_target_name))
     fallback_z = safe_float(getattr(storm_inlets[0], "rim_elev_ft", DEFAULT_PAD_ELEV), DEFAULT_PAD_ELEV) - 1.0
     anchor = _storm_target_anchor(
         target,
@@ -211,16 +212,36 @@ def _synthesize_storm_pipe_summary(
             4,
         ),
         "controlling_segment": safe_str(segments[0].get("pipe"), "") if segments else "",
+        "selected_outfall": target_name,
+        "target_outfall_name": target_name,
+        "target_outfall": {"name": target_name, "x": anchor["x"], "y": anchor["y"], "z": anchor["z"]},
+        "outfall_target_metadata": {"name": target_name, "type": target_type, "x": anchor["x"], "y": anchor["y"], "z": anchor["z"]},
         "explain": {
             "selected_outfall_name": target_name,
             "selected_basin_name": target_name if storm_basins else "",
-            "implied_target_used": True,
+            "implied_target_used": not explicit_target_used,
             "routing_mode": "surface_fallback",
+        },
+        "hydraulic_summary": {
+            "system_tributary_area_sf": round(total_area := sum(safe_float(seg.get("tributary_area_sf"), 0.0) for seg in segments), 3),
+            "system_tributary_runoff_cfs": round(total_flow, 3),
+            "system_tributary_catchment_count": len(segments),
+            "system_tributary_basin_names": [target_name] if target_name else [],
+            "critical_pipes": deepcopy(segments[:3]),
+            "max_capacity_ratio": round(
+                max((safe_float(seg.get("capacity_ratio"), 0.0) for seg in segments), default=0.0),
+                4,
+            ),
+            "total_tributary_area_ac": round(total_area / 43560.0, 4),
         },
         "stats": {
             "selected_outfall_name": target_name,
             "selected_basin_name": target_name if storm_basins else "",
             "pipe_count": len(segments),
+            "max_governing_flow_cfs": round(max((safe_float(seg.get("governing_flow_cfs"), 0.0) for seg in segments), default=0.0), 3),
+            "max_governing_area_sf": round(max((safe_float(seg.get("governing_area_sf"), 0.0) for seg in segments), default=0.0), 3),
+            "deficient_count": 0,
+            "marginal_count": 0,
         },
     }
     summary["graph_validation"] = validate_network_graph(summary, "storm")
@@ -864,7 +885,15 @@ def run_storm_pipe_stage(
             ctx.add_stage("storm_pipes", True, "Storm pipe stage skipped because drainage summary was unavailable.")
             return
 
-        drainage_meta = safe_dict(manager.latest_outputs.get("drainage", project.meta.get("drainage_canonical", {})))
+        execution_payload = unwrap_fields_for_execution(ctx.parsed)
+        drainage_profile = safe_dict(execution_payload.get("drainage"))
+        min_pipe_slope_pct = safe_float(drainage_profile.get("min_pipe_slope_pct"), 0.0)
+        min_pipe_slope = max(
+            PIPE_MIN_SLOPE,
+            min_pipe_slope_pct / 100.0 if min_pipe_slope_pct > 0 else PIPE_MIN_SLOPE,
+        )
+
+        drainage_meta = safe_dict(canonical_stage_output(project, manager, "drainage"))
         coordination = safe_dict(drainage_meta.get("coordination"))
         storm_inlets = storm_inlets_from_drainage(drainage_meta)
         if not storm_inlets:
@@ -876,17 +905,67 @@ def run_storm_pipe_stage(
             drainage_meta,
             primary_engineered_basins=primary_engineered_basins,
         )
+        selected_storm_basins = storm_basins[:1]
+        preferred_outfall = safe_dict(coordination.get("preferred_outfall"))
+        has_preferred_outfall = bool(
+            safe_str(preferred_outfall.get("target_name"))
+            or (preferred_outfall.get("x") is not None and preferred_outfall.get("y") is not None)
+        )
+        if not selected_storm_basins and not has_preferred_outfall:
+            message = "Storm pipes need a drainage-selected basin or outfall target before hydraulic design can run."
+            missing_summary = {
+                "success": False,
+                "source": "canonical_drainage",
+                "hydraulic_source": "not_run",
+                "source_detail": "missing_drainage_outfall",
+                "pipe_count": 0,
+                "segments": [],
+                "nodes": [],
+                "warnings": [],
+                "errors": [message],
+                "missing_requirements": {
+                    "missing_fields": ["drainage.coordination.preferred_outfall", "drainage.basins"],
+                    "why_needed": {
+                        "drainage.coordination.preferred_outfall": "Storm routing needs a downstream discharge target.",
+                        "drainage.basins": "Storm routing needs a basin/outfall when no downstream target is selected.",
+                    },
+                    "suggested_next_actions": [
+                        "Add or detect a basin/outfall target.",
+                        "Run drainage so a downstream target is selected before storm pipe design.",
+                    ],
+                    "can_assist_if_enabled": True,
+                },
+                "graph_validation": {"valid": False, "reason": "missing_drainage_outfall"},
+                "hydraulic_validation": {"valid": False, "reason": "missing_drainage_outfall"},
+                "missing_data_segments": [],
+                "max_capacity_ratio": 0.0,
+                "controlling_segment": "",
+                "total_system_flow_cfs": 0.0,
+                "total_system_capacity_cfs": 0.0,
+                "explain": {"selected_outfall_name": "", "selected_basin_name": "", "routing_mode": "blocked_missing_outfall"},
+                "stats": {"pipe_count": 0, "selected_outfall_name": "", "selected_basin_name": ""},
+            }
+            manager.latest_outputs["storm_pipe_summary"] = deepcopy(missing_summary)
+            project.meta["storm_pipe_summary"] = deepcopy(missing_summary)
+            manager.mark_system_failed("storm_pipes", message, [message])
+            ctx.add_stage(
+                "storm_pipes",
+                False,
+                message,
+                missing_requirements=deepcopy(missing_summary["missing_requirements"]),
+                pipe_count=0,
+            )
+            return
         storm_catchments = storm_catchments_from_drainage(
             drainage_meta,
             runoff_c=safe_float(hydrology.get("runoff_c"), PIPE_RUNOFF_C),
             intensity_in_hr=safe_float(hydrology.get("intensity_in_hr"), PIPE_INTENSITY_IN_HR),
         )
-        preferred_outfall = safe_dict(coordination.get("preferred_outfall"))
         outfall_x = safe_float(preferred_outfall.get("x"), storm_inlets[0].point.x + 40.0)
         outfall_y = safe_float(preferred_outfall.get("y"), storm_inlets[0].point.y - 20.0)
         outfall_z = safe_float(preferred_outfall.get("z"), safe_float(storm_inlets[0].rim_elev_ft, DEFAULT_PAD_ELEV) - 1.0)
         outfalls: List[StormNode] = []
-        if not storm_basins:
+        if not selected_storm_basins:
             outfalls = [
                 StormNode(
                     name="OUTFALL",
@@ -902,7 +981,7 @@ def run_storm_pipe_stage(
                 network_name=safe_str(project.name, "Storm Network"),
                 catchments=storm_catchments,
                 inlets=storm_inlets,
-                basins=storm_basins,
+                basins=selected_storm_basins,
                 outfalls=outfalls,
                 default_pipe_material="RCP",
                 default_mannings_n=PIPE_MANNINGS_N,
@@ -944,7 +1023,7 @@ def run_storm_pipe_stage(
         if safe_int(storm_pipe_summary.get("pipe_count"), 0) <= 0:
             storm_pipe_summary = _synthesize_storm_pipe_summary(
                 storm_inlets=storm_inlets,
-                storm_basins=storm_basins,
+                storm_basins=selected_storm_basins,
                 outfalls=outfalls,
                 selected_target_name=safe_str(
                     safe_dict(storm_pipe_summary.get("explain")).get("selected_outfall_name"),
@@ -965,6 +1044,15 @@ def run_storm_pipe_stage(
                 if safe_str(storm_pipe_summary.get("hydraulic_source")).lower() == "fallback"
                 else "storm_network_engine+hydraulic_engine"
             )
+        preferred_target_name = safe_str(preferred_outfall.get("target_name"), "")
+        if preferred_target_name:
+            storm_pipe_summary.setdefault("target_outfall", deepcopy(preferred_outfall))
+            storm_pipe_summary["selected_outfall"] = preferred_target_name
+            storm_pipe_summary["target_outfall_name"] = preferred_target_name
+            storm_pipe_summary.setdefault("outfall_target_metadata", deepcopy(preferred_outfall))
+            stats = safe_dict(storm_pipe_summary.get("stats"))
+            stats.setdefault("target_outfall_name", preferred_target_name)
+            storm_pipe_summary["stats"] = stats
         selected_outfall_name = safe_str(safe_dict(storm_pipe_summary.get("explain")).get("selected_outfall_name"), "")
         selected_outfall = next(
             (

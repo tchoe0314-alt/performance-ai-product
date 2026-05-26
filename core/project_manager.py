@@ -767,7 +767,7 @@ class ProjectManager:
                 target=dep.get("target", ""),
                 reason=dep.get("reason", ""),
                 state=DependencyState(dep.get("state", DependencyState.STALE.value)),
-                context=copy.deepcopy(dep.get("context", {})),
+                context=dep.get("context", {}) if assume_isolated else copy.deepcopy(dep.get("context", {})),
             )
 
         for conflict_id, conflict in (state_payload.get("conflicts") or {}).items():
@@ -778,7 +778,7 @@ class ProjectManager:
                 severity=ConflictSeverity(conflict.get("severity", ConflictSeverity.WARNING.value)),
                 related_ids=list(conflict.get("related_ids", [])),
                 category=conflict.get("category", "general"),
-                context=copy.deepcopy(conflict.get("context", {})),
+                context=conflict.get("context", {}) if assume_isolated else copy.deepcopy(conflict.get("context", {})),
                 resolved=bool(conflict.get("resolved", False)),
             )
 
@@ -791,17 +791,17 @@ class ProjectManager:
                 zone_ids=list(system.get("zone_ids", [])),
                 object_ids=list(system.get("object_ids", [])),
                 related_system_ids=list(system.get("related_system_ids", [])),
-                meta=copy.deepcopy(system.get("meta", {})),
+                meta=system.get("meta", {}) if assume_isolated else copy.deepcopy(system.get("meta", {})),
             )
 
         for metric_id, metric in (state_payload.get("metrics") or {}).items():
             manager.state.metrics[metric_id] = MetricRecord(
                 id=metric.get("id", metric_id),
                 name=metric.get("name", ""),
-                value=copy.deepcopy(metric.get("value")),
+                value=metric.get("value") if assume_isolated else copy.deepcopy(metric.get("value")),
                 units=metric.get("units"),
                 category=metric.get("category", "general"),
-                meta=copy.deepcopy(metric.get("meta", {})),
+                meta=metric.get("meta", {}) if assume_isolated else copy.deepcopy(metric.get("meta", {})),
             )
 
         for snap_id, snap in (state_payload.get("snapshots") or {}).items():
@@ -809,19 +809,19 @@ class ProjectManager:
                 id=snap.get("id", snap_id),
                 name=snap.get("name", snap_id),
                 description=snap.get("description", ""),
-                project_state=copy.deepcopy(snap.get("project_state", {})),
-                meta=copy.deepcopy(snap.get("meta", {})),
+                project_state=snap.get("project_state", {}) if assume_isolated else copy.deepcopy(snap.get("project_state", {})),
+                meta=snap.get("meta", {}) if assume_isolated else copy.deepcopy(snap.get("meta", {})),
             )
 
         for var_id, variant in (state_payload.get("variants") or {}).items():
             manager.state.variants[var_id] = DesignVariant(
                 id=variant.get("id", var_id),
                 name=variant.get("name", var_id),
-                payload=copy.deepcopy(variant.get("payload", {})),
+                payload=variant.get("payload", {}) if assume_isolated else copy.deepcopy(variant.get("payload", {})),
                 status=VariantStatus(variant.get("status", VariantStatus.SAVED.value)),
                 score=variant.get("score"),
                 summary=variant.get("summary", ""),
-                meta=copy.deepcopy(variant.get("meta", {})),
+                meta=variant.get("meta", {}) if assume_isolated else copy.deepcopy(variant.get("meta", {})),
             )
 
         manager.state.audit_log = [
@@ -830,12 +830,12 @@ class ProjectManager:
                 title=event.get("title", "event"),
                 description=event.get("description", ""),
                 category=event.get("category", "general"),
-                meta=copy.deepcopy(event.get("meta", {})),
+                meta=event.get("meta", {}) if assume_isolated else copy.deepcopy(event.get("meta", {})),
             )
             for event in (state_payload.get("audit_log") or [])
             if isinstance(event, dict)
         ]
-        manager.state.meta = copy.deepcopy(state_payload.get("meta", {}))
+        manager.state.meta = state_payload.get("meta", {}) if assume_isolated else copy.deepcopy(state_payload.get("meta", {}))
         return manager
 
     @classmethod

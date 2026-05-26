@@ -115,6 +115,8 @@ def canonical_structure_actions(project: ProjectModel) -> List[Dict[str, Any]]:
         struct_type = safe_str(
             rec.get("structure_type") or rec.get("canonical_type"), "structure"
         ).upper()
+        z = rec.get("z")
+        flow = rec.get("estimated_flow_cfs")
         actions.append(
             canonical_action(
                 {
@@ -144,8 +146,6 @@ def canonical_structure_actions(project: ProjectModel) -> List[Dict[str, Any]]:
                 source_stage="drainage",
             )
         )
-        z = rec.get("z")
-        flow = rec.get("estimated_flow_cfs")
         note = f"{struct_type} {name}"
         if z is not None:
             note += f" RIM {safe_float(z, 0.0):.2f}"

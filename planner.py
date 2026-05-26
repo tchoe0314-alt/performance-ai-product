@@ -4978,7 +4978,10 @@ def _detect_coordination_conflicts(project: ProjectModel, manager: ProjectManage
                 }
             )
         for rect in obstacles:
-            if safe_str(segment.get("system")) not in {"storm", "sanitary", "water"}:
+            system_name = safe_str(segment.get("system"))
+            if system_name not in {"storm", "sanitary", "water"}:
+                continue
+            if not bool(rect.get("avoid")):
                 continue
             path = safe_list(segment.get("path"))
             if any(_point_inside_buffered_rect(point, rect) for point in path) or any(
@@ -7259,6 +7262,7 @@ def _solve_conflict_cluster(
             if not matching:
                 continue
             active_conflict = matching[0]
+            attempt_full_snapshot = _full_coordination_state_snapshot(project, manager)
             resolution = _apply_conflict_resolution(
                 project,
                 manager,
@@ -7284,6 +7288,7 @@ def _solve_conflict_cluster(
                 )
             else:
                 failed_reason = safe_str(resolution.get("failure_reason")) or "A cluster candidate could not resolve one of its member conflicts."
+                _restore_full_coordination_state(project, manager, attempt_full_snapshot)
                 if resolution.get("assumed"):
                     candidate_assumptions.append(
                         {
