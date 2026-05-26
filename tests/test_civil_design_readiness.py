@@ -92,7 +92,9 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertIn(readiness["status"], {"ready", "needs_engineering_review"})
         self.assertEqual(readiness["truth_sources"]["grading"], "terrain")
         self.assertGreaterEqual(readiness["score"], 80.0)
-        self.assertIn(readiness["real_world_readiness"], {"concept_design_ready", "production_review_candidate"})
+        self.assertEqual(readiness["real_world_readiness"], "concept_design_ready")
+        self.assertFalse(readiness["production_ready"])
+        self.assertTrue(readiness["production_blockers"])
         self.assertEqual(readiness["systems"]["storm_pipes"]["metrics"]["segment_count"], 1)
         self.assertEqual(readiness["systems"]["sanitary"]["metrics"]["manhole_count"], 2)
         self.assertFalse(readiness["critical_blockers"])
@@ -152,6 +154,57 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertIn(("sanitary", "max_capacity_ratio"), fields)
         self.assertIn(("utilities", "cover_ft"), fields)
         self.assertGreater(readiness["systems"]["utilities"]["metrics"]["separation_warning_count"], 0)
+
+    def test_production_depth_gates_clear_when_real_design_evidence_exists(self) -> None:
+        meta = _complete_meta()
+        meta["design_standards"] = {"source": "test_jurisdiction_pack", "version": "2026.1"}
+        meta["jurisdiction_standards"] = {"agency": "Test City"}
+        meta["company_standards"] = {"cad_layer_standard": "CIVORA_TEST"}
+        meta["survey"] = {"point_count": 12, "source": "survey_points"}
+        meta["gis_layers"] = {"parcels": [{}], "easements": [{}], "row": [{}], "existing_utilities": [{}]}
+        meta["grading"]["source_quality"] = "survey"
+        meta["grading"]["road_crown_controls"] = [{"road": "A", "cross_slope": 0.02}]
+        meta["grading"]["curb_gutter_controls"] = [{"road": "A", "gutter_slope": 0.01}]
+        meta["grading"]["ada_path_checks"] = [{"path": "ADA-1", "valid": True}]
+        meta["grading"]["pad_tie_ins"] = [{"building": "B-1", "valid": True}]
+        meta["grading"]["contours"] = [{"elev": 100.0, "points": [[0.0, 0.0], [10.0, 0.0]]}]
+        meta["grading"]["contour_interval_ft"] = 2.0
+        meta["drainage"]["detention_routing"] = [{"basin": "BASIN-1", "valid": True}]
+        meta["storm_pipes"]["hgl_profile"] = [{"station": 0.0, "hgl_ft": 98.0}]
+        meta["storm_pipes"]["egl_profile"] = [{"station": 0.0, "egl_ft": 98.2}]
+        meta["storm_pipes"]["tailwater_elev_ft"] = 96.0
+        meta["storm_pipes"]["inlet_capacity_checks"] = [{"inlet": "INLET-1", "spread_ft": 4.0, "bypass_cfs": 0.0}]
+        meta["export_audit"] = {"ready": True}
+        meta["sheet_registry"] = {"sheets": [{"id": "C-100"}]}
+        meta["cad_interop"] = {"source": "test", "civil3d": True, "landxml": True, "pipe_network_export": True}
+        meta["optimization_summary"] = {
+            "source": "test",
+            "overall_score": 92.0,
+            "component_scores": {"grading": 90.0, "drainage": 93.0},
+            "alternatives": [{"name": "A"}, {"name": "B"}],
+            "comparison_summary": {"recommended_option_name": "A", "runner_up_option_name": "B"},
+            "recommendations": ["Use option A."],
+        }
+
+        readiness = civil_design_readiness({"meta": meta})
+
+        self.assertTrue(readiness["success"])
+        self.assertTrue(readiness["production_ready"])
+        self.assertEqual(readiness["real_world_readiness"], "production_review_candidate")
+        self.assertFalse(readiness["production_blockers"])
+
+    def test_production_depth_gates_name_every_major_real_world_gap(self) -> None:
+        readiness = civil_design_readiness({"meta": _complete_meta()})
+        gaps = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
+
+        self.assertIn(("standards", "design_standards"), gaps)
+        self.assertIn(("existing_conditions", "survey_surface"), gaps)
+        self.assertIn(("existing_conditions", "gis_layers"), gaps)
+        self.assertIn(("hydraulics", "hgl_profile"), gaps)
+        self.assertIn(("hydraulics", "detention_routing"), gaps)
+        self.assertIn(("grading_detail", "ada_path_checks"), gaps)
+        self.assertIn(("cad_interop", "civil3d_landxml"), gaps)
+        self.assertIn(("optimization", "optimization_summary"), gaps)
 
     def test_build_plan_attaches_civil_design_readiness_without_fake_success(self) -> None:
         plan = planner.build_plan(

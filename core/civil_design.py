@@ -351,6 +351,213 @@ def _system_result(
     }
 
 
+def _production_gap(area: str, field: str, why: str, action: str) -> Dict[str, Any]:
+    return {
+        "area": area,
+        "field": field,
+        "why_needed": why,
+        "suggested_next_action": action,
+    }
+
+
+def _has_any(mapping: Dict[str, Any], keys: Iterable[str]) -> bool:
+    return any(mapping.get(key) not in (None, "", [], {}) for key in keys)
+
+
+def check_standards_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
+    warnings: List[str] = []
+    gaps: List[Dict[str, Any]] = []
+    standards = _safe_dict(meta.get("design_standards") or meta.get("standards"))
+    jurisdiction = _safe_dict(meta.get("jurisdiction_standards"))
+    company = _safe_dict(meta.get("company_standards"))
+    if not standards:
+        gaps.append(
+            _production_gap(
+                "standards",
+                "design_standards",
+                "Production civil design needs a standards pack for slopes, cover, separation, ADA, stormwater, sanitary, and CAD conventions.",
+                "Attach a jurisdiction/company standards profile before permit-grade design.",
+            )
+        )
+    if not jurisdiction:
+        warnings.append("No jurisdiction standards profile is attached.")
+    if not company:
+        warnings.append("No company CAD/design standards profile is attached.")
+    status = "ready" if not gaps else "needs_production_input"
+    return _system_result(
+        status=status,
+        source=_safe_str(standards.get("source"), "default_concept_standards"),
+        warnings=warnings,
+        metrics={
+            "has_design_standards": bool(standards),
+            "has_jurisdiction_standards": bool(jurisdiction),
+            "has_company_standards": bool(company),
+            "production_gaps": gaps,
+        },
+    )
+
+
+def check_existing_conditions_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
+    warnings: List[str] = []
+    gaps: List[Dict[str, Any]] = []
+    grading = _safe_dict(meta.get("grading") or meta.get("grading_summary"))
+    source = (
+        _safe_str(grading.get("source_quality"))
+        or _safe_str(grading.get("grading_source_quality"))
+        or _safe_str(_safe_dict(grading.get("existing_surface")).get("source_quality"))
+        or "missing"
+    )
+    survey = _safe_dict(meta.get("survey") or meta.get("survey_file") or _safe_dict(grading.get("existing_surface")).get("survey"))
+    gis = _safe_dict(meta.get("gis_layers") or meta.get("existing_conditions"))
+    if source != "survey" and not survey:
+        gaps.append(
+            _production_gap(
+                "existing_conditions",
+                "survey_surface",
+                "Terrain is useful for concept work, but permit-ready grading needs survey/control or an explicitly approved data source.",
+                "Import survey points, breaklines, contours, or a stamped existing surface.",
+            )
+        )
+    if not _has_any(gis, ("parcels", "easements", "row", "floodplain", "wetlands", "existing_utilities")):
+        gaps.append(
+            _production_gap(
+                "existing_conditions",
+                "gis_layers",
+                "Real coordination needs parcels, ROW/easements, floodplain/wetlands, and existing utilities where available.",
+                "Attach GIS/existing-condition layers before production coordination.",
+            )
+        )
+    if source in {"terrain", "image_inferred", "address_context"}:
+        warnings.append(f"Existing surface is {source}-derived, not survey.")
+    return _system_result(
+        status="ready" if not gaps else "needs_production_input",
+        source=source,
+        warnings=warnings,
+        metrics={
+            "surface_source": source,
+            "has_survey": bool(survey) or source == "survey",
+            "has_gis_layers": bool(gis),
+            "production_gaps": gaps,
+        },
+    )
+
+
+def check_hydraulic_depth_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
+    warnings: List[str] = []
+    gaps: List[Dict[str, Any]] = []
+    storm = _safe_dict(meta.get("storm_pipes") or meta.get("storm_pipe_summary"))
+    drainage = _safe_dict(meta.get("drainage") or meta.get("drainage_canonical"))
+    if storm and _safe_list(storm.get("segments")):
+        required = {
+            "hgl_profile": "Storm production design needs HGL to verify surcharging and inlet/junction elevations.",
+            "egl_profile": "Storm production design needs EGL/energy losses for hydraulic grade review.",
+            "tailwater": "Storm production design needs tailwater/backwater assumptions at the outfall.",
+            "inlet_capacity_checks": "Production drainage needs inlet capacity, spread, and bypass checks.",
+        }
+        for field, why in required.items():
+            if field == "tailwater":
+                present = _has_any(storm, ("tailwater_elev_ft", "tailwater_condition", "tailwater"))
+            else:
+                present = bool(storm.get(field))
+            if not present:
+                gaps.append(_production_gap("hydraulics", field, why, f"Run or attach {field.replace('_', ' ')} calculations."))
+    else:
+        warnings.append("Storm network is not present; hydraulic depth checks are waiting on storm design.")
+    detention_routes = _safe_list(drainage.get("detention_routing")) or _safe_list(drainage.get("stage_storage"))
+    if drainage and _safe_list(drainage.get("basins")) and not detention_routes:
+        gaps.append(
+            _production_gap(
+                "hydraulics",
+                "detention_routing",
+                "Permit-grade stormwater needs stage-storage, outlet, drawdown, and overflow routing.",
+                "Run detention routing for the selected basin/outfall.",
+            )
+        )
+    return _system_result(
+        status="ready" if not gaps else "needs_production_input",
+        source=_safe_str(storm.get("hydraulic_source") or storm.get("source"), "missing"),
+        warnings=warnings,
+        metrics={"production_gaps": gaps, "gap_count": len(gaps)},
+    )
+
+
+def check_grading_detail_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
+    warnings: List[str] = []
+    gaps: List[Dict[str, Any]] = []
+    grading = _safe_dict(meta.get("grading") or meta.get("grading_summary"))
+    detail_fields = {
+        "road_crown_controls": "Roadway grading needs crown/cross-slope controls.",
+        "curb_gutter_controls": "Curb/gutter grading is needed for pavement drainage and gutter flow.",
+        "ada_path_checks": "ADA routes need running slope and cross-slope checks.",
+        "pad_tie_ins": "Building pads need tie-in elevations and positive drainage away from doors/foundations.",
+        "contours": "Production grading needs contour output with traceable interval/source.",
+    }
+    for field, why in detail_fields.items():
+        if not grading.get(field):
+            gaps.append(_production_gap("grading_detail", field, why, f"Generate {field.replace('_', ' ')} from the finished surface."))
+    if not _has_any(grading, ("contour_interval_ft", "contours")):
+        warnings.append("Contour interval/output is incomplete.")
+    if _safe_list(grading.get("retaining_walls")):
+        if not grading.get("wall_tie_in_checks"):
+            gaps.append(_production_gap("grading_detail", "wall_tie_in_checks", "Retaining walls need top/bottom tie-in checks.", "Run retaining wall tie-in validation."))
+    return _system_result(
+        status="ready" if not gaps else "needs_production_input",
+        source=_safe_str(grading.get("source_quality") or grading.get("grading_source_quality"), "missing"),
+        warnings=warnings,
+        metrics={"production_gaps": gaps, "gap_count": len(gaps)},
+    )
+
+
+def check_cad_interop_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
+    warnings: List[str] = []
+    gaps: List[Dict[str, Any]] = []
+    export_audit = _safe_dict(meta.get("export_audit"))
+    sheet_registry = _safe_dict(meta.get("sheet_registry"))
+    cad = _safe_dict(meta.get("cad_interop") or meta.get("export_interop"))
+    if not export_audit:
+        gaps.append(_production_gap("cad_interop", "export_audit", "Export truth needs an audit before production deliverables.", "Finalize export metadata before artifact generation."))
+    if not sheet_registry:
+        gaps.append(_production_gap("cad_interop", "sheet_registry", "Production sheets need a sheet registry matching final canonical state.", "Finalize sheet registry before export."))
+    if not _has_any(cad, ("civil3d", "landxml", "dwg", "pipe_network_export", "surface_export")):
+        gaps.append(
+            _production_gap(
+                "cad_interop",
+                "civil3d_landxml",
+                "Production civil workflows need Civil 3D/LandXML/DWG-compatible surfaces, profiles, and pipe networks.",
+                "Add Civil 3D/LandXML export contracts for surfaces, alignments, profiles, and pipe networks.",
+            )
+        )
+    if not cad:
+        warnings.append("DXF is available, but Civil 3D/LandXML interoperability metadata is not attached.")
+    return _system_result(
+        status="ready" if not gaps else "needs_production_input",
+        source=_safe_str(cad.get("source"), "dxf_concept_export"),
+        warnings=warnings,
+        metrics={"production_gaps": gaps, "gap_count": len(gaps), "has_export_audit": bool(export_audit), "has_sheet_registry": bool(sheet_registry)},
+    )
+
+
+def check_optimization_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
+    warnings: List[str] = []
+    gaps: List[Dict[str, Any]] = []
+    optimization = _safe_dict(meta.get("optimization_summary"))
+    if not optimization:
+        gaps.append(_production_gap("optimization", "optimization_summary", "Production design should compare buildable alternatives, not only one generated option.", "Run multi-option optimization after core systems are ready."))
+    else:
+        if not _safe_dict(optimization.get("component_scores")):
+            gaps.append(_production_gap("optimization", "component_scores", "Optimization needs scored tradeoffs across grading, drainage, utilities, parking, and constructability.", "Compute component scores for alternatives."))
+        if not (_safe_dict(optimization.get("comparison_summary")) or _safe_list(optimization.get("alternatives"))):
+            gaps.append(_production_gap("optimization", "alternatives", "Production design needs a best option and runner-up/tradeoff explanation.", "Generate and compare design alternatives."))
+        if not optimization.get("recommendations"):
+            warnings.append("Optimization has no recommendations.")
+    return _system_result(
+        status="ready" if not gaps else "needs_production_input",
+        source=_safe_str(optimization.get("source"), "planner_optimization_summary" if optimization else "missing"),
+        warnings=warnings,
+        metrics={"production_gaps": gaps, "gap_count": len(gaps), "overall_score": _safe_float(optimization.get("overall_score"), 0.0)},
+    )
+
+
 def check_grading_truth(grading: Dict[str, Any]) -> Dict[str, Any]:
     missing: List[Dict[str, Any]] = []
     warnings: List[str] = []
@@ -706,19 +913,27 @@ def civil_design_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
     meta = _safe_dict(plan_or_meta.get("meta")) if "meta" in plan_or_meta else _safe_dict(plan_or_meta)
     systems = {
         "site": check_site_truth(plan_or_meta),
+        "standards": check_standards_truth(meta),
+        "existing_conditions": check_existing_conditions_truth(meta),
         "grading": check_grading_truth(_safe_dict(meta.get("grading") or meta.get("grading_summary"))),
+        "grading_detail": check_grading_detail_truth(meta),
         "drainage": check_drainage_truth(_safe_dict(meta.get("drainage") or meta.get("drainage_canonical"))),
         "storm_pipes": check_storm_truth(_safe_dict(meta.get("storm_pipes") or meta.get("storm_pipe_summary"))),
+        "hydraulic_depth": check_hydraulic_depth_truth(meta),
         "sanitary": check_sanitary_truth(_safe_dict(meta.get("sanitary") or meta.get("sanitary_summary"))),
         "utilities": check_utility_truth(_safe_dict(meta.get("utilities") or meta.get("utility_summary"))),
         "coordination": check_coordination_truth(_safe_dict(meta.get("coordination") or meta.get("coordination_summary"))),
+        "cad_interop": check_cad_interop_truth(meta),
+        "optimization": check_optimization_truth(meta),
     }
     missing_requirements: List[Dict[str, Any]] = []
     warnings: List[Dict[str, Any]] = []
+    production_blockers: List[Dict[str, Any]] = []
     truth_sources: Dict[str, str] = {}
     for system, result in systems.items():
         truth_sources[system] = _safe_str(result.get("source"), "missing")
         missing_requirements.extend(_safe_list(result.get("missing")))
+        production_blockers.extend(_safe_list(_safe_dict(result.get("metrics")).get("production_gaps")))
         for warning in _safe_list(result.get("warnings")):
             warnings.append({"system": system, "message": _safe_str(warning)})
     critical_blockers = [
@@ -732,17 +947,20 @@ def civil_design_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
     if success and warnings:
         status = "needs_engineering_review"
     score = readiness_score(systems, warnings)
+    production_ready = success and not production_blockers and score >= 85.0
     return {
         "success": success,
         "status": status,
         "score": score,
         "real_world_readiness": (
             "production_review_candidate"
-            if score >= 85.0 and success
+            if production_ready
             else "concept_design_ready"
             if score >= 65.0
             else "engineering_inputs_incomplete"
         ),
+        "production_ready": production_ready,
+        "production_blockers": production_blockers,
         "standards_version": standards.version,
         "standards": standards.to_dict(),
         "systems": systems,
@@ -766,10 +984,16 @@ __all__ = [
     "DEFAULT_STANDARDS",
     "civil_design_readiness",
     "check_coordination_truth",
+    "check_cad_interop_truth",
     "check_drainage_truth",
+    "check_existing_conditions_truth",
     "check_grading_truth",
+    "check_grading_detail_truth",
+    "check_hydraulic_depth_truth",
+    "check_optimization_truth",
     "check_sanitary_truth",
     "check_site_truth",
+    "check_standards_truth",
     "check_storm_truth",
     "check_utility_truth",
     "classify_action_system",
