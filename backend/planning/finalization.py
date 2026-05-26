@@ -8,6 +8,7 @@ from core.project_manager import ProjectManager
 
 from .common import dedupe_keep_order, lower_text, polyline_length, safe_dict, safe_float, safe_int, safe_list, safe_str
 from .field_contract import unwrap_fields_for_execution
+from .production_depth import build_optimization_alternatives
 from .runtime import _lot_area
 
 
@@ -104,7 +105,7 @@ def build_optimization_summary(parsed: Dict[str, Any], plan: Dict[str, Any]) -> 
     if not recommendations:
         recommendations.append("Current design is reasonably balanced across parking, grading, drainage, and utility efficiency.")
 
-    return {
+    return build_optimization_alternatives({
         "active_goal": active_goal or "balanced",
         "planner_score_total": round(safe_float(planner_score.get("total"), 0.0), 3),
         "weighted_components": weighted,
@@ -125,7 +126,7 @@ def build_optimization_summary(parsed: Dict[str, Any], plan: Dict[str, Any]) -> 
             "max_capacity_ratio": round(max_capacity_ratio, 3),
         },
         "recommendations": recommendations[:4],
-    }
+    })
 
 
 def requested_deliverables(parsed: Dict[str, Any]) -> List[str]:

@@ -32,6 +32,7 @@ from engines.storm.storm_types import (
 
 from .common import canonical_stage_output, lower_text, polyline_length, safe_dict, safe_float, safe_int, safe_list, safe_str
 from .field_contract import field_path_is_omitted, unwrap_fields_for_execution
+from .production_depth import enrich_drainage_production_depth, enrich_storm_production_depth
 from .runtime import PlannerExecutionContext, _mark_dependency_state
 
 
@@ -306,6 +307,7 @@ def run_drainage_stage(
                 success=True,
                 message="Drainage stage accepted user-supplied geometry.",
             )
+            canonical_drainage = enrich_drainage_production_depth(canonical_drainage)
             project.meta["drainage_canonical"] = canonical_drainage
             manager.latest_outputs["drainage"] = deepcopy(canonical_drainage)
             project.meta["drainage_summary"] = type(
@@ -797,6 +799,7 @@ def run_drainage_stage(
             hydrology=hydrology,
             coordination=coordination,
         )
+        canonical_drainage = enrich_drainage_production_depth(canonical_drainage)
         canonical_drainage["coordination"] = deepcopy(coordination)
         canonical_drainage["surface_guidance"] = {
             "downhill_vector": deepcopy(safe_dict(coordination.get("downhill_vector"))),
@@ -1053,6 +1056,7 @@ def run_storm_pipe_stage(
             stats = safe_dict(storm_pipe_summary.get("stats"))
             stats.setdefault("target_outfall_name", preferred_target_name)
             storm_pipe_summary["stats"] = stats
+        storm_pipe_summary = enrich_storm_production_depth(storm_pipe_summary, drainage_meta)
         selected_outfall_name = safe_str(safe_dict(storm_pipe_summary.get("explain")).get("selected_outfall_name"), "")
         selected_outfall = next(
             (

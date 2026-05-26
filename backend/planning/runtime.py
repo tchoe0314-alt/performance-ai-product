@@ -187,6 +187,7 @@ _PLAN_META_KEYS = {
     "cross_sections",
     "sheet_registry",
     "export_audit",
+    "cad_interop",
     "utilities",
     "requested_deliverables",
     "produced_deliverables",

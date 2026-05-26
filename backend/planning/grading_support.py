@@ -27,6 +27,7 @@ from .terrain_provider import build_terrain_surface, normalize_surface
 
 from .common import safe_dict, safe_float, safe_int, safe_list, safe_str
 from .field_contract import field_path_is_omitted
+from .production_depth import build_grading_detail_controls
 
 MAX_TERRAIN_GRID_CELLS = 12000
 MAX_TERRAIN_GRID_AXIS = 140
@@ -691,6 +692,10 @@ def canonical_grading_payload(
         avg_dx = safe_float(safe_dict(inferred_profile).get("downhill_dx"), 0.0)
         avg_dy = safe_float(safe_dict(inferred_profile).get("downhill_dy"), 0.0)
     downhill_dx, downhill_dy = normalize_vector(avg_dx, avg_dy)
+    downhill_vector = {
+        "dx": round(downhill_dx, 6),
+        "dy": round(downhill_dy, 6),
+    }
     ranked_low_points = sorted(
         low_points,
         key=lambda point: (
@@ -705,6 +710,14 @@ def canonical_grading_payload(
         kind = safe_str(getattr(elem, "kind", ""), "")
         if kind:
             kind_counts[kind] = kind_counts.get(kind, 0) + 1
+    grading_detail_controls = build_grading_detail_controls(
+        grade_elements=controls,
+        derived_action_stats=derived_action_stats,
+        downhill_vector=downhill_vector,
+        existing_high_points=existing_high_points,
+        existing_low_points=existing_low_points,
+        proposed_range_ft=proposed_max - proposed_min,
+    )
     return {
         "schema_version": "v1",
         "source": "grading_engine",
@@ -738,6 +751,9 @@ def canonical_grading_payload(
         },
         "grading_source_quality": safe_str(inferred_profile_dict.get("source_quality"), ""),
         "grading_source_detail": safe_str(inferred_profile_dict.get("source_detail"), ""),
+        "source_quality": safe_str(inferred_profile_dict.get("source_quality"), ""),
+        "source_detail": safe_str(inferred_profile_dict.get("source_detail"), ""),
+        "high_points": deepcopy(existing_high_points),
         "checks": [
             {
                 "name": safe_str(getattr(check, "name", "")),
@@ -775,10 +791,7 @@ def canonical_grading_payload(
         ],
         "surface_controls": {
             "has_primary_drainage_direction": bool(abs(downhill_dx) > 1e-9 or abs(downhill_dy) > 1e-9),
-            "downhill_vector": {
-                "dx": round(downhill_dx, 6),
-                "dy": round(downhill_dy, 6),
-            },
+            "downhill_vector": downhill_vector,
             "primary_low_point": (
                 {
                     "x": round(safe_float(getattr(primary_low_point, "x", 0.0), 0.0), 3),
@@ -820,6 +833,7 @@ def canonical_grading_payload(
             "failed_check_count": sum(1 for check in checks if not bool(getattr(check, "passed", False))),
             **derived_action_stats,
         },
+        **grading_detail_controls,
     }
 
 

@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import ezdxf
 
+from backend.planning.production_depth import build_cad_interop_metadata
 from core.utils import (
     clean_label,
     safe_center,
@@ -3733,9 +3734,11 @@ def finalize_export_metadata(plan: Dict[str, Any]) -> Dict[str, Any]:
 
     modelspace_actions = _prepare_modelspace_actions(plan, actions)
     meta["export_audit"] = _build_export_audit(doc, plan, modelspace_actions, profiles, section_groups, sheet_registry)
+    meta["cad_interop"] = build_cad_interop_metadata(plan)
     return {
         "sheet_registry": deepcopy(meta["sheet_registry"]),
         "export_audit": deepcopy(meta["export_audit"]),
+        "cad_interop": deepcopy(meta["cad_interop"]),
     }
 
 
