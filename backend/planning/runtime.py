@@ -169,6 +169,7 @@ _PLAN_META_KEYS = {
     "deliverables",
     "engineering_status",
     "truth_audit",
+    "civil_design_readiness",
     "manual_validation",
     "qa",
     "coordination",

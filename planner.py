@@ -80,6 +80,7 @@ from core.geometry_core import (
     ZoneType,
     rect_zone,
 )
+from core.civil_design import civil_design_readiness
 
 from core.project_manager import (
     ConflictRecord,
@@ -9045,6 +9046,7 @@ def finalize_plan(plan: Dict[str, Any], *, parsed: Dict[str, Any], route: Routin
     final["meta"].setdefault("parsed_mode", lower_text(parsed.get("mode")))
     final["meta"].setdefault("project_type", lower_text(parsed.get("project_type")))
     final["meta"].setdefault("stats", collect_plan_stats(final))
+    final["meta"]["civil_design_readiness"] = civil_design_readiness(final)
     return final
 
 
