@@ -4595,6 +4595,18 @@ function PerformanceAIDashboardView({
     return false;
   };
 
+  const shouldRouteToOrchestrator = (message: string): boolean => {
+    const normalized = message.toLowerCase();
+    if (normalized.length < 140) return false;
+    const asksForDesign =
+      /\b(design|create|generate|produce|engineer|layout|site plan|development)\b/.test(normalized);
+    const describesScope =
+      /\b(include|with|building|road|parking|grading|drainage|utilities|detention|basin|sanitary|water)\b/.test(
+        normalized,
+      );
+    return asksForDesign && describesScope;
+  };
+
   const handlePromptKeyDown = (
     event: React.KeyboardEvent<HTMLTextAreaElement>,
   ) => {
@@ -4813,20 +4825,23 @@ function PerformanceAIDashboardView({
       return;
     }
     if (trimmed) {
-      const handledInfo = tryHandleInfoIntent(trimmed);
-      if (handledInfo) {
-        setPrompt("");
-        return;
-      }
-      const handledAction = tryHandleActionIntent(trimmed);
-      if (handledAction) {
-        setPrompt("");
-        return;
-      }
-      const handled = tryHandleObjectIntent(trimmed);
-      if (handled) {
-        setPrompt("");
-        return;
+      const routeToOrchestrator = shouldRouteToOrchestrator(trimmed);
+      if (!routeToOrchestrator) {
+        const handledInfo = tryHandleInfoIntent(trimmed);
+        if (handledInfo) {
+          setPrompt("");
+          return;
+        }
+        const handledAction = tryHandleActionIntent(trimmed);
+        if (handledAction) {
+          setPrompt("");
+          return;
+        }
+        const handled = tryHandleObjectIntent(trimmed);
+        if (handled) {
+          setPrompt("");
+          return;
+        }
       }
     }
     void runOrchestrator("run");
