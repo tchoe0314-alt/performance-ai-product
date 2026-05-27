@@ -3603,6 +3603,9 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
         "section_deliverable_consistent": (not expected_sections and "cross_sections" not in produced) or bool(canonical_sections),
         "missing_requested_deliverables": missing_requested,
     }
+    canonical_integrity = safe_dict(meta.get("canonical_integrity") or safe_dict(meta.get("truth_audit")).get("canonical_integrity"))
+    stale_output_blocking = bool(canonical_integrity.get("blocked"))
+    stale_blocking_reasons = [safe_text(item) for item in safe_list(canonical_integrity.get("blocking_reasons")) if safe_text(item)]
     warnings: List[str] = []
     if canonical_profiles and not any(name.startswith("PROFILE") for name in layout_names):
         warnings.append("Canonical profiles exist but no profile layouts were exported.")
@@ -3628,8 +3631,13 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
         warnings.append("Requested profile deliverables were not backed by canonical profile data. Generate canonical profiles before export.")
     if requested_vs_produced["missing_requested_sections"]:
         warnings.append("Requested cross-section deliverables were not backed by canonical section data. Generate canonical cross sections before export.")
+    if stale_output_blocking:
+        warnings.append("Export is blocked because one or more canonical outputs are dirty, stale, invalid, or cache-only.")
     return {
         "success": not warnings,
+        "ready": not warnings,
+        "export_blocked": stale_output_blocking,
+        "blocked_reasons": stale_blocking_reasons,
         "layout_order": layout_names,
         "sheet_total": len(sheet_registry),
         "sheet_titles": [safe_text(item.get("sheet_title")) for item in sheet_registry],
@@ -3665,6 +3673,7 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
             "mapped_engineering_actions": len(mapped_engineering_actions),
             "all_engineering_actions_mapped": action_mapping_complete,
         },
+        "canonical_integrity": deepcopy(canonical_integrity),
         "warnings": warnings,
     }
 

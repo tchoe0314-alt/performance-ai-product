@@ -6,7 +6,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from core.project_manager import ProjectManager
 
-from .common import dedupe_keep_order, lower_text, polyline_length, safe_dict, safe_float, safe_int, safe_list, safe_str
+from .common import canonical_stage_name, canonical_state_integrity, dedupe_keep_order, lower_text, polyline_length, safe_dict, safe_float, safe_int, safe_list, safe_str
 from .field_contract import unwrap_fields_for_execution
 from .production_depth import build_optimization_alternatives
 from .runtime import _lot_area
@@ -133,6 +133,85 @@ def requested_deliverables(parsed: Dict[str, Any]) -> List[str]:
     return dedupe_keep_order([lower_text(item) for item in safe_list(parsed.get("deliverables")) if lower_text(item)])
 
 
+def _truth_integrity_stages(parsed: Dict[str, Any], plan: Dict[str, Any]) -> List[str]:
+    meta = safe_dict(plan.get("meta"))
+    stage_alias = {
+        "storm": "storm_pipes",
+        "storm_pipe_summary": "storm_pipes",
+        "storm_pipe_gate": "storm_pipes",
+        "utility": "utilities",
+        "utility_network": "utilities",
+        "utility_gate": "utilities",
+        "coordination_resolution": "coordination",
+        "coordination_gate": "coordination",
+        "grading_gate": "grading",
+        "drainage_gate": "drainage",
+        "sanitary_gate": "sanitary",
+        "sheets": "cross_sections",
+    }
+
+    stages: List[str] = []
+    for key in (
+        "grading",
+        "drainage",
+        "storm_pipes",
+        "sanitary",
+        "utilities",
+        "coordination",
+        "profiles",
+        "cross_sections",
+        "parking_program",
+    ):
+        value = meta.get(key)
+        if safe_dict(value) or safe_list(value):
+            stages.append(key)
+
+    stage_completeness = safe_dict(meta.get("stage_completeness"))
+    for name in safe_list(stage_completeness.get("required_stage_names")):
+        stage_name = stage_alias.get(safe_str(name), safe_str(name))
+        if stage_name:
+            stages.append(stage_name)
+    for name in safe_dict(stage_completeness.get("required_stage_status")).keys():
+        stage_name = stage_alias.get(safe_str(name), safe_str(name))
+        if stage_name:
+            stages.append(stage_name)
+
+    requested = requested_deliverables(parsed)
+    if any("grading" in item or "contour" in item or "spot" in item for item in requested):
+        stages.append("grading")
+    if any("drainage" in item or "basin" in item or "inlet" in item for item in requested):
+        stages.extend(["drainage", "storm_pipes"])
+    if any("storm" in item or "pipe" in item for item in requested):
+        stages.extend(["drainage", "storm_pipes"])
+    if any("sanitary" in item or "sewer" in item for item in requested):
+        stages.append("sanitary")
+    if any("utility" in item or "water" in item for item in requested):
+        stages.append("utilities")
+    if any("profile" in item for item in requested):
+        stages.append("profiles")
+    if any("section" in item for item in requested):
+        stages.append("cross_sections")
+
+    return dedupe_keep_order([item for item in stages if item])
+
+
+def _completed_integrity_stages(plan: Dict[str, Any]) -> List[str]:
+    meta = safe_dict(plan.get("meta"))
+    completeness = safe_dict(meta.get("stage_completeness"))
+    completed: List[str] = []
+    for name, status in safe_dict(completeness.get("required_stage_status")).items():
+        if safe_str(status).lower() == "complete":
+            completed.append(canonical_stage_name(name))
+    for row in safe_list(meta.get("stage_results")):
+        rec = safe_dict(row)
+        stage_name = safe_str(rec.get("stage_name"))
+        row_meta = safe_dict(rec.get("meta"))
+        row_completeness = safe_str(row_meta.get("completeness")).lower()
+        if bool(rec.get("success")) and row_completeness in {"complete", "assumed", ""}:
+            completed.append(canonical_stage_name(stage_name))
+    return dedupe_keep_order([item for item in completed if item])
+
+
 def parking_program_context(parsed: Dict[str, Any], plan: Dict[str, Any]) -> Dict[str, Any]:
     site_plan = safe_dict(unwrap_fields_for_execution(parsed.get("site_plan")))
     stats = safe_dict(safe_dict(plan.get("meta")).get("stats"))
@@ -254,6 +333,38 @@ def canonical_truth_audit(
         for action in mapped_actions
         if not safe_str(action.get("canonical_source_id")) or not safe_str(action.get("canonical_source_type"))
     ]
+    integrity = safe_dict(meta.get("canonical_integrity"))
+    if manager is not None:
+        integrity = canonical_state_integrity(
+            manager.project,
+            manager,
+            required_stages=_truth_integrity_stages(parsed, plan),
+            completed_stages=_completed_integrity_stages(plan),
+        )
+        plan.setdefault("meta", {})["canonical_integrity"] = deepcopy(integrity)
+        manager.project.meta["canonical_integrity"] = deepcopy(integrity)
+
+    checks.append(
+        {
+            "code": "CANONICAL_ACCEPTED_STATE_CURRENT",
+            "ok": not bool(integrity.get("blocked")),
+            "severity": "error",
+            "message": "Canonical outputs must be accepted, clean, and non-cache-only before QA/export can claim engineering truth.",
+            "context": deepcopy(integrity),
+        }
+    )
+    if safe_list(integrity.get("cache_differs_stages")):
+        checks.append(
+            {
+                "code": "CANONICAL_CACHE_DIFFERS_REVIEW",
+                "ok": True,
+                "severity": "warning",
+                "message": "Manager cache differs from accepted project meta; project meta remains authoritative.",
+                "context": {
+                    "cache_differs_stages": deepcopy(safe_list(integrity.get("cache_differs_stages"))),
+                },
+            }
+        )
     consistency = safe_dict(safe_dict(coordination.get("post_resolution_validations")).get("consistency"))
     for key in ("storm_summary_current", "sanitary_summary_current", "utility_summary_current", "drainage_summary_current"):
         if key in consistency:
@@ -498,6 +609,7 @@ def canonical_truth_audit(
 
     failing = [deepcopy(check) for check in checks if not bool(check.get("ok"))]
     weight_by_code = {
+        "CANONICAL_ACCEPTED_STATE_CURRENT": 18.0,
         "CANONICAL_REFERENCE_VALID": 15.0,
         "STORM_HYDRAULIC_COMPLETE": 16.0,
         "STORM_SEGMENT_DATA_COMPLETE": 12.0,
@@ -516,12 +628,14 @@ def canonical_truth_audit(
         "checks": checks,
         "failing_checks": failing,
         "summary": {
-            "canonical_validity": not any(safe_str(item.get("code")) in {"CANONICAL_REFERENCE_VALID", "EXPORT_OBJECT_MAPPING_COMPLETE"} for item in failing),
+            "canonical_validity": not any(safe_str(item.get("code")) in {"CANONICAL_ACCEPTED_STATE_CURRENT", "CANONICAL_REFERENCE_VALID", "EXPORT_OBJECT_MAPPING_COMPLETE"} for item in failing),
             "hydraulic_completeness": not any(safe_str(item.get("code")).startswith("STORM_") for item in failing),
             "graph_validity": not any(safe_str(item.get("code")) in {"STORM_GRAPH_VALID", "SANITARY_GRAPH_VALID"} for item in failing),
             "quantity_alignment": not any(safe_str(item.get("code")) in {"PIPE_LENGTH_CONSISTENT", "UTILITY_LENGTH_CONSISTENT", "SANITARY_LENGTH_CONSISTENT", "QUANTITY_AREA_VALID"} for item in failing),
             "conflict_integrity": not any(safe_str(item.get("code")) == "CONFLICT_INTEGRITY" for item in failing),
+            "stale_output_blocking": not bool(integrity.get("blocked")),
         },
+        "canonical_integrity": deepcopy(integrity),
         "engineering_trust_score": round(max(0.0, 100.0 - penalty), 1),
     }
     if manager is not None:

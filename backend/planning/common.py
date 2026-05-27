@@ -55,6 +55,29 @@ _CANONICAL_STAGE_KEYS: Dict[str, tuple[str, str]] = {
 }
 
 
+_INTEGRITY_STAGE_ALIASES: Dict[str, str] = {
+    "storm": "storm_pipes",
+    "storm_pipe": "storm_pipes",
+    "storm_pipe_summary": "storm_pipes",
+    "storm_pipe_gate": "storm_pipes",
+    "utility": "utilities",
+    "utility_network": "utilities",
+    "utility_gate": "utilities",
+    "coordination_resolution": "coordination",
+    "coordination_gate": "coordination",
+    "quantities": "qa",
+    "quantity": "qa",
+    "export": "sheets",
+    "export_cad": "sheets",
+    "profile_section": "sheets",
+}
+
+
+def canonical_stage_name(stage: Any) -> str:
+    key = safe_str(stage).strip().lower()
+    return _INTEGRITY_STAGE_ALIASES.get(key, key)
+
+
 def bounded_copy(value: Any, *, max_depth: int = 8, max_items: int = 600) -> Any:
     """Copy JSON-like stage payloads without chasing huge/cyclic graphs.
 
@@ -144,6 +167,109 @@ def canonical_stage_output(project: Any, manager: Any, stage: str) -> Any:
         return bounded_copy(latest_outputs.get(cache_key))
 
     return [] if stage_key in {"profiles", "cross_sections", "alignments"} else {}
+
+
+def canonical_state_integrity(
+    project: Any,
+    manager: Any = None,
+    *,
+    required_stages: Sequence[str] | None = None,
+    completed_stages: Sequence[str] | None = None,
+) -> Dict[str, Any]:
+    """Summarize whether canonical state is export/signoff safe.
+
+    ``project.meta`` remains the accepted source of truth. This helper does not
+    replace canonical values with cache data; it only reports cases that should
+    block production claims, such as cache-only stage output or dirty downstream
+    systems.
+    """
+
+    project_meta = safe_dict(getattr(project, "meta", {}))
+    latest_outputs = safe_dict(getattr(manager, "latest_outputs", {}) if manager is not None else {})
+    requested = dedupe_keep_order([canonical_stage_name(item) for item in safe_list(list(required_stages or [])) if safe_str(item)])
+    completed = {
+        canonical_stage_name(item)
+        for item in safe_list(list(completed_stages or []))
+        if safe_str(item)
+    }
+    warning_records: Dict[str, Any] = {
+        safe_str(stage): safe_dict(record)
+        for stage, record in safe_dict(project_meta.get("canonical_state_warnings")).items()
+        if safe_str(stage)
+    }
+
+    for stage_key in requested:
+        canonical_stage = canonical_stage_name(stage_key)
+        meta_key, cache_key = _CANONICAL_STAGE_KEYS.get(canonical_stage, (canonical_stage, canonical_stage))
+        has_meta_value = meta_key in project_meta and project_meta.get(meta_key) is not None
+        has_cache_value = cache_key in latest_outputs and latest_outputs.get(cache_key) is not None
+        if not has_meta_value and has_cache_value:
+            warning_records.setdefault(
+                canonical_stage,
+                {
+                    "stage": canonical_stage,
+                    "canonical_meta_key": meta_key,
+                    "cache_key": cache_key,
+                    "cache_only": True,
+                    "message": "project.meta has no accepted stage summary; manager cache cannot be treated as canonical truth.",
+                },
+            )
+
+    cache_only_stages = sorted(
+        stage for stage, record in warning_records.items() if bool(safe_dict(record).get("cache_only"))
+    )
+    cache_differs_stages = sorted(
+        stage for stage, record in warning_records.items() if bool(safe_dict(record).get("cache_differs"))
+    )
+
+    dirty_rows: Dict[str, Any] = {}
+    for source in (
+        safe_dict(project_meta.get("system_dirty_state")),
+        safe_dict(getattr(manager, "system_dirty_state", {}) if manager is not None else {}),
+    ):
+        for name, record in source.items():
+            key = canonical_stage_name(name)
+            if not key:
+                continue
+            if key in completed:
+                continue
+            row = safe_dict(record) if isinstance(record, dict) else {"state": record}
+            state_value = safe_str(row.get("state"), row.get("status") or row.get("value") or "")
+            if state_value.lower() in {"dirty", "stale", "invalid", "not_generated", "failed"}:
+                dirty_rows[key] = {
+                    "state": state_value.lower(),
+                    "reasons": [safe_str(item) for item in safe_list(row.get("reasons")) if safe_str(item)],
+                    "source": safe_str(row.get("source")),
+                }
+
+    invalid_targets: List[str] = []
+    if manager is not None and hasattr(manager, "get_invalidated_targets"):
+        try:
+            invalid_targets = [safe_str(item) for item in manager.get_invalidated_targets() if safe_str(item)]
+        except Exception:
+            invalid_targets = []
+    invalid_targets = sorted({target for target in invalid_targets if canonical_stage_name(target) not in completed})
+
+    blocking_reasons: List[str] = []
+    for stage in cache_only_stages:
+        blocking_reasons.append(f"{stage}: accepted canonical summary missing; cache-only output cannot be trusted.")
+    for stage in sorted(dirty_rows):
+        reason = "; ".join(safe_list(safe_dict(dirty_rows.get(stage)).get("reasons")))
+        blocking_reasons.append(f"{stage}: system is {safe_dict(dirty_rows.get(stage)).get('state')}{f' ({reason})' if reason else ''}.")
+    for target in invalid_targets:
+        blocking_reasons.append(f"{target}: dependency graph marks this target stale or invalid.")
+
+    return {
+        "version": "canonical_integrity_v1",
+        "blocked": bool(cache_only_stages or dirty_rows or invalid_targets),
+        "cache_only_stages": cache_only_stages,
+        "cache_differs_stages": cache_differs_stages,
+        "dirty_stages": sorted(dirty_rows.keys()),
+        "dirty_state": dirty_rows,
+        "invalidated_targets": invalid_targets,
+        "warnings": warning_records,
+        "blocking_reasons": dedupe_keep_order(blocking_reasons),
+    }
 
 
 def lower_text(value: Any) -> str:

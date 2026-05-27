@@ -331,6 +331,8 @@ class QuantityEngine:
         sanitary_stats = _safe_dict(sanitary_meta.get("stats"))
         storm_stats = _safe_dict(storm_meta.get("stats"))
         utilities_stats = _safe_dict(utilities_meta.get("stats"))
+        canonical_integrity = _safe_dict(meta.get("canonical_integrity") or _safe_dict(meta.get("truth_audit")).get("canonical_integrity"))
+        canonical_integrity_blocked = bool(canonical_integrity.get("blocked"))
         primary_basins = _primary_engineered_basins(drainage_meta)
         canonical_basins = [_safe_dict(item) for item in _safe_list(drainage_meta.get("basins")) if _safe_dict(item)]
         drainage_export_validation = _safe_dict(drainage_meta.get("export_validation"))
@@ -350,6 +352,8 @@ class QuantityEngine:
             "Quantities prefer accepted canonical stage summaries and use ProjectManager metrics only as fallback where canonical values are missing.",
             "Where widths are not explicit for linear features, discipline defaults are used.",
         ]
+        if canonical_integrity_blocked:
+            warnings.append("Canonical state is dirty, stale, invalid, or cache-only; quantity totals are blocked from production signoff.")
 
         line_items: List[QuantityLineItem] = []
         quantity_audit: Dict[str, Dict[str, Any]] = {}
@@ -1005,6 +1009,7 @@ class QuantityEngine:
                 "planner_score_total": _safe_float(_safe_dict(meta.get("planner_score")).get("total"), 0.0),
                 "canonical_coordination_used": bool(coordination_meta),
                 "quantity_traceability_complete": True,
+                "canonical_integrity_blocked": canonical_integrity_blocked,
             },
         }
 
@@ -1048,6 +1053,7 @@ class QuantityEngine:
         }
         explain["quantity_audit"] = quantity_audit
         explain["trace_gaps"] = trace_gaps
+        explain["canonical_integrity"] = canonical_integrity
         explain["meta_summary"]["quantity_traceability_complete"] = not bool(trace_gaps)
 
         if counts["action_count"] == 0:
@@ -1062,8 +1068,12 @@ class QuantityEngine:
             warnings.append("Buildings were detected without explicit utility linework.")
 
         return QuantityResult(
-            success=True,
-            message="Concept quantity takeoff completed.",
+            success=not canonical_integrity_blocked,
+            message=(
+                "Concept quantity takeoff completed, but production signoff is blocked by canonical integrity."
+                if canonical_integrity_blocked
+                else "Concept quantity takeoff completed."
+            ),
             totals=totals,
             tables=tables,
             warnings=sorted(set(warnings)),
