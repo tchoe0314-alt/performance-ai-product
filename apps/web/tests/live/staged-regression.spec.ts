@@ -230,6 +230,29 @@ async function waitForApprovalCheckpoint(
   throw new Error(`Timed out waiting for ${expectedStageName} approval checkpoint.`);
 }
 
+async function waitForJobToLeaveApproval(
+  request: APIRequestContext,
+  token: string,
+  jobId: string,
+): Promise<JobSummary> {
+  const deadline = Date.now() + 45_000;
+  while (Date.now() < deadline) {
+    const jobPayload = await apiJson<JobDetailResponse>(request, token, `/api/jobs/${jobId}`);
+    const job = jobPayload.job;
+    if (job?.job_id && String(job.status || "").toLowerCase() !== "awaiting_approval") {
+      return {
+        job_id: job.job_id,
+        status: job.status,
+        stage: job.stage,
+        stage_detail: job.stage_detail,
+        project_id: job.project_id,
+      };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+  throw new Error("Timed out waiting for approved job to leave awaiting approval.");
+}
+
 async function savePreviewArtifact(
   request: APIRequestContext,
   token: string,
@@ -416,4 +439,35 @@ test("staged regression flow", async ({ page, request, baseURL }) => {
 
   expect(gradingCheckpoint.actionCount).toBeGreaterThan(0);
   expect(layoutCheckpoint.actionCount).toBeGreaterThan(0);
+
+  const continueDiagnostics: string[] = [];
+  page.on("requestfailed", (failedRequest) => {
+    if (failedRequest.url().includes(`/api/jobs/${jobId}/continue`)) {
+      const failure = failedRequest.failure();
+      continueDiagnostics.push(`request failed: ${failure?.errorText || "unknown browser failure"}`);
+    }
+  });
+  page.on("response", (response) => {
+    if (response.url().includes(`/api/jobs/${jobId}/continue`)) {
+      continueDiagnostics.push(`response: ${response.status()} ${response.statusText()}`);
+    }
+  });
+
+  const secondApproveButton = page.getByRole("button", { name: /Approve & Continue/i });
+  await secondApproveButton.scrollIntoViewIfNeeded();
+  await secondApproveButton.click({ force: true });
+
+  const backendError = page.getByText("could not reach the backend", { exact: false });
+  if (await backendError.isVisible({ timeout: 6000 }).catch(() => false)) {
+    await page.screenshot({
+      path: path.join(artifactDir, "second-approval-error.png"),
+      fullPage: true,
+    });
+    throw new Error(
+      `Second approval could not reach the backend. Diagnostics: ${continueDiagnostics.join(" | ") || "none"}`,
+    );
+  }
+
+  const continuedJob = await waitForJobToLeaveApproval(request, token, jobId);
+  expect(String(continuedJob.status || "").toLowerCase()).not.toBe("awaiting_approval");
 });

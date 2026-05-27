@@ -206,27 +206,27 @@ export default function ChatPanel({
               </div>
             ) : null}
             {(hasVisibleActiveJob || hasDirectRunInFlight) && (
-              <div className="mt-4 flex justify-end">
-                <button
-                  type="button"
-                  onClick={onCancelJob}
-                  disabled={isCancelling}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isCancelling ? "Cancelling..." : "Cancel"}
-                </button>
-                {isAwaitingApproval && (
-                  <>
-                    {approvalError ? (
-                      <div className="ml-3 flex items-center rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
-                        {approvalError}
-                      </div>
-                    ) : null}
+              <div className="mt-4 space-y-2">
+                {isAwaitingApproval && approvalError ? (
+                  <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold leading-5 text-rose-700">
+                    {approvalError}
+                  </div>
+                ) : null}
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={onCancelJob}
+                    disabled={isCancelling}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isCancelling ? "Cancelling..." : "Cancel"}
+                  </button>
+                  {isAwaitingApproval && (
                     <button
                       type="button"
                       onClick={onContinueJob}
                       disabled={isApprovalBusy || isCancelling}
-                      className="ml-2 rounded-xl border border-slate-900 bg-slate-950 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+                      className="rounded-xl border border-slate-900 bg-slate-950 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
                     >
                       {approvalState === "approving"
                         ? "Approving..."
@@ -234,8 +234,8 @@ export default function ChatPanel({
                           ? approvalLabel
                           : "Approve & Continue"}
                     </button>
-                  </>
-                )}
+                  )}
+                </div>
               </div>
             )}
           </div>
