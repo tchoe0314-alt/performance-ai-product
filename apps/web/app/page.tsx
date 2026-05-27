@@ -4,14 +4,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
+  BookOpen,
   Box,
   ClipboardCheck,
+  ClipboardList,
   CheckCircle2,
   Circle,
   Database,
   Droplets,
   FileText,
+  FolderOpen,
   Gauge,
+  HardHat,
+  Library,
   Layers,
   MapPinned,
   MessageSquare,
@@ -69,19 +74,28 @@ import type { CivoraWorkflowStep } from "./design-system";
 type SystemGenerationTarget = "roads" | "parking" | "grading" | "drainage" | "utilities" | "full";
 type SidePanelKey =
   | "projects"
+  | "dashboard"
   | "model"
+  | "site_existing"
+  | "import_survey"
   | "objects"
   | "generate"
   | "grading"
   | "drainage"
+  | "sanitary"
+  | "water"
   | "utilities"
   | "roadway"
   | "landscape"
+  | "details"
   | "layers"
   | "analysis"
   | "reports"
   | "quantities"
   | "deliverables"
+  | "files"
+  | "standards"
+  | "libraries"
   | "data"
   | "settings"
   | "chat";
@@ -930,6 +944,7 @@ function PerformanceAIDashboardView({
   const [jobClockMs, setJobClockMs] = useState(() => Date.now());
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const mapSnapshotInputRef = useRef<HTMLInputElement | null>(null);
+  const surveyInputRef = useRef<HTMLInputElement | null>(null);
   const runSubmissionRef = useRef(false);
   const directRunAbortRef = useRef<AbortController | null>(null);
   const draftProjectPromiseRef = useRef<Promise<ProjectRecord | null> | null>(null);
@@ -8890,21 +8905,34 @@ function PerformanceAIDashboardView({
     ],
     [hasHardSystemBlock, hasTerrainSource, siteScaleLocked, siteTooLargeForGrading, systemStatuses],
   );
+  const selectedBuilding = useMemo(
+    () => buildingPlacements.find((item) => item.id === activePlacementId) ?? null,
+    [activePlacementId, buildingPlacements],
+  );
   const sidePanelCopy: Record<SidePanelKey, { title: string; desc: string }> = {
     projects: { title: "Project", desc: "Open, create, and manage project records." },
+    dashboard: { title: "Dashboard", desc: "Review project readiness, health, and active work." },
     model: { title: "Canvas", desc: "Inspect live canvas health and canonical state." },
+    site_existing: { title: "Site & Existing", desc: "Review site boundary, existing conditions, and constraints." },
+    import_survey: { title: "Import & Survey", desc: "Bring in survey, map snapshots, and terrain sources." },
     objects: { title: "Objects", desc: "Add, size, and place model objects." },
     generate: { title: "Generate", desc: "Run focused engines from one control panel." },
     grading: { title: "Grading", desc: "Control grading rules, terrain inputs, and slope limits." },
     drainage: { title: "Drainage", desc: "Control drainage rules, sources, and repair behavior." },
+    sanitary: { title: "Sanitary Sewer", desc: "Configure sanitary coverage, slopes, and service assumptions." },
+    water: { title: "Water", desc: "Configure water, hydrant, loop, and pressure assumptions." },
     utilities: { title: "Utilities", desc: "Control utility generation and coordination assumptions." },
     roadway: { title: "Roadway", desc: "Control roads, parking, and corridor behavior." },
     landscape: { title: "Landscape", desc: "Place open space and landscape-related site objects." },
+    details: { title: "Details", desc: "Inspect selected objects, locks, and engineering metadata." },
     layers: { title: "Layers", desc: "Choose visible model layers and labels." },
     analysis: { title: "Analysis", desc: "Review model issues, access checks, and QA signals." },
     reports: { title: "Reports", desc: "Open readable engineering summaries." },
     quantities: { title: "Quantities", desc: "Review takeoff totals and cost inputs." },
     deliverables: { title: "Deliverables", desc: "Export plans, reports, and production files." },
+    files: { title: "Files", desc: "Manage imported inputs and generated outputs." },
+    standards: { title: "Standards", desc: "Review rule packs, assumptions, and project criteria." },
+    libraries: { title: "Libraries", desc: "Use reusable objects, templates, and project presets." },
     data: { title: "Data", desc: "Configure site, survey, map, and existing conditions." },
     settings: { title: "Settings", desc: "Set project rules, defaults, and run preferences." },
     chat: { title: "Civora AI", desc: "Conversation and assisted workflow control." },
@@ -8925,18 +8953,27 @@ function PerformanceAIDashboardView({
     setActiveSidePanel(panel);
     if (!panel) return;
     const workflowByPanel: Partial<Record<SidePanelKey, CivoraWorkflowStep>> = {
+      dashboard: "Review",
       model: "Concept",
+      site_existing: "Concept",
+      import_survey: "Concept",
       objects: "Concept",
       generate: "Concept",
       grading: "Grading",
       drainage: "Drainage",
+      sanitary: "Utilities",
+      water: "Utilities",
       utilities: "Utilities",
       roadway: "Concept",
       landscape: "Concept",
+      details: "Review",
       analysis: "Review",
       reports: "Deliverables",
       quantities: "Deliverables",
       deliverables: "Deliverables",
+      files: "Deliverables",
+      standards: "Review",
+      libraries: "Concept",
       data: "Concept",
       settings: "Concept",
       chat: "Concept",
@@ -9004,11 +9041,14 @@ function PerformanceAIDashboardView({
             </button>
             <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
               {[
+                { label: "Project", items: ["Dashboard", "Site & Existing", "Import & Survey"] },
                 { label: "Canvas", items: ["Canvas", "Data", "Objects", "Generate"] },
                 { label: "Disciplines", items: ["Grading", "Drainage", "Utilities", "Roadway", "Landscape"] },
                 { label: "Control", items: ["Layers", "Analysis", "Chat"] },
-                { label: "Output", items: ["Reports", "Quantities", "Deliverables"] },
+                { label: "Output", items: ["Details", "Reports", "Quantities", "Deliverables"] },
+                { label: "Data", items: ["Files", "Standards", "Libraries"] },
                 { label: "Setup", items: ["Settings"] },
+                { label: "Systems", items: ["Storm Drainage", "Sanitary Sewer", "Water"] },
               ].map((section) => (
                 <div key={section.label}>
                   <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
@@ -9018,38 +9058,58 @@ function PerformanceAIDashboardView({
                     {section.items.map((item) => {
                       const targetMap: Record<string, SidePanelKey> = {
                         Project: "projects",
+                        Dashboard: "dashboard",
+                        "Site & Existing": "site_existing",
+                        "Import & Survey": "import_survey",
                         Canvas: "model",
                         Objects: "objects",
                         Generate: "generate",
                         Grading: "grading",
                         Drainage: "drainage",
+                        "Storm Drainage": "drainage",
+                        "Sanitary Sewer": "sanitary",
+                        Water: "water",
                         Utilities: "utilities",
                         Roadway: "roadway",
                         Landscape: "landscape",
+                        Details: "details",
                         Layers: "layers",
                         Analysis: "analysis",
                         Chat: "chat",
                         Reports: "reports",
                         Quantities: "quantities",
                         Deliverables: "deliverables",
+                        Files: "files",
+                        Standards: "standards",
+                        Libraries: "libraries",
                         Data: "data",
                         Settings: "settings",
                       };
                       const iconMap: Record<string, typeof Gauge> = {
+                        Dashboard: Gauge,
+                        "Site & Existing": MapPinned,
+                        "Import & Survey": FolderOpen,
                         Canvas: Gauge,
                         Objects: Box,
                         Generate: PlayCircle,
                         Grading: Mountain,
                         Drainage: Droplets,
+                        "Storm Drainage": Droplets,
+                        "Sanitary Sewer": HardHat,
+                        Water: Droplets,
                         Utilities: Wrench,
                         Roadway: Route,
                         Landscape: Sprout,
+                        Details: ClipboardList,
                         Layers,
                         Analysis: ClipboardCheck,
                         Chat: MessageSquare,
                         Reports: FileText,
                         Quantities: Database,
                         Deliverables: SquareStack,
+                        Files: FolderOpen,
+                        Standards: BookOpen,
+                        Libraries: Library,
                         Data: MapPinned,
                         Settings,
                       };
@@ -9060,6 +9120,20 @@ function PerformanceAIDashboardView({
                           ? placedObjectCount > 0
                             ? "ok"
                             : "idle"
+                          : item === "Dashboard"
+                            ? issues.length || analysisIssues.length || hasHardSystemBlock
+                              ? "review"
+                              : backendResult
+                                ? "ok"
+                                : "idle"
+                          : item === "Site & Existing"
+                            ? siteScaleLocked || Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng)
+                              ? "ok"
+                              : "review"
+                          : item === "Import & Survey"
+                            ? hasTerrainSource || surveyPreviewPoints.length || uploadedImagePreviewUrl || uploadedImageApiUrl
+                              ? "ok"
+                              : "review"
                           : item === "Objects"
                             ? buildingPlacements.length > 0
                               ? "ok"
@@ -9074,12 +9148,18 @@ function PerformanceAIDashboardView({
                                   : systemStatuses.grading === "fresh"
                                     ? "ok"
                                     : "review"
-                                : item === "Drainage"
+                              : item === "Drainage" || item === "Storm Drainage"
                                   ? hasHardSystemBlock
                                     ? "block"
                                     : systemStatuses.drainage === "fresh"
                                       ? "ok"
                                       : "review"
+                                  : item === "Sanitary Sewer" || item === "Water"
+                                    ? hasHardSystemBlock
+                                      ? "block"
+                                      : systemStatuses.utilities === "fresh"
+                                        ? "ok"
+                                        : "review"
                                   : item === "Utilities"
                                     ? hasHardSystemBlock
                                       ? "block"
@@ -9098,7 +9178,21 @@ function PerformanceAIDashboardView({
                                           ? siteScaleLocked || Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng)
                                             ? "ok"
                                             : "review"
-                                          : item === "Analysis"
+                                          : item === "Details"
+                                            ? buildingPlacements.length > 0
+                                              ? "ok"
+                                              : "idle"
+                                            : item === "Files"
+                                              ? uploadedImagePreviewUrl || uploadedImageApiUrl || mapSnapshotPath || surveyPreviewPoints.length || planPreviewUrl
+                                                ? "ok"
+                                                : "idle"
+                                              : item === "Standards"
+                                                ? minSlopePct || maxRoadGradePct || pipeMinSlopePct || maxAdaCrossSlopePct
+                                                  ? "ok"
+                                                  : "review"
+                                                : item === "Libraries"
+                                                  ? "ok"
+                                                  : item === "Analysis"
                                               ? issues.length || analysisIssues.length
                                                 ? "review"
                                                 : "idle"
@@ -9253,6 +9347,160 @@ function PerformanceAIDashboardView({
                     ) : (
                       <p className="text-sm text-slate-500">No projects yet.</p>
                     )}
+                  </div>
+                ) : null}
+
+                {activeSidePanel === "dashboard" ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        ["Objects", placedObjectCount],
+                        ["Issues", issues.length + analysisIssues.length],
+                        ["Fresh systems", Object.values(systemStatuses).filter((status) => status === "fresh").length],
+                        ["Outputs", backendResult ? 1 : 0],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                          <p className="mt-1 text-xl font-semibold text-slate-900">{value}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Project readiness</p>
+                      <div className="mt-3 space-y-2">
+                        {systemHealthItems.map((item) => (
+                          <button
+                            key={item.key}
+                            type="button"
+                            onClick={() =>
+                              handleOpenSidePanel(
+                                item.key === "data"
+                                  ? "site_existing"
+                                  : item.key === "roadway"
+                                    ? "roadway"
+                                    : (item.key as SidePanelKey),
+                              )
+                            }
+                            className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left hover:bg-white"
+                          >
+                            <span>
+                              <span className="block text-sm font-semibold text-slate-800">{item.label}</span>
+                              <span className="block text-xs text-slate-500">{item.detail}</span>
+                            </span>
+                            <span
+                              className={`h-2.5 w-2.5 rounded-full ${
+                                item.state === "complete"
+                                  ? "bg-emerald-500"
+                                  : item.state === "blocked"
+                                    ? "bg-red-500"
+                                    : "bg-amber-400"
+                              }`}
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button type="button" onClick={() => handleOpenSidePanel("objects")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Objects</button>
+                      <button type="button" onClick={() => handleOpenSidePanel("analysis")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Review</button>
+                      <button type="button" onClick={() => handleOpenSidePanel("generate")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Generate</button>
+                      <button type="button" onClick={() => handleOpenSidePanel("deliverables")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Deliver</button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {activeSidePanel === "site_existing" ? (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Site summary</p>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                          <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">Width</p>
+                          <p className="mt-1 font-semibold text-slate-900">{lotBounds.w ? `${lotBounds.w.toFixed(0)} ft` : "Not set"}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                          <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">Length</p>
+                          <p className="mt-1 font-semibold text-slate-900">{lotBounds.h ? `${lotBounds.h.toFixed(0)} ft` : "Not set"}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                          <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">Address</p>
+                          <p className="mt-1 line-clamp-2 font-semibold text-slate-900">{siteAddress || "Not set"}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                          <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">Coordinates</p>
+                          <p className="mt-1 font-semibold text-slate-900">
+                            {siteInputs?.geocode?.lat && siteInputs?.geocode?.lng
+                              ? `${siteInputs.geocode.lat.toFixed(4)}, ${siteInputs.geocode.lng.toFixed(4)}`
+                              : "Not set"}
+                          </p>
+                        </div>
+                      </div>
+                      <button type="button" onClick={() => handleOpenSidePanel("data")} className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Edit site data</button>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Existing conditions</p>
+                      <div className="mt-3 space-y-2 text-sm font-semibold text-slate-700">
+                        {[
+                          ["Survey / terrain", hasTerrainSource ? "Ready" : "Not imported"],
+                          ["Map snapshot", uploadedImagePreviewUrl || uploadedImageApiUrl ? "Ready" : "Not imported"],
+                          ["Site boundary", siteScaleLocked ? "Locked" : "Not locked"],
+                          ["Constraints", buildingPlacements.some((item) => ["setback_zone", "no_build_zone"].includes(item.type ?? "")) ? "Placed" : "Not placed"],
+                        ].map(([label, value]) => (
+                          <div key={label} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <span>{label}</span>
+                            <span className="text-xs uppercase tracking-[0.12em] text-slate-500">{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {activeSidePanel === "import_survey" ? (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Import inputs</p>
+                      <div className="mt-3 space-y-2">
+                        <button type="button" onClick={() => mapSnapshotInputRef.current?.click()} className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                          <span>Map snapshot / image</span>
+                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">{uploadedImagePreviewUrl || uploadedImageApiUrl ? "Ready" : "Upload"}</span>
+                        </button>
+                        <button type="button" onClick={() => surveyInputRef.current?.click()} className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                          <span>Survey / topo file</span>
+                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">{surveyPreviewPoints.length ? "Ready" : "Upload"}</span>
+                        </button>
+                        <button type="button" onClick={analyzeMapSnapshot} disabled={!mapSnapshotPath} className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
+                          <span>Analyze map snapshot</span>
+                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">{mapAnalysis?.success ? "Ready" : "Analyze"}</span>
+                        </button>
+                      </div>
+                      <input
+                        ref={surveyInputRef}
+                        type="file"
+                        accept=".csv,.txt,.xml,.las,.laz,.xyz,.pts"
+                        className="hidden"
+                        onChange={async (event) => {
+                          const file = event.currentTarget.files?.[0];
+                          if (file) {
+                            await uploadSurvey(file);
+                          }
+                          event.currentTarget.value = "";
+                        }}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        ["Survey pts", surveyPreviewPoints.length],
+                        ["Terrain", hasTerrainSource ? "Ready" : "Missing"],
+                        ["Image", uploadedImagePreviewUrl || uploadedImageApiUrl ? "Ready" : "Missing"],
+                        ["Scale", detectionScaleFtPerPx ? `${detectionScaleFtPerPx.toFixed(2)} ft/px` : "Unset"],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">{value}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ) : null}
 
@@ -9952,6 +10200,79 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
+                {activeSidePanel === "sanitary" ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        ["Status", hasHardSystemBlock ? "Blocked / unsafe" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured"],
+                        ["Service", utilities ? "Enabled" : "Off"],
+                        ["Pipe slope", pipeMinSlopePct || "Auto"],
+                        ["Coverage", buildingPlacements.length ? `${confirmedObjectCounts.buildings} buildings` : "No buildings"],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-800">{value}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Sanitary rules</p>
+                      <label className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+                        <span>Include sanitary services</span>
+                        <input type="checkbox" checked={utilities} onChange={(event) => setUtilities(event.target.checked)} className="h-4 w-4 accent-slate-950" />
+                      </label>
+                      <label className="mt-3 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        Minimum pipe slope %
+                        <input value={pipeMinSlopePct} onChange={(event) => setPipeMinSlopePct(event.target.value)} placeholder="Auto" className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm normal-case tracking-normal text-slate-700" />
+                      </label>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600">
+                        <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">Service laterals</span>
+                        <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">Manhole spacing</span>
+                        <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">Cover checks</span>
+                        <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">Tie-in review</span>
+                      </div>
+                      <button type="button" onClick={() => handleGenerateSystem("utilities")} className="mt-4 w-full rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800">
+                        Generate sanitary
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {activeSidePanel === "water" ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        ["Status", hasHardSystemBlock ? "Blocked / unsafe" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured"],
+                        ["Network", utilities ? "Enabled" : "Off"],
+                        ["Hydrants", buildingPlacements.filter((item) => item.type === "hydrant").length],
+                        ["Buildings", confirmedObjectCounts.buildings],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-800">{value}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Water rules</p>
+                      <label className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+                        <span>Include water network</span>
+                        <input type="checkbox" checked={utilities} onChange={(event) => setUtilities(event.target.checked)} className="h-4 w-4 accent-slate-950" />
+                      </label>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600">
+                        <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">Hydrant spacing</span>
+                        <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">Looping</span>
+                        <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">Fire flow</span>
+                        <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">Velocity checks</span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <button type="button" onClick={() => handleAddObject("hydrant")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Add hydrant</button>
+                        <button type="button" onClick={() => handleGenerateSystem("utilities")} className="rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800">Generate</button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 {activeSidePanel === "roadway" ? (
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-2">
@@ -10023,6 +10344,52 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
+                {activeSidePanel === "details" ? (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Selected object</p>
+                      {selectedBuilding ? (
+                        <div className="mt-3 space-y-2 text-sm text-slate-700">
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Name</p>
+                            <p className="mt-1 font-semibold text-slate-900">{selectedBuilding.label}</p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Size</p>
+                              <p className="mt-1 font-semibold text-slate-900">{Math.round(selectedBuilding.w)} x {Math.round(selectedBuilding.d)} ft</p>
+                            </div>
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Status</p>
+                              <p className="mt-1 font-semibold text-slate-900">{selectedBuilding.placed ? "Placed" : "Unplaced"}</p>
+                            </div>
+                          </div>
+                          <button type="button" onClick={() => handleToggleBuildingLock(selectedBuilding.id)} disabled={selectedBuilding.type === "site"} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+                            {selectedBuilding.locked ? "Unlock object" : "Lock object"}
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="mt-3 text-sm text-slate-500">Select an object on the canvas or in Objects to inspect its details.</p>
+                      )}
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Object list</p>
+                      <div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
+                        {buildingPlacements.length ? (
+                          buildingPlacements.map((item) => (
+                            <button key={item.id} type="button" onClick={() => setActivePlacementId(item.id)} className={`w-full rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${activePlacementId === item.id ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"}`}>
+                              {item.label}
+                              <span className="mt-1 block text-[10px] uppercase tracking-[0.12em] opacity-70">{item.placed ? "Placed" : "Not placed"} · {item.locked ? "Locked" : "Editable"}</span>
+                            </button>
+                          ))
+                        ) : (
+                          <p className="text-sm text-slate-500">No objects yet.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 {activeSidePanel === "layers" ? (
                   <div className="space-y-3">
                     {Object.entries(previewLayers).map(([key, value]) => (
@@ -10049,6 +10416,93 @@ function PerformanceAIDashboardView({
                       </div>
                     ))}
                     {!issues.length && !analysisIssues.length ? <p className="text-sm text-slate-500">No active analysis issues.</p> : null}
+                  </div>
+                ) : null}
+
+                {activeSidePanel === "files" ? (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Input files</p>
+                      <div className="mt-3 space-y-2">
+                        {[
+                          ["Map snapshot", uploadedImageApiUrl || uploadedImagePreviewUrl ? "Ready" : "Not uploaded"],
+                          ["Survey/topo", surveyFileName || "Not uploaded"],
+                          ["Project record", currentProject?.project_id || projectId || "Draft"],
+                        ].map(([label, value]) => (
+                          <div key={label} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                            <span className="font-semibold text-slate-700">{label}</span>
+                            <span className="max-w-[150px] truncate text-xs uppercase tracking-[0.12em] text-slate-500">{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <button type="button" onClick={() => handleOpenSidePanel("import_survey")} className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Import files</button>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Generated outputs</p>
+                      <div className="mt-3 space-y-2">
+                        {[
+                          ["Preview", planPreviewUrl ? "Ready" : "Not generated"],
+                          ["Report", backendResult ? "Ready" : "Not generated"],
+                          ["DXF", backendResult ? "Ready to export" : "Needs run"],
+                        ].map(([label, value]) => (
+                          <div key={label} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                            <span className="font-semibold text-slate-700">{label}</span>
+                            <span className="text-xs uppercase tracking-[0.12em] text-slate-500">{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {activeSidePanel === "standards" ? (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Active criteria</p>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        {[
+                          ["Min slope", minSlopePct || "Auto"],
+                          ["Parking max", maxParkingSlopePct || "Auto"],
+                          ["Road max", maxRoadGradePct || "Auto"],
+                          ["ADA cross", maxAdaCrossSlopePct || "Auto"],
+                          ["Pipe slope", pipeMinSlopePct || "Auto"],
+                          ["Parking angle", `${parkingAngle} deg`],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                            <p className="mt-1 text-sm font-semibold text-slate-900">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Standards packs</p>
+                      <div className="mt-3 space-y-2 text-sm font-semibold text-slate-700">
+                        {["Company default", "US baseline review", "ADA surface checks", "Utility clearance rules"].map((label) => (
+                          <label key={label} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <span>{label}</span>
+                            <input type="checkbox" checked readOnly className="h-4 w-4 accent-slate-950" />
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {activeSidePanel === "libraries" ? (
+                  <div className="space-y-4">
+                    {ADD_MENU_SECTIONS.map((group) => (
+                      <div key={group.key} className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{group.title}</p>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          {group.items.map((type) => (
+                            <button key={type} type="button" onClick={() => handleAddObject(type)} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">
+                              {SITE_OBJECT_CATALOG[type].label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ) : null}
 
