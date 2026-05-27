@@ -1,17 +1,11 @@
 "use client";
 
-import { Bell, ChevronDown, CircleHelp, PanelLeftClose, PanelLeftOpen, RotateCcw, Search, Share2, Undo2 } from "lucide-react";
-
-import { workflowSteps } from "../design-system";
+import { Bell, CircleHelp, PanelLeftClose, PanelLeftOpen, RotateCcw, Search, Share2, Undo2 } from "lucide-react";
 
 type AppHeaderProps = {
   userEmail: string;
-  onOpenProjects: () => void;
-  onOpenSiteInputs: () => void;
   onOpenDocs: () => void;
   onOpenChat: () => void;
-  activeWorkflowStep?: string;
-  onWorkflowStepChange?: (step: string) => void;
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
   onLogout: () => void;
@@ -19,12 +13,8 @@ type AppHeaderProps = {
 
 export default function AppHeader({
   userEmail,
-  onOpenProjects,
-  onOpenSiteInputs,
   onOpenDocs,
   onOpenChat,
-  activeWorkflowStep = "Concept",
-  onWorkflowStepChange,
   sidebarOpen,
   onToggleSidebar,
   onLogout,
@@ -49,44 +39,7 @@ export default function AppHeader({
             <p className="text-[15px] font-semibold tracking-[0.32em] text-slate-950">CIVORA</p>
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Engineering OS</p>
           </div>
-          <button
-            type="button"
-            onClick={onOpenProjects}
-            className="hidden min-w-[220px] items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left text-sm font-medium text-slate-800 transition hover:bg-white md:flex"
-          >
-            <span className="truncate">Pinecrest Mixed-Use</span>
-            <ChevronDown className="h-4 w-4 text-slate-400" />
-          </button>
-          <button
-            type="button"
-            onClick={onOpenSiteInputs}
-            className="hidden rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 md:inline-flex"
-          >
-            Site
-          </button>
         </div>
-
-        <nav className="hidden h-full flex-1 items-center justify-center gap-1 lg:flex">
-          {workflowSteps.map((step) => {
-            const isActive = step === activeWorkflowStep;
-            return (
-              <button
-                key={step}
-                type="button"
-                onClick={() => onWorkflowStepChange?.(step)}
-                className={`flex h-full items-center border-b-2 px-4 text-sm font-semibold transition ${
-                  isActive
-                    ? "border-slate-950 text-slate-950"
-                    : "border-transparent text-slate-500 hover:text-slate-950"
-                }`}
-              >
-                <span>
-                  {step}
-                </span>
-              </button>
-            );
-          })}
-        </nav>
 
         <div className="flex items-center gap-2">
           <button type="button" className="hidden h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 md:inline-flex" aria-label="Search">

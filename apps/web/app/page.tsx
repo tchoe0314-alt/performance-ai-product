@@ -9010,12 +9010,8 @@ function PerformanceAIDashboardView({
       <div className="flex min-h-screen flex-col">
         <AppHeader
           userEmail={effectiveUser.email}
-          onOpenProjects={() => handleOpenSidePanel("projects")}
-          onOpenSiteInputs={() => handleOpenSidePanel("data")}
           onOpenDocs={() => handleOpenSidePanel("deliverables")}
           onOpenChat={() => handleOpenSidePanel("chat")}
-          activeWorkflowStep={activeWorkflowStep}
-          onWorkflowStepChange={(step) => handleWorkflowStepChange(step as CivoraWorkflowStep)}
           sidebarOpen={leftSidebarOpen}
           onToggleSidebar={() => setLeftSidebarOpen((value) => !value)}
           onLogout={handleLogout}
