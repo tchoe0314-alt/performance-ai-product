@@ -1518,12 +1518,14 @@ function PerformanceAIDashboardView({
   useEffect(() => {
     if (!approvalPendingJobId) return;
     if (visibleActiveJob?.job_id !== approvalPendingJobId) {
+      setApprovalInFlight(false);
       setApprovalPendingJobId(null);
       setApprovalPhaseLabel(null);
       return;
     }
     const status = String(visibleActiveJob?.status || "").toLowerCase();
     if (["awaiting_approval", "completed", "failed", "cancelled"].includes(status)) {
+      setApprovalInFlight(false);
       setApprovalPendingJobId(null);
       setApprovalPhaseLabel(null);
     }
