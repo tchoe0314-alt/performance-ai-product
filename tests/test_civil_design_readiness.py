@@ -6,6 +6,7 @@ from core.civil_design import (
     path_clearance,
     path_length,
     sample_path,
+    standards_from_meta,
     station_point,
     utility_pairing_rule,
 )
@@ -154,6 +155,40 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertIn(("sanitary", "max_capacity_ratio"), fields)
         self.assertIn(("utilities", "cover_ft"), fields)
         self.assertGreater(readiness["systems"]["utilities"]["metrics"]["separation_warning_count"], 0)
+
+    def test_accepted_standards_pack_tightens_qa_thresholds(self) -> None:
+        meta = _complete_meta()
+        meta["design_standards"] = {
+            "source": "accepted_standards_review_packet",
+            "version": "city_manual_2026",
+            "rules": [
+                {
+                    "rule_id": "city_storm_capacity",
+                    "topic": "Pipe capacity ratio",
+                    "candidate_value": "Flag storm pipe segments above 0.25 capacity ratio.",
+                    "status": "accepted",
+                },
+                {
+                    "rule_id": "city_cover",
+                    "topic": "Minimum utility cover",
+                    "candidate_value": "Minimum utility cover shall be 48 inches.",
+                    "status": "accepted",
+                },
+            ],
+            "production_usable": True,
+        }
+        meta["storm_pipes"]["max_capacity_ratio"] = 0.3
+        meta["utilities"]["segments"] = [{"name": "W-1", "system": "water", "cover_ft": 3.5, "path": [[0.0, 0.0], [10.0, 0.0]]}]
+
+        active = standards_from_meta(meta)
+        readiness = civil_design_readiness({"meta": meta})
+        fields = {(item["system"], item["field"]) for item in readiness["missing_requirements"]}
+
+        self.assertEqual(active.version, "city_manual_2026")
+        self.assertAlmostEqual(active.max_pipe_capacity_ratio, 0.25)
+        self.assertAlmostEqual(active.min_utility_cover_ft, 4.0)
+        self.assertIn(("storm_pipes", "max_capacity_ratio"), fields)
+        self.assertIn(("utilities", "cover_ft"), fields)
 
     def test_production_depth_gates_clear_when_real_design_evidence_exists(self) -> None:
         meta = _complete_meta()

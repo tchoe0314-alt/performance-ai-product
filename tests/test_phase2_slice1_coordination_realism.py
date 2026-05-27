@@ -9,6 +9,7 @@ from planner import (
     _attach_canonical_stage_outputs,
     _detect_coordination_conflicts,
     _preferred_corridors,
+    _preferred_route_between,
 )
 
 
@@ -236,6 +237,54 @@ class Phase2Slice1CoordinationRealismTest(unittest.TestCase):
         self.assertEqual(corridors["water"]["orientation"], "horizontal")
         self.assertAlmostEqual(corridors["sanitary"]["axis_value"], 100.0, places=3)
         self.assertGreater(corridors["water"]["axis_value"], corridors["sanitary"]["axis_value"])
+
+    def test_preferred_corridors_follow_gis_line_centerline_when_available(self) -> None:
+        project = ProjectModel()
+        project.meta["gis_layers"] = {
+            "utility_corridors": [
+                {
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [[0.0, 40.0], [80.0, 40.0], [80.0, 120.0]],
+                    },
+                    "properties": {"name": "Existing Utility Spine"},
+                }
+            ]
+        }
+
+        corridors = _preferred_corridors(
+            {"lot": {"x": 0.0, "y": 0.0, "w": 160.0, "h": 160.0}, "street_edge": "bottom"},
+            project,
+        )
+        route = _preferred_route_between([10.0, 10.0], [120.0, 130.0], corridors["water"])
+
+        self.assertEqual(corridors["water"]["source"], "gis_easement")
+        self.assertTrue(corridors["water"]["centerline"])
+        self.assertTrue(any(point in route for point in corridors["water"]["centerline"]))
+        self.assertGreater(len(route), 4)
+
+    def test_preferred_corridors_fall_back_to_actual_road_centerline(self) -> None:
+        project = ProjectModel()
+        project.meta["_expanded_plan"] = {
+            "actions": [
+                {
+                    "task": "polyline",
+                    "layer": "ROAD",
+                    "label": "Loop Road",
+                    "points": [[0.0, 30.0], [100.0, 30.0], [140.0, 80.0]],
+                    "width_ft": 26.0,
+                }
+            ]
+        }
+
+        corridors = _preferred_corridors(
+            {"lot": {"x": 0.0, "y": 0.0, "w": 160.0, "h": 120.0}, "street_edge": "bottom"},
+            project,
+        )
+
+        self.assertEqual(corridors["storm"]["source"], "road_corridor")
+        self.assertTrue(corridors["storm"]["centerline"])
+        self.assertEqual(corridors["storm"]["source_name"], "Loop Road")
 
 
 if __name__ == "__main__":

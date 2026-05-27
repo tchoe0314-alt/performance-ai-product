@@ -4073,6 +4073,43 @@ def _bbox_from_feature(feature: Dict[str, Any]) -> Optional[Dict[str, float]]:
     return {"x": min(xs), "y": min(ys), "w": max(xs) - min(xs), "h": max(ys) - min(ys)}
 
 
+def _ordered_line_points_from_coordinates(value: Any) -> List[List[float]]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    if len(value) >= 2 and isinstance(value[0], (int, float)) and isinstance(value[1], (int, float)):
+        return [[safe_float(value[0], 0.0), safe_float(value[1], 0.0)]]
+    if value and all(isinstance(item, (list, tuple)) and len(item) >= 2 and isinstance(item[0], (int, float)) and isinstance(item[1], (int, float)) for item in value):
+        return [[safe_float(item[0], 0.0), safe_float(item[1], 0.0)] for item in value]
+    candidates = [_ordered_line_points_from_coordinates(item) for item in value]
+    candidates = [candidate for candidate in candidates if len(candidate) >= 2]
+    if not candidates:
+        return []
+    return max(candidates, key=polyline_length)
+
+
+def _corridor_centerline_from_feature(feature: Dict[str, Any], bbox: Dict[str, float], orientation: str) -> List[List[float]]:
+    rec = safe_dict(feature)
+    props = safe_dict(rec.get("properties"))
+    explicit = _ordered_line_points_from_coordinates(props.get("centerline") or rec.get("centerline"))
+    if len(explicit) >= 2:
+        return _dedupe_path_points(explicit)
+    geometry = safe_dict(rec.get("geometry")) or rec
+    geom_type = lower_text(geometry.get("type"))
+    if "line" in geom_type:
+        line = _ordered_line_points_from_coordinates(geometry.get("coordinates"))
+        if len(line) >= 2:
+            return _dedupe_path_points(line)
+    x = safe_float(bbox.get("x"), 0.0)
+    y = safe_float(bbox.get("y"), 0.0)
+    w = safe_float(bbox.get("w"), 0.0)
+    h = safe_float(bbox.get("h"), 0.0)
+    if orientation == "horizontal":
+        axis = y + h / 2.0
+        return [[round(x, 3), round(axis, 3)], [round(x + w, 3), round(axis, 3)]]
+    axis = x + w / 2.0
+    return [[round(axis, 3), round(y, 3)], [round(axis, 3), round(y + h, 3)]]
+
+
 def _gis_feature_rows(raw_layer: Any) -> List[Dict[str, Any]]:
     if isinstance(raw_layer, list):
         return [safe_dict(item) for item in raw_layer if safe_dict(item)]
@@ -4457,17 +4494,88 @@ def _preferred_corridor_from_gis(project: ProjectModel) -> Dict[str, Any]:
             if orientation == "horizontal"
             else safe_float(bbox.get("x"), 0.0) + width / 2.0
         )
+        centerline = _corridor_centerline_from_feature(feature, bbox, orientation)
         candidates.append(
             {
                 "orientation": orientation,
                 "axis_value": round(axis_value, 3),
                 "width_ft": round(height if orientation == "horizontal" else width, 3),
                 "length_ft": round(max(width, height), 3),
+                "centerline": centerline,
                 "source": "gis_easement",
                 "source_layer": layer_name,
                 "source_name": _feature_label(feature, f"{layer_name.upper()}-{index}"),
             }
         )
+    if not candidates:
+        return {}
+    return max(candidates, key=lambda item: safe_float(item.get("length_ft"), 0.0))
+
+
+def _preferred_corridor_from_roads(project: ProjectModel) -> Dict[str, Any]:
+    actions = safe_list(safe_dict(project.meta.get("_expanded_plan")).get("actions"))
+    candidates: List[Dict[str, Any]] = []
+    for index, raw in enumerate(actions, start=1):
+        action = safe_dict(raw)
+        label = " ".join(
+            safe_str(action.get(key))
+            for key in ("layer", "label", "kind", "task", "canonical_source_type")
+            if safe_str(action.get(key))
+        ).lower()
+        if not any(token in label for token in ("road", "drive", "corridor", "street")):
+            continue
+        points = _dedupe_path_points(safe_list(action.get("points") or action.get("path") or action.get("route_points")))
+        if len(points) >= 2:
+            bbox = {
+                "x": min(point[0] for point in points),
+                "y": min(point[1] for point in points),
+                "w": max(point[0] for point in points) - min(point[0] for point in points),
+                "h": max(point[1] for point in points) - min(point[1] for point in points),
+            }
+            orientation = "horizontal" if safe_float(bbox.get("w"), 0.0) >= safe_float(bbox.get("h"), 0.0) else "vertical"
+            axis_value = (
+                sum(point[1] for point in points) / len(points)
+                if orientation == "horizontal"
+                else sum(point[0] for point in points) / len(points)
+            )
+            candidates.append(
+                {
+                    "orientation": orientation,
+                    "axis_value": round(axis_value, 3),
+                    "width_ft": max(12.0, safe_float(action.get("width"), safe_float(action.get("width_ft"), 24.0))),
+                    "length_ft": round(polyline_length(points), 3),
+                    "centerline": points,
+                    "source": "road_corridor",
+                    "source_layer": "expanded_plan",
+                    "source_name": safe_str(action.get("label"), f"ROAD-{index}"),
+                }
+            )
+            continue
+        origin = safe_list(action.get("origin"))
+        width = safe_float(action.get("width"), safe_float(action.get("w"), 0.0))
+        height = safe_float(action.get("height"), safe_float(action.get("h"), 0.0))
+        if len(origin) >= 2 and width > 0.0 and height > 0.0:
+            x = safe_float(origin[0], 0.0)
+            y = safe_float(origin[1], 0.0)
+            orientation = "horizontal" if width >= height else "vertical"
+            axis_value = y + height / 2.0 if orientation == "horizontal" else x + width / 2.0
+            centerline = (
+                [[x, axis_value], [x + width, axis_value]]
+                if orientation == "horizontal"
+                else [[axis_value, y], [axis_value, y + height]]
+            )
+            candidates.append(
+                {
+                    "orientation": orientation,
+                    "axis_value": round(axis_value, 3),
+                    "width_ft": round(height if orientation == "horizontal" else width, 3),
+                    "length_ft": round(max(width, height), 3),
+                    "centerline": _dedupe_path_points(centerline),
+                    "source": "road_corridor",
+                    "source_layer": "expanded_plan",
+                    "source_name": safe_str(action.get("label"), f"ROAD-{index}"),
+                }
+            )
     if not candidates:
         return {}
     return max(candidates, key=lambda item: safe_float(item.get("length_ft"), 0.0))
@@ -4486,11 +4594,28 @@ def _corridor_slots_from_axis(axis: Dict[str, Any], fallback: Dict[str, Dict[str
         "source_layer": safe_str(axis.get("source_layer")),
         "source_name": safe_str(axis.get("source_name")),
     }
+    raw_centerline = _dedupe_path_points(safe_list(axis.get("centerline")))
+
+    def _slot_centerline(slot_axis: float) -> List[List[float]]:
+        if len(raw_centerline) < 2:
+            return []
+        if orientation == "horizontal":
+            current = sum(safe_float(pt[1], 0.0) for pt in raw_centerline) / len(raw_centerline)
+            delta = slot_axis - current
+            return [[round(safe_float(pt[0], 0.0), 3), round(safe_float(pt[1], 0.0) + delta, 3)] for pt in raw_centerline]
+        current = sum(safe_float(pt[0], 0.0) for pt in raw_centerline) / len(raw_centerline)
+        delta = slot_axis - current
+        return [[round(safe_float(pt[0], 0.0) + delta, 3), round(safe_float(pt[1], 0.0), 3)] for pt in raw_centerline]
+
+    storm_axis = round(axis_value - slot, 3)
+    sanitary_axis = round(axis_value, 3)
+    water_axis = round(axis_value + slot, 3)
+    generic_axis = round(axis_value + slot * 1.5, 3)
     return {
-        "storm": {**source, "axis_value": round(axis_value - slot, 3), "weight": 1.1, "slot_role": "storm_lower_slot"},
-        "sanitary": {**source, "axis_value": round(axis_value, 3), "weight": 1.15, "slot_role": "sanitary_middle_slot"},
-        "water": {**source, "axis_value": round(axis_value + slot, 3), "weight": 1.0, "slot_role": "water_pressure_slot"},
-        "generic": {**source, "axis_value": round(axis_value + slot * 1.5, 3), "weight": 0.8, "slot_role": "generic_utility_slot"},
+        "storm": {**source, "axis_value": storm_axis, "centerline": _slot_centerline(storm_axis), "weight": 1.1, "slot_role": "storm_lower_slot"},
+        "sanitary": {**source, "axis_value": sanitary_axis, "centerline": _slot_centerline(sanitary_axis), "weight": 1.15, "slot_role": "sanitary_middle_slot"},
+        "water": {**source, "axis_value": water_axis, "centerline": _slot_centerline(water_axis), "weight": 1.0, "slot_role": "water_pressure_slot"},
+        "generic": {**source, "axis_value": generic_axis, "centerline": _slot_centerline(generic_axis), "weight": 0.8, "slot_role": "generic_utility_slot"},
     }
 
 
@@ -4508,6 +4633,7 @@ def _preferred_corridors(parsed: Dict[str, Any], project: ProjectModel) -> Dict[
     sanitary_offset = setback * 0.75
     storm_offset = setback * 1.0
     water_offset = setback * 1.35
+    source_axis = _preferred_corridor_from_gis(project) or _preferred_corridor_from_roads(project)
     if horizontal:
         fallback = {
             "storm": {"orientation": "horizontal", "axis_value": round(road_bias_y + storm_offset, 3), "weight": 0.8},
@@ -4515,14 +4641,14 @@ def _preferred_corridors(parsed: Dict[str, Any], project: ProjectModel) -> Dict[
             "water": {"orientation": "horizontal", "axis_value": round(road_bias_y + water_offset, 3), "weight": 0.7},
             "generic": {"orientation": "horizontal", "axis_value": round(road_bias_y + water_offset + 4.0, 3), "weight": 0.5},
         }
-        return _corridor_slots_from_axis(_preferred_corridor_from_gis(project), fallback)
+        return _corridor_slots_from_axis(source_axis, fallback)
     fallback = {
         "storm": {"orientation": "vertical", "axis_value": round(road_bias_x + storm_offset, 3), "weight": 0.8},
         "sanitary": {"orientation": "vertical", "axis_value": round(road_bias_x + sanitary_offset, 3), "weight": 0.9},
         "water": {"orientation": "vertical", "axis_value": round(road_bias_x + water_offset, 3), "weight": 0.7},
         "generic": {"orientation": "vertical", "axis_value": round(road_bias_x + water_offset + 4.0, 3), "weight": 0.5},
     }
-    return _corridor_slots_from_axis(_preferred_corridor_from_gis(project), fallback)
+    return _corridor_slots_from_axis(source_axis, fallback)
 
 
 def _corridor_deviation_cost(path: Sequence[Sequence[float]], preference: Dict[str, Any]) -> float:
@@ -4699,6 +4825,53 @@ def _preferred_corridor_for_segment(project: ProjectModel, segment: Dict[str, An
     return deepcopy(safe_dict(corridors.get(system) or corridors.get("generic", {})))
 
 
+def _nearest_point_on_corridor(path: Sequence[Sequence[float]], point: Sequence[float]) -> Tuple[List[float], float, int]:
+    px = safe_float(point[0], 0.0)
+    py = safe_float(point[1], 0.0)
+    best_point = [px, py]
+    best_station = 0.0
+    best_index = 0
+    best_dist = float("inf")
+    station = 0.0
+    for index in range(1, len(path)):
+        ax = safe_float(path[index - 1][0], 0.0)
+        ay = safe_float(path[index - 1][1], 0.0)
+        bx = safe_float(path[index][0], 0.0)
+        by = safe_float(path[index][1], 0.0)
+        dx = bx - ax
+        dy = by - ay
+        seg_len_sq = dx * dx + dy * dy
+        seg_len = math.sqrt(seg_len_sq) if seg_len_sq > 0.0 else 0.0
+        t = 0.0 if seg_len_sq <= 0.0 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / seg_len_sq))
+        qx = ax + t * dx
+        qy = ay + t * dy
+        dist = math.hypot(px - qx, py - qy)
+        if dist < best_dist:
+            best_dist = dist
+            best_point = [round(qx, 3), round(qy, 3)]
+            best_station = station + t * seg_len
+            best_index = index - 1
+        station += seg_len
+    return best_point, best_station, best_index
+
+
+def _preferred_route_along_centerline(start: Sequence[float], end: Sequence[float], centerline: Sequence[Sequence[float]]) -> List[List[float]]:
+    line = _dedupe_path_points(centerline)
+    if len(line) < 2:
+        return []
+    start_projection, start_station, start_index = _nearest_point_on_corridor(line, start)
+    end_projection, end_station, end_index = _nearest_point_on_corridor(line, end)
+    if start_station <= end_station:
+        corridor_part = [start_projection]
+        corridor_part.extend(line[start_index + 1 : end_index + 1])
+        corridor_part.append(end_projection)
+    else:
+        corridor_part = [start_projection]
+        corridor_part.extend(reversed(line[end_index + 1 : start_index + 1]))
+        corridor_part.append(end_projection)
+    return _dedupe_path_points([[safe_float(start[0], 0.0), safe_float(start[1], 0.0)], *corridor_part, [safe_float(end[0], 0.0), safe_float(end[1], 0.0)]])
+
+
 def _preferred_route_between(start: Sequence[float], end: Sequence[float], preference: Dict[str, Any]) -> List[List[float]]:
     sx = safe_float(start[0], 0.0)
     sy = safe_float(start[1], 0.0)
@@ -4706,6 +4879,9 @@ def _preferred_route_between(start: Sequence[float], end: Sequence[float], prefe
     ey = safe_float(end[1], 0.0)
     orientation = safe_str(preference.get("orientation"))
     axis = safe_float(preference.get("axis_value"), 0.0)
+    centerline_route = _preferred_route_along_centerline(start, end, safe_list(preference.get("centerline")))
+    if centerline_route:
+        return centerline_route
     if orientation == "horizontal":
         return _dedupe_path_points([[sx, sy], [sx, axis], [ex, axis], [ex, ey]])
     if orientation == "vertical":
@@ -5690,6 +5866,7 @@ def _validate_storm_hydraulics(summary: Dict[str, Any]) -> Dict[str, Any]:
     invalid_capacity_ratio_segments: List[Dict[str, Any]] = []
     downstream_total_inconsistencies: List[Dict[str, Any]] = []
     backwater_failures: List[Dict[str, Any]] = []
+    surcharge_failures: List[Dict[str, Any]] = []
     node_inflow: Dict[str, float] = {}
     node_outflow: Dict[str, float] = {}
     tolerance = 0.05
@@ -5735,6 +5912,18 @@ def _validate_storm_hydraulics(summary: Dict[str, Any]) -> Dict[str, Any]:
                 "surcharged_segments": deepcopy(safe_list(backwater_validation.get("surcharged_segments"))),
             }
         )
+    hydraulic_engine_summary = safe_dict(summary.get("hydraulic_engine_summary"))
+    for node in safe_list(hydraulic_engine_summary.get("critical_nodes")):
+        rec = safe_dict(node)
+        if bool(rec.get("surcharge_risk")):
+            surcharge_failures.append(
+                {
+                    "reason": "node_hgl_exceeds_rim_threshold",
+                    "node": safe_str(rec.get("name")),
+                    "max_hgl_ft": round(safe_float(rec.get("max_hgl_ft"), 0.0), 3),
+                    "rim_elev_ft": round(safe_float(rec.get("rim_elev_ft"), 0.0), 3),
+                }
+            )
 
     return {
         "system": "storm",
@@ -5743,8 +5932,16 @@ def _validate_storm_hydraulics(summary: Dict[str, Any]) -> Dict[str, Any]:
         "invalid_capacity_ratio_segments": invalid_capacity_ratio_segments,
         "downstream_total_inconsistencies": downstream_total_inconsistencies,
         "backwater_failures": backwater_failures,
+        "surcharge_failures": surcharge_failures,
         "valid": not any(
-            [geometry_only_segments, missing_accumulation_segments, invalid_capacity_ratio_segments, downstream_total_inconsistencies, backwater_failures]
+            [
+                geometry_only_segments,
+                missing_accumulation_segments,
+                invalid_capacity_ratio_segments,
+                downstream_total_inconsistencies,
+                backwater_failures,
+                surcharge_failures,
+            ]
         ),
     }
 
@@ -5990,6 +6187,7 @@ def _validate_sanitary_network(summary: Dict[str, Any]) -> Dict[str, Any]:
     tie_in_issues: List[Dict[str, Any]] = []
     service_coverage = safe_dict(summary.get("service_coverage"))
     missing_service_buildings = safe_list(service_coverage.get("missing_buildings") or summary.get("missing_service_buildings"))
+    disconnected_service_segments = safe_list(summary.get("disconnected_service_segments"))
 
     for rec in segments:
         seg_id = _summary_segment_id(rec, "sanitary")
@@ -6021,6 +6219,7 @@ def _validate_sanitary_network(summary: Dict[str, Any]) -> Dict[str, Any]:
         "tie_in_issues": tie_in_issues,
         "service_coverage": deepcopy(service_coverage),
         "missing_service_buildings": deepcopy(missing_service_buildings),
+        "disconnected_service_segments": deepcopy(disconnected_service_segments),
         "missing_manhole_points": deepcopy(safe_list(summary.get("missing_manhole_points"))),
         "storm_conflicts": deepcopy(safe_list(summary.get("storm_conflicts"))),
         "coordination_conflicts_present": bool(safe_list(summary.get("storm_conflicts"))),
@@ -6028,6 +6227,7 @@ def _validate_sanitary_network(summary: Dict[str, Any]) -> Dict[str, Any]:
             [
                 slope_violations,
                 disconnected_services,
+                disconnected_service_segments,
                 invalid_cover_segments,
                 tie_in_issues,
                 missing_service_buildings,
@@ -6061,6 +6261,20 @@ def _recompute_sanitary_service_loads(project: ProjectModel, summary: Dict[str, 
         if safe_str(rec.get("segment_role")) in {"service_connection", "lateral"}
     ]
     main_segments = [rec for rec in segments if safe_str(rec.get("segment_role")) == "main"]
+    node_inflow: Dict[str, float] = {}
+    main_outgoing: Dict[str, List[Dict[str, Any]]] = {}
+    main_incoming_count: Dict[str, int] = {}
+    main_names: set[str] = set()
+    disconnected_service_segments: List[Dict[str, Any]] = []
+    for rec in main_segments:
+        from_node = safe_str(rec.get("from") or rec.get("start_name"))
+        to_node = safe_str(rec.get("to") or rec.get("end_name"))
+        if from_node:
+            main_outgoing.setdefault(from_node, []).append(rec)
+        if to_node:
+            main_incoming_count[to_node] = main_incoming_count.get(to_node, 0) + 1
+        if safe_str(rec.get("name")):
+            main_names.add(safe_str(rec.get("name")))
     served_buildings = dedupe_keep_order(
         [
             safe_str(rec.get("served_building"))
@@ -6079,18 +6293,60 @@ def _recompute_sanitary_service_loads(project: ProjectModel, summary: Dict[str, 
         6,
     )
     for rec in service_segments:
-        rec["upstream_service_flow_cfs"] = round(max(0.0, safe_float(rec.get("flow_cfs"), 0.0)), 6)
+        flow = round(max(0.0, safe_float(rec.get("flow_cfs"), 0.0)), 6)
+        end_node = safe_str(rec.get("to") or rec.get("end_name"))
+        rec["upstream_service_flow_cfs"] = flow
         rec["post_reroute_recalculated"] = True
+        if end_node and (end_node in main_outgoing or end_node in main_incoming_count or end_node in main_names):
+            node_inflow[end_node] = node_inflow.get(end_node, 0.0) + flow
+        elif flow > 0.0:
+            disconnected_service_segments.append(
+                {
+                    "segment": safe_str(rec.get("name"), "SAN-SERVICE"),
+                    "end_node": end_node,
+                    "reason": "service_lateral_does_not_land_on_main_graph",
+                }
+            )
+
+    pending_nodes = list(node_inflow.keys()) or [safe_str(rec.get("from") or rec.get("start_name")) for rec in main_segments]
+    visited_edges: set[str] = set()
+    iterations = 0
+    max_iterations = max(len(main_segments) * 3, 1)
+    while pending_nodes and iterations < max_iterations:
+        iterations += 1
+        node_id = pending_nodes.pop(0)
+        inflow = max(0.0, node_inflow.get(node_id, 0.0))
+        for rec in main_outgoing.get(node_id, []):
+            seg_id = safe_str(rec.get("name") or rec.get("id") or f"main_{id(rec)}")
+            to_node = safe_str(rec.get("to") or rec.get("end_name"))
+            original_flow = max(0.0, safe_float(rec.get("flow_cfs"), 0.0))
+            recomputed_flow = max(original_flow, inflow)
+            if recomputed_flow > original_flow + 1e-9:
+                rec["flow_cfs"] = round(recomputed_flow, 6)
+                rec["post_reroute_flow_source"] = "upstream_service_topology"
+            rec["upstream_service_flow_cfs"] = round(inflow, 6)
+            rec["post_reroute_recalculated"] = True
+            rec["flow_topology"] = {
+                "from_node": node_id,
+                "to_node": to_node,
+                "incoming_service_flow_cfs": round(inflow, 6),
+                "computed_segment_flow_cfs": round(recomputed_flow, 6),
+            }
+            edge_key = f"{seg_id}:{node_id}->{to_node}:{round(recomputed_flow, 6)}"
+            if to_node and edge_key not in visited_edges:
+                visited_edges.add(edge_key)
+                if recomputed_flow > 0.0:
+                    node_inflow[to_node] = node_inflow.get(to_node, 0.0) + recomputed_flow
+                    pending_nodes.append(to_node)
+
     for rec in main_segments:
-        original_flow = max(0.0, safe_float(rec.get("flow_cfs"), 0.0))
-        if service_flow_total > original_flow:
-            rec["flow_cfs"] = service_flow_total
-            rec["post_reroute_flow_source"] = "summed_service_laterals"
-        rec["upstream_service_flow_cfs"] = service_flow_total
-        rec["post_reroute_recalculated"] = True
+        if not bool(rec.get("post_reroute_recalculated")):
+            rec["upstream_service_flow_cfs"] = round(max(0.0, safe_float(rec.get("flow_cfs"), 0.0)), 6)
+            rec["post_reroute_recalculated"] = True
     summary["segments"] = segments
     summary["missing_service_buildings"] = missing_buildings
     summary["served_buildings"] = served_buildings
+    summary["disconnected_service_segments"] = disconnected_service_segments
     summary["service_coverage"] = {
         "expected_buildings": expected_buildings,
         "served_buildings": served_buildings,
@@ -6104,7 +6360,9 @@ def _recompute_sanitary_service_loads(project: ProjectModel, summary: Dict[str, 
         "service_flow_total_cfs": service_flow_total,
         "main_segments_recomputed": len(main_segments),
         "service_segments_recomputed": len(service_segments),
-        "truth_label": "Post-reroute sanitary recalculation re-sums service lateral flow into downstream mains before validation.",
+        "node_inflow_cfs": {key: round(value, 6) for key, value in sorted(node_inflow.items())},
+        "disconnected_service_count": len(disconnected_service_segments),
+        "truth_label": "Post-reroute sanitary recalculation propagates service lateral flow through the directed main graph before validation.",
     }
     return summary
 
@@ -6234,6 +6492,7 @@ def _recompute_storm_summary(project: ProjectModel, manager: ProjectManager) -> 
             "invalid_capacity_ratio_segments",
             "downstream_total_inconsistencies",
             "backwater_failures",
+            "surcharge_failures",
         ],
     )
     storm["success"] = bool(storm["graph_validation"].get("valid")) and bool(storm["hydraulic_validation"].get("valid"))

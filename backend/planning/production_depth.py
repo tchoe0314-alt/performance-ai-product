@@ -4,6 +4,8 @@ import math
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from engines.storm.hydraulic_engine import analyze_storm_hydraulics
+from engines.storm.storm_types import HydraulicAnalysisRequest, StormNode, StormPipe, StormPoint
 from engines.water_sizing_engine import WaterSizingEngine, analyze_water_pressure_graph
 
 from .common import polyline_length, safe_dict, safe_float, safe_int, safe_list, safe_str
@@ -40,6 +42,101 @@ def _segment_name(segment: Dict[str, Any], fallback_index: int = 1) -> str:
         or safe_str(segment.get("name"))
         or safe_str(segment.get("id"))
         or f"SEG-{fallback_index}"
+    )
+
+
+def _node_name_from_segment(segment: Dict[str, Any], key: str, fallback: str) -> str:
+    if key == "from":
+        return (
+            safe_str(segment.get("from"))
+            or safe_str(segment.get("start_name"))
+            or safe_str(segment.get("upstream_node_name"))
+            or fallback
+        )
+    return (
+        safe_str(segment.get("to"))
+        or safe_str(segment.get("end_name"))
+        or safe_str(segment.get("downstream_node_name"))
+        or fallback
+    )
+
+
+def _storm_hydraulic_request_from_summary(storm: Dict[str, Any], segments: Sequence[Dict[str, Any]]) -> Optional[HydraulicAnalysisRequest]:
+    pipes: List[StormPipe] = []
+    nodes_by_name: Dict[str, StormNode] = {}
+
+    def _ensure_node(name: str, point: Sequence[float], invert: float, rim: float) -> None:
+        if not name or name in nodes_by_name:
+            return
+        nodes_by_name[name] = StormNode(
+            name=name,
+            point=StormPoint(safe_float(point[0], 0.0), safe_float(point[1], 0.0), rim),
+            rim_elev_ft=round(rim, 3),
+            invert_elev_ft=round(invert, 3),
+        )
+
+    for raw_node in safe_list(storm.get("nodes")) + safe_list(storm.get("structures")) + safe_list(storm.get("inlets")):
+        node = safe_dict(raw_node)
+        name = safe_str(node.get("name") or node.get("id") or node.get("node_id"))
+        if not name:
+            continue
+        point = _point_xy(node.get("point")) or (
+            safe_float(node.get("x"), 0.0),
+            safe_float(node.get("y"), 0.0),
+        )
+        invert = safe_float(node.get("invert_elev_ft") or node.get("invert_ft"), safe_float(node.get("z"), 0.0) - 4.0)
+        rim = safe_float(node.get("rim_elev_ft") or node.get("rim_ft") or node.get("z"), invert + 4.0)
+        _ensure_node(name, point, invert, rim)
+
+    for index, segment in enumerate(segments, start=1):
+        name = _segment_name(segment, index)
+        path = _path_points(segment)
+        if len(path) < 2:
+            continue
+        length = max(1.0, safe_float(segment.get("length_ft"), polyline_length(path)))
+        start_inv = safe_float(segment.get("start_invert_ft"), safe_float(segment.get("start_invert"), 0.0))
+        end_inv = safe_float(segment.get("end_invert_ft"), safe_float(segment.get("end_invert"), start_inv - 0.003 * length))
+        slope = safe_float(segment.get("slope_ft_ft"), safe_float(segment.get("slope"), 0.0))
+        if slope <= 0.0:
+            slope = max((start_inv - end_inv) / max(length, 1e-9), 0.0001)
+        upstream = _node_name_from_segment(segment, "from", f"{name}-UP")
+        downstream = _node_name_from_segment(segment, "to", f"{name}-DN")
+        _ensure_node(upstream, path[0], start_inv, safe_float(segment.get("start_rim_ft"), start_inv + 5.0))
+        _ensure_node(downstream, path[-1], end_inv, safe_float(segment.get("end_rim_ft"), end_inv + 5.0))
+        pipes.append(
+            StormPipe(
+                name=name,
+                pipe_type=safe_str(segment.get("pipe_type"), safe_str(segment.get("segment_role"), "main")),
+                upstream_node_name=upstream,
+                downstream_node_name=downstream,
+                diameter_in=max(1.0, safe_float(segment.get("diameter_in"), safe_float(segment.get("diameter_ft"), 1.0) * 12.0)),
+                length_ft=length,
+                slope=max(slope, 0.0001),
+                mannings_n=max(0.001, safe_float(segment.get("mannings_n"), safe_float(segment.get("n"), 0.013))),
+                upstream_invert_ft=start_inv,
+                downstream_invert_ft=end_inv,
+                route_points=[(safe_float(pt[0], 0.0), safe_float(pt[1], 0.0)) for pt in path],
+                assigned_runoff_cfs=max(0.0, safe_float(segment.get("flow_cfs"), safe_float(segment.get("governing_flow_cfs"), 0.0))),
+                meta={
+                    "tributary_area_sf": max(
+                        0.0,
+                        safe_float(segment.get("tributary_area_sf"), safe_float(segment.get("upstream_cumulative_area_sf"), 0.0)),
+                    ),
+                    "tributary_runoff_cfs": max(0.0, safe_float(segment.get("flow_cfs"), 0.0)),
+                    "tributary_catchment_count": safe_int(segment.get("tributary_catchment_count"), 0),
+                    "tributary_basin_names": safe_list(segment.get("tributary_basin_names")),
+                },
+            )
+        )
+    if not pipes:
+        return None
+    return HydraulicAnalysisRequest(
+        pipes=pipes,
+        nodes=list(nodes_by_name.values()),
+        compute_hgl=True,
+        compute_egl=True,
+        allow_partial_flow=True,
+        meta={"source": "storm_summary_recompute"},
     )
 
 
@@ -131,6 +228,36 @@ def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict
     enriched = deepcopy(safe_dict(storm))
     drainage_meta = safe_dict(drainage)
     segments = [safe_dict(item) for item in safe_list(enriched.get("segments"))]
+    hydraulic_request = _storm_hydraulic_request_from_summary(enriched, segments)
+    if hydraulic_request is not None:
+        hydraulic_result = analyze_storm_hydraulics(hydraulic_request)
+        if hydraulic_result.success:
+            by_name = {pipe.name: pipe for pipe in hydraulic_result.pipes}
+            for index, segment in enumerate(segments, start=1):
+                pipe = by_name.get(_segment_name(segment, index))
+                if pipe is None or pipe.hydraulic is None:
+                    continue
+                segment["capacity_cfs"] = round(pipe.hydraulic.full_capacity_cfs, 3)
+                segment["capacity_ratio"] = (
+                    round(pipe.hydraulic.design_flow_cfs / max(pipe.hydraulic.full_capacity_cfs, 1e-9), 3)
+                    if pipe.hydraulic.design_flow_cfs > 0.0
+                    else 0.0
+                )
+                segment["velocity_fps"] = round(pipe.hydraulic.velocity_fps, 3)
+                segment["normal_depth_ft"] = round(pipe.hydraulic.normal_depth_ft, 3)
+                segment["hgl_start"] = segment["hgl_start_ft"] = pipe.hydraulic.hgl_upstream_ft
+                segment["hgl_end"] = segment["hgl_end_ft"] = pipe.hydraulic.hgl_downstream_ft
+                segment["egl_start"] = segment["egl_start_ft"] = pipe.hydraulic.egl_upstream_ft
+                segment["egl_end"] = segment["egl_end_ft"] = pipe.hydraulic.egl_downstream_ft
+                segment["capacity_status"] = pipe.hydraulic.capacity_status
+                segment["hydraulic_depth_source"] = "storm_hydraulic_engine"
+            enriched["hydraulic_engine_summary"] = {
+                **safe_dict(hydraulic_result.summary),
+                "warnings": list(hydraulic_result.warnings),
+                "truth_label": "Storm HGL/EGL, velocity, normal depth, and capacity are computed by the storm hydraulic engine from canonical pipe/node data.",
+            }
+            enriched["hydraulic_source"] = "engine"
+            enriched["segments"] = segments
     hgl_profile: List[Dict[str, Any]] = []
     egl_profile: List[Dict[str, Any]] = []
     station = 0.0

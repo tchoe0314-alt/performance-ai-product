@@ -131,6 +131,72 @@ class SanitaryStageTest(unittest.TestCase):
         self.assertIn("BLDG-3", recomputed["service_coverage"]["missing_buildings"])
         self.assertFalse(recomputed["network_validation"]["valid"])
 
+    def test_post_reroute_recompute_propagates_service_flow_through_main_graph(self) -> None:
+        manager = ProjectManager()
+        project = manager.project
+        sanitary = {
+            "expected_service_buildings": ["BLDG-1", "BLDG-2"],
+            "segments": [
+                {
+                    "name": "LAT-1",
+                    "segment_role": "lateral",
+                    "served_building": "BLDG-1",
+                    "start_name": "BLDG-1",
+                    "end_name": "NODE-A",
+                    "route_points": [[0.0, 0.0], [10.0, 0.0]],
+                    "diameter_in": 8.0,
+                    "flow_cfs": 0.02,
+                    "start_invert_ft": 98.0,
+                    "end_invert_ft": 97.8,
+                },
+                {
+                    "name": "LAT-2",
+                    "segment_role": "lateral",
+                    "served_building": "BLDG-2",
+                    "start_name": "BLDG-2",
+                    "end_name": "NODE-B",
+                    "route_points": [[0.0, 10.0], [40.0, 0.0]],
+                    "diameter_in": 8.0,
+                    "flow_cfs": 0.03,
+                    "start_invert_ft": 98.0,
+                    "end_invert_ft": 97.6,
+                },
+                {
+                    "name": "SAN-MAIN-1",
+                    "segment_role": "main",
+                    "start_name": "NODE-A",
+                    "end_name": "NODE-B",
+                    "route_points": [[10.0, 0.0], [40.0, 0.0]],
+                    "diameter_in": 8.0,
+                    "flow_cfs": 0.01,
+                    "start_invert_ft": 97.5,
+                    "end_invert_ft": 97.0,
+                },
+                {
+                    "name": "SAN-MAIN-2",
+                    "segment_role": "main",
+                    "start_name": "NODE-B",
+                    "end_name": "SAN_TIE_IN",
+                    "route_points": [[40.0, 0.0], [90.0, 0.0]],
+                    "diameter_in": 8.0,
+                    "flow_cfs": 0.01,
+                    "start_invert_ft": 96.9,
+                    "end_invert_ft": 96.2,
+                },
+            ],
+            "manholes": [],
+        }
+        manager.latest_outputs["sanitary"] = sanitary
+        project.meta["sanitary_summary"] = sanitary
+
+        _recompute_sanitary_summary(project, manager, prefer_cache=True)
+
+        recomputed = project.meta["sanitary_summary"]
+        by_name = {item["name"]: item for item in recomputed["segments"]}
+        self.assertAlmostEqual(by_name["SAN-MAIN-1"]["flow_cfs"], 0.02, places=4)
+        self.assertAlmostEqual(by_name["SAN-MAIN-2"]["flow_cfs"], 0.05, places=4)
+        self.assertAlmostEqual(recomputed["post_reroute_recalculation"]["node_inflow_cfs"]["NODE-B"], 0.05, places=4)
+
 
 if __name__ == "__main__":
     unittest.main()

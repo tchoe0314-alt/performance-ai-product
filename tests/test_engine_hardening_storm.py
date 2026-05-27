@@ -213,6 +213,32 @@ class EngineHardeningStormTests(unittest.TestCase):
         self.assertFalse(validation["valid"])
         self.assertEqual(validation["backwater_failures"][0]["reason"], "tailwater_surcharges_pipe_crown")
 
+    def test_hydraulic_validation_fails_node_surcharge_from_engine_summary(self) -> None:
+        validation = planner._validate_storm_hydraulics(
+            {
+                "segments": [
+                    {
+                        "pipe": "P-1",
+                        "from": "INLET-1",
+                        "to": "OUTLET-1",
+                        "flow_cfs": 1.0,
+                        "capacity_cfs": 3.0,
+                        "capacity_ratio": 0.33,
+                        "slope_ft_ft": 0.01,
+                        "contributing_area_ac": 0.5,
+                    }
+                ],
+                "hydraulic_engine_summary": {
+                    "critical_nodes": [
+                        {"name": "INLET-1", "surcharge_risk": True, "max_hgl_ft": 102.2, "rim_elev_ft": 101.0}
+                    ]
+                },
+            }
+        )
+
+        self.assertFalse(validation["valid"])
+        self.assertEqual(validation["surcharge_failures"][0]["reason"], "node_hgl_exceeds_rim_threshold")
+
     def test_final_plan_sanitizer_preserves_canonical_storm_summary(self) -> None:
         storm = {
             "success": True,
