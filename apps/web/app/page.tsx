@@ -10,7 +10,6 @@ import {
   Circle,
   Database,
   Droplets,
-  Eye,
   FileText,
   Gauge,
   Layers,
@@ -79,7 +78,6 @@ type SidePanelKey =
   | "roadway"
   | "landscape"
   | "layers"
-  | "views"
   | "analysis"
   | "reports"
   | "quantities"
@@ -8903,7 +8901,6 @@ function PerformanceAIDashboardView({
     roadway: { title: "Roadway", desc: "Control roads, parking, and corridor behavior." },
     landscape: { title: "Landscape", desc: "Place open space and landscape-related site objects." },
     layers: { title: "Layers", desc: "Choose visible model layers and labels." },
-    views: { title: "Views", desc: "Switch 2D, 3D, quality, and canvas behavior." },
     analysis: { title: "Analysis", desc: "Review model issues, access checks, and QA signals." },
     reports: { title: "Reports", desc: "Open readable engineering summaries." },
     quantities: { title: "Quantities", desc: "Review takeoff totals and cost inputs." },
@@ -9007,11 +9004,11 @@ function PerformanceAIDashboardView({
             </button>
             <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
               {[
-                { label: "Canvas", items: ["Canvas", "Objects", "Generate"] },
+                { label: "Canvas", items: ["Canvas", "Data", "Objects", "Generate"] },
                 { label: "Disciplines", items: ["Grading", "Drainage", "Utilities", "Roadway", "Landscape"] },
-                { label: "Control", items: ["Layers", "Views", "Analysis", "Chat"] },
+                { label: "Control", items: ["Layers", "Analysis", "Chat"] },
                 { label: "Output", items: ["Reports", "Quantities", "Deliverables"] },
-                { label: "Setup", items: ["Data", "Settings"] },
+                { label: "Setup", items: ["Settings"] },
               ].map((section) => (
                 <div key={section.label}>
                   <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
@@ -9030,7 +9027,6 @@ function PerformanceAIDashboardView({
                         Roadway: "roadway",
                         Landscape: "landscape",
                         Layers: "layers",
-                        Views: "views",
                         Analysis: "analysis",
                         Chat: "chat",
                         Reports: "reports",
@@ -9049,7 +9045,6 @@ function PerformanceAIDashboardView({
                         Roadway: Route,
                         Landscape: Sprout,
                         Layers,
-                        Views: Eye,
                         Analysis: ClipboardCheck,
                         Chat: MessageSquare,
                         Reports: FileText,
@@ -9103,11 +9098,7 @@ function PerformanceAIDashboardView({
                                           ? siteScaleLocked || Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng)
                                             ? "ok"
                                             : "review"
-                                          : item === "Views"
-                                            ? preview3DEffectiveItems.length > 0 || planPreviewUrl
-                                              ? "ok"
-                                              : "idle"
-                                            : item === "Analysis"
+                                          : item === "Analysis"
                                               ? issues.length || analysisIssues.length
                                                 ? "review"
                                                 : "idle"
@@ -9156,27 +9147,27 @@ function PerformanceAIDashboardView({
                   </div>
                 </div>
               ))}
-            </div>
-            <div className="mt-4 rounded-lg border border-slate-200 bg-white px-3 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Systems</p>
-              <div className="mt-3 space-y-2">
-                {systemHealthItems.map((item) => (
-                  <div key={item.key} className="flex items-center justify-between gap-3">
-                    <span className="text-xs font-semibold text-slate-700">{item.label}</span>
-                    <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                      <span
-                        className={`h-2.5 w-2.5 rounded-full ${
-                          item.state === "complete"
-                            ? "bg-emerald-500"
-                            : item.state === "blocked"
-                              ? "bg-red-500"
-                              : "bg-amber-400"
-                        }`}
-                      />
-                      {item.state === "complete" ? "Complete" : item.state === "blocked" ? "Blocked / Unsafe" : "Not configured / Not rendered"}
-                    </span>
-                  </div>
-                ))}
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Systems Health</p>
+                <div className="mt-3 space-y-2">
+                  {systemHealthItems.map((item) => (
+                    <div key={item.key} className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-semibold text-slate-700">{item.label}</span>
+                      <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                        <span
+                          className={`h-2.5 w-2.5 rounded-full ${
+                            item.state === "complete"
+                              ? "bg-emerald-500"
+                              : item.state === "blocked"
+                                ? "bg-red-500"
+                                : "bg-amber-400"
+                          }`}
+                        />
+                        {item.state === "complete" ? "Complete" : item.state === "blocked" ? "Blocked / Unsafe" : "Not configured / Not rendered"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
             <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-3">
@@ -9635,7 +9626,7 @@ function PerformanceAIDashboardView({
                   <div className="space-y-4">
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Canonical model
+                        Canvas
                       </p>
                       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                         <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
@@ -9647,12 +9638,45 @@ function PerformanceAIDashboardView({
                           <p className="mt-1 text-lg font-semibold text-slate-900">{issues.length + analysisIssues.length}</p>
                         </div>
                       </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Canvas controls</p>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        {(["2d", "3d"] as const).map((mode) => (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => setPreviewMode(mode)}
+                            className={`rounded-xl border px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] ${
+                              previewMode === mode
+                                ? "border-slate-950 bg-slate-950 text-white"
+                                : "border-slate-200 bg-white text-slate-700"
+                            }`}
+                          >
+                            {mode}
+                          </button>
+                        ))}
+                        {(["standard", "high"] as const).map((quality) => (
+                          <button
+                            key={quality}
+                            type="button"
+                            onClick={() => setPreviewQuality(quality)}
+                            className={`rounded-xl border px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] ${
+                              previewQuality === quality
+                                ? "border-slate-950 bg-slate-950 text-white"
+                                : "border-slate-200 bg-white text-slate-700"
+                            }`}
+                          >
+                            {quality}
+                          </button>
+                        ))}
+                      </div>
                       <button
                         type="button"
-                        onClick={() => setActiveSidePanel("views")}
-                        className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                        onClick={() => setFitToSiteRequest((value) => value + 1)}
+                        className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
                       >
-                        Open view controls
+                        Fit site
                       </button>
                     </div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -10012,23 +10036,6 @@ function PerformanceAIDashboardView({
                         />
                       </label>
                     ))}
-                  </div>
-                ) : null}
-
-                {activeSidePanel === "views" ? (
-                  <div className="space-y-4">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Canvas mode</p>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        {(["2d", "3d"] as const).map((mode) => (
-                          <button key={mode} type="button" onClick={() => setPreviewMode(mode)} className={`rounded-xl border px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] ${previewMode === mode ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700"}`}>{mode}</button>
-                        ))}
-                        {(["standard", "high"] as const).map((quality) => (
-                          <button key={quality} type="button" onClick={() => setPreviewQuality(quality)} className={`rounded-xl border px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] ${previewQuality === quality ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700"}`}>{quality}</button>
-                        ))}
-                      </div>
-                      <button type="button" onClick={() => setFitToSiteRequest((value) => value + 1)} className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Fit site</button>
-                    </div>
                   </div>
                 ) : null}
 
