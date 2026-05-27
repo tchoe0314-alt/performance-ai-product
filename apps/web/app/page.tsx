@@ -2519,9 +2519,9 @@ function PerformanceAIDashboardView({
       const perModuleWidth = (stallsPerRow: number) =>
         stallsPerRow * params.stallWidth + Math.abs(shift);
       const totalStalls = Math.max(stallCount, params.adaCount + params.compactCount);
-      let stallsPerRow = Math.max(1, Math.ceil(totalStalls / rows));
-      let moduleWidth = perModuleWidth(stallsPerRow);
-      let modulesNeeded = Math.max(1, Math.ceil(totalStalls / (stallsPerRow * rows)));
+      const stallsPerRow = Math.max(1, Math.ceil(totalStalls / rows));
+      const moduleWidth = perModuleWidth(stallsPerRow);
+      const modulesNeeded = Math.max(1, Math.ceil(totalStalls / (stallsPerRow * rows)));
       let cols = Math.max(1, Math.ceil(Math.sqrt(modulesNeeded)));
       let rowsOfModules = Math.max(1, Math.ceil(modulesNeeded / cols));
       if (totalStalls === 0) {
@@ -9392,8 +9392,25 @@ function PerformanceAIDashboardView({
                 {activeSidePanel === "dashboard" ? (
                   <div className="space-y-4">
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Project</p>
-                      <div className="mt-3 space-y-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Dashboard</p>
+                          <p className="mt-1 text-lg font-semibold text-slate-950">{siteName || "Untitled Project"}</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {fileName || "No file name"} · {lotBounds.w && lotBounds.h ? `${lotBounds.w.toFixed(0)} ft x ${lotBounds.h.toFixed(0)} ft` : "Site not locked"}
+                          </p>
+                        </div>
+                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                          hasHardSystemBlock
+                            ? "bg-red-50 text-red-600"
+                            : backendResult
+                              ? "bg-emerald-50 text-emerald-600"
+                              : "bg-amber-50 text-amber-600"
+                        }`}>
+                          {hasHardSystemBlock ? "Blocked" : backendResult ? "Ready" : "Setup"}
+                        </span>
+                      </div>
+                      <div className="mt-4 grid grid-cols-2 gap-2">
                         <input
                           value={siteName}
                           onChange={(event) => {
@@ -9401,7 +9418,7 @@ function PerformanceAIDashboardView({
                             setSiteNameAuto(false);
                           }}
                           placeholder="Project name"
-                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none"
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none"
                         />
                         <input
                           value={fileName}
@@ -9410,29 +9427,29 @@ function PerformanceAIDashboardView({
                             setFileNameAuto(false);
                           }}
                           placeholder="File name"
-                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none"
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none"
                         />
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void saveProject({
-                              nameOverride: siteName.trim(),
-                              fileNameOverride: fileName.trim(),
-                              autoNamedOverride: false,
-                              autoFileNamedOverride: false,
-                            })
-                          }
-                          className="w-full rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800"
-                        >
-                          Save names
-                        </button>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void saveProject({
+                            nameOverride: siteName.trim(),
+                            fileNameOverride: fileName.trim(),
+                            autoNamedOverride: false,
+                            autoFileNamedOverride: false,
+                          })
+                        }
+                        className="mt-3 w-full rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800"
+                      >
+                        Save project identity
+                      </button>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       {[
                         ["Objects", placedObjectCount],
                         ["Issues", issues.length + analysisIssues.length],
-                        ["Fresh systems", Object.values(systemStatuses).filter((status) => status === "fresh").length],
+                        ["Fresh", Object.values(systemStatuses).filter((status) => status === "fresh").length],
                         ["Outputs", backendResult ? 1 : 0],
                       ].map(([label, value]) => (
                         <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-3">
@@ -9442,7 +9459,12 @@ function PerformanceAIDashboardView({
                       ))}
                     </div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Project readiness</p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Project readiness</p>
+                        <span className="text-[11px] font-semibold text-slate-500">
+                          {systemHealthItems.filter((item) => item.state === "complete").length}/{systemHealthItems.length}
+                        </span>
+                      </div>
                       <div className="mt-3 space-y-2">
                         {systemHealthItems.map((item) => (
                           <button
@@ -9474,6 +9496,42 @@ function PerformanceAIDashboardView({
                             />
                           </button>
                         ))}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Attention</p>
+                      <div className="mt-3 space-y-2">
+                        {[...issues.map((issue) => issue.message), ...analysisIssues.map((issue) => issue.message)].slice(0, 3).map((message) => (
+                          <button
+                            key={message}
+                            type="button"
+                            onClick={() => handleOpenSidePanel("analysis")}
+                            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-white"
+                          >
+                            {message}
+                          </button>
+                        ))}
+                        {!issues.length && !analysisIssues.length ? (
+                          <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-600">
+                            No active issues in the current workspace.
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Takeoff snapshot</p>
+                      <div className="mt-3 space-y-2 text-sm text-slate-700">
+                        {quantityRows.slice(0, 4).map((row) => (
+                          <div key={row.label} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <span className="font-semibold">{row.label}</span>
+                            <span>{formatMetric(Number(row.value), row.unit)}</span>
+                          </div>
+                        ))}
+                        {!quantityRows.length ? (
+                          <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-600">
+                            Run systems to populate quantities.
+                          </p>
+                        ) : null}
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2">

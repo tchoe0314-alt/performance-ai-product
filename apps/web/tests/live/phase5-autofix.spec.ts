@@ -375,7 +375,7 @@ test.describe("Phase 5 drainage autofix matrix", () => {
       const before = parseDrainageCounts(beforeResultPayload);
       let after = before;
       let applyError: string | null = null;
-      let actionLabel = entry.action;
+      const actionLabel = entry.action;
       try {
           if (entry.skipApply || !actionLabel) {
             console.info(`${entry.name} BEFORE`, before);

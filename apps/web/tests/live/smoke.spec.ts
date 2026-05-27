@@ -155,7 +155,9 @@ test("live civora flow", async ({ page, request, baseURL }) => {
     fullPage: true,
   });
 
-  await expect(page.getByText("Preview Workspace")).toBeVisible();
+  await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
+  await expect(page.getByRole("banner").getByRole("button", { name: "Dashboard" })).toBeVisible();
+  await expect(page.getByRole("banner").getByRole("button", { name: "Chat" })).toBeVisible();
 
   if (prompt.trim()) {
     await ensureNewProject(page);
