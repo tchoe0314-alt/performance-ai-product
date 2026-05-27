@@ -141,6 +141,76 @@ class Phase2Slice1CoordinationRealismTest(unittest.TestCase):
         self.assertIn("after_deviation_ft", selected["corridor_impact"])
         self.assertGreaterEqual(selected["structure_insertion_count"], 0)
 
+    def test_gis_wetlands_become_hard_protected_coordination_zones(self) -> None:
+        project, manager = _manager_with_summaries()
+        project.meta["gis_layers"] = {
+            "wetlands": [
+                {
+                    "id": "WET-1",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[[10.0, 0.0], [22.0, 0.0], [22.0, 20.0], [10.0, 20.0], [10.0, 0.0]]],
+                    },
+                    "properties": {"name": "Wetland A"},
+                }
+            ]
+        }
+        utilities = {
+            "conflict_hooks": {
+                "utility_system_type": "water",
+                "utility_segments": [
+                    {
+                        "name": "WATER-WET",
+                        "system_type": "water",
+                        "route_points": [[0.0, 10.0], [35.0, 10.0]],
+                        "start_invert_ft": 97.0,
+                        "end_invert_ft": 97.0,
+                    }
+                ],
+            }
+        }
+        manager.latest_outputs["utilities"] = deepcopy(utilities)
+        project.meta["utility_summary"] = deepcopy(utilities)
+
+        conflicts = _detect_coordination_conflicts(project, manager)
+        wetland_conflicts = [row for row in conflicts if row["conflict_type"] == "water_wetland_geometry"]
+
+        self.assertTrue(wetland_conflicts)
+        self.assertIn("wetland", wetland_conflicts[0]["systems"])
+        self.assertIn("Wetland A", wetland_conflicts[0]["involved_objects"])
+
+    def test_non_water_utilities_use_their_own_crossing_rules(self) -> None:
+        project, manager = _manager_with_summaries()
+        utilities = {
+            "conflict_hooks": {
+                "utility_segments": [
+                    {
+                        "name": "WATER-1",
+                        "system_type": "water",
+                        "route_points": [[0.0, 0.0], [40.0, 0.0]],
+                        "start_invert_ft": 97.0,
+                        "end_invert_ft": 97.0,
+                    },
+                    {
+                        "name": "GAS-1",
+                        "system_type": "gas",
+                        "route_points": [[20.0, -8.0], [20.0, 8.0]],
+                        "start_invert_ft": 97.4,
+                        "end_invert_ft": 97.4,
+                    },
+                ],
+            }
+        }
+        manager.latest_outputs["utilities"] = deepcopy(utilities)
+        project.meta["utility_summary"] = deepcopy(utilities)
+
+        conflicts = _detect_coordination_conflicts(project, manager)
+        gas_water = [row for row in conflicts if row["conflict_type"] == "gas_water_clearance"]
+
+        self.assertTrue(gas_water)
+        self.assertEqual(gas_water[0]["preferred_lower_system"], "gas")
+        self.assertEqual(gas_water[0]["interaction_type"], "crossing")
+
 
 if __name__ == "__main__":
     unittest.main()

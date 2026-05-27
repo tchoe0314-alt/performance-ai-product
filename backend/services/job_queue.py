@@ -255,10 +255,12 @@ class JobQueueService:
         detail = self._job_summary(record, queue_stats=queue_stats)
         result_payload: Dict[str, Any] = {}
         candidate_result = dict(record.get("result") or {})
+        candidate_metadata = dict(candidate_result.get("metadata") or {})
         has_partial_plan = bool(
             dict(candidate_result.get("final_plan") or {})
-            or dict(candidate_result.get("metadata") or {}).get("run_summary")
+            or candidate_metadata.get("run_summary")
             or dict(candidate_result.get("job_progress") or {}).get("partial_result_ready")
+            or candidate_metadata.get("runtime_phase_checkpoint")
         )
         if record["status"] in {"completed", "failed", "cancelled"} or has_partial_plan:
             result_payload = candidate_result

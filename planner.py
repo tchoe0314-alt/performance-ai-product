@@ -3747,6 +3747,42 @@ def _route_conflicts(route_points: List[List[float]], other_paths: Sequence[Sequ
     return conflicts
 
 
+def _utility_system_type(rec: Dict[str, Any], hooks: Optional[Dict[str, Any]] = None) -> str:
+    text = lower_text(
+        " ".join(
+            safe_str(value)
+            for value in (
+                rec.get("system"),
+                rec.get("system_type"),
+                rec.get("utility_type"),
+                rec.get("type"),
+                rec.get("name"),
+                safe_dict(hooks).get("utility_system_type"),
+            )
+            if safe_str(value)
+        )
+    )
+    if "sanitary" in text or "sewer" in text:
+        return "sanitary"
+    if "storm" in text or "drain" in text:
+        return "storm"
+    if "gas" in text:
+        return "gas"
+    if "electric" in text or "power" in text:
+        return "electric"
+    if "telecom" in text or "fiber" in text or "communication" in text:
+        return "telecom"
+    return "water"
+
+
+def _canonical_changed_systems(systems: Sequence[str]) -> List[str]:
+    values = list(systems) if isinstance(systems, (list, tuple, set)) else []
+    rows = {safe_str(item) for item in values if safe_str(item)}
+    if rows & {"water", "gas", "electric", "telecom"}:
+        rows.add("utilities")
+    return sorted(rows)
+
+
 COORDINATION_CROSSING_RULES: Dict[Tuple[str, str], Dict[str, Any]] = {
     tuple(sorted(("storm", "sanitary"))): {
         "preferred_lower_system": "storm",
@@ -3769,6 +3805,54 @@ COORDINATION_CROSSING_RULES: Dict[Tuple[str, str], Dict[str, Any]] = {
         "preferred_crossing_angle_deg": 75.0,
         "roadway_min_cover_ft": 4.0,
     },
+    tuple(sorted(("gas", "water"))): {
+        "preferred_lower_system": "gas",
+        "required_horizontal_clearance_ft": 3.0,
+        "required_vertical_clearance_ft": 1.0,
+        "preferred_crossing_angle_deg": 70.0,
+    },
+    tuple(sorted(("electric", "water"))): {
+        "preferred_lower_system": "electric",
+        "required_horizontal_clearance_ft": 3.0,
+        "required_vertical_clearance_ft": 1.0,
+        "preferred_crossing_angle_deg": 70.0,
+    },
+    tuple(sorted(("gas", "sanitary"))): {
+        "preferred_lower_system": "sanitary",
+        "required_horizontal_clearance_ft": 5.0,
+        "required_vertical_clearance_ft": 1.0,
+        "preferred_crossing_angle_deg": 75.0,
+    },
+    tuple(sorted(("electric", "sanitary"))): {
+        "preferred_lower_system": "sanitary",
+        "required_horizontal_clearance_ft": 5.0,
+        "required_vertical_clearance_ft": 1.0,
+        "preferred_crossing_angle_deg": 75.0,
+    },
+    tuple(sorted(("gas", "storm"))): {
+        "preferred_lower_system": "storm",
+        "required_horizontal_clearance_ft": 3.0,
+        "required_vertical_clearance_ft": 1.0,
+        "preferred_crossing_angle_deg": 70.0,
+    },
+    tuple(sorted(("electric", "storm"))): {
+        "preferred_lower_system": "storm",
+        "required_horizontal_clearance_ft": 3.0,
+        "required_vertical_clearance_ft": 1.0,
+        "preferred_crossing_angle_deg": 70.0,
+    },
+    tuple(sorted(("electric", "gas"))): {
+        "preferred_lower_system": "gas",
+        "required_horizontal_clearance_ft": 2.0,
+        "required_vertical_clearance_ft": 1.0,
+        "preferred_crossing_angle_deg": 60.0,
+    },
+    tuple(sorted(("telecom", "water"))): {
+        "preferred_lower_system": "telecom",
+        "required_horizontal_clearance_ft": 2.0,
+        "required_vertical_clearance_ft": 1.0,
+        "preferred_crossing_angle_deg": 60.0,
+    },
 }
 
 SYSTEM_OWNERSHIP_PRIORITY: Dict[str, int] = {
@@ -3776,8 +3860,11 @@ SYSTEM_OWNERSHIP_PRIORITY: Dict[str, int] = {
     "storm_main": 1,
     "sanitary_main": 2,
     "water_main": 3,
+    "gas_main": 3,
+    "electric_main": 3,
     "storm_lateral": 4,
     "sanitary_lateral": 5,
+    "telecom_main": 5,
     "utility_service": 6,
     "generic": 7,
 }
@@ -3790,6 +3877,36 @@ PROTECTED_ZONE_RULES: Dict[str, Dict[str, Any]] = {
     "access_aisle": {"penalty": 150.0, "avoid": True},
     "parking_field": {"penalty": 35.0, "avoid": False},
     "retaining_sensitive": {"penalty": 180.0, "avoid": True},
+    "wetland": {"penalty": 260.0, "avoid": True},
+    "floodplain": {"penalty": 210.0, "avoid": True},
+    "tree_save": {"penalty": 200.0, "avoid": True},
+    "row_conflict": {"penalty": 170.0, "avoid": True},
+    "construction_access": {"penalty": 130.0, "avoid": True},
+}
+
+GIS_PROTECTED_LAYER_RULES: Dict[str, Dict[str, Any]] = {
+    "wetlands": {"kind": "wetland", "buffer_ft": 10.0},
+    "wetland": {"kind": "wetland", "buffer_ft": 10.0},
+    "floodplain": {"kind": "floodplain", "buffer_ft": 8.0},
+    "floodplains": {"kind": "floodplain", "buffer_ft": 8.0},
+    "row": {"kind": "row_conflict", "buffer_ft": 5.0},
+    "right_of_way": {"kind": "row_conflict", "buffer_ft": 5.0},
+    "tree_save": {"kind": "tree_save", "buffer_ft": 8.0},
+    "tree_save_zones": {"kind": "tree_save", "buffer_ft": 8.0},
+    "protected_trees": {"kind": "tree_save", "buffer_ft": 8.0},
+    "construction_access": {"kind": "construction_access", "buffer_ft": 6.0},
+}
+
+HARD_PROTECTED_ZONE_KINDS = {
+    "ada_path",
+    "fire_lane",
+    "access_aisle",
+    "retaining_sensitive",
+    "wetland",
+    "floodplain",
+    "tree_save",
+    "row_conflict",
+    "construction_access",
 }
 
 MAX_COORDINATION_CONFLICTS_PER_CANDIDATE = 8
@@ -3895,13 +4012,8 @@ def _normalized_summary_segments(project: ProjectModel, manager: ProjectManager)
         path = _sample_coordination_path(raw_path)
         if len(path) < 2:
             continue
-        system_type = lower_text(rec.get("system_type") or hooks.get("utility_system_type") or "water")
-        if "sanitary" in system_type or "sewer" in system_type:
-            system = "sanitary"
-        elif "storm" in system_type or "drain" in system_type:
-            system = "storm"
-        else:
-            system = "water"
+        system = _utility_system_type(rec, hooks)
+        min_cover = safe_float(rec.get("min_cover_ft"), 3.0 if system in {"water", "gas"} else 2.5)
         segments.append(
             {
                 "system": system,
@@ -3911,12 +4023,12 @@ def _normalized_summary_segments(project: ProjectModel, manager: ProjectManager)
                 "diameter_in": safe_float(rec.get("diameter_in"), 8.0),
                 "start_invert_ft": safe_float(rec.get("start_invert_ft"), DEFAULT_PAD_ELEV - 4.0),
                 "end_invert_ft": safe_float(rec.get("end_invert_ft"), DEFAULT_PAD_ELEV - 4.0),
-                "cover_start_ft": safe_float(rec.get("cover_start_ft"), 3.0),
-                "cover_end_ft": safe_float(rec.get("cover_end_ft"), 3.0),
-                "min_cover_ft": 3.0,
+                "cover_start_ft": safe_float(rec.get("cover_start_ft"), min_cover),
+                "cover_end_ft": safe_float(rec.get("cover_end_ft"), min_cover),
+                "min_cover_ft": min_cover,
                 "slope_ft_ft": safe_float(rec.get("slope_ft_ft"), 0.0),
-                "min_slope_ft_ft": safe_float(hooks.get("minimum_vertical_separation_ft"), 0.0) if system != "water" else 0.0,
-                "gravity": safe_str(rec.get("hydraulic_mode"), "").lower() == "gravity",
+                "min_slope_ft_ft": safe_float(hooks.get("minimum_vertical_separation_ft"), 0.0) if system in {"storm", "sanitary"} else 0.0,
+                "gravity": system in {"storm", "sanitary"} or safe_str(rec.get("hydraulic_mode"), "").lower() == "gravity",
                 "from_name": safe_str(rec.get("start_name"), ""),
                 "to_name": safe_str(rec.get("end_name"), ""),
                 "segment_role": safe_str(rec.get("segment_role") or rec.get("role"), ""),
@@ -3925,6 +4037,118 @@ def _normalized_summary_segments(project: ProjectModel, manager: ProjectManager)
         )
 
     return segments
+
+
+def _coordinate_pairs_from_geometry(value: Any) -> List[List[float]]:
+    pairs: List[List[float]] = []
+    if not isinstance(value, (list, tuple)):
+        return pairs
+    if len(value) >= 2 and isinstance(value[0], (int, float)) and isinstance(value[1], (int, float)):
+        pairs.append([safe_float(value[0], 0.0), safe_float(value[1], 0.0)])
+        return pairs
+    for item in value:
+        pairs.extend(_coordinate_pairs_from_geometry(item))
+    return pairs
+
+
+def _bbox_from_feature(feature: Dict[str, Any]) -> Optional[Dict[str, float]]:
+    rec = safe_dict(feature)
+    bbox = safe_list(rec.get("bbox") or safe_dict(rec.get("properties")).get("bbox"))
+    if len(bbox) >= 4:
+        min_x = safe_float(bbox[0], 0.0)
+        min_y = safe_float(bbox[1], 0.0)
+        max_x = safe_float(bbox[2], min_x)
+        max_y = safe_float(bbox[3], min_y)
+        return {"x": min(min_x, max_x), "y": min(min_y, max_y), "w": abs(max_x - min_x), "h": abs(max_y - min_y)}
+    geometry = safe_dict(rec.get("geometry")) or rec
+    points = _coordinate_pairs_from_geometry(geometry.get("coordinates"))
+    if not points:
+        return None
+    xs = [point[0] for point in points]
+    ys = [point[1] for point in points]
+    return {"x": min(xs), "y": min(ys), "w": max(xs) - min(xs), "h": max(ys) - min(ys)}
+
+
+def _gis_feature_rows(raw_layer: Any) -> List[Dict[str, Any]]:
+    if isinstance(raw_layer, list):
+        return [safe_dict(item) for item in raw_layer if safe_dict(item)]
+    rec = safe_dict(raw_layer)
+    for key in ("features", "items", "records"):
+        rows = [safe_dict(item) for item in safe_list(rec.get(key)) if safe_dict(item)]
+        if rows:
+            return rows
+    return [rec] if rec else []
+
+
+def _feature_label(feature: Dict[str, Any], fallback: str) -> str:
+    rec = safe_dict(feature)
+    props = safe_dict(rec.get("properties"))
+    return safe_str(
+        props.get("name")
+        or props.get("Name")
+        or props.get("label")
+        or rec.get("id")
+        or props.get("id")
+        or props.get("OBJECTID")
+        or fallback
+    )
+
+
+def _protected_zones_from_gis(project: ProjectModel) -> List[Dict[str, Any]]:
+    meta = safe_dict(project.meta)
+    gis_layers = safe_dict(meta.get("gis_layers"))
+    existing = safe_dict(meta.get("existing_conditions"))
+    if not gis_layers:
+        gis_layers = safe_dict(existing.get("gis_layers")) or safe_dict(existing.get("layers")) or existing
+    protected_rows = safe_list(meta.get("protected_zones"))
+    zones: List[Dict[str, Any]] = []
+    for layer_name, layer_rule in GIS_PROTECTED_LAYER_RULES.items():
+        raw = gis_layers.get(layer_name)
+        for index, feature in enumerate(_gis_feature_rows(raw), start=1):
+            bbox = _bbox_from_feature(feature)
+            if bbox is None:
+                continue
+            kind = safe_str(layer_rule.get("kind"))
+            rule = safe_dict(PROTECTED_ZONE_RULES.get(kind))
+            zones.append(
+                {
+                    "kind": kind,
+                    "name": _feature_label(feature, f"{layer_name.upper()}-{index}"),
+                    "x": safe_float(bbox.get("x"), 0.0),
+                    "y": safe_float(bbox.get("y"), 0.0),
+                    "w": max(safe_float(bbox.get("w"), 0.0), 0.0),
+                    "h": max(safe_float(bbox.get("h"), 0.0), 0.0),
+                    "buffer_ft": safe_float(layer_rule.get("buffer_ft"), 6.0),
+                    "penalty": safe_float(rule.get("penalty"), 120.0),
+                    "avoid": bool(rule.get("avoid", True)),
+                    "source": "gis_layers",
+                    "source_layer": layer_name,
+                }
+            )
+    for index, feature in enumerate([safe_dict(item) for item in protected_rows if safe_dict(item)], start=1):
+        bbox = _bbox_from_feature(feature) or {
+            "x": safe_float(feature.get("x"), 0.0),
+            "y": safe_float(feature.get("y"), 0.0),
+            "w": safe_float(feature.get("w") or feature.get("width"), 0.0),
+            "h": safe_float(feature.get("h") or feature.get("height"), 0.0),
+        }
+        kind = safe_str(feature.get("kind") or feature.get("type"), "construction_access")
+        rule = safe_dict(PROTECTED_ZONE_RULES.get(kind)) or safe_dict(PROTECTED_ZONE_RULES.get("construction_access"))
+        zones.append(
+            {
+                "kind": kind,
+                "name": _feature_label(feature, f"PROTECTED-{index}"),
+                "x": safe_float(bbox.get("x"), 0.0),
+                "y": safe_float(bbox.get("y"), 0.0),
+                "w": max(safe_float(bbox.get("w"), 0.0), 0.0),
+                "h": max(safe_float(bbox.get("h"), 0.0), 0.0),
+                "buffer_ft": safe_float(feature.get("buffer_ft"), 6.0),
+                "penalty": safe_float(feature.get("penalty"), safe_float(rule.get("penalty"), 120.0)),
+                "avoid": bool(feature.get("avoid", rule.get("avoid", True))),
+                "source": "protected_zones",
+            }
+        )
+    return zones
 
 
 def _expanded_obstacle_rectangles(project: ProjectModel) -> List[Dict[str, Any]]:
@@ -3966,6 +4190,7 @@ def _expanded_obstacle_rectangles(project: ProjectModel) -> List[Dict[str, Any]]
                 "avoid": bool(safe_dict(PROTECTED_ZONE_RULES.get(zone_kind)).get("avoid", False)),
             }
         )
+    obstacles.extend(_protected_zones_from_gis(project))
     return obstacles
 
 
@@ -4105,6 +4330,12 @@ def _segment_ownership_class(segment: Dict[str, Any]) -> str:
         return "sanitary_main" if role in {"", "main"} else "sanitary_lateral"
     if system == "water":
         return "water_main" if role in {"", "main"} else "utility_service"
+    if system == "gas":
+        return "gas_main" if role in {"", "main"} else "utility_service"
+    if system == "electric":
+        return "electric_main" if role in {"", "main"} else "utility_service"
+    if system == "telecom":
+        return "telecom_main" if role in {"", "main"} else "utility_service"
     return "utility_service" if role in {"service", "service_connection", "lateral"} else "generic"
 
 
@@ -4123,7 +4354,7 @@ def _clearance_resolution_steps(
     upper_targets = [item for item in ordered_targets if safe_str(item[0]) != preferred_lower] or list(ordered_targets)
     lower_targets = [item for item in ordered_targets if safe_str(item[0]) == preferred_lower] or list(ordered_targets)
     utility_gravity_systems = {"sanitary", "storm", "storm_pipes"}
-    utility_pressurized_systems = {"water", "utilities"}
+    utility_pressurized_systems = {"water", "utilities", "gas", "electric", "telecom"}
 
     def _utility_vertical_first(rows: Sequence[Tuple[str, str]]) -> List[Tuple[str, str]]:
         vertical_first: List[Tuple[str, str]] = []
@@ -4326,12 +4557,15 @@ def _grading_repair_penalty(note: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         score += 35.0
     if "retaining_sensitive_transition" in repair_modes:
         score += 45.0
+    if "protected_zone_grading_avoidance" in repair_modes:
+        score += 55.0
     blocked = (
         ("ada_path_repair" in repair_modes and delta_depth > 1.5)
         or ("road_edge_transition" in repair_modes and delta_depth > 1.25)
         or ("pavement_transition" in repair_modes and cut_fill > 140.0)
         or ("pad_tie_in" in repair_modes and delta_depth > 1.1)
         or ("retaining_sensitive_transition" in repair_modes and delta_depth > 1.0)
+        or ("protected_zone_grading_avoidance" in repair_modes and delta_depth > 0.75)
         or (disturbance == "high" and cut_fill > 180.0)
     )
     return {
@@ -4749,7 +4983,7 @@ def _prune_geometry_candidate_rows(
         hard_hits = [
             safe_dict(hit)
             for hit in safe_list(row.get("protected_hits"))
-            if bool(safe_dict(hit).get("avoid")) and safe_str(safe_dict(hit).get("kind")) in {"ada_path", "fire_lane", "access_aisle", "retaining_sensitive"}
+            if bool(safe_dict(hit).get("avoid")) and safe_str(safe_dict(hit).get("kind")) in HARD_PROTECTED_ZONE_KINDS
         ]
         if hard_hits:
             if preserve_first_hard_avoid and not preserved_hard_avoid:
@@ -4886,14 +5120,14 @@ def _conflicts_related(a: Dict[str, Any], b: Dict[str, Any], threshold_ft: float
     b_systems = {safe_str(item) for item in safe_list(b_rec.get("systems")) if safe_str(item)}
     if a_systems and b_systems and (a_systems & b_systems) and _conflict_distance(a_rec, b_rec) <= threshold_ft:
         return True
-    trench_systems = {"storm", "sanitary", "water", "utilities"}
+    trench_systems = {"storm", "sanitary", "water", "utilities", "gas", "electric", "telecom"}
     if (a_systems & trench_systems) and (b_systems & trench_systems):
         if _conflict_distance(a_rec, b_rec) <= max(threshold_ft, 28.0):
             return True
     a_types = {safe_str(a_rec.get("conflict_type"))}
     b_types = {safe_str(b_rec.get("conflict_type"))}
     if any(item.endswith("_geometry") for item in a_types | b_types):
-        protected_systems = {"building_pad", "roadway", "ada_path", "fire_lane", "access_aisle", "retaining_sensitive"}
+        protected_systems = {"building_pad", "roadway"} | HARD_PROTECTED_ZONE_KINDS
         if (a_systems & protected_systems or b_systems & protected_systems) and _conflict_distance(a_rec, b_rec) <= max(threshold_ft, 24.0):
             return True
     return False
@@ -4905,9 +5139,9 @@ def _system_family_name(system_name: str) -> str:
         return "storm"
     if name in {"sanitary", "sewer"}:
         return "sanitary"
-    if name in {"water", "utilities", "utility"}:
+    if name in {"water", "utilities", "utility", "gas", "electric", "telecom"}:
         return "water_utility"
-    if name in {"roadway", "building_pad", "ada_path", "fire_lane", "access_aisle", "retaining_sensitive"}:
+    if name in {"roadway", "building_pad"} or name in HARD_PROTECTED_ZONE_KINDS:
         return "protected_zone"
     return name or "unknown"
 
@@ -4919,7 +5153,7 @@ def _cluster_corridor_context(project: Optional[ProjectModel], systems: Sequence
         corridor_key = "sanitary"
     elif "storm" in rows:
         corridor_key = "storm"
-    elif "water" in rows or "utilities" in rows:
+    elif "water" in rows or "utilities" in rows or "gas" in rows or "electric" in rows or "telecom" in rows:
         corridor_key = "water"
     corridor = safe_dict(safe_dict(project.meta.get("preferred_corridors")).get(corridor_key)) if project is not None else {}
     if not corridor:
@@ -4975,7 +5209,7 @@ def _group_conflict_clusters(conflicts: Sequence[Dict[str, Any]], project: Optio
             {
                 safe_str(name)
                 for name in systems
-                if safe_str(name) in {"roadway", "building_pad", "ada_path", "fire_lane", "access_aisle", "retaining_sensitive"}
+                if safe_str(name) in {"roadway", "building_pad"} or safe_str(name) in HARD_PROTECTED_ZONE_KINDS
             }
         )
         cluster_rows.append(
@@ -5231,12 +5465,12 @@ def _detect_coordination_conflicts(project: ProjectModel, manager: ProjectManage
             )
         for rect in obstacles:
             system_name = safe_str(segment.get("system"))
-            if system_name not in {"storm", "sanitary", "water"}:
+            if system_name not in {"storm", "sanitary", "water", "gas", "electric", "telecom"}:
                 continue
             if not bool(rect.get("avoid")):
                 continue
             path = safe_list(segment.get("path"))
-            if safe_str(rect.get("kind")) == "building_pad" and system_name in {"storm", "sanitary", "water"}:
+            if safe_str(rect.get("kind")) == "building_pad" and system_name in {"storm", "sanitary", "water", "gas", "electric", "telecom"}:
                 endpoint_inside = bool(path) and (
                     _point_inside_buffered_rect(path[0], rect)
                     or _point_inside_buffered_rect(path[-1], rect)
@@ -5283,7 +5517,7 @@ def _find_summary_segment(project: ProjectModel, manager: ProjectManager, name: 
     for rec in safe_list(hooks.get("utility_segments")):
         row = safe_dict(rec)
         if safe_str(row.get("name")) == name:
-            return "utilities", row
+            return _utility_system_type(row, hooks), row
     return None
 
 
@@ -6078,6 +6312,9 @@ def _apply_local_grading_repair(project: ProjectModel, target_name: str, *, delt
     if "retaining_sensitive" in zone_kinds:
         repair_modes.append("retaining_sensitive_transition")
         recomputed_outputs.extend(["retaining_transition", "embankment_check"])
+    if any(kind in {"wetland", "floodplain", "tree_save", "row_conflict", "construction_access"} for kind in zone_kinds):
+        repair_modes.append("protected_zone_grading_avoidance")
+        recomputed_outputs.extend(["constraint_buffer_tie_in", "access_constructability_check"])
     recomputed_outputs = dedupe_keep_order(recomputed_outputs)
     disturbance_weight = 1.0 + sum(safe_float(item.get("penalty"), 0.0) for item in nearby_zones) / 250.0
     note = {
@@ -6088,7 +6325,7 @@ def _apply_local_grading_repair(project: ProjectModel, target_name: str, *, delt
         "recomputed_outputs": recomputed_outputs,
         "repair_modes": repair_modes or ["local_surface_adjustment"],
         "protected_zone_context": nearby_zones,
-        "disturbance_class": "high" if any(kind in {"roadway", "fire_lane", "ada_path", "access_aisle", "retaining_sensitive"} for kind in zone_kinds) else ("moderate" if zone_kinds else "standard"),
+        "disturbance_class": "high" if any(kind in {"roadway"} or kind in HARD_PROTECTED_ZONE_KINDS for kind in zone_kinds) else ("moderate" if zone_kinds else "standard"),
         "cut_fill_delta_cf": round(abs(delta_depth_ft) * 18.0 * disturbance_weight, 3),
     }
     _add_grading_adjustment(project, note)
@@ -6351,7 +6588,7 @@ def _apply_conflict_resolution(
         grading_eval = _grading_repair_penalty(grading_note)
         protected_hits = _path_protected_zone_hits(after_path or before_path or [], protected_zones, ignored_names=ignored_zone_names)
         protected_blocked = any(
-            bool(hit.get("avoid")) and safe_str(hit.get("kind")) in {"ada_path", "fire_lane", "access_aisle", "retaining_sensitive"}
+            bool(hit.get("avoid")) and safe_str(hit.get("kind")) in HARD_PROTECTED_ZONE_KINDS
             for hit in protected_hits
         )
         constructability = _candidate_constructability_score(
@@ -6423,7 +6660,7 @@ def _apply_conflict_resolution(
             "strategy": strategy,
             "source_mode": source_mode,
             "target": target_name,
-            "changed_systems": sorted({safe_str(item) for item in changed_systems if safe_str(item)}),
+            "changed_systems": _canonical_changed_systems(changed_systems),
             "valid": valid,
             "score": round(score, 3),
             "constructability": constructability,
@@ -6863,7 +7100,7 @@ def _refresh_conflict_resolved_state(
         _recompute_storm_summary(project, manager)
     if "sanitary" in changed:
         _recompute_sanitary_summary(project, manager, prefer_cache=True)
-    if changed.intersection({"utilities", "water"}):
+    if changed.intersection({"utilities", "water", "gas", "electric", "telecom"}):
         _recompute_utility_summary(project, manager, prefer_cache=True)
     return {
         "storm": deepcopy(safe_dict(manager.latest_outputs.get("storm_pipe_summary", project.meta.get("storm_pipe_summary", {})))),
@@ -7069,7 +7306,7 @@ def _apply_cluster_trench_prefit(project: ProjectModel, manager: ProjectManager,
         notes.append(f"Cluster-prefit rerouted {segment_name} using {candidate_mode} to reduce trench-group conflicts.")
     return {
         "applied": bool(moved_segments),
-        "changed_systems": sorted(changed_systems),
+        "changed_systems": _canonical_changed_systems(changed_systems),
         "notes": notes,
         "moved_segments": moved_segments,
         "added_structures": added_structures,
@@ -7200,7 +7437,7 @@ def _apply_trench_group_prefit(project: ProjectModel, manager: ProjectManager, g
     return {
         "applied": bool(cluster_prefits),
         "cluster_prefits": cluster_prefits,
-        "changed_systems": sorted(changed_systems),
+        "changed_systems": _canonical_changed_systems(changed_systems),
         "added_structures": added_structures,
         "grading_notes": grading_notes,
     }
@@ -7367,7 +7604,7 @@ def _apply_group_geometry_strategy_prefit(project: ProjectModel, manager: Projec
         notes.append(f"Group geometry strategy shared_corridor_escape rerouted {safe_str(rec.get('name'), target_name)} around combined protected geometry.")
     return {
         "applied": bool(rerouted_segments),
-        "changed_systems": sorted(changed_systems),
+        "changed_systems": _canonical_changed_systems(changed_systems),
         "added_structures": added_structures,
         "grading_notes": grading_notes,
         "notes": notes,
@@ -7599,7 +7836,7 @@ def _apply_group_crossing_strategy_prefit(project: ProjectModel, manager: Projec
             notes.append(f"Group crossing strategy {strategy_name} rerouted {safe_str(rec.get('name'), name)} before cluster solving.")
     return {
         "applied": bool(rerouted_segments),
-        "changed_systems": sorted(changed_systems),
+        "changed_systems": _canonical_changed_systems(changed_systems),
         "added_structures": added_structures,
         "grading_notes": grading_notes,
         "notes": notes,
@@ -7767,7 +8004,7 @@ def _solve_conflict_cluster(
             "order_name": safe_str(order.get("name")),
             "candidate_mode": safe_str(order.get("candidate_mode"), "balanced"),
             "candidate_count": len(candidate_orders),
-            "changed_systems": sorted(candidate_changed_systems),
+            "changed_systems": _canonical_changed_systems(candidate_changed_systems),
             "valid": len(remaining_related) == 0 and bool(validations.get("valid")) and not candidate_assumptions,
             "score": score,
             "remaining_cluster_conflicts": deepcopy(remaining_related),
@@ -8083,7 +8320,7 @@ def _solve_conflict_cluster_group(
             "plan_name": safe_str(plan.get("name")),
             "valid": len(remaining_related) == 0 and bool(validations.get("valid")) and not assumptions and all(bool(item.get("success")) for item in cluster_results),
             "score": score,
-            "changed_systems": sorted(changed_systems),
+            "changed_systems": _canonical_changed_systems(changed_systems),
             "cluster_results": cluster_results,
             "resolution_rows": cluster_rows,
             "constructability_score": constructability_score,
