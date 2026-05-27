@@ -87,7 +87,7 @@ export default function ChatPanel({
   const showContinuePending = Boolean(pendingClarification && onContinuePendingClarification && !busy && !hasVisibleActiveJob);
 
   return (
-    <div className="rounded-[24px] border border-slate-200 bg-white shadow-[0_10px_40px_-28px_rgba(15,23,42,0.5)]">
+    <div className="rounded-xl border border-slate-200 bg-white shadow-[0_10px_40px_-28px_rgba(15,23,42,0.5)]">
       <button
         type="button"
         onClick={onToggleCollapsed}
@@ -95,7 +95,7 @@ export default function ChatPanel({
       >
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-            Chat
+            Command Center (AI)
           </p>
           <p className="mt-1 text-sm text-slate-700">{summaryText}</p>
         </div>
@@ -107,7 +107,7 @@ export default function ChatPanel({
       {!collapsed ? (
         <div
           ref={chatScrollRef}
-          className="max-h-[320px] space-y-4 overflow-y-auto p-4 md:p-6"
+          className="max-h-[320px] space-y-4 overflow-y-auto p-4"
         >
           {chatMessages.map((message) => (
             <div
@@ -115,7 +115,7 @@ export default function ChatPanel({
               className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[85%] rounded-[28px] px-4 py-3 ${
+                className={`max-w-[85%] rounded-xl px-4 py-3 ${
                   message.role === "user"
                     ? "bg-slate-950 text-white"
                     : message.role === "system"
@@ -176,9 +176,9 @@ export default function ChatPanel({
         </div>
       ) : null}
 
-      <div className="border-t border-slate-200 p-4 md:p-5">
+      <div className="border-t border-slate-200 p-4">
         {(busy || hasVisibleActiveJob) && (
-          <div className="mb-4 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4">
+          <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-sm font-semibold text-slate-950">
@@ -199,7 +199,7 @@ export default function ChatPanel({
               />
             </div>
             {isAwaitingApproval ? (
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
+              <div className="mt-4 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
                 {approvalState === "starting"
                   ? approvalLabel
                   : "Phase ready for review. Approve to continue or send changes."}

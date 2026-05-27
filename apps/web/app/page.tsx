@@ -8450,7 +8450,7 @@ export default function PerformanceAIDashboard() {
           onLogout={handleLogout}
         />
 
-        <div className="flex min-h-[calc(100vh-4rem)]">
+        <div className="flex min-h-[calc(100vh-4rem)] flex-col lg:flex-row">
           <aside className="hidden w-[224px] shrink-0 border-r border-slate-200 bg-white/95 px-4 py-5 shadow-[18px_0_40px_-36px_rgba(15,23,42,0.5)] backdrop-blur-xl lg:flex lg:flex-col">
             <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Project</p>
@@ -8499,11 +8499,35 @@ export default function PerformanceAIDashboard() {
                                   ? MapPinned
                                   : Settings;
                 const status =
-                  item === "Model" || item === "Objects" || item === "Data"
-                    ? "ok"
-                    : item === "3D" || item === "Reports"
-                      ? "review"
-                      : "idle";
+                  item === "Model"
+                    ? placedObjectCount > 0
+                      ? "ok"
+                      : "idle"
+                    : item === "Objects"
+                      ? buildingPlacements.length > 0
+                        ? "ok"
+                        : "idle"
+                      : item === "Data"
+                        ? siteScaleLocked || Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng)
+                          ? "ok"
+                          : "review"
+                        : item === "3D"
+                          ? preview3DEffectiveItems.length > 0
+                            ? "ok"
+                            : "review"
+                          : item === "Reports" || item === "Quantities"
+                            ? backendResult
+                              ? "ok"
+                              : "idle"
+                            : item === "Layers"
+                              ? Object.values(systemStatuses).some((value) => value === "fresh")
+                                ? "ok"
+                                : "idle"
+                              : item === "Sections"
+                                ? planPreviewUrl
+                                  ? "ok"
+                                  : "idle"
+                                : "idle";
                 const StatusIcon = status === "ok" ? CheckCircle2 : status === "review" ? AlertCircle : Circle;
                 return (
                   <button
@@ -8544,7 +8568,7 @@ export default function PerformanceAIDashboard() {
             </div>
           </aside>
           {activeSidePanel ? (
-            <aside className="order-3 m-3 ml-0 flex w-[372px] shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white/96 shadow-[var(--civora-shadow-panel)] backdrop-blur-xl">
+            <aside className="order-3 m-3 flex w-auto shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white/96 shadow-[var(--civora-shadow-panel)] backdrop-blur-xl lg:ml-0 lg:w-[372px]">
               <div className="flex items-center justify-between border-b border-[var(--civora-border)] px-4 py-4">
                 <div>
                   <p className="civora-muted-label">
@@ -9357,7 +9381,7 @@ export default function PerformanceAIDashboard() {
                 <div
                   className="civora-canvas mx-auto w-full overflow-hidden p-1"
                   style={{
-                    width: activeSidePanel ? "calc(100vw - 224px - 372px)" : "calc(100vw - 224px)",
+                    width: "100%",
                     height: `${previewHeightPx}px`,
                   }}
                 >
@@ -9486,7 +9510,151 @@ export default function PerformanceAIDashboard() {
                 </div>
               </div>
 
-              <div className="rounded-[24px] border border-slate-200 bg-white/95 p-4 shadow-[0_12px_35px_-28px_rgba(15,23,42,0.45)]">
+              <div className="grid gap-3 lg:grid-cols-4">
+                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_14px_34px_-28px_rgba(15,23,42,0.5)]">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                    System Status
+                  </p>
+                  <div className="mt-4 flex items-center gap-4">
+                    <div className="flex h-20 w-20 items-center justify-center rounded-full border-[7px] border-slate-950 bg-white text-2xl font-semibold text-slate-950">
+                      {Object.values(systemStatuses).filter((status) => status === "fresh").length}
+                    </div>
+                    <div className="space-y-1 text-xs text-slate-600">
+                      <p>
+                        <span className="font-semibold text-emerald-600">
+                          {Object.values(systemStatuses).filter((status) => status === "fresh").length}
+                        </span>{" "}
+                        Fresh
+                      </p>
+                      <p>
+                        <span className="font-semibold text-amber-600">
+                          {Object.values(systemStatuses).filter((status) => status === "stale").length}
+                        </span>{" "}
+                        Stale
+                      </p>
+                      <p>
+                        <span className="font-semibold text-slate-500">
+                          {Object.values(systemStatuses).filter((status) => status === "not_generated").length}
+                        </span>{" "}
+                        Not generated
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_14px_34px_-28px_rgba(15,23,42,0.5)]">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                      Critical Issues
+                    </p>
+                    <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                      {issues.length + analysisIssues.length}
+                    </span>
+                  </div>
+                  <div className="mt-4 space-y-2 text-xs text-slate-700">
+                    {issues.slice(0, 2).map((issue, idx) => (
+                      <p key={`${issue.message}-${idx}`} className="line-clamp-2">
+                        <span className="mr-2 inline-block h-2 w-2 rounded-full bg-rose-500" />
+                        {issue.message}
+                      </p>
+                    ))}
+                    {analysisIssues.slice(0, 2).map((issue) => (
+                      <p key={issue.id} className="line-clamp-2">
+                        <span className="mr-2 inline-block h-2 w-2 rounded-full bg-amber-500" />
+                        {issue.message}
+                      </p>
+                    ))}
+                    {!issues.length && !analysisIssues.length ? (
+                      <p className="text-slate-500">No active blocking issues in the current workspace.</p>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_14px_34px_-28px_rgba(15,23,42,0.5)]">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                    Quantity Summary
+                  </p>
+                  <div className="mt-4 space-y-2 text-xs text-slate-600">
+                    {quantityRows.slice(0, 4).map((row) => (
+                      <div key={row.label} className="flex items-center justify-between gap-3">
+                        <span>{row.label}</span>
+                        <span className="font-semibold text-slate-900">
+                          {formatMetric(Number(row.value), row.unit)}
+                        </span>
+                      </div>
+                    ))}
+                    {!quantityRows.length ? (
+                      <p className="text-slate-500">Run systems to populate takeoff quantities.</p>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_14px_34px_-28px_rgba(15,23,42,0.5)]">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                    QA / Model
+                  </p>
+                  <div className="mt-4 flex items-center gap-4">
+                    <div className="flex h-20 w-20 items-center justify-center rounded-full border-[7px] border-slate-200 bg-slate-50 text-lg font-semibold text-slate-900">
+                      {placedObjectCount}
+                    </div>
+                    <div className="space-y-1 text-xs text-slate-600">
+                      <p>{buildingPlacements.length} canonical objects</p>
+                      <p>{confirmedObjectCounts.buildings} confirmed buildings</p>
+                      <p>{confirmedObjectCounts.access} access objects</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-[0_14px_34px_-28px_rgba(15,23,42,0.5)]">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                      Generate Systems
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Run focused engines without opening another panel.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-[0.12em]">
+                    {(["roads", "parking", "grading", "drainage", "utilities"] as const).map((system) => {
+                      const status = systemStatuses[system];
+                      const tone =
+                        status === "fresh"
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : status === "stale"
+                            ? "border-amber-200 bg-amber-50 text-amber-700"
+                            : "border-slate-200 bg-slate-50 text-slate-500";
+                      return (
+                        <span key={system} className={`rounded-md border px-2 py-1 ${tone}`}>
+                          {system} · {status.replace("_", " ")}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 md:grid-cols-6">
+                  {(["roads", "parking", "grading", "drainage", "utilities"] as const).map((system) => (
+                    <button
+                      key={system}
+                      type="button"
+                      onClick={() => handleGenerateSystem(system)}
+                      className="rounded-lg border border-slate-200 bg-white px-2 py-2 transition hover:border-slate-900 hover:text-slate-950"
+                    >
+                      {system}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateSystem("full")}
+                    className="rounded-lg border border-slate-900 bg-slate-950 px-2 py-2 text-white transition hover:bg-slate-800"
+                  >
+                    Full Site
+                  </button>
+                </div>
+              </div>
+
+              <div className="hidden">
                   <div className="rounded-2xl border border-slate-200 bg-white p-4">
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                       Create Objects
