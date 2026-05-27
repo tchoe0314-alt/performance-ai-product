@@ -113,6 +113,21 @@ const SITE_GRADING_HARD_BLOCK_ACRES = 500;
 const OVERSIZED_SITE_MESSAGE =
   "Selected site is very large. Zoom in or reduce site area before grading.";
 
+function buildAssumedSlopeEstimate(): SurveySlopeResponse {
+  return {
+    success: true,
+    slope_ratio: 0.015,
+    slope_percent: 1.5,
+    downhill_dx: 1,
+    downhill_dy: 1,
+    direction: "southeast",
+    point_count: 0,
+    warnings: [
+      "First-pass assumed slope for early layout only. Replace with survey, DEM, or map terrain before final engineering.",
+    ],
+  };
+}
+
 const siteAreaAcresFromSize = (widthFt?: number | null, heightFt?: number | null) => {
   if (!widthFt || !heightFt) return 0;
   return (widthFt * heightFt) / SQFT_PER_ACRE;
@@ -2784,6 +2799,7 @@ function PerformanceAIDashboardView({
       setActivePlacementId(nextPlacement.id);
       setPlacementModeEnabled(true);
       setPreviewMode("2d");
+      setPreviewInteraction("edit");
       console.debug("[placement] add-object", {
         id: nextPlacement.id,
         type: nextPlacement.type,
@@ -3203,6 +3219,7 @@ function PerformanceAIDashboardView({
       }
       if (next) {
         setPreviewMode("2d");
+        setPreviewInteraction("edit");
       }
       return next;
     });
@@ -3219,6 +3236,7 @@ function PerformanceAIDashboardView({
       return;
     }
     setPreviewMode("2d");
+    setPreviewInteraction("edit");
     setActivePlacementId(id);
     setPlacementModeEnabled(true);
     const target = buildingPlacements.find((item) => item.id === id);
@@ -4733,6 +4751,7 @@ function PerformanceAIDashboardView({
       }
       if (pendingClarification.action === "grading_source") {
         const lower = trimmed.toLowerCase();
+        let slopeEstimateOverride: SurveySlopeResponse | null = null;
         if (/(survey)/.test(lower)) {
           if (!surveyFileName) {
             appendChatMessage("assistant", "Please upload a survey/topo file first.", "status");
@@ -4742,7 +4761,9 @@ function PerformanceAIDashboardView({
         } else if (/(map|terrain)/.test(lower)) {
           setUseSurveyForGrading(false);
         } else if (/(assume|assumed|fallback)/.test(lower)) {
+          slopeEstimateOverride = buildAssumedSlopeEstimate();
           setUseSurveyForGrading(false);
+          setSurveySlopeEstimate(slopeEstimateOverride);
         } else {
           appendChatMessage(
             "assistant",
@@ -4761,7 +4782,7 @@ function PerformanceAIDashboardView({
           | undefined;
         if (target) {
           setPendingClarification(null);
-          void handleGenerateSystem(target);
+          void handleGenerateSystem(target, { slopeEstimateOverride });
           return;
         }
       }
@@ -4903,6 +4924,24 @@ function PerformanceAIDashboardView({
     if (pendingClarification.action === "access_analysis_missing") {
       setPendingClarification(null);
       handleAnalyzeSiteAccess();
+      return;
+    }
+    if (pendingClarification.action === "grading_source") {
+      const target = pendingClarification.payload?.target as
+        | "roads"
+        | "parking"
+        | "grading"
+        | "drainage"
+        | "utilities"
+        | "full"
+        | undefined;
+      if (target) {
+        const slopeEstimateOverride = buildAssumedSlopeEstimate();
+        setUseSurveyForGrading(false);
+        setSurveySlopeEstimate(slopeEstimateOverride);
+        setPendingClarification(null);
+        void handleGenerateSystem(target, { slopeEstimateOverride });
+      }
       return;
     }
   };
@@ -7559,7 +7598,10 @@ function PerformanceAIDashboardView({
   );
 
   const handleGenerateSystem = useCallback(
-    async (target: "roads" | "parking" | "grading" | "drainage" | "utilities" | "full") => {
+    async (
+      target: "roads" | "parking" | "grading" | "drainage" | "utilities" | "full",
+      options?: { slopeEstimateOverride?: SurveySlopeResponse | null },
+    ) => {
       if (!hasSiteBoundary()) {
         askClarification(
           "I need a site boundary before generating systems. What size should the site be?",
@@ -7599,9 +7641,10 @@ function PerformanceAIDashboardView({
           setStatusMessage(OVERSIZED_SITE_MESSAGE);
           return;
         }
+        const effectiveSlopeEstimate = options?.slopeEstimateOverride ?? surveySlopeEstimate;
         const hasSurvey = Boolean(surveyFileName) && useSurveyForGrading;
         const hasMapTerrain = Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng);
-        if (!hasSurvey && !hasMapTerrain && !surveySlopeEstimate?.slope_percent) {
+        if (!hasSurvey && !hasMapTerrain && !effectiveSlopeEstimate?.slope_percent) {
           askClarification(
             "I need a terrain source for grading. Use survey, map terrain, or a first‑pass assumed slope?",
             "grading_source",
@@ -7615,6 +7658,21 @@ function PerformanceAIDashboardView({
       const nextManualFields = {
         ...(requestPayload.manual_fields ?? {}),
       } as Record<string, unknown>;
+      const slopeEstimateOverride = options?.slopeEstimateOverride ?? null;
+      if (slopeEstimateOverride?.slope_percent) {
+        nextManualFields.grading = {
+          ...((typeof nextManualFields.grading === "object" && nextManualFields.grading !== null
+            ? nextManualFields.grading
+            : {}) as Record<string, unknown>),
+          min_slope_pct:
+            parsePositiveNumber(minSlopePct) ?? slopeEstimateOverride.slope_percent,
+          assumed_terrain_source: true,
+        };
+        nextManualFields.terrain =
+          slopeEstimateOverride.direction && slopeEstimateOverride.slope_percent
+            ? `First-pass assumed ${slopeEstimateOverride.slope_percent.toFixed(2)}% slope toward ${slopeEstimateOverride.direction}`
+            : "First-pass assumed terrain slope";
+      }
 
       if (target === "roads" || target === "parking") {
         nextManualFields.grading = omitField;
@@ -7670,6 +7728,7 @@ function PerformanceAIDashboardView({
       executePlanAction,
       hasSiteBoundary,
       ensureSiteLocked,
+      minSlopePct,
       projectId,
       resolveLotBounds,
       siteInputs?.geocode?.lat,

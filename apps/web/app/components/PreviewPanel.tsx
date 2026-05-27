@@ -1281,7 +1281,6 @@ export default function PreviewPanel({
     map.on("zoomend", reportCenter);
     const handleClick = (event: mapboxgl.MapMouseEvent) => {
       if (placementMode) {
-        if (!allowEdits) return;
         const sitePoint = latLngToSite(event.lngLat.lat, event.lngLat.lng);
         if (!sitePoint || !lotWidth || !lotHeight) {
           return;
@@ -2598,7 +2597,7 @@ export default function PreviewPanel({
                   ? "fixed inset-0 z-[120] rounded-none bg-slate-950 p-0"
                   : ""
               } ${
-                allowEdits ? "cursor-crosshair" : "cursor-default"
+                placementMode || allowEdits ? "cursor-crosshair" : "cursor-default"
               }`}
               onDragOver={(event) => {
                 event.preventDefault();
@@ -2683,7 +2682,6 @@ export default function PreviewPanel({
               onClick={(event) => {
                 if (allowMapInteraction) return;
                 if (placementMode) {
-                  if (!allowEdits) return;
                   resolvePlacement(event, previewRef, overlayBoundsResolved);
                   return;
                 }
@@ -2744,8 +2742,8 @@ export default function PreviewPanel({
                     ref={previewImageRef}
                     src={planPreviewUrl}
                     alt="Generated plan preview"
-                  className={`h-full w-full object-contain ${
-                      allowEdits ? "cursor-crosshair" : "cursor-default"
+                    className={`h-full w-full object-contain ${
+                      placementMode || allowEdits ? "cursor-crosshair" : "cursor-default"
                     }`}
                     onLoad={() => updateImageBounds(previewRef, previewImageRef, setPreviewImageBounds)}
                     onClick={onOpenFullscreen}
