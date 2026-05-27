@@ -2618,19 +2618,21 @@ function PerformanceAIDashboardView({
     [],
   );
 
-  const parsePromptToObject = useCallback(
+  const parsePromptToObjects = useCallback(
     (value: string) => {
       const normalized = value.trim().toLowerCase();
-      if (!normalized) return null;
+      if (!normalized) return [];
       const typeMap: Array<{ keys: string[]; type: SiteObjectType; label: string }> = [
         { keys: ["building", "office", "retail", "industrial", "warehouse", "house"], type: "building", label: "Building" },
         { keys: ["road", "street", "drive", "driveway"], type: "road", label: "Road" },
         { keys: ["parking", "lot", "garage"], type: "parking", label: "Parking" },
         { keys: ["basin", "pond", "detention"], type: "basin", label: "Basin" },
+        { keys: ["outfall"], type: "outfall", label: "Outfall" },
+        { keys: ["inlet", "catch basin"], type: "inlet", label: "Inlet" },
         { keys: ["sidewalk", "path", "trail"], type: "sidewalk", label: "Path" },
       ];
-      const matched = typeMap.find((item) => item.keys.some((key) => normalized.includes(key)));
-      if (!matched) return null;
+      const matched = typeMap.filter((item) => item.keys.some((key) => normalized.includes(key)));
+      if (!matched.length) return [];
       const colors = ["red", "blue", "green", "white", "black", "gray", "grey", "tan", "brown"];
       const materials = ["brick", "glass", "concrete", "asphalt", "gravel", "metal", "wood"];
       const color = colors.find((c) => normalized.includes(c));
@@ -2639,17 +2641,25 @@ function PerformanceAIDashboardView({
       if (color) style.color = color;
       if (material) style.material = material;
       const styleLabel = [color, material].filter(Boolean).join(" ");
-      return {
-        type: matched.type,
-        label: styleLabel ? `${matched.label} — ${styleLabel}` : matched.label,
+      return matched.map((item) => ({
+        type: item.type,
+        label: styleLabel ? `${item.label} — ${styleLabel}` : item.label,
         style: Object.keys(style).length ? style : undefined,
-      };
+      }));
     },
     [],
   );
 
   const handleAddObject = useCallback(
-    (type: SiteObjectType, options?: { label?: string; style?: Record<string, string>; geometryType?: "polygon" | "polyline" | "rect" }) => {
+    (
+      type: SiteObjectType,
+      options?: {
+        label?: string;
+        style?: Record<string, string>;
+        geometryType?: "polygon" | "polyline" | "rect";
+        placed?: boolean;
+      },
+    ) => {
       const catalog = SITE_OBJECT_CATALOG[type];
       if (!catalog) return;
       clearGeneratedPreview();
@@ -2696,6 +2706,15 @@ function PerformanceAIDashboardView({
       const defaults =
         type === "building" ? resolveDefaultBuildingDims() : { w: catalog.defaultW, d: catalog.defaultD };
       const defaultHeight = catalog.defaultH ?? 0;
+      const autoPlaced = Boolean(options?.placed);
+      const autoX =
+        type === "basin" || type === "outfall"
+          ? Math.max(0, lot.w - defaults.w - 24)
+          : Math.min(Math.max(24, existingCount * 24), Math.max(24, lot.w - defaults.w - 24));
+      const autoY =
+        type === "basin" || type === "outfall"
+          ? Math.max(0, lot.h - defaults.d - (type === "outfall" ? 8 : 24))
+          : Math.min(Math.max(24, existingCount * 18), Math.max(24, lot.h - defaults.d - 24));
       const parkingStalls =
         type === "parking" ? parsePositiveNumber(parkingCount) ?? 0 : undefined;
       const parkingParams =
@@ -2723,10 +2742,12 @@ function PerformanceAIDashboardView({
         w: defaults.w,
         d: defaults.d,
         h: defaultHeight,
+        x: autoPlaced ? autoX : undefined,
+        y: autoPlaced ? autoY : undefined,
         rotation: 0,
         stallCount: parkingStalls,
         locked: false,
-        placed: false,
+        placed: autoPlaced,
         source: "user",
         generated: false,
         capabilities: {
@@ -2836,18 +2857,20 @@ function PerformanceAIDashboardView({
   );
 
   const handlePromptAddObject = useCallback(() => {
-    const parsed = parsePromptToObject(objectPrompt);
-    if (!parsed) {
+    const parsedObjects = parsePromptToObjects(objectPrompt);
+    if (!parsedObjects.length) {
       setStatusMessage("Describe a building, road, parking, or basin to add.");
       return;
     }
-    const style = {
-      ...(parsed.style ?? {}),
-      outline_color: objectOutlineColor,
-    };
-    handleAddObject(parsed.type, { label: parsed.label, style });
+    parsedObjects.forEach((parsed) => {
+      const style = {
+        ...(parsed.style ?? {}),
+        outline_color: objectOutlineColor,
+      };
+      handleAddObject(parsed.type, { label: parsed.label, style, placed: true });
+    });
     setObjectPrompt("");
-  }, [handleAddObject, objectOutlineColor, objectPrompt, parsePromptToObject, setStatusMessage]);
+  }, [handleAddObject, objectOutlineColor, objectPrompt, parsePromptToObjects, setStatusMessage]);
 
   const handleUpdateBuilding = useCallback((id: string, updates: Partial<BuildingPlacement>) => {
     clearGeneratedPreview();
@@ -10326,6 +10349,13 @@ function PerformanceAIDashboardView({
                           className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           Refresh preview
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewFullscreenOpen(true)}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                        >
+                          Fullscreen
                         </button>
                       </div>
                       <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
