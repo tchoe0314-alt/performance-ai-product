@@ -9089,6 +9089,7 @@ function PerformanceAIDashboardView({
                     "Import & Survey",
                     "Design",
                     "Objects",
+                    "Generate",
                     "Grading",
                     "Drainage",
                     "Utilities",
@@ -9587,6 +9588,61 @@ function PerformanceAIDashboardView({
                         ))}
                       </div>
                     </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Boundary & constraints</p>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={siteScaleLocked ? handleUnlockSite : () => void handleApplySite()}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                        >
+                          {siteScaleLocked ? "Unlock site" : "Lock site"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAddObject("site")}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                        >
+                          Add boundary
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAddObject("setback_zone")}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                        >
+                          Setback zone
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAddObject("no_build_zone")}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                        >
+                          No-build zone
+                        </button>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Next setup actions</p>
+                      <div className="mt-3 space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenSidePanel("import_survey")}
+                          className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                        >
+                          <span>Import survey or map</span>
+                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">{hasTerrainSource ? "Ready" : "Needed"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleAnalyzeSiteAccess}
+                          disabled={confirmedObjectCounts.buildings === 0 || confirmedObjectCounts.access === 0}
+                          className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <span>Check site access</span>
+                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">{analysisIssues.length ? "Reviewed" : "Run"}</span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 ) : null}
 
@@ -9634,6 +9690,60 @@ function PerformanceAIDashboardView({
                           <p className="mt-1 text-sm font-semibold text-slate-900">{value}</p>
                         </div>
                       ))}
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Map calibration</p>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setFitToSiteRequest((value) => value + 1)}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                        >
+                          Fit to site
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setMapCenterRequest((value) => value + 1)}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                        >
+                          Map center
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAlignToRoadRequest((value) => value + 1)}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                        >
+                          Align road
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSiteRotationDeg(0);
+                            setSiteRotationInput("0");
+                            scheduleRotationSave(0);
+                          }}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                        >
+                          Reset rotation
+                        </button>
+                      </div>
+                      <label className="mt-3 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        Rotation
+                        <input
+                          type="range"
+                          min={-180}
+                          max={180}
+                          value={siteRotationDeg}
+                          disabled={siteScaleLocked}
+                          onChange={(event) => {
+                            const value = Number(event.target.value);
+                            setSiteRotationDeg(value);
+                            setSiteRotationInput(String(value));
+                            scheduleRotationSave(value);
+                          }}
+                          className="mt-2 h-2 w-full accent-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                        />
+                      </label>
                     </div>
                   </div>
                 ) : null}
@@ -10053,6 +10163,66 @@ function PerformanceAIDashboardView({
                           </button>
                         ))}
                       </div>
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          View behavior
+                        </p>
+                        <div className="mt-2 grid grid-cols-2 gap-2">
+                          {(["static", "edit"] as const).map((mode) => (
+                            <button
+                              key={mode}
+                              type="button"
+                              onClick={() => setPreviewInteraction(mode)}
+                              className={`rounded-xl border px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] ${
+                                previewInteraction === mode
+                                  ? "border-slate-950 bg-slate-950 text-white"
+                                  : "border-slate-200 bg-white text-slate-700"
+                              }`}
+                            >
+                              {mode}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="mt-3 grid grid-cols-3 gap-2">
+                          {(["low", "standard", "high"] as const).map((density) => (
+                            <button
+                              key={density}
+                              type="button"
+                              onClick={() => {
+                                setPreviewLabelDensityTouched(true);
+                                setPreviewLabelDensity(density);
+                              }}
+                              className={`rounded-xl border px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                                previewLabelDensity === density
+                                  ? "border-slate-950 bg-slate-950 text-white"
+                                  : "border-slate-200 bg-white text-slate-700"
+                              }`}
+                            >
+                              {density}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="mt-3 space-y-2 text-sm font-semibold text-slate-700">
+                          <label className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
+                            <span>Measurements overlay</span>
+                            <input
+                              type="checkbox"
+                              checked={showMeasurements}
+                              onChange={(event) => setShowMeasurements(event.target.checked)}
+                              className="h-4 w-4 accent-slate-950"
+                            />
+                          </label>
+                          <label className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
+                            <span>Calculation overlay</span>
+                            <input
+                              type="checkbox"
+                              checked={showCalculations}
+                              onChange={(event) => setShowCalculations(event.target.checked)}
+                              className="h-4 w-4 accent-slate-950"
+                            />
+                          </label>
+                        </div>
+                      </div>
                       <button
                         type="button"
                         onClick={() => setFitToSiteRequest((value) => value + 1)}
@@ -10262,6 +10432,21 @@ function PerformanceAIDashboardView({
                           </label>
                         </div>
                       </div>
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Outputs</p>
+                        <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-600">
+                          {["2-ft contours", "Spot elevations", "ADA slope check", "Pad tie-ins"].map((label) => (
+                            <span key={label} className="rounded-lg border border-slate-200 bg-white px-2 py-2">{label}</span>
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenSidePanel("analysis")}
+                          className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                        >
+                          Review grading issues
+                        </button>
+                      </div>
                       <button
                         type="button"
                         onClick={() => handleGenerateSystem("grading")}
@@ -10325,6 +10510,21 @@ function PerformanceAIDashboardView({
                           <span className="rounded-lg border border-slate-200 bg-white px-2 py-2">Overflow checks</span>
                         </div>
                       </div>
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Drainage objects</p>
+                        <div className="mt-2 grid grid-cols-3 gap-2">
+                          {(["basin", "inlet", "outfall"] as const).map((type) => (
+                            <button
+                              key={type}
+                              type="button"
+                              onClick={() => handleAddObject(type)}
+                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                            >
+                              {SITE_OBJECT_CATALOG[type].label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       <button
                         type="button"
                         onClick={() => handleGenerateSystem("drainage")}
@@ -10378,6 +10578,37 @@ function PerformanceAIDashboardView({
                           ))}
                         </div>
                       </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenSidePanel("sanitary")}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                        >
+                          Sanitary
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenSidePanel("water")}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                        >
+                          Water
+                        </button>
+                      </div>
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Utility objects</p>
+                        <div className="mt-2 grid grid-cols-3 gap-2">
+                          {(["utility_corridor", "manhole", "hydrant"] as const).map((type) => (
+                            <button
+                              key={type}
+                              type="button"
+                              onClick={() => handleAddObject(type)}
+                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                            >
+                              {SITE_OBJECT_CATALOG[type].label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       <button type="button" onClick={() => handleGenerateSystem("utilities")} className="mt-4 w-full rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800">
                         Generate utilities
                       </button>
@@ -10415,6 +10646,10 @@ function PerformanceAIDashboardView({
                         <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">Manhole spacing</span>
                         <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">Cover checks</span>
                         <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">Tie-in review</span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <button type="button" onClick={() => handleAddObject("manhole")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Add manhole</button>
+                        <button type="button" onClick={() => handleAddObject("utility_corridor")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Add corridor</button>
                       </div>
                       <button type="button" onClick={() => handleGenerateSystem("utilities")} className="mt-4 w-full rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800">
                         Generate sanitary
@@ -10589,12 +10824,45 @@ function PerformanceAIDashboardView({
                       </label>
                       <div className="mt-3 grid grid-cols-2 gap-2">
                         <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          Parking angle
+                          <select
+                            value={parkingAngle}
+                            onChange={(event) => setParkingAngle(event.target.value as "90" | "60" | "45")}
+                            className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm normal-case tracking-normal text-slate-700"
+                          >
+                            <option value="90">90 deg</option>
+                            <option value="60">60 deg</option>
+                            <option value="45">45 deg</option>
+                          </select>
+                        </label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          Parking load
+                          <select
+                            value={parkingLoading}
+                            onChange={(event) => setParkingLoading(event.target.value as "single" | "double")}
+                            className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm normal-case tracking-normal text-slate-700"
+                          >
+                            <option value="double">Double loaded</option>
+                            <option value="single">Single loaded</option>
+                          </select>
+                        </label>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
                           Stall width
                           <input value={parkingStallWidth} onChange={(event) => setParkingStallWidth(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm normal-case tracking-normal text-slate-700" />
                         </label>
                         <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
                           Aisle width
                           <input value={parkingAisleWidth} onChange={(event) => setParkingAisleWidth(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm normal-case tracking-normal text-slate-700" />
+                        </label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          Stall depth
+                          <input value={parkingStallDepth} onChange={(event) => setParkingStallDepth(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm normal-case tracking-normal text-slate-700" />
+                        </label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          Road max %
+                          <input value={maxRoadGradePct} onChange={(event) => setMaxRoadGradePct(event.target.value)} placeholder="Auto" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm normal-case tracking-normal text-slate-700" />
                         </label>
                         <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
                           ADA spaces
@@ -10604,6 +10872,24 @@ function PerformanceAIDashboardView({
                           Compact spaces
                           <input value={parkingCompactCount} onChange={(event) => setParkingCompactCount(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm normal-case tracking-normal text-slate-700" />
                         </label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          ADA aisle
+                          <input value={parkingAdaAisleWidth} onChange={(event) => setParkingAdaAisleWidth(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm normal-case tracking-normal text-slate-700" />
+                        </label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          Compact width
+                          <input value={parkingCompactWidth} onChange={(event) => setParkingCompactWidth(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm normal-case tracking-normal text-slate-700" />
+                        </label>
+                      </div>
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Roadway objects</p>
+                        <div className="mt-2 grid grid-cols-2 gap-2">
+                          {(["entrance", "road", "parking", "sidewalk"] as const).map((type) => (
+                            <button key={type} type="button" onClick={() => handleAddObject(type)} className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50">
+                              {SITE_OBJECT_CATALOG[type].label}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                       <div className="mt-3 grid grid-cols-2 gap-2">
                         <button type="button" onClick={() => handleGenerateSystem("roads")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Roads</button>
@@ -10615,6 +10901,19 @@ function PerformanceAIDashboardView({
 
                 {activeSidePanel === "landscape" ? (
                   <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        ["Open space", buildingPlacements.filter((item) => item.type === "open_space").length],
+                        ["Amenities", buildingPlacements.filter((item) => ["amenity", "pool"].includes(item.type ?? "")).length],
+                        ["Paths", buildingPlacements.filter((item) => item.type === "sidewalk").length],
+                        ["Placed", buildingPlacements.filter((item) => item.placed && ["open_space", "amenity", "pool", "sidewalk"].includes(item.type ?? "")).length],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-800">{value}</p>
+                        </div>
+                      ))}
+                    </div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Landscape controls</p>
                       <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600">
@@ -10660,6 +10959,77 @@ function PerformanceAIDashboardView({
                           <button type="button" onClick={() => handleToggleBuildingLock(selectedBuilding.id)} disabled={selectedBuilding.type === "site"} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
                             {selectedBuilding.locked ? "Unlock object" : "Lock object"}
                           </button>
+                          <div className="grid grid-cols-2 gap-2 text-[11px]">
+                            <label className="flex flex-col gap-1 font-semibold uppercase tracking-[0.12em] text-slate-500">
+                              X
+                              <input
+                                type="number"
+                                value={Math.round(selectedBuilding.x ?? 0)}
+                                onChange={(event) =>
+                                  handleUpdateBuilding(selectedBuilding.id, {
+                                    x: Number(event.target.value) || 0,
+                                  })
+                                }
+                                className="rounded-md border border-slate-200 px-2 py-1 normal-case tracking-normal text-slate-700"
+                              />
+                            </label>
+                            <label className="flex flex-col gap-1 font-semibold uppercase tracking-[0.12em] text-slate-500">
+                              Y
+                              <input
+                                type="number"
+                                value={Math.round(selectedBuilding.y ?? 0)}
+                                onChange={(event) =>
+                                  handleUpdateBuilding(selectedBuilding.id, {
+                                    y: Number(event.target.value) || 0,
+                                  })
+                                }
+                                className="rounded-md border border-slate-200 px-2 py-1 normal-case tracking-normal text-slate-700"
+                              />
+                            </label>
+                            <label className="flex flex-col gap-1 font-semibold uppercase tracking-[0.12em] text-slate-500">
+                              Rotation
+                              <input
+                                type="number"
+                                value={Math.round(selectedBuilding.rotation ?? 0)}
+                                onChange={(event) =>
+                                  handleUpdateBuilding(selectedBuilding.id, {
+                                    rotation: Number(event.target.value) || 0,
+                                  })
+                                }
+                                className="rounded-md border border-slate-200 px-2 py-1 normal-case tracking-normal text-slate-700"
+                              />
+                            </label>
+                            <label className="flex flex-col gap-1 font-semibold uppercase tracking-[0.12em] text-slate-500">
+                              Source
+                              <input
+                                value={selectedBuilding.source ?? "user"}
+                                readOnly
+                                className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 normal-case tracking-normal text-slate-700"
+                              />
+                            </label>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActivePlacementId(selectedBuilding.id);
+                                setPlacementModeEnabled(true);
+                              }}
+                              className="rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800"
+                            >
+                              Move
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFocusObjectId(selectedBuilding.id);
+                                setActiveSidePanel(null);
+                              }}
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                            >
+                              Focus
+                            </button>
+                          </div>
                         </div>
                       ) : (
                         <p className="mt-3 text-sm text-slate-500">Select an object on the canvas or in Objects to inspect its details.</p>
@@ -10685,6 +11055,31 @@ function PerformanceAIDashboardView({
 
                 {activeSidePanel === "layers" ? (
                   <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPreviewLayers((prev) =>
+                            Object.fromEntries(Object.keys(prev).map((key) => [key, true])) as typeof prev,
+                          )
+                        }
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                      >
+                        Show all
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPreviewLayers((prev) => ({
+                            ...Object.fromEntries(Object.keys(prev).map((key) => [key, false])),
+                            buildings: true,
+                          }) as typeof prev)
+                        }
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                      >
+                        Buildings only
+                      </button>
+                    </div>
                     {Object.entries(previewLayers).map(([key, value]) => (
                       <label key={key} className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold capitalize text-slate-700">
                         <span>{key.replace("_", " ")}</span>
@@ -10701,7 +11096,23 @@ function PerformanceAIDashboardView({
 
                 {activeSidePanel === "analysis" ? (
                   <div className="space-y-3">
-                    <button type="button" onClick={handleAnalyzeSiteAccess} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">Run access analysis</button>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        ["Model issues", issues.length],
+                        ["Access issues", analysisIssues.length],
+                        ["Systems ready", systemHealthItems.filter((item) => item.state === "complete").length],
+                        ["Blocked", systemHealthItems.filter((item) => item.state === "blocked").length],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-800">{value}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button type="button" onClick={handleAnalyzeSiteAccess} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">Run access analysis</button>
+                      <button type="button" onClick={() => handleOpenSidePanel("dashboard")} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">Open dashboard</button>
+                    </div>
                     {[...issues.map((issue, index) => ({ id: `issue-${index}`, message: issue.message, severity: issue.severity })), ...analysisIssues.map((issue) => ({ id: issue.id, message: issue.message, severity: "warning" as const }))].map((issue) => (
                       <div key={issue.id} className="rounded-2xl border border-slate-200 bg-white p-4">
                         <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${issue.severity === "error" ? "text-red-600" : "text-amber-600"}`}>{issue.severity}</p>
@@ -10729,6 +11140,10 @@ function PerformanceAIDashboardView({
                         ))}
                       </div>
                       <button type="button" onClick={() => handleOpenSidePanel("import_survey")} className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Import files</button>
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <button type="button" onClick={() => mapSnapshotInputRef.current?.click()} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Map image</button>
+                        <button type="button" onClick={() => surveyInputRef.current?.click()} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Survey file</button>
+                      </div>
                     </div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Generated outputs</p>
@@ -10743,6 +11158,10 @@ function PerformanceAIDashboardView({
                             <span className="text-xs uppercase tracking-[0.12em] text-slate-500">{value}</span>
                           </div>
                         ))}
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <button type="button" onClick={handleExportDxf} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">DXF</button>
+                        <button type="button" onClick={handleExportReport} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Report</button>
                       </div>
                     </div>
                   </div>
