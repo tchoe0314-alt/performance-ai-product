@@ -8,6 +8,7 @@ from backend.planning.production_depth import (
     build_optimization_alternatives,
     enrich_drainage_production_depth,
     enrich_storm_production_depth,
+    enrich_water_production_depth,
 )
 from core.civil_design import civil_design_readiness
 
@@ -67,6 +68,72 @@ class ProductionDepthArtifactTests(unittest.TestCase):
         self.assertEqual(enriched["tailwater_elev_ft"], 96.0)
         self.assertEqual(enriched["inlet_capacity_checks"][0]["inlet"], "INLET-1")
         self.assertEqual(enriched["controlling_segment"], "P-1")
+
+    def test_water_depth_validates_pressure_fire_flow_hydrants_and_velocity(self) -> None:
+        utilities = {
+            "source_pressure_psi": 72.0,
+            "source_node": "SRC",
+            "available_fire_flow_gpm": 1600.0,
+            "fire_flow_demand_gpm": 1250.0,
+            "hydrants": [
+                {"name": "H-1", "x": 0.0, "y": 0.0},
+                {"name": "H-2", "x": 280.0, "y": 0.0},
+            ],
+            "conflict_hooks": {
+                "utility_system_type": "water",
+                "utility_segments": [
+                    {
+                        "name": "W-1",
+                        "system_type": "water",
+                        "start_node": "SRC",
+                        "end_node": "A",
+                        "route_points": [[0.0, 0.0], [220.0, 0.0]],
+                        "diameter_in": 8.0,
+                        "flow_gpm": 450.0,
+                    },
+                    {
+                        "name": "W-2",
+                        "system_type": "water",
+                        "start_node": "A",
+                        "end_node": "SRC",
+                        "route_points": [[220.0, 0.0], [0.0, 0.0]],
+                        "diameter_in": 8.0,
+                        "flow_gpm": 300.0,
+                    },
+                ],
+            },
+        }
+
+        enriched = enrich_water_production_depth(utilities)
+
+        self.assertTrue(enriched["pressure_validation"]["valid"])
+        self.assertTrue(enriched["fire_flow_validation"]["valid"])
+        self.assertTrue(enriched["hydrant_spacing_validation"]["valid"])
+        self.assertTrue(enriched["looped"])
+        self.assertEqual(enriched["water_depth_status"], "ready")
+        self.assertEqual(enriched["velocity_checks"][0]["segment"], "W-1")
+
+    def test_water_depth_blocks_missing_pressure_and_fire_flow_inputs(self) -> None:
+        utilities = {
+            "conflict_hooks": {
+                "utility_system_type": "water",
+                "utility_segments": [
+                    {
+                        "name": "W-MISSING",
+                        "system_type": "water",
+                        "route_points": [[0.0, 0.0], [100.0, 0.0]],
+                        "diameter_in": 8.0,
+                    }
+                ],
+            }
+        }
+
+        enriched = enrich_water_production_depth(utilities)
+
+        self.assertFalse(enriched["pressure_validation"]["valid"])
+        self.assertIn("pressure_inputs_missing", enriched["water_depth_blockers"])
+        self.assertIn("fire_flow_not_validated", enriched["water_depth_blockers"])
+        self.assertEqual(enriched["water_depth_status"], "blocked_missing_inputs")
 
     def test_grading_detail_controls_are_derived_from_grade_elements(self) -> None:
         controls = build_grading_detail_controls(

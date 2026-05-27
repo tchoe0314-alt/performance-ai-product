@@ -274,6 +274,9 @@ from backend.planning.depth_validators import (
     validate_stormwater_depth as _validate_stormwater_depth,
     validate_water_system_depth as _validate_water_system_depth,
 )
+from backend.planning.production_depth import (
+    enrich_water_production_depth as _enrich_water_production_depth,
+)
 from backend.planning.existing_conditions import summarize_existing_conditions as _summarize_existing_conditions
 from backend.planning.reactive_model import reactive_report_from_plan as _reactive_report_from_plan
 
@@ -2712,7 +2715,7 @@ def _enrich_utility_summary_with_coordination(
         "required_horizontal_separation_ft": round(safe_float(hooks.get("minimum_horizontal_separation_ft"), 0.0), 3),
         "required_vertical_separation_ft": round(safe_float(hooks.get("minimum_vertical_separation_ft"), 0.0), 3),
     }
-    return summary
+    return _enrich_water_production_depth(summary)
 
 
 def _filter_placeholder_engineering_actions(project: ProjectModel, actions: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -4413,6 +4416,83 @@ def _clearance_resolution_steps(
     return resolution_steps
 
 
+def _gis_layer_payload(project: ProjectModel, layer_names: Sequence[str]) -> Tuple[str, Any]:
+    meta = safe_dict(project.meta)
+    gis_layers = safe_dict(meta.get("gis_layers"))
+    existing = safe_dict(meta.get("existing_conditions"))
+    if not gis_layers:
+        gis_layers = safe_dict(existing.get("gis_layers")) or safe_dict(existing.get("layers")) or existing
+    for layer_name in layer_names:
+        value = gis_layers.get(layer_name)
+        if value:
+            return layer_name, value
+    return "", None
+
+
+def _preferred_corridor_from_gis(project: ProjectModel) -> Dict[str, Any]:
+    layer_name, raw_layer = _gis_layer_payload(
+        project,
+        (
+            "utility_corridors",
+            "utility_easements",
+            "easements",
+            "private_easements",
+        ),
+    )
+    if not raw_layer:
+        return {}
+    candidates: List[Dict[str, Any]] = []
+    for index, feature in enumerate(_gis_feature_rows(raw_layer), start=1):
+        bbox = _bbox_from_feature(feature)
+        if not bbox:
+            continue
+        width = safe_float(bbox.get("w"), 0.0)
+        height = safe_float(bbox.get("h"), 0.0)
+        if width <= 0.0 and height <= 0.0:
+            continue
+        orientation = "horizontal" if width >= height else "vertical"
+        axis_value = (
+            safe_float(bbox.get("y"), 0.0) + height / 2.0
+            if orientation == "horizontal"
+            else safe_float(bbox.get("x"), 0.0) + width / 2.0
+        )
+        candidates.append(
+            {
+                "orientation": orientation,
+                "axis_value": round(axis_value, 3),
+                "width_ft": round(height if orientation == "horizontal" else width, 3),
+                "length_ft": round(max(width, height), 3),
+                "source": "gis_easement",
+                "source_layer": layer_name,
+                "source_name": _feature_label(feature, f"{layer_name.upper()}-{index}"),
+            }
+        )
+    if not candidates:
+        return {}
+    return max(candidates, key=lambda item: safe_float(item.get("length_ft"), 0.0))
+
+
+def _corridor_slots_from_axis(axis: Dict[str, Any], fallback: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    orientation = safe_str(axis.get("orientation"))
+    axis_value = safe_float(axis.get("axis_value"), 0.0)
+    if orientation not in {"horizontal", "vertical"}:
+        return fallback
+    width_ft = safe_float(axis.get("width_ft"), 0.0)
+    slot = max(4.0, min(10.0, width_ft / 4.0 if width_ft > 0.0 else 6.0))
+    source = {
+        "orientation": orientation,
+        "source": safe_str(axis.get("source"), "derived_corridor"),
+        "source_layer": safe_str(axis.get("source_layer")),
+        "source_name": safe_str(axis.get("source_name")),
+    }
+    return {
+        "storm": {**source, "axis_value": round(axis_value - slot, 3), "weight": 1.1, "slot_role": "storm_lower_slot"},
+        "sanitary": {**source, "axis_value": round(axis_value, 3), "weight": 1.15, "slot_role": "sanitary_middle_slot"},
+        "water": {**source, "axis_value": round(axis_value + slot, 3), "weight": 1.0, "slot_role": "water_pressure_slot"},
+        "generic": {**source, "axis_value": round(axis_value + slot * 1.5, 3), "weight": 0.8, "slot_role": "generic_utility_slot"},
+    }
+
+
 def _preferred_corridors(parsed: Dict[str, Any], project: ProjectModel) -> Dict[str, Dict[str, Any]]:
     lot = safe_dict(unwrap_fields_for_execution(parsed.get("lot")))
     x = safe_float(lot.get("x"), DEFAULT_LOT_X)
@@ -4428,18 +4508,20 @@ def _preferred_corridors(parsed: Dict[str, Any], project: ProjectModel) -> Dict[
     storm_offset = setback * 1.0
     water_offset = setback * 1.35
     if horizontal:
-        return {
+        fallback = {
             "storm": {"orientation": "horizontal", "axis_value": round(road_bias_y + storm_offset, 3), "weight": 0.8},
             "sanitary": {"orientation": "horizontal", "axis_value": round(road_bias_y + sanitary_offset, 3), "weight": 0.9},
             "water": {"orientation": "horizontal", "axis_value": round(road_bias_y + water_offset, 3), "weight": 0.7},
             "generic": {"orientation": "horizontal", "axis_value": round(road_bias_y + water_offset + 4.0, 3), "weight": 0.5},
         }
-    return {
+        return _corridor_slots_from_axis(_preferred_corridor_from_gis(project), fallback)
+    fallback = {
         "storm": {"orientation": "vertical", "axis_value": round(road_bias_x + storm_offset, 3), "weight": 0.8},
         "sanitary": {"orientation": "vertical", "axis_value": round(road_bias_x + sanitary_offset, 3), "weight": 0.9},
         "water": {"orientation": "vertical", "axis_value": round(road_bias_x + water_offset, 3), "weight": 0.7},
         "generic": {"orientation": "vertical", "axis_value": round(road_bias_x + water_offset + 4.0, 3), "weight": 0.5},
     }
+    return _corridor_slots_from_axis(_preferred_corridor_from_gis(project), fallback)
 
 
 def _corridor_deviation_cost(path: Sequence[Sequence[float]], preference: Dict[str, Any]) -> float:

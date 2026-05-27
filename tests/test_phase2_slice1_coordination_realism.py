@@ -8,6 +8,7 @@ from planner import (
     _apply_conflict_resolution,
     _attach_canonical_stage_outputs,
     _detect_coordination_conflicts,
+    _preferred_corridors,
 )
 
 
@@ -210,6 +211,31 @@ class Phase2Slice1CoordinationRealismTest(unittest.TestCase):
         self.assertTrue(gas_water)
         self.assertEqual(gas_water[0]["preferred_lower_system"], "gas")
         self.assertEqual(gas_water[0]["interaction_type"], "crossing")
+
+    def test_preferred_corridors_use_gis_easement_axis_when_available(self) -> None:
+        project = ProjectModel()
+        project.meta["gis_layers"] = {
+            "easements": [
+                {
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[[0.0, 90.0], [300.0, 90.0], [300.0, 110.0], [0.0, 110.0], [0.0, 90.0]]],
+                    },
+                    "properties": {"name": "Utility Easement A"},
+                }
+            ]
+        }
+
+        corridors = _preferred_corridors(
+            {"lot": {"x": 0.0, "y": 0.0, "w": 300.0, "h": 200.0}, "street_edge": "bottom"},
+            project,
+        )
+
+        self.assertEqual(corridors["water"]["source"], "gis_easement")
+        self.assertEqual(corridors["water"]["source_name"], "Utility Easement A")
+        self.assertEqual(corridors["water"]["orientation"], "horizontal")
+        self.assertAlmostEqual(corridors["sanitary"]["axis_value"], 100.0, places=3)
+        self.assertGreater(corridors["water"]["axis_value"], corridors["sanitary"]["axis_value"])
 
 
 if __name__ == "__main__":

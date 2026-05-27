@@ -4,6 +4,8 @@ import math
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from engines.water_sizing_engine import WaterSizingEngine, analyze_water_pressure_graph
+
 from .common import polyline_length, safe_dict, safe_float, safe_int, safe_list, safe_str
 
 
@@ -227,6 +229,330 @@ def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict
     enriched.setdefault("total_system_capacity_cfs", round(total_capacity, 3))
     enriched.setdefault("max_capacity_ratio", round(max_ratio, 4))
     enriched.setdefault("controlling_segment", controlling)
+    return enriched
+
+
+def _finite_or_none(value: Any) -> Optional[float]:
+    number = safe_float(value, float("nan"))
+    return number if math.isfinite(number) else None
+
+
+def _water_segment_system(segment: Dict[str, Any], default_system: str = "") -> str:
+    text = " ".join(
+        safe_str(value).lower()
+        for value in (
+            segment.get("system"),
+            segment.get("system_type"),
+            segment.get("utility_type"),
+            segment.get("type"),
+            segment.get("layer"),
+            segment.get("name"),
+            default_system,
+        )
+        if safe_str(value)
+    )
+    if any(token in text for token in ("sanitary", "sewer", "storm", "drain", "gas", "electric", "telecom", "fiber")):
+        return "other"
+    if any(token in text for token in ("water", "watr", "potable", "hydrant", "fire")):
+        return "water"
+    return "water" if default_system == "water" else "other"
+
+
+def _endpoint_node_name(point: Sequence[float], fallback: str) -> str:
+    if len(point) < 2:
+        return fallback
+    return f"N-{round(safe_float(point[0], 0.0), 3)}-{round(safe_float(point[1], 0.0), 3)}"
+
+
+def _water_has_cycle(segments: Sequence[Dict[str, Any]]) -> bool:
+    adjacency: Dict[str, List[str]] = {}
+    for rec in segments:
+        start = safe_str(rec.get("start_node") or rec.get("from_node"))
+        end = safe_str(rec.get("end_node") or rec.get("to_node"))
+        if not start or not end:
+            continue
+        adjacency.setdefault(start, []).append(end)
+        adjacency.setdefault(end, []).append(start)
+    visited: set[str] = set()
+
+    def visit(node: str, parent: str) -> bool:
+        visited.add(node)
+        for neighbor in adjacency.get(node, []):
+            if neighbor == parent:
+                continue
+            if neighbor in visited or visit(neighbor, node):
+                return True
+        return False
+
+    return any(visit(node, "") for node in adjacency if node not in visited)
+
+
+def _hydrant_spacing_validation(hydrants: Sequence[Any], *, default_limit_ft: float = 500.0) -> Dict[str, Any]:
+    points: List[Tuple[str, float, float]] = []
+    for index, item in enumerate(hydrants, start=1):
+        rec = safe_dict(item)
+        xy = _point_xy(rec)
+        if xy is None:
+            continue
+        points.append((safe_str(rec.get("name") or rec.get("id"), f"HYD-{index}"), xy[0], xy[1]))
+    if len(points) < 2:
+        return {
+            "valid": False,
+            "hydrant_count": len(points),
+            "missing_inputs": ["at_least_two_hydrants"],
+            "truth_label": "Hydrant spacing was not validated because fewer than two hydrants have coordinates.",
+        }
+    ordered = sorted(points, key=lambda row: (row[1], row[2], row[0]))
+    spacing_rows: List[Dict[str, Any]] = []
+    max_spacing = 0.0
+    for current, nxt in zip(ordered, ordered[1:]):
+        distance = math.hypot(nxt[1] - current[1], nxt[2] - current[2])
+        max_spacing = max(max_spacing, distance)
+        spacing_rows.append(
+            {
+                "from": current[0],
+                "to": nxt[0],
+                "spacing_ft": round(distance, 3),
+            }
+        )
+    limit = max(1.0, default_limit_ft)
+    return {
+        "valid": max_spacing <= limit,
+        "hydrant_count": len(points),
+        "max_spacing_ft": round(max_spacing, 3),
+        "limit_ft": round(limit, 3),
+        "spacing_rows": spacing_rows,
+        "truth_label": "Coordinate-based hydrant spacing check; confirm jurisdiction spacing and fire-flow method.",
+    }
+
+
+def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
+    """Attach pressure, hydrant, fire-flow, velocity, and sizing evidence.
+
+    This function intentionally records missing inputs instead of inventing
+    demand, pressure, hydrants, or looping. Validations only turn true when the
+    necessary canonical inputs are present.
+    """
+
+    enriched = deepcopy(safe_dict(summary))
+    hooks = safe_dict(enriched.get("conflict_hooks"))
+    default_system = safe_str(hooks.get("utility_system_type")).lower()
+    raw_segments = safe_list(enriched.get("water_segments")) or safe_list(enriched.get("segments")) or safe_list(hooks.get("utility_segments"))
+    water_segments: List[Dict[str, Any]] = []
+    graph_rows: List[Dict[str, Any]] = []
+    velocity_checks: List[Dict[str, Any]] = []
+    missing_inputs: List[Dict[str, Any]] = []
+    engine = WaterSizingEngine()
+    for index, raw_segment in enumerate(raw_segments, start=1):
+        rec = deepcopy(safe_dict(raw_segment))
+        if _water_segment_system(rec, default_system) != "water":
+            continue
+        name = safe_str(rec.get("name") or rec.get("id") or rec.get("pipe"), f"W-{index}")
+        points = _path_points(rec)
+        length_ft = max(
+            0.0,
+            safe_float(rec.get("length_ft"), safe_float(rec.get("length"), 0.0)),
+            polyline_length(points) if len(points) >= 2 else 0.0,
+        )
+        diameter_in = safe_float(rec.get("diameter_in") or rec.get("assigned_size_in"), 0.0)
+        flow_gpm = safe_float(
+            rec.get("flow_gpm")
+            or rec.get("assigned_flow_gpm")
+            or rec.get("design_flow_gpm")
+            or rec.get("demand_gpm"),
+            0.0,
+        )
+        max_velocity = max(0.1, safe_float(rec.get("max_velocity_fps"), safe_float(enriched.get("max_velocity_fps"), 8.0)))
+        if flow_gpm > 0.0 and diameter_in > 0.0:
+            velocity = engine._velocity_fps(flow_gpm, diameter_in)
+            rec["velocity_fps"] = velocity
+            velocity_checks.append(
+                {
+                    "segment": name,
+                    "flow_gpm": round(flow_gpm, 3),
+                    "diameter_in": round(diameter_in, 3),
+                    "velocity_fps": velocity,
+                    "max_velocity_fps": round(max_velocity, 3),
+                    "valid": velocity <= max_velocity,
+                }
+            )
+        segment_missing: List[str] = []
+        if length_ft <= 0.0:
+            segment_missing.append("length_ft")
+        if flow_gpm <= 0.0:
+            segment_missing.append("flow_gpm")
+        if diameter_in <= 0.0:
+            segment_missing.append("diameter_in")
+        start_node = safe_str(rec.get("start_node") or rec.get("from_node") or rec.get("start_name"))
+        end_node = safe_str(rec.get("end_node") or rec.get("to_node") or rec.get("end_name"))
+        if not start_node and points:
+            start_node = _endpoint_node_name(points[0], f"{name}-START")
+            rec["start_node_inferred_from_geometry"] = True
+        if not end_node and points:
+            end_node = _endpoint_node_name(points[-1], f"{name}-END")
+            rec["end_node_inferred_from_geometry"] = True
+        if not start_node or not end_node:
+            segment_missing.append("start_end_nodes")
+        rec["name"] = name
+        rec["system_type"] = "water"
+        rec["length_ft"] = round(length_ft, 3)
+        if diameter_in > 0.0:
+            rec["diameter_in"] = round(diameter_in, 3)
+        if flow_gpm > 0.0:
+            rec["flow_gpm"] = round(flow_gpm, 3)
+        if start_node:
+            rec["start_node"] = start_node
+        if end_node:
+            rec["end_node"] = end_node
+        water_segments.append(rec)
+        if segment_missing:
+            missing_inputs.append({"segment": name, "missing_fields": sorted(set(segment_missing))})
+            continue
+        graph_rows.append(
+            {
+                "name": name,
+                "start_node": start_node,
+                "end_node": end_node,
+                "flow_gpm": flow_gpm,
+                "diameter_in": diameter_in,
+                "length_ft": length_ft,
+                "elevation_gain_ft": safe_float(rec.get("elevation_gain_ft") or rec.get("elevation_gain"), 0.0),
+            }
+        )
+
+    enriched["water_segments"] = water_segments
+    if water_segments:
+        hooks["utility_segments"] = [
+            {**safe_dict(item), "system_type": safe_str(safe_dict(item).get("system_type") or "water")}
+            for item in safe_list(hooks.get("utility_segments"))
+        ] or water_segments
+        enriched["conflict_hooks"] = hooks
+
+    source = safe_dict(enriched.get("water_source") or enriched.get("source"))
+    source_pressure = (
+        _finite_or_none(enriched.get("source_pressure_psi"))
+        or _finite_or_none(enriched.get("available_pressure_psi"))
+        or _finite_or_none(source.get("pressure_psi"))
+        or _finite_or_none(source.get("source_pressure_psi"))
+    )
+    source_node = safe_str(enriched.get("source_node") or source.get("node") or source.get("source_node"))
+    if not source_node and graph_rows:
+        source_node = safe_str(graph_rows[0].get("start_node"))
+    min_required_pressure = max(0.0, safe_float(enriched.get("min_residual_pressure_psi"), 20.0))
+    pressure_missing: List[str] = []
+    if source_pressure is None:
+        pressure_missing.append("source_pressure_psi")
+    if not source_node:
+        pressure_missing.append("source_node")
+    if not graph_rows:
+        pressure_missing.append("water_segments_with_flow_diameter_length_nodes")
+    pressure_result: Dict[str, Any] = {}
+    if source_pressure is not None and source_node and graph_rows:
+        pressure_result = analyze_water_pressure_graph(
+            graph_rows,
+            source_node=source_node,
+            source_pressure_psi=source_pressure,
+            hazen_williams_c=safe_float(enriched.get("hazen_williams_c"), 130.0),
+        )
+    min_pressure = safe_float(pressure_result.get("min_pressure_psi"), 0.0)
+    pressure_valid = bool(pressure_result.get("success")) and min_pressure >= min_required_pressure and not missing_inputs
+    enriched["pressure_validation"] = {
+        "valid": pressure_valid,
+        "source_node": source_node,
+        "source_pressure_psi": round(source_pressure, 3) if source_pressure is not None else None,
+        "min_pressure_psi": round(min_pressure, 3) if pressure_result else None,
+        "min_required_pressure_psi": round(min_required_pressure, 3),
+        "pressure_graph": pressure_result,
+        "missing_inputs": pressure_missing,
+        "segment_missing_inputs": missing_inputs,
+        "truth_label": "Hazen-Williams pressure evidence from supplied source pressure and water segment demands.",
+    }
+    if pressure_result.get("segments"):
+        pressure_by_name = {safe_str(item.get("name")): safe_dict(item) for item in safe_list(pressure_result.get("segments"))}
+        for rec in water_segments:
+            solved = pressure_by_name.get(safe_str(rec.get("name")))
+            if solved:
+                rec["friction_loss_psi"] = solved.get("friction_loss_psi")
+                rec["start_pressure_psi"] = solved.get("start_pressure_psi")
+                rec["end_pressure_psi"] = solved.get("end_pressure_psi")
+                rec["velocity_fps"] = solved.get("velocity_fps")
+    enriched["velocity_checks"] = velocity_checks
+    existing_zones = safe_list(enriched.get("pressure_zones"))
+    if existing_zones:
+        enriched["pressure_zones"] = existing_zones
+    elif source_pressure is not None:
+        enriched["pressure_zones"] = [
+            {
+                "name": safe_str(source.get("zone") or enriched.get("pressure_zone_name"), "Source Pressure Zone"),
+                "source_node": source_node,
+                "source_pressure_psi": round(source_pressure, 3),
+                "truth_label": "Pressure zone derived from supplied source pressure.",
+            }
+        ]
+
+    hydrants = safe_list(enriched.get("hydrants") or enriched.get("fire_hydrants"))
+    enriched["hydrant_spacing_validation"] = _hydrant_spacing_validation(
+        hydrants,
+        default_limit_ft=safe_float(enriched.get("max_hydrant_spacing_ft"), 500.0),
+    )
+    fire_demand = max(
+        0.0,
+        safe_float(enriched.get("fire_flow_demand_gpm"), 0.0),
+        safe_float(enriched.get("required_fire_flow_gpm"), 0.0),
+    )
+    available_fire = max(
+        0.0,
+        safe_float(enriched.get("available_fire_flow_gpm"), 0.0),
+        safe_float(source.get("available_fire_flow_gpm"), 0.0),
+    )
+    fire_missing = []
+    if fire_demand <= 0.0:
+        fire_missing.append("fire_flow_demand_gpm")
+    if available_fire <= 0.0:
+        fire_missing.append("available_fire_flow_gpm")
+    enriched["fire_flow_validation"] = {
+        "valid": bool(fire_demand > 0.0 and available_fire >= fire_demand and (not pressure_result or min_pressure >= min_required_pressure)),
+        "required_fire_flow_gpm": round(fire_demand, 3),
+        "available_fire_flow_gpm": round(available_fire, 3),
+        "residual_pressure_psi": round(min_pressure, 3) if pressure_result else None,
+        "missing_inputs": fire_missing,
+        "truth_label": "Fire-flow check uses supplied required/available flow and pressure evidence; verify with local fire authority.",
+    }
+    if available_fire > 0.0:
+        enriched["available_fire_flow_gpm"] = round(available_fire, 3)
+    graph_looped = _water_has_cycle(graph_rows)
+    enriched["looped"] = bool(enriched.get("looped") or enriched.get("is_looped") or graph_looped)
+    enriched["looping_validation"] = {
+        "valid": bool(enriched["looped"]),
+        "method": "graph_cycle_detection",
+        "truth_label": "Looping validation is based on water graph connectivity.",
+    }
+    sizing_recommendations: List[Dict[str, Any]] = []
+    for check in velocity_checks:
+        if not bool(check.get("valid")):
+            sizing_recommendations.append(
+                {
+                    "segment": safe_str(check.get("segment")),
+                    "recommendation": "increase_diameter_or_reduce_flow",
+                    "reason": "velocity_exceeds_limit",
+                }
+            )
+    enriched["sizing_optimization"] = {
+        "status": "needs_resize" if sizing_recommendations else "checked",
+        "recommendations": sizing_recommendations,
+        "truth_label": "Sizing optimization is evidence-only until a resized candidate is explicitly accepted.",
+    }
+    blockers = []
+    if pressure_missing or missing_inputs:
+        blockers.append("pressure_inputs_missing")
+    if safe_dict(enriched["hydrant_spacing_validation"]).get("valid") is not True:
+        blockers.append("hydrant_spacing_not_validated")
+    if safe_dict(enriched["fire_flow_validation"]).get("valid") is not True:
+        blockers.append("fire_flow_not_validated")
+    if not enriched["looped"]:
+        blockers.append("looping_not_validated")
+    enriched["water_depth_status"] = "ready" if not blockers else "blocked_missing_inputs"
+    enriched["water_depth_blockers"] = blockers
     return enriched
 
 
