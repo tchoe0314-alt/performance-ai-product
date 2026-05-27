@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, ChevronDown, CircleHelp, RotateCcw, Search, Share2, Undo2 } from "lucide-react";
+import { Bell, ChevronDown, CircleHelp, PanelLeftClose, PanelLeftOpen, RotateCcw, Search, Share2, Undo2 } from "lucide-react";
 
 import { workflowSteps } from "../design-system";
 
@@ -12,6 +12,8 @@ type AppHeaderProps = {
   onOpenChat: () => void;
   activeWorkflowStep?: string;
   onWorkflowStepChange?: (step: string) => void;
+  sidebarOpen: boolean;
+  onToggleSidebar: () => void;
   onLogout: () => void;
 };
 
@@ -23,12 +25,23 @@ export default function AppHeader({
   onOpenChat,
   activeWorkflowStep = "Concept",
   onWorkflowStepChange,
+  sidebarOpen,
+  onToggleSidebar,
   onLogout,
 }: AppHeaderProps) {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-200 bg-white/95 shadow-[0_14px_40px_-36px_rgba(15,23,42,0.5)] backdrop-blur-xl">
       <div className="flex h-16 w-full items-center justify-between gap-4 px-5">
         <div className="flex min-w-0 items-center gap-4">
+          <button
+            type="button"
+            onClick={onToggleSidebar}
+            className="hidden h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 lg:inline-flex"
+            aria-label={sidebarOpen ? "Hide left sidebar" : "Show left sidebar"}
+            title={sidebarOpen ? "Hide left sidebar" : "Show left sidebar"}
+          >
+            {sidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+          </button>
           <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-900 bg-slate-950 text-lg font-bold text-white shadow-[0_12px_30px_-24px_rgba(18,25,38,0.5)]">
             F
           </div>

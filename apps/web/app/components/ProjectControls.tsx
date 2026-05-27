@@ -2,12 +2,6 @@
 
 import { TextInput } from "./ui";
 
-type DisciplineToggle = {
-  label: string;
-  checked: boolean;
-  onToggle: () => void;
-};
-
 type ProjectControlsProps = {
   siteName: string;
   fileName: string;
@@ -17,7 +11,6 @@ type ProjectControlsProps = {
   onFileNameEdited: () => void;
   onSaveProjectNames: () => void;
   onRefreshWorkspace: () => void;
-  disciplineToggles: DisciplineToggle[];
 };
 
 export default function ProjectControls({
@@ -29,7 +22,6 @@ export default function ProjectControls({
   onFileNameEdited,
   onSaveProjectNames,
   onRefreshWorkspace,
-  disciplineToggles,
 }: ProjectControlsProps) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -80,23 +72,6 @@ export default function ProjectControls({
             Refresh
           </button>
         </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        {disciplineToggles.map((item) => (
-          <button
-            key={item.label}
-            type="button"
-            onClick={item.onToggle}
-            className={`rounded-lg border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
-              item.checked
-                ? "border-slate-900 bg-slate-950 text-white"
-                : "border-slate-200 bg-white text-slate-500 hover:text-slate-900"
-            }`}
-          >
-            {item.label}
-          </button>
-        ))}
       </div>
     </div>
   );
