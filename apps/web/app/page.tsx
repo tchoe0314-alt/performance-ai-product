@@ -98,7 +98,14 @@ type SidePanelKey =
   | "libraries"
   | "data"
   | "settings"
-  | "chat";
+  | "chat"
+  | "system_grading"
+  | "system_storm"
+  | "system_sanitary"
+  | "system_water"
+  | "system_roadway"
+  | "system_utilities"
+  | "system_landscape";
 
 const SQFT_PER_ACRE = 43_560;
 const SITE_WARNING_ACRES = 250;
@@ -515,7 +522,6 @@ import AppHeader from "./components/AppHeader";
 import AuthScreen from "./components/AuthScreen";
 import ChatPanel from "./components/ChatPanel";
 import PreviewPanel from "./components/PreviewPanel";
-import ProjectControls from "./components/ProjectControls";
 import useChatPersistence from "./hooks/useChatPersistence";
 import usePreviewReview from "./hooks/usePreviewReview";
 import useJobPolling from "./hooks/useJobPolling";
@@ -2626,7 +2632,7 @@ function PerformanceAIDashboardView({
   );
 
   const handleAddObject = useCallback(
-    (type: SiteObjectType, options?: { label?: string; style?: Record<string, string> }) => {
+    (type: SiteObjectType, options?: { label?: string; style?: Record<string, string>; geometryType?: "polygon" | "polyline" | "rect" }) => {
       const catalog = SITE_OBJECT_CATALOG[type];
       if (!catalog) return;
       clearGeneratedPreview();
@@ -2750,6 +2756,29 @@ function PerformanceAIDashboardView({
           rotatable: false,
           deletable: true,
         };
+      }
+      if (options?.geometryType === "polyline") {
+        nextPlacement.geometryType = "polyline";
+        nextPlacement.geometry = buildDefaultPolyline({
+          x: 0,
+          y: 0,
+          w: nextPlacement.w,
+          d: nextPlacement.d,
+        });
+        nextPlacement.capabilities = {
+          movable: true,
+          resizable: false,
+          rotatable: false,
+          deletable: true,
+        };
+      } else if (options?.geometryType === "polygon") {
+        nextPlacement.geometryType = "polygon";
+        nextPlacement.geometry = [
+          [0, 0],
+          [nextPlacement.w, 0],
+          [nextPlacement.w * 0.82, nextPlacement.d],
+          [nextPlacement.w * 0.18, nextPlacement.d],
+        ];
       }
       setBuildingPlacements((prev) => [...prev, nextPlacement]);
       setActivePlacementId(nextPlacement.id);
@@ -8936,6 +8965,13 @@ function PerformanceAIDashboardView({
     data: { title: "Data", desc: "Configure site, survey, map, and existing conditions." },
     settings: { title: "Settings", desc: "Set project rules, defaults, and run preferences." },
     chat: { title: "Civora AI", desc: "Conversation and assisted workflow control." },
+    system_grading: { title: "Grading Health", desc: "Review what grading needs before it can be trusted." },
+    system_storm: { title: "Storm Drainage Health", desc: "Review what storm drainage needs before it can be trusted." },
+    system_sanitary: { title: "Sanitary Sewer Health", desc: "Review what sanitary needs before it can be trusted." },
+    system_water: { title: "Water Health", desc: "Review what water needs before it can be trusted." },
+    system_roadway: { title: "Roadway Health", desc: "Review what roadway needs before it can be trusted." },
+    system_utilities: { title: "Utilities Health", desc: "Review what utility coordination needs before it can be trusted." },
+    system_landscape: { title: "Landscape Health", desc: "Review what landscape needs before it can be trusted." },
   };
   const handleWorkflowStepChange = useCallback((step: CivoraWorkflowStep) => {
     setActiveWorkflowStep(step);
@@ -8977,6 +9013,13 @@ function PerformanceAIDashboardView({
       data: "Concept",
       settings: "Concept",
       chat: "Concept",
+      system_grading: "Review",
+      system_storm: "Review",
+      system_sanitary: "Review",
+      system_water: "Review",
+      system_roadway: "Review",
+      system_utilities: "Review",
+      system_landscape: "Review",
     };
     const nextStep = workflowByPanel[panel];
     if (nextStep) setActiveWorkflowStep(nextStep);
@@ -9010,6 +9053,7 @@ function PerformanceAIDashboardView({
       <div className="flex min-h-screen flex-col">
         <AppHeader
           userEmail={effectiveUser.email}
+          onOpenDashboard={() => handleOpenSidePanel("dashboard")}
           onOpenDocs={() => handleOpenSidePanel("deliverables")}
           onOpenChat={() => handleOpenSidePanel("chat")}
           sidebarOpen={leftSidebarOpen}
@@ -9044,6 +9088,7 @@ function PerformanceAIDashboardView({
                     "Site & Existing",
                     "Import & Survey",
                     "Design",
+                    "Objects",
                     "Grading",
                     "Drainage",
                     "Utilities",
@@ -9120,7 +9165,16 @@ function PerformanceAIDashboardView({
                         Data: MapPinned,
                         Settings,
                       };
-                      const target = targetMap[item] ?? "model";
+                      const systemTargetMap: Record<string, SidePanelKey> = {
+                        Grading: "system_grading",
+                        "Storm Drainage": "system_storm",
+                        "Sanitary Sewer": "system_sanitary",
+                        Water: "system_water",
+                        Roadway: "system_roadway",
+                        Utilities: "system_utilities",
+                        Landscape: "system_landscape",
+                      };
+                      const target = section.label === "Systems" ? (systemTargetMap[item] ?? "dashboard") : (targetMap[item] ?? "model");
                       const isActive = activeSidePanel === target;
                       const status =
                         item === "Design" || item === "Canvas"
@@ -9345,6 +9399,43 @@ function PerformanceAIDashboardView({
 
                 {activeSidePanel === "dashboard" ? (
                   <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Project</p>
+                      <div className="mt-3 space-y-2">
+                        <input
+                          value={siteName}
+                          onChange={(event) => {
+                            setSiteName(event.target.value);
+                            setSiteNameAuto(false);
+                          }}
+                          placeholder="Project name"
+                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none"
+                        />
+                        <input
+                          value={fileName}
+                          onChange={(event) => {
+                            setFileName(event.target.value);
+                            setFileNameAuto(false);
+                          }}
+                          placeholder="File name"
+                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void saveProject({
+                              nameOverride: siteName.trim(),
+                              fileNameOverride: fileName.trim(),
+                              autoNamedOverride: false,
+                              autoFileNamedOverride: false,
+                            })
+                          }
+                          className="w-full rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800"
+                        >
+                          Save names
+                        </button>
+                      </div>
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                       {[
                         ["Objects", placedObjectCount],
@@ -9919,31 +10010,56 @@ function PerformanceAIDashboardView({
                       >
                         Fit site
                       </button>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Downstream state
-                      </p>
-                      <div className="mt-3 space-y-2">
-                        {systemHealthItems.map((item) => (
-                          <div key={item.key} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-sm font-semibold text-slate-800">{item.label}</span>
-                              <span
-                                className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-                                  item.state === "complete"
-                                    ? "bg-emerald-50 text-emerald-700"
-                                    : item.state === "blocked"
-                                      ? "bg-red-50 text-red-700"
-                                      : "bg-amber-50 text-amber-700"
-                                }`}
-                              >
-                                {item.state === "complete" ? "Complete" : item.state === "blocked" ? "Blocked / Unsafe" : "Not configured / Not rendered"}
-                              </span>
-                            </div>
-                            <p className="mt-1 text-xs text-slate-500">{item.detail}</p>
-                          </div>
-                        ))}
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAnalysisSelectedIssueId(null);
+                            setFocusDetectedId(null);
+                            setAnalysisFocusLocked(false);
+                            setFitToSiteRequest((value) => value + 1);
+                          }}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                        >
+                          Reset view
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handlePreviewPlan}
+                          disabled={busy}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Refresh preview
+                        </button>
+                      </div>
+                      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          Canvas height
+                          <input
+                            type="range"
+                            min={590}
+                            max={1200}
+                            step={10}
+                            value={previewHeightPx}
+                            onChange={(event) => {
+                              const next = Number(event.target.value);
+                              if (Number.isFinite(next)) setPreviewHeightPx(next);
+                            }}
+                            className="mt-3 h-2 w-full accent-slate-900"
+                          />
+                        </label>
+                        <input
+                          type="number"
+                          min={590}
+                          max={1200}
+                          step={10}
+                          value={previewHeightPx}
+                          onChange={(event) => {
+                            const next = Number(event.target.value);
+                            if (Number.isFinite(next)) setPreviewHeightPx(next);
+                          }}
+                          className="mt-2 h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                        />
                       </div>
                     </div>
                   </div>
@@ -10266,6 +10382,114 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
+                {activeSidePanel.startsWith("system_") ? (() => {
+                  const healthConfig: Record<
+                    Extract<SidePanelKey, "system_grading" | "system_storm" | "system_sanitary" | "system_water" | "system_roadway" | "system_utilities" | "system_landscape">,
+                    { label: string; status: string; needs: string[]; openPanel: SidePanelKey }
+                  > = {
+                    system_grading: {
+                      label: "Grading",
+                      status: siteTooLargeForGrading ? "Blocked / unsafe" : systemStatuses.grading === "fresh" ? "Complete" : "Not configured / not rendered",
+                      needs: [
+                        siteScaleLocked ? "Site boundary locked" : "Lock a site boundary",
+                        hasTerrainSource ? "Terrain source ready" : "Import survey, DEM, or map terrain",
+                        siteTooLargeForGrading ? "Reduce oversized grading area" : "Area is within grading limits",
+                        systemStatuses.grading === "fresh" ? "Generated grading is current" : "Run grading generation",
+                      ],
+                      openPanel: "grading",
+                    },
+                    system_storm: {
+                      label: "Storm Drainage",
+                      status: hasHardSystemBlock ? "Blocked / unsafe" : systemStatuses.drainage === "fresh" ? "Complete" : "Not configured / not rendered",
+                      needs: [
+                        hasTerrainSource ? "Terrain source ready" : "Import terrain for flow direction",
+                        hasBasinPlaced ? "Basin placed" : "Place a detention basin",
+                        systemStatuses.drainage === "fresh" ? "Drainage generated" : "Run drainage generation",
+                        hasHardSystemBlock ? "Resolve hard system blockers" : "No hard blockers detected",
+                      ],
+                      openPanel: "drainage",
+                    },
+                    system_sanitary: {
+                      label: "Sanitary Sewer",
+                      status: hasHardSystemBlock ? "Blocked / unsafe" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured / not rendered",
+                      needs: [
+                        buildingPlacements.length ? "Buildings available for service coverage" : "Add buildings or service targets",
+                        utilities ? "Utility generation enabled" : "Enable utilities",
+                        pipeMinSlopePct ? "Minimum pipe slope configured" : "Set or accept automatic pipe slope",
+                        systemStatuses.utilities === "fresh" ? "Utility network generated" : "Run utility generation",
+                      ],
+                      openPanel: "sanitary",
+                    },
+                    system_water: {
+                      label: "Water",
+                      status: hasHardSystemBlock ? "Blocked / unsafe" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured / not rendered",
+                      needs: [
+                        utilities ? "Water network enabled" : "Enable utilities",
+                        buildingPlacements.filter((item) => item.type === "hydrant").length ? "Hydrants placed" : "Add hydrants or allow generated hydrants",
+                        buildingPlacements.length ? "Demand targets available" : "Add buildings or demand targets",
+                        systemStatuses.utilities === "fresh" ? "Utility network generated" : "Run utility generation",
+                      ],
+                      openPanel: "water",
+                    },
+                    system_roadway: {
+                      label: "Roadway",
+                      status: systemStatuses.roads === "fresh" ? "Complete" : "Not configured / not rendered",
+                      needs: [
+                        siteScaleLocked ? "Site boundary locked" : "Lock a site boundary",
+                        roads ? "Road generation enabled" : "Enable roads",
+                        systemStatuses.roads === "fresh" ? "Roadway generated" : "Run roadway generation",
+                        maxRoadGradePct ? "Road grade criteria configured" : "Set or accept automatic road grade",
+                      ],
+                      openPanel: "roadway",
+                    },
+                    system_utilities: {
+                      label: "Utilities",
+                      status: hasHardSystemBlock ? "Blocked / unsafe" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured / not rendered",
+                      needs: [
+                        utilities ? "Utility generation enabled" : "Enable utilities",
+                        systemStatuses.drainage === "fresh" ? "Storm context ready" : "Generate or review drainage first",
+                        hasHardSystemBlock ? "Resolve hard conflicts" : "No hard blockers detected",
+                        systemStatuses.utilities === "fresh" ? "Utilities generated" : "Run utility generation",
+                      ],
+                      openPanel: "utilities",
+                    },
+                    system_landscape: {
+                      label: "Landscape",
+                      status: buildingPlacements.some((value) => ["open_space", "amenity", "pool"].includes(value.type ?? "")) ? "Complete" : "Not configured / not rendered",
+                      needs: [
+                        buildingPlacements.some((value) => value.type === "open_space") ? "Open space placed" : "Add open space",
+                        buildingPlacements.some((value) => value.type === "sidewalk") ? "Pedestrian paths placed" : "Add pedestrian paths",
+                        buildingPlacements.some((value) => ["amenity", "pool"].includes(value.type ?? "")) ? "Amenity objects placed" : "Add amenity objects if needed",
+                      ],
+                      openPanel: "landscape",
+                    },
+                  };
+                  const config = healthConfig[activeSidePanel as keyof typeof healthConfig];
+                  return (
+                    <div className="space-y-4">
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{config.label} readiness</p>
+                        <p className="mt-2 text-lg font-semibold text-slate-950">{config.status}</p>
+                        <div className="mt-4 space-y-2">
+                          {config.needs.map((need) => (
+                            <div key={need} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+                              <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
+                              <span>{need}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenSidePanel(config.openPanel)}
+                          className="mt-4 w-full rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800"
+                        >
+                          Open controls
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })() : null}
+
                 {activeSidePanel === "roadway" ? (
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-2">
@@ -10562,6 +10786,33 @@ function PerformanceAIDashboardView({
                     </div>
 
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Shape tools</p>
+                      <div className="mt-3 grid grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleAddObject("building", { label: "Rectangle Shape", geometryType: "rect" })}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                        >
+                          Rectangle
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAddObject("open_space", { label: "Polygon Shape", geometryType: "polygon" })}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                        >
+                          Polygon
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAddObject("road", { label: "Line Shape", geometryType: "polyline" })}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                        >
+                          Line
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                         Object Library
                       </p>
@@ -10823,63 +11074,8 @@ function PerformanceAIDashboardView({
             </aside>
           ) : null}
           <main className="order-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
-            <div className="border-b border-slate-200 bg-white/80 backdrop-blur-xl">
-              <div className="mx-auto w-full max-w-[1800px] px-4 py-3 md:px-5">
-                <ProjectControls
-                  siteName={siteName}
-                  fileName={fileName}
-                  onSiteNameChange={setSiteName}
-                  onFileNameChange={setFileName}
-                  onSiteNameEdited={() => setSiteNameAuto(false)}
-                  onFileNameEdited={() => setFileNameAuto(false)}
-                  onSaveProjectNames={() =>
-                    void saveProject({
-                      nameOverride: siteName.trim(),
-                      fileNameOverride: fileName.trim(),
-                      autoNamedOverride: false,
-                      autoFileNamedOverride: false,
-                    })
-                  }
-                  onRefreshWorkspace={handleRefreshWorkspace}
-                />
-              </div>
-            </div>
-
             <div className="flex w-full flex-1 flex-col gap-4 px-4 py-4 md:px-5">
               <div className="flex w-full flex-col">
-                <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-slate-600">
-                  <span className="civora-muted-label">
-                    Preview height
-                    <span className="ml-2 rounded-full bg-[var(--civora-surface-muted)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--civora-text-soft)]">
-                      Build 2026-04-20c
-                    </span>
-                  </span>
-                  <input
-                    type="range"
-                    min={590}
-                    max={1200}
-                    step={10}
-                    value={previewHeightPx}
-                    onChange={(event) => {
-                      const next = Number(event.target.value);
-                      if (Number.isFinite(next)) setPreviewHeightPx(next);
-                    }}
-                    className="h-2 w-44 accent-slate-900"
-                  />
-                  <input
-                    type="number"
-                    min={590}
-                    max={1200}
-                    step={10}
-                    value={previewHeightPx}
-                    onChange={(event) => {
-                      const next = Number(event.target.value);
-                      if (Number.isFinite(next)) setPreviewHeightPx(next);
-                    }}
-                    className="h-8 w-20 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
-                  />
-                  <span className="text-[11px] uppercase tracking-[0.12em] text-slate-400">px</span>
-                </div>
                 <div
                   data-testid="workspace-canvas-shell"
                   className="civora-canvas mx-auto w-full overflow-hidden p-1"

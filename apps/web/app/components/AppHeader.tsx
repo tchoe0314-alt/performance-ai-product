@@ -4,6 +4,7 @@ import { Bell, CircleHelp, PanelLeftClose, PanelLeftOpen, RotateCcw, Search, Sha
 
 type AppHeaderProps = {
   userEmail: string;
+  onOpenDashboard: () => void;
   onOpenDocs: () => void;
   onOpenChat: () => void;
   sidebarOpen: boolean;
@@ -13,6 +14,7 @@ type AppHeaderProps = {
 
 export default function AppHeader({
   userEmail,
+  onOpenDashboard,
   onOpenDocs,
   onOpenChat,
   sidebarOpen,
@@ -39,6 +41,13 @@ export default function AppHeader({
             <p className="text-[15px] font-semibold tracking-[0.32em] text-slate-950">CIVORA</p>
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Engineering OS</p>
           </div>
+          <button
+            type="button"
+            onClick={onOpenDashboard}
+            className="hidden rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 md:inline-flex"
+          >
+            Dashboard
+          </button>
         </div>
 
         <div className="flex items-center gap-2">

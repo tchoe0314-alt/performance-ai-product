@@ -2306,7 +2306,7 @@ export default function PreviewPanel({
   const showParkingAnalysis = Boolean(analysisPaths && analysisPaths.length);
   return (
     <div className="flex h-full flex-col rounded-xl border border-slate-200 bg-white/92 p-3 shadow-[0_20px_60px_-44px_rgba(15,23,42,0.45)] backdrop-blur">
-      <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+      <div className="hidden">
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center rounded-md bg-slate-950 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white">
@@ -2420,7 +2420,7 @@ export default function PreviewPanel({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="hidden">
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               <span>Preview Mode</span>
               <button
