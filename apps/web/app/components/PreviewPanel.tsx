@@ -2772,7 +2772,7 @@ export default function PreviewPanel({
                   >
                     {!siteLocked && showSiteBounds && lotWidth > 0 && lotHeight > 0 ? (
                       <div
-                        className={`absolute inset-0 rounded-[16px] border-2 border-dashed ${legendPalette.siteBorder} ${legendPalette.siteFill}`}
+                        className={`absolute inset-0 rounded-[16px] border border-dashed ${legendPalette.siteBorder} ${legendPalette.siteFill}`}
                       />
                     ) : null}
                     {(buildingPlacements.length || suggestedPlacements.length || (surveyPoints?.length ?? 0) > 0) ? (
@@ -2809,7 +2809,7 @@ export default function PreviewPanel({
                                     fill="rgba(248,113,113,0.12)"
                                     stroke="rgba(248,113,113,0.8)"
                                     strokeDasharray="2 2"
-                                    strokeWidth={0.8}
+                                    strokeWidth={0.45}
                                   />
                                 ) : null}
                                 {source && target ? (
@@ -2819,7 +2819,7 @@ export default function PreviewPanel({
                                     x2={target.x}
                                     y2={target.y}
                                     stroke="rgba(14,116,144,0.75)"
-                                    strokeWidth={0.8}
+                                    strokeWidth={0.45}
                                     strokeDasharray="3 3"
                                   />
                                 ) : null}
@@ -2859,7 +2859,7 @@ export default function PreviewPanel({
                                     points={points.join(" ")}
                                     fill="none"
                                     stroke={previewQuality === "high" ? "#fbbf24" : "#f59e0b"}
-                                    strokeWidth={2.4}
+                                    strokeWidth={1.3}
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
                                   />
@@ -2868,7 +2868,7 @@ export default function PreviewPanel({
                                   points={points.join(" ")}
                                   fill="none"
                                   stroke={stroke}
-                                  strokeWidth={1.1}
+                                  strokeWidth={0.65}
                                   strokeLinecap="round"
                                   strokeLinejoin="round"
                                 />
@@ -2897,7 +2897,7 @@ export default function PreviewPanel({
                                       points={module.bounds.map(toPct).join(" ")}
                                       fill={moduleFill}
                                       stroke="rgba(15,23,42,0.15)"
-                                      strokeWidth={0.3}
+                                      strokeWidth={0.22}
                                     />
                                   ) : null}
                                   {module.stallPolygons.map((stall, polyIdx) => {
@@ -2913,7 +2913,7 @@ export default function PreviewPanel({
                                       showParkingAnalysis && stall.kind !== "standard"
                                         ? "#0f172a"
                                         : legendPalette.parking;
-                                    const strokeWidth = showParkingAnalysis && stall.kind !== "standard" ? 0.55 : 0.4;
+                                    const strokeWidth = showParkingAnalysis && stall.kind !== "standard" ? 0.38 : 0.28;
                                     return (
                                       <polygon
                                         key={`stall-${polyIdx}`}
@@ -2928,7 +2928,7 @@ export default function PreviewPanel({
                                     points={module.aisleLine.map(toPct).join(" ")}
                                     fill="none"
                                     stroke={legendPalette.road}
-                                    strokeWidth={0.7}
+                                    strokeWidth={0.45}
                                   />
                                   {module.stripeLines.map((line, stripeIdx) => (
                                     <polyline
@@ -2936,7 +2936,7 @@ export default function PreviewPanel({
                                       points={line.map(toPct).join(" ")}
                                       fill="none"
                                       stroke="#cbd5f5"
-                                      strokeWidth={0.35}
+                                      strokeWidth={0.24}
                                     />
                                   ))}
                                 </g>
@@ -2969,7 +2969,7 @@ export default function PreviewPanel({
                                 points={points.join(" ")}
                                 fill="none"
                                 stroke={stroke}
-                                strokeWidth={0.8}
+                                strokeWidth={0.45}
                                 strokeDasharray={item.source === "detected_from_image" ? "2 2" : undefined}
                               />
                             ) : (
@@ -2978,7 +2978,7 @@ export default function PreviewPanel({
                                 points={points.join(" ")}
                                 fill={fill}
                                 stroke={stroke}
-                                strokeWidth={0.8}
+                                strokeWidth={0.45}
                                 strokeDasharray={item.source === "detected_from_image" ? "2 2" : undefined}
                               />
                             );
@@ -3114,7 +3114,7 @@ export default function PreviewPanel({
                           >
                             <div
                               className={`h-full w-full rounded-[8px] shadow-sm transition ${
-                                showBox ? `border-2 ${borderColor}` : ""
+                                showBox ? `border ${borderColor}` : ""
                               } ${
                                 showBox && isSelected ? "ring-2 ring-amber-300" : ""
                               } ${showBox && isAccessHighlight ? "ring-2 ring-rose-300" : ""}`}
@@ -3220,7 +3220,7 @@ export default function PreviewPanel({
                                           x2={x2}
                                           y2={y2}
                                           stroke="rgba(245,158,11,0.6)"
-                                          strokeWidth={2.5}
+                                          strokeWidth={1.3}
                                           strokeLinecap="round"
                                         />
                                       ) : null}
@@ -3401,7 +3401,7 @@ export default function PreviewPanel({
                             }}
                             onMouseLeave={() => setHoveredObjectId(null)}
                           >
-                            <div className="h-full w-full rounded-[8px] border-2 border-dashed border-amber-400 bg-amber-200/10" />
+                            <div className="h-full w-full rounded-[8px] border border-dashed border-amber-400 bg-amber-200/10" />
                             <div className="absolute -top-6 left-1/2 -translate-x-1/2 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 shadow">
                               {item.label}
                             </div>
@@ -3446,7 +3446,7 @@ export default function PreviewPanel({
                                 points={coords}
                                 fill="none"
                                 stroke={isSelected ? "#ef4444" : "#f97316"}
-                                strokeWidth={isSelected ? "1.2" : "0.6"}
+                                strokeWidth={isSelected ? "0.75" : "0.4"}
                                 strokeDasharray="2 2"
                               />
                               <text
@@ -3478,13 +3478,13 @@ export default function PreviewPanel({
                   >
                     {activeHighlightBounds ? (
                       <div
-                        className="absolute rounded-[14px] border-2 border-sky-400/90 bg-sky-400/10 shadow-[0_0_0_6px_rgba(56,189,248,0.18)]"
+                        className="absolute rounded-[14px] border border-sky-400/90 bg-sky-400/10 shadow-[0_0_0_4px_rgba(56,189,248,0.14)]"
                         style={buildBoundsStyle(activeHighlightBounds)}
                       />
                     ) : null}
                     {issueHighlightBounds ? (
                       <div
-                        className="absolute rounded-[12px] border-2 border-rose-400/80 bg-rose-400/10 shadow-[0_0_0_6px_rgba(244,63,94,0.12)]"
+                        className="absolute rounded-[12px] border border-rose-400/80 bg-rose-400/10 shadow-[0_0_0_4px_rgba(244,63,94,0.1)]"
                         style={buildBoundsStyle(issueHighlightBounds)}
                       />
                     ) : null}
@@ -3699,17 +3699,17 @@ export default function PreviewPanel({
                     }}
                   >
                     {!siteLocked && lotWidth > 0 && lotHeight > 0 ? (
-                      <div className="absolute inset-0 rounded-[16px] border-2 border-dashed border-slate-300/70" />
+                      <div className="absolute inset-0 rounded-[16px] border border-dashed border-slate-300/70" />
                     ) : null}
                     {activeHighlightBounds ? (
                       <div
-                        className="absolute rounded-[14px] border-2 border-sky-400/90 bg-sky-400/10 shadow-[0_0_0_6px_rgba(56,189,248,0.18)]"
+                        className="absolute rounded-[14px] border border-sky-400/90 bg-sky-400/10 shadow-[0_0_0_4px_rgba(56,189,248,0.14)]"
                         style={buildBoundsStyle(activeHighlightBounds)}
                       />
                     ) : null}
                     {issueHighlightBounds ? (
                       <div
-                        className="absolute rounded-[12px] border-2 border-rose-400/80 bg-rose-400/10 shadow-[0_0_0_6px_rgba(244,63,94,0.12)]"
+                        className="absolute rounded-[12px] border border-rose-400/80 bg-rose-400/10 shadow-[0_0_0_4px_rgba(244,63,94,0.1)]"
                         style={buildBoundsStyle(issueHighlightBounds)}
                       />
                     ) : null}
@@ -3795,7 +3795,7 @@ export default function PreviewPanel({
                             }}
                           >
                             <div
-                              className={`h-full w-full rounded-[8px] border-2 bg-slate-900/10 transition ${borderColor}`}
+                              className={`h-full w-full rounded-[8px] border bg-slate-900/10 transition ${borderColor}`}
                               style={outlineColor ? { borderColor: outlineColor } : undefined}
                             />
                             <button
@@ -3868,7 +3868,7 @@ export default function PreviewPanel({
                               }}
                             >
                               <div
-                                className={`h-full w-full rounded-[8px] border-2 border-dashed bg-slate-50/70 transition ${borderColor}`}
+                                className={`h-full w-full rounded-[8px] border border-dashed bg-slate-50/70 transition ${borderColor}`}
                               />
                               <div className="absolute left-2 top-2 rounded-full border border-slate-200 bg-white/90 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow">
                                 {item.label}

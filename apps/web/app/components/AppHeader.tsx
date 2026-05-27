@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, CircleHelp, PanelLeftClose, PanelLeftOpen, RotateCcw, Search, Share2, Undo2 } from "lucide-react";
+import { Bell, CircleHelp, MessageSquare, PanelLeftClose, PanelLeftOpen, RotateCcw, Search, Undo2 } from "lucide-react";
 
 type AppHeaderProps = {
   userEmail: string;
@@ -48,6 +48,14 @@ export default function AppHeader({
           >
             Dashboard
           </button>
+          <button
+            type="button"
+            onClick={onOpenChat}
+            className="hidden items-center gap-2 rounded-lg border border-slate-900 bg-slate-950 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 md:inline-flex"
+          >
+            <MessageSquare className="h-4 w-4" />
+            Chat
+          </button>
         </div>
 
         <div className="flex items-center gap-2">
@@ -65,14 +73,6 @@ export default function AppHeader({
           </button>
           <button type="button" onClick={onOpenDocs} className="hidden h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 md:inline-flex" aria-label="Help">
             <CircleHelp className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={onOpenChat}
-            className="hidden items-center gap-2 rounded-lg border border-slate-900 bg-slate-950 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 xl:inline-flex"
-          >
-            <Share2 className="h-4 w-4" />
-            AI
           </button>
           <button
             type="button"

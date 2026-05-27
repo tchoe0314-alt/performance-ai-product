@@ -9303,21 +9303,13 @@ function PerformanceAIDashboardView({
                 </div>
               ))}
             </div>
-            <button
-              type="button"
-              onClick={() => handleOpenSidePanel("chat")}
-              className={`mt-3 rounded-lg border px-3 py-3 text-left transition ${
-                activeSidePanel === "chat"
-                  ? "border-slate-950 bg-slate-950 text-white"
-                  : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
-              }`}
-            >
+            <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-3 text-left text-slate-900">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Civora AI</p>
               <div className="mt-2 flex items-center justify-between">
                 <span className="text-sm font-semibold">Online</span>
                 <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.12)]" />
               </div>
-            </button>
+            </div>
           </aside>
           ) : null}
           {activeSidePanel ? (
@@ -10060,6 +10052,32 @@ function PerformanceAIDashboardView({
                           }}
                           className="mt-2 h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
                         />
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Legend</p>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-700">
+                        {[
+                          ["Buildings", "#0f172a", "solid"],
+                          ["Roads", "#475569", "solid"],
+                          ["Parking", "#cbd5e1", "solid"],
+                          ["Drainage", "#2563eb", "solid"],
+                          ["Utilities", "#7c3aed", "solid"],
+                          ["Site boundary", "#94a3b8", "dash"],
+                          ["AI detected", "#f59e0b", "dash"],
+                          ["Survey points", "#14b8a6", "dot"],
+                        ].map(([label, color, style]) => (
+                          <div key={label} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <span
+                              className={`h-3 w-8 rounded-full ${style === "dash" ? "border-t-2 border-dashed" : style === "dot" ? "w-3" : ""}`}
+                              style={{
+                                backgroundColor: style === "dash" ? "transparent" : color,
+                                borderColor: color,
+                              }}
+                            />
+                            <span>{label}</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </div>
