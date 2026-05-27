@@ -5,20 +5,26 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Box,
+  ClipboardCheck,
   CheckCircle2,
   Circle,
   Database,
+  Droplets,
+  Eye,
   FileText,
   Gauge,
   Layers,
   MapPinned,
+  Mountain,
+  PlayCircle,
   Route,
   Settings,
+  Sprout,
   SquareStack,
+  Wrench,
 } from "lucide-react";
 
 import { deleteJson, getJson, postBinary, postForm, postJson } from "../lib/api";
-import { workspaceNavItems } from "./design-system";
 
 import type {
   Assumption,
@@ -60,6 +66,25 @@ import type {
 } from "./types";
 
 type SystemGenerationTarget = "roads" | "parking" | "grading" | "drainage" | "utilities" | "full";
+type SidePanelKey =
+  | "projects"
+  | "model"
+  | "objects"
+  | "generate"
+  | "grading"
+  | "drainage"
+  | "utilities"
+  | "roadway"
+  | "landscape"
+  | "layers"
+  | "views"
+  | "analysis"
+  | "reports"
+  | "quantities"
+  | "deliverables"
+  | "data"
+  | "settings"
+  | "chat";
 
 const SQFT_PER_ACRE = 43_560;
 const SITE_WARNING_ACRES = 250;
@@ -195,6 +220,7 @@ const DEMO_PROJECT_ID = "demo-pinecrest-mixed-use";
 
 function isDemoWorkspaceQuery() {
   if (typeof window === "undefined") return false;
+  if (window.location.pathname === "/demo/workspace") return true;
   const query = window.location.search || (window.location.href.includes("?") ? `?${window.location.href.split("?")[1]}` : "");
   const params = new URLSearchParams(query);
   const demoValue = params.get("demo") || params.get("ui_demo");
@@ -656,7 +682,13 @@ function buildThinkingState({
   };
 }
 
-export default function PerformanceAIDashboard() {
+type PerformanceAIDashboardProps = {
+  forceDemoWorkspace?: boolean;
+};
+
+function PerformanceAIDashboardView({
+  forceDemoWorkspace = false,
+}: PerformanceAIDashboardProps = {}) {
   const [projectType, setProjectType] = useState("");
   const [units, setUnits] = useState("ft");
   const [prompt, setPrompt] = useState("");
@@ -664,9 +696,9 @@ export default function PerformanceAIDashboard() {
     createWelcomeMessage(),
   ]);
   const [demoWorkspaceEnabled, setDemoWorkspaceEnabled] = useState(false);
-  const effectiveDemoWorkspaceEnabled = demoWorkspaceEnabled || isDemoWorkspaceQuery();
+  const effectiveDemoWorkspaceEnabled = forceDemoWorkspace || demoWorkspaceEnabled || isDemoWorkspaceQuery();
   const [chatCollapsed, setChatCollapsed] = useState(false);
-  const [activeSidePanel, setActiveSidePanel] = useState<"projects" | "docs" | "chat" | "site" | "objects" | null>("objects");
+  const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>("objects");
   const [imageName, setImageName] = useState("");
   const [siteName, setSiteName] = useState("");
   const [fileName, setFileName] = useState("");
@@ -992,8 +1024,8 @@ export default function PerformanceAIDashboard() {
       : null);
 
   useEffect(() => {
-    setDemoWorkspaceEnabled(isDemoWorkspaceQuery());
-  }, []);
+    setDemoWorkspaceEnabled(forceDemoWorkspace || isDemoWorkspaceQuery());
+  }, [forceDemoWorkspace]);
 
   const disciplineToggles: DisciplineToggle[] = [
     {
@@ -6839,7 +6871,7 @@ export default function PerformanceAIDashboard() {
         provider: geocode.provider ?? "nominatim",
       };
       nextSiteInputs.site_alignment_locked = false;
-      setActiveSidePanel("site");
+      setActiveSidePanel("data");
       const viewportSize = viewportFootprint ?? computeViewportSiteSize();
       const viewportWidth =
         viewportSize && "width" in viewportSize ? viewportSize.width : viewportSize?.widthFt;
@@ -8820,6 +8852,62 @@ export default function PerformanceAIDashboard() {
     () => [...projects].sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0)),
     [projects],
   );
+  const hasHardSystemBlock = issues.some((issue) => issue.severity === "error") || siteTooLargeForGrading;
+  const systemHealthItems = useMemo(
+    () => [
+      {
+        key: "data",
+        label: "Data",
+        state: siteScaleLocked || hasTerrainSource ? "complete" : "not_configured",
+        detail: siteScaleLocked ? "Site locked" : "Needs site setup",
+      },
+      {
+        key: "roadway",
+        label: "Roadway",
+        state: systemStatuses.roads === "fresh" && systemStatuses.parking === "fresh" ? "complete" : "not_configured",
+        detail: systemStatuses.roads === "fresh" ? "Generated" : "Not rendered",
+      },
+      {
+        key: "grading",
+        label: "Grading",
+        state: siteTooLargeForGrading ? "blocked" : systemStatuses.grading === "fresh" ? "complete" : "not_configured",
+        detail: siteTooLargeForGrading ? "Site too large" : systemStatuses.grading === "fresh" ? "Complete" : "Needs terrain/run",
+      },
+      {
+        key: "drainage",
+        label: "Drainage",
+        state: hasHardSystemBlock ? "blocked" : systemStatuses.drainage === "fresh" ? "complete" : "not_configured",
+        detail: hasHardSystemBlock ? "Review blockers" : systemStatuses.drainage === "fresh" ? "Complete" : "Needs basin/run",
+      },
+      {
+        key: "utilities",
+        label: "Utilities",
+        state: hasHardSystemBlock ? "blocked" : systemStatuses.utilities === "fresh" ? "complete" : "not_configured",
+        detail: hasHardSystemBlock ? "Coordination risk" : systemStatuses.utilities === "fresh" ? "Complete" : "Not rendered",
+      },
+    ],
+    [hasHardSystemBlock, hasTerrainSource, siteScaleLocked, siteTooLargeForGrading, systemStatuses],
+  );
+  const sidePanelCopy: Record<SidePanelKey, { title: string; desc: string }> = {
+    projects: { title: "Project", desc: "Open, create, and manage project records." },
+    model: { title: "Model", desc: "Inspect live model health and canonical state." },
+    objects: { title: "Objects", desc: "Add, size, and place model objects." },
+    generate: { title: "Generate", desc: "Run focused engines from one control panel." },
+    grading: { title: "Grading", desc: "Control grading rules, terrain inputs, and slope limits." },
+    drainage: { title: "Drainage", desc: "Control drainage rules, sources, and repair behavior." },
+    utilities: { title: "Utilities", desc: "Control utility generation and coordination assumptions." },
+    roadway: { title: "Roadway", desc: "Control roads, parking, and corridor behavior." },
+    landscape: { title: "Landscape", desc: "Place open space and landscape-related site objects." },
+    layers: { title: "Layers", desc: "Choose visible model layers and labels." },
+    views: { title: "Views", desc: "Switch 2D, 3D, quality, and canvas behavior." },
+    analysis: { title: "Analysis", desc: "Review model issues, access checks, and QA signals." },
+    reports: { title: "Reports", desc: "Open readable engineering summaries." },
+    quantities: { title: "Quantities", desc: "Review takeoff totals and cost inputs." },
+    deliverables: { title: "Deliverables", desc: "Export plans, reports, and production files." },
+    data: { title: "Data", desc: "Configure site, survey, map, and existing conditions." },
+    settings: { title: "Settings", desc: "Set project rules, defaults, and run preferences." },
+    chat: { title: "Civora AI", desc: "Conversation and assisted workflow control." },
+  };
 
   if (!effectiveUser) {
     return (
@@ -8850,15 +8938,19 @@ export default function PerformanceAIDashboard() {
         <AppHeader
           userEmail={effectiveUser.email}
           onOpenProjects={() => setActiveSidePanel("projects")}
-          onOpenSiteInputs={() => setActiveSidePanel("site")}
-          onOpenDocs={() => setActiveSidePanel("docs")}
+          onOpenSiteInputs={() => setActiveSidePanel("data")}
+          onOpenDocs={() => setActiveSidePanel("deliverables")}
           onOpenChat={() => setActiveSidePanel("chat")}
           onLogout={handleLogout}
         />
 
         <div className="flex min-h-[calc(100vh-4rem)] flex-col lg:flex-row">
-          <aside className="hidden w-[224px] shrink-0 border-r border-slate-200 bg-white/95 px-4 py-5 shadow-[18px_0_40px_-36px_rgba(15,23,42,0.5)] backdrop-blur-xl lg:flex lg:flex-col">
-            <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+          <aside className="hidden w-[252px] shrink-0 border-r border-slate-200 bg-white/95 px-4 py-5 shadow-[18px_0_40px_-36px_rgba(15,23,42,0.5)] backdrop-blur-xl lg:flex lg:flex-col">
+            <button
+              type="button"
+              onClick={() => setActiveSidePanel("projects")}
+              className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-left transition hover:bg-white"
+            >
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Project</p>
               <p className="mt-1 truncate text-sm font-semibold text-slate-950">
                 {siteName || "Untitled Project"}
@@ -8868,104 +8960,180 @@ export default function PerformanceAIDashboard() {
                   ? `${lotBounds.w.toFixed(0)} ft x ${lotBounds.h.toFixed(0)} ft`
                   : "Site not locked"}
               </p>
-            </div>
-            <div className="flex w-full flex-col gap-1">
-              {workspaceNavItems.map((item) => {
-                const target =
-                  item === "Data"
-                    ? "projects"
-                    : item === "Objects"
-                      ? "objects"
-                    : item === "Reports" || item === "Quantities" || item === "Sheets"
-                      ? "docs"
-                      : item === "Settings"
-                        ? "docs"
-                        : "site";
-                const isActive =
-                  (target === "projects" && activeSidePanel === "projects") ||
-                  (target === "docs" && activeSidePanel === "docs") ||
-                  (target === "objects" && activeSidePanel === "objects") ||
-                  (target === "site" && activeSidePanel === "site");
-                const Icon =
-                  item === "Model"
-                    ? Gauge
-                    : item === "Objects"
-                      ? Box
-                      : item === "Layers"
-                        ? Layers
-                        : item === "Sections" || item === "3D"
-                          ? SquareStack
-                          : item === "Reports"
-                            ? FileText
-                            : item === "Quantities"
-                              ? Database
-                              : item === "Sheets"
-                                ? Route
-                                : item === "Data"
-                                  ? MapPinned
-                                  : Settings;
-                const status =
-                  item === "Model"
-                    ? placedObjectCount > 0
-                      ? "ok"
-                      : "idle"
-                    : item === "Objects"
-                      ? buildingPlacements.length > 0
-                        ? "ok"
-                        : "idle"
-                      : item === "Data"
-                        ? siteScaleLocked || Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng)
-                          ? "ok"
-                          : "review"
-                        : item === "3D"
-                          ? preview3DEffectiveItems.length > 0
+            </button>
+            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
+              {[
+                { label: "Model", items: ["Model", "Objects", "Generate"] },
+                { label: "Disciplines", items: ["Grading", "Drainage", "Utilities", "Roadway", "Landscape"] },
+                { label: "Control", items: ["Layers", "Views", "Analysis"] },
+                { label: "Output", items: ["Reports", "Quantities", "Deliverables"] },
+                { label: "Setup", items: ["Data", "Settings"] },
+              ].map((section) => (
+                <div key={section.label}>
+                  <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    {section.label}
+                  </p>
+                  <div className="flex flex-col gap-1">
+                    {section.items.map((item) => {
+                      const targetMap: Record<string, SidePanelKey> = {
+                        Project: "projects",
+                        Model: "model",
+                        Objects: "objects",
+                        Generate: "generate",
+                        Grading: "grading",
+                        Drainage: "drainage",
+                        Utilities: "utilities",
+                        Roadway: "roadway",
+                        Landscape: "landscape",
+                        Layers: "layers",
+                        Views: "views",
+                        Analysis: "analysis",
+                        Reports: "reports",
+                        Quantities: "quantities",
+                        Deliverables: "deliverables",
+                        Data: "data",
+                        Settings: "settings",
+                      };
+                      const iconMap: Record<string, typeof Gauge> = {
+                        Model: Gauge,
+                        Objects: Box,
+                        Generate: PlayCircle,
+                        Grading: Mountain,
+                        Drainage: Droplets,
+                        Utilities: Wrench,
+                        Roadway: Route,
+                        Landscape: Sprout,
+                        Layers,
+                        Views: Eye,
+                        Analysis: ClipboardCheck,
+                        Reports: FileText,
+                        Quantities: Database,
+                        Deliverables: SquareStack,
+                        Data: MapPinned,
+                        Settings,
+                      };
+                      const target = targetMap[item] ?? "model";
+                      const isActive = activeSidePanel === target;
+                      const status =
+                        item === "Model"
+                          ? placedObjectCount > 0
                             ? "ok"
-                            : "review"
-                          : item === "Reports" || item === "Quantities"
-                            ? backendResult
+                            : "idle"
+                          : item === "Objects"
+                            ? buildingPlacements.length > 0
                               ? "ok"
                               : "idle"
-                            : item === "Layers"
+                            : item === "Generate"
                               ? Object.values(systemStatuses).some((value) => value === "fresh")
                                 ? "ok"
-                                : "idle"
-                              : item === "Sections"
-                                ? planPreviewUrl
-                                  ? "ok"
-                                  : "idle"
-                                : "idle";
-                const StatusIcon = status === "ok" ? CheckCircle2 : status === "review" ? AlertCircle : Circle;
-                return (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => setActiveSidePanel(target)}
-                    className={`flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold transition ${
-                      isActive
-                        ? "bg-slate-950 text-white"
-                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
-                    }`}
-                  >
-                    <span className="flex min-w-0 items-center gap-3">
-                      <Icon className="h-4 w-4 shrink-0" />
-                      <span className="truncate">{item}</span>
-                    </span>
-                    <StatusIcon
-                      className={`h-3.5 w-3.5 shrink-0 ${
-                        isActive
-                          ? "text-white/80"
-                          : status === "ok"
-                            ? "text-emerald-500"
-                            : status === "review"
-                              ? "text-amber-500"
-                              : "text-slate-300"
-                      }`}
-                    />
-                  </button>
-                );
-              })}
+                                : "review"
+                              : item === "Grading"
+                                ? siteTooLargeForGrading
+                                  ? "block"
+                                  : systemStatuses.grading === "fresh"
+                                    ? "ok"
+                                    : "review"
+                                : item === "Drainage"
+                                  ? hasHardSystemBlock
+                                    ? "block"
+                                    : systemStatuses.drainage === "fresh"
+                                      ? "ok"
+                                      : "review"
+                                  : item === "Utilities"
+                                    ? hasHardSystemBlock
+                                      ? "block"
+                                      : systemStatuses.utilities === "fresh"
+                                        ? "ok"
+                                        : "review"
+                                    : item === "Roadway"
+                                      ? systemStatuses.roads === "fresh"
+                                        ? "ok"
+                                        : "review"
+                                      : item === "Landscape"
+                                        ? buildingPlacements.some((value) => ["open_space", "amenity", "pool"].includes(value.type ?? ""))
+                                          ? "ok"
+                                          : "idle"
+                                        : item === "Data"
+                                          ? siteScaleLocked || Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng)
+                                            ? "ok"
+                                            : "review"
+                                          : item === "Views"
+                                            ? preview3DEffectiveItems.length > 0 || planPreviewUrl
+                                              ? "ok"
+                                              : "idle"
+                                            : item === "Analysis"
+                                              ? issues.length || analysisIssues.length
+                                                ? "review"
+                                                : "idle"
+                                              : item === "Reports" || item === "Quantities" || item === "Deliverables"
+                                                ? backendResult
+                                                  ? "ok"
+                                                  : "idle"
+                                                : item === "Layers"
+                                                  ? Object.values(systemStatuses).some((value) => value === "fresh")
+                                                    ? "ok"
+                                                    : "idle"
+                                                  : "idle";
+                      const Icon = iconMap[item] ?? Gauge;
+                      const StatusIcon = status === "ok" ? CheckCircle2 : status === "block" ? AlertCircle : status === "review" ? AlertCircle : Circle;
+                      return (
+                        <button
+                          key={item}
+                          type="button"
+                          onClick={() => setActiveSidePanel(target)}
+                          className={`flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                            isActive
+                              ? "bg-slate-950 text-white"
+                              : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                          }`}
+                        >
+                          <span className="flex min-w-0 items-center gap-3">
+                            <Icon className="h-4 w-4 shrink-0" />
+                            <span className="truncate">{item}</span>
+                          </span>
+                          <StatusIcon
+                            className={`h-3.5 w-3.5 shrink-0 ${
+                              isActive
+                                ? "text-white/80"
+                                : status === "ok"
+                                  ? "text-emerald-500"
+                                  : status === "block"
+                                    ? "text-red-500"
+                                    : status === "review"
+                                      ? "text-amber-500"
+                                      : "text-slate-300"
+                            }`}
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="mt-auto rounded-xl border border-slate-200 bg-white px-3 py-3">
+            <div className="mt-4 rounded-lg border border-slate-200 bg-white px-3 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Systems</p>
+              <div className="mt-3 space-y-2">
+                {systemHealthItems.map((item) => (
+                  <div key={item.key} className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-semibold text-slate-700">{item.label}</span>
+                    <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                      <span
+                        className={`h-2.5 w-2.5 rounded-full ${
+                          item.state === "complete"
+                            ? "bg-emerald-500"
+                            : item.state === "blocked"
+                              ? "bg-red-500"
+                              : "bg-amber-400"
+                        }`}
+                      />
+                      {item.state === "complete" ? "Complete" : item.state === "blocked" ? "Blocked" : "Not configured"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Civora AI</p>
               <div className="mt-2 flex items-center justify-between">
                 <span className="text-sm font-semibold text-slate-900">Online</span>
@@ -8977,27 +9145,9 @@ export default function PerformanceAIDashboard() {
             <aside className="order-3 m-3 flex w-auto shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white/96 shadow-[var(--civora-shadow-panel)] backdrop-blur-xl lg:ml-0 lg:w-[372px]">
               <div className="flex items-center justify-between border-b border-[var(--civora-border)] px-4 py-4">
                 <div>
-                  <p className="civora-muted-label">
-                    {activeSidePanel === "projects"
-                      ? "Projects"
-                      : activeSidePanel === "site"
-                        ? "Site Inputs"
-                      : activeSidePanel === "objects"
-                        ? "Objects"
-                      : activeSidePanel === "docs"
-                        ? "Docs"
-                        : "Chat"}
-                  </p>
+                  <p className="civora-muted-label">{sidePanelCopy[activeSidePanel].title}</p>
                   <p className="mt-1 text-sm text-[var(--civora-text-muted)]">
-                    {activeSidePanel === "projects"
-                      ? "Switch between projects."
-                      : activeSidePanel === "site"
-                        ? "Provide address and imagery."
-                      : activeSidePanel === "objects"
-                        ? "Add, size, and place model objects."
-                      : activeSidePanel === "docs"
-                        ? "Preview docs and exports."
-                        : "Conversation and updates."}
+                    {sidePanelCopy[activeSidePanel].desc}
                   </p>
                 </div>
                 <button
@@ -9068,7 +9218,7 @@ export default function PerformanceAIDashboard() {
                   </div>
                 ) : null}
 
-                {activeSidePanel === "site" ? (
+                {activeSidePanel === "data" ? (
                   <div className="space-y-4">
                     <div>
                       <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
@@ -9434,6 +9584,323 @@ export default function PerformanceAIDashboard() {
                   </div>
                 ) : null}
 
+                {activeSidePanel === "model" ? (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Canonical model
+                      </p>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                          <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">Objects</p>
+                          <p className="mt-1 text-lg font-semibold text-slate-900">{placedObjectCount}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                          <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">Issues</p>
+                          <p className="mt-1 text-lg font-semibold text-slate-900">{issues.length + analysisIssues.length}</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setActiveSidePanel("views")}
+                        className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                      >
+                        Open view controls
+                      </button>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Downstream state
+                      </p>
+                      <div className="mt-3 space-y-2">
+                        {systemHealthItems.map((item) => (
+                          <div key={item.key} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-sm font-semibold text-slate-800">{item.label}</span>
+                              <span
+                                className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                  item.state === "complete"
+                                    ? "bg-emerald-50 text-emerald-700"
+                                    : item.state === "blocked"
+                                      ? "bg-red-50 text-red-700"
+                                      : "bg-amber-50 text-amber-700"
+                                }`}
+                              >
+                                {item.state === "complete" ? "Complete" : item.state === "blocked" ? "Blocked" : "Not configured"}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500">{item.detail}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {activeSidePanel === "generate" ? (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Generate systems
+                      </p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Run one discipline or regenerate the whole coordinated model.
+                      </p>
+                      <div className="mt-4 grid grid-cols-2 gap-2">
+                        {([
+                          ["roads", "Roads"],
+                          ["parking", "Parking"],
+                          ["grading", "Grading"],
+                          ["drainage", "Drainage"],
+                          ["utilities", "Utilities"],
+                        ] as const).map(([system, label]) => {
+                          const status = systemStatuses[system];
+                          return (
+                            <button
+                              key={system}
+                              type="button"
+                              onClick={() => handleGenerateSystem(system)}
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-slate-950 hover:bg-slate-50"
+                            >
+                              <span className="block text-xs font-semibold uppercase tracking-[0.14em] text-slate-900">
+                                {label}
+                              </span>
+                              <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                                {status.replace("_", " ")}
+                              </span>
+                            </button>
+                          );
+                        })}
+                        <button
+                          type="button"
+                          onClick={() => handleGenerateSystem("full")}
+                          className="col-span-2 rounded-xl border border-slate-950 bg-slate-950 px-3 py-3 text-left text-white transition hover:bg-slate-800"
+                        >
+                          <span className="block text-xs font-semibold uppercase tracking-[0.14em]">
+                            Full System Run
+                          </span>
+                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/65">
+                            Roads, grading, drainage, utilities
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <label className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-800">
+                        <span>Assisted generation</span>
+                        <input
+                          type="checkbox"
+                          checked={assistedEnabled}
+                          onChange={(event) => setAssistedEnabled(event.target.checked)}
+                          className="h-4 w-4 accent-slate-950"
+                        />
+                      </label>
+                      <p className="mt-2 text-xs text-slate-500">
+                        Assisted runs can fill missing choices with explicit assumptions.
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
+
+                {activeSidePanel === "grading" ? (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Grading rules</p>
+                      <label className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+                        <span>Use survey/terrain for grading</span>
+                        <input type="checkbox" checked={useSurveyForGrading} onChange={(event) => setUseSurveyForGrading(event.target.checked)} className="h-4 w-4 accent-slate-950" />
+                      </label>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        {[
+                          ["Min slope %", minSlopePct, setMinSlopePct],
+                          ["Max parking %", maxParkingSlopePct, setMaxParkingSlopePct],
+                          ["Max road %", maxRoadGradePct, setMaxRoadGradePct],
+                          ["ADA cross %", maxAdaCrossSlopePct, setMaxAdaCrossSlopePct],
+                        ].map(([label, value, setter]) => (
+                          <label key={label as string} className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                            {label as string}
+                            <input
+                              value={value as string}
+                              onChange={(event) => (setter as (next: string) => void)(event.target.value)}
+                              placeholder="Auto"
+                              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm normal-case tracking-normal text-slate-700"
+                            />
+                          </label>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateSystem("grading")}
+                        disabled={missingSite || !hasTerrainSource || siteTooLargeForGrading}
+                        className="mt-4 w-full rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                      >
+                        Generate grading
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {activeSidePanel === "drainage" ? (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Drainage rules</p>
+                      <label className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+                        <span>Connect orphan inlets</span>
+                        <input type="checkbox" checked={drainageConnectOrphans} onChange={(event) => setDrainageConnectOrphans(event.target.checked)} className="h-4 w-4 accent-slate-950" />
+                      </label>
+                      <label className="mt-2 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+                        <span>Allow slope repair</span>
+                        <input type="checkbox" checked={drainageAllowSlopeAdjust} onChange={(event) => setDrainageAllowSlopeAdjust(event.target.checked)} className="h-4 w-4 accent-slate-950" />
+                      </label>
+                      <label className="mt-3 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        Max slope adjustment
+                        <input
+                          value={drainageMaxSlopeAdjust}
+                          type="number"
+                          step="0.001"
+                          onChange={(event) => setDrainageMaxSlopeAdjust(Number(event.target.value) || 0)}
+                          className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm normal-case tracking-normal text-slate-700"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateSystem("drainage")}
+                        disabled={missingSite || !hasTerrainSource || !hasBasinPlaced}
+                        className="mt-4 w-full rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                      >
+                        Generate drainage
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {activeSidePanel === "utilities" ? (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Utility rules</p>
+                      <label className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+                        <span>Include utilities</span>
+                        <input type="checkbox" checked={utilities} onChange={(event) => setUtilities(event.target.checked)} className="h-4 w-4 accent-slate-950" />
+                      </label>
+                      <label className="mt-3 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        Pipe min slope %
+                        <input
+                          value={pipeMinSlopePct}
+                          onChange={(event) => setPipeMinSlopePct(event.target.value)}
+                          placeholder="Auto"
+                          className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm normal-case tracking-normal text-slate-700"
+                        />
+                      </label>
+                      <button type="button" onClick={() => handleGenerateSystem("utilities")} className="mt-4 w-full rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800">
+                        Generate utilities
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {activeSidePanel === "roadway" ? (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Roadway rules</p>
+                      <label className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+                        <span>Generate roads</span>
+                        <input type="checkbox" checked={roads} onChange={(event) => setRoads(event.target.checked)} className="h-4 w-4 accent-slate-950" />
+                      </label>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          Stall width
+                          <input value={parkingStallWidth} onChange={(event) => setParkingStallWidth(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm normal-case tracking-normal text-slate-700" />
+                        </label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          Aisle width
+                          <input value={parkingAisleWidth} onChange={(event) => setParkingAisleWidth(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm normal-case tracking-normal text-slate-700" />
+                        </label>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <button type="button" onClick={() => handleGenerateSystem("roads")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Roads</button>
+                        <button type="button" onClick={() => handleGenerateSystem("parking")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Parking</button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {activeSidePanel === "landscape" ? (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Landscape objects</p>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        {(["open_space", "amenity", "pool", "sidewalk"] as const).map((type) => (
+                          <button key={type} type="button" onClick={() => handleAddObject(type)} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">
+                            {SITE_OBJECT_CATALOG[type].label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {activeSidePanel === "layers" ? (
+                  <div className="space-y-3">
+                    {Object.entries(previewLayers).map(([key, value]) => (
+                      <label key={key} className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold capitalize text-slate-700">
+                        <span>{key.replace("_", " ")}</span>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(value)}
+                          onChange={(event) => setPreviewLayers((prev) => ({ ...prev, [key]: event.target.checked }))}
+                          className="h-4 w-4 accent-slate-950"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                ) : null}
+
+                {activeSidePanel === "views" ? (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Canvas mode</p>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        {(["2d", "3d"] as const).map((mode) => (
+                          <button key={mode} type="button" onClick={() => setPreviewMode(mode)} className={`rounded-xl border px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] ${previewMode === mode ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700"}`}>{mode}</button>
+                        ))}
+                        {(["standard", "high"] as const).map((quality) => (
+                          <button key={quality} type="button" onClick={() => setPreviewQuality(quality)} className={`rounded-xl border px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] ${previewQuality === quality ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700"}`}>{quality}</button>
+                        ))}
+                      </div>
+                      <button type="button" onClick={() => setFitToSiteRequest((value) => value + 1)} className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Fit site</button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {activeSidePanel === "analysis" ? (
+                  <div className="space-y-3">
+                    <button type="button" onClick={handleAnalyzeSiteAccess} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">Run access analysis</button>
+                    {[...issues.map((issue, index) => ({ id: `issue-${index}`, message: issue.message, severity: issue.severity })), ...analysisIssues.map((issue) => ({ id: issue.id, message: issue.message, severity: "warning" as const }))].map((issue) => (
+                      <div key={issue.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${issue.severity === "error" ? "text-red-600" : "text-amber-600"}`}>{issue.severity}</p>
+                        <p className="mt-2 text-sm text-slate-700">{issue.message}</p>
+                      </div>
+                    ))}
+                    {!issues.length && !analysisIssues.length ? <p className="text-sm text-slate-500">No active analysis issues.</p> : null}
+                  </div>
+                ) : null}
+
+                {activeSidePanel === "settings" ? (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Run defaults</p>
+                      <div className="mt-3 space-y-2">
+                        {disciplineToggles.map((toggle) => (
+                          <label key={toggle.label} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+                            <span>{toggle.label}</span>
+                            <input type="checkbox" checked={toggle.checked} onChange={(event) => toggle.setter(event.target.checked)} className="h-4 w-4 accent-slate-950" />
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 {activeSidePanel === "objects" ? (
                   <div className="space-y-4">
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -9530,7 +9997,7 @@ export default function PerformanceAIDashboard() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => setActiveSidePanel("site")}
+                        onClick={() => setActiveSidePanel("data")}
                         className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
                       >
                         Edit Site Setup
@@ -9646,8 +10113,28 @@ export default function PerformanceAIDashboard() {
                   </div>
                 ) : null}
 
-                {activeSidePanel === "docs" ? (
+                {activeSidePanel === "reports" || activeSidePanel === "quantities" || activeSidePanel === "deliverables" ? (
                   <div className="space-y-3">
+                    {activeSidePanel === "quantities" ? (
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Quantity takeoff</p>
+                        <div className="mt-3 space-y-2 text-sm text-slate-700">
+                          {quantityRows.slice(0, 8).map((row) => (
+                            <div key={row.label} className="flex items-center justify-between gap-3">
+                              <span>{row.label}</span>
+                              <span className="font-semibold text-slate-950">{formatMetric(Number(row.value), row.unit)}</span>
+                            </div>
+                          ))}
+                          {!quantityRows.length ? <p className="text-slate-500">Run systems to populate quantities.</p> : null}
+                        </div>
+                      </div>
+                    ) : null}
+                    {activeSidePanel === "deliverables" ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        <button type="button" onClick={handleExportDxf} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Export DXF</button>
+                        <button type="button" onClick={handleExportReport} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Export Report</button>
+                      </div>
+                    ) : null}
                     {sortedProjects.length ? (
                       sortedProjects.map((projectSummary) => (
                         <div
@@ -10017,47 +10504,27 @@ export default function PerformanceAIDashboard() {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                      Generate Systems
+                      System Status
                     </p>
                     <p className="mt-1 text-xs text-slate-500">
-                      Run focused engines without opening another panel.
+                      Generation controls now live in the left Generate and discipline panels.
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-[0.12em]">
-                    {(["roads", "parking", "grading", "drainage", "utilities"] as const).map((system) => {
-                      const status = systemStatuses[system];
+                    {systemHealthItems.map((system) => {
                       const tone =
-                        status === "fresh"
+                        system.state === "complete"
                           ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                          : status === "stale"
-                            ? "border-amber-200 bg-amber-50 text-amber-700"
-                            : "border-slate-200 bg-slate-50 text-slate-500";
+                          : system.state === "blocked"
+                            ? "border-red-200 bg-red-50 text-red-700"
+                            : "border-amber-200 bg-amber-50 text-amber-700";
                       return (
-                        <span key={system} className={`rounded-md border px-2 py-1 ${tone}`}>
-                          {system} · {status.replace("_", " ")}
+                        <span key={system.key} className={`rounded-md border px-2 py-1 ${tone}`}>
+                          {system.label} · {system.state === "complete" ? "complete" : system.state === "blocked" ? "blocked" : "not configured"}
                         </span>
                       );
                     })}
                   </div>
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 md:grid-cols-6">
-                  {(["roads", "parking", "grading", "drainage", "utilities"] as const).map((system) => (
-                    <button
-                      key={system}
-                      type="button"
-                      onClick={() => handleGenerateSystem(system)}
-                      className="rounded-lg border border-slate-200 bg-white px-2 py-2 transition hover:border-slate-900 hover:text-slate-950"
-                    >
-                      {system}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => handleGenerateSystem("full")}
-                    className="rounded-lg border border-slate-900 bg-slate-950 px-2 py-2 text-white transition hover:bg-slate-800"
-                  >
-                    Full Site
-                  </button>
                 </div>
               </div>
 
@@ -11174,4 +11641,8 @@ export default function PerformanceAIDashboard() {
       </div>
     </div>
   );
+}
+
+export default function PerformanceAIDashboard() {
+  return <PerformanceAIDashboardView />;
 }

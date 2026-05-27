@@ -41,14 +41,21 @@ export const workflowSteps = [
 ] as const;
 
 export const workspaceNavItems = [
+  "Project",
   "Model",
   "Objects",
+  "Generate",
+  "Grading",
+  "Drainage",
+  "Utilities",
+  "Roadway",
+  "Landscape",
   "Layers",
-  "Sections",
-  "3D",
+  "Views",
+  "Analysis",
   "Reports",
   "Quantities",
-  "Sheets",
+  "Deliverables",
   "Data",
   "Settings",
 ] as const;
