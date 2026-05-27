@@ -33,6 +33,14 @@ export default function ProjectControls({
 }: ProjectControlsProps) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="w-full lg:hidden">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+          Current Project
+        </p>
+        <p className="mt-1 truncate text-sm font-semibold text-slate-950">
+          {siteName || "Untitled Project"}
+        </p>
+      </div>
       <div className="grid min-w-0 flex-1 gap-3 md:grid-cols-[minmax(180px,280px)_minmax(180px,280px)]">
         <TextInput
           value={siteName}

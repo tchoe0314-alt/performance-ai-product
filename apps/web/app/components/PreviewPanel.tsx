@@ -1330,8 +1330,10 @@ export default function PreviewPanel({
       map.off("zoomend", reportScale);
       map.off("moveend", reportViewport);
       map.off("zoomend", reportViewport);
+      map.off("moveend", reportCenter);
+      map.off("zoomend", reportCenter);
     };
-  }, [latLngToSite, lotHeight, lotWidth, mapAvailable, mapLoaded, onMapScaleUpdate, onPlaceBuilding, onPlaceObject, placementMode, selectedBuildingId, onSelectBuilding, showHover, onViewportFootprint]);
+  }, [latLngToSite, lotHeight, lotWidth, mapAvailable, mapLoaded, onMapScaleUpdate, onPlaceBuilding, onPlaceObject, placementMode, selectedBuildingId, onSelectBuilding, showHover, onViewportCenter, onViewportFootprint]);
 
   useEffect(() => {
     if (!mapAvailable || !mapLoaded || !mapRef.current) return;
@@ -2423,6 +2425,7 @@ export default function PreviewPanel({
               <span>Preview Mode</span>
               <button
                 type="button"
+                data-testid="preview-mode-2d"
                 onClick={() => onSetPreviewMode("2d")}
                 className={`rounded-full border px-2.5 py-1 ${
                   previewMode === "2d"
@@ -2434,6 +2437,7 @@ export default function PreviewPanel({
               </button>
               <button
                 type="button"
+                data-testid="preview-mode-3d"
                 onClick={() => {
                   if (!canUse3D) return;
                   onSetPreviewMode("3d");
@@ -2463,6 +2467,7 @@ export default function PreviewPanel({
               </button>
               <button
                 type="button"
+                data-testid="preview-quality-standard"
                 onClick={() => {
                   if (previewInteraction === "edit") return;
                   onQueuePreviewRefresh("Entering edit mode...");
@@ -2481,6 +2486,7 @@ export default function PreviewPanel({
               <span>Quality</span>
               <button
                 type="button"
+                data-testid="preview-quality-high"
                 onClick={() => {
                   if (previewQuality === "standard") return;
                   onQueuePreviewRefresh("Requesting standard-quality preview...");

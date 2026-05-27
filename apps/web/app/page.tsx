@@ -45,6 +45,7 @@ import type {
   PreviewResponse,
   UploadImageResponse,
   UploadSurveyResponse,
+  UserRecord,
   PlanToolMode,
   ControlOverrides,
   BuildingPlacement,
@@ -189,6 +190,265 @@ const DEFAULT_SYSTEM_STATUS: Record<
   drainage: "not_generated",
   utilities: "not_generated",
 };
+
+const DEMO_PROJECT_ID = "demo-pinecrest-mixed-use";
+
+function isDemoWorkspaceQuery() {
+  if (typeof window === "undefined") return false;
+  const query = window.location.search || (window.location.href.includes("?") ? `?${window.location.href.split("?")[1]}` : "");
+  const params = new URLSearchParams(query);
+  const demoValue = params.get("demo") || params.get("ui_demo");
+  return demoValue === "workspace" || demoValue === "1" || demoValue === "true";
+}
+
+const createDemoPlacements = (): BuildingPlacement[] => [
+  {
+    id: "demo-site",
+    label: "Pinecrest Site",
+    type: "site",
+    w: 760,
+    d: 520,
+    x: 0,
+    y: 0,
+    rotation: 0,
+    locked: true,
+    placed: true,
+    source: "user",
+    generated: false,
+    capabilities: { movable: false, resizable: false, rotatable: false, deletable: false },
+    systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+  },
+  {
+    id: "demo-building-a",
+    label: "Multifamily Building A",
+    type: "multifamily_building",
+    w: 110,
+    d: 58,
+    h: 36,
+    x: 120,
+    y: 95,
+    rotation: 0,
+    placed: true,
+    source: "user_confirmed",
+  },
+  {
+    id: "demo-building-b",
+    label: "Multifamily Building B",
+    type: "multifamily_building",
+    w: 110,
+    d: 58,
+    h: 36,
+    x: 330,
+    y: 82,
+    rotation: 0,
+    placed: true,
+    source: "user_confirmed",
+  },
+  {
+    id: "demo-retail",
+    label: "Retail Building",
+    type: "retail_building",
+    w: 70,
+    d: 45,
+    h: 24,
+    x: 96,
+    y: 350,
+    rotation: 0,
+    placed: true,
+    source: "user_confirmed",
+  },
+  {
+    id: "demo-loop-road",
+    label: "Internal Loop Road",
+    type: "road",
+    w: 590,
+    d: 28,
+    x: 70,
+    y: 275,
+    rotation: 0,
+    placed: true,
+    source: "user_confirmed",
+    geometryType: "polyline",
+    geometry: [
+      [82, 294],
+      [210, 210],
+      [522, 210],
+      [664, 310],
+      [540, 410],
+      [160, 410],
+      [82, 294],
+    ],
+  },
+  {
+    id: "demo-parking-north",
+    label: "Residential Parking Court",
+    type: "parking",
+    w: 210,
+    d: 104,
+    x: 255,
+    y: 190,
+    rotation: 0,
+    stallCount: 72,
+    placed: true,
+    source: "user_confirmed",
+  },
+  {
+    id: "demo-parking-retail",
+    label: "Retail Parking Field",
+    type: "parking",
+    w: 165,
+    d: 92,
+    x: 185,
+    y: 345,
+    rotation: 0,
+    stallCount: 44,
+    placed: true,
+    source: "user_confirmed",
+  },
+  {
+    id: "demo-basin-a",
+    label: "Detention Basin A",
+    type: "basin",
+    w: 150,
+    d: 86,
+    x: 540,
+    y: 380,
+    rotation: 0,
+    placed: true,
+    source: "user_confirmed",
+  },
+  {
+    id: "demo-sidewalk",
+    label: "ADA Pedestrian Route",
+    type: "sidewalk",
+    w: 410,
+    d: 8,
+    x: 120,
+    y: 305,
+    placed: true,
+    source: "user_confirmed",
+    geometryType: "polyline",
+    geometry: [
+      [122, 314],
+      [255, 314],
+      [365, 246],
+      [500, 246],
+      [592, 388],
+    ],
+  },
+  {
+    id: "demo-inlet-1",
+    label: "Storm Inlet S-15",
+    type: "inlet",
+    w: 12,
+    d: 12,
+    x: 472,
+    y: 312,
+    placed: true,
+    source: "generated",
+  },
+  {
+    id: "demo-hydrant-1",
+    label: "Hydrant W-12",
+    type: "hydrant",
+    w: 10,
+    d: 10,
+    x: 238,
+    y: 270,
+    placed: true,
+    source: "generated",
+  },
+];
+
+const createDemoPlanResponse = (): PlanResponse => ({
+  success: true,
+  message: "Demo workspace loaded for UI QA.",
+  assumptions: [
+    {
+      field_name: "demo_mode",
+      assumed_value: "UI-only seeded project",
+      reason: "Allows dashboard and canvas review without authenticating.",
+    },
+  ],
+  issues: [
+    {
+      severity: "warning",
+      code: "DEMO_WATER_CLEARANCE",
+      message: "Water line W-12 conflicts with proposed building clearance envelope.",
+    },
+    {
+      severity: "warning",
+      code: "DEMO_ROAD_GRADE",
+      message: "Roadway R-03 exceeds target max grade in one localized segment.",
+    },
+  ],
+  final_plan: {
+    actions: [
+      { label: "Multifamily Building A", layer: "BUILDING", task: "rectangle", origin: [120, 95], width: 110, height: 58, meta: { preview_role: "final" } } as Record<string, unknown>,
+      { label: "Multifamily Building B", layer: "BUILDING", task: "rectangle", origin: [330, 82], width: 110, height: 58, meta: { preview_role: "final" } } as Record<string, unknown>,
+      { label: "Retail Building", layer: "BUILDING", task: "rectangle", origin: [96, 350], width: 70, height: 45, meta: { preview_role: "final" } } as Record<string, unknown>,
+      { label: "Residential Parking", layer: "PARKING", task: "rectangle", origin: [255, 190], width: 210, height: 104, meta: { preview_role: "final", system: "parking" } } as Record<string, unknown>,
+      { label: "Detention Basin A", layer: "POND", task: "rectangle", origin: [540, 380], width: 150, height: 86, meta: { preview_role: "final", system: "drainage" } } as Record<string, unknown>,
+    ] as unknown as NonNullable<NonNullable<PlanResponse["final_plan"]>["actions"]>,
+    meta: {
+      engineering_status: { success: true, status: "demo_ready", trust_score: 82 },
+      manager_export: {
+        metrics: {
+          storm_pipe_length_ft: 1240,
+          pipe_capacity_total_cfs: 18.7,
+          earthwork_net_cf: -8640,
+        },
+      },
+      quantities: {
+        totals: {
+          lot_area_sf: 395200,
+          building_area_sf: 17590,
+          parking_area_sf: 36990,
+          road_length_ft: 890,
+          pipe_length_ft: 1240,
+          utility_length_ft: 1510,
+          sanitary_length_ft: 1080,
+          estimated_impervious_area_sf: 112450,
+          estimated_parking_stalls: 116,
+          pond_count: 1,
+          inlet_count: 5,
+        },
+      },
+      storm_pipes: {
+        total_system_flow_cfs: 18.7,
+        total_system_capacity_cfs: 25.2,
+        segments: [
+          { length_ft: 320, slope_pct: 0.62 },
+          { length_ft: 460, slope_pct: 0.48 },
+          { length_ft: 460, slope_pct: 0.52 },
+        ],
+      },
+      drainage: {
+        basins: [{ area_sf: 12900, footprint_area_sf: 12900 }],
+        low_points: [{ x: 618, y: 428, z: 641.2 }],
+        surface_guidance: { downhill_vector: { dx: 0.45, dy: -0.7 } },
+      },
+      grading: {
+        grading_source_quality: "demo_surface",
+        grading_source_detail: "Seeded northwest-to-southeast slope for UI QA.",
+        existing_surface: {
+          range_z: 6.8,
+          high_points: [{ x: 60, y: 60, z: 648.0 }],
+          low_points: [{ x: 690, y: 460, z: 641.2 }],
+          terrain_profile: {
+            source_quality: "demo_surface",
+            source_detail: "Synthetic surface for visual QA only.",
+            terrain_stats: { sample_count: 144, missing_count: 0 },
+            downhill_dx: 0.45,
+            downhill_dy: -0.7,
+          },
+        },
+        earthwork: { net_cf: -8640 },
+      },
+      truth_audit: { success: true },
+    },
+  },
+});
 
 import {
   defaultAssumptions,
@@ -403,6 +663,8 @@ export default function PerformanceAIDashboard() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => [
     createWelcomeMessage(),
   ]);
+  const [demoWorkspaceEnabled, setDemoWorkspaceEnabled] = useState(false);
+  const effectiveDemoWorkspaceEnabled = demoWorkspaceEnabled || isDemoWorkspaceQuery();
   const [chatCollapsed, setChatCollapsed] = useState(false);
   const [activeSidePanel, setActiveSidePanel] = useState<"projects" | "docs" | "chat" | "site" | "objects" | null>("objects");
   const [imageName, setImageName] = useState("");
@@ -547,6 +809,30 @@ export default function PerformanceAIDashboard() {
     };
   } | null>(null);
   const [viewportCenter, setViewportCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const handleViewportFootprint = useCallback((value: NonNullable<typeof viewportFootprint>) => {
+    setViewportFootprint((prev) => {
+      if (
+        prev &&
+        Math.abs(prev.widthFt - value.widthFt) < 0.01 &&
+        Math.abs(prev.heightFt - value.heightFt) < 0.01 &&
+        Math.abs((prev.bounds?.north ?? 0) - (value.bounds?.north ?? 0)) < 1e-7 &&
+        Math.abs((prev.bounds?.south ?? 0) - (value.bounds?.south ?? 0)) < 1e-7 &&
+        Math.abs((prev.bounds?.east ?? 0) - (value.bounds?.east ?? 0)) < 1e-7 &&
+        Math.abs((prev.bounds?.west ?? 0) - (value.bounds?.west ?? 0)) < 1e-7
+      ) {
+        return prev;
+      }
+      return value;
+    });
+  }, []);
+  const handleViewportCenter = useCallback((value: { lat: number; lng: number }) => {
+    setViewportCenter((prev) => {
+      if (prev && Math.abs(prev.lat - value.lat) < 1e-7 && Math.abs(prev.lng - value.lng) < 1e-7) {
+        return prev;
+      }
+      return value;
+    });
+  }, []);
   const [detectionChoices, setDetectionChoices] = useState({
     roads: true,
     buildings: true,
@@ -641,6 +927,7 @@ export default function PerformanceAIDashboard() {
   const suppressProjectAutoLoadRef = useRef(false);
   const chatAutosaveTimeoutRef = useRef<number | null>(null);
   const autosaveSuspendRef = useRef(false);
+  const demoWorkspaceSeededRef = useRef(false);
   const currentPhaseLabelRef = useRef<string>("");
   const previewRecoveryKeyRef = useRef("");
   const lastSiteInputProjectRef = useRef("");
@@ -694,6 +981,19 @@ export default function PerformanceAIDashboard() {
       setProjectId("");
     },
   });
+  const effectiveUser: UserRecord | null =
+    user ??
+    (effectiveDemoWorkspaceEnabled
+      ? {
+          user_id: "demo-user",
+          name: "Demo Reviewer",
+          email: "demo@civora.local",
+        }
+      : null);
+
+  useEffect(() => {
+    setDemoWorkspaceEnabled(isDemoWorkspaceQuery());
+  }, []);
 
   const disciplineToggles: DisciplineToggle[] = [
     {
@@ -1560,6 +1860,112 @@ export default function PerformanceAIDashboard() {
     projectId,
     currentProjectId: currentProject?.project_id,
   });
+
+  useEffect(() => {
+    if (!effectiveDemoWorkspaceEnabled || demoWorkspaceSeededRef.current) return;
+    const demoPlacements = createDemoPlacements();
+    const demoResult = createDemoPlanResponse();
+    const demoProjectInput: ProjectInput = {
+      prompt_text: "Demo UI QA workspace for a 9-acre mixed-use civil site.",
+      input_mode: "user",
+      strict_mode: false,
+      allow_ai_fill_for_blanks: false,
+      manual_fields: {
+        project_name: "Pinecrest Mixed-Use",
+        file_name: "pinecrest-demo-ui",
+        units: "ft",
+        project_type: "mixed_use",
+        lot: { x: 0, y: 0, w: 760, h: 520 },
+        disciplines: ["roads", "grading", "drainage", "utilities"],
+        buildings: demoPlacements
+          .filter((item) => item.type !== "site")
+          .map((item) => ({
+            id: item.id,
+            name: item.label ?? item.id,
+            type: item.type,
+            x: item.x,
+            y: item.y,
+            w: item.w,
+            d: item.d,
+            height_ft: item.h,
+            rotation: item.rotation,
+            source: item.source,
+            generated: item.generated,
+            locked: item.locked,
+          })),
+      },
+      meta: {
+        auto_named: false,
+        auto_file_named: false,
+        site_inputs: {
+          address: "Pinecrest Mixed-Use Demo Site",
+          geocode: {
+            lat: 32.7767,
+            lng: -96.797,
+            display_name: "Pinecrest Mixed-Use Demo Site",
+            provider: "demo",
+          },
+          site_rotation_deg: 0,
+          site_alignment_locked: true,
+          use_survey_for_grading: true,
+        },
+      },
+    };
+    const demoProject: ProjectRecord = {
+      project_id: DEMO_PROJECT_ID,
+      name: "Pinecrest Mixed-Use",
+      description: "Seeded demo workspace for UI QA.",
+      updated_at: Date.now() / 1000,
+      project_input: demoProjectInput,
+      latest_result: demoResult,
+      has_result: true,
+    };
+    demoWorkspaceSeededRef.current = true;
+    suppressProjectAutoLoadRef.current = true;
+    setProjects([demoProject]);
+    setCurrentProject(demoProject);
+    setProjectId(DEMO_PROJECT_ID);
+    setSiteName("Pinecrest Mixed-Use");
+    setFileName("pinecrest-demo-ui");
+    setSiteNameAuto(false);
+    setFileNameAuto(false);
+    setLotWidth("760");
+    setLotHeight("520");
+    setParkingCount("116");
+    setBuildingWidth("110");
+    setBuildingDepth("58");
+    setBuildingCount("3");
+    setProjectType("mixed_use");
+    setSiteAddress("Pinecrest Mixed-Use Demo Site");
+    setSiteScaleLocked(true);
+    setUseSurveyForGrading(true);
+    setBuildingPlacements(demoPlacements);
+    setPlacementModeEnabled(false);
+    setActivePlacementId("demo-basin-a");
+    setPreviewQuality("standard");
+    setPreviewMode("2d");
+    setPreviewInteraction("static");
+    setPreviewHeightPx(720);
+    setSystemStatuses({
+      roads: "fresh",
+      parking: "fresh",
+      grading: "fresh",
+      drainage: "stale",
+      utilities: "fresh",
+    });
+    applyBackendResult(demoResult);
+    const demoThread = [
+      createWelcomeMessage(),
+      createChatMessage(
+        "system",
+        "Demo workspace loaded. Use this seeded project to QA canvas modes, sidebars, status cards, and object editing without signing in.",
+        "status",
+      ),
+    ];
+    setChatMessages(demoThread);
+    chatMessagesRef.current = demoThread;
+    setStatusMessage("Demo workspace loaded for UI QA.");
+  }, [effectiveDemoWorkspaceEnabled]);
 
   const applyProjectInput = (projectInput: ProjectInput) => {
     if (!projectInput || typeof projectInput !== "object") {
@@ -8415,7 +8821,7 @@ export default function PerformanceAIDashboard() {
     [projects],
   );
 
-  if (!user) {
+  if (!effectiveUser) {
     return (
       <AuthScreen
         authMode={authMode}
@@ -8442,7 +8848,7 @@ export default function PerformanceAIDashboard() {
     <div className="civora-app-bg min-h-screen text-[var(--civora-text)]">
       <div className="flex min-h-screen flex-col">
         <AppHeader
-          userEmail={user.email}
+          userEmail={effectiveUser.email}
           onOpenProjects={() => setActiveSidePanel("projects")}
           onOpenSiteInputs={() => setActiveSidePanel("site")}
           onOpenDocs={() => setActiveSidePanel("docs")}
@@ -9379,6 +9785,7 @@ export default function PerformanceAIDashboard() {
                   <span className="text-[11px] uppercase tracking-[0.12em] text-slate-400">px</span>
                 </div>
                 <div
+                  data-testid="workspace-canvas-shell"
                   className="civora-canvas mx-auto w-full overflow-hidden p-1"
                   style={{
                     width: "100%",
@@ -9403,7 +9810,7 @@ export default function PerformanceAIDashboard() {
                 previewLabelDensity={previewLabelDensity}
                 hasGeneratedPlan={Boolean(planPreviewUrl && backendResult)}
                 placementMode={placementModeEnabled || Boolean(activePlacementId)}
-                onViewportCenter={setViewportCenter}
+                onViewportCenter={handleViewportCenter}
                 externalRectUndo={externalRectUndo}
               onPlaceBuilding={handlePlaceBuilding}
               onPlaceObject={handlePlaceObject}
@@ -9416,7 +9823,7 @@ export default function PerformanceAIDashboard() {
               onClearFocusObject={() => setFocusObjectId(null)}
               lotWidth={lotBounds.w}
               lotHeight={lotBounds.h}
-              onViewportFootprint={(value) => setViewportFootprint(value)}
+              onViewportFootprint={handleViewportFootprint}
               onUpdateBuilding={handleUpdateBuilding}
               onUpdateSuggested={(id, updates) => {
                 setDetectedPlacements((prev) => {
@@ -9653,6 +10060,40 @@ export default function PerformanceAIDashboard() {
                   </button>
                 </div>
               </div>
+
+              <ChatPanel
+                chatMessages={chatMessages}
+                chatScrollRef={chatScrollRef}
+                onSetMessageFeedback={setMessageFeedback}
+                thinkingState={thinkingState}
+                busy={busy}
+                activePlanTool={activePlanTool}
+                visibleActiveJobStatus={visibleActiveJob?.status ?? ""}
+                hasDirectRunInFlight={Boolean(directRunAbortRef.current)}
+                onCancelJob={handleCancelActiveJob}
+                onContinueJob={handleContinueActiveJob}
+                pendingClarification={pendingClarification?.question || null}
+                onContinuePendingClarification={handleContinuePendingClarification}
+                prompt={prompt}
+                imageName={imageName}
+                onPromptChange={setPrompt}
+                onPromptKeyDown={handlePromptKeyDown}
+                onSendMessage={handleSendMessage}
+                onUploadImage={uploadImage}
+                onExplainPlan={() => void handleExplainPlan()}
+                onRunFix={() => void handleRunFix()}
+                onRunImprove={() => void handleRunImprove()}
+                onSaveProject={() => void saveProject()}
+                canExplain={Boolean(planPreviewUrl)}
+                statusMessage={statusMessage}
+                hasVisibleActiveJob={Boolean(visibleActiveJob)}
+                approvalState={approvalStatus.state}
+                approvalPhaseLabel={approvalStatus.label}
+                approvalError={approvalError}
+                collapsed={false}
+                onToggleCollapsed={() => setChatCollapsed((value) => !value)}
+                summaryText={chatSummary}
+              />
 
               <div className="hidden">
                   <div className="rounded-2xl border border-slate-200 bg-white p-4">
