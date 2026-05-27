@@ -9037,14 +9037,23 @@ function PerformanceAIDashboardView({
             </button>
             <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
               {[
-                { label: "Project", items: ["Dashboard", "Site & Existing", "Import & Survey"] },
-                { label: "Canvas", items: ["Canvas", "Data", "Objects", "Generate"] },
-                { label: "Disciplines", items: ["Grading", "Drainage", "Utilities", "Roadway", "Landscape"] },
-                { label: "Control", items: ["Layers", "Analysis", "Chat"] },
-                { label: "Output", items: ["Details", "Reports", "Quantities", "Deliverables"] },
+                {
+                  label: "Project",
+                  items: [
+                    "Dashboard",
+                    "Site & Existing",
+                    "Import & Survey",
+                    "Design",
+                    "Grading",
+                    "Drainage",
+                    "Utilities",
+                    "Roadway",
+                    "Landscape",
+                    "Details",
+                  ],
+                },
                 { label: "Data", items: ["Files", "Standards", "Libraries"] },
-                { label: "Setup", items: ["Settings"] },
-                { label: "Systems", items: ["Storm Drainage", "Sanitary Sewer", "Water"] },
+                { label: "Systems", items: ["Grading", "Storm Drainage", "Sanitary Sewer", "Water", "Roadway", "Utilities", "Landscape"] },
               ].map((section) => (
                 <div key={section.label}>
                   <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
@@ -9057,6 +9066,7 @@ function PerformanceAIDashboardView({
                         Dashboard: "dashboard",
                         "Site & Existing": "site_existing",
                         "Import & Survey": "import_survey",
+                        Design: "model",
                         Canvas: "model",
                         Objects: "objects",
                         Generate: "generate",
@@ -9085,6 +9095,7 @@ function PerformanceAIDashboardView({
                         Dashboard: Gauge,
                         "Site & Existing": MapPinned,
                         "Import & Survey": FolderOpen,
+                        Design: Gauge,
                         Canvas: Gauge,
                         Objects: Box,
                         Generate: PlayCircle,
@@ -9112,7 +9123,7 @@ function PerformanceAIDashboardView({
                       const target = targetMap[item] ?? "model";
                       const isActive = activeSidePanel === target;
                       const status =
-                        item === "Canvas"
+                        item === "Design" || item === "Canvas"
                           ? placedObjectCount > 0
                             ? "ok"
                             : "idle"
@@ -9237,36 +9248,22 @@ function PerformanceAIDashboardView({
                   </div>
                 </div>
               ))}
-              <div className="rounded-lg border border-slate-200 bg-white px-3 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Systems Health</p>
-                <div className="mt-3 space-y-2">
-                  {systemHealthItems.map((item) => (
-                    <div key={item.key} className="flex items-center justify-between gap-3">
-                      <span className="text-xs font-semibold text-slate-700">{item.label}</span>
-                      <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                        <span
-                          className={`h-2.5 w-2.5 rounded-full ${
-                            item.state === "complete"
-                              ? "bg-emerald-500"
-                              : item.state === "blocked"
-                                ? "bg-red-500"
-                                : "bg-amber-400"
-                          }`}
-                        />
-                        {item.state === "complete" ? "Complete" : item.state === "blocked" ? "Blocked / Unsafe" : "Not configured / Not rendered"}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
             </div>
-            <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-3">
+            <button
+              type="button"
+              onClick={() => handleOpenSidePanel("chat")}
+              className={`mt-3 rounded-lg border px-3 py-3 text-left transition ${
+                activeSidePanel === "chat"
+                  ? "border-slate-950 bg-slate-950 text-white"
+                  : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
+              }`}
+            >
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Civora AI</p>
               <div className="mt-2 flex items-center justify-between">
-                <span className="text-sm font-semibold text-slate-900">Online</span>
+                <span className="text-sm font-semibold">Online</span>
                 <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.12)]" />
               </div>
-            </div>
+            </button>
           </aside>
           ) : null}
           {activeSidePanel ? (
