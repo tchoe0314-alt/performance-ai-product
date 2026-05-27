@@ -187,6 +187,32 @@ class EngineHardeningStormTests(unittest.TestCase):
         self.assertIn("controlling_segment", after)
         self.assertIn("max_capacity_ratio", after)
 
+    def test_hydraulic_validation_fails_explicit_backwater_surcharge(self) -> None:
+        validation = planner._validate_storm_hydraulics(
+            {
+                "segments": [
+                    {
+                        "pipe": "P-1",
+                        "from": "INLET-1",
+                        "to": "OUTLET-1",
+                        "flow_cfs": 1.0,
+                        "capacity_cfs": 3.0,
+                        "capacity_ratio": 0.33,
+                        "slope_ft_ft": 0.01,
+                        "contributing_area_ac": 0.5,
+                    }
+                ],
+                "backwater_validation": {
+                    "valid": False,
+                    "max_tailwater_surcharge_ft": 1.2,
+                    "surcharged_segments": [{"segment": "P-1", "max_hgl_above_crown_ft": 0.4}],
+                },
+            }
+        )
+
+        self.assertFalse(validation["valid"])
+        self.assertEqual(validation["backwater_failures"][0]["reason"], "tailwater_surcharges_pipe_crown")
+
     def test_final_plan_sanitizer_preserves_canonical_storm_summary(self) -> None:
         storm = {
             "success": True,

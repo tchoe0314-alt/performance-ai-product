@@ -69,6 +69,33 @@ class ProductionDepthArtifactTests(unittest.TestCase):
         self.assertEqual(enriched["inlet_capacity_checks"][0]["inlet"], "INLET-1")
         self.assertEqual(enriched["controlling_segment"], "P-1")
 
+    def test_storm_backwater_validation_blocks_tailwater_surcharged_pipe(self) -> None:
+        storm = {
+            "success": True,
+            "hydraulic_source": "engine",
+            "segments": [
+                {
+                    "pipe": "P-BACKWATER",
+                    "path": [[0.0, 0.0], [80.0, 0.0]],
+                    "diameter_in": 12.0,
+                    "flow_cfs": 1.0,
+                    "capacity_cfs": 3.0,
+                    "capacity_ratio": 0.33,
+                    "velocity_fps": 3.0,
+                    "start_invert_ft": 97.0,
+                    "end_invert_ft": 96.5,
+                    "tributary_area_sf": 10000.0,
+                }
+            ],
+            "target_outfall": {"name": "BASIN-1", "z": 99.0},
+        }
+
+        enriched = enrich_storm_production_depth(storm, {})
+
+        self.assertFalse(enriched["backwater_validation"]["valid"])
+        self.assertTrue(enriched["backwater_validation"]["tailwater_controls_hgl"])
+        self.assertEqual(enriched["backwater_validation"]["surcharged_segments"][0]["segment"], "P-BACKWATER")
+
     def test_water_depth_validates_pressure_fire_flow_hydrants_and_velocity(self) -> None:
         utilities = {
             "source_pressure_psi": 72.0,

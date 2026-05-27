@@ -1,7 +1,8 @@
 import unittest
 from unittest.mock import patch
 
-from planner import build_plan
+from core.project_manager import ProjectManager
+from planner import _recompute_sanitary_summary, build_plan
 
 
 def _manual_sanitary_payload(**overrides):
@@ -71,6 +72,64 @@ class SanitaryStageTest(unittest.TestCase):
         produced = ((plan.get("meta") or {}).get("deliverables") or {}).get("produced") or []
         self.assertEqual(sanitary, {})
         self.assertNotIn("sanitary_plan", produced)
+
+    def test_post_reroute_recompute_rolls_service_flow_into_main_and_blocks_missing_service(self) -> None:
+        manager = ProjectManager()
+        project = manager.project
+        sanitary = {
+            "expected_service_buildings": ["BLDG-1", "BLDG-2", "BLDG-3"],
+            "segments": [
+                {
+                    "name": "LAT-1",
+                    "segment_role": "lateral",
+                    "served_building": "BLDG-1",
+                    "start_name": "BLDG-1",
+                    "end_name": "MAIN-A",
+                    "route_points": [[10.0, 10.0], [20.0, 10.0]],
+                    "diameter_in": 8.0,
+                    "flow_cfs": 0.02,
+                    "start_invert_ft": 97.0,
+                    "end_invert_ft": 96.7,
+                },
+                {
+                    "name": "LAT-2",
+                    "segment_role": "lateral",
+                    "served_building": "BLDG-2",
+                    "start_name": "BLDG-2",
+                    "end_name": "MAIN-A",
+                    "route_points": [[10.0, 20.0], [20.0, 10.0]],
+                    "diameter_in": 8.0,
+                    "flow_cfs": 0.03,
+                    "start_invert_ft": 97.0,
+                    "end_invert_ft": 96.65,
+                },
+                {
+                    "name": "SAN-MAIN-1",
+                    "segment_role": "main",
+                    "served_building": "shared_main",
+                    "start_name": "MAIN-A",
+                    "end_name": "SAN_TIE_IN",
+                    "route_points": [[20.0, 10.0], [80.0, 10.0]],
+                    "diameter_in": 8.0,
+                    "flow_cfs": 0.01,
+                    "start_invert_ft": 96.5,
+                    "end_invert_ft": 95.8,
+                },
+            ],
+            "manholes": [],
+        }
+        manager.latest_outputs["sanitary"] = sanitary
+        project.meta["sanitary_summary"] = sanitary
+
+        _recompute_sanitary_summary(project, manager, prefer_cache=True)
+
+        recomputed = project.meta["sanitary_summary"]
+        main = next(item for item in recomputed["segments"] if item["name"] == "SAN-MAIN-1")
+        self.assertAlmostEqual(main["upstream_service_flow_cfs"], 0.05, places=4)
+        self.assertAlmostEqual(main["flow_cfs"], 0.05, places=4)
+        self.assertFalse(recomputed["service_coverage"]["valid"])
+        self.assertIn("BLDG-3", recomputed["service_coverage"]["missing_buildings"])
+        self.assertFalse(recomputed["network_validation"]["valid"])
 
 
 if __name__ == "__main__":

@@ -139,6 +139,7 @@ def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict
     total_flow = 0.0
     total_capacity = 0.0
     total_area_sf = 0.0
+    segment_hydraulics: List[Dict[str, Any]] = []
     for index, segment in enumerate(segments, start=1):
         name = _segment_name(segment, index)
         points = _path_points(segment)
@@ -176,6 +177,17 @@ def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict
         segment["hgl_end_ft"] = round(hgl_end, 3)
         segment["egl_start_ft"] = round(egl_start, 3)
         segment["egl_end_ft"] = round(egl_end, 3)
+        segment_hydraulics.append(
+            {
+                "segment": name,
+                "station_start_ft": station,
+                "station_end_ft": station + length,
+                "hgl_start_ft": hgl_start,
+                "hgl_end_ft": hgl_end,
+                "crown_start_ft": start_inv + diameter_ft,
+                "crown_end_ft": end_inv + diameter_ft,
+            }
+        )
         segment.setdefault("hydraulic_depth_source", "hydraulic_engine" if safe_str(enriched.get("hydraulic_source")) == "engine" else "concept_hgl_egl_proxy")
         max_ratio = max(max_ratio, ratio)
         if not controlling or ratio >= safe_float(safe_dict(next((seg for seg in segments if _segment_name(seg) == controlling), {})).get("capacity_ratio"), -1.0):
@@ -196,6 +208,45 @@ def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict
     if math.isfinite(tailwater):
         enriched["tailwater_elev_ft"] = round(tailwater, 3)
         enriched["tailwater_source"] = "selected_outfall_or_terminal_hgl"
+        terminal_hgl = safe_float(hgl_profile[-1].get("hgl_ft"), tailwater) if hgl_profile else tailwater
+        surcharge = max(tailwater - terminal_hgl, 0.0)
+        total_station = max((safe_float(row.get("station_ft"), 0.0) for row in hgl_profile), default=0.0)
+        backwater_rows: List[Dict[str, Any]] = []
+        surcharged_segments: List[Dict[str, Any]] = []
+        for row in segment_hydraulics:
+            start_station = safe_float(row.get("station_start_ft"), 0.0)
+            end_station = safe_float(row.get("station_end_ft"), start_station)
+            if total_station > 0.0 and surcharge > 0.0:
+                start_influence = max(0.0, min(1.0, 1.0 - ((total_station - start_station) / total_station)))
+                end_influence = max(0.0, min(1.0, 1.0 - ((total_station - end_station) / total_station)))
+            else:
+                start_influence = end_influence = 0.0
+            adjusted_start = safe_float(row.get("hgl_start_ft"), 0.0) + surcharge * start_influence
+            adjusted_end = safe_float(row.get("hgl_end_ft"), 0.0) + surcharge * end_influence
+            max_above_crown = max(
+                adjusted_start - safe_float(row.get("crown_start_ft"), adjusted_start),
+                adjusted_end - safe_float(row.get("crown_end_ft"), adjusted_end),
+                0.0,
+            )
+            payload = {
+                "segment": safe_str(row.get("segment")),
+                "adjusted_hgl_start_ft": round(adjusted_start, 3),
+                "adjusted_hgl_end_ft": round(adjusted_end, 3),
+                "max_hgl_above_crown_ft": round(max_above_crown, 3),
+            }
+            backwater_rows.append(payload)
+            if max_above_crown > 0.05:
+                surcharged_segments.append(payload)
+        enriched["backwater_validation"] = {
+            "valid": not surcharged_segments,
+            "tailwater_controls_hgl": surcharge > 0.01,
+            "tailwater_elev_ft": round(tailwater, 3),
+            "terminal_hgl_ft": round(terminal_hgl, 3),
+            "max_tailwater_surcharge_ft": round(surcharge, 3),
+            "surcharged_segments": surcharged_segments,
+            "profile": backwater_rows,
+            "truth_label": "Tailwater/backwater check compares terminal HGL against pipe crown using supplied or selected outfall elevation.",
+        }
     inlet_checks: List[Dict[str, Any]] = []
     structures = safe_list(drainage_meta.get("structures")) or safe_list(drainage_meta.get("inlets"))
     for index, structure_raw in enumerate(structures[:25], start=1):

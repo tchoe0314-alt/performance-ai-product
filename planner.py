@@ -275,6 +275,7 @@ from backend.planning.depth_validators import (
     validate_water_system_depth as _validate_water_system_depth,
 )
 from backend.planning.production_depth import (
+    enrich_storm_production_depth as _enrich_storm_production_depth,
     enrich_water_production_depth as _enrich_water_production_depth,
 )
 from backend.planning.existing_conditions import summarize_existing_conditions as _summarize_existing_conditions
@@ -5688,6 +5689,7 @@ def _validate_storm_hydraulics(summary: Dict[str, Any]) -> Dict[str, Any]:
     missing_accumulation_segments: List[str] = []
     invalid_capacity_ratio_segments: List[Dict[str, Any]] = []
     downstream_total_inconsistencies: List[Dict[str, Any]] = []
+    backwater_failures: List[Dict[str, Any]] = []
     node_inflow: Dict[str, float] = {}
     node_outflow: Dict[str, float] = {}
     tolerance = 0.05
@@ -5724,6 +5726,15 @@ def _validate_storm_hydraulics(summary: Dict[str, Any]) -> Dict[str, Any]:
                     "outgoing_flow_cfs": round(outflow, 3),
                 }
             )
+    backwater_validation = safe_dict(summary.get("backwater_validation"))
+    if backwater_validation and backwater_validation.get("valid") is False:
+        backwater_failures.append(
+            {
+                "reason": "tailwater_surcharges_pipe_crown",
+                "max_tailwater_surcharge_ft": round(safe_float(backwater_validation.get("max_tailwater_surcharge_ft"), 0.0), 3),
+                "surcharged_segments": deepcopy(safe_list(backwater_validation.get("surcharged_segments"))),
+            }
+        )
 
     return {
         "system": "storm",
@@ -5731,8 +5742,9 @@ def _validate_storm_hydraulics(summary: Dict[str, Any]) -> Dict[str, Any]:
         "missing_accumulation_segments": missing_accumulation_segments,
         "invalid_capacity_ratio_segments": invalid_capacity_ratio_segments,
         "downstream_total_inconsistencies": downstream_total_inconsistencies,
+        "backwater_failures": backwater_failures,
         "valid": not any(
-            [geometry_only_segments, missing_accumulation_segments, invalid_capacity_ratio_segments, downstream_total_inconsistencies]
+            [geometry_only_segments, missing_accumulation_segments, invalid_capacity_ratio_segments, downstream_total_inconsistencies, backwater_failures]
         ),
     }
 
@@ -5976,6 +5988,8 @@ def _validate_sanitary_network(summary: Dict[str, Any]) -> Dict[str, Any]:
     disconnected_services: List[str] = []
     invalid_cover_segments: List[Dict[str, Any]] = []
     tie_in_issues: List[Dict[str, Any]] = []
+    service_coverage = safe_dict(summary.get("service_coverage"))
+    missing_service_buildings = safe_list(service_coverage.get("missing_buildings") or summary.get("missing_service_buildings"))
 
     for rec in segments:
         seg_id = _summary_segment_id(rec, "sanitary")
@@ -6005,6 +6019,8 @@ def _validate_sanitary_network(summary: Dict[str, Any]) -> Dict[str, Any]:
         "disconnected_services": disconnected_services,
         "invalid_cover_segments": invalid_cover_segments,
         "tie_in_issues": tie_in_issues,
+        "service_coverage": deepcopy(service_coverage),
+        "missing_service_buildings": deepcopy(missing_service_buildings),
         "missing_manhole_points": deepcopy(safe_list(summary.get("missing_manhole_points"))),
         "storm_conflicts": deepcopy(safe_list(summary.get("storm_conflicts"))),
         "coordination_conflicts_present": bool(safe_list(summary.get("storm_conflicts"))),
@@ -6014,10 +6030,83 @@ def _validate_sanitary_network(summary: Dict[str, Any]) -> Dict[str, Any]:
                 disconnected_services,
                 invalid_cover_segments,
                 tie_in_issues,
+                missing_service_buildings,
                 safe_list(summary.get("missing_manhole_points")),
             ]
         ),
     }
+
+
+def _expected_sanitary_service_buildings(project: ProjectModel, summary: Dict[str, Any]) -> List[str]:
+    explicit = safe_list(
+        summary.get("expected_service_buildings")
+        or summary.get("service_buildings")
+        or summary.get("required_service_buildings")
+    )
+    names = [safe_str(item) for item in explicit if safe_str(item)]
+    if names:
+        return dedupe_keep_order(names)
+    zone_names: List[str] = []
+    for zone in project.zones.values():
+        if getattr(zone, "zone_type", None) in {ZoneType.BUILDING, ZoneType.BUILDING_PAD}:
+            zone_names.append(safe_str(getattr(zone, "name", ""), safe_str(getattr(zone, "id", ""))))
+    return dedupe_keep_order([name for name in zone_names if name])
+
+
+def _recompute_sanitary_service_loads(project: ProjectModel, summary: Dict[str, Any]) -> Dict[str, Any]:
+    segments = [safe_dict(item) for item in safe_list(summary.get("segments"))]
+    service_segments = [
+        rec
+        for rec in segments
+        if safe_str(rec.get("segment_role")) in {"service_connection", "lateral"}
+    ]
+    main_segments = [rec for rec in segments if safe_str(rec.get("segment_role")) == "main"]
+    served_buildings = dedupe_keep_order(
+        [
+            safe_str(rec.get("served_building"))
+            for rec in service_segments
+            if safe_str(rec.get("served_building")) and safe_str(rec.get("served_building")) != "shared_main"
+        ]
+    )
+    expected_buildings = _expected_sanitary_service_buildings(project, summary)
+    existing_missing = [safe_str(item) for item in safe_list(summary.get("missing_service_buildings")) if safe_str(item)]
+    missing_buildings = dedupe_keep_order(
+        [name for name in expected_buildings if name not in set(served_buildings)]
+        + [name for name in existing_missing if name not in set(served_buildings)]
+    )
+    service_flow_total = round(
+        sum(max(0.0, safe_float(rec.get("flow_cfs"), 0.0)) for rec in service_segments),
+        6,
+    )
+    for rec in service_segments:
+        rec["upstream_service_flow_cfs"] = round(max(0.0, safe_float(rec.get("flow_cfs"), 0.0)), 6)
+        rec["post_reroute_recalculated"] = True
+    for rec in main_segments:
+        original_flow = max(0.0, safe_float(rec.get("flow_cfs"), 0.0))
+        if service_flow_total > original_flow:
+            rec["flow_cfs"] = service_flow_total
+            rec["post_reroute_flow_source"] = "summed_service_laterals"
+        rec["upstream_service_flow_cfs"] = service_flow_total
+        rec["post_reroute_recalculated"] = True
+    summary["segments"] = segments
+    summary["missing_service_buildings"] = missing_buildings
+    summary["served_buildings"] = served_buildings
+    summary["service_coverage"] = {
+        "expected_buildings": expected_buildings,
+        "served_buildings": served_buildings,
+        "missing_buildings": missing_buildings,
+        "expected_count": len(expected_buildings),
+        "served_count": len(served_buildings),
+        "valid": not missing_buildings,
+        "truth_label": "Sanitary service coverage is derived from canonical service/lateral segments after reroute recomputation.",
+    }
+    summary["post_reroute_recalculation"] = {
+        "service_flow_total_cfs": service_flow_total,
+        "main_segments_recomputed": len(main_segments),
+        "service_segments_recomputed": len(service_segments),
+        "truth_label": "Post-reroute sanitary recalculation re-sums service lateral flow into downstream mains before validation.",
+    }
+    return summary
 
 
 def _recompute_storm_summary(project: ProjectModel, manager: ProjectManager) -> None:
@@ -6114,6 +6203,8 @@ def _recompute_storm_summary(project: ProjectModel, manager: ProjectManager) -> 
     )
     storm["pipe_slope_invert_consistency"] = all(safe_float(rec.get("slope_pct"), 0.0) > 0.0 for rec in segments)
     storm["resized_segments"] = resized_segments
+    drainage = safe_dict(project.meta.get("drainage_canonical"))
+    storm = _enrich_storm_production_depth(storm, drainage)
     storm["graph_validation"] = _merge_validation_payload(
         _validate_network_graph(
             {
@@ -6142,12 +6233,12 @@ def _recompute_storm_summary(project: ProjectModel, manager: ProjectManager) -> 
             "missing_accumulation_segments",
             "invalid_capacity_ratio_segments",
             "downstream_total_inconsistencies",
+            "backwater_failures",
         ],
     )
     storm["success"] = bool(storm["graph_validation"].get("valid")) and bool(storm["hydraulic_validation"].get("valid"))
     manager.latest_outputs["storm_pipe_summary"] = _bounded_state_copy(storm, max_depth=6, max_items=260)
     project.meta["storm_pipe_summary"] = _bounded_state_copy(storm, max_depth=6, max_items=260)
-    drainage = safe_dict(project.meta.get("drainage_canonical"))
     if drainage:
         export_validation = _drainage_export_validation(
             project,
@@ -6172,6 +6263,7 @@ def _recompute_sanitary_summary(project: ProjectModel, manager: ProjectManager, 
         else safe_dict(canonical_stage_output(project, manager, "grading"))
     )
     proposed_surface = grading.get("proposed_surface")
+    summary = _recompute_sanitary_service_loads(project, summary)
     segments = [safe_dict(item) for item in safe_list(summary.get("segments"))]
     slope_violations: List[Dict[str, Any]] = []
     resized_segments: List[Dict[str, Any]] = []
