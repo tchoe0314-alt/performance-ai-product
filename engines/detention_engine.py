@@ -116,6 +116,15 @@ class DetentionResult:
     summary: Dict[str, float] = field(default_factory=dict)
 
 
+@dataclass
+class DetentionRoutingPoint:
+    time_hr: float
+    inflow_cfs: float
+    outflow_cfs: float
+    storage_cf: float
+    water_surface_elev_ft: float
+
+
 # =============================================================================
 # BASIC HELPERS
 # =============================================================================
@@ -246,6 +255,52 @@ def estimate_drawdown_hours(storage_cf: float, release_cfs: float) -> float:
     if release_cfs <= 0.0:
         return float("inf")
     return storage_cf / release_cfs / 3600.0
+
+
+def route_detention_level_pool(
+    inflow_hydrograph: Sequence[Tuple[float, float]],
+    stage_storage_curve: Sequence[StageStoragePoint],
+    *,
+    outlet_coefficient: float = 0.6,
+    outlet_area_sf: float = 1.0,
+    outlet_invert_elev: Optional[float] = None,
+) -> List[DetentionRoutingPoint]:
+    if len(inflow_hydrograph) < 2 or not stage_storage_curve:
+        return []
+    curve = sorted(stage_storage_curve, key=lambda row: row.storage_cf)
+    invert = outlet_invert_elev if outlet_invert_elev is not None else curve[0].elevation
+
+    def elevation_for_storage(storage: float) -> float:
+        if storage <= curve[0].storage_cf:
+            return curve[0].elevation
+        for idx in range(1, len(curve)):
+            a = curve[idx - 1]
+            b = curve[idx]
+            if storage <= b.storage_cf:
+                frac = (storage - a.storage_cf) / max(b.storage_cf - a.storage_cf, 1e-9)
+                return a.elevation + frac * (b.elevation - a.elevation)
+        return curve[-1].elevation
+
+    def outflow(storage: float) -> float:
+        elev = elevation_for_storage(storage)
+        head = max(0.0, elev - invert)
+        return max(0.0, outlet_coefficient * outlet_area_sf * math.sqrt(2.0 * 32.2 * head))
+
+    routed: List[DetentionRoutingPoint] = []
+    storage = 0.0
+    first_time, first_inflow = inflow_hydrograph[0]
+    routed.append(DetentionRoutingPoint(first_time, max(0.0, first_inflow), outflow(storage), storage, elevation_for_storage(storage)))
+    for idx in range(1, len(inflow_hydrograph)):
+        t0, q0 = inflow_hydrograph[idx - 1]
+        t1, q1 = inflow_hydrograph[idx]
+        dt_seconds = max(0.0, (t1 - t0) * 3600.0)
+        avg_inflow = (max(0.0, q0) + max(0.0, q1)) / 2.0
+        qout0 = outflow(storage)
+        trial_storage = max(0.0, storage + (avg_inflow - qout0) * dt_seconds)
+        qout1 = outflow(trial_storage)
+        storage = max(0.0, storage + (avg_inflow - (qout0 + qout1) / 2.0) * dt_seconds)
+        routed.append(DetentionRoutingPoint(t1, max(0.0, q1), outflow(storage), storage, elevation_for_storage(storage)))
+    return routed
 
 
 # =============================================================================

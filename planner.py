@@ -21,6 +21,7 @@ Design rules
 """
 
 import inspect
+import hashlib
 import json
 import logging
 import math
@@ -265,6 +266,16 @@ from backend.planning.coordination_state import (
     snapshot_coordination_state as _snapshot_coordination_state_impl,
     sync_drainage_mutable_state as _sync_drainage_mutable_state_impl,
 )
+from backend.planning.engine_readiness import (
+    evaluate_engine_readiness as _evaluate_engine_readiness,
+)
+from backend.planning.depth_validators import (
+    validate_roadway_corridor_depth as _validate_roadway_corridor_depth,
+    validate_stormwater_depth as _validate_stormwater_depth,
+    validate_water_system_depth as _validate_water_system_depth,
+)
+from backend.planning.existing_conditions import summarize_existing_conditions as _summarize_existing_conditions
+from backend.planning.reactive_model import reactive_report_from_plan as _reactive_report_from_plan
 
 
 BASE_DIR = Path(__file__).parent
@@ -1400,7 +1411,15 @@ def _run_manual_gate(ctx: PlannerExecutionContext, gate_name: str, plan: Optiona
                         context={"missing_manhole_points": safe_list(sanitary.get("missing_manhole_points"))},
                     )
                 )
-            if _storm_requested(parsed) and safe_list(sanitary.get("storm_conflicts")):
+            coordination_summary = safe_dict(safe_dict(plan.get("meta")).get("coordination"))
+            unresolved_coordination = safe_list(coordination_summary.get("unresolved_conflicts"))
+            unresolved_sanitary_storm = [
+                item
+                for item in unresolved_coordination
+                if "sanitary" in {lower_text(system) for system in safe_list(safe_dict(item).get("systems"))}
+                and "storm" in {lower_text(system) for system in safe_list(safe_dict(item).get("systems"))}
+            ]
+            if _storm_requested(parsed) and safe_list(sanitary.get("storm_conflicts")) and (not coordination_summary or unresolved_sanitary_storm):
                 failures.append(
                     _manual_failure(
                         gate_name,
@@ -1434,29 +1453,30 @@ def _run_manual_gate(ctx: PlannerExecutionContext, gate_name: str, plan: Optiona
                 )
 
     elif gate_name == "utility_gate":
+        utilities = gate_stage("utilities")
+        stage = _latest_stage_result(ctx, "utility_network")
+        if safe_dict(getattr(stage, "meta", {})).get("fallback_used") or bool(utilities.get("fallback_used")):
+            failures.append(
+                _manual_failure(
+                    gate_name,
+                    "utility_network",
+                    "MANUAL_UTILITY_FALLBACK_USED",
+                    "Assisted off does not allow utility fallback routing.",
+                    engine="utility_engine",
+                    missing_computation="coordinated_utility_routing",
+                    source_fields=["utility_network", "lot", "grading", "drainage"],
+                    failure_type="engine_failure",
+                    reason_class="fallback_used",
+                    category="utilities",
+                    context=utilities,
+                )
+            )
+            return _record_manual_gate_result(ctx, gate_name, failures)
         if not field_path_is_omitted(parsed, "utility_network"):
             deliverables = {lower_text(item) for item in safe_list(parsed.get("deliverables")) if safe_str(item)}
             utility_required = any("utility" in item or "water" in item for item in deliverables) or _user_supplied_geometry_available(parsed, "utility_network")
             if not utility_required:
                 return _record_manual_gate_result(ctx, gate_name, failures)
-            utilities = gate_stage("utilities")
-            stage = _latest_stage_result(ctx, "utility_network")
-            if safe_dict(getattr(stage, "meta", {})).get("fallback_used") or bool(utilities.get("fallback_used")):
-                failures.append(
-                    _manual_failure(
-                        gate_name,
-                        "utility_network",
-                        "MANUAL_UTILITY_FALLBACK_USED",
-                        "Assisted off does not allow utility fallback routing.",
-                        engine="utility_engine",
-                        missing_computation="coordinated_utility_routing",
-                        source_fields=["utility_network", "lot", "grading", "drainage"],
-                        failure_type="engine_failure",
-                        reason_class="fallback_used",
-                        category="utilities",
-                        context=utilities,
-                    )
-                )
             if safe_int(utilities.get("route_count"), 0) <= 0:
                 failures.append(
                     _manual_failure(
@@ -3058,6 +3078,10 @@ def _preview_meta_for_base_action(layer: str, task: str) -> Dict[str, Any]:
 def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
     actions: List[Dict[str, Any]] = []
 
+    def _stable_source_id(prefix: str, *parts: Any) -> str:
+        payload = json.dumps(parts, sort_keys=True, default=str)
+        return f"{prefix}_{hashlib.sha1(payload.encode('utf-8')).hexdigest()[:10]}"
+
     zones = getattr(project, "zones", {}) or {}
     if isinstance(zones, dict):
         for zone in zones.values():
@@ -3066,6 +3090,13 @@ def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
             bbox = getattr(boundary, "bbox", None)
             layer = _zone_layer_for_preview(zone)
             zone_id = safe_str(getattr(zone, "id", ""), "")
+            if zone_id.startswith("zone_"):
+                zone_id = _stable_source_id(
+                    "zone",
+                    layer,
+                    _zone_label_for_preview(zone),
+                    [round(value, 4) for value in [bbox.min_x, bbox.min_y, bbox.width, bbox.height]] if bbox is not None else boundary_points,
+                )
             zone_type = safe_str(getattr(zone, "zone_type", ""), "zone")
             if layer in {"SITE", "BUILDING"} and bbox is not None:
                 actions.append({
@@ -3151,6 +3182,8 @@ def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
             boundary_points = _boundary_points_for_preview(boundary) if boundary is not None else []
             if layer and boundary_points:
                 obj_id = safe_str(getattr(obj, "id", ""), "")
+                if obj_id.startswith("obj_"):
+                    obj_id = _stable_source_id("obj", layer, safe_str(getattr(obj, "name", "")), boundary_points)
                 obj_kind = safe_str(getattr(obj, "kind", ""), "object")
                 actions.append({
                     "task": "polygon",
@@ -3182,6 +3215,13 @@ def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
             if layer is None:
                 continue
             obj_id = safe_str(getattr(obj, "id", ""), "")
+            if obj_id.startswith("obj_"):
+                obj_id = _stable_source_id(
+                    "obj",
+                    layer,
+                    safe_str(getattr(obj, "name", "")),
+                    [round(safe_float(getattr(anchor, "x", 0.0)), 4), round(safe_float(getattr(anchor, "y", 0.0)), 4)],
+                )
             obj_kind = safe_str(getattr(obj, "kind", ""), "object")
             actions.append({
                 "task": "text_note",
@@ -3803,6 +3843,7 @@ def _normalized_summary_segments(project: ProjectModel, manager: ProjectManager)
                 "flow_cfs": safe_float(rec.get("flow_cfs"), 0.0),
                 "capacity_cfs": safe_float(rec.get("capacity_cfs"), 0.0),
                 "capacity_ratio": safe_float(rec.get("capacity_ratio"), 0.0),
+                "segment_role": safe_str(rec.get("segment_role") or rec.get("role"), ""),
                 "source_summary": "storm_pipe_summary",
             }
         )
@@ -3878,6 +3919,7 @@ def _normalized_summary_segments(project: ProjectModel, manager: ProjectManager)
                 "gravity": safe_str(rec.get("hydraulic_mode"), "").lower() == "gravity",
                 "from_name": safe_str(rec.get("start_name"), ""),
                 "to_name": safe_str(rec.get("end_name"), ""),
+                "segment_role": safe_str(rec.get("segment_role") or rec.get("role"), ""),
                 "source_summary": "utility_summary",
             }
         )
@@ -5173,7 +5215,7 @@ def _detect_coordination_conflicts(project: ProjectModel, manager: ProjectManage
             )
         min_slope = safe_float(segment.get("min_slope_ft_ft"), 0.0)
         actual_slope = safe_float(segment.get("slope_ft_ft"), 0.0)
-        if min_slope > 0.0 and actual_slope + 1e-6 < min_slope:
+        if min_slope > 0.0 and actual_slope + 1e-4 < min_slope:
             conflicts.append(
                 {
                     "conflict_type": "slope_violation",
@@ -5199,15 +5241,13 @@ def _detect_coordination_conflicts(project: ProjectModel, manager: ProjectManage
                     _point_inside_buffered_rect(path[0], rect)
                     or _point_inside_buffered_rect(path[-1], rect)
                 )
-                if endpoint_inside:
-                    # Service laterals, roof-drain laterals, and water services are
-                    # allowed to enter a building/pad at their endpoint. They should
-                    # still be flagged if they cut through a pad away from the
-                    # service endpoint, but not simply for connecting to the served
-                    # building.
-                    interior_points = path[1:-1]
-                    if not any(_point_inside_buffered_rect(point, rect) for point in interior_points):
-                        continue
+                interior_points = path[1:-1]
+                role = safe_str(segment.get("segment_role")).lower()
+                if (
+                    endpoint_inside
+                    and role in {"service", "service_connection", "lateral", "roof_lateral", "building_service"}
+                ):
+                    continue
             if any(_point_inside_buffered_rect(point, rect) for point in path) or any(
                 _segment_hits_buffered_rect(path[idx - 1], path[idx], rect) for idx in range(1, len(path))
             ):
@@ -6225,12 +6265,16 @@ def _post_reroute_validations(project: ProjectModel, manager: ProjectManager, ch
             "service_assignment_complete": all(safe_list(safe_dict(seg).get("route_points")) for seg in utility_segments),
         }
         validations["valid"] = validations["valid"] and bool(validations["systems"]["utilities"]["valid"])
-    validations["consistency"] = {
-        "storm_summary_current": safe_dict(manager.latest_outputs.get("storm_pipe_summary", {})) == safe_dict(project.meta.get("storm_pipe_summary", {})),
-        "sanitary_summary_current": safe_dict(manager.latest_outputs.get("sanitary", {})) == safe_dict(project.meta.get("sanitary_summary", {})),
-        "utility_summary_current": safe_dict(manager.latest_outputs.get("utilities", {})) == safe_dict(project.meta.get("utility_summary", {})),
-        "drainage_summary_current": safe_dict(manager.latest_outputs.get("drainage", {})) == safe_dict(project.meta.get("drainage_canonical", {})),
-    }
+    consistency: Dict[str, bool] = {}
+    if "storm" in changed:
+        consistency["storm_summary_current"] = safe_dict(manager.latest_outputs.get("storm_pipe_summary", {})) == safe_dict(project.meta.get("storm_pipe_summary", {}))
+    if "sanitary" in changed:
+        consistency["sanitary_summary_current"] = safe_dict(manager.latest_outputs.get("sanitary", {})) == safe_dict(project.meta.get("sanitary_summary", {}))
+    if "utilities" in changed or "water" in changed:
+        consistency["utility_summary_current"] = safe_dict(manager.latest_outputs.get("utilities", {})) == safe_dict(project.meta.get("utility_summary", {}))
+    if "drainage" in changed:
+        consistency["drainage_summary_current"] = safe_dict(manager.latest_outputs.get("drainage", {})) == safe_dict(project.meta.get("drainage_canonical", {}))
+    validations["consistency"] = consistency
     validations["valid"] = validations["valid"] and all(bool(flag) for flag in validations["consistency"].values())
     return validations
 
@@ -9193,6 +9237,10 @@ def finalize_plan(plan: Dict[str, Any], *, parsed: Dict[str, Any], route: Routin
     final = sanitize_plan(plan)
     _ensure_subdivision_road_preview(final, parsed)
     final.setdefault("meta", {})
+    parsed_meta = safe_dict(parsed.get("meta"))
+    for key in ("survey", "gis_layers", "existing_conditions", "coordinate_system", "standards_review_packet", "standards_acceptance", "design_standards", "jurisdiction_standards", "company_standards"):
+        if key in parsed_meta and key not in final["meta"]:
+            final["meta"][key] = deepcopy(parsed_meta.get(key))
     final["meta"].setdefault("routing", {"path": route.path, "reasons": list(route.reasons)})
     final["meta"].setdefault("parsed_mode", lower_text(parsed.get("mode")))
     final["meta"].setdefault("project_type", lower_text(parsed.get("project_type")))
@@ -9201,7 +9249,15 @@ def finalize_plan(plan: Dict[str, Any], *, parsed: Dict[str, Any], route: Routin
         finalize_export_metadata(final)
     except Exception as exc:
         final["meta"].setdefault("export_audit", {"ready": False, "error": safe_str(exc)})
+    final["meta"]["existing_conditions_summary"] = _summarize_existing_conditions(final, parsed)
+    final["meta"].setdefault("reactive_update_report", _reactive_report_from_plan(final))
+    final["meta"]["depth_validation"] = {
+        "stormwater": _validate_stormwater_depth(final),
+        "water": _validate_water_system_depth(final),
+        "roadway_corridor": _validate_roadway_corridor_depth(final),
+    }
     final["meta"]["civil_design_readiness"] = civil_design_readiness(final)
+    final["meta"]["engine_readiness"] = _evaluate_engine_readiness(final)
     return final
 
 

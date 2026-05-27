@@ -1,0 +1,68 @@
+import unittest
+
+import planner
+from backend.planning.existing_conditions import summarize_existing_conditions
+from core.civil_design import civil_design_readiness
+
+
+class ExistingConditionsTests(unittest.TestCase):
+    def test_missing_existing_conditions_are_explicit_production_blockers(self) -> None:
+        summary = summarize_existing_conditions({"meta": {"grading": {"source_quality": "terrain"}}})
+
+        fields = {item["field"] for item in summary["missing_requirements"]}
+
+        self.assertFalse(summary["production_ready"])
+        self.assertIn("survey_surface", fields)
+        self.assertIn("gis_layers", fields)
+        self.assertIn("coordinate_system", fields)
+
+    def test_survey_gis_and_coordinate_system_clear_existing_conditions_gate(self) -> None:
+        summary = summarize_existing_conditions(
+            {
+                "meta": {
+                    "grading": {"source_quality": "survey"},
+                    "survey": {"point_count": 8, "source": "uploaded_csv", "benchmark": "BM-1"},
+                    "gis_layers": {
+                        "parcels": [{"id": "P-1"}],
+                        "easements": [{"id": "E-1"}],
+                        "row": [{"id": "ROW-1"}],
+                        "floodplain": [],
+                        "wetlands": [],
+                        "existing_utilities": [{"id": "EX-W"}],
+                    },
+                    "coordinate_system": {"epsg": "EPSG:2276", "units": "ft", "source": "survey"},
+                }
+            }
+        )
+
+        self.assertTrue(summary["production_ready"])
+        self.assertTrue(summary["survey"]["ready"])
+        self.assertTrue(summary["gis"]["ready"])
+        self.assertTrue(summary["coordinate_system"]["ready"])
+
+    def test_civil_readiness_blocks_missing_coordinate_system(self) -> None:
+        readiness = civil_design_readiness({"meta": {"grading": {"source_quality": "survey"}, "survey": {"point_count": 4}, "gis_layers": {"parcels": [{}]}}})
+        gaps = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
+
+        self.assertIn(("existing_conditions", "coordinate_system"), gaps)
+
+    def test_build_plan_attaches_existing_conditions_summary(self) -> None:
+        plan = planner.build_plan(
+            {
+                "project_name": "Existing Conditions Smoke",
+                "units": "ft",
+                "mode": "site_plan",
+                "lot": {"x": 0.0, "y": 0.0, "w": 120.0, "h": 100.0},
+                "site_plan": {"building_width": 40.0, "building_depth": 30.0, "parking_count": 12},
+            }
+        )
+        meta = plan.get("meta") or {}
+        summary = meta.get("existing_conditions_summary") or {}
+
+        self.assertEqual(summary.get("version"), "existing_conditions_v1")
+        self.assertFalse(summary.get("production_ready"))
+        self.assertIn("coordinate_system", {item["field"] for item in summary.get("missing_requirements") or []})
+
+
+if __name__ == "__main__":
+    unittest.main()

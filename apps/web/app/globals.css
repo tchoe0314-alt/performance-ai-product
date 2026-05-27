@@ -1,21 +1,21 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f6f7f4;
+  --background: #f7f7f7;
   --foreground: #101318;
 
-  --civora-bg: #f6f7f4;
-  --civora-bg-soft: #fbfbf8;
-  --civora-surface: rgba(255, 255, 252, 0.9);
-  --civora-surface-solid: #fffffc;
-  --civora-surface-muted: rgba(244, 245, 239, 0.86);
+  --civora-bg: #f4f4f5;
+  --civora-bg-soft: #ffffff;
+  --civora-surface: rgba(255, 255, 255, 0.92);
+  --civora-surface-solid: #ffffff;
+  --civora-surface-muted: rgba(244, 244, 245, 0.9);
   --civora-border: rgba(28, 35, 45, 0.1);
   --civora-border-strong: rgba(28, 35, 45, 0.18);
   --civora-text: #101318;
   --civora-text-muted: #626b78;
   --civora-text-soft: #8a93a0;
-  --civora-accent: #2563eb;
-  --civora-accent-soft: rgba(37, 99, 235, 0.12);
+  --civora-accent: #111827;
+  --civora-accent-soft: rgba(17, 24, 39, 0.1);
   --civora-success: #2f9b5f;
   --civora-warning: #d68a1d;
   --civora-danger: #d94a45;
@@ -24,11 +24,11 @@
   --civora-terrain-water: #7fa7aa;
   --civora-terrain-line: rgba(156, 110, 46, 0.24);
 
-  --civora-radius-xs: 10px;
-  --civora-radius-sm: 14px;
-  --civora-radius-md: 18px;
-  --civora-radius-lg: 24px;
-  --civora-radius-xl: 32px;
+  --civora-radius-xs: 6px;
+  --civora-radius-sm: 8px;
+  --civora-radius-md: 10px;
+  --civora-radius-lg: 12px;
+  --civora-radius-xl: 14px;
   --civora-radius-pill: 999px;
 
   --civora-shadow-soft: 0 18px 50px -34px rgba(18, 25, 38, 0.42);
@@ -49,9 +49,7 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), sans-serif;
   background-image:
-    radial-gradient(circle at top left, rgba(190, 207, 175, 0.18), transparent 24rem),
-    radial-gradient(circle at top right, rgba(127, 167, 170, 0.14), transparent 28rem),
-    linear-gradient(180deg, #fbfbf8 0%, #eef1e8 100%);
+    linear-gradient(180deg, #ffffff 0%, #f3f4f6 100%);
   min-height: 100vh;
 }
 
@@ -62,8 +60,6 @@ body {
 
 .civora-app-bg {
   background:
-    radial-gradient(circle at 18% 0%, rgba(190, 207, 175, 0.22), transparent 28rem),
-    radial-gradient(circle at 78% 8%, rgba(127, 167, 170, 0.16), transparent 30rem),
     linear-gradient(180deg, var(--civora-bg-soft), var(--civora-bg));
 }
 
@@ -86,25 +82,28 @@ body {
   border: 1px solid var(--civora-border-strong);
   border-radius: var(--civora-radius-xl);
   background:
-    linear-gradient(rgba(255, 255, 252, 0.72), rgba(255, 255, 252, 0.72)),
-    radial-gradient(circle at 44% 34%, rgba(127, 167, 170, 0.22), transparent 16rem),
-    radial-gradient(circle at 56% 58%, rgba(190, 207, 175, 0.24), transparent 18rem),
-    repeating-linear-gradient(
-      165deg,
-      transparent 0,
-      transparent 15px,
-      var(--civora-terrain-line) 16px,
-      transparent 17px,
-      transparent 33px
-    ),
-    linear-gradient(135deg, var(--civora-terrain-sand), #f6f1df 46%, var(--civora-terrain-grass));
+    linear-gradient(rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.86)),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.055) 1px, transparent 1px),
+    linear-gradient(rgba(15, 23, 42, 0.055) 1px, transparent 1px),
+    #ffffff;
+  background-size: auto, 48px 48px, 48px 48px, auto;
   box-shadow: var(--civora-shadow-canvas);
+}
+
+.civora-app-bg {
+  color-scheme: light;
+}
+
+.civora-app-bg input,
+.civora-app-bg select,
+.civora-app-bg textarea {
+  border-radius: 8px;
 }
 
 .civora-control {
   border: 1px solid var(--civora-border);
   border-radius: var(--civora-radius-md);
-  background: rgba(255, 255, 252, 0.82);
+  background: rgba(255, 255, 255, 0.86);
   color: var(--civora-text);
   box-shadow: 0 10px 30px -24px rgba(18, 25, 38, 0.5);
   transition:

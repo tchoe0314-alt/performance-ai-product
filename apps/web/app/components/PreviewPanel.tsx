@@ -280,6 +280,9 @@ export default function PreviewPanel({
     Boolean(mapboxToken) &&
     Boolean(geocode?.lat && geocode?.lng);
   const showMap = mapAvailable && previewQuality === "high";
+  const showMap3D = showMap && previewMode === "3d";
+  const mapPitch = showMap3D ? 58 : 0;
+  const mapBearing = showMap3D ? (typeof siteRotationDeg === "number" ? siteRotationDeg : 0) : 0;
   const allowMapInteraction =
     showMap && previewInteraction === "static" && !placementMode && !rotateDragStart && !mapLocked;
   const showGeneratedPlan =
@@ -294,6 +297,7 @@ export default function PreviewPanel({
     suggestedPlacements.length > 0 ||
     (surveyPoints?.length ?? 0) > 0 ||
     Boolean(lotWidth && lotHeight);
+  const canUse3D = showMap || hasLiveObjects || preview3DEffectiveItems.length > 0 || Boolean(planPreviewUrl);
   const showHover = previewInteraction === "static";
   const allowEdits = previewInteraction === "edit";
   const overlayPointerEvents = allowMapInteraction ? "pointer-events-none" : "pointer-events-auto";
@@ -333,7 +337,7 @@ export default function PreviewPanel({
       ) ?? null,
     [buildingPlacements, suggestedPlacements, hoveredObjectId],
   );
-  const show3D = previewMode === "3d" && Boolean(planPreviewUrl) && !showMap;
+  const show3D = previewMode === "3d" && !showMap;
   useEffect(() => {
     if (typeof window === "undefined") return;
     const debugWindow = window as unknown as Record<string, unknown>;
@@ -342,16 +346,6 @@ export default function PreviewPanel({
     debugWindow.__civoraPreviewQuality = previewQuality;
     debugWindow.__civoraMapLoaded = mapLoaded;
   }, [geocode, mapLoaded, showMap, previewQuality]);
-  useEffect(() => {
-    if (previewMode === "3d" && (!planPreviewUrl || preview3DEffectiveItems.length === 0 || showMap)) {
-      onSetPreviewMode("2d");
-    }
-  }, [onSetPreviewMode, planPreviewUrl, preview3DEffectiveItems.length, previewMode, showMap]);
-  useEffect(() => {
-    if ((!planPreviewUrl || showMap) && previewMode === "3d") {
-      onSetPreviewMode("2d");
-    }
-  }, [onSetPreviewMode, planPreviewUrl, previewMode, showMap]);
   const selectedObject = useMemo(
     () =>
       [...buildingPlacements, ...suggestedPlacements].find(
@@ -1093,6 +1087,8 @@ export default function PreviewPanel({
       style: "mapbox://styles/mapbox/satellite-streets-v12",
       center: [-95.9345, 41.2565],
       zoom: 16,
+      pitch: mapPitch,
+      bearing: mapBearing,
       attributionControl: false,
     });
     mapRef.current = map;
@@ -1135,7 +1131,7 @@ export default function PreviewPanel({
       mapRef.current = null;
       setMapLoaded(false);
     };
-  }, [mapAvailable, mapboxToken]);
+  }, [mapAvailable, mapBearing, mapPitch, mapboxToken]);
 
   useEffect(() => {
     if (!mapAvailable || !mapLoaded) return;
@@ -1160,6 +1156,20 @@ export default function PreviewPanel({
       }
     });
   }, [allowMapInteraction, mapAvailable, mapLoaded]);
+
+  useEffect(() => {
+    if (!showMap || !mapLoaded) return;
+    const targets = [mapRef.current, fullscreenMapRef.current].filter(
+      (map): map is mapboxgl.Map => Boolean(map),
+    );
+    targets.forEach((map) => {
+      map.easeTo({
+        pitch: mapPitch,
+        bearing: mapBearing,
+        duration: 450,
+      });
+    });
+  }, [mapBearing, mapLoaded, mapPitch, showMap]);
 
   useEffect(() => {
     if (!debugStats?.enabled || !showMap) return;
@@ -1386,6 +1396,8 @@ export default function PreviewPanel({
       style: "mapbox://styles/mapbox/satellite-streets-v12",
       center: center ? [center.lng, center.lat] : [-95.9345, 41.2565],
       zoom: typeof zoom === "number" ? zoom : 16,
+      pitch: mapPitch,
+      bearing: mapBearing,
       attributionControl: false,
     });
     fullscreenMapRef.current.on("load", () => {
@@ -1399,7 +1411,7 @@ export default function PreviewPanel({
       fullscreenMapRef.current?.resize();
       setMapRevision((value) => value + 1);
     });
-  }, [fullscreenContainerReady, mapboxToken, previewFullscreenOpen, showMap]);
+  }, [fullscreenContainerReady, mapBearing, mapPitch, mapboxToken, previewFullscreenOpen, showMap]);
 
   useEffect(() => {
     if (previewFullscreenOpen) return;
@@ -1414,8 +1426,8 @@ export default function PreviewPanel({
     if (!fullscreenMapRef.current || !mapRef.current) return;
     const center = fullscreenMapRef.current.getCenter();
     const zoom = fullscreenMapRef.current.getZoom();
-    mapRef.current.jumpTo({ center: [center.lng, center.lat], zoom });
-  }, [previewFullscreenOpen, showMap]);
+    mapRef.current.jumpTo({ center: [center.lng, center.lat], zoom, pitch: mapPitch, bearing: mapBearing });
+  }, [mapBearing, mapPitch, previewFullscreenOpen, showMap]);
 
   useEffect(() => {
     if (!mapAvailable) return;
@@ -2291,20 +2303,23 @@ export default function PreviewPanel({
   }, [analysisHighlight, analysisPaths, buildingPlacements, lotHeight, lotWidth, suggestedPlacements]);
   const showParkingAnalysis = Boolean(analysisPaths && analysisPaths.length);
   return (
-    <div className="flex h-full flex-col rounded-[28px] border border-slate-200 bg-white/90 p-4 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.4)] backdrop-blur md:p-6">
-      <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div className="space-y-3">
+    <div className="flex h-full flex-col rounded-xl border border-slate-200 bg-white/92 p-3 shadow-[0_20px_60px_-44px_rgba(15,23,42,0.45)] backdrop-blur">
+      <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+        <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-              Preview Workspace
+            <span className="inline-flex items-center rounded-md bg-slate-950 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white">
+              Design Canvas
+            </span>
+            <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              {previewQuality === "high" ? "High Quality" : "Standard"}
+            </span>
+            <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              {previewMode.toUpperCase()}
             </span>
           </div>
-          <p className="text-sm font-semibold text-slate-950">Live Preview</p>
-          <p className="mt-1 text-sm text-slate-500">
-            The preview shows the latest engineered plan even when final export is still under review.
-          </p>
+          <p className="text-sm font-semibold text-slate-950">Live engineering model</p>
           {previewTotalPhaseCount > 0 && previewCompletedPhaseCount < previewTotalPhaseCount ? (
-            <div className="inline-flex max-w-3xl items-start rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <div className="inline-flex max-w-3xl items-start rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               <div>
                 <p className="font-semibold">Preview shows completed phases only.</p>
                 <p className="mt-1 text-xs">
@@ -2318,7 +2333,7 @@ export default function PreviewPanel({
             </div>
           ) : null}
           {analysisHighlight ? (
-            <div className="inline-flex max-w-3xl items-start rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-xs text-slate-600">
+            <div className="inline-flex max-w-3xl items-start rounded-lg border border-slate-200 bg-white/90 px-3 py-2 text-xs text-slate-600">
               <div>
                 <p className="font-semibold text-slate-800">Parking logic notes</p>
                 <p className="mt-1">
@@ -2402,7 +2417,7 @@ export default function PreviewPanel({
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+      <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               <span>Preview Mode</span>
@@ -2420,7 +2435,7 @@ export default function PreviewPanel({
               <button
                 type="button"
                 onClick={() => {
-                  if (!planPreviewUrl) return;
+                  if (!canUse3D) return;
                   onSetPreviewMode("3d");
                 }}
                 className={`rounded-full border px-2.5 py-1 ${
@@ -2428,7 +2443,7 @@ export default function PreviewPanel({
                     ? "border-slate-900 bg-slate-950 text-white"
                     : "border-slate-200 bg-white text-slate-600"
                 }`}
-                disabled={!planPreviewUrl}
+                disabled={!canUse3D}
               >
                 3D
               </button>
@@ -2699,6 +2714,7 @@ export default function PreviewPanel({
                     <div>geocode: {geocode?.lat && geocode?.lng ? `${geocode.lat.toFixed(6)}, ${geocode.lng.toFixed(6)}` : "null"}</div>
                     <div>showMap: {showMap ? "true" : "false"}</div>
                     <div>quality: {previewQuality}</div>
+                    <div>dimension: {previewMode}</div>
                     <div>mapLoaded: {mapLoaded ? "true" : "false"}</div>
                     <div>mapbox requests: {mapboxRequestCount}</div>
                     <div>mapbox tiles: {mapboxTileCount}</div>
@@ -2713,7 +2729,7 @@ export default function PreviewPanel({
                 ) : null}
                 {showMap ? (
                   <div className="pointer-events-none absolute right-5 top-5 rounded-full border border-white/40 bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white">
-                    N ↑ {typeof siteRotationDeg === "number" ? `${siteRotationDeg.toFixed(1)}°` : "0°"}
+                    {showMap3D ? "3D Map" : "2D Map"} · N ↑ {typeof siteRotationDeg === "number" ? `${siteRotationDeg.toFixed(1)}°` : "0°"}
                   </div>
                 ) : null}
                 {showGeneratedPlan && planPreviewUrl && !showMap ? (
@@ -2733,7 +2749,7 @@ export default function PreviewPanel({
                     Add objects to start building the site. Then click Place and drop them here.
                   </div>
                 ) : null}
-                {!showGeneratedPlan && previewMode === "3d" ? (
+                {!showGeneratedPlan && previewMode === "3d" && !showMap ? (
                   <div className="pointer-events-none absolute left-6 top-6 rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm">
                     3D needs a preview run
                   </div>

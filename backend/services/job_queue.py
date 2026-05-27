@@ -101,9 +101,8 @@ class JobQueueService:
             except Exception:
                 worker_count = 1
         self._worker_count = max(1, int(worker_count or 1))
-        self._resume_pending_jobs = str(
-            os.getenv("PERFORMANCE_AI_RESUME_PENDING_JOBS") or ""
-        ).strip().lower() in {"1", "true", "yes", "on"}
+        resume_setting = str(os.getenv("PERFORMANCE_AI_RESUME_PENDING_JOBS") or "true").strip().lower()
+        self._resume_pending_jobs = resume_setting not in {"0", "false", "no", "off"}
         self._workers: List[threading.Thread] = []
         self._heartbeat_interval_sec = max(0.5, float(heartbeat_interval_sec or 10.0))
         self._ensure_workers_alive()
@@ -675,6 +674,14 @@ class JobQueueService:
                     )
                     self._update_job_state(job_id, status="awaiting_approval", result=awaiting_result, error=None)
                 else:
+                    previous_result = dict((current or {}).get("result") or {})
+                    previous_metadata = dict(previous_result.get("metadata") or {})
+                    result_payload = dict(result or {})
+                    result_metadata = dict(result_payload.get("metadata") or {})
+                    if previous_metadata.get("runtime_phase_checkpoint") and not result_metadata.get("runtime_phase_checkpoint"):
+                        result_metadata["runtime_phase_checkpoint"] = previous_metadata.get("runtime_phase_checkpoint")
+                        result_payload["metadata"] = result_metadata
+                        result = result_payload
                     self._update_job_state(job_id, status="completed", result=result, error=None)
             except JobCancelledError:
                 current = self._get_job_for_worker(job_id)

@@ -63,6 +63,12 @@ class SanitaryPipeSegment:
     assigned_dfu: float = 0.0
     assigned_flow_gpm: float = 0.0
     assigned_size_in: float = 0.0
+    capacity_gpm: float = 0.0
+    capacity_cfs: float = 0.0
+    velocity_fps: float = 0.0
+    capacity_ratio: float = 0.0
+    flow_depth_ratio: float = 0.0
+    mannings_n: float = 0.013
 
     requires_cleanout: bool = False
     cleanout_spacing_ft: float = 100.0
@@ -287,6 +293,15 @@ class SanitaryEngine:
                 seg.warnings.append("Assigned DFU exceeds simplified pipe capacity table.")
 
             seg.invert_drop = round(seg.length * seg.slope, 4)
+            self._assign_manning_capacity(seg)
+            if seg.capacity_ratio > 1.0:
+                seg.warnings.append("Assigned sanitary flow exceeds Manning full-flow capacity.")
+            elif seg.capacity_ratio > 0.8:
+                seg.warnings.append("Assigned sanitary flow is above 80 percent of Manning full-flow capacity.")
+            if 0.0 < seg.velocity_fps < 2.0:
+                seg.warnings.append("Sanitary velocity is below preferred self-cleansing velocity.")
+            if seg.velocity_fps > 10.0:
+                seg.warnings.append("Sanitary velocity exceeds preferred maximum velocity.")
 
             seg.requires_cleanout = self._requires_cleanout(seg)
             seg.cleanout_spacing_ft = max(1.0, request.max_cleanout_spacing_ft if seg.cleanout_spacing_ft <= 0 else seg.cleanout_spacing_ft)
@@ -372,6 +387,12 @@ class SanitaryEngine:
             assigned_dfu=seg.assigned_dfu,
             assigned_flow_gpm=seg.assigned_flow_gpm,
             assigned_size_in=seg.assigned_size_in,
+            capacity_gpm=seg.capacity_gpm,
+            capacity_cfs=seg.capacity_cfs,
+            velocity_fps=seg.velocity_fps,
+            capacity_ratio=seg.capacity_ratio,
+            flow_depth_ratio=seg.flow_depth_ratio,
+            mannings_n=seg.mannings_n,
             requires_cleanout=seg.requires_cleanout,
             cleanout_spacing_ft=seg.cleanout_spacing_ft if seg.cleanout_spacing_ft > 0 else request.max_cleanout_spacing_ft,
             cleanout_count=seg.cleanout_count,
@@ -550,6 +571,25 @@ class SanitaryEngine:
         attr = self.TYPE_SLOPE_MAP.get(seg.segment_type, "default_main_slope")
         default_value = getattr(request, attr, request.default_main_slope)
         return max(default_value, seg.min_slope, min_table_slope)
+
+    def _manning_full_flow_capacity_cfs(self, diameter_in: float, slope_ft_ft: float, mannings_n: float = 0.013) -> float:
+        diameter_ft = max(0.01, diameter_in / 12.0)
+        slope = max(0.000001, slope_ft_ft)
+        n = max(0.001, mannings_n)
+        area = math.pi * diameter_ft * diameter_ft / 4.0
+        radius = diameter_ft / 4.0
+        return (1.486 / n) * area * (radius ** (2.0 / 3.0)) * (slope ** 0.5)
+
+    def _assign_manning_capacity(self, seg: SanitaryPipeSegment) -> None:
+        capacity_cfs = self._manning_full_flow_capacity_cfs(seg.assigned_size_in, seg.slope, seg.mannings_n)
+        flow_cfs = max(0.0, seg.assigned_flow_gpm) * 0.00222800926
+        diameter_ft = max(0.01, seg.assigned_size_in / 12.0)
+        area = math.pi * diameter_ft * diameter_ft / 4.0
+        seg.capacity_cfs = round(capacity_cfs, 4)
+        seg.capacity_gpm = round(capacity_cfs / 0.00222800926, 3)
+        seg.capacity_ratio = round(flow_cfs / max(capacity_cfs, 1e-9), 4)
+        seg.velocity_fps = round(flow_cfs / max(area, 1e-9), 3)
+        seg.flow_depth_ratio = round(min(1.0, seg.capacity_ratio), 4)
 
     # =========================================================================
     # RELATIVE INVERT SYSTEM (A-MODE)
@@ -753,6 +793,9 @@ class SanitaryEngine:
                     "segment_type": seg.segment_type,
                     "assigned_dfu": seg.assigned_dfu,
                     "assigned_size_in": seg.assigned_size_in,
+                    "capacity_gpm": seg.capacity_gpm,
+                    "velocity_fps": seg.velocity_fps,
+                    "capacity_ratio": seg.capacity_ratio,
                     "slope": seg.slope,
                     "upstream_invert_ft": seg.upstream_invert_ft,
                     "downstream_invert_ft": seg.downstream_invert_ft,
@@ -789,6 +832,9 @@ class SanitaryEngine:
                     "segment_type": seg.segment_type,
                     "geometry_points": list(seg.geometry_points),
                     "assigned_size_in": seg.assigned_size_in,
+                    "capacity_gpm": seg.capacity_gpm,
+                    "velocity_fps": seg.velocity_fps,
+                    "capacity_ratio": seg.capacity_ratio,
                     "upstream_invert_ft": seg.upstream_invert_ft,
                     "downstream_invert_ft": seg.downstream_invert_ft,
                     "route_system_type": "sanitary",

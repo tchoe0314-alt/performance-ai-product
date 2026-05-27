@@ -1,0 +1,604 @@
+from __future__ import annotations
+
+import csv
+import importlib.util
+import json
+import zipfile
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+from engines.surface_engine import GridSurface, SurfaceEngine, SurveyPoint
+
+from .common import safe_dict, safe_float, safe_int, safe_list, safe_str
+from .existing_conditions import REQUIRED_GIS_LAYERS
+from .landxml_io import import_landxml
+
+
+SURVEY_X_COLUMNS = ("x", "easting", "east", "lon", "longitude")
+SURVEY_Y_COLUMNS = ("y", "northing", "north", "lat", "latitude")
+SURVEY_Z_COLUMNS = ("z", "elev", "elevation", "height")
+SURVEY_ID_COLUMNS = ("point_id", "point", "id", "name", "number")
+SURVEY_DESC_COLUMNS = ("description", "desc", "code", "feature", "label")
+HEAVY_FORMAT_REQUIREMENTS = {
+    ".shp": "Shapefile import requires fiona/geopandas or GDAL.",
+    ".gpkg": "GeoPackage import requires fiona/geopandas or GDAL.",
+    ".tif": "GeoTIFF import requires rasterio/GDAL.",
+    ".tiff": "GeoTIFF import requires rasterio/GDAL.",
+    ".las": "LAS point-cloud import requires laspy plus coordinate metadata validation.",
+    ".laz": "LAZ point-cloud import requires laspy with LAZ backend support.",
+}
+
+
+def _normalized_field_map(fieldnames: Iterable[str]) -> Dict[str, str]:
+    return {safe_str(name).strip().lower(): safe_str(name) for name in fieldnames if safe_str(name)}
+
+
+def _first_column(fields: Dict[str, str], candidates: Iterable[str]) -> str:
+    for candidate in candidates:
+        if candidate in fields:
+            return fields[candidate]
+    return ""
+
+
+def _module_available(name: str) -> bool:
+    return importlib.util.find_spec(name) is not None
+
+
+def _bounds(points: List[Dict[str, Any]]) -> Optional[Dict[str, float]]:
+    if not points:
+        return None
+    xs = [safe_float(point.get("x"), 0.0) for point in points]
+    ys = [safe_float(point.get("y"), 0.0) for point in points]
+    return {"min_x": min(xs), "min_y": min(ys), "max_x": max(xs), "max_y": max(ys)}
+
+
+def import_survey_csv(path: Path, *, coordinate_system: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    points: List[Dict[str, Any]] = []
+    warnings: List[str] = []
+    invalid_rows = 0
+    with Path(path).open("r", newline="", encoding="utf-8-sig") as handle:
+        reader = csv.DictReader(handle)
+        fields = _normalized_field_map(reader.fieldnames or [])
+        x_col = _first_column(fields, SURVEY_X_COLUMNS)
+        y_col = _first_column(fields, SURVEY_Y_COLUMNS)
+        z_col = _first_column(fields, SURVEY_Z_COLUMNS)
+        id_col = _first_column(fields, SURVEY_ID_COLUMNS)
+        desc_col = _first_column(fields, SURVEY_DESC_COLUMNS)
+        if not (x_col and y_col and z_col):
+            return {
+                "success": False,
+                "source": str(path),
+                "source_type": "survey_csv",
+                "points": [],
+                "point_count": 0,
+                "invalid_rows": 0,
+                "recognized_columns": {"x": x_col, "y": y_col, "z": z_col, "id": id_col, "description": desc_col},
+                "warnings": ["Survey CSV must include x/y/z, easting/northing/elevation, or longitude/latitude/elevation columns."],
+            }
+        for index, row in enumerate(reader, start=2):
+            try:
+                point = {
+                    "point_id": safe_str(row.get(id_col), f"P-{index - 1}") if id_col else f"P-{index - 1}",
+                    "x": float(row.get(x_col, "")),
+                    "y": float(row.get(y_col, "")),
+                    "z": float(row.get(z_col, "")),
+                    "description": safe_str(row.get(desc_col), "") if desc_col else "",
+                }
+            except Exception:
+                invalid_rows += 1
+                continue
+            points.append(point)
+    if len(points) < 3:
+        warnings.append("Survey CSV needs at least 3 valid points before it can build a surface.")
+    elevations = [safe_float(point.get("z"), 0.0) for point in points]
+    return {
+        "success": len(points) >= 3,
+        "source": str(path),
+        "source_type": "survey_csv",
+        "points": points,
+        "point_count": len(points),
+        "invalid_rows": invalid_rows,
+        "recognized_columns": {"x": x_col, "y": y_col, "z": z_col, "id": id_col, "description": desc_col},
+        "bounds": _bounds(points),
+        "elevation_range": {"min": min(elevations), "max": max(elevations)} if elevations else None,
+        "coordinate_system": safe_dict(coordinate_system),
+        "warnings": warnings,
+    }
+
+
+def surface_from_survey_import(import_result: Dict[str, Any], *, cell_size: float = 10.0, padding: float = 0.0) -> Optional[GridSurface]:
+    points = [
+        SurveyPoint(x=safe_float(point.get("x")), y=safe_float(point.get("y")), z=safe_float(point.get("z")))
+        for point in safe_list(import_result.get("points"))
+    ]
+    if len(points) < 3:
+        return None
+    surface = SurfaceEngine(points).build_grid(cell_size=max(0.1, safe_float(cell_size, 10.0)), padding=max(0.0, safe_float(padding, 0.0)))
+    setattr(
+        surface,
+        "_inferred_profile",
+        {
+            "source_quality": "survey",
+            "source_detail": "survey_csv_import",
+            "source_file": safe_str(import_result.get("source")),
+            "point_count": len(points),
+            "coordinate_system": safe_dict(import_result.get("coordinate_system")),
+        },
+    )
+    return surface
+
+
+def _read_xyz_rows(path: Path) -> Tuple[List[Dict[str, float]], Dict[str, str], int]:
+    rows: List[Dict[str, float]] = []
+    invalid_rows = 0
+    with path.open("r", newline="", encoding="utf-8-sig") as handle:
+        reader = csv.DictReader(handle)
+        fields = _normalized_field_map(reader.fieldnames or [])
+        x_col = _first_column(fields, SURVEY_X_COLUMNS)
+        y_col = _first_column(fields, SURVEY_Y_COLUMNS)
+        z_col = _first_column(fields, SURVEY_Z_COLUMNS)
+        if not (x_col and y_col and z_col):
+            return [], {"x": x_col, "y": y_col, "z": z_col}, 0
+        for row in reader:
+            try:
+                rows.append({"x": float(row.get(x_col, "")), "y": float(row.get(y_col, "")), "z": float(row.get(z_col, ""))})
+            except Exception:
+                invalid_rows += 1
+    return rows, {"x": x_col, "y": y_col, "z": z_col}, invalid_rows
+
+
+def import_surface_grid_csv(path: Path, *, coordinate_system: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    xyz_rows, columns, invalid_rows = _read_xyz_rows(Path(path))
+    warnings: List[str] = []
+    if len(xyz_rows) < 4:
+        return {
+            "success": False,
+            "source": str(path),
+            "source_type": "surface_xyz_csv",
+            "surface": None,
+            "coordinate_system": safe_dict(coordinate_system),
+            "invalid_rows": invalid_rows,
+            "recognized_columns": columns,
+            "warnings": ["Surface CSV needs at least 4 valid x/y/z rows."],
+        }
+    xs = sorted({round(row["x"], 6) for row in xyz_rows})
+    ys = sorted({round(row["y"], 6) for row in xyz_rows})
+    if len(xs) < 2 or len(ys) < 2:
+        return {
+            "success": False,
+            "source": str(path),
+            "source_type": "surface_xyz_csv",
+            "surface": None,
+            "coordinate_system": safe_dict(coordinate_system),
+            "invalid_rows": invalid_rows,
+            "recognized_columns": columns,
+            "warnings": ["Surface CSV rows do not span a usable grid."],
+        }
+    dx_values = [round(xs[index] - xs[index - 1], 6) for index in range(1, len(xs))]
+    dy_values = [round(ys[index] - ys[index - 1], 6) for index in range(1, len(ys))]
+    cell = min([value for value in dx_values + dy_values if value > 0.0] or [1.0])
+    lookup = {(round(row["x"], 6), round(row["y"], 6)): row["z"] for row in xyz_rows}
+    values: List[List[float]] = []
+    missing_cells = 0
+    for y in ys:
+        row_values: List[float] = []
+        for x in xs:
+            z = lookup.get((x, y))
+            if z is None:
+                missing_cells += 1
+                z = _nearest_z(x, y, xyz_rows)
+            row_values.append(z)
+        values.append(row_values)
+    if missing_cells:
+        warnings.append(f"Surface grid had {missing_cells} missing cells; nearest imported elevation was used.")
+    surface = GridSurface(
+        x_min=xs[0],
+        y_min=ys[0],
+        x_max=xs[-1],
+        y_max=ys[-1],
+        cell_size=cell,
+        ncols=len(xs),
+        nrows=len(ys),
+        values=values,
+    )
+    setattr(
+        surface,
+        "_inferred_profile",
+        {
+            "source_quality": "survey",
+            "source_detail": "surface_xyz_csv_import",
+            "source_file": str(path),
+            "coordinate_system": safe_dict(coordinate_system),
+            "missing_cells": missing_cells,
+        },
+    )
+    return {
+        "success": True,
+        "source": str(path),
+        "source_type": "surface_xyz_csv",
+        "surface": surface,
+        "ncols": len(xs),
+        "nrows": len(ys),
+        "cell_size": cell,
+        "invalid_rows": invalid_rows,
+        "missing_cells": missing_cells,
+        "recognized_columns": columns,
+        "bounds": {"min_x": xs[0], "min_y": ys[0], "max_x": xs[-1], "max_y": ys[-1]},
+        "coordinate_system": safe_dict(coordinate_system),
+        "warnings": warnings,
+    }
+
+
+def _nearest_z(x: float, y: float, rows: List[Dict[str, float]]) -> float:
+    nearest = min(rows, key=lambda row: (row["x"] - x) ** 2 + (row["y"] - y) ** 2)
+    return nearest["z"]
+
+
+def import_geojson(path: Path, *, layer_hint: str = "", coordinate_system: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    warnings: List[str] = []
+    with Path(path).open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    features = safe_list(payload.get("features"))
+    if safe_str(payload.get("type")) == "Feature":
+        features = [payload]
+    layers: Dict[str, List[Dict[str, Any]]] = {layer: [] for layer in REQUIRED_GIS_LAYERS}
+    unknown: List[Dict[str, Any]] = []
+    for index, feature in enumerate(features, start=1):
+        rec = safe_dict(feature)
+        layer = _classify_geojson_layer(rec, layer_hint=layer_hint or Path(path).stem)
+        normalized = {
+            "id": safe_str(rec.get("id"), f"feature-{index}"),
+            "geometry": safe_dict(rec.get("geometry")),
+            "properties": safe_dict(rec.get("properties")),
+            "source": str(path),
+        }
+        if layer in layers:
+            layers[layer].append(normalized)
+        else:
+            unknown.append(normalized)
+    if unknown:
+        warnings.append(f"{len(unknown)} GeoJSON features could not be classified into required existing-condition layers.")
+    return {
+        "success": bool(features),
+        "source": str(path),
+        "source_type": "geojson",
+        "feature_count": len(features),
+        "layers": layers,
+        "layer_counts": {layer: len(items) for layer, items in layers.items()},
+        "unknown_feature_count": len(unknown),
+        "coordinate_system": safe_dict(coordinate_system) or _coordinate_from_geojson(payload),
+        "warnings": warnings,
+    }
+
+
+def _classify_geojson_layer(feature: Dict[str, Any], *, layer_hint: str = "") -> str:
+    props = safe_dict(feature.get("properties"))
+    haystack = " ".join(
+        safe_str(value).lower()
+        for value in (
+            layer_hint,
+            props.get("layer"),
+            props.get("type"),
+            props.get("category"),
+            props.get("name"),
+            props.get("description"),
+        )
+    )
+    if "parcel" in haystack or "property" in haystack:
+        return "parcels"
+    if "easement" in haystack:
+        return "easements"
+    if "row" in haystack or "right of way" in haystack or "right-of-way" in haystack:
+        return "row"
+    if "flood" in haystack or "fema" in haystack:
+        return "floodplain"
+    if "wetland" in haystack or "nwi" in haystack:
+        return "wetlands"
+    if "utility" in haystack or "water" in haystack or "sanitary" in haystack or "storm" in haystack or "gas" in haystack or "electric" in haystack:
+        return "existing_utilities"
+    return ""
+
+
+def classify_existing_conditions_file(path: Path) -> Dict[str, Any]:
+    suffix = Path(path).suffix.lower()
+    if suffix == ".csv":
+        return {"supported": True, "format": "csv", "mode": "survey_or_surface_xyz"}
+    if suffix in {".geojson", ".json"}:
+        return {"supported": True, "format": "geojson", "mode": "gis_features"}
+    if suffix == ".xml" or suffix == ".landxml":
+        return {"supported": True, "format": "landxml", "mode": "surface_or_alignment_metadata"}
+    if suffix == ".zip":
+        return _classify_zip(path)
+    if suffix in {".shp", ".gpkg"}:
+        available = _module_available("geopandas")
+        return {
+            "supported": available,
+            "format": suffix.lstrip("."),
+            "mode": "geospatial_vector",
+            "required_dependency": "" if available else HEAVY_FORMAT_REQUIREMENTS[suffix],
+        }
+    if suffix in {".tif", ".tiff"}:
+        available = _module_available("rasterio")
+        return {
+            "supported": available,
+            "format": "geotiff",
+            "mode": "raster_surface",
+            "required_dependency": "" if available else HEAVY_FORMAT_REQUIREMENTS[suffix],
+        }
+    if suffix in {".las", ".laz"}:
+        available = _module_available("laspy")
+        return {
+            "supported": available,
+            "format": suffix.lstrip("."),
+            "mode": "point_cloud",
+            "required_dependency": "" if available else HEAVY_FORMAT_REQUIREMENTS[suffix],
+        }
+    if suffix in HEAVY_FORMAT_REQUIREMENTS:
+        return {
+            "supported": False,
+            "format": suffix.lstrip("."),
+            "mode": "requires_external_gis_dependency",
+            "required_dependency": HEAVY_FORMAT_REQUIREMENTS[suffix],
+        }
+    return {"supported": False, "format": suffix.lstrip(".") or "unknown", "mode": "unsupported"}
+
+
+def _classify_zip(path: Path) -> Dict[str, Any]:
+    try:
+        with zipfile.ZipFile(path) as archive:
+            names = [Path(name).suffix.lower() for name in archive.namelist()]
+    except Exception as exc:
+        return {"supported": False, "format": "zip", "mode": "unreadable_zip", "warning": safe_str(exc)}
+    if ".shp" in names:
+        available = _module_available("geopandas")
+        return {
+            "supported": available,
+            "format": "zipped_shapefile",
+            "mode": "geospatial_vector",
+            "required_dependency": "" if available else HEAVY_FORMAT_REQUIREMENTS[".shp"],
+        }
+    return {"supported": False, "format": "zip", "mode": "unsupported_zip_contents"}
+
+
+def import_geospatial_vector_file(path: Path, *, layer_hint: str = "", coordinate_system: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    if not _module_available("geopandas"):
+        return {
+            "success": False,
+            "source": str(path),
+            "source_type": "geospatial_vector",
+            "warnings": ["GeoPandas is required for Shapefile/GeoPackage vector import."],
+        }
+    import geopandas as gpd
+
+    warnings: List[str] = []
+    try:
+        gdf = gpd.read_file(path)
+    except Exception as exc:
+        return {"success": False, "source": str(path), "source_type": "geospatial_vector", "warnings": [safe_str(exc)]}
+    crs_text = safe_str(gdf.crs.to_string() if gdf.crs is not None else "")
+    if gdf.crs is not None:
+        try:
+            export_gdf = gdf.to_crs("EPSG:4326")
+        except Exception as exc:
+            warnings.append(f"CRS transform to EPSG:4326 failed; using source coordinates. {exc}")
+            export_gdf = gdf
+    else:
+        export_gdf = gdf
+        warnings.append("Vector file has no CRS metadata; production readiness must remain blocked until CRS is confirmed.")
+    layers: Dict[str, List[Dict[str, Any]]] = {layer: [] for layer in REQUIRED_GIS_LAYERS}
+    unknown = 0
+    for index, row in export_gdf.iterrows():
+        props = {safe_str(key): _json_safe_value(value) for key, value in dict(row.drop(labels=[export_gdf.geometry.name], errors="ignore")).items()}
+        feature = {
+            "id": safe_str(props.get("id") or props.get("OBJECTID") or props.get("objectid"), f"feature-{index + 1}"),
+            "type": "Feature",
+            "properties": props,
+            "geometry": row.geometry.__geo_interface__ if row.geometry is not None else {},
+        }
+        layer = _classify_geojson_layer(feature, layer_hint=layer_hint or Path(path).stem)
+        if layer in layers:
+            layers[layer].append({"id": feature["id"], "geometry": feature["geometry"], "properties": props, "source": str(path)})
+        else:
+            unknown += 1
+    return {
+        "success": len(export_gdf) > 0,
+        "source": str(path),
+        "source_type": "geospatial_vector",
+        "feature_count": int(len(export_gdf)),
+        "layers": layers,
+        "layer_counts": {layer: len(items) for layer, items in layers.items()},
+        "unknown_feature_count": unknown,
+        "coordinate_system": safe_dict(coordinate_system) or {"name": crs_text, "source": "vector_crs"} if crs_text else safe_dict(coordinate_system),
+        "warnings": warnings,
+    }
+
+
+def _json_safe_value(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    try:
+        if hasattr(value, "item"):
+            return value.item()
+    except Exception:
+        pass
+    return safe_str(value)
+
+
+def import_geotiff_surface(path: Path, *, coordinate_system: Optional[Dict[str, Any]] = None, max_cells: int = 40000) -> Dict[str, Any]:
+    if not _module_available("rasterio"):
+        return {"success": False, "source": str(path), "source_type": "geotiff_surface", "warnings": ["Rasterio/GDAL is required for GeoTIFF import."]}
+    import math
+    import rasterio
+
+    warnings: List[str] = []
+    try:
+        with rasterio.open(path) as dataset:
+            factor = max(1, int(math.ceil(((dataset.width * dataset.height) / max(1, max_cells)) ** 0.5)))
+            out_width = max(1, int(math.ceil(dataset.width / factor)))
+            out_height = max(1, int(math.ceil(dataset.height / factor)))
+            data = dataset.read(1, out_shape=(out_height, out_width), masked=True)
+            transform = dataset.transform * dataset.transform.scale(dataset.width / out_width, dataset.height / out_height)
+            values: List[List[float]] = []
+            finite: List[float] = []
+            for row in range(out_height):
+                row_vals: List[float] = []
+                for col in range(out_width):
+                    raw = data[row, col]
+                    value = float(raw) if raw is not None and not getattr(raw, "mask", False) else float("nan")
+                    if math.isfinite(value):
+                        finite.append(value)
+                    row_vals.append(value)
+                values.append(row_vals)
+            fill = sum(finite) / len(finite) if finite else 0.0
+            values = [[fill if not math.isfinite(value) else value for value in row] for row in values]
+            x0, y0 = transform * (0, 0)
+            x1, y1 = transform * (out_width - 1, out_height - 1)
+            cell_x = abs(float(transform.a)) or 1.0
+            cell_y = abs(float(transform.e)) or cell_x
+            cell = (cell_x + cell_y) / 2.0
+            surface = GridSurface(
+                x_min=min(x0, x1),
+                y_min=min(y0, y1),
+                x_max=max(x0, x1),
+                y_max=max(y0, y1),
+                cell_size=cell,
+                ncols=out_width,
+                nrows=out_height,
+                values=values,
+            )
+            crs_text = safe_str(dataset.crs.to_string() if dataset.crs is not None else "")
+    except Exception as exc:
+        return {"success": False, "source": str(path), "source_type": "geotiff_surface", "warnings": [safe_str(exc)]}
+    setattr(
+        surface,
+        "_inferred_profile",
+        {
+            "source_quality": "dem",
+            "source_detail": "geotiff_import",
+            "source_file": str(path),
+            "coordinate_system": safe_dict(coordinate_system) or {"name": crs_text, "source": "geotiff_crs"} if crs_text else safe_dict(coordinate_system),
+            "downsample_factor": factor,
+        },
+    )
+    if factor > 1:
+        warnings.append(f"GeoTIFF was downsampled by factor {factor} to keep backend import bounded.")
+    return {
+        "success": True,
+        "source": str(path),
+        "source_type": "geotiff_surface",
+        "surface": surface,
+        "ncols": surface.ncols,
+        "nrows": surface.nrows,
+        "cell_size": surface.cell_size,
+        "coordinate_system": safe_dict(coordinate_system) or {"name": crs_text, "source": "geotiff_crs"} if crs_text else safe_dict(coordinate_system),
+        "warnings": warnings,
+    }
+
+
+def import_las_point_cloud(path: Path, *, coordinate_system: Optional[Dict[str, Any]] = None, max_points: int = 5000) -> Dict[str, Any]:
+    if not _module_available("laspy"):
+        return {"success": False, "source": str(path), "source_type": "las_point_cloud", "warnings": ["laspy is required for LAS/LAZ import."]}
+    import laspy
+
+    warnings: List[str] = []
+    try:
+        las = laspy.read(path)
+    except Exception as exc:
+        return {"success": False, "source": str(path), "source_type": "las_point_cloud", "warnings": [safe_str(exc)]}
+    total = len(las.x)
+    if total <= 0:
+        return {"success": False, "source": str(path), "source_type": "las_point_cloud", "warnings": ["LAS/LAZ file has no points."]}
+    step = max(1, int(total / max(1, max_points)))
+    points = [
+        {"x": float(las.x[index]), "y": float(las.y[index]), "z": float(las.z[index])}
+        for index in range(0, total, step)
+    ][:max_points]
+    if step > 1:
+        warnings.append(f"LAS/LAZ point cloud sampled every {step} points for bounded backend import.")
+    return {
+        "success": len(points) >= 3,
+        "source": str(path),
+        "source_type": "las_point_cloud",
+        "point_count": len(points),
+        "source_point_count": int(total),
+        "points": points,
+        "bounds": _bounds(points),
+        "coordinate_system": safe_dict(coordinate_system),
+        "warnings": warnings,
+        "truth_label": "Point cloud imported as sampled surface evidence; classification/breakline extraction still needs deeper processing.",
+    }
+
+
+def import_landxml_metadata(path: Path, *, coordinate_system: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    imported = import_landxml(path)
+    if coordinate_system:
+        imported["coordinate_system"] = safe_dict(coordinate_system)
+    return imported
+
+
+def _coordinate_from_geojson(payload: Dict[str, Any]) -> Dict[str, Any]:
+    crs = safe_dict(payload.get("crs"))
+    props = safe_dict(crs.get("properties"))
+    name = safe_str(props.get("name") or crs.get("name"))
+    if not name:
+        return {}
+    return {
+        "name": name,
+        "source": "geojson_crs",
+    }
+
+
+def merge_imported_existing_conditions(*imports: Dict[str, Any]) -> Dict[str, Any]:
+    survey_points: List[Dict[str, Any]] = []
+    gis_layers: Dict[str, List[Dict[str, Any]]] = {layer: [] for layer in REQUIRED_GIS_LAYERS}
+    surfaces: List[Dict[str, Any]] = []
+    warnings: List[str] = []
+    coordinate_system: Dict[str, Any] = {}
+    sources: List[Dict[str, Any]] = []
+    for item in imports:
+        rec = safe_dict(item)
+        if not rec:
+            continue
+        sources.append({"source": safe_str(rec.get("source")), "source_type": safe_str(rec.get("source_type")), "success": bool(rec.get("success"))})
+        warnings.extend(safe_list(rec.get("warnings")))
+        if not coordinate_system:
+            coordinate_system = safe_dict(rec.get("coordinate_system"))
+        if rec.get("source_type") in {"survey_csv", "las_point_cloud"}:
+            survey_points.extend(safe_list(rec.get("points")))
+        if rec.get("source_type") in {"surface_xyz_csv", "geotiff_surface"} and rec.get("surface") is not None:
+            surfaces.append({"source": rec.get("source"), "surface": rec.get("surface"), "ncols": rec.get("ncols"), "nrows": rec.get("nrows")})
+        if rec.get("source_type") in {"geojson", "geospatial_vector"}:
+            for layer, features in safe_dict(rec.get("layers")).items():
+                if layer in gis_layers:
+                    gis_layers[layer].extend(safe_list(features))
+    return {
+        "success": any(source["success"] for source in sources),
+        "source_type": "merged_existing_conditions",
+        "sources": sources,
+        "survey": {
+            "source": "imported_survey_csv" if survey_points else "missing",
+            "point_count": len(survey_points),
+            "points": survey_points,
+        },
+        "gis_layers": gis_layers,
+        "existing_conditions": gis_layers,
+        "coordinate_system": coordinate_system,
+        "surfaces": surfaces,
+        "warnings": warnings,
+    }
+
+
+__all__ = [
+    "import_geojson",
+    "classify_existing_conditions_file",
+    "import_geospatial_vector_file",
+    "import_geotiff_surface",
+    "import_las_point_cloud",
+    "import_landxml_metadata",
+    "import_surface_grid_csv",
+    "import_survey_csv",
+    "merge_imported_existing_conditions",
+    "surface_from_survey_import",
+]

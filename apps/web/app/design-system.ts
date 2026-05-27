@@ -42,6 +42,7 @@ export const workflowSteps = [
 
 export const workspaceNavItems = [
   "Model",
+  "Objects",
   "Layers",
   "Sections",
   "3D",

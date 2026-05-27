@@ -367,7 +367,15 @@ def _has_any(mapping: Dict[str, Any], keys: Iterable[str]) -> bool:
 def check_standards_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
     warnings: List[str] = []
     gaps: List[Dict[str, Any]] = []
+    acceptance = _safe_dict(meta.get("standards_acceptance"))
+    accepted_rules = _safe_list(acceptance.get("accepted_rules"))
     standards = _safe_dict(meta.get("design_standards") or meta.get("standards"))
+    if not standards and accepted_rules:
+        standards = {
+            "source": "accepted_standards_review_packet",
+            "accepted_rule_count": len(accepted_rules),
+            "rules": accepted_rules,
+        }
     jurisdiction = _safe_dict(meta.get("jurisdiction_standards"))
     company = _safe_dict(meta.get("company_standards"))
     if not standards:
@@ -383,6 +391,8 @@ def check_standards_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
         warnings.append("No jurisdiction standards profile is attached.")
     if not company:
         warnings.append("No company CAD/design standards profile is attached.")
+    if _safe_dict(meta.get("standards_review_packet")) and not accepted_rules:
+        warnings.append("Standards candidates exist, but no rules have been accepted for production QA.")
     status = "ready" if not gaps else "needs_production_input"
     return _system_result(
         status=status,
@@ -390,6 +400,7 @@ def check_standards_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
         warnings=warnings,
         metrics={
             "has_design_standards": bool(standards),
+            "accepted_rule_count": len(accepted_rules),
             "has_jurisdiction_standards": bool(jurisdiction),
             "has_company_standards": bool(company),
             "production_gaps": gaps,
@@ -401,15 +412,23 @@ def check_existing_conditions_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
     warnings: List[str] = []
     gaps: List[Dict[str, Any]] = []
     grading = _safe_dict(meta.get("grading") or meta.get("grading_summary"))
+    summary = _safe_dict(meta.get("existing_conditions_summary"))
+    summary_survey = _safe_dict(summary.get("survey"))
+    summary_gis = _safe_dict(summary.get("gis"))
+    summary_coordinate = _safe_dict(summary.get("coordinate_system"))
     source = (
-        _safe_str(grading.get("source_quality"))
+        _safe_str(summary_survey.get("surface_source"))
+        or _safe_str(grading.get("source_quality"))
         or _safe_str(grading.get("grading_source_quality"))
         or _safe_str(_safe_dict(grading.get("existing_surface")).get("source_quality"))
         or "missing"
     )
     survey = _safe_dict(meta.get("survey") or meta.get("survey_file") or _safe_dict(grading.get("existing_surface")).get("survey"))
     gis = _safe_dict(meta.get("gis_layers") or meta.get("existing_conditions"))
-    if source != "survey" and not survey:
+    survey_ready = bool(summary_survey.get("ready")) or bool(survey) or source == "survey"
+    gis_ready = bool(summary_gis.get("ready")) or _has_any(gis, ("parcels", "easements", "row", "floodplain", "wetlands", "existing_utilities"))
+    coordinate_ready = bool(summary_coordinate.get("ready")) or bool(_safe_dict(meta.get("coordinate_system")))
+    if source != "survey" and not survey_ready:
         gaps.append(
             _production_gap(
                 "existing_conditions",
@@ -418,7 +437,7 @@ def check_existing_conditions_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
                 "Import survey points, breaklines, contours, or a stamped existing surface.",
             )
         )
-    if not _has_any(gis, ("parcels", "easements", "row", "floodplain", "wetlands", "existing_utilities")):
+    if not gis_ready:
         gaps.append(
             _production_gap(
                 "existing_conditions",
@@ -427,16 +446,27 @@ def check_existing_conditions_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
                 "Attach GIS/existing-condition layers before production coordination.",
             )
         )
+    if not coordinate_ready:
+        gaps.append(
+            _production_gap(
+                "existing_conditions",
+                "coordinate_system",
+                "Production civil design needs a real CRS/EPSG/projection so survey, GIS, utilities, and exports share one coordinate truth.",
+                "Attach the project coordinate system or mark the design as local-coordinate concept only.",
+            )
+        )
     if source in {"terrain", "image_inferred", "address_context"}:
         warnings.append(f"Existing surface is {source}-derived, not survey.")
+    warnings.extend(_safe_list(summary.get("warnings")))
     return _system_result(
         status="ready" if not gaps else "needs_production_input",
         source=source,
         warnings=warnings,
         metrics={
             "surface_source": source,
-            "has_survey": bool(survey) or source == "survey",
-            "has_gis_layers": bool(gis),
+            "has_survey": survey_ready,
+            "has_gis_layers": gis_ready,
+            "has_coordinate_system": coordinate_ready,
             "production_gaps": gaps,
         },
     )

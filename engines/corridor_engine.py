@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from core.geometry_core import (
@@ -88,6 +89,20 @@ class CorridorResult:
     zone_ids: List[str] = field(default_factory=list)
     object_ids: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+
+
+@dataclass
+class RoadProfilePoint:
+    station_ft: float
+    elevation_ft: float
+    grade: float = 0.0
+
+
+@dataclass
+class RoadCrossSectionPoint:
+    offset_ft: float
+    elevation_ft: float
+    role: str
 
 
 class CorridorEngine:
@@ -476,6 +491,45 @@ class CorridorEngine:
         dx = a.x - b.x
         dy = a.y - b.y
         return (dx * dx + dy * dy) ** 0.5
+
+    def build_profile_from_points(self, points: Sequence[Point3D]) -> List[RoadProfilePoint]:
+        if len(points) < 2:
+            return []
+        out: List[RoadProfilePoint] = []
+        station = 0.0
+        for idx, point in enumerate(points):
+            if idx > 0:
+                prev = points[idx - 1]
+                station += math.hypot(point.x - prev.x, point.y - prev.y)
+            grade = 0.0
+            if idx > 0:
+                prev_profile = out[-1]
+                run = max(1e-9, station - prev_profile.station_ft)
+                grade = (point.z - prev_profile.elevation_ft) / run
+            out.append(RoadProfilePoint(round(station, 3), round(point.z, 3), round(grade, 5)))
+        return out
+
+    def build_crowned_section(
+        self,
+        *,
+        lane_width: float = 12.0,
+        lane_count: int = 2,
+        crown_elev_ft: float = 100.0,
+        cross_slope: float = 0.02,
+        curb_reveal_ft: float = 0.5,
+        sidewalk_width: float = 5.0,
+        sidewalk_cross_slope: float = 0.015,
+    ) -> List[RoadCrossSectionPoint]:
+        half_pavement = max(1.0, lane_width * lane_count / 2.0)
+        gutter_elev = crown_elev_ft - abs(cross_slope) * half_pavement
+        sidewalk_outer_elev = gutter_elev + curb_reveal_ft + abs(sidewalk_cross_slope) * sidewalk_width
+        return [
+            RoadCrossSectionPoint(round(-half_pavement - sidewalk_width, 3), round(sidewalk_outer_elev, 3), "left_sidewalk_outer"),
+            RoadCrossSectionPoint(round(-half_pavement, 3), round(gutter_elev + curb_reveal_ft, 3), "left_back_of_curb"),
+            RoadCrossSectionPoint(0.0, round(crown_elev_ft, 3), "crown"),
+            RoadCrossSectionPoint(round(half_pavement, 3), round(gutter_elev + curb_reveal_ft, 3), "right_back_of_curb"),
+            RoadCrossSectionPoint(round(half_pavement + sidewalk_width, 3), round(sidewalk_outer_elev, 3), "right_sidewalk_outer"),
+        ]
 
     def _dedupe_points(self, pts: Sequence[Point2D], tol: float = 1e-6) -> List[Point2D]:
         out: List[Point2D] = []

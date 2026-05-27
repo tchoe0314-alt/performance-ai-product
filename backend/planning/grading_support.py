@@ -88,9 +88,25 @@ def build_existing_surface(
     site_inputs = safe_dict(meta.get("site_inputs"))
     if not site_inputs:
         site_inputs = safe_dict(safe_dict(meta.get("orchestrator_meta")).get("site_inputs"))
+    if not site_inputs:
+        site_inputs = {}
+    existing_conditions = safe_dict(meta.get("existing_conditions") or meta.get("canonical_existing_conditions"))
+    survey_meta = safe_dict(meta.get("survey") or safe_dict(existing_conditions).get("survey"))
+    imported_points = safe_list(survey_meta.get("points")) or safe_list(meta.get("survey_points"))
+    if imported_points and not site_inputs.get("survey_points"):
+        site_inputs = dict(site_inputs)
+        normalized_points: List[List[float]] = []
+        for item in imported_points:
+            if isinstance(item, dict):
+                normalized_points.append([safe_float(item.get("x")), safe_float(item.get("y")), safe_float(item.get("z"))])
+            elif isinstance(item, (list, tuple)) and len(item) >= 3:
+                normalized_points.append([safe_float(item[0]), safe_float(item[1]), safe_float(item[2])])
+        if normalized_points:
+            site_inputs["survey_points"] = normalized_points
+            site_inputs["survey_file"] = site_inputs.get("survey_file") or {"source": safe_str(survey_meta.get("source"), "imported_survey_points")}
     survey_file = safe_dict(site_inputs.get("survey_file"))
     use_survey = bool(site_inputs.get("use_survey_for_grading", True))
-    has_survey = use_survey and bool(survey_file.get("stored_filename") or survey_file.get("survey_url"))
+    has_survey = use_survey and bool(survey_file.get("stored_filename") or survey_file.get("survey_url") or safe_list(site_inputs.get("survey_points")))
     geocode_for_terrain = safe_dict(site_inputs.get("geocode"))
     has_terrain_geocode = geocode_for_terrain.get("lat") is not None and geocode_for_terrain.get("lng") is not None
     if has_terrain_geocode and not has_survey:

@@ -2,6 +2,20 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  AlertCircle,
+  Box,
+  CheckCircle2,
+  Circle,
+  Database,
+  FileText,
+  Gauge,
+  Layers,
+  MapPinned,
+  Route,
+  Settings,
+  SquareStack,
+} from "lucide-react";
 
 import { deleteJson, getJson, postBinary, postForm, postJson } from "../lib/api";
 import { workspaceNavItems } from "./design-system";
@@ -390,7 +404,7 @@ export default function PerformanceAIDashboard() {
     createWelcomeMessage(),
   ]);
   const [chatCollapsed, setChatCollapsed] = useState(false);
-  const [activeSidePanel, setActiveSidePanel] = useState<"projects" | "docs" | "chat" | "site" | null>(null);
+  const [activeSidePanel, setActiveSidePanel] = useState<"projects" | "docs" | "chat" | "site" | "objects" | null>("objects");
   const [imageName, setImageName] = useState("");
   const [siteName, setSiteName] = useState("");
   const [fileName, setFileName] = useState("");
@@ -8093,9 +8107,63 @@ export default function PerformanceAIDashboard() {
     }
     return items;
   }, [planPreviewAnnotations, previewLayersEffective]);
+  const preview3DPlacementItems = useMemo<Preview3DItem[]>(() => {
+    const lot = resolveLotBounds();
+    const items: Preview3DItem[] = [];
+    if (lot.w && lot.h) {
+      items.push({
+        x: 0,
+        y: 0,
+        w: lot.w,
+        h: lot.h,
+        height: 1,
+        z: -0.5,
+        color: "#f8fafc",
+        label: "Site",
+        layer: "TERRAIN",
+      });
+    }
+    buildingPlacements
+      .filter((item) => item.type !== "site" && item.placed)
+      .forEach((item) => {
+        const isBuilding = Boolean(item.type && item.type.includes("building")) || !item.type;
+        const isRoad = item.type === "road" || item.type === "driveway" || item.type === "sidewalk";
+        const isParking = item.type === "parking";
+        const isDrainage = item.type === "basin" || item.type === "inlet" || item.type === "outfall";
+        const isUtility = item.type === "hydrant" || item.type === "manhole" || item.type === "utility_corridor";
+        items.push({
+          x: item.x ?? 0,
+          y: item.y ?? 0,
+          w: Math.max(1, item.w),
+          h: Math.max(1, item.d),
+          height: isBuilding ? Math.max(8, Number(item.h ?? 28)) : isDrainage ? 3 : isRoad ? 1.5 : isParking ? 1 : 6,
+          z: isDrainage ? -1 : 0,
+          color: isBuilding
+            ? "#d1d5db"
+            : isDrainage
+              ? "#bfdbfe"
+              : isUtility
+                ? "#e9d5ff"
+                : isRoad || isParking
+                  ? "#cbd5e1"
+                  : "#e5e7eb",
+          label: item.label ?? SITE_OBJECT_CATALOG[item.type ?? "building"]?.label ?? "Object",
+          layer: isBuilding
+            ? "BUILDING"
+            : isDrainage
+              ? "DRAINAGE"
+              : isUtility
+                ? "UTILITY"
+                : "ROAD",
+        });
+      });
+    return items;
+  }, [buildingPlacements, resolveLotBounds]);
   const preview3DEffectiveItems = preview3DItems.length
     ? preview3DItems
-    : preview3DAnnotationItems;
+    : preview3DAnnotationItems.length
+      ? preview3DAnnotationItems
+      : preview3DPlacementItems;
   const usingAnnotation3D =
     preview3DItems.length === 0 && preview3DAnnotationItems.length > 0;
   const lotBounds = resolveLotBounds();
@@ -8383,12 +8451,25 @@ export default function PerformanceAIDashboard() {
         />
 
         <div className="flex min-h-[calc(100vh-4rem)]">
-          <aside className="hidden w-[88px] shrink-0 border-r border-[var(--civora-border)] bg-[var(--civora-surface)] px-3 py-4 backdrop-blur-xl lg:flex lg:flex-col lg:items-center">
-            <div className="flex w-full flex-col gap-2">
+          <aside className="hidden w-[224px] shrink-0 border-r border-slate-200 bg-white/95 px-4 py-5 shadow-[18px_0_40px_-36px_rgba(15,23,42,0.5)] backdrop-blur-xl lg:flex lg:flex-col">
+            <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Project</p>
+              <p className="mt-1 truncate text-sm font-semibold text-slate-950">
+                {siteName || "Untitled Project"}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {lotBounds.w && lotBounds.h
+                  ? `${lotBounds.w.toFixed(0)} ft x ${lotBounds.h.toFixed(0)} ft`
+                  : "Site not locked"}
+              </p>
+            </div>
+            <div className="flex w-full flex-col gap-1">
               {workspaceNavItems.map((item) => {
                 const target =
                   item === "Data"
                     ? "projects"
+                    : item === "Objects"
+                      ? "objects"
                     : item === "Reports" || item === "Quantities" || item === "Sheets"
                       ? "docs"
                       : item === "Settings"
@@ -8397,29 +8478,73 @@ export default function PerformanceAIDashboard() {
                 const isActive =
                   (target === "projects" && activeSidePanel === "projects") ||
                   (target === "docs" && activeSidePanel === "docs") ||
+                  (target === "objects" && activeSidePanel === "objects") ||
                   (target === "site" && activeSidePanel === "site");
+                const Icon =
+                  item === "Model"
+                    ? Gauge
+                    : item === "Objects"
+                      ? Box
+                      : item === "Layers"
+                        ? Layers
+                        : item === "Sections" || item === "3D"
+                          ? SquareStack
+                          : item === "Reports"
+                            ? FileText
+                            : item === "Quantities"
+                              ? Database
+                              : item === "Sheets"
+                                ? Route
+                                : item === "Data"
+                                  ? MapPinned
+                                  : Settings;
+                const status =
+                  item === "Model" || item === "Objects" || item === "Data"
+                    ? "ok"
+                    : item === "3D" || item === "Reports"
+                      ? "review"
+                      : "idle";
+                const StatusIcon = status === "ok" ? CheckCircle2 : status === "review" ? AlertCircle : Circle;
                 return (
                   <button
                     key={item}
                     type="button"
                     onClick={() => setActiveSidePanel(target)}
-                    className={`flex min-h-14 flex-col items-center justify-center rounded-2xl px-2 py-2 text-[11px] font-semibold transition ${
+                    className={`flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold transition ${
                       isActive
-                        ? "bg-[var(--civora-accent-soft)] text-[var(--civora-accent)]"
-                        : "text-[var(--civora-text-muted)] hover:bg-[var(--civora-surface-muted)] hover:text-[var(--civora-text)]"
+                        ? "bg-slate-950 text-white"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
                     }`}
                   >
-                    <span className="mb-1 inline-flex h-5 w-5 items-center justify-center rounded-md border border-current/20 text-[10px]">
-                      {item.slice(0, 1)}
+                    <span className="flex min-w-0 items-center gap-3">
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{item}</span>
                     </span>
-                    <span>{item}</span>
+                    <StatusIcon
+                      className={`h-3.5 w-3.5 shrink-0 ${
+                        isActive
+                          ? "text-white/80"
+                          : status === "ok"
+                            ? "text-emerald-500"
+                            : status === "review"
+                              ? "text-amber-500"
+                              : "text-slate-300"
+                      }`}
+                    />
                   </button>
                 );
               })}
             </div>
+            <div className="mt-auto rounded-xl border border-slate-200 bg-white px-3 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Civora AI</p>
+              <div className="mt-2 flex items-center justify-between">
+                <span className="text-sm font-semibold text-slate-900">Online</span>
+                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.12)]" />
+              </div>
+            </div>
           </aside>
           {activeSidePanel ? (
-            <aside className="order-3 m-3 ml-0 flex w-[360px] shrink-0 flex-col overflow-hidden rounded-[28px] border border-[var(--civora-border)] bg-[var(--civora-surface)] shadow-[var(--civora-shadow-panel)] backdrop-blur-xl">
+            <aside className="order-3 m-3 ml-0 flex w-[372px] shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white/96 shadow-[var(--civora-shadow-panel)] backdrop-blur-xl">
               <div className="flex items-center justify-between border-b border-[var(--civora-border)] px-4 py-4">
                 <div>
                   <p className="civora-muted-label">
@@ -8427,6 +8552,8 @@ export default function PerformanceAIDashboard() {
                       ? "Projects"
                       : activeSidePanel === "site"
                         ? "Site Inputs"
+                      : activeSidePanel === "objects"
+                        ? "Objects"
                       : activeSidePanel === "docs"
                         ? "Docs"
                         : "Chat"}
@@ -8436,6 +8563,8 @@ export default function PerformanceAIDashboard() {
                       ? "Switch between projects."
                       : activeSidePanel === "site"
                         ? "Provide address and imagery."
+                      : activeSidePanel === "objects"
+                        ? "Add, size, and place model objects."
                       : activeSidePanel === "docs"
                         ? "Preview docs and exports."
                         : "Conversation and updates."}
@@ -8875,6 +9004,218 @@ export default function PerformanceAIDashboard() {
                   </div>
                 ) : null}
 
+                {activeSidePanel === "objects" ? (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Add Object
+                      </p>
+                      <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+                        <label className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-800">
+                          <span>Assisted</span>
+                          <input
+                            type="checkbox"
+                            checked={assistedEnabled}
+                            onChange={(event) => setAssistedEnabled(event.target.checked)}
+                            className="h-4 w-4 accent-slate-950"
+                          />
+                        </label>
+                      </div>
+                      <div className="mt-3 flex flex-col gap-2">
+                        <input
+                          value={objectPrompt}
+                          onChange={(event) => setObjectPrompt(event.target.value)}
+                          placeholder="building 110x58, road, basin..."
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none"
+                        />
+                        <div className="flex items-center gap-3">
+                          <label className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                            Outline
+                            <input
+                              type="color"
+                              value={objectOutlineColor}
+                              onChange={(event) => setObjectOutlineColor(event.target.value)}
+                              className="h-9 w-10 rounded-lg border border-slate-200 bg-white"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={handlePromptAddObject}
+                            disabled={!objectPrompt.trim()}
+                            className="flex-1 rounded-2xl border border-slate-900 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Add Object
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Object Library
+                      </p>
+                      <div className="mt-3 space-y-4">
+                        {ADD_MENU_SECTIONS.map((section) => (
+                          <div key={section.key}>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                              {section.title}
+                            </p>
+                            <div className="mt-2 grid grid-cols-2 gap-2">
+                              {section.items.map((type) => {
+                                const catalog = SITE_OBJECT_CATALOG[type];
+                                return (
+                                  <button
+                                    key={type}
+                                    type="button"
+                                    onClick={() => handleAddObject(type)}
+                                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 transition hover:border-slate-900 hover:text-slate-950"
+                                  >
+                                    {catalog.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Project Setup
+                      </p>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                          <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">Site width</p>
+                          <p className="mt-1 font-semibold text-slate-800">
+                            {lotBounds.w ? `${lotBounds.w.toFixed(0)} ft` : "Not set"}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                          <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">Site length</p>
+                          <p className="mt-1 font-semibold text-slate-800">
+                            {lotBounds.h ? `${lotBounds.h.toFixed(0)} ft` : "Not set"}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setActiveSidePanel("site")}
+                        className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                      >
+                        Edit Site Setup
+                      </button>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          Model Objects
+                        </p>
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                          {buildingPlacements.length}
+                        </span>
+                      </div>
+                      <div className="mt-3 max-h-96 space-y-2 overflow-y-auto pr-1">
+                        {buildingPlacements.length ? (
+                          buildingPlacements.map((item) => (
+                            <div
+                              key={item.id}
+                              draggable={!item.locked}
+                              onDragStart={(event) => {
+                                if (item.locked) return;
+                                event.dataTransfer?.setData("civora-object-id", item.id);
+                                setPlacementModeEnabled(true);
+                              }}
+                              className={`rounded-2xl border bg-white p-3 text-xs text-slate-600 ${
+                                activePlacementId === item.id
+                                  ? "border-slate-900 ring-2 ring-slate-200"
+                                  : "border-slate-200"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <p className="font-semibold text-slate-900">{item.label}</p>
+                                  <p className="mt-1 uppercase tracking-[0.12em] text-slate-400">
+                                    {SITE_OBJECT_CATALOG[item.type ?? "building"]?.label ?? "Object"} ·{" "}
+                                    {item.placed ? "Placed" : "Unplaced"}
+                                  </p>
+                                </div>
+                                {item.type !== "site" ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveBuilding(item.id)}
+                                    className="text-[11px] font-semibold uppercase tracking-[0.12em] text-rose-500"
+                                  >
+                                    Delete
+                                  </button>
+                                ) : null}
+                              </div>
+                              {item.type !== "site" ? (
+                                <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+                                  <label className="flex flex-col gap-1">
+                                    Length
+                                    <input
+                                      type="number"
+                                      value={item.w}
+                                      onChange={(event) =>
+                                        handleUpdateBuilding(item.id, {
+                                          w: parsePositiveNumber(event.target.value) ?? item.w,
+                                        })
+                                      }
+                                      className="rounded-md border border-slate-200 px-2 py-1"
+                                    />
+                                  </label>
+                                  <label className="flex flex-col gap-1">
+                                    Width
+                                    <input
+                                      type="number"
+                                      value={item.d}
+                                      onChange={(event) =>
+                                        handleUpdateBuilding(item.id, {
+                                          d: parsePositiveNumber(event.target.value) ?? item.d,
+                                        })
+                                      }
+                                      className="rounded-md border border-slate-200 px-2 py-1"
+                                    />
+                                  </label>
+                                  {SITE_OBJECT_CATALOG[item.type ?? "building"]?.defaultH !== undefined ? (
+                                    <label className="col-span-2 flex flex-col gap-1">
+                                      Height
+                                      <input
+                                        type="number"
+                                        value={item.h ?? ""}
+                                        onChange={(event) =>
+                                          handleUpdateBuilding(item.id, {
+                                            h: parsePositiveNumber(event.target.value) ?? item.h,
+                                          })
+                                        }
+                                        className="rounded-md border border-slate-200 px-2 py-1"
+                                      />
+                                    </label>
+                                  ) : null}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setActivePlacementId(item.id);
+                                      setPlacementModeEnabled(true);
+                                    }}
+                                    className="col-span-2 rounded-xl border border-slate-900 bg-slate-950 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white"
+                                  >
+                                    {item.placed ? "Move on Canvas" : "Place on Canvas"}
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+                          ))
+                        ) : (
+                          <p className="text-sm text-slate-500">No objects yet.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 {activeSidePanel === "docs" ? (
                   <div className="space-y-3">
                     {sortedProjects.length ? (
@@ -8951,8 +9292,8 @@ export default function PerformanceAIDashboard() {
             </aside>
           ) : null}
           <main className="order-2 flex min-w-0 flex-1 flex-col">
-            <div className="border-b border-[var(--civora-border)] bg-[var(--civora-surface)]/80 backdrop-blur-xl">
-              <div className="mx-auto w-full max-w-7xl px-4 py-5 md:px-6">
+            <div className="border-b border-slate-200 bg-white/80 backdrop-blur-xl">
+              <div className="mx-auto w-full max-w-[1800px] px-4 py-3 md:px-5">
                 <ProjectControls
                   siteName={siteName}
                   fileName={fileName}
@@ -8978,7 +9319,7 @@ export default function PerformanceAIDashboard() {
               </div>
             </div>
 
-            <div className="flex w-full flex-1 flex-col gap-5 px-4 py-5 md:px-6">
+            <div className="flex w-full flex-1 flex-col gap-4 px-4 py-4 md:px-5">
               <div className="flex w-full flex-col">
                 <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-slate-600">
                   <span className="civora-muted-label">
@@ -9016,7 +9357,7 @@ export default function PerformanceAIDashboard() {
                 <div
                   className="civora-canvas mx-auto w-full overflow-hidden p-1"
                   style={{
-                    width: activeSidePanel ? "calc(100vw - 96px - 360px)" : "calc(100vw - 96px)",
+                    width: activeSidePanel ? "calc(100vw - 224px - 372px)" : "calc(100vw - 224px)",
                     height: `${previewHeightPx}px`,
                   }}
                 >

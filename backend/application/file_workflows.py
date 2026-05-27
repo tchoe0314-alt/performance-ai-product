@@ -3,12 +3,27 @@ from __future__ import annotations
 import csv
 import math
 import mimetypes
+import os
 import shutil
 from pathlib import Path
 from typing import Any, Dict, Optional, Protocol
 
 from fastapi import HTTPException, UploadFile
 from fastapi.responses import FileResponse
+
+from backend.planning.existing_conditions import summarize_existing_conditions
+from backend.planning.existing_conditions_importers import (
+    classify_existing_conditions_file,
+    import_geospatial_vector_file,
+    import_geotiff_surface,
+    import_geojson,
+    import_las_point_cloud,
+    import_landxml_metadata,
+    import_surface_grid_csv,
+    import_survey_csv,
+    merge_imported_existing_conditions,
+)
+from backend.planning.existing_conditions_online import build_online_source_urls, fetch_online_existing_conditions
 
 
 class AuthStoreProtocol(Protocol):
@@ -103,6 +118,152 @@ def upload_survey_file(
         "elevation_range": elevation_range,
         "warnings": warnings,
     }
+
+
+def upload_existing_conditions_file(
+    *,
+    upload_dir: Path,
+    file: UploadFile,
+    current_user: Dict[str, Any],
+) -> Dict[str, Any]:
+    filename = file.filename or "existing_conditions"
+    safe_prefix = str(current_user["user_id"]).replace("/", "_")
+    safe_name = Path(filename).name
+    stored_name = f"{safe_prefix}_{safe_name}"
+    target = upload_dir / stored_name
+
+    with target.open("wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    suffix = target.suffix.lower()
+    imports = []
+    warnings: list[str] = []
+    classification = classify_existing_conditions_file(target)
+    if suffix == ".csv":
+        survey = import_survey_csv(target)
+        imports.append(survey)
+        surface = import_surface_grid_csv(target)
+        if surface.get("success"):
+            imports.append(surface)
+        else:
+            warnings.extend(surface.get("warnings") or [])
+    elif suffix in {".geojson", ".json"}:
+        try:
+            imports.append(import_geojson(target))
+        except Exception as exc:
+            warnings.append(f"GeoJSON import failed: {exc}")
+    elif suffix in {".shp", ".gpkg"}:
+        imports.append(import_geospatial_vector_file(target))
+    elif suffix in {".tif", ".tiff"}:
+        imports.append(import_geotiff_surface(target))
+    elif suffix in {".las", ".laz"}:
+        imports.append(import_las_point_cloud(target))
+    elif suffix in {".xml", ".landxml"}:
+        imports.append(import_landxml_metadata(target))
+    elif not classification.get("supported"):
+        warnings.append(classification.get("required_dependency") or "Unsupported existing-conditions file format.")
+    else:
+        warnings.append("Existing-conditions importer currently supports CSV survey/surface files and GeoJSON.")
+
+    merged = merge_imported_existing_conditions(*imports)
+    warnings.extend(merged.get("warnings") or [])
+    summary = summarize_existing_conditions(
+        {
+            "meta": {
+                "survey": merged.get("survey"),
+                "gis_layers": merged.get("gis_layers"),
+                "coordinate_system": merged.get("coordinate_system"),
+                "grading": {"source_quality": "survey"} if (merged.get("survey") or {}).get("point_count") else {},
+            }
+        }
+    )
+
+    return {
+        "success": bool(merged.get("success")),
+        "message": "Existing conditions uploaded." if merged.get("success") else "Existing conditions stored, but no supported import data was recognized.",
+        "filename": safe_name,
+        "stored_filename": stored_name,
+        "file_url": f"/api/uploads/{stored_name}",
+        "file_type": suffix.lstrip("."),
+        "format_classification": classification,
+        "imports": [_public_existing_conditions_import(item) for item in imports],
+        "canonical_existing_conditions": {
+            "survey": merged.get("survey"),
+            "gis_layers": merged.get("gis_layers"),
+            "coordinate_system": merged.get("coordinate_system"),
+            "sources": merged.get("sources"),
+        },
+        "existing_conditions_summary": summary,
+        "warnings": warnings,
+    }
+
+
+def existing_conditions_online_sources(
+    *,
+    address: str = "",
+    bbox: Optional[Dict[str, Any]] = None,
+    parcel_service_url: str = "",
+) -> Dict[str, Any]:
+    return {
+        "success": True,
+        "source_type": "online_source_registry",
+        "sources": build_online_source_urls(address=address, bbox=bbox, parcel_service_url=parcel_service_url),
+        "truth_label": "Online data sources can provide planning context. Production truth still requires survey, utility locate/as-built, jurisdiction confirmation, and engineer review.",
+    }
+
+
+def fetch_existing_conditions_online(
+    *,
+    address: str = "",
+    bbox: Optional[Dict[str, Any]] = None,
+    parcel_service_url: str = "",
+    parcel_layer_id: int = 0,
+    include_floodplain: bool = True,
+    include_wetlands: bool = True,
+    include_parcels: bool = True,
+    include_elevation: bool = True,
+) -> Dict[str, Any]:
+    parcel_url = parcel_service_url or str(os.getenv("CIVORA_PARCEL_ARCGIS_SERVICE_URL") or "")
+    parcel_layer = parcel_layer_id if parcel_layer_id is not None else int(os.getenv("CIVORA_PARCEL_ARCGIS_LAYER_ID") or "0")
+    result = fetch_online_existing_conditions(
+        address=address,
+        bbox=bbox,
+        parcel_service_url=parcel_url,
+        parcel_layer_id=parcel_layer,
+        include_floodplain=include_floodplain,
+        include_wetlands=include_wetlands,
+        include_parcels=include_parcels,
+        include_elevation=include_elevation,
+    )
+    canonical = result.get("canonical_existing_conditions") or {}
+    summary = summarize_existing_conditions(
+        {
+            "meta": {
+                "survey": canonical.get("survey"),
+                "gis_layers": canonical.get("gis_layers"),
+                "existing_conditions": canonical.get("existing_conditions"),
+                "coordinate_system": canonical.get("coordinate_system"),
+                "dem_lidar": canonical.get("dem_lidar"),
+            }
+        }
+    )
+    result["existing_conditions_summary"] = summary
+    return result
+
+
+def _public_existing_conditions_import(item: Dict[str, Any]) -> Dict[str, Any]:
+    rec = dict(item)
+    rec.pop("surface", None)
+    if isinstance(rec.get("points"), list):
+        rec["point_count"] = len(rec["points"])
+        rec.pop("points", None)
+    if isinstance(rec.get("layers"), dict):
+        rec["layer_counts"] = {
+            key: len(value) if isinstance(value, list) else 0
+            for key, value in rec["layers"].items()
+        }
+        rec.pop("layers", None)
+    return rec
 
 
 def _parse_survey_points(

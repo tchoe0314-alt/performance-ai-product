@@ -30,6 +30,9 @@ class WaterPipeSegment:
     assigned_flow_gpm: float = 0.0
     assigned_size_in: float = 0.0
     pressure_loss_per_100ft: float = 0.0
+    velocity_fps: float = 0.0
+    friction_loss_psi: float = 0.0
+    residual_pressure_psi: float = 0.0
     warnings: List[str] = field(default_factory=list)
     meta: Dict[str, Any] = field(default_factory=dict)
 
@@ -43,6 +46,7 @@ class WaterSizingRequest:
     backflow_loss_psi: float = 8.0
     heater_loss_psi: float = 4.0
     static_loss_per_ft_psi: float = 0.433
+    hazen_williams_c: float = 130.0
     hot_water: bool = False
     conservative: bool = True
     meta: Dict[str, Any] = field(default_factory=dict)
@@ -73,17 +77,7 @@ class WaterSizingEngine:
     This is concept sizing support, not code-certified final hydraulic design.
     """
 
-    PIPE_CAPACITY_TABLE = [
-        {"size_in": 0.5, "max_gpm": 4.0, "loss_100ft": 14.0},
-        {"size_in": 0.75, "max_gpm": 8.0, "loss_100ft": 8.5},
-        {"size_in": 1.0, "max_gpm": 16.0, "loss_100ft": 4.5},
-        {"size_in": 1.25, "max_gpm": 28.0, "loss_100ft": 2.5},
-        {"size_in": 1.5, "max_gpm": 42.0, "loss_100ft": 1.6},
-        {"size_in": 2.0, "max_gpm": 75.0, "loss_100ft": 0.8},
-        {"size_in": 2.5, "max_gpm": 120.0, "loss_100ft": 0.45},
-        {"size_in": 3.0, "max_gpm": 180.0, "loss_100ft": 0.25},
-        {"size_in": 4.0, "max_gpm": 320.0, "loss_100ft": 0.12},
-    ]
+    NOMINAL_SIZES_IN = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 6.0, 8.0, 10.0, 12.0]
 
     DEFAULT_FIXTURE_UNIT_TABLE = {
         "lav": 1.0,
@@ -146,20 +140,34 @@ class WaterSizingEngine:
                 flow_gpm=seg.assigned_flow_gpm,
                 min_size=seg.min_size_in,
                 target_loss=seg.target_pressure_loss_per_100ft,
+                max_velocity=seg.max_velocity_fps,
+                c_factor=request.hazen_williams_c,
             )
             seg.assigned_size_in = size_row["size_in"]
             seg.pressure_loss_per_100ft = size_row["loss_100ft"]
+            seg.velocity_fps = size_row["velocity_fps"]
+            seg.friction_loss_psi = round((max(seg.length, 0.0) / 100.0) * seg.pressure_loss_per_100ft, 3)
 
-            if seg.assigned_flow_gpm > size_row["max_gpm"]:
-                seg.warnings.append("Assigned flow exceeds nominal capacity table value.")
             if seg.pressure_loss_per_100ft > seg.target_pressure_loss_per_100ft:
                 seg.warnings.append("Pressure loss target exceeded.")
+            if seg.velocity_fps > seg.max_velocity_fps:
+                seg.warnings.append("Water velocity exceeds maximum requested velocity.")
             if seg.assigned_size_in < seg.min_size_in:
                 seg.warnings.append("Assigned size is smaller than minimum requested.")
             warnings.extend(seg.warnings)
 
         total_flow = max((seg.assigned_flow_gpm for seg in segments), default=0.0)
         remaining_pressure = self._estimate_remaining_pressure(request, segments)
+        for seg in segments:
+            seg.residual_pressure_psi = round(
+                request.available_pressure_psi
+                - request.meter_loss_psi
+                - request.backflow_loss_psi
+                - (request.heater_loss_psi if request.hot_water else 0.0)
+                - seg.friction_loss_psi
+                - max(0.0, seg.elevation_gain) * request.static_loss_per_ft_psi,
+                3,
+            )
 
         if remaining_pressure < 15.0:
             warnings.append("Estimated remaining pressure is low.")
@@ -212,6 +220,9 @@ class WaterSizingEngine:
             assigned_flow_gpm=seg.assigned_flow_gpm,
             assigned_size_in=seg.assigned_size_in,
             pressure_loss_per_100ft=seg.pressure_loss_per_100ft,
+            velocity_fps=seg.velocity_fps,
+            friction_loss_psi=seg.friction_loss_psi,
+            residual_pressure_psi=seg.residual_pressure_psi,
             warnings=list(seg.warnings),
             meta=dict(seg.meta),
         )
@@ -233,20 +244,37 @@ class WaterSizingEngine:
             gpm *= 1.1
         return gpm
 
-    def _pick_pipe_size(self, flow_gpm: float, min_size: float, target_loss: float) -> Dict[str, float]:
-        eligible = [row for row in self.PIPE_CAPACITY_TABLE if row["size_in"] >= min_size]
+    def _pick_pipe_size(self, flow_gpm: float, min_size: float, target_loss: float, max_velocity: float, c_factor: float) -> Dict[str, float]:
+        rows = [
+            {
+                "size_in": size,
+                "loss_100ft": self._hazen_williams_loss_psi_per_100ft(flow_gpm, size, c_factor=c_factor),
+                "velocity_fps": self._velocity_fps(flow_gpm, size),
+            }
+            for size in self.NOMINAL_SIZES_IN
+        ]
+        eligible = [row for row in rows if row["size_in"] >= min_size]
         if not eligible:
-            return self.PIPE_CAPACITY_TABLE[-1]
+            return rows[-1]
 
         for row in eligible:
-            if flow_gpm <= row["max_gpm"] and row["loss_100ft"] <= target_loss:
-                return row
-
-        for row in eligible:
-            if flow_gpm <= row["max_gpm"]:
+            if row["loss_100ft"] <= target_loss and row["velocity_fps"] <= max_velocity:
                 return row
 
         return eligible[-1]
+
+    def _velocity_fps(self, flow_gpm: float, diameter_in: float) -> float:
+        if flow_gpm <= 0.0 or diameter_in <= 0.0:
+            return 0.0
+        area_sf = 3.141592653589793 * (diameter_in / 12.0) ** 2 / 4.0
+        return round((flow_gpm * 0.00222800926) / max(area_sf, 1e-9), 3)
+
+    def _hazen_williams_loss_psi_per_100ft(self, flow_gpm: float, diameter_in: float, *, c_factor: float) -> float:
+        if flow_gpm <= 0.0 or diameter_in <= 0.0:
+            return 0.0
+        c = max(1.0, c_factor)
+        headloss_ft_per_100ft = 4.52 * 100.0 * (flow_gpm ** 1.85) / ((c ** 1.85) * (diameter_in ** 4.87))
+        return round(headloss_ft_per_100ft * 0.433, 3)
 
     def _estimate_remaining_pressure(
         self,
@@ -261,7 +289,7 @@ class WaterSizingEngine:
         variable_losses = 0.0
         static_losses = 0.0
         for seg in segments:
-            variable_losses += (seg.length / 100.0) * seg.pressure_loss_per_100ft
+            variable_losses += seg.friction_loss_psi or (seg.length / 100.0) * seg.pressure_loss_per_100ft
             static_losses += max(0.0, seg.elevation_gain) * request.static_loss_per_ft_psi
 
         return available - fixed_losses - variable_losses - static_losses
@@ -269,3 +297,71 @@ class WaterSizingEngine:
 
 def size_water_system(request: WaterSizingRequest) -> WaterSizingResult:
     return WaterSizingEngine().size(request)
+
+
+def analyze_water_pressure_graph(
+    segments: Sequence[Dict[str, Any]],
+    *,
+    source_node: str,
+    source_pressure_psi: float,
+    hazen_williams_c: float = 130.0,
+    static_loss_per_ft_psi: float = 0.433,
+) -> Dict[str, Any]:
+    engine = WaterSizingEngine()
+    node_pressure: Dict[str, float] = {source_node: float(source_pressure_psi)}
+    unresolved = [dict(seg) for seg in segments]
+    solved: List[Dict[str, Any]] = []
+    warnings: List[str] = []
+
+    for _ in range(len(unresolved) + 5):
+        progressed = False
+        remaining: List[Dict[str, Any]] = []
+        for seg in unresolved:
+            start = str(seg.get("start_node") or seg.get("from_node") or "")
+            end = str(seg.get("end_node") or seg.get("to_node") or "")
+            if not start or not end:
+                warnings.append("Water pressure graph segment is missing start/end node.")
+                continue
+            if start not in node_pressure:
+                remaining.append(seg)
+                continue
+            flow_gpm = float(seg.get("flow_gpm") or seg.get("assigned_flow_gpm") or 0.0)
+            diameter_in = float(seg.get("diameter_in") or seg.get("assigned_size_in") or 1.0)
+            length_ft = float(seg.get("length_ft") or seg.get("length") or 0.0)
+            elevation_gain_ft = float(seg.get("elevation_gain_ft") or seg.get("elevation_gain") or 0.0)
+            loss_100 = engine._hazen_williams_loss_psi_per_100ft(flow_gpm, diameter_in, c_factor=hazen_williams_c)
+            friction_loss = (max(0.0, length_ft) / 100.0) * loss_100
+            static_loss = max(0.0, elevation_gain_ft) * static_loss_per_ft_psi
+            end_pressure = node_pressure[start] - friction_loss - static_loss
+            if end not in node_pressure or end_pressure > node_pressure[end]:
+                node_pressure[end] = end_pressure
+            solved.append(
+                {
+                    "name": str(seg.get("name") or f"{start}-{end}"),
+                    "start_node": start,
+                    "end_node": end,
+                    "flow_gpm": round(flow_gpm, 3),
+                    "diameter_in": round(diameter_in, 3),
+                    "velocity_fps": engine._velocity_fps(flow_gpm, diameter_in),
+                    "friction_loss_psi": round(friction_loss, 3),
+                    "static_loss_psi": round(static_loss, 3),
+                    "start_pressure_psi": round(node_pressure[start], 3),
+                    "end_pressure_psi": round(end_pressure, 3),
+                }
+            )
+            progressed = True
+        unresolved = remaining
+        if not unresolved or not progressed:
+            break
+
+    if unresolved:
+        warnings.append("Water pressure graph has unreachable segments from the source node.")
+    return {
+        "success": not unresolved,
+        "source_node": source_node,
+        "node_pressures_psi": {node: round(value, 3) for node, value in node_pressure.items()},
+        "segments": solved,
+        "min_pressure_psi": round(min(node_pressure.values()), 3) if node_pressure else 0.0,
+        "warnings": warnings,
+        "truth_label": "Hazen-Williams steady pressure graph; does not replace calibrated fire-flow modeling.",
+    }

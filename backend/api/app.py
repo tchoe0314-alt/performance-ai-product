@@ -37,9 +37,12 @@ from backend.application.auth_workflows import (
 from backend.application.chat_workflows import decide_chat as application_decide_chat
 from backend.application.file_workflows import (
     download_artifact_response as application_download_artifact_response,
+    existing_conditions_online_sources as application_existing_conditions_online_sources,
+    fetch_existing_conditions_online as application_fetch_existing_conditions_online,
     get_uploaded_image_response as application_get_uploaded_image_response,
     estimate_slope_from_survey as application_estimate_slope_from_survey,
     read_survey_points as application_read_survey_points,
+    upload_existing_conditions_file as application_upload_existing_conditions_file,
     upload_image_file as application_upload_image_file,
     upload_survey_file as application_upload_survey_file,
 )
@@ -66,6 +69,13 @@ from backend.application.project_workflows import (
     save_project_workflow_update as application_save_project_workflow_update,
 )
 from backend.application.session_workflows import maybe_export_session as application_maybe_export_session
+from backend.application.standards_workflows import (
+    accept_standards_response as application_accept_standards_response,
+    discover_standards_response as application_discover_standards_response,
+    extract_standards_candidates_response as application_extract_standards_candidates_response,
+    run_golden_scenarios_response as application_run_golden_scenarios_response,
+    standards_review_packet_response as application_standards_review_packet_response,
+)
 from backend.services.artifact_service import ArtifactService
 from backend.services.auth_store import AuthStore
 from backend.services.database import Database
@@ -228,6 +238,46 @@ class ChatFeedbackPayload(BaseModel):
 
 class SurveySlopePayload(BaseModel):
     filename: str
+
+
+class ExistingConditionsOnlineSourcesPayload(BaseModel):
+    address: str = ""
+    bbox: Optional[Dict[str, Any]] = None
+    parcel_service_url: str = ""
+
+
+class ExistingConditionsOnlineFetchPayload(BaseModel):
+    address: str = ""
+    bbox: Optional[Dict[str, Any]] = None
+    parcel_service_url: str = ""
+    parcel_layer_id: int = 0
+    include_floodplain: bool = True
+    include_wetlands: bool = True
+    include_parcels: bool = True
+    include_elevation: bool = True
+
+
+class StandardsDiscoveryPayload(BaseModel):
+    city: str = ""
+    county: str = ""
+    state: str = ""
+    utility_provider: str = ""
+    extracted_rules: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class StandardsAcceptancePayload(BaseModel):
+    review_packet: Dict[str, Any] = Field(default_factory=dict)
+    accepted_rule_ids: List[str] = Field(default_factory=list)
+    edits: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+
+
+class StandardsExtractPayload(BaseModel):
+    source_url: str
+    source_id: str = "official_source"
+
+
+class GoldenScenarioRunPayload(BaseModel):
+    scenario_ids: List[str] = Field(default_factory=list)
 
 
 class ImageAnalysisPayload(BaseModel):
@@ -632,6 +682,114 @@ async def upload_survey(
         upload_dir=UPLOAD_DIR,
         file=file,
         current_user=current_user,
+    )
+
+
+@app.post("/api/upload-existing-conditions")
+async def upload_existing_conditions(
+    file: UploadFile = File(...),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    return application_upload_existing_conditions_file(
+        upload_dir=UPLOAD_DIR,
+        file=file,
+        current_user=current_user,
+    )
+
+
+@app.post("/api/existing-conditions/online-sources")
+def existing_conditions_online_sources(
+    payload: ExistingConditionsOnlineSourcesPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    _ = current_user
+    return application_existing_conditions_online_sources(
+        address=payload.address,
+        bbox=payload.bbox,
+        parcel_service_url=payload.parcel_service_url,
+    )
+
+
+@app.post("/api/existing-conditions/fetch-online")
+def fetch_existing_conditions_online(
+    payload: ExistingConditionsOnlineFetchPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    _ = current_user
+    return application_fetch_existing_conditions_online(
+        address=payload.address,
+        bbox=payload.bbox,
+        parcel_service_url=payload.parcel_service_url,
+        parcel_layer_id=payload.parcel_layer_id,
+        include_floodplain=payload.include_floodplain,
+        include_wetlands=payload.include_wetlands,
+        include_parcels=payload.include_parcels,
+        include_elevation=payload.include_elevation,
+    )
+
+
+@app.post("/api/standards/discover")
+def discover_standards(
+    payload: StandardsDiscoveryPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    _ = current_user
+    return application_discover_standards_response(
+        city=payload.city,
+        county=payload.county,
+        state=payload.state,
+        utility_provider=payload.utility_provider,
+    )
+
+
+@app.post("/api/standards/review-packet")
+def standards_review_packet(
+    payload: StandardsDiscoveryPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    _ = current_user
+    return application_standards_review_packet_response(
+        city=payload.city,
+        county=payload.county,
+        state=payload.state,
+        utility_provider=payload.utility_provider,
+        extracted_rules=payload.extracted_rules,
+    )
+
+
+@app.post("/api/standards/accept")
+def accept_standards(
+    payload: StandardsAcceptancePayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    _ = current_user
+    return application_accept_standards_response(
+        review_packet=payload.review_packet,
+        accepted_rule_ids=payload.accepted_rule_ids,
+        edits=payload.edits,
+    )
+
+
+@app.post("/api/standards/extract")
+def extract_standards(
+    payload: StandardsExtractPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    _ = current_user
+    return application_extract_standards_candidates_response(
+        source_url=payload.source_url,
+        source_id=payload.source_id,
+    )
+
+
+@app.post("/api/golden-scenarios/run")
+def run_golden_scenarios(
+    payload: GoldenScenarioRunPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    _ = current_user
+    return application_run_golden_scenarios_response(
+        scenario_ids=payload.scenario_ids or None,
     )
 
 

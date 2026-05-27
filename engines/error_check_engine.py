@@ -705,7 +705,7 @@ def _check_parking_program(
                 ),
                 seen,
             )
-        elif variance > max(target_count * 0.50, 25):
+        elif variance > max(target_count * 0.50, 30):
             _append_issue(
                 issues,
                 EngineeringCheckIssue(
@@ -756,7 +756,7 @@ def _check_parking_program(
             seen,
         )
 
-    if target_count > 0 and actual_estimated_count > max(target_count * 1.50, target_count + 25):
+    if target_count > 0 and actual_estimated_count > max(target_count * 1.50, target_count + 30):
         _append_issue(
             issues,
             EngineeringCheckIssue(
@@ -786,7 +786,7 @@ def _check_parking_geometry_reasonableness(
             continue
         layer = _safe_str(action.get("layer"), "").upper()
         label = _lower(action.get("label"))
-        if layer in {"PARKING", "PAVEMENT"} or "park" in label:
+        if layer == "PARKING" or "park" in label:
             parking_rects.append({"index": idx, "rect": rect, "label": _safe_str(action.get("label"), "PARK")})
 
     for item in parking_rects:

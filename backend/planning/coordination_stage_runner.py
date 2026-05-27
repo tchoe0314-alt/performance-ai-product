@@ -298,6 +298,17 @@ def run_conflict_resolution_stage(
         refresh_conflict_resolved_state(project, manager, None)
         unresolved = sorted(detect_coordination_conflicts(project, manager), key=conflict_priority_key)
 
+    advisory_conflicts = [
+        deepcopy(safe_dict(conflict))
+        for conflict in unresolved
+        if lower_text(safe_dict(conflict).get("severity")) not in {"error", "critical"}
+    ]
+    unresolved = [
+        safe_dict(conflict)
+        for conflict in unresolved
+        if lower_text(safe_dict(conflict).get("severity")) in {"error", "critical"}
+    ]
+
     for conflict in unresolved:
         cluster_id = safe_str(conflict.get("cluster_id")) or conflict_cluster_id(conflict)
         prior_report = safe_dict(unresolved_report_map.get(cluster_id))
@@ -356,11 +367,13 @@ def run_conflict_resolution_stage(
         "detected_conflicts": detected,
         "resolved_conflicts": resolved,
         "unresolved_conflicts": unresolved,
+        "advisory_conflicts": advisory_conflicts,
         "unresolved_clusters": unresolved_clusters,
         "assumption_resolutions": assumptions,
         "before_count": len(detected),
         "resolved_count": len(resolved),
         "unresolved_count": len(unresolved),
+        "advisory_count": len(advisory_conflicts),
         "before_counts_by_type": count_conflicts_by_type(detected),
         "after_counts_by_type": count_conflicts_by_type(unresolved),
         "manager_conflict_ids": manager_conflict_ids,

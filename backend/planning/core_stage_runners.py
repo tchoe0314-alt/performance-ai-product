@@ -189,7 +189,7 @@ def _synthesized_program_layout(
     margin_x = max(40.0, lot_w * 0.07)
     margin_y = max(40.0, lot_h * 0.07)
     if frontage and len(primary) == 3:
-        margin_y = max(30.0, lot_h * 0.05)
+        margin_y = max(30.0, lot_h * 0.035)
     min_x = lot_x + margin_x
     max_x = lot_x + lot_w - margin_x
     min_y = lot_y + margin_y
@@ -366,7 +366,7 @@ def _layout_overlap_issues(actions: Sequence[Dict[str, Any]]) -> List[str]:
                 issues.append("Buildings are overlapping or too tightly spaced.")
                 break
 
-    _check_pairs(building_rects, parking_rects, 6.0, "Parking overlaps or crowds building footprints.")
+    _check_pairs(building_rects, parking_rects, 2.0, "Parking overlaps or crowds building footprints.")
     # Parking rectangles commonly include drive aisles / pavement aprons that
     # intentionally touch or overlap schematic road geometry. Treating that as
     # a hard layout blocker sends valid commercial-pad layouts into expensive

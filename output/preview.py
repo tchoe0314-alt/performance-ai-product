@@ -1074,6 +1074,7 @@ def _polyline_style(action):
         color = "#fbbf24" if variant == "FG" else "#dbe4ef"
         alpha = 0.2 if variant == "FG" else 0.12
         linewidth = max(0.5, linewidth * (0.58 if variant == "FG" else 0.55))
+        linestyle = "-."
 
     return linewidth, color, linestyle, alpha
 
@@ -1142,6 +1143,8 @@ def _rectangle_visual_style(action, w, h):
         else:
             edge_alpha = 0.3 if preview_profile == "grading" else 0.38
         edge_alpha = min(0.85, edge_alpha * float(_ACTIVE_STYLE.get("parking_edge_boost", 1.0)))
+        if residential_court and preview_profile == "grading":
+            edge_alpha = min(edge_alpha, 0.03)
 
         if w >= 24 and h >= 10:
             if residential_court and (w >= 120.0 or h >= 24.0):
@@ -1521,7 +1524,7 @@ def _synthesize_drive_aisles(building_rects, parking_rects):
                 end_x = max(end_x, next_px1 - gap)
             aisle = {
                 "task": "rectangle",
-                "layer": "C-PAVEMENT",
+                "layer": "PAVEMENT",
                 "origin": [round(start_x, 3), aisle_y],
                 "width": round(min(max(14.0, end_x - start_x), max(120.0, (px2 - px1) + 24.0), 180.0), 3),
                 "height": aisle_height,
@@ -1608,7 +1611,7 @@ def _synthesize_layout_preview_actions(actions):
                 if not label or label in {"ROAD", "DRIVE", "FIRE", "FIRE-1", "ROAD-1"}:
                     continue
             if task in {"rectangle", "polygon"} and (not label or label in {"ROAD", "DRIVE", "FIRE", "FIRE-1", "ROAD-1"}):
-                rec["layer"] = "C-PAVEMENT"
+                rec["layer"] = "PAVEMENT"
                 rec["semantic_surface_role"] = "circulation"
                 layer = "C-PAVEMENT"
         bounds = _action_bounds(rec)
@@ -1632,7 +1635,7 @@ def _synthesize_layout_preview_actions(actions):
             overlaps_building_band = any(abs(center_x - _rect_center(b_bounds)[0]) <= max(bounds[2] - bounds[0], b_bounds[2] - b_bounds[0]) * 0.7 for b_bounds in building_rects)
             if nearest_gap[1] <= 120.0 and overlaps_building_band and _looks_like_parking_module(bounds, building_rects):
                 out = dict(action)
-                out["layer"] = "C-PARKING"
+                out["layer"] = "PARKING"
                 key = repr(out)
                 if key not in seen:
                     seen.add(key)
@@ -1661,7 +1664,7 @@ def _synthesize_layout_preview_actions(actions):
                 continue
             walk_action = {
                 "task": "rectangle",
-                "layer": "C-SIDEWALK",
+                "layer": "WALK",
                 "origin": [walk_x, walk_y],
                 "width": walk_width,
                 "height": walk_h,
@@ -2173,14 +2176,15 @@ def _filtered_preview_actions(
     *,
     rich_engineering=False,
     include_layers: Optional[set[str]] = None,
-    allow_heuristics: bool = PREVIEW_ALLOW_HEURISTICS_DEFAULT,
-    allow_synthesis: bool = PREVIEW_ALLOW_SYNTHESIS_DEFAULT,
+    allow_heuristics: bool = True,
+    allow_synthesis: bool = True,
     preview_mode: Optional[str] = None,
     label_density: Optional[str] = None,
+    return_audit: bool = False,
 ):
     engineering_profile = _normalize_engineering_profile(rich_engineering)
     include_layers = _normalize_include_layers(include_layers)
-    preview_mode = _normalize_preview_mode(preview_mode)
+    preview_mode = "engineering" if preview_mode is None else _normalize_preview_mode(preview_mode)
     profile_layers = PROFILE_LAYER_VISIBILITY.get(engineering_profile, FINAL_GEOMETRY_LAYERS)
     if preview_mode == "engineering":
         profile_layers = set(profile_layers).union(SECONDARY_ENGINEERING_LAYERS)
@@ -2268,7 +2272,11 @@ def _filtered_preview_actions(
         if preview_mode == "production" and layer not in FINAL_GEOMETRY_LAYERS:
             audit["filtered_reasons"]["non_final_layer"] = audit["filtered_reasons"].get("non_final_layer", 0) + 1
             continue
-        if preview_mode in {"production", "engineering"} and layer not in profile_layers:
+        if (
+            preview_mode in {"production", "engineering"}
+            and layer not in profile_layers
+            and repr(action) not in engineering_overlay_keys
+        ):
             audit["hidden_incomplete_phase_count"] += 1
             audit["filtered_reasons"]["profile_hidden"] = audit["filtered_reasons"].get("profile_hidden", 0) + 1
             continue
@@ -2360,7 +2368,9 @@ def _filtered_preview_actions(
         filtered.append(action)
     audit["rendered_final_count"] = sum(1 for action in filtered if _action_preview_role(action) == "final")
     audit["rendered_counts"] = _system_counts(filtered)
-    return filtered, audit
+    if return_audit:
+        return filtered, audit
+    return filtered
 
 
 # ----------------------------------------
@@ -2616,22 +2626,22 @@ def draw_north_arrow(ax, action, *, render_labels: bool = True):
 # Main preview
 # ----------------------------------------
 
-def _expand_bounds(bounds, pad_ratio=0.12, min_pad=12.0):
+def _expand_bounds(bounds, pad_ratio=0.08, min_pad=8.0):
     min_x, min_y, max_x, max_y = bounds
     width = max(max_x - min_x, 1.0)
     height = max(max_y - min_y, 1.0)
     aspect = width / height if height > 0 else 1.0
     if aspect >= 1.8:
-        pad_x = max(width * min(pad_ratio, 0.08), max(8.0, min_pad * 0.85))
-        pad_y_top = max(height * min(pad_ratio * 0.35, 0.035), max(4.0, min_pad * 0.4))
-        pad_y_bottom = max(height * min(pad_ratio * 0.85, 0.08), max(8.0, min_pad * 0.85))
+        pad_x = max(width * min(pad_ratio, 0.06), max(6.0, min_pad * 0.75))
+        pad_y_top = max(height * min(pad_ratio * 0.25, 0.02), max(2.5, min_pad * 0.3))
+        pad_y_bottom = max(height * min(pad_ratio * 0.7, 0.05), max(5.0, min_pad * 0.65))
     elif aspect >= 1.35:
-        pad_x = max(width * min(pad_ratio, 0.09), max(9.0, min_pad * 0.9))
-        pad_y_top = max(height * min(pad_ratio * 0.45, 0.04), max(5.0, min_pad * 0.45))
-        pad_y_bottom = max(height * min(pad_ratio * 0.9, 0.08), max(9.0, min_pad * 0.9))
+        pad_x = max(width * min(pad_ratio, 0.07), max(7.0, min_pad * 0.85))
+        pad_y_top = max(height * min(pad_ratio * 0.4, 0.032), max(3.0, min_pad * 0.4))
+        pad_y_bottom = max(height * min(pad_ratio * 0.8, 0.06), max(5.0, min_pad * 0.7))
     else:
         pad_x = max(width * pad_ratio, min_pad)
-        pad_y_top = max(height * pad_ratio * 0.85, min_pad * 0.85)
+        pad_y_top = max(height * pad_ratio * 0.75, min_pad * 0.75)
         pad_y_bottom = max(height * pad_ratio, min_pad)
     return min_x - pad_x, min_y - pad_y_bottom, max_x + pad_x, max_y + pad_y_top
 
@@ -2667,6 +2677,7 @@ def _choose_view_bounds(drawn_items, *, engineering_profile="layout"):
     phase_engineering_bounds = None
 
     for layer, task, bounds in drawn_items:
+        layer = _normalize_layer(layer)
         if not bounds:
             continue
         if task not in {"text_note", "point", "north_arrow"}:
@@ -2852,6 +2863,7 @@ def _preview_scene(
         allow_synthesis=allow_synthesis,
         preview_mode=resolved_preview_mode,
         label_density=label_density,
+        return_audit=True,
     )
     if not actions:
         return engineering_profile, actions, None, audit

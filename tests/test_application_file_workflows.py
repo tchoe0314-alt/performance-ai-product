@@ -7,7 +7,10 @@ from fastapi import UploadFile
 
 from backend.application.file_workflows import (
     download_artifact_response,
+    existing_conditions_online_sources,
+    fetch_existing_conditions_online,
     get_uploaded_image_response,
+    upload_existing_conditions_file,
     upload_image_file,
 )
 
@@ -58,6 +61,36 @@ class ApplicationFileWorkflowsTest(unittest.TestCase):
                 filename="plan.dxf",
             )
             self.assertEqual(Path(response.path).name, "plan.dxf")
+
+    def test_upload_existing_conditions_imports_survey_csv(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            upload = UploadFile(
+                filename="survey.csv",
+                file=BytesIO(b"x,y,z\n0,0,100\n10,0,101\n0,10,99\n"),
+            )
+            result = upload_existing_conditions_file(
+                upload_dir=Path(tmpdir),
+                file=upload,
+                current_user={"user_id": "u1"},
+            )
+
+            self.assertTrue(result["success"])
+            self.assertEqual(result["canonical_existing_conditions"]["survey"]["point_count"], 3)
+            self.assertTrue(result["existing_conditions_summary"]["survey"]["ready"])
+
+    def test_online_sources_returns_truth_labeled_registry(self):
+        result = existing_conditions_online_sources(address="1 Main St", bbox={"west": -97, "south": 32, "east": -96, "north": 33})
+
+        self.assertTrue(result["success"])
+        self.assertIn("census_geocoder", result["sources"])
+        self.assertIn("Production truth", result["truth_label"])
+
+    def test_fetch_online_existing_conditions_blocks_without_location(self):
+        result = fetch_existing_conditions_online()
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("existing_conditions_summary", result)
 
 
 if __name__ == "__main__":

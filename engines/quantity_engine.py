@@ -332,6 +332,7 @@ class QuantityEngine:
         storm_stats = _safe_dict(storm_meta.get("stats"))
         utilities_stats = _safe_dict(utilities_meta.get("stats"))
         primary_basins = _primary_engineered_basins(drainage_meta)
+        canonical_basins = [_safe_dict(item) for item in _safe_list(drainage_meta.get("basins")) if _safe_dict(item)]
         drainage_export_validation = _safe_dict(drainage_meta.get("export_validation"))
         if primary_basins and not drainage_export_validation:
             storm_segments = _safe_list(storm_meta.get("segments"))
@@ -670,19 +671,25 @@ class QuantityEngine:
         if drainage_meta:
             counts["drainage_feature_count"] = max(
                 counts["drainage_feature_count"],
-                _safe_int(drainage_stats.get("structure_count"), 0) + len(primary_basins),
+                _safe_int(drainage_stats.get("structure_count"), 0) + max(len(primary_basins), len(canonical_basins)),
             )
             counts["pipe_feature_count"] = max(counts["pipe_feature_count"], _safe_int(drainage_stats.get("pipe_count"), 0))
             unit_counts["inlet_count"] = max(unit_counts["inlet_count"], _safe_int(drainage_stats.get("inlet_count"), 0))
             if drainage_export_validation.get("ready", False):
                 unit_counts["pond_count"] = max(
-                    unit_counts["pond_count"],
                     len(primary_basins),
+                    _safe_int(drainage_stats.get("primary_detention_count"), 0),
+                )
+            else:
+                unit_counts["pond_count"] = max(
+                    unit_counts["pond_count"],
+                    len(canonical_basins),
+                    _safe_int(drainage_stats.get("basin_count"), 0),
                     _safe_int(drainage_stats.get("primary_detention_count"), 0),
                 )
             lengths["pipe_length_ft"] = max(lengths["pipe_length_ft"], _safe_float(drainage_stats.get("pipe_total_length_ft"), 0.0))
             structures = [_safe_dict(item) for item in _safe_list(drainage_meta.get("structures"))]
-            basins = primary_basins if drainage_export_validation.get("ready", False) else []
+            basins = primary_basins if drainage_export_validation.get("ready", False) else canonical_basins
             if structures:
                 quantity_audit["inlet_count"] = {
                     "source_object_ids": [_safe_str(item.get("id"), _safe_str(item.get("name"), "STRUCT")) for item in structures if _safe_str(item.get("id") or item.get("name"))],
@@ -697,8 +704,8 @@ class QuantityEngine:
                 )
                 quantity_audit["pond_count"] = {
                     "source_object_ids": [_safe_str(item.get("id"), _safe_str(item.get("name"), "BASIN")) for item in basins if _safe_str(item.get("id") or item.get("name"))],
-                    "source_object_types": ["detention_basin" for item in basins if _safe_str(item.get("id") or item.get("name"))],
-                    "derivation_method": "count_primary_engineered_detention_basins",
+                    "source_object_types": [_safe_str(item.get("canonical_type") or item.get("object_type"), "detention_basin") for item in basins if _safe_str(item.get("id") or item.get("name"))],
+                    "derivation_method": "count_primary_engineered_detention_basins" if drainage_export_validation.get("ready", False) else "count_canonical_drainage_basins",
                     "assumptions_involved": False,
                 }
                 quantity_audit["pond_area_sf"] = {

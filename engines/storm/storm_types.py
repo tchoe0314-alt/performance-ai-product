@@ -223,6 +223,8 @@ class HydraulicCheck:
     full_capacity_cfs: float = 0.0
     velocity_fps: float = 0.0
     flow_depth_ratio: float = 0.0
+    normal_depth_ft: float = 0.0
+    flow_area_sf: float = 0.0
     hgl_upstream_ft: Optional[float] = None
     hgl_downstream_ft: Optional[float] = None
     egl_upstream_ft: Optional[float] = None

@@ -162,6 +162,7 @@ class CivilDesignReadinessTests(unittest.TestCase):
         meta["company_standards"] = {"cad_layer_standard": "CIVORA_TEST"}
         meta["survey"] = {"point_count": 12, "source": "survey_points"}
         meta["gis_layers"] = {"parcels": [{}], "easements": [{}], "row": [{}], "existing_utilities": [{}]}
+        meta["coordinate_system"] = {"epsg": "EPSG:2276", "units": "ft", "source": "test"}
         meta["grading"]["source_quality"] = "survey"
         meta["grading"]["road_crown_controls"] = [{"road": "A", "cross_slope": 0.02}]
         meta["grading"]["curb_gutter_controls"] = [{"road": "A", "gutter_slope": 0.01}]
@@ -200,6 +201,7 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertIn(("standards", "design_standards"), gaps)
         self.assertIn(("existing_conditions", "survey_surface"), gaps)
         self.assertIn(("existing_conditions", "gis_layers"), gaps)
+        self.assertIn(("existing_conditions", "coordinate_system"), gaps)
         self.assertIn(("hydraulics", "hgl_profile"), gaps)
         self.assertIn(("hydraulics", "detention_routing"), gaps)
         self.assertIn(("grading_detail", "ada_path_checks"), gaps)

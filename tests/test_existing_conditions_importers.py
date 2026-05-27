@@ -1,0 +1,210 @@
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from backend.planning.existing_conditions import summarize_existing_conditions
+from backend.planning.existing_conditions_importers import (
+    classify_existing_conditions_file,
+    import_geospatial_vector_file,
+    import_geotiff_surface,
+    import_geojson,
+    import_las_point_cloud,
+    import_landxml_metadata,
+    import_surface_grid_csv,
+    import_survey_csv,
+    merge_imported_existing_conditions,
+    surface_from_survey_import,
+)
+
+
+class ExistingConditionsImporterTests(unittest.TestCase):
+    def test_import_survey_csv_and_build_surface(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "survey.csv"
+            path.write_text(
+                "point_id,easting,northing,elevation,description\n"
+                "1,0,0,100.0,BM\n"
+                "2,20,0,101.0,SHOT\n"
+                "3,0,20,99.5,SHOT\n"
+                "4,20,20,100.5,SHOT\n",
+                encoding="utf-8",
+            )
+
+            imported = import_survey_csv(path, coordinate_system={"epsg": "EPSG:2276", "units": "ft"})
+            surface = surface_from_survey_import(imported, cell_size=10.0)
+
+            self.assertTrue(imported["success"])
+            self.assertEqual(imported["point_count"], 4)
+            self.assertEqual(imported["recognized_columns"]["x"], "easting")
+            self.assertIsNotNone(surface)
+            self.assertEqual(getattr(surface, "_inferred_profile")["source_quality"], "survey")
+
+    def test_import_geojson_classifies_required_layers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "constraints.geojson"
+            path.write_text(
+                json.dumps(
+                    {
+                        "type": "FeatureCollection",
+                        "features": [
+                            {"type": "Feature", "properties": {"layer": "parcel"}, "geometry": {"type": "Polygon", "coordinates": []}},
+                            {"type": "Feature", "properties": {"type": "wetland"}, "geometry": {"type": "Polygon", "coordinates": []}},
+                            {"type": "Feature", "properties": {"name": "existing water utility"}, "geometry": {"type": "LineString", "coordinates": []}},
+                        ],
+                        "crs": {"type": "name", "properties": {"name": "EPSG:2276"}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            imported = import_geojson(path)
+
+            self.assertTrue(imported["success"])
+            self.assertEqual(imported["layer_counts"]["parcels"], 1)
+            self.assertEqual(imported["layer_counts"]["wetlands"], 1)
+            self.assertEqual(imported["layer_counts"]["existing_utilities"], 1)
+            self.assertEqual(imported["coordinate_system"]["name"], "EPSG:2276")
+
+    def test_import_surface_grid_csv_builds_grid_surface(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "surface.csv"
+            path.write_text(
+                "x,y,z\n"
+                "0,0,100\n"
+                "10,0,101\n"
+                "0,10,99\n"
+                "10,10,100\n",
+                encoding="utf-8",
+            )
+
+            imported = import_surface_grid_csv(path, coordinate_system={"epsg": "EPSG:2276"})
+            surface = imported["surface"]
+
+            self.assertTrue(imported["success"])
+            self.assertEqual(surface.ncols, 2)
+            self.assertEqual(surface.nrows, 2)
+            self.assertEqual(getattr(surface, "_inferred_profile")["source_detail"], "surface_xyz_csv_import")
+
+    def test_merge_imports_feed_existing_conditions_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            survey_path = Path(tmpdir) / "survey.csv"
+            survey_path.write_text("x,y,z\n0,0,100\n10,0,101\n0,10,99\n", encoding="utf-8")
+            gis_path = Path(tmpdir) / "parcel.geojson"
+            gis_path.write_text(
+                json.dumps(
+                    {
+                        "type": "FeatureCollection",
+                        "features": [{"type": "Feature", "properties": {"layer": "parcel"}, "geometry": {"type": "Polygon", "coordinates": []}}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            survey = import_survey_csv(survey_path, coordinate_system={"epsg": "EPSG:2276"})
+            gis = import_geojson(gis_path, coordinate_system={"epsg": "EPSG:2276"})
+            merged = merge_imported_existing_conditions(survey, gis)
+            meta = {
+                "grading": {"source_quality": "survey"},
+                "survey": merged["survey"],
+                "gis_layers": merged["gis_layers"],
+                "coordinate_system": merged["coordinate_system"],
+            }
+
+            summary = summarize_existing_conditions({"meta": meta})
+
+            self.assertTrue(summary["survey"]["ready"])
+            self.assertTrue(summary["gis"]["ready"])
+            self.assertTrue(summary["coordinate_system"]["ready"])
+            self.assertTrue(summary["production_ready"])
+
+    def test_heavy_gis_formats_are_truthfully_blocked_without_dependencies(self) -> None:
+        self.assertTrue(classify_existing_conditions_file(Path("parcel.gpkg"))["supported"])
+        self.assertTrue(classify_existing_conditions_file(Path("surface.tif"))["supported"])
+        self.assertTrue(classify_existing_conditions_file(Path("cloud.las"))["supported"])
+
+    def test_landxml_metadata_import_parses_surface_metadata_without_overclaiming(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "surface.landxml"
+            path.write_text(
+                '<LandXML><Surfaces><Surface name="EG"><Definition surfType="TIN">'
+                "<P>0 0 100</P><P>10 0 101</P><P>0 10 99</P><F>1 2 3</F>"
+                "</Definition></Surface></Surfaces></LandXML>",
+                encoding="utf-8",
+            )
+
+            imported = import_landxml_metadata(path)
+
+            self.assertTrue(imported["success"])
+            self.assertEqual(imported["surface_count"], 1)
+            self.assertEqual(imported["surfaces"][0]["point_count"], 3)
+            self.assertEqual(imported["surfaces"][0]["face_count"], 1)
+            self.assertIn("engineer review", imported["truth_label"])
+
+    def test_geopackage_vector_import_classifies_layers(self) -> None:
+        import geopandas as gpd
+        from shapely.geometry import Polygon
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "parcels.gpkg"
+            gdf = gpd.GeoDataFrame(
+                [{"layer": "parcel", "name": "Parcel A", "geometry": Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])}],
+                crs="EPSG:4326",
+            )
+            gdf.to_file(path, driver="GPKG")
+
+            imported = import_geospatial_vector_file(path)
+
+            self.assertTrue(imported["success"])
+            self.assertEqual(imported["layer_counts"]["parcels"], 1)
+            self.assertEqual(imported["coordinate_system"]["name"], "EPSG:4326")
+
+    def test_geotiff_import_builds_surface(self) -> None:
+        import numpy as np
+        import rasterio
+        from rasterio.transform import from_origin
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "surface.tif"
+            data = np.array([[100.0, 101.0], [99.0, 100.0]], dtype="float32")
+            with rasterio.open(
+                path,
+                "w",
+                driver="GTiff",
+                height=2,
+                width=2,
+                count=1,
+                dtype="float32",
+                crs="EPSG:2276",
+                transform=from_origin(0.0, 20.0, 10.0, 10.0),
+            ) as dataset:
+                dataset.write(data, 1)
+
+            imported = import_geotiff_surface(path)
+
+            self.assertTrue(imported["success"])
+            self.assertEqual(imported["surface"].ncols, 2)
+            self.assertEqual(imported["surface"].nrows, 2)
+            self.assertEqual(imported["coordinate_system"]["name"], "EPSG:2276")
+
+    def test_las_import_samples_point_cloud(self) -> None:
+        import laspy
+        import numpy as np
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "cloud.las"
+            header = laspy.LasHeader(point_format=3, version="1.2")
+            las = laspy.LasData(header)
+            las.x = np.array([0.0, 10.0, 0.0, 10.0])
+            las.y = np.array([0.0, 0.0, 10.0, 10.0])
+            las.z = np.array([100.0, 101.0, 99.0, 100.0])
+            las.write(path)
+
+            imported = import_las_point_cloud(path)
+
+            self.assertTrue(imported["success"])
+            self.assertEqual(imported["point_count"], 4)
+            self.assertEqual(imported["bounds"]["max_x"], 10.0)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -27,7 +27,7 @@ Design intent
 """
 
 from dataclasses import dataclass, field
-from math import pi
+from math import acos, pi, sin
 from typing import Any, Dict, List, Optional, Sequence
 
 from .storm_types import (
@@ -64,6 +64,8 @@ class PipeHydraulicDecision:
     velocity_fps: float
     flow_depth_ratio: float
     capacity_status: str
+    normal_depth_ft: float = 0.0
+    flow_area_sf: float = 0.0
     warnings: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -73,6 +75,8 @@ class PipeHydraulicDecision:
             "full_capacity_cfs": round(self.full_capacity_cfs, 3),
             "velocity_fps": round(self.velocity_fps, 3),
             "flow_depth_ratio": round(self.flow_depth_ratio, 4),
+            "normal_depth_ft": round(self.normal_depth_ft, 3),
+            "flow_area_sf": round(self.flow_area_sf, 4),
             "capacity_status": self.capacity_status,
             "warnings": list(self.warnings),
         }
@@ -121,6 +125,8 @@ class HydraulicEngine:
                 full_capacity_cfs=round(decision.full_capacity_cfs, 3),
                 velocity_fps=round(decision.velocity_fps, 3),
                 flow_depth_ratio=round(decision.flow_depth_ratio, 4),
+                normal_depth_ft=round(decision.normal_depth_ft, 3),
+                flow_area_sf=round(decision.flow_area_sf, 4),
                 capacity_status=decision.capacity_status,
                 warnings=list(decision.warnings),
             )
@@ -153,13 +159,14 @@ class HydraulicEngine:
         slope = max(0.0001, float(pipe.slope))
 
         full_capacity = self._full_flow_capacity_cfs(d_ft, slope, n)
-        area = pi * (d_ft ** 2) / 4.0
-        velocity = q / max(area, 1e-9)
-
-        if request.allow_partial_flow:
-            flow_depth_ratio = min(1.0, q / max(full_capacity * DEFAULT_PARTIAL_FLOW_FACTOR, 1e-9))
+        full_area = pi * (d_ft ** 2) / 4.0
+        if request.allow_partial_flow and 0.0 < q < full_capacity:
+            flow_depth_ratio = self._normal_depth_ratio_for_flow(q / max(full_capacity, 1e-9))
+            flow_area = self._partial_flow_area_sf(d_ft, flow_depth_ratio * d_ft)
         else:
             flow_depth_ratio = min(1.0, q / max(full_capacity, 1e-9))
+            flow_area = full_area
+        velocity = q / max(flow_area, 1e-9)
 
         status = CapacityStatus.OK.value
         warnings: List[str] = []
@@ -182,6 +189,8 @@ class HydraulicEngine:
             full_capacity_cfs=full_capacity,
             velocity_fps=velocity,
             flow_depth_ratio=flow_depth_ratio,
+            normal_depth_ft=flow_depth_ratio * d_ft,
+            flow_area_sf=flow_area,
             capacity_status=status,
             warnings=warnings,
         )
@@ -191,6 +200,45 @@ class HydraulicEngine:
         wetted_perimeter = pi * diameter_ft
         hydraulic_radius = area / max(wetted_perimeter, 1e-9)
         return (1.486 / mannings_n) * area * (hydraulic_radius ** (2.0 / 3.0)) * (slope ** 0.5)
+
+    def _partial_flow_area_sf(self, diameter_ft: float, depth_ft: float) -> float:
+        radius = diameter_ft / 2.0
+        depth = max(0.0, min(diameter_ft, depth_ft))
+        if depth <= 0.0:
+            return 0.0
+        if depth >= diameter_ft:
+            return pi * radius * radius
+        theta = 2.0 * acos((radius - depth) / radius)
+        return 0.5 * radius * radius * (theta - sin(theta))
+
+    def _partial_flow_ratio_for_depth_ratio(self, depth_ratio: float) -> float:
+        y = max(0.0001, min(1.0, depth_ratio))
+        diameter = 1.0
+        radius = diameter / 2.0
+        area = self._partial_flow_area_sf(diameter, y * diameter)
+        if y >= 1.0:
+            wetted_perimeter = pi * diameter
+        else:
+            theta = 2.0 * acos((radius - y * diameter) / radius)
+            wetted_perimeter = radius * theta
+        hydraulic_radius = area / max(wetted_perimeter, 1e-9)
+        full_area = pi * diameter * diameter / 4.0
+        full_radius = full_area / (pi * diameter)
+        return (area * hydraulic_radius ** (2.0 / 3.0)) / max(full_area * full_radius ** (2.0 / 3.0), 1e-9)
+
+    def _normal_depth_ratio_for_flow(self, q_over_qfull: float) -> float:
+        target = max(0.0, min(1.0, q_over_qfull))
+        if target <= 0.0:
+            return 0.0
+        low = 0.0001
+        high = 1.0
+        for _ in range(60):
+            mid = (low + high) / 2.0
+            if self._partial_flow_ratio_for_depth_ratio(mid) < target:
+                low = mid
+            else:
+                high = mid
+        return (low + high) / 2.0
 
     # =========================================================================
     # HGL / EGL PROPAGATION
@@ -219,14 +267,14 @@ class HydraulicEngine:
             up_inv = pipe.upstream_invert_ft if pipe.upstream_invert_ft is not None else (up.invert_elev_ft if up else 100.0)
             dn_inv = pipe.downstream_invert_ft if pipe.downstream_invert_ft is not None else (dn.invert_elev_ft if dn else up_inv - max(pipe.length_ft * pipe.slope, 0.1))
 
-            depth_head = (float(pipe.diameter_in) / 12.0) * max(pipe.hydraulic.flow_depth_ratio, 0.2)
-            friction_loss = max(0.0, pipe.length_ft * pipe.slope * 0.25)
-            minor_loss = DEFAULT_MINOR_LOSS_COEFF * max(pipe.hydraulic.velocity_fps, 0.0) * 0.05
+            depth_head = (float(pipe.diameter_in) / 12.0) * max(pipe.hydraulic.flow_depth_ratio, 0.0)
+            velocity_head = (max(pipe.hydraulic.velocity_fps, 0.0) ** 2) / (2.0 * 32.2)
+            minor_loss = DEFAULT_MINOR_LOSS_COEFF * velocity_head
 
-            hgl_up = up_inv + depth_head + friction_loss + minor_loss
             hgl_dn = dn_inv + depth_head
-            egl_up = hgl_up + DEFAULT_ENERGY_GRADE_BUMP_FT
-            egl_dn = hgl_dn + DEFAULT_ENERGY_GRADE_BUMP_FT
+            hgl_up = up_inv + depth_head + minor_loss
+            egl_up = hgl_up + velocity_head
+            egl_dn = hgl_dn + velocity_head
 
             pipe.hydraulic.hgl_upstream_ft = round(hgl_up, 3)
             pipe.hydraulic.hgl_downstream_ft = round(hgl_dn, 3)

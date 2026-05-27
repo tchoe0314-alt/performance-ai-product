@@ -25,7 +25,7 @@ Design intent
 """
 
 from dataclasses import dataclass, field
-from math import hypot
+from math import hypot, sqrt
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .storm_types import (
@@ -55,6 +55,12 @@ DEFAULT_GUTTER_SPREAD_LIMIT_FT = 8.0
 DEFAULT_SAG_CAPTURE_FACTOR = 0.95
 DEFAULT_ON_GRADE_CAPTURE_FACTOR = 0.65
 DEFAULT_BYPASS_FACTOR = 0.15
+DEFAULT_GUTTER_N = 0.016
+DEFAULT_GUTTER_CROSS_SLOPE = 0.02
+DEFAULT_GUTTER_LONGITUDINAL_SLOPE = 0.005
+DEFAULT_GRATE_OPEN_AREA_RATIO = 0.65
+DEFAULT_WEIR_COEFF = 3.0
+DEFAULT_ORIFICE_COEFF = 0.67
 
 
 # =============================================================================
@@ -368,12 +374,24 @@ class InletEngine:
         design_runoff_cfs = max(0.0, float(design_runoff_cfs))
         max_capture_cfs = max(0.1, float(max_capture_cfs))
 
-        factor = DEFAULT_SAG_CAPTURE_FACTOR if sag else DEFAULT_ON_GRADE_CAPTURE_FACTOR
-        intercepted = min(design_runoff_cfs * factor, max_capture_cfs)
+        spread_ft = self._triangular_gutter_spread_ft(
+            design_runoff_cfs,
+            cross_slope=DEFAULT_GUTTER_CROSS_SLOPE,
+            longitudinal_slope=DEFAULT_GUTTER_LONGITUDINAL_SLOPE,
+            mannings_n=DEFAULT_GUTTER_N,
+        )
+        depth_ft = spread_ft * DEFAULT_GUTTER_CROSS_SLOPE
+        grate_area_sf = DEFAULT_GRATE_LENGTH_FT * DEFAULT_GRATE_WIDTH_FT * DEFAULT_GRATE_OPEN_AREA_RATIO
+        grate_perimeter_ft = 2.0 * (DEFAULT_GRATE_LENGTH_FT + DEFAULT_GRATE_WIDTH_FT)
+        sag_capacity = min(
+            DEFAULT_WEIR_COEFF * grate_perimeter_ft * (max(depth_ft, 0.0) ** 1.5),
+            DEFAULT_ORIFICE_COEFF * grate_area_sf * sqrt(2.0 * 32.2 * max(depth_ft, 0.0)),
+        )
+        on_grade_capacity = max_capture_cfs * min(DEFAULT_ON_GRADE_CAPTURE_FACTOR, max(0.1, gutter_spread_limit_ft / max(spread_ft, 1e-9)))
+        hydraulic_capacity = sag_capacity if sag else on_grade_capacity
+        intercepted = min(design_runoff_cfs, max_capture_cfs, hydraulic_capacity)
         bypass = max(0.0, design_runoff_cfs - intercepted)
         efficiency = 0.0 if design_runoff_cfs <= 0 else intercepted / design_runoff_cfs
-        spread_ft = min(gutter_spread_limit_ft * (1.0 + bypass * 0.05), gutter_spread_limit_ft * 2.5)
-        depth_ft = min(0.2 + design_runoff_cfs * 0.03, 1.5)
 
         warnings: List[str] = []
         if bypass > 0.0:
@@ -389,6 +407,22 @@ class InletEngine:
             depth_ft=round(depth_ft, 3),
             warnings=warnings,
         )
+
+    def _triangular_gutter_capacity_cfs(self, spread_ft: float, *, cross_slope: float, longitudinal_slope: float, mannings_n: float) -> float:
+        spread = max(0.0, spread_ft)
+        sx = max(0.0001, cross_slope)
+        sl = max(0.000001, longitudinal_slope)
+        n = max(0.001, mannings_n)
+        return (0.56 / n) * (sx ** (5.0 / 3.0)) * (sl ** 0.5) * (spread ** (8.0 / 3.0))
+
+    def _triangular_gutter_spread_ft(self, flow_cfs: float, *, cross_slope: float, longitudinal_slope: float, mannings_n: float) -> float:
+        q = max(0.0, flow_cfs)
+        if q <= 0.0:
+            return 0.0
+        sx = max(0.0001, cross_slope)
+        sl = max(0.000001, longitudinal_slope)
+        n = max(0.001, mannings_n)
+        return (q * n / (0.56 * (sx ** (5.0 / 3.0)) * (sl ** 0.5))) ** (3.0 / 8.0)
 
     def _placement_reason(self, cand: Dict[str, Any]) -> str:
         reasons: List[str] = []
