@@ -42,7 +42,7 @@ export const workflowSteps = [
 
 export const workspaceNavItems = [
   "Project",
-  "Model",
+  "Canvas",
   "Objects",
   "Generate",
   "Grading",

@@ -64,6 +64,7 @@ import type {
   PreviewRequestPayload,
   SiteInputs,
 } from "./types";
+import type { CivoraWorkflowStep } from "./design-system";
 
 type SystemGenerationTarget = "roads" | "parking" | "grading" | "drainage" | "utilities" | "full";
 type SidePanelKey =
@@ -918,6 +919,7 @@ function PerformanceAIDashboardView({
   const [quantityRollupsEnabled, setQuantityRollupsEnabled] = useState(true);
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
   const [previewFullscreenOpen, setPreviewFullscreenOpen] = useState(false);
+  const [activeWorkflowStep, setActiveWorkflowStep] = useState<CivoraWorkflowStep>("Concept");
   const [projectId, setProjectId] = useState("");
   const [currentProject, setCurrentProject] = useState<ProjectRecord | null>(null);
   const [selectedRunId, setSelectedRunId] = useState("");
@@ -8865,7 +8867,7 @@ function PerformanceAIDashboardView({
         key: "roadway",
         label: "Roadway",
         state: systemStatuses.roads === "fresh" && systemStatuses.parking === "fresh" ? "complete" : "not_configured",
-        detail: systemStatuses.roads === "fresh" ? "Generated" : "Not rendered",
+        detail: systemStatuses.roads === "fresh" ? "Complete" : "Not configured / not rendered",
       },
       {
         key: "grading",
@@ -8883,14 +8885,14 @@ function PerformanceAIDashboardView({
         key: "utilities",
         label: "Utilities",
         state: hasHardSystemBlock ? "blocked" : systemStatuses.utilities === "fresh" ? "complete" : "not_configured",
-        detail: hasHardSystemBlock ? "Coordination risk" : systemStatuses.utilities === "fresh" ? "Complete" : "Not rendered",
+        detail: hasHardSystemBlock ? "Blocked / unsafe" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured / not rendered",
       },
     ],
     [hasHardSystemBlock, hasTerrainSource, siteScaleLocked, siteTooLargeForGrading, systemStatuses],
   );
   const sidePanelCopy: Record<SidePanelKey, { title: string; desc: string }> = {
     projects: { title: "Project", desc: "Open, create, and manage project records." },
-    model: { title: "Model", desc: "Inspect live model health and canonical state." },
+    model: { title: "Canvas", desc: "Inspect live canvas health and canonical state." },
     objects: { title: "Objects", desc: "Add, size, and place model objects." },
     generate: { title: "Generate", desc: "Run focused engines from one control panel." },
     grading: { title: "Grading", desc: "Control grading rules, terrain inputs, and slope limits." },
@@ -8908,6 +8910,40 @@ function PerformanceAIDashboardView({
     settings: { title: "Settings", desc: "Set project rules, defaults, and run preferences." },
     chat: { title: "Civora AI", desc: "Conversation and assisted workflow control." },
   };
+  const handleWorkflowStepChange = useCallback((step: CivoraWorkflowStep) => {
+    setActiveWorkflowStep(step);
+    const target: Record<CivoraWorkflowStep, SidePanelKey> = {
+      Concept: "model",
+      Grading: "grading",
+      Drainage: "drainage",
+      Utilities: "utilities",
+      Review: "analysis",
+      Deliverables: "deliverables",
+    };
+    setActiveSidePanel(target[step]);
+  }, []);
+  const handleOpenSidePanel = useCallback((panel: SidePanelKey | null) => {
+    setActiveSidePanel(panel);
+    if (!panel) return;
+    const workflowByPanel: Partial<Record<SidePanelKey, CivoraWorkflowStep>> = {
+      model: "Concept",
+      objects: "Concept",
+      generate: "Concept",
+      grading: "Grading",
+      drainage: "Drainage",
+      utilities: "Utilities",
+      roadway: "Concept",
+      landscape: "Concept",
+      analysis: "Review",
+      reports: "Deliverables",
+      quantities: "Deliverables",
+      deliverables: "Deliverables",
+      data: "Concept",
+      settings: "Concept",
+    };
+    const nextStep = workflowByPanel[panel];
+    if (nextStep) setActiveWorkflowStep(nextStep);
+  }, []);
 
   if (!effectiveUser) {
     return (
@@ -8937,10 +8973,12 @@ function PerformanceAIDashboardView({
       <div className="flex min-h-screen flex-col">
         <AppHeader
           userEmail={effectiveUser.email}
-          onOpenProjects={() => setActiveSidePanel("projects")}
-          onOpenSiteInputs={() => setActiveSidePanel("data")}
-          onOpenDocs={() => setActiveSidePanel("deliverables")}
-          onOpenChat={() => setActiveSidePanel("chat")}
+          onOpenProjects={() => handleOpenSidePanel("projects")}
+          onOpenSiteInputs={() => handleOpenSidePanel("data")}
+          onOpenDocs={() => handleOpenSidePanel("deliverables")}
+          onOpenChat={() => handleOpenSidePanel("chat")}
+          activeWorkflowStep={activeWorkflowStep}
+          onWorkflowStepChange={(step) => handleWorkflowStepChange(step as CivoraWorkflowStep)}
           onLogout={handleLogout}
         />
 
@@ -8948,7 +8986,7 @@ function PerformanceAIDashboardView({
           <aside className="hidden w-[252px] shrink-0 border-r border-slate-200 bg-white/95 px-4 py-5 shadow-[18px_0_40px_-36px_rgba(15,23,42,0.5)] backdrop-blur-xl lg:flex lg:flex-col">
             <button
               type="button"
-              onClick={() => setActiveSidePanel("projects")}
+              onClick={() => handleOpenSidePanel("projects")}
               className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-left transition hover:bg-white"
             >
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Project</p>
@@ -8963,7 +9001,7 @@ function PerformanceAIDashboardView({
             </button>
             <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
               {[
-                { label: "Model", items: ["Model", "Objects", "Generate"] },
+                { label: "Canvas", items: ["Canvas", "Objects", "Generate"] },
                 { label: "Disciplines", items: ["Grading", "Drainage", "Utilities", "Roadway", "Landscape"] },
                 { label: "Control", items: ["Layers", "Views", "Analysis"] },
                 { label: "Output", items: ["Reports", "Quantities", "Deliverables"] },
@@ -8977,7 +9015,7 @@ function PerformanceAIDashboardView({
                     {section.items.map((item) => {
                       const targetMap: Record<string, SidePanelKey> = {
                         Project: "projects",
-                        Model: "model",
+                        Canvas: "model",
                         Objects: "objects",
                         Generate: "generate",
                         Grading: "grading",
@@ -8995,7 +9033,7 @@ function PerformanceAIDashboardView({
                         Settings: "settings",
                       };
                       const iconMap: Record<string, typeof Gauge> = {
-                        Model: Gauge,
+                        Canvas: Gauge,
                         Objects: Box,
                         Generate: PlayCircle,
                         Grading: Mountain,
@@ -9015,7 +9053,7 @@ function PerformanceAIDashboardView({
                       const target = targetMap[item] ?? "model";
                       const isActive = activeSidePanel === target;
                       const status =
-                        item === "Model"
+                        item === "Canvas"
                           ? placedObjectCount > 0
                             ? "ok"
                             : "idle"
@@ -9080,7 +9118,7 @@ function PerformanceAIDashboardView({
                         <button
                           key={item}
                           type="button"
-                          onClick={() => setActiveSidePanel(target)}
+                          onClick={() => handleOpenSidePanel(target)}
                           className={`flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold transition ${
                             isActive
                               ? "bg-slate-950 text-white"
@@ -9127,7 +9165,7 @@ function PerformanceAIDashboardView({
                               : "bg-amber-400"
                         }`}
                       />
-                      {item.state === "complete" ? "Complete" : item.state === "blocked" ? "Blocked" : "Not configured"}
+                      {item.state === "complete" ? "Complete" : item.state === "blocked" ? "Blocked / Unsafe" : "Not configured / Not rendered"}
                     </span>
                   </div>
                 ))}
@@ -9626,7 +9664,7 @@ function PerformanceAIDashboardView({
                                       : "bg-amber-50 text-amber-700"
                                 }`}
                               >
-                                {item.state === "complete" ? "Complete" : item.state === "blocked" ? "Blocked" : "Not configured"}
+                                {item.state === "complete" ? "Complete" : item.state === "blocked" ? "Blocked / Unsafe" : "Not configured / Not rendered"}
                               </span>
                             </div>
                             <p className="mt-1 text-xs text-slate-500">{item.detail}</p>
@@ -9704,6 +9742,19 @@ function PerformanceAIDashboardView({
 
                 {activeSidePanel === "grading" ? (
                   <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        ["Terrain", hasTerrainSource ? "Ready" : "Missing"],
+                        ["Surface", hasGradingSurface ? "Rendered" : "Not rendered"],
+                        ["Status", siteTooLargeForGrading ? "Blocked / unsafe" : systemStatuses.grading === "fresh" ? "Complete" : "Not configured"],
+                        ["Source", useSurveyForGrading ? "Survey / terrain" : "Manual"],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-800">{value}</p>
+                        </div>
+                      ))}
+                    </div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Grading rules</p>
                       <label className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
@@ -9728,6 +9779,23 @@ function PerformanceAIDashboardView({
                           </label>
                         ))}
                       </div>
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Constructability controls</p>
+                        <div className="mt-2 space-y-2 text-sm font-semibold text-slate-700">
+                          <label className="flex items-center justify-between gap-3">
+                            <span>Drain away from pads</span>
+                            <input type="checkbox" checked readOnly className="h-4 w-4 accent-slate-950" />
+                          </label>
+                          <label className="flex items-center justify-between gap-3">
+                            <span>Respect ADA paths</span>
+                            <input type="checkbox" checked readOnly className="h-4 w-4 accent-slate-950" />
+                          </label>
+                          <label className="flex items-center justify-between gap-3">
+                            <span>Repair local low points</span>
+                            <input type="checkbox" checked={drainageAllowSlopeAdjust} onChange={(event) => setDrainageAllowSlopeAdjust(event.target.checked)} className="h-4 w-4 accent-slate-950" />
+                          </label>
+                        </div>
+                      </div>
                       <button
                         type="button"
                         onClick={() => handleGenerateSystem("grading")}
@@ -9742,8 +9810,28 @@ function PerformanceAIDashboardView({
 
                 {activeSidePanel === "drainage" ? (
                   <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        ["Basin", hasBasinPlaced ? "Placed" : "Missing"],
+                        ["Surface", hasTerrainSource ? "Ready" : "Missing"],
+                        ["Status", hasHardSystemBlock ? "Blocked / unsafe" : systemStatuses.drainage === "fresh" ? "Complete" : "Not configured"],
+                        ["Source", drainageSourceOverride === "user" ? "User" : "Civora"],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-800">{value}</p>
+                        </div>
+                      ))}
+                    </div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Drainage rules</p>
+                      <label className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+                        <span>Drainage source</span>
+                        <select value={drainageSourceOverride} onChange={(event) => setDrainageSourceOverride(event.target.value === "user" ? "user" : "civora")} className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700">
+                          <option value="civora">Civora</option>
+                          <option value="user">User</option>
+                        </select>
+                      </label>
                       <label className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
                         <span>Connect orphan inlets</span>
                         <input type="checkbox" checked={drainageConnectOrphans} onChange={(event) => setDrainageConnectOrphans(event.target.checked)} className="h-4 w-4 accent-slate-950" />
@@ -9762,6 +9850,15 @@ function PerformanceAIDashboardView({
                           className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm normal-case tracking-normal text-slate-700"
                         />
                       </label>
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Hydrology assumptions</p>
+                        <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-600">
+                          <span className="rounded-lg border border-slate-200 bg-white px-2 py-2">Low point detection</span>
+                          <span className="rounded-lg border border-slate-200 bg-white px-2 py-2">Flow path routing</span>
+                          <span className="rounded-lg border border-slate-200 bg-white px-2 py-2">Basin targeting</span>
+                          <span className="rounded-lg border border-slate-200 bg-white px-2 py-2">Overflow checks</span>
+                        </div>
+                      </div>
                       <button
                         type="button"
                         onClick={() => handleGenerateSystem("drainage")}
@@ -9776,6 +9873,19 @@ function PerformanceAIDashboardView({
 
                 {activeSidePanel === "utilities" ? (
                   <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        ["Status", hasHardSystemBlock ? "Blocked / unsafe" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured"],
+                        ["Storm", drainage ? "Enabled" : "Off"],
+                        ["Sanitary", utilities ? "Enabled" : "Off"],
+                        ["Water", utilities ? "Enabled" : "Off"],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-800">{value}</p>
+                        </div>
+                      ))}
+                    </div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Utility rules</p>
                       <label className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
@@ -9791,6 +9901,17 @@ function PerformanceAIDashboardView({
                           className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm normal-case tracking-normal text-slate-700"
                         />
                       </label>
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Coordination rules</p>
+                        <div className="mt-2 space-y-2 text-sm font-semibold text-slate-700">
+                          {["Maintain crossing clearance", "Prefer shared corridors", "Avoid building footprints", "Reroute around conflicts"].map((label) => (
+                            <label key={label} className="flex items-center justify-between gap-3">
+                              <span>{label}</span>
+                              <input type="checkbox" checked readOnly className="h-4 w-4 accent-slate-950" />
+                            </label>
+                          ))}
+                        </div>
+                      </div>
                       <button type="button" onClick={() => handleGenerateSystem("utilities")} className="mt-4 w-full rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800">
                         Generate utilities
                       </button>
@@ -9800,6 +9921,19 @@ function PerformanceAIDashboardView({
 
                 {activeSidePanel === "roadway" ? (
                   <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        ["Roads", systemStatuses.roads === "fresh" ? "Complete" : "Not configured"],
+                        ["Parking", systemStatuses.parking === "fresh" ? "Complete" : "Not configured"],
+                        ["Max grade", maxRoadGradePct || "Auto"],
+                        ["Angle", `${parkingAngle} deg`],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-800">{value}</p>
+                        </div>
+                      ))}
+                    </div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Roadway rules</p>
                       <label className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
@@ -9815,6 +9949,14 @@ function PerformanceAIDashboardView({
                           Aisle width
                           <input value={parkingAisleWidth} onChange={(event) => setParkingAisleWidth(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm normal-case tracking-normal text-slate-700" />
                         </label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          ADA spaces
+                          <input value={parkingAdaCount} onChange={(event) => setParkingAdaCount(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm normal-case tracking-normal text-slate-700" />
+                        </label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          Compact spaces
+                          <input value={parkingCompactCount} onChange={(event) => setParkingCompactCount(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm normal-case tracking-normal text-slate-700" />
+                        </label>
                       </div>
                       <div className="mt-3 grid grid-cols-2 gap-2">
                         <button type="button" onClick={() => handleGenerateSystem("roads")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Roads</button>
@@ -9826,6 +9968,15 @@ function PerformanceAIDashboardView({
 
                 {activeSidePanel === "landscape" ? (
                   <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Landscape controls</p>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600">
+                        <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">Open space</span>
+                        <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">Amenities</span>
+                        <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">Pedestrian paths</span>
+                        <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">Buffers</span>
+                      </div>
+                    </div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Landscape objects</p>
                       <div className="mt-3 grid grid-cols-2 gap-2">
@@ -10007,7 +10158,7 @@ function PerformanceAIDashboardView({
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <div className="flex items-center justify-between">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          Model Objects
+                          Canvas Objects
                         </p>
                         <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
                           {buildingPlacements.length}
@@ -10485,7 +10636,7 @@ function PerformanceAIDashboardView({
 
                 <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_14px_34px_-28px_rgba(15,23,42,0.5)]">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    QA / Model
+                    QA / Canvas
                   </p>
                   <div className="mt-4 flex items-center gap-4">
                     <div className="flex h-20 w-20 items-center justify-center rounded-full border-[7px] border-slate-200 bg-slate-50 text-lg font-semibold text-slate-900">
@@ -10520,7 +10671,7 @@ function PerformanceAIDashboardView({
                             : "border-amber-200 bg-amber-50 text-amber-700";
                       return (
                         <span key={system.key} className={`rounded-md border px-2 py-1 ${tone}`}>
-                          {system.label} · {system.state === "complete" ? "complete" : system.state === "blocked" ? "blocked" : "not configured"}
+                          {system.label} · {system.state === "complete" ? "complete" : system.state === "blocked" ? "blocked / unsafe" : "not configured / not rendered"}
                         </span>
                       );
                     })}

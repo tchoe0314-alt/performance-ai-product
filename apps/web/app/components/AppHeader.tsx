@@ -10,6 +10,8 @@ type AppHeaderProps = {
   onOpenSiteInputs: () => void;
   onOpenDocs: () => void;
   onOpenChat: () => void;
+  activeWorkflowStep?: string;
+  onWorkflowStepChange?: (step: string) => void;
   onLogout: () => void;
 };
 
@@ -19,6 +21,8 @@ export default function AppHeader({
   onOpenSiteInputs,
   onOpenDocs,
   onOpenChat,
+  activeWorkflowStep = "Concept",
+  onWorkflowStepChange,
   onLogout,
 }: AppHeaderProps) {
   return (
@@ -50,18 +54,17 @@ export default function AppHeader({
         </div>
 
         <nav className="hidden h-full flex-1 items-center justify-center gap-1 lg:flex">
-          {workflowSteps.map((step, index) => {
-            const state = index === 0 ? "complete" : index === 1 ? "active" : "idle";
+          {workflowSteps.map((step) => {
+            const isActive = step === activeWorkflowStep;
             return (
               <button
                 key={step}
                 type="button"
+                onClick={() => onWorkflowStepChange?.(step)}
                 className={`flex h-full items-center border-b-2 px-4 text-sm font-semibold transition ${
-                  state === "active"
+                  isActive
                     ? "border-slate-950 text-slate-950"
-                    : state === "complete"
-                      ? "border-transparent text-slate-700 hover:text-slate-950"
-                      : "border-transparent text-slate-500 hover:text-slate-800"
+                    : "border-transparent text-slate-500 hover:text-slate-950"
                 }`}
               >
                 <span>
