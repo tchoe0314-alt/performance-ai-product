@@ -177,7 +177,9 @@ def _benchmark_metric_value(metric: str, plan: Dict[str, Any]) -> Any:
         return len(safe_list(readiness.get("production_blockers")))
     if signal == "lot_area_sf":
         lot = safe_dict(meta.get("lot") or safe_dict(meta.get("site")).get("lot") or meta.get("site_boundary"))
-        area = safe_float(lot.get("area_sf") or lot.get("area"), 0.0)
+        area = safe_float(totals.get("lot_area_sf"), 0.0)
+        if area <= 0.0:
+            area = safe_float(lot.get("area_sf") or lot.get("area"), 0.0)
         if area <= 0.0:
             area = safe_float(lot.get("w") or lot.get("width"), 0.0) * safe_float(lot.get("h") or lot.get("height"), 0.0)
         return area

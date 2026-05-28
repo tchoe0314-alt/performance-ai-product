@@ -97,6 +97,22 @@ class GoldenRunnerTests(unittest.TestCase):
         self.assertIn("lot_area_sf", result["failed_benchmark_expectations"])
         self.assertIn("storm_segment_count", result["failed_benchmark_expectations"])
 
+    def test_real_small_commercial_golden_scenario_passes_harness(self) -> None:
+        result = run_golden_scenario("small_commercial_pad")
+
+        self.assertTrue(result["success"], result)
+        self.assertFalse(result["missing_canonical_signals"])
+        self.assertFalse(result["failed_benchmark_expectations"])
+        self.assertFalse(result["readiness_summary"]["civil_production_ready"])
+
+    def test_real_incomplete_golden_scenario_stays_truthfully_blocked(self) -> None:
+        result = run_golden_scenario("incomplete_bad_input_case")
+
+        self.assertTrue(result["success"], result)
+        self.assertFalse(result["readiness_summary"]["civil_success"])
+        self.assertGreater(result["readiness_summary"]["critical_blocker_count"], 0)
+        self.assertFalse(result["readiness_summary"]["civil_production_ready"])
+
 
 if __name__ == "__main__":
     unittest.main()
