@@ -8,6 +8,7 @@ from backend.planning.standards_discovery import (
 import planner
 from core.civil_design import (
     civil_design_readiness,
+    construction_readiness,
     path_clearance,
     path_length,
     sample_path,
@@ -88,6 +89,95 @@ def _complete_meta() -> dict:
             "assumption_resolutions": [],
         },
     }
+
+
+def _production_ready_meta() -> dict:
+    meta = _complete_meta()
+    packet = build_standards_review_packet(
+        extracted_rules=[
+            {
+                "rule_id": "city_storm_capacity",
+                "discipline": "storm",
+                "topic": "Pipe capacity ratio",
+                "candidate_value": "Flag storm pipe segments above 95 percent capacity ratio.",
+                "source_url": "https://city.example.gov/drainage-manual",
+                "source_section": "Storm Drainage 5.2",
+            },
+            {
+                "rule_id": "city_utility_cover",
+                "discipline": "utilities",
+                "topic": "Minimum utility cover",
+                "candidate_value": "Minimum utility cover is 3 feet.",
+                "source_url": "https://city.example.gov/utility-standards",
+                "source_section": "Utilities 2.1",
+            },
+        ]
+    )
+    accepted = accept_standards_rules(packet, ["city_storm_capacity", "city_utility_cover"])
+    meta["standards_acceptance"] = accepted
+    meta["design_standards"] = standards_pack_from_acceptance(accepted)
+    meta["jurisdiction_standards"] = {"agency": "Test City", "source_url": "https://city.example.gov/engineering-standards"}
+    meta["company_standards"] = {"cad_layer_standard": "CIVORA_TEST", "title_block": "CIVORA"}
+    meta["survey"] = {
+        "point_count": 18,
+        "source": "survey_points",
+        "benchmark": "BM-1",
+        "datum": "NAVD88",
+        "control_verified": True,
+    }
+    meta["gis_layers"] = {
+        "parcels": [{}],
+        "easements": [{}],
+        "row": [{}],
+        "floodplain": [{}],
+        "wetlands": [{}],
+        "existing_utilities": [{}],
+    }
+    meta["coordinate_system"] = {"epsg": "EPSG:2276", "units": "ft", "source": "survey_control", "production_usable": True}
+    meta["existing_conditions_summary"] = {
+        "production_ready": True,
+        "survey_ready": True,
+        "gis_ready": True,
+        "coordinate_system_ready": True,
+    }
+    meta["grading"]["source_quality"] = "survey"
+    meta["grading"]["road_crown_controls"] = [{"road": "A", "cross_slope": 0.02}]
+    meta["grading"]["curb_gutter_controls"] = [{"road": "A", "gutter_slope": 0.01}]
+    meta["grading"]["ada_path_checks"] = [{"path": "ADA-1", "valid": True}]
+    meta["grading"]["pad_tie_ins"] = [{"building": "B-1", "valid": True}]
+    meta["grading"]["contours"] = [{"elev": 100.0, "points": [[0.0, 0.0], [10.0, 0.0]]}]
+    meta["grading"]["contour_interval_ft"] = 2.0
+    meta["drainage"]["detention_routing"] = [{"basin": "BASIN-1", "valid": True}]
+    meta["storm_pipes"]["hgl_profile"] = [{"station": 0.0, "hgl_ft": 98.0}]
+    meta["storm_pipes"]["egl_profile"] = [{"station": 0.0, "egl_ft": 98.2}]
+    meta["storm_pipes"]["tailwater_elev_ft"] = 96.0
+    meta["storm_pipes"]["inlet_capacity_checks"] = [{"inlet": "INLET-1", "spread_ft": 4.0, "bypass_cfs": 0.0}]
+    meta["storm_pipes"]["backwater_validation"] = {"valid": True, "surcharged_segments": []}
+    meta["depth_validation"] = {
+        "stormwater": {"production_ready": True, "blockers": []},
+        "water": {"production_ready": True, "blockers": []},
+        "roadway_corridor": {"production_ready": True, "blockers": []},
+    }
+    meta["truth_audit"] = {"success": True}
+    meta["manual_validation"] = {"success": True, "failed": False, "failures": []}
+    meta["reactive_update_report"] = {"export_blocked": False, "post_rerun_stale_outputs": []}
+    meta["export_audit"] = {
+        "ready": True,
+        "production_export_ready": True,
+        "export_blocked": False,
+        "canonical_id_traceability": {"ready": True},
+    }
+    meta["sheet_registry"] = {"sheets": [{"id": "C-100", "title": "Civil Site Plan"}]}
+    meta["cad_interop"] = {"source": "test", "civil3d": True, "landxml": True, "pipe_network_export": True}
+    meta["optimization_summary"] = {
+        "source": "test",
+        "overall_score": 92.0,
+        "component_scores": {"grading": 90.0, "drainage": 93.0},
+        "alternatives": [{"name": "A"}, {"name": "B"}],
+        "comparison_summary": {"recommended_option_name": "A", "runner_up_option_name": "B"},
+        "recommendations": ["Use option A."],
+    }
+    return meta
 
 
 class CivilDesignReadinessTests(unittest.TestCase):
@@ -268,54 +358,7 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertIn(("standards", "rule_metadata"), fields)
 
     def test_production_depth_gates_clear_when_real_design_evidence_exists(self) -> None:
-        meta = _complete_meta()
-        packet = build_standards_review_packet(
-            extracted_rules=[
-                {
-                    "rule_id": "city_storm_capacity",
-                    "discipline": "storm",
-                    "topic": "Pipe capacity ratio",
-                    "candidate_value": "Flag storm pipe segments above 95 percent capacity ratio.",
-                    "source_url": "https://city.example.gov/drainage-manual",
-                    "source_section": "Storm Drainage 5.2",
-                }
-            ]
-        )
-        accepted = accept_standards_rules(packet, ["city_storm_capacity"])
-        meta["standards_acceptance"] = accepted
-        meta["design_standards"] = standards_pack_from_acceptance(accepted)
-        meta["jurisdiction_standards"] = {"agency": "Test City"}
-        meta["company_standards"] = {"cad_layer_standard": "CIVORA_TEST"}
-        meta["survey"] = {"point_count": 12, "source": "survey_points"}
-        meta["gis_layers"] = {"parcels": [{}], "easements": [{}], "row": [{}], "existing_utilities": [{}]}
-        meta["coordinate_system"] = {"epsg": "EPSG:2276", "units": "ft", "source": "test"}
-        meta["grading"]["source_quality"] = "survey"
-        meta["grading"]["road_crown_controls"] = [{"road": "A", "cross_slope": 0.02}]
-        meta["grading"]["curb_gutter_controls"] = [{"road": "A", "gutter_slope": 0.01}]
-        meta["grading"]["ada_path_checks"] = [{"path": "ADA-1", "valid": True}]
-        meta["grading"]["pad_tie_ins"] = [{"building": "B-1", "valid": True}]
-        meta["grading"]["contours"] = [{"elev": 100.0, "points": [[0.0, 0.0], [10.0, 0.0]]}]
-        meta["grading"]["contour_interval_ft"] = 2.0
-        meta["drainage"]["detention_routing"] = [{"basin": "BASIN-1", "valid": True}]
-        meta["storm_pipes"]["hgl_profile"] = [{"station": 0.0, "hgl_ft": 98.0}]
-        meta["storm_pipes"]["egl_profile"] = [{"station": 0.0, "egl_ft": 98.2}]
-        meta["storm_pipes"]["tailwater_elev_ft"] = 96.0
-        meta["storm_pipes"]["inlet_capacity_checks"] = [{"inlet": "INLET-1", "spread_ft": 4.0, "bypass_cfs": 0.0}]
-        meta["export_audit"] = {
-            "ready": True,
-            "production_export_ready": True,
-            "canonical_id_traceability": {"ready": True},
-        }
-        meta["sheet_registry"] = {"sheets": [{"id": "C-100"}]}
-        meta["cad_interop"] = {"source": "test", "civil3d": True, "landxml": True, "pipe_network_export": True}
-        meta["optimization_summary"] = {
-            "source": "test",
-            "overall_score": 92.0,
-            "component_scores": {"grading": 90.0, "drainage": 93.0},
-            "alternatives": [{"name": "A"}, {"name": "B"}],
-            "comparison_summary": {"recommended_option_name": "A", "runner_up_option_name": "B"},
-            "recommendations": ["Use option A."],
-        }
+        meta = _production_ready_meta()
 
         readiness = civil_design_readiness({"meta": meta})
 
@@ -323,6 +366,33 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertTrue(readiness["production_ready"])
         self.assertEqual(readiness["real_world_readiness"], "production_review_candidate")
         self.assertFalse(readiness["production_blockers"])
+
+    def test_construction_readiness_blocks_unsealed_production_candidate(self) -> None:
+        meta = _production_ready_meta()
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertEqual(readiness["status"], "not_construction_ready")
+        self.assertIn(("professional_review", "sealed_release"), blockers)
+        self.assertIn("Civora does not stamp drawings", readiness["truth_label"])
+
+    def test_construction_readiness_can_clear_with_verified_professional_release(self) -> None:
+        meta = _production_ready_meta()
+        meta["professional_review"] = {
+            "status": "released_for_construction",
+            "sealed": True,
+            "engineer_name": "Alex Morgan",
+            "license_number": "TX-123456",
+            "review_date": "2026-05-28",
+        }
+
+        readiness = construction_readiness({"meta": meta})
+
+        self.assertTrue(readiness["ready"])
+        self.assertEqual(readiness["status"], "construction_ready")
+        self.assertFalse(readiness["blockers"])
+        self.assertTrue(readiness["evidence"]["professional_release"])
 
     def test_production_depth_gates_name_every_major_real_world_gap(self) -> None:
         readiness = civil_design_readiness({"meta": _complete_meta()})
@@ -407,11 +477,14 @@ class CivilDesignReadinessTests(unittest.TestCase):
             }
         )
         readiness = plan["meta"].get("civil_design_readiness")
+        construction = plan["meta"].get("construction_readiness")
 
         self.assertIsInstance(readiness, dict)
         self.assertIn("systems", readiness)
         self.assertIn("missing_requirements", readiness)
         self.assertIn(readiness.get("status"), {"ready", "needs_engineering_review", "blocked"})
+        self.assertIsInstance(construction, dict)
+        self.assertEqual(construction.get("status"), "not_construction_ready")
 
 
 if __name__ == "__main__":

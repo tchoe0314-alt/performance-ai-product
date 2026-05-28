@@ -512,6 +512,16 @@ def _production_gap(area: str, field: str, why: str, action: str) -> Dict[str, A
     }
 
 
+def _construction_gap(area: str, field: str, why: str, action: str, *, severity: str = "blocker") -> Dict[str, Any]:
+    return {
+        "area": area,
+        "field": field,
+        "severity": severity,
+        "why_needed": why,
+        "suggested_next_action": action,
+    }
+
+
 def _standards_official_url(url: str) -> bool:
     lowered = _safe_str(url).lower()
     return (
@@ -1399,10 +1409,232 @@ def civil_design_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
     }
 
 
+def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesignStandards = DEFAULT_STANDARDS) -> Dict[str, Any]:
+    meta = _safe_dict(plan_or_meta.get("meta")) if "meta" in plan_or_meta else _safe_dict(plan_or_meta)
+    civil = _safe_dict(meta.get("civil_design_readiness"))
+    if not civil:
+        civil = civil_design_readiness(plan_or_meta, standards=standards)
+
+    blockers: List[Dict[str, Any]] = []
+    warnings: List[Dict[str, Any]] = []
+
+    if civil.get("production_ready") is not True:
+        blockers.append(
+            _construction_gap(
+                "civil_design",
+                "production_ready",
+                "Construction release requires the civil model to pass every production readiness gate first.",
+                "Resolve civil_design_readiness.production_blockers before construction release.",
+            )
+        )
+    for gap in _safe_list(civil.get("production_blockers")):
+        rec = _safe_dict(gap)
+        if rec:
+            blockers.append(
+                _construction_gap(
+                    _safe_str(rec.get("area"), "production"),
+                    _safe_str(rec.get("field"), "production_gap"),
+                    _safe_str(rec.get("why_needed"), _safe_str(rec.get("reason"), "Production readiness gap remains.")),
+                    _safe_str(rec.get("suggested_next_action"), "Resolve this production readiness gap."),
+                )
+            )
+
+    existing = _safe_dict(meta.get("existing_conditions_summary"))
+    if existing and existing.get("production_ready") is not True:
+        blockers.append(
+            _construction_gap(
+                "existing_conditions",
+                "verified_existing_conditions",
+                "Construction documents require verified survey, GIS constraints, and coordinate control.",
+                "Import and verify survey, GIS constraints, existing utilities, and projected coordinate control.",
+            )
+        )
+    survey = _safe_dict(meta.get("survey"))
+    if not survey or not (_safe_int(survey.get("point_count"), 0) > 0 and _safe_str(survey.get("source"))):
+        blockers.append(
+            _construction_gap(
+                "existing_conditions",
+                "survey",
+                "Construction release requires a traceable survey/control source, not inferred geometry.",
+                "Attach survey points/surface, benchmark, datum, and source metadata.",
+            )
+        )
+    coordinate_system = _safe_dict(meta.get("coordinate_system"))
+    if not coordinate_system or _safe_str(coordinate_system.get("units")).lower() in {"degrees", "degree"}:
+        blockers.append(
+            _construction_gap(
+                "existing_conditions",
+                "coordinate_system",
+                "Construction release requires a projected coordinate system with usable site units.",
+                "Set a projected CRS, units, datum/source, and control evidence.",
+            )
+        )
+
+    standards_pack = _safe_dict(meta.get("design_standards"))
+    if standards_pack.get("production_usable") is not True:
+        blockers.append(
+            _construction_gap(
+                "standards",
+                "accepted_official_rules",
+                "Construction release needs accepted rules from official jurisdiction/company standards.",
+                "Attach accepted standards rules with official source URLs and reviewer acceptance.",
+            )
+        )
+    if not _truthy_mapping(meta.get("jurisdiction_standards")):
+        blockers.append(
+            _construction_gap(
+                "standards",
+                "jurisdiction_standards",
+                "Construction release must identify the governing jurisdiction standards.",
+                "Attach the city/county/DOT/utility standards pack used for review.",
+            )
+        )
+    if not _truthy_mapping(meta.get("company_standards")):
+        warnings.append(
+            _construction_gap(
+                "standards",
+                "company_standards",
+                "Company CAD/QA standards are not attached.",
+                "Attach company layer, sheet, title block, and QA standards before final issue.",
+                severity="warning",
+            )
+        )
+
+    depth = _safe_dict(meta.get("depth_validation"))
+    for key in ("stormwater", "water", "roadway_corridor"):
+        result = _safe_dict(depth.get(key))
+        if not result or result.get("production_ready") is not True:
+            blockers.append(
+                _construction_gap(
+                    "depth_validation",
+                    key,
+                    f"{key.replace('_', ' ').title()} depth validation has not cleared production checks.",
+                    f"Resolve {key} depth validation blockers and rerun readiness.",
+                )
+            )
+
+    truth = _safe_dict(meta.get("truth_audit"))
+    if truth and truth.get("success") is not True:
+        blockers.append(
+            _construction_gap(
+                "qa",
+                "truth_audit",
+                "Construction release cannot proceed with failing canonical truth audit checks.",
+                "Resolve truth_audit failing checks and rerun finalization.",
+            )
+        )
+    manual = _safe_dict(meta.get("manual_validation"))
+    if manual and manual.get("success") is not True:
+        blockers.append(
+            _construction_gap(
+                "qa",
+                "manual_validation",
+                "Construction release cannot proceed with failed manual validation gates.",
+                "Resolve manual validation failures before release.",
+            )
+        )
+    reactive = _safe_dict(meta.get("reactive_update_report"))
+    if reactive and (reactive.get("export_blocked") is True or _safe_list(reactive.get("post_rerun_stale_outputs"))):
+        blockers.append(
+            _construction_gap(
+                "reactive_model",
+                "stale_outputs",
+                "Construction release cannot include stale downstream outputs.",
+                "Complete dependency-aware reruns and regenerate exports from the final canonical model.",
+            )
+        )
+
+    export = _safe_dict(meta.get("export_audit"))
+    if not export or export.get("production_export_ready") is not True or export.get("export_blocked") is True:
+        blockers.append(
+            _construction_gap(
+                "deliverables",
+                "export_audit",
+                "Construction release requires current export audit approval tied to canonical IDs.",
+                "Regenerate export audit and resolve stale/orphaned export blockers.",
+            )
+        )
+    if not (_truthy_mapping(meta.get("sheet_registry")) or bool(_safe_list(meta.get("sheet_registry")))):
+        blockers.append(
+            _construction_gap(
+                "deliverables",
+                "sheet_registry",
+                "Construction release requires a sheet registry tied to the final model.",
+                "Generate/finalize sheet registry and title block metadata.",
+            )
+        )
+
+    wall = _safe_dict(meta.get("retaining_wall_summary"))
+    if wall and wall.get("review_required") is True:
+        blockers.append(
+            _construction_gap(
+                "structures",
+                "retaining_wall_review",
+                "Retaining wall output is coordination guidance until structural design review is complete.",
+                "Attach sealed wall calculations or remove construction-ready wall claims.",
+            )
+        )
+
+    professional = _safe_dict(meta.get("professional_review") or meta.get("engineer_review"))
+    professional_status = _safe_str(professional.get("status")).lower()
+    professionally_released = professional.get("sealed") is True or professional_status in {
+        "approved",
+        "sealed",
+        "released_for_construction",
+        "issued_for_construction",
+    }
+    if not professionally_released:
+        blockers.append(
+            _construction_gap(
+                "professional_review",
+                "sealed_release",
+                "Civora can prepare and audit engineering packages, but construction release requires licensed professional review.",
+                "Attach reviewer, license, review date, and sealed/released-for-construction status.",
+            )
+        )
+    else:
+        for field in ("engineer_name", "license_number"):
+            if not _safe_str(professional.get(field)):
+                blockers.append(
+                    _construction_gap(
+                        "professional_review",
+                        field,
+                        "Professional release evidence is missing reviewer identity/license metadata.",
+                        "Attach engineer name and license number to professional_review.",
+                    )
+                )
+
+    ready = not blockers
+    blocker_penalty = min(len(blockers) * 8.0, 85.0)
+    warning_penalty = min(len(warnings) * 2.0, 10.0)
+    civil_score = _safe_float(civil.get("score"), 0.0)
+    score = round(max(0.0, min(100.0, civil_score - blocker_penalty - warning_penalty)), 1)
+    return {
+        "ready": ready,
+        "status": "construction_ready" if ready else "not_construction_ready",
+        "score": 100.0 if ready and score < 95.0 else score,
+        "blockers": blockers,
+        "warnings": warnings,
+        "evidence": {
+            "civil_production_ready": civil.get("production_ready") is True,
+            "existing_conditions_production_ready": existing.get("production_ready") is True if existing else False,
+            "standards_production_usable": standards_pack.get("production_usable") is True,
+            "export_production_ready": export.get("production_export_ready") is True if export else False,
+            "professional_release": professionally_released,
+        },
+        "truth_label": (
+            "Construction readiness requires verified existing conditions, accepted official standards, current canonical exports, "
+            "and licensed professional release. Civora does not stamp drawings."
+        ),
+        "next_actions": [item.get("suggested_next_action") for item in blockers[:10] if item.get("suggested_next_action")],
+    }
+
+
 __all__ = [
     "CivilDesignStandards",
     "DEFAULT_STANDARDS",
     "civil_design_readiness",
+    "construction_readiness",
     "standards_from_meta",
     "check_coordination_truth",
     "check_cad_interop_truth",

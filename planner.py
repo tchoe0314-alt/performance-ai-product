@@ -81,7 +81,7 @@ from core.geometry_core import (
     ZoneType,
     rect_zone,
 )
-from core.civil_design import civil_design_readiness, standards_from_meta
+from core.civil_design import civil_design_readiness, construction_readiness, standards_from_meta
 
 from core.project_manager import (
     ConflictRecord,
@@ -10330,6 +10330,7 @@ def finalize_plan(plan: Dict[str, Any], *, parsed: Dict[str, Any], route: Routin
         "roadway_corridor": _validate_roadway_corridor_depth(final),
     }
     final["meta"]["civil_design_readiness"] = civil_design_readiness(final)
+    final["meta"]["construction_readiness"] = construction_readiness(final)
     final["meta"]["engine_readiness"] = _evaluate_engine_readiness(final)
     return final
 
