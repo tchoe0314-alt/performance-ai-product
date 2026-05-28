@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict, Iterable, List, Set
 
 from .common import safe_dict, safe_list, safe_str
 from .engine_contracts import downstream_closure
-from .runtime import PLANNER_STAGE_ORDER
+from .runtime import PLANNER_STAGE_DEPENDENCIES, PLANNER_STAGE_ORDER
 
 
 ENGINE_TO_STAGE = {
@@ -45,6 +45,24 @@ def _target_stage(target: str) -> str:
     return ENGINE_TO_STAGE.get(target, "")
 
 
+def _downstream_stage_closure(stage_name: str) -> Set[str]:
+    if stage_name not in PLANNER_STAGE_ORDER:
+        return set()
+    reverse: Dict[str, Set[str]] = {stage: set() for stage in PLANNER_STAGE_ORDER}
+    for stage, deps in PLANNER_STAGE_DEPENDENCIES.items():
+        for dep in deps:
+            reverse.setdefault(dep, set()).add(stage)
+    seen: Set[str] = set()
+    pending = sorted(reverse.get(stage_name, set()), key=_stage_index)
+    while pending:
+        stage = pending.pop(0)
+        if stage in seen:
+            continue
+        seen.add(stage)
+        pending.extend(sorted(reverse.get(stage, set()) - seen, key=_stage_index))
+    return seen
+
+
 def build_reactive_update_report(
     *,
     changed_engine_ids: Iterable[str] = (),
@@ -58,6 +76,8 @@ def build_reactive_update_report(
     impacted_stages: Set[str] = set(changed_stage_set)
     for engine_id in changed_engine_set:
         impacted_engines.update(downstream_closure(engine_id))
+    for stage_name in changed_stage_set:
+        impacted_stages.update(_downstream_stage_closure(stage_name))
     for engine_id in changed_engine_set | impacted_engines:
         stage = _target_stage(engine_id)
         if stage:

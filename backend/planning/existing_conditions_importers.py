@@ -10,7 +10,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from engines.surface_engine import GridSurface, SurfaceEngine, SurveyPoint
 
-from .common import safe_dict, safe_float, safe_int, safe_list, safe_str
+from .common import dedupe_keep_order, safe_dict, safe_float, safe_int, safe_list, safe_str
 from .existing_conditions import REQUIRED_GIS_LAYERS
 from .landxml_io import import_landxml
 
@@ -52,6 +52,23 @@ def _bounds(points: List[Dict[str, Any]]) -> Optional[Dict[str, float]]:
     xs = [safe_float(point.get("x"), 0.0) for point in points]
     ys = [safe_float(point.get("y"), 0.0) for point in points]
     return {"min_x": min(xs), "min_y": min(ys), "max_x": max(xs), "max_y": max(ys)}
+
+
+def _coordinate_key(value: Dict[str, Any]) -> str:
+    rec = safe_dict(value)
+    epsg = safe_str(rec.get("epsg") or rec.get("EPSG"))
+    name = safe_str(rec.get("name") or rec.get("crs"))
+    units = safe_str(rec.get("units"))
+    return "|".join(part.lower() for part in (epsg, name, units) if part)
+
+
+def _coordinate_from_import(rec: Dict[str, Any]) -> Dict[str, Any]:
+    coordinate = safe_dict(rec.get("coordinate_system"))
+    if coordinate:
+        return coordinate
+    surface = rec.get("surface")
+    profile = safe_dict(getattr(surface, "_inferred_profile", {})) if surface is not None else {}
+    return safe_dict(profile.get("coordinate_system"))
 
 
 def import_survey_csv(path: Path, *, coordinate_system: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -547,7 +564,7 @@ def import_geospatial_vector_file(path: Path, *, layer_hint: str = "", coordinat
         "layers": layers,
         "layer_counts": {layer: len(items) for layer, items in layers.items()},
         "unknown_feature_count": unknown,
-        "coordinate_system": safe_dict(coordinate_system) or {"name": crs_text, "source": "vector_crs"} if crs_text else safe_dict(coordinate_system),
+        "coordinate_system": safe_dict(coordinate_system) or ({"name": crs_text, "source": "vector_crs"} if crs_text else {}),
         "warnings": warnings,
     }
 
@@ -617,7 +634,7 @@ def import_geotiff_surface(path: Path, *, coordinate_system: Optional[Dict[str, 
             "source_quality": "dem",
             "source_detail": "geotiff_import",
             "source_file": str(path),
-            "coordinate_system": safe_dict(coordinate_system) or {"name": crs_text, "source": "geotiff_crs"} if crs_text else safe_dict(coordinate_system),
+            "coordinate_system": safe_dict(coordinate_system) or ({"name": crs_text, "source": "geotiff_crs"} if crs_text else {}),
             "downsample_factor": factor,
         },
     )
@@ -631,7 +648,7 @@ def import_geotiff_surface(path: Path, *, coordinate_system: Optional[Dict[str, 
         "ncols": surface.ncols,
         "nrows": surface.nrows,
         "cell_size": surface.cell_size,
-        "coordinate_system": safe_dict(coordinate_system) or {"name": crs_text, "source": "geotiff_crs"} if crs_text else safe_dict(coordinate_system),
+        "coordinate_system": safe_dict(coordinate_system) or ({"name": crs_text, "source": "geotiff_crs"} if crs_text else {}),
         "warnings": warnings,
     }
 
@@ -696,6 +713,7 @@ def merge_imported_existing_conditions(*imports: Dict[str, Any]) -> Dict[str, An
     surfaces: List[Dict[str, Any]] = []
     warnings: List[str] = []
     coordinate_system: Dict[str, Any] = {}
+    coordinate_systems: List[Dict[str, Any]] = []
     sources: List[Dict[str, Any]] = []
     for item in imports:
         rec = safe_dict(item)
@@ -703,8 +721,11 @@ def merge_imported_existing_conditions(*imports: Dict[str, Any]) -> Dict[str, An
             continue
         sources.append({"source": safe_str(rec.get("source")), "source_type": safe_str(rec.get("source_type")), "success": bool(rec.get("success"))})
         warnings.extend(safe_list(rec.get("warnings")))
+        rec_coordinate = _coordinate_from_import(rec)
+        if rec_coordinate:
+            coordinate_systems.append(rec_coordinate)
         if not coordinate_system:
-            coordinate_system = safe_dict(rec.get("coordinate_system"))
+            coordinate_system = rec_coordinate
         if rec.get("source_type") in {"survey_csv", "las_point_cloud", "dxf_existing_conditions"}:
             survey_points.extend(safe_list(rec.get("points")))
         if rec.get("source_type") == "dxf_existing_conditions":
@@ -715,7 +736,7 @@ def merge_imported_existing_conditions(*imports: Dict[str, Any]) -> Dict[str, An
             for layer, features in safe_dict(rec.get("layers")).items():
                 if layer in gis_layers:
                     gis_layers[layer].extend(safe_list(features))
-    return {
+    merged = {
         "success": any(source["success"] for source in sources),
         "source_type": "merged_existing_conditions",
         "sources": sources,
@@ -729,8 +750,96 @@ def merge_imported_existing_conditions(*imports: Dict[str, Any]) -> Dict[str, An
         "gis_layers": gis_layers,
         "existing_conditions": gis_layers,
         "coordinate_system": coordinate_system,
+        "coordinate_systems": coordinate_systems,
         "surfaces": surfaces,
         "warnings": warnings,
+    }
+    merged["import_validation"] = validate_imported_existing_conditions_package(merged)
+    return merged
+
+
+def validate_imported_existing_conditions_package(
+    merged: Dict[str, Any],
+    *,
+    require_all_gis_layers: bool = True,
+    require_surface: bool = True,
+) -> Dict[str, Any]:
+    """Validate whether imported existing-condition evidence is safe to use.
+
+    This is intentionally stricter than basic import success. A file can parse
+    successfully but still be unsafe for production use when CRS, survey
+    control, surfaces, or required constraint layers are missing.
+    """
+
+    rec = safe_dict(merged)
+    blockers: List[Dict[str, Any]] = []
+    warnings: List[str] = [safe_str(item) for item in safe_list(rec.get("warnings")) if safe_str(item)]
+    sources = [safe_dict(item) for item in safe_list(rec.get("sources"))]
+    failed_sources = [source for source in sources if source and not bool(source.get("success"))]
+    if failed_sources:
+        blockers.append(
+            {
+                "field": "sources",
+                "reason": "One or more existing-condition imports failed.",
+                "sources": failed_sources,
+            }
+        )
+
+    coordinate = safe_dict(rec.get("coordinate_system"))
+    coordinate_systems = [safe_dict(item) for item in safe_list(rec.get("coordinate_systems")) if safe_dict(item)]
+    coordinate_keys = sorted({key for key in (_coordinate_key(item) for item in coordinate_systems) if key})
+    if not coordinate and not coordinate_keys:
+        blockers.append({"field": "coordinate_system", "reason": "No CRS/EPSG/coordinate system was confirmed."})
+    elif len(coordinate_keys) > 1:
+        blockers.append(
+            {
+                "field": "coordinate_system",
+                "reason": "Imported sources use conflicting coordinate systems.",
+                "coordinate_systems": coordinate_systems,
+            }
+        )
+
+    survey = safe_dict(rec.get("survey"))
+    point_count = safe_int(survey.get("point_count"), len(safe_list(survey.get("points"))))
+    breakline_count = safe_int(survey.get("breakline_count"), len(safe_list(survey.get("breaklines"))))
+    surface_count = len(safe_list(rec.get("surfaces")))
+    if require_surface and point_count < 3 and surface_count <= 0:
+        blockers.append(
+            {
+                "field": "survey_surface",
+                "reason": "No usable survey surface, DEM/LiDAR surface, or at least 3 survey points were imported.",
+            }
+        )
+    elif point_count >= 3 and breakline_count <= 0:
+        warnings.append("Survey points are present, but no breaklines were imported.")
+
+    gis_layers = safe_dict(rec.get("gis_layers") or rec.get("existing_conditions"))
+    layer_counts = {layer: len(safe_list(gis_layers.get(layer))) for layer in REQUIRED_GIS_LAYERS}
+    present_layers = [layer for layer, count in layer_counts.items() if count > 0]
+    if not present_layers:
+        blockers.append({"field": "gis_layers", "reason": "No GIS/site constraint layers were imported."})
+    elif require_all_gis_layers:
+        missing_layers = [layer for layer in REQUIRED_GIS_LAYERS if layer_counts.get(layer, 0) <= 0]
+        if missing_layers:
+            blockers.append(
+                {
+                    "field": "gis_layers",
+                    "reason": "Required existing-condition GIS layers are missing.",
+                    "missing_layers": missing_layers,
+                }
+            )
+
+    return {
+        "success": not blockers,
+        "production_usable": not blockers,
+        "blockers": blockers,
+        "warnings": dedupe_keep_order(warnings),
+        "source_count": len(sources),
+        "surface_count": surface_count,
+        "survey_point_count": point_count,
+        "breakline_count": breakline_count,
+        "layer_counts": layer_counts,
+        "truth_label": "Successful import is not production approval; CRS, surface evidence, and required GIS layers must validate first.",
     }
 
 
@@ -746,4 +855,5 @@ __all__ = [
     "import_survey_csv",
     "merge_imported_existing_conditions",
     "surface_from_survey_import",
+    "validate_imported_existing_conditions_package",
 ]

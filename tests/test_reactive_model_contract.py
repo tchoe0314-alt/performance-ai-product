@@ -20,6 +20,15 @@ class ReactiveModelContractTests(unittest.TestCase):
         self.assertEqual(report["stale_outputs"], ["sheets", "storm_pipes"])
         self.assertTrue(report["dirty_reasons"])
 
+    def test_changed_stage_marks_declared_downstream_stages(self) -> None:
+        report = build_reactive_update_report(changed_stages=["grading"])
+
+        self.assertIn("grading", report["impacted_stages"])
+        self.assertIn("drainage", report["impacted_stages"])
+        self.assertIn("storm_pipes", report["impacted_stages"])
+        self.assertIn("qa", report["impacted_stages"])
+        self.assertNotIn("layout", report["impacted_stages"])
+
     def test_execute_reactive_rerun_performs_safe_full_rerun_with_truth_label(self) -> None:
         def fake_build(payload):
             return {"meta": {"civil_design_readiness": {"production_ready": False}, "payload": payload}}

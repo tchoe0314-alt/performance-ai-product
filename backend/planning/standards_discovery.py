@@ -253,7 +253,7 @@ def accept_standards_rules(review_packet: Dict[str, Any], accepted_rule_ids: Ite
 
 def standards_pack_from_acceptance(acceptance: Dict[str, Any]) -> Dict[str, Any]:
     accepted_rules = [safe_dict(item) for item in safe_list(acceptance.get("accepted_rules"))]
-    return {
+    pack = {
         "source": "accepted_standards_review_packet",
         "version": safe_str(acceptance.get("version"), "standards_acceptance_v1"),
         "accepted_rule_count": len(accepted_rules),
@@ -263,6 +263,84 @@ def standards_pack_from_acceptance(acceptance: Dict[str, Any]) -> Dict[str, Any]
         "needs_source_review": bool(acceptance.get("needs_source_review")),
         "production_usable": bool(accepted_rules),
         "truth_label": "User-accepted standards pack. Engineer review is still required for permit use.",
+    }
+    pack["production_validation"] = validate_standards_acceptance_for_production(pack)
+    return pack
+
+
+def _source_url_is_official(url: str) -> bool:
+    lowered = safe_str(url).lower()
+    return (
+        lowered.startswith("https://")
+        and "google.com/search" not in lowered
+        and "bing.com/search" not in lowered
+        and "internal://civora" not in lowered
+    )
+
+
+def validate_standards_acceptance_for_production(standards: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate accepted standards before production QA is allowed to rely on them."""
+
+    rec = safe_dict(standards)
+    rules = [safe_dict(item) for item in safe_list(rec.get("accepted_rules") or rec.get("rules")) if safe_dict(item)]
+    blockers: List[Dict[str, Any]] = []
+    warnings: List[str] = []
+    if not rules:
+        blockers.append({"field": "accepted_rules", "reason": "No user-accepted standards rules are available."})
+    source_urls = [safe_str(url) for url in safe_list(rec.get("source_urls")) if safe_str(url)]
+    if not source_urls:
+        source_urls = [safe_str(rule.get("source_url")) for rule in rules if safe_str(rule.get("source_url"))]
+    official_urls = [url for url in source_urls if _source_url_is_official(url)]
+    baseline_rules = [
+        safe_str(rule.get("rule_id"))
+        for rule in rules
+        if safe_str(rule.get("source_url")).startswith("internal://")
+        or safe_str(rule.get("confidence")).lower() == "baseline"
+        or safe_str(rule.get("source_id")) == "civora_us_baseline"
+    ]
+    if rules and not official_urls:
+        blockers.append(
+            {
+                "field": "official_sources",
+                "reason": "Accepted rules do not cite an official HTTPS source.",
+                "source_urls": source_urls,
+            }
+        )
+    if baseline_rules:
+        blockers.append(
+            {
+                "field": "baseline_rules",
+                "reason": "Baseline concept rules cannot be production authority without an official source.",
+                "rule_ids": baseline_rules,
+            }
+        )
+    incomplete_rules = []
+    for rule in rules:
+        missing = [
+            key
+            for key in ("discipline", "topic", "candidate_value", "source_url", "source_section")
+            if not safe_str(rule.get(key))
+        ]
+        if missing:
+            incomplete_rules.append({"rule_id": safe_str(rule.get("rule_id")), "missing": missing})
+    if incomplete_rules:
+        blockers.append(
+            {
+                "field": "rule_metadata",
+                "reason": "Accepted rules are missing traceable metadata.",
+                "rules": incomplete_rules,
+            }
+        )
+    if bool(rec.get("needs_source_review")):
+        warnings.append("Accepted standards still need source review before permit use.")
+    return {
+        "success": not blockers,
+        "production_usable": not blockers,
+        "blockers": blockers,
+        "warnings": warnings,
+        "accepted_rule_count": len(rules),
+        "official_source_count": len(set(official_urls)),
+        "truth_label": "Standards are production-usable only after user acceptance plus official-source traceability.",
     }
 
 
@@ -383,4 +461,5 @@ __all__ = [
     "extract_text_from_html",
     "fetch_and_extract_rule_candidates",
     "standards_pack_from_acceptance",
+    "validate_standards_acceptance_for_production",
 ]

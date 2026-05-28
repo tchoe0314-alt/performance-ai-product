@@ -153,3 +153,47 @@ def coordination_realism_from_summary(coordination: Dict[str, Any]) -> Dict[str,
         "resolved_count": safe_int(summary.get("resolved_count"), len(resolved)),
         "unresolved_count": safe_int(summary.get("unresolved_count"), len(unresolved)),
     }
+
+
+def build_coordination_realism_report(coordination: Dict[str, Any]) -> Dict[str, Any]:
+    """Create a reviewer-facing constructability/realism rollup."""
+
+    rollup = coordination_realism_from_summary(coordination)
+    candidates = [safe_dict(item) for item in safe_list(rollup.get("selected_candidates")) + safe_list(rollup.get("best_near_valid_candidates"))]
+    scores = [safe_float(item.get("constructability_score"), 0.0) for item in candidates if item.get("constructability_score") not in (None, "")]
+    protected_hits = []
+    crossing_issues = []
+    ownership_classes = []
+    trench_groups = []
+    for candidate in candidates:
+        protected_hits.extend(safe_list(candidate.get("protected_zone_hits")))
+        crossing_issues.extend(safe_list(candidate.get("crossing_hierarchy_issues")))
+        if safe_str(candidate.get("ownership_class")):
+            ownership_classes.append(safe_str(candidate.get("ownership_class")))
+        trench = safe_dict(candidate.get("trench_grouping_context"))
+        if safe_str(trench.get("cluster_id") or trench.get("cluster_group_id") or trench.get("selected_group_strategy")):
+            trench_groups.append(deepcopy(trench))
+    unresolved_flags = [safe_str(item) for item in safe_list(rollup.get("unresolved_realism_flags")) if safe_str(item)]
+    hard_risks = len(protected_hits) + len(crossing_issues) + safe_int(rollup.get("unresolved_count"), 0)
+    if hard_risks > 0 or unresolved_flags:
+        risk_level = "high"
+    elif scores and min(scores) < 65.0:
+        risk_level = "medium"
+    else:
+        risk_level = "low" if candidates else "not_evaluated"
+    return {
+        "version": "coordination_realism_report_v1",
+        "risk_level": risk_level,
+        "average_constructability_score": round(sum(scores) / len(scores), 3) if scores else None,
+        "minimum_constructability_score": round(min(scores), 3) if scores else None,
+        "protected_zone_hit_count": len(protected_hits),
+        "crossing_issue_count": len(crossing_issues),
+        "trench_group_count": len(trench_groups),
+        "ownership_classes": dedupe_keep_order(ownership_classes),
+        "unresolved_realism_flags": dedupe_keep_order(unresolved_flags),
+        "resolved_count": safe_int(rollup.get("resolved_count"), 0),
+        "unresolved_count": safe_int(rollup.get("unresolved_count"), 0),
+        "selected_candidate_count": len(safe_list(rollup.get("selected_candidates"))),
+        "best_near_candidate_count": len(safe_list(rollup.get("best_near_valid_candidates"))),
+        "truth_label": "Coordination realism report summarizes computed candidate evidence; it does not hide unresolved protected-zone, crossing, or constructability risks.",
+    }

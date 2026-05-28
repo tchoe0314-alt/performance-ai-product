@@ -7,6 +7,7 @@ from backend.planning.standards_discovery import (
     extract_rule_candidates_from_text,
     fetch_and_extract_rule_candidates,
     standards_pack_from_acceptance,
+    validate_standards_acceptance_for_production,
 )
 from core.civil_design import civil_design_readiness
 
@@ -38,6 +39,7 @@ class StandardsDiscoveryTests(unittest.TestCase):
         self.assertEqual(accepted["accepted_rule_count"], 1)
         self.assertEqual(pack["rules"][0]["candidate_value"], "Accepted edited value")
         self.assertTrue(pack["needs_source_review"])
+        self.assertFalse(pack["production_validation"]["production_usable"])
 
     def test_civil_readiness_can_use_accepted_standards_without_fake_jurisdiction(self) -> None:
         packet = build_standards_review_packet()
@@ -85,6 +87,39 @@ class StandardsDiscoveryTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["candidate_count"], 1)
         self.assertIn("candidates only", result["truth_label"])
+
+    def test_standards_production_validation_requires_official_source(self) -> None:
+        packet = build_standards_review_packet(
+            extracted_rules=[
+                {
+                    "rule_id": "city_cover",
+                    "discipline": "utilities",
+                    "topic": "minimum cover",
+                    "candidate_value": "Minimum cover shall be 4 feet.",
+                    "source_url": "https://city.example.gov/manual",
+                    "source_section": "Section 5.1",
+                }
+            ]
+        )
+        accepted = accept_standards_rules(packet, ["city_cover"])
+        pack = standards_pack_from_acceptance(accepted)
+
+        validation = validate_standards_acceptance_for_production(pack)
+
+        self.assertTrue(validation["production_usable"])
+        self.assertEqual(validation["official_source_count"], 1)
+
+    def test_baseline_or_search_sources_are_not_production_authority(self) -> None:
+        packet = build_standards_review_packet()
+        baseline = packet["candidate_rules"][0]["rule_id"]
+        accepted = accept_standards_rules(packet, [baseline])
+
+        validation = validate_standards_acceptance_for_production(accepted)
+
+        self.assertFalse(validation["production_usable"])
+        fields = {item["field"] for item in validation["blockers"]}
+        self.assertIn("official_sources", fields)
+        self.assertIn("baseline_rules", fields)
 
 
 if __name__ == "__main__":

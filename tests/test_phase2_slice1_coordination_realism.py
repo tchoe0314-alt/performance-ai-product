@@ -11,6 +11,7 @@ from planner import (
     _preferred_corridors,
     _preferred_route_between,
 )
+from backend.planning.coordination_realism import build_coordination_realism_report
 
 
 def _manager_with_summaries():
@@ -237,6 +238,33 @@ class Phase2Slice1CoordinationRealismTest(unittest.TestCase):
         self.assertEqual(corridors["water"]["orientation"], "horizontal")
         self.assertAlmostEqual(corridors["sanitary"]["axis_value"], 100.0, places=3)
         self.assertGreater(corridors["water"]["axis_value"], corridors["sanitary"]["axis_value"])
+
+    def test_coordination_realism_report_surfaces_hard_risks(self) -> None:
+        coordination = {
+            "resolved_conflicts": [
+                {
+                    "resolution": {
+                        "coordination_realism": {
+                            "constructability_score": 58.0,
+                            "protected_zone_hits": [{"kind": "wetland", "avoid": True}],
+                            "crossing_hierarchy_issues": [{"rule": "water_over_sanitary", "blocked": True}],
+                            "ownership_class": "water_main",
+                            "trench_grouping_context": {"cluster_id": "C-1", "selected_group_strategy": "shared_trench"},
+                            "unresolved_realism_flags": ["protected_zone_hit"],
+                        }
+                    }
+                }
+            ],
+            "unresolved_count": 1,
+        }
+
+        report = build_coordination_realism_report(coordination)
+
+        self.assertEqual(report["risk_level"], "high")
+        self.assertEqual(report["protected_zone_hit_count"], 1)
+        self.assertEqual(report["crossing_issue_count"], 1)
+        self.assertEqual(report["trench_group_count"], 1)
+        self.assertIn("water_main", report["ownership_classes"])
 
     def test_preferred_corridors_follow_gis_line_centerline_when_available(self) -> None:
         project = ProjectModel()

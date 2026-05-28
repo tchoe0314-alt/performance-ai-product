@@ -16,6 +16,7 @@ from backend.planning.existing_conditions_importers import (
     import_survey_csv,
     merge_imported_existing_conditions,
     surface_from_survey_import,
+    validate_imported_existing_conditions_package,
 )
 
 
@@ -145,6 +146,59 @@ class ExistingConditionsImporterTests(unittest.TestCase):
             self.assertTrue(summary["gis"]["ready"])
             self.assertTrue(summary["coordinate_system"]["ready"])
             self.assertTrue(summary["production_ready"])
+
+    def test_import_package_validation_blocks_crs_conflicts_and_missing_layers(self) -> None:
+        merged = merge_imported_existing_conditions(
+            {
+                "success": True,
+                "source": "survey.csv",
+                "source_type": "survey_csv",
+                "points": [
+                    {"x": 0.0, "y": 0.0, "z": 100.0},
+                    {"x": 10.0, "y": 0.0, "z": 101.0},
+                    {"x": 0.0, "y": 10.0, "z": 99.0},
+                ],
+                "coordinate_system": {"epsg": "EPSG:2276", "units": "ft"},
+            },
+            {
+                "success": True,
+                "source": "parcel.geojson",
+                "source_type": "geojson",
+                "layers": {"parcels": [{"id": "P-1"}]},
+                "coordinate_system": {"name": "EPSG:4326"},
+            },
+        )
+
+        validation = merged["import_validation"]
+
+        self.assertFalse(validation["production_usable"])
+        fields = {item["field"] for item in validation["blockers"]}
+        self.assertIn("coordinate_system", fields)
+        self.assertIn("gis_layers", fields)
+
+    def test_import_package_validation_can_pass_complete_import_evidence(self) -> None:
+        merged = {
+            "sources": [{"source": "merged", "source_type": "test", "success": True}],
+            "survey": {
+                "point_count": 4,
+                "points": [
+                    {"x": 0.0, "y": 0.0, "z": 100.0},
+                    {"x": 10.0, "y": 0.0, "z": 101.0},
+                    {"x": 0.0, "y": 10.0, "z": 99.0},
+                    {"x": 10.0, "y": 10.0, "z": 100.0},
+                ],
+                "breakline_count": 1,
+                "breaklines": [{"name": "BL-1"}],
+            },
+            "gis_layers": {layer: [{"id": layer}] for layer in ("parcels", "easements", "row", "floodplain", "wetlands", "existing_utilities")},
+            "coordinate_system": {"epsg": "EPSG:2276", "units": "ft"},
+            "coordinate_systems": [{"epsg": "EPSG:2276", "units": "ft"}],
+        }
+
+        validation = validate_imported_existing_conditions_package(merged)
+
+        self.assertTrue(validation["production_usable"])
+        self.assertFalse(validation["blockers"])
 
     def test_heavy_gis_formats_are_truthfully_blocked_without_dependencies(self) -> None:
         self.assertTrue(classify_existing_conditions_file(Path("parcel.gpkg"))["supported"])
