@@ -81,7 +81,7 @@ from core.geometry_core import (
     ZoneType,
     rect_zone,
 )
-from core.civil_design import civil_design_readiness
+from core.civil_design import civil_design_readiness, standards_from_meta
 
 from core.project_manager import (
     ConflictRecord,
@@ -4349,6 +4349,10 @@ def _dedupe_path_points(path: Sequence[Sequence[float]]) -> List[List[float]]:
     return deduped
 
 
+def _point_key(point: Sequence[float], precision: int = 3) -> Tuple[float, float]:
+    return (round(safe_float(point[0], 0.0), precision), round(safe_float(point[1], 0.0), precision))
+
+
 def _path_turn_count(path: Sequence[Sequence[float]]) -> int:
     points = _dedupe_path_points(path)
     turns = 0
@@ -4363,7 +4367,7 @@ def _path_turn_count(path: Sequence[Sequence[float]]) -> int:
 
 
 def _segment_ownership_class(segment: Dict[str, Any]) -> str:
-    system = safe_str(segment.get("system"))
+    system = safe_str(segment.get("system") or segment.get("system_type"))
     role = safe_str(segment.get("segment_role"))
     if system == "storm":
         return "storm_main" if role in {"", "main"} else "storm_lateral"
@@ -4818,7 +4822,7 @@ def _candidate_constructability_score(
 
 def _preferred_corridor_for_segment(project: ProjectModel, segment: Dict[str, Any]) -> Dict[str, Any]:
     corridors = safe_dict(project.meta.get("preferred_corridors"))
-    system = safe_str(segment.get("system"))
+    system = safe_str(segment.get("system") or segment.get("system_type"))
     ownership = _segment_ownership_class(segment)
     if ownership == "utility_service":
         return deepcopy(safe_dict(corridors.get("generic", {})))
@@ -4887,6 +4891,127 @@ def _preferred_route_between(start: Sequence[float], end: Sequence[float], prefe
     if orientation == "vertical":
         return _dedupe_path_points([[sx, sy], [axis, sy], [axis, ey], [ex, ey]])
     return _dedupe_path_points([[sx, sy], [ex, ey]])
+
+
+def _hard_protected_zone_names_hit(path: Sequence[Sequence[float]], project: ProjectModel) -> List[str]:
+    hits = _path_protected_zone_hits(path, _expanded_obstacle_rectangles(project))
+    return dedupe_keep_order(
+        safe_str(hit.get("name"))
+        for hit in hits
+        if bool(hit.get("avoid")) and safe_str(hit.get("kind")) in HARD_PROTECTED_ZONE_KINDS and safe_str(hit.get("name"))
+    )
+
+
+def _maybe_prefer_corridor_route(project: ProjectModel, segment: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    rec = deepcopy(safe_dict(segment))
+    path = _dedupe_path_points(safe_list(rec.get("route_points") or rec.get("path")))
+    if len(path) < 2:
+        return rec, {}
+    role = safe_str(rec.get("segment_role") or rec.get("role")).lower()
+    if role and role not in {"main", "trunk", "collector", "transmission", "loop", "primary"}:
+        return rec, {}
+    preference = _preferred_corridor_for_segment(project, rec)
+    if not preference:
+        return rec, {}
+    source = safe_str(preference.get("source"))
+    if source not in {"gis_easement", "road_corridor"} and not safe_list(preference.get("centerline")):
+        return rec, {}
+    candidate = _preferred_route_between(path[0], path[-1], preference)
+    if len(candidate) < 2:
+        return rec, {}
+    before_dev = _corridor_deviation_cost(path, preference)
+    after_dev = _corridor_deviation_cost(candidate, preference)
+    before_len = polyline_length(path)
+    after_len = polyline_length(candidate)
+    hard_hits = _hard_protected_zone_names_hit(candidate, project)
+    if hard_hits or after_dev >= before_dev or after_len > max(before_len * 3.0, before_len + 350.0):
+        rec["corridor_routing_audit"] = {
+            "applied": False,
+            "reason": "candidate_blocked_or_not_better",
+            "preferred_source": source or safe_str(preference.get("source_layer")),
+            "before_deviation_ft": round(before_dev, 3),
+            "after_deviation_ft": round(after_dev, 3),
+            "candidate_length_ft": round(after_len, 3),
+            "hard_protected_zone_hits": hard_hits,
+        }
+        return rec, rec["corridor_routing_audit"]
+    rec["route_points"] = candidate
+    if "path" in rec:
+        rec["path"] = candidate
+    rec["corridor_routing_audit"] = {
+        "applied": True,
+        "reason": "preferred_corridor_reduced_deviation",
+        "preferred_source": source or safe_str(preference.get("source_layer")),
+        "preferred_source_name": safe_str(preference.get("source_name")),
+        "slot_role": safe_str(preference.get("slot_role")),
+        "before_deviation_ft": round(before_dev, 3),
+        "after_deviation_ft": round(after_dev, 3),
+        "before_length_ft": round(before_len, 3),
+        "after_length_ft": round(after_len, 3),
+    }
+    return rec, rec["corridor_routing_audit"]
+
+
+def _station_point_on_path(path: Sequence[Sequence[float]], station_ft: float) -> List[float]:
+    points = _dedupe_path_points(path)
+    if not points:
+        return [0.0, 0.0]
+    remaining = max(0.0, safe_float(station_ft, 0.0))
+    for index in range(1, len(points)):
+        start = points[index - 1]
+        end = points[index]
+        seg_len = math.hypot(end[0] - start[0], end[1] - start[1])
+        if remaining <= seg_len or index == len(points) - 1:
+            ratio = 0.0 if seg_len <= 0.0 else min(max(remaining / seg_len, 0.0), 1.0)
+            return [round(start[0] + (end[0] - start[0]) * ratio, 3), round(start[1] + (end[1] - start[1]) * ratio, 3)]
+        remaining -= seg_len
+    return [round(points[-1][0], 3), round(points[-1][1], 3)]
+
+
+def _insert_points_into_path(path: Sequence[Sequence[float]], insert_points: Sequence[Sequence[float]]) -> List[List[float]]:
+    points = _dedupe_path_points(path)
+    if len(points) < 2 or not insert_points:
+        return points
+    inserts = {_point_key(point): [round(safe_float(point[0], 0.0), 3), round(safe_float(point[1], 0.0), 3)] for point in insert_points if isinstance(point, (list, tuple)) and len(point) >= 2}
+    rows: List[Tuple[float, List[float]]] = []
+    station = 0.0
+    rows.append((0.0, points[0]))
+    for index in range(1, len(points)):
+        start = points[index - 1]
+        end = points[index]
+        seg_len = math.hypot(end[0] - start[0], end[1] - start[1])
+        for insert in inserts.values():
+            if _point_key(insert) in {_point_key(start), _point_key(end)}:
+                continue
+            seg_len_sq = seg_len * seg_len
+            if seg_len_sq <= 0.0:
+                continue
+            t = ((insert[0] - start[0]) * (end[0] - start[0]) + (insert[1] - start[1]) * (end[1] - start[1])) / seg_len_sq
+            if 1e-6 < t < 1.0 - 1e-6:
+                projected = [round(start[0] + (end[0] - start[0]) * t, 3), round(start[1] + (end[1] - start[1]) * t, 3)]
+                if math.hypot(projected[0] - insert[0], projected[1] - insert[1]) <= 0.05:
+                    rows.append((station + seg_len * t, insert))
+        station += seg_len
+        rows.append((station, end))
+    return _dedupe_path_points([point for _, point in sorted(rows, key=lambda row: row[0])])
+
+
+def _support_structure_points_for_path(path: Sequence[Sequence[float]], max_spacing_ft: float) -> List[List[float]]:
+    points = _dedupe_path_points(path)
+    if len(points) < 2:
+        return []
+    total = polyline_length(points)
+    spacing = max(1.0, safe_float(max_spacing_ft, 1.0))
+    stations = {0.0, round(total, 3)}
+    count = max(0, int(math.floor(total / spacing)))
+    for index in range(1, count + 1):
+        station = min(index * spacing, total)
+        if 1.0 < station < total - 1.0:
+            stations.add(round(station, 3))
+    for index in range(1, len(points) - 1):
+        if _path_turn_count(points[index - 1 : index + 2]) > 0:
+            stations.add(round(polyline_length(points[: index + 1]), 3))
+    return _dedupe_path_points([_station_point_on_path(points, station) for station in sorted(stations)])
 
 
 def _reroute_candidates_around_rect(path: List[List[float]], rect: Dict[str, Any], preference: Optional[Dict[str, Any]] = None) -> List[List[List[float]]]:
@@ -6510,6 +6635,117 @@ def _recompute_storm_summary(project: ProjectModel, manager: ProjectManager) -> 
     manager.set_metric("pipe_capacity_total_cfs", total_capacity, units="cfs", category="pipes")
 
 
+def _ensure_sanitary_structure_spacing(
+    segments: Sequence[Dict[str, Any]],
+    manholes: Sequence[Dict[str, Any]],
+    *,
+    max_spacing_ft: float,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
+    updated_segments = [deepcopy(safe_dict(item)) for item in segments]
+    updated_manholes = [deepcopy(safe_dict(item)) for item in manholes if safe_dict(item)]
+    existing_points = {
+        _point_key([safe_float(item.get("x"), 0.0), safe_float(item.get("y"), 0.0)])
+        for item in updated_manholes
+    }
+    inserted: List[Dict[str, Any]] = []
+    for rec in updated_segments:
+        role = safe_str(rec.get("segment_role")).lower()
+        if role not in {"main", "trunk", "collector", ""}:
+            continue
+        path = _dedupe_path_points(safe_list(rec.get("route_points")))
+        if len(path) < 2:
+            continue
+        points = _support_structure_points_for_path(path, max_spacing_ft)
+        new_points: List[List[float]] = []
+        for point in points:
+            key = _point_key(point)
+            if key in existing_points:
+                continue
+            name = f"SMH-{len(updated_manholes) + 1}"
+            row = {
+                "name": name,
+                "id": name,
+                "node_id": name,
+                "x": key[0],
+                "y": key[1],
+                "reason": "sanitary_structure_spacing",
+                "source": "generated_from_canonical_route",
+                "max_spacing_ft": round(max_spacing_ft, 3),
+                "segment": safe_str(rec.get("name"), "SAN"),
+            }
+            updated_manholes.append(row)
+            inserted.append(row)
+            existing_points.add(key)
+            new_points.append([key[0], key[1]])
+        if new_points:
+            rec["route_points"] = _insert_points_into_path(path, new_points)
+            rec["structure_spacing_audit"] = {
+                "generated_manhole_count": len(new_points),
+                "max_spacing_ft": round(max_spacing_ft, 3),
+                "reason": "main_route_spacing_and_bends",
+            }
+    return updated_segments, updated_manholes, {
+        "valid": True,
+        "max_spacing_ft": round(max_spacing_ft, 3),
+        "generated_manhole_count": len(inserted),
+        "generated_manholes": deepcopy(inserted),
+        "truth_label": "Sanitary manholes are generated from canonical main route bends and spacing points.",
+    }
+
+
+def _ensure_water_hydrant_spacing(
+    summary: Dict[str, Any],
+    segments: Sequence[Dict[str, Any]],
+    *,
+    max_spacing_ft: float,
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    enriched = deepcopy(safe_dict(summary))
+    hydrants = [deepcopy(safe_dict(item)) for item in safe_list(enriched.get("hydrants") or enriched.get("fire_hydrants")) if safe_dict(item)]
+    existing_points = {
+        _point_key([safe_float(item.get("x"), 0.0), safe_float(item.get("y"), 0.0)])
+        for item in hydrants
+    }
+    inserted: List[Dict[str, Any]] = []
+    for rec in segments:
+        system = safe_str(rec.get("system_type") or rec.get("system")).lower()
+        role = safe_str(rec.get("segment_role") or rec.get("role")).lower()
+        if system and system != "water":
+            continue
+        if role and role not in {"main", "loop", "transmission", "primary"}:
+            continue
+        path = _dedupe_path_points(safe_list(rec.get("route_points")))
+        if len(path) < 2:
+            continue
+        for point in _support_structure_points_for_path(path, max_spacing_ft):
+            key = _point_key(point)
+            if key in existing_points:
+                continue
+            name = f"HYD-{len(hydrants) + 1}"
+            row = {
+                "name": name,
+                "id": name,
+                "x": key[0],
+                "y": key[1],
+                "reason": "water_hydrant_spacing",
+                "source": "generated_from_canonical_water_main",
+                "max_spacing_ft": round(max_spacing_ft, 3),
+                "segment": safe_str(rec.get("name"), "WATER"),
+            }
+            hydrants.append(row)
+            inserted.append(row)
+            existing_points.add(key)
+    if hydrants:
+        enriched["hydrants"] = hydrants
+        enriched["fire_hydrants"] = hydrants
+    return enriched, {
+        "max_spacing_ft": round(max_spacing_ft, 3),
+        "generated_hydrant_count": len(inserted),
+        "hydrant_count": len(hydrants),
+        "generated_hydrants": deepcopy(inserted),
+        "truth_label": "Water hydrants are generated from canonical water-main geometry for spacing validation; jurisdiction approval is still required.",
+    }
+
+
 def _recompute_sanitary_summary(project: ProjectModel, manager: ProjectManager, *, prefer_cache: bool = False) -> None:
     summary = (
         deepcopy(safe_dict(manager.latest_outputs.get("sanitary", project.meta.get("sanitary_summary", {}))))
@@ -6523,7 +6759,27 @@ def _recompute_sanitary_summary(project: ProjectModel, manager: ProjectManager, 
     )
     proposed_surface = grading.get("proposed_surface")
     summary = _recompute_sanitary_service_loads(project, summary)
-    segments = [safe_dict(item) for item in safe_list(summary.get("segments"))]
+    standards = standards_from_meta(project.meta)
+    segments = []
+    corridor_audits: List[Dict[str, Any]] = []
+    for item in safe_list(summary.get("segments")):
+        routed, audit = _maybe_prefer_corridor_route(project, safe_dict(item))
+        source_missing_fields: List[str] = []
+        if not safe_str(routed.get("start_name") or routed.get("from")):
+            source_missing_fields.append("start_name")
+        if not safe_str(routed.get("end_name") or routed.get("to")):
+            source_missing_fields.append("end_name")
+        if routed.get("start_invert_ft") is None:
+            source_missing_fields.append("start_invert_ft")
+        if routed.get("end_invert_ft") is None:
+            source_missing_fields.append("end_invert_ft")
+        if routed.get("diameter_in") is None:
+            source_missing_fields.append("diameter_in")
+        if source_missing_fields:
+            routed["_source_missing_fields"] = dedupe_keep_order(source_missing_fields)
+        if audit:
+            corridor_audits.append({"segment": safe_str(routed.get("name"), "SAN"), **audit})
+        segments.append(routed)
     slope_violations: List[Dict[str, Any]] = []
     resized_segments: List[Dict[str, Any]] = []
     missing_data_segments: List[Dict[str, Any]] = []
@@ -6578,7 +6834,12 @@ def _recompute_sanitary_summary(project: ProjectModel, manager: ProjectManager, 
             rec["cover_start_ft"] = round(_sample_grid_surface(proposed_surface, path[0][0], path[0][1], DEFAULT_PAD_ELEV) - start_invert, 3)
             rec["cover_end_ft"] = round(_sample_grid_surface(proposed_surface, path[-1][0], path[-1][1], DEFAULT_PAD_ELEV) - end_invert, 3)
     repairs = _repair_sanitary_segment_covers(segments, proposed_surface)
-    segments, manholes, nodes = _bind_sanitary_graph_nodes(segments, safe_list(summary.get("manholes")))
+    segments, generated_manholes, structure_spacing = _ensure_sanitary_structure_spacing(
+        segments,
+        safe_list(summary.get("manholes")),
+        max_spacing_ft=safe_float(standards.max_sanitary_manhole_spacing_ft, 400.0),
+    )
+    segments, manholes, nodes = _bind_sanitary_graph_nodes(segments, generated_manholes)
     referenced_node_ids = {
         safe_str(node_id)
         for rec in segments
@@ -6597,6 +6858,7 @@ def _recompute_sanitary_summary(project: ProjectModel, manager: ProjectManager, 
         for key in ("start_name", "end_name"):
             if not safe_str(rec.get(key)):
                 missing_fields.append(key)
+        missing_fields.extend(safe_str(item) for item in safe_list(rec.get("_source_missing_fields")) if safe_str(item))
         for key in ("length_ft", "slope_ft_ft", "capacity_cfs"):
             if safe_float(rec.get(key), 0.0) <= 0.0:
                 missing_fields.append(key)
@@ -6639,6 +6901,8 @@ def _recompute_sanitary_summary(project: ProjectModel, manager: ProjectManager, 
     }
     summary["resized_segments"] = resized_segments
     summary["cover_repairs"] = repairs
+    summary["corridor_routing_audit"] = corridor_audits
+    summary["structure_spacing_validation"] = structure_spacing
     summary["graph_validation"] = _validate_network_graph(summary, "sanitary")
     summary["network_validation"] = _validate_sanitary_network(summary)
     summary["disconnected_segments"] = deepcopy(safe_list(safe_dict(summary["network_validation"]).get("disconnected_services")))
@@ -6658,7 +6922,14 @@ def _recompute_utility_summary(project: ProjectModel, manager: ProjectManager, *
         else deepcopy(safe_dict(canonical_stage_output(project, manager, "utilities")))
     )
     hooks = safe_dict(summary.get("conflict_hooks"))
-    segments = [safe_dict(item) for item in safe_list(hooks.get("utility_segments"))]
+    standards = standards_from_meta(project.meta)
+    segments: List[Dict[str, Any]] = []
+    corridor_audits: List[Dict[str, Any]] = []
+    for item in safe_list(hooks.get("utility_segments")):
+        routed, audit = _maybe_prefer_corridor_route(project, safe_dict(item))
+        if audit:
+            corridor_audits.append({"segment": safe_str(routed.get("name"), "UTILITY"), **audit})
+        segments.append(routed)
     total_length = 0.0
     for rec in segments:
         path = [[safe_float(pt[0], 0.0), safe_float(pt[1], 0.0)] for pt in safe_list(rec.get("route_points")) if isinstance(pt, (list, tuple)) and len(pt) >= 2]
@@ -6667,6 +6938,13 @@ def _recompute_utility_summary(project: ProjectModel, manager: ProjectManager, *
     summary["total_length_ft"] = round(total_length, 3)
     hooks["utility_segments"] = segments
     summary["conflict_hooks"] = hooks
+    summary["corridor_routing_audit"] = corridor_audits
+    summary, hydrant_spacing_generation = _ensure_water_hydrant_spacing(
+        summary,
+        segments,
+        max_spacing_ft=safe_float(standards.max_hydrant_spacing_ft, 500.0),
+    )
+    summary["hydrant_spacing_generation"] = hydrant_spacing_generation
     summary = _enrich_utility_summary_with_coordination(summary, project, manager)
     summary["export_validation"] = _utility_export_validation(project, utilities_override=summary)
     manager.latest_outputs["utilities"] = deepcopy(summary)

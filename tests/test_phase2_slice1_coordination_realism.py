@@ -10,6 +10,7 @@ from planner import (
     _detect_coordination_conflicts,
     _preferred_corridors,
     _preferred_route_between,
+    _recompute_utility_summary,
 )
 from backend.planning.coordination_realism import build_coordination_realism_report
 
@@ -313,6 +314,46 @@ class Phase2Slice1CoordinationRealismTest(unittest.TestCase):
         self.assertEqual(corridors["storm"]["source"], "road_corridor")
         self.assertTrue(corridors["storm"]["centerline"])
         self.assertEqual(corridors["storm"]["source_name"], "Loop Road")
+
+    def test_utility_recompute_routes_water_mains_on_preferred_corridor_and_generates_hydrants(self) -> None:
+        project, manager = _manager_with_summaries()
+        project.meta["preferred_corridors"] = {
+            "water": {"orientation": "horizontal", "axis_value": 50.0, "weight": 1.6, "source": "road_corridor", "source_name": "Main Drive"},
+            "generic": {"orientation": "horizontal", "axis_value": 55.0, "weight": 1.0, "source": "road_corridor"},
+        }
+        utilities = {
+            "conflict_hooks": {
+                "utility_system_type": "water",
+                "utility_segments": [
+                    {
+                        "name": "WATER-LONG",
+                        "system_type": "water",
+                        "segment_role": "main",
+                        "route_points": [[0.0, 0.0], [1200.0, 0.0]],
+                        "diameter_in": 8.0,
+                        "flow_gpm": 600.0,
+                        "start_node": "SOURCE",
+                        "end_node": "NODE-B",
+                    }
+                ],
+            },
+            "source_pressure_psi": 70.0,
+            "source_node": "SOURCE",
+            "available_fire_flow_gpm": 1800.0,
+            "fire_flow_demand_gpm": 1500.0,
+        }
+        manager.latest_outputs["utilities"] = deepcopy(utilities)
+        project.meta["utility_summary"] = deepcopy(utilities)
+
+        _recompute_utility_summary(project, manager, prefer_cache=True)
+
+        recomputed = project.meta["utility_summary"]
+        segment = recomputed["conflict_hooks"]["utility_segments"][0]
+        self.assertEqual(segment["route_points"][1], [0.0, 50.0])
+        self.assertTrue(segment["corridor_routing_audit"]["applied"])
+        self.assertGreaterEqual(recomputed["hydrant_spacing_generation"]["generated_hydrant_count"], 3)
+        self.assertGreaterEqual(len(recomputed["hydrants"]), 3)
+        self.assertGreaterEqual(recomputed["hydrant_spacing_validation"]["hydrant_count"], 3)
 
 
 if __name__ == "__main__":

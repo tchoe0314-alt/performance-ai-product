@@ -197,6 +197,38 @@ class SanitaryStageTest(unittest.TestCase):
         self.assertAlmostEqual(by_name["SAN-MAIN-2"]["flow_cfs"], 0.05, places=4)
         self.assertAlmostEqual(recomputed["post_reroute_recalculation"]["node_inflow_cfs"]["NODE-B"], 0.05, places=4)
 
+    def test_recompute_generates_manholes_at_main_spacing_points(self) -> None:
+        manager = ProjectManager()
+        project = manager.project
+        sanitary = {
+            "expected_service_buildings": [],
+            "segments": [
+                {
+                    "name": "SAN-LONG-MAIN",
+                    "segment_role": "main",
+                    "start_name": "NODE-A",
+                    "end_name": "OUTFALL",
+                    "route_points": [[0.0, 0.0], [900.0, 0.0]],
+                    "diameter_in": 8.0,
+                    "flow_cfs": 0.04,
+                    "start_invert_ft": 98.0,
+                    "end_invert_ft": 94.0,
+                }
+            ],
+            "manholes": [],
+        }
+        manager.latest_outputs["sanitary"] = sanitary
+        project.meta["sanitary_summary"] = sanitary
+
+        _recompute_sanitary_summary(project, manager, prefer_cache=True)
+
+        recomputed = project.meta["sanitary_summary"]
+        main = recomputed["segments"][0]
+        self.assertGreaterEqual(recomputed["manhole_count"], 4)
+        self.assertGreaterEqual(len(main["node_ids"]), 4)
+        self.assertTrue(recomputed["structure_spacing_validation"]["valid"])
+        self.assertGreaterEqual(recomputed["structure_spacing_validation"]["generated_manhole_count"], 4)
+
 
 if __name__ == "__main__":
     unittest.main()
