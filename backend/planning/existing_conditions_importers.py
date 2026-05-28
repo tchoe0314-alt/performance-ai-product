@@ -57,6 +57,26 @@ def _bounds(points: List[Dict[str, Any]]) -> Optional[Dict[str, float]]:
     return {"min_x": min(xs), "min_y": min(ys), "max_x": max(xs), "max_y": max(ys)}
 
 
+def _point_quality(points: List[Dict[str, Any]]) -> Dict[str, Any]:
+    unique_xy = {
+        (round(safe_float(point.get("x"), 0.0), 6), round(safe_float(point.get("y"), 0.0), 6))
+        for point in points
+    }
+    bounds = _bounds(points)
+    width = safe_float(safe_dict(bounds).get("max_x"), 0.0) - safe_float(safe_dict(bounds).get("min_x"), 0.0)
+    height = safe_float(safe_dict(bounds).get("max_y"), 0.0) - safe_float(safe_dict(bounds).get("min_y"), 0.0)
+    elevations = [safe_float(point.get("z"), 0.0) for point in points]
+    return {
+        "unique_xy_count": len(unique_xy),
+        "duplicate_xy_count": max(0, len(points) - len(unique_xy)),
+        "bounds": bounds,
+        "span_x": round(width, 6),
+        "span_y": round(height, 6),
+        "has_surface_span": width > 0.0 and height > 0.0,
+        "elevation_range": {"min": min(elevations), "max": max(elevations)} if elevations else None,
+    }
+
+
 def _coordinate_key(value: Dict[str, Any]) -> str:
     rec = _normalize_coordinate_system(value)
     epsg = safe_str(rec.get("epsg"))
@@ -177,18 +197,24 @@ def import_survey_csv(path: Path, *, coordinate_system: Optional[Dict[str, Any]]
             points.append(point)
     if len(points) < 3:
         warnings.append("Survey CSV needs at least 3 valid points before it can build a surface.")
-    elevations = [safe_float(point.get("z"), 0.0) for point in points]
+    quality = _point_quality(points)
+    if safe_int(quality.get("unique_xy_count"), 0) < 3:
+        warnings.append("Survey CSV needs at least 3 unique x/y locations before it can build a surface.")
+    if points and not bool(quality.get("has_surface_span")):
+        warnings.append("Survey CSV points do not span both x and y directions; surface generation is blocked.")
     return {
-        "success": len(points) >= 3,
+        "success": len(points) >= 3 and safe_int(quality.get("unique_xy_count"), 0) >= 3 and bool(quality.get("has_surface_span")),
         "source": str(path),
         "source_type": "survey_csv",
         "points": points,
         "point_count": len(points),
         "invalid_rows": invalid_rows,
+        "quality": quality,
         "recognized_columns": {"x": x_col, "y": y_col, "z": z_col, "id": id_col, "description": desc_col},
-        "bounds": _bounds(points),
-        "elevation_range": {"min": min(elevations), "max": max(elevations)} if elevations else None,
+        "bounds": quality.get("bounds"),
+        "elevation_range": quality.get("elevation_range"),
         "coordinate_system": safe_dict(coordinate_system),
+        "coordinate_validation": _coordinate_validation(safe_dict(coordinate_system)) if coordinate_system else {},
         "warnings": warnings,
     }
 
@@ -198,7 +224,8 @@ def surface_from_survey_import(import_result: Dict[str, Any], *, cell_size: floa
         SurveyPoint(x=safe_float(point.get("x")), y=safe_float(point.get("y")), z=safe_float(point.get("z")))
         for point in safe_list(import_result.get("points"))
     ]
-    if len(points) < 3:
+    quality = safe_dict(import_result.get("quality")) or _point_quality([{"x": point.x, "y": point.y, "z": point.z} for point in points])
+    if len(points) < 3 or safe_int(quality.get("unique_xy_count"), 0) < 3 or not bool(quality.get("has_surface_span")):
         return None
     surface = SurfaceEngine(points).build_grid(cell_size=max(0.1, safe_float(cell_size, 10.0)), padding=max(0.0, safe_float(padding, 0.0)))
     setattr(
@@ -873,12 +900,31 @@ def validate_imported_existing_conditions_package(
     survey = safe_dict(rec.get("survey"))
     point_count = safe_int(survey.get("point_count"), len(safe_list(survey.get("points"))))
     breakline_count = safe_int(survey.get("breakline_count"), len(safe_list(survey.get("breaklines"))))
+    survey_points = [safe_dict(item) for item in safe_list(survey.get("points"))]
+    point_quality = _point_quality(survey_points)
     surface_count = len(safe_list(rec.get("surfaces")))
     if require_surface and point_count < 3 and surface_count <= 0:
         blockers.append(
             {
                 "field": "survey_surface",
                 "reason": "No usable survey surface, DEM/LiDAR surface, or at least 3 survey points were imported.",
+            }
+        )
+    elif require_surface and surface_count <= 0 and safe_int(point_quality.get("unique_xy_count"), 0) < 3:
+        blockers.append(
+            {
+                "field": "survey_surface",
+                "reason": "Survey evidence has fewer than 3 unique x/y locations; no terrain surface can be built.",
+                "unique_xy_count": safe_int(point_quality.get("unique_xy_count"), 0),
+            }
+        )
+    elif require_surface and surface_count <= 0 and not bool(point_quality.get("has_surface_span")):
+        blockers.append(
+            {
+                "field": "survey_surface",
+                "reason": "Survey evidence is geometrically collapsed and does not span both x and y directions.",
+                "span_x": point_quality.get("span_x"),
+                "span_y": point_quality.get("span_y"),
             }
         )
     elif point_count >= 3 and breakline_count <= 0:
@@ -908,6 +954,7 @@ def validate_imported_existing_conditions_package(
         "source_count": len(sources),
         "surface_count": surface_count,
         "survey_point_count": point_count,
+        "survey_point_quality": point_quality,
         "breakline_count": breakline_count,
         "layer_counts": layer_counts,
         "coordinate_system_validation": coordinate_validation,

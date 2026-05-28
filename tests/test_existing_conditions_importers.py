@@ -42,6 +42,25 @@ class ExistingConditionsImporterTests(unittest.TestCase):
             self.assertIsNotNone(surface)
             self.assertEqual(getattr(surface, "_inferred_profile")["source_quality"], "survey")
 
+    def test_import_survey_csv_blocks_duplicate_or_collapsed_points(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "bad_survey.csv"
+            path.write_text(
+                "point_id,x,y,z\n"
+                "1,0,0,100.0\n"
+                "2,0,0,101.0\n"
+                "3,10,0,99.5\n",
+                encoding="utf-8",
+            )
+
+            imported = import_survey_csv(path, coordinate_system={"epsg": "EPSG:2276", "units": "ft"})
+            surface = surface_from_survey_import(imported, cell_size=10.0)
+
+            self.assertFalse(imported["success"])
+            self.assertEqual(imported["quality"]["unique_xy_count"], 2)
+            self.assertFalse(imported["quality"]["has_surface_span"])
+            self.assertIsNone(surface)
+
     def test_import_geojson_classifies_required_layers(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "constraints.geojson"
@@ -225,6 +244,28 @@ class ExistingConditionsImporterTests(unittest.TestCase):
         self.assertFalse(validation["coordinate_system_validation"]["valid"])
         reasons = " ".join(item["reason"] for item in validation["blockers"])
         self.assertIn("Geographic", reasons)
+
+    def test_import_package_validation_blocks_collapsed_survey_surface(self) -> None:
+        merged = {
+            "sources": [{"source": "bad_survey.csv", "source_type": "survey_csv", "success": True}],
+            "survey": {
+                "point_count": 3,
+                "points": [
+                    {"x": 0.0, "y": 0.0, "z": 100.0},
+                    {"x": 0.0, "y": 0.0, "z": 101.0},
+                    {"x": 10.0, "y": 0.0, "z": 99.0},
+                ],
+            },
+            "gis_layers": {layer: [{"id": layer}] for layer in ("parcels", "easements", "row", "floodplain", "wetlands", "existing_utilities")},
+            "coordinate_system": {"epsg": "EPSG:2276", "units": "ft"},
+            "coordinate_systems": [{"epsg": "EPSG:2276", "units": "ft"}],
+        }
+
+        validation = validate_imported_existing_conditions_package(merged)
+
+        self.assertFalse(validation["production_usable"])
+        self.assertIn("survey_surface", {item["field"] for item in validation["blockers"]})
+        self.assertEqual(validation["survey_point_quality"]["unique_xy_count"], 2)
 
     def test_heavy_gis_formats_are_truthfully_blocked_without_dependencies(self) -> None:
         self.assertTrue(classify_existing_conditions_file(Path("parcel.gpkg"))["supported"])
