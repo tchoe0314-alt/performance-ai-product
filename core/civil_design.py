@@ -5,6 +5,8 @@ from math import hypot
 import re
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from core.professional_release import validate_professional_release
+
 
 Point = Tuple[float, float]
 
@@ -1576,13 +1578,8 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
         )
 
     professional = _safe_dict(meta.get("professional_review") or meta.get("engineer_review"))
-    professional_status = _safe_str(professional.get("status")).lower()
-    professionally_released = professional.get("sealed") is True or professional_status in {
-        "approved",
-        "sealed",
-        "released_for_construction",
-        "issued_for_construction",
-    }
+    professional_validation = validate_professional_release(professional)
+    professionally_released = professional_validation.get("released_for_construction") is True
     if not professionally_released:
         blockers.append(
             _construction_gap(
@@ -1592,17 +1589,19 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                 "Attach reviewer, license, review date, and sealed/released-for-construction status.",
             )
         )
-    else:
-        for field in ("engineer_name", "license_number"):
-            if not _safe_str(professional.get(field)):
-                blockers.append(
-                    _construction_gap(
-                        "professional_review",
-                        field,
-                        "Professional release evidence is missing reviewer identity/license metadata.",
-                        "Attach engineer name and license number to professional_review.",
-                    )
-                )
+    for gap in _safe_list(professional_validation.get("blockers")):
+        rec = _safe_dict(gap)
+        field = _safe_str(rec.get("field"))
+        if field == "sealed_release":
+            continue
+        blockers.append(
+            _construction_gap(
+                "professional_review",
+                field or "professional_release",
+                _safe_str(rec.get("reason"), "Professional release evidence is incomplete."),
+                "Attach complete professional review metadata before construction release.",
+            )
+        )
 
     ready = not blockers
     blocker_penalty = min(len(blockers) * 8.0, 85.0)
@@ -1621,6 +1620,7 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
             "standards_production_usable": standards_pack.get("production_usable") is True,
             "export_production_ready": export.get("production_export_ready") is True if export else False,
             "professional_release": professionally_released,
+            "professional_release_validation": professional_validation,
         },
         "truth_label": (
             "Construction readiness requires verified existing conditions, accepted official standards, current canonical exports, "

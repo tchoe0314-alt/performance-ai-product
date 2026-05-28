@@ -76,6 +76,10 @@ from backend.application.standards_workflows import (
     run_golden_scenarios_response as application_run_golden_scenarios_response,
     standards_review_packet_response as application_standards_review_packet_response,
 )
+from backend.application.professional_workflows import (
+    professional_release_response as application_professional_release_response,
+    validate_professional_release_response as application_validate_professional_release_response,
+)
 from backend.services.artifact_service import ArtifactService
 from backend.services.auth_store import AuthStore
 from backend.services.database import Database
@@ -278,6 +282,20 @@ class StandardsExtractPayload(BaseModel):
 
 class GoldenScenarioRunPayload(BaseModel):
     scenario_ids: List[str] = Field(default_factory=list)
+
+
+class ProfessionalReleasePayload(BaseModel):
+    engineer_name: str = ""
+    license_number: str = ""
+    status: str = "released_for_construction"
+    review_date: str = ""
+    sealed: bool = True
+    jurisdiction: str = ""
+    notes: str = ""
+
+
+class ProfessionalReleaseValidationPayload(BaseModel):
+    professional_review: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ImageAnalysisPayload(BaseModel):
@@ -791,6 +809,32 @@ def run_golden_scenarios(
     return application_run_golden_scenarios_response(
         scenario_ids=payload.scenario_ids or None,
     )
+
+
+@app.post("/api/professional-release/build")
+def build_professional_release(
+    payload: ProfessionalReleasePayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    _ = current_user
+    return application_professional_release_response(
+        engineer_name=payload.engineer_name,
+        license_number=payload.license_number,
+        status=payload.status,
+        review_date=payload.review_date,
+        sealed=payload.sealed,
+        jurisdiction=payload.jurisdiction,
+        notes=payload.notes,
+    )
+
+
+@app.post("/api/professional-release/validate")
+def validate_professional_release(
+    payload: ProfessionalReleaseValidationPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    _ = current_user
+    return application_validate_professional_release_response(payload.professional_review)
 
 
 @app.post("/api/survey/estimate-slope")
