@@ -110,10 +110,31 @@ def build_reactive_update_report(
 
 def reactive_report_from_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
     meta = safe_dict(plan.get("meta"))
-    changed = safe_list(meta.get("changed_engine_ids")) or safe_list(meta.get("changed_targets"))
+    raw_changed_engine_ids = safe_list(meta.get("changed_engine_ids"))
+    raw_changed_targets = safe_list(meta.get("changed_targets"))
+    changed_engine_ids = [
+        safe_str(item)
+        for item in raw_changed_engine_ids
+        if safe_str(item) and safe_str(item) not in PLANNER_STAGE_ORDER
+    ]
+    changed_stages = [
+        safe_str(item)
+        for item in raw_changed_targets
+        if safe_str(item) in PLANNER_STAGE_ORDER
+    ]
+    changed_engine_ids.extend(
+        safe_str(item)
+        for item in raw_changed_targets
+        if safe_str(item) and safe_str(item) not in PLANNER_STAGE_ORDER
+    )
     stale = safe_list(meta.get("stale_outputs"))
     stages = safe_list(meta.get("stage_results"))
-    return build_reactive_update_report(changed_engine_ids=changed, stage_results=stages, stale_outputs=stale)
+    return build_reactive_update_report(
+        changed_engine_ids=changed_engine_ids,
+        changed_stages=changed_stages,
+        stage_results=stages,
+        stale_outputs=stale,
+    )
 
 
 def _completed_stage_names(meta: Dict[str, Any]) -> Set[str]:

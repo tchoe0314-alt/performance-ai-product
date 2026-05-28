@@ -1,6 +1,6 @@
 import unittest
 
-from backend.planning.reactive_model import build_reactive_update_report, execute_reactive_rerun
+from backend.planning.reactive_model import build_reactive_update_report, execute_reactive_rerun, reactive_report_from_plan
 
 
 class ReactiveModelContractTests(unittest.TestCase):
@@ -28,6 +28,23 @@ class ReactiveModelContractTests(unittest.TestCase):
         self.assertIn("storm_pipes", report["impacted_stages"])
         self.assertIn("qa", report["impacted_stages"])
         self.assertNotIn("layout", report["impacted_stages"])
+
+    def test_reactive_report_from_plan_treats_changed_targets_as_stages(self) -> None:
+        report = reactive_report_from_plan(
+            {
+                "meta": {
+                    "changed_targets": ["grading"],
+                    "stage_results": [{"stage_name": "grading"}],
+                    "stale_outputs": ["storm_pipes"],
+                }
+            }
+        )
+
+        self.assertEqual(report["changed_stages"], ["grading"])
+        self.assertEqual(report["changed_engine_ids"], [])
+        self.assertIn("drainage", report["impacted_stages"])
+        self.assertIn("storm_pipes", report["impacted_stages"])
+        self.assertTrue(report["export_blocked"])
 
     def test_execute_reactive_rerun_performs_safe_full_rerun_with_truth_label(self) -> None:
         def fake_build(payload):
