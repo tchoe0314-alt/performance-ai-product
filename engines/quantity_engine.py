@@ -1055,6 +1055,7 @@ class QuantityEngine:
         explain["trace_gaps"] = trace_gaps
         explain["canonical_integrity"] = canonical_integrity
         explain["meta_summary"]["quantity_traceability_complete"] = not bool(trace_gaps)
+        quantity_traceability_blocked = bool(trace_gaps)
 
         if counts["action_count"] == 0:
             warnings.append("Plan contains no actions; quantity totals are empty or zero.")
@@ -1066,12 +1067,16 @@ class QuantityEngine:
             warnings.append("Drainage features were detected without explicit pipe linework.")
         if counts["utility_feature_count"] == 0 and counts["building_count"] > 0:
             warnings.append("Buildings were detected without explicit utility linework.")
+        if quantity_traceability_blocked:
+            warnings.append("Material quantity totals have missing source object IDs; quantity takeoff is blocked from production signoff.")
 
         return QuantityResult(
-            success=not canonical_integrity_blocked,
+            success=not canonical_integrity_blocked and not quantity_traceability_blocked,
             message=(
                 "Concept quantity takeoff completed, but production signoff is blocked by canonical integrity."
                 if canonical_integrity_blocked
+                else "Concept quantity takeoff completed, but production signoff is blocked by missing quantity traceability."
+                if quantity_traceability_blocked
                 else "Concept quantity takeoff completed."
             ),
             totals=totals,

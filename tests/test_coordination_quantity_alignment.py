@@ -75,6 +75,32 @@ class CoordinationQuantityAlignmentTest(unittest.TestCase):
         self.assertEqual(audit["sanitary_length_ft"]["source_object_ids"], ["san-seg-1"])
         self.assertTrue(audit["pipe_length_ft"]["trace_complete"])
 
+    def test_quantity_takeoff_blocks_material_totals_without_source_ids(self) -> None:
+        plan = {
+            "project_name": "Quantity Trace Gap",
+            "units": "ft",
+            "actions": [
+                {
+                    "task": "polyline",
+                    "points": [[0.0, 0.0], [25.0, 0.0]],
+                    "layer": "PIPE",
+                    "label": "P-1",
+                },
+            ],
+            "meta": {
+                "storm_pipes": {
+                    "segments": [{"length_ft": 25.0, "flow_cfs": 1.0, "capacity_cfs": 2.0}],
+                },
+            },
+        }
+
+        result = compute_plan_quantities(plan)
+
+        self.assertFalse(result.success)
+        self.assertFalse(result.explain["meta_summary"]["quantity_traceability_complete"])
+        self.assertIn("pipe_length_ft", result.explain["trace_gaps"])
+        self.assertTrue(any("missing source object IDs" in warning for warning in result.warnings))
+
 
 if __name__ == "__main__":
     unittest.main()
