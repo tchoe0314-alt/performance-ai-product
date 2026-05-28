@@ -15,6 +15,7 @@ class GoldenScenario:
     required_canonical_signals: Tuple[str, ...]
     production_gates: Tuple[str, ...]
     blocked_without: Tuple[str, ...]
+    benchmark_expectations: Tuple[Dict[str, Any], ...]
     benchmark_payload: Dict[str, Any]
 
 
@@ -44,6 +45,14 @@ GOLDEN_SCENARIO_REGISTRY: Tuple[GoldenScenario, ...] = (
         required_canonical_signals=("site_boundary", "grading", "drainage", "storm_pipes", "sanitary", "utilities", "quantities"),
         production_gates=("survey/GIS attached or blocked", "storm hydraulics checked", "export audit complete"),
         blocked_without=("survey_surface", "gis_layers", "coordinate_system", "design_standards"),
+        benchmark_expectations=(
+            {"metric": "lot_area_sf", "min": 30000.0, "max": 38000.0},
+            {"metric": "storm_segment_count", "min": 1},
+            {"metric": "sanitary_segment_count", "min": 1},
+            {"metric": "utility_segment_count", "min": 1},
+            {"metric": "pipe_length_ft", "min": 25.0},
+            {"metric": "civil_production_ready", "equals": False},
+        ),
         benchmark_payload=_payload("Golden Commercial Pad", project_type="commercial_pad", lot_w=220.0, lot_h=160.0),
     ),
     GoldenScenario(
@@ -54,6 +63,14 @@ GOLDEN_SCENARIO_REGISTRY: Tuple[GoldenScenario, ...] = (
         required_canonical_signals=("site_boundary", "building_count", "parking_program", "sanitary", "storm_pipes"),
         production_gates=("all buildings served", "ADA paths checked", "storm graph valid"),
         blocked_without=("service_coverage", "ada_path_checks", "survey_surface"),
+        benchmark_expectations=(
+            {"metric": "lot_area_sf", "min": 150000.0, "max": 175000.0},
+            {"metric": "building_count", "min": 3},
+            {"metric": "parking_count", "min": 80},
+            {"metric": "storm_segment_count", "min": 1},
+            {"metric": "sanitary_segment_count", "min": 1},
+            {"metric": "civil_production_ready", "equals": False},
+        ),
         benchmark_payload=_payload(
             "Golden Multifamily",
             project_type="multifamily",
@@ -70,6 +87,15 @@ GOLDEN_SCENARIO_REGISTRY: Tuple[GoldenScenario, ...] = (
         required_canonical_signals=("site_boundary", "alignments", "grading", "drainage", "storm_pipes", "sanitary", "utilities", "coordination"),
         production_gates=("detention routing complete", "utility conflicts resolved", "quantities traceable"),
         blocked_without=("detention_routing", "hgl_profile", "coordinate_system", "design_standards"),
+        benchmark_expectations=(
+            {"metric": "lot_area_sf", "min": 600000.0, "max": 620000.0},
+            {"metric": "building_count", "min": 4},
+            {"metric": "parking_count", "min": 150},
+            {"metric": "storm_segment_count", "min": 1},
+            {"metric": "sanitary_segment_count", "min": 1},
+            {"metric": "utility_segment_count", "min": 1},
+            {"metric": "civil_production_ready", "equals": False},
+        ),
         benchmark_payload=_payload(
             "Golden 14-Acre Mixed Use",
             project_type="mixed_use",
@@ -87,6 +113,12 @@ GOLDEN_SCENARIO_REGISTRY: Tuple[GoldenScenario, ...] = (
         required_canonical_signals=("existing_surface", "proposed_surface", "low_points", "basins", "detention_routing", "earthwork"),
         production_gates=("survey/DEM source known", "stage-storage routed", "overflow route reviewed"),
         blocked_without=("survey_surface", "detention_routing", "overflow_route"),
+        benchmark_expectations=(
+            {"metric": "lot_area_sf", "min": 90000.0, "max": 96000.0},
+            {"metric": "low_point_count", "min": 1},
+            {"metric": "basin_count", "min": 1},
+            {"metric": "civil_production_ready", "equals": False},
+        ),
         benchmark_payload=_payload("Golden Sloped Detention", project_type="commercial_pad", lot_w=360.0, lot_h=260.0, terrain={"slope_direction": "southeast", "fall_ft": 8.0}),
     ),
     GoldenScenario(
@@ -97,6 +129,13 @@ GOLDEN_SCENARIO_REGISTRY: Tuple[GoldenScenario, ...] = (
         required_canonical_signals=("alignments", "profiles", "cross_sections", "road_crown_controls", "sheet_registry"),
         production_gates=("profiles trace alignments", "sections trace surface", "ADA checked"),
         blocked_without=("alignments", "profiles", "ada_path_checks", "coordinate_system"),
+        benchmark_expectations=(
+            {"metric": "lot_area_sf", "min": 190000.0, "max": 205000.0},
+            {"metric": "alignment_count", "min": 1},
+            {"metric": "profile_count", "min": 1},
+            {"metric": "cross_section_count", "min": 1},
+            {"metric": "civil_production_ready", "equals": False},
+        ),
         benchmark_payload=_payload("Golden Roadway Corridor", project_type="roadway_corridor", lot_w=900.0, lot_h=220.0, deliverables=["road_profile", "cross_sections"]),
     ),
     GoldenScenario(
@@ -107,6 +146,14 @@ GOLDEN_SCENARIO_REGISTRY: Tuple[GoldenScenario, ...] = (
         required_canonical_signals=("storm_pipes", "sanitary", "utilities", "coordination", "resolution_history"),
         production_gates=("crossing rules applied", "reroutes post-validated", "unresolved conflicts explicit"),
         blocked_without=("post_reroute_validation", "separation_rules", "constructability_score"),
+        benchmark_expectations=(
+            {"metric": "lot_area_sf", "min": 210000.0, "max": 225000.0},
+            {"metric": "storm_segment_count", "min": 1},
+            {"metric": "sanitary_segment_count", "min": 1},
+            {"metric": "utility_segment_count", "min": 1},
+            {"metric": "coordination_conflict_count", "min": 1},
+            {"metric": "civil_production_ready", "equals": False},
+        ),
         benchmark_payload=_payload("Golden Utility Heavy", project_type="mixed_use", lot_w=520.0, lot_h=420.0, deliverables=["storm_pipe_plan", "sanitary_plan", "utility_plan"]),
     ),
     GoldenScenario(
@@ -117,6 +164,11 @@ GOLDEN_SCENARIO_REGISTRY: Tuple[GoldenScenario, ...] = (
         required_canonical_signals=("existing_conditions", "floodplain_data", "wetland_data", "protected_zones", "drainage"),
         production_gates=("constraints source cited", "protected zones avoided", "overflow risk flagged"),
         blocked_without=("floodplain", "wetlands", "coordinate_system", "protected_zone_routing"),
+        benchmark_expectations=(
+            {"metric": "lot_area_sf", "min": 130000.0, "max": 140000.0},
+            {"metric": "protected_zone_count", "min": 1},
+            {"metric": "civil_production_ready", "equals": False},
+        ),
         benchmark_payload=_payload("Golden Floodplain Wetland", project_type="constrained_site", lot_w=420.0, lot_h=320.0),
     ),
     GoldenScenario(
@@ -127,6 +179,12 @@ GOLDEN_SCENARIO_REGISTRY: Tuple[GoldenScenario, ...] = (
         required_canonical_signals=("retaining_walls", "wall_tie_in_checks", "earthwork", "cross_sections", "quantities"),
         production_gates=("wall tie-ins checked", "excavation impacts included", "wall quantities traceable"),
         blocked_without=("wall_tie_in_checks", "structure_conflicts", "section_samples"),
+        benchmark_expectations=(
+            {"metric": "lot_area_sf", "min": 60000.0, "max": 63000.0},
+            {"metric": "retaining_wall_count", "min": 1},
+            {"metric": "cross_section_count", "min": 1},
+            {"metric": "civil_production_ready", "equals": False},
+        ),
         benchmark_payload=_payload("Golden Retaining Wall", project_type="retaining_wall_site", lot_w=280.0, lot_h=220.0, terrain={"fall_ft": 18.0}),
     ),
     GoldenScenario(
@@ -137,6 +195,10 @@ GOLDEN_SCENARIO_REGISTRY: Tuple[GoldenScenario, ...] = (
         required_canonical_signals=("missing_requirements", "civil_design_readiness", "engine_readiness"),
         production_gates=("missing data explicit", "no fake production success", "assistant asks for required input"),
         blocked_without=("site_boundary", "survey_surface", "gis_layers", "design_standards"),
+        benchmark_expectations=(
+            {"metric": "civil_production_ready", "equals": False},
+            {"metric": "production_blocker_count", "min": 1},
+        ),
         benchmark_payload={"project_name": "Golden Incomplete Input", "units": "ft", "mode": "site_plan"},
     ),
     GoldenScenario(
@@ -147,6 +209,11 @@ GOLDEN_SCENARIO_REGISTRY: Tuple[GoldenScenario, ...] = (
         required_canonical_signals=("manual_validation", "truth_audit", "civil_design_readiness", "engine_readiness"),
         production_gates=("manual omissions preserved", "export blocked when stale/missing", "assumptions labeled"),
         blocked_without=("manual_validation", "export_audit", "stale_output_blocking"),
+        benchmark_expectations=(
+            {"metric": "lot_area_sf", "min": 24000.0, "max": 26000.0},
+            {"metric": "civil_production_ready", "equals": False},
+            {"metric": "production_blocker_count", "min": 1},
+        ),
         benchmark_payload=_payload("Golden Manual Gate", project_type="commercial_pad", lot_w=180.0, lot_h=140.0, meta={"input_mode": "manual", "source_input_mode": "manual", "manual_mode": True}),
     ),
 )
@@ -191,6 +258,8 @@ def validate_golden_scenarios() -> List[str]:
             issues.append(f"{scenario.scenario_id}: production gates missing")
         if not scenario.blocked_without:
             issues.append(f"{scenario.scenario_id}: blocked_without missing")
+        if not scenario.benchmark_expectations:
+            issues.append(f"{scenario.scenario_id}: benchmark expectations missing")
         if not scenario.benchmark_payload.get("project_name"):
             issues.append(f"{scenario.scenario_id}: benchmark payload missing project_name")
     return issues

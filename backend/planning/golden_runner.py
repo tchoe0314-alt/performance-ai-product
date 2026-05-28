@@ -148,6 +148,119 @@ def _canonical_signal_results(scenario: GoldenScenario, plan: Dict[str, Any]) ->
     ]
 
 
+def _sum_lengths(items: Iterable[Any]) -> float:
+    total = 0.0
+    for item in items:
+        rec = safe_dict(item)
+        total += safe_float(rec.get("length_ft") or rec.get("length"), 0.0)
+    return total
+
+
+def _benchmark_metric_value(metric: str, plan: Dict[str, Any]) -> Any:
+    meta = safe_dict(plan.get("meta"))
+    actions = safe_list(plan.get("actions"))
+    readiness = safe_dict(meta.get("civil_design_readiness"))
+    quantities = safe_dict(meta.get("quantities"))
+    totals = safe_dict(quantities.get("totals"))
+    grading = safe_dict(meta.get("grading") or meta.get("grading_summary"))
+    drainage = safe_dict(meta.get("drainage") or meta.get("drainage_canonical"))
+    storm = safe_dict(meta.get("storm_pipes") or meta.get("storm_pipe_summary"))
+    sanitary = safe_dict(meta.get("sanitary") or meta.get("sanitary_summary"))
+    utilities = safe_dict(meta.get("utilities") or meta.get("utility_summary"))
+    coordination = safe_dict(meta.get("coordination") or meta.get("coordination_summary"))
+    signal = safe_str(metric)
+    if signal == "civil_production_ready":
+        return bool(readiness.get("production_ready"))
+    if signal == "critical_blocker_count":
+        return len(safe_list(readiness.get("critical_blockers")))
+    if signal == "production_blocker_count":
+        return len(safe_list(readiness.get("production_blockers")))
+    if signal == "lot_area_sf":
+        lot = safe_dict(meta.get("lot") or safe_dict(meta.get("site")).get("lot") or meta.get("site_boundary"))
+        area = safe_float(lot.get("area_sf") or lot.get("area"), 0.0)
+        if area <= 0.0:
+            area = safe_float(lot.get("w") or lot.get("width"), 0.0) * safe_float(lot.get("h") or lot.get("height"), 0.0)
+        return area
+    if signal == "building_count":
+        value = safe_int(meta.get("building_count"), 0)
+        if value <= 0:
+            value = len([action for action in actions if safe_str(action.get("layer")).upper() in {"BUILDING", "STRUCTURE"}])
+        return value
+    if signal == "parking_count":
+        return max(
+            safe_int(meta.get("parking_count"), 0),
+            safe_int(totals.get("estimated_parking_stalls"), 0),
+            safe_int(safe_dict(meta.get("parking_program")).get("stall_count"), 0),
+        )
+    if signal == "storm_segment_count":
+        return len(safe_list(storm.get("segments")))
+    if signal == "sanitary_segment_count":
+        return len(safe_list(sanitary.get("segments")))
+    if signal == "utility_segment_count":
+        return max(len(safe_list(utilities.get("segments"))), len(safe_list(safe_dict(utilities.get("conflict_hooks")).get("utility_segments"))))
+    if signal == "pipe_length_ft":
+        return max(safe_float(totals.get("pipe_length_ft"), 0.0), _sum_lengths(safe_list(storm.get("segments"))))
+    if signal == "low_point_count":
+        return max(len(safe_list(grading.get("low_points"))), len(safe_list(drainage.get("low_points"))))
+    if signal == "basin_count":
+        return len(safe_list(drainage.get("basins")))
+    if signal == "alignment_count":
+        return len(safe_list(meta.get("alignments")))
+    if signal == "profile_count":
+        return len(safe_list(meta.get("profiles")))
+    if signal == "cross_section_count":
+        return len(safe_list(meta.get("cross_sections")))
+    if signal == "coordination_conflict_count":
+        return max(
+            safe_int(coordination.get("detected_conflicts"), 0),
+            safe_int(coordination.get("conflict_count"), 0),
+            len(safe_list(coordination.get("conflicts"))),
+            len(safe_list(coordination.get("resolved_conflicts"))),
+        )
+    if signal == "protected_zone_count":
+        return max(len(safe_list(meta.get("protected_zones"))), len(safe_list(safe_dict(meta.get("existing_conditions")).get("protected_zones"))))
+    if signal == "retaining_wall_count":
+        structures = safe_dict(meta.get("structures") or meta.get("structure_summary"))
+        return max(len(safe_list(meta.get("retaining_walls"))), len(safe_list(structures.get("retaining_walls"))), len(safe_list(grading.get("retaining_walls"))))
+    return meta.get(signal)
+
+
+def _expectation_passes(expectation: Dict[str, Any], value: Any) -> bool:
+    if "equals" in expectation:
+        expected = expectation.get("equals")
+        if isinstance(expected, bool):
+            return bool(value) is expected
+        return value == expected
+    if value in (None, ""):
+        return False
+    numeric = safe_float(value, 0.0)
+    if "min" in expectation and numeric < safe_float(expectation.get("min"), 0.0):
+        return False
+    if "max" in expectation and numeric > safe_float(expectation.get("max"), 0.0):
+        return False
+    return True
+
+
+def _benchmark_expectation_results(scenario: GoldenScenario, plan: Dict[str, Any]) -> List[Dict[str, Any]]:
+    results: List[Dict[str, Any]] = []
+    for expectation in scenario.benchmark_expectations:
+        rec = safe_dict(expectation)
+        metric = safe_str(rec.get("metric"))
+        value = _benchmark_metric_value(metric, plan)
+        results.append(
+            {
+                "metric": metric,
+                "value": value,
+                "min": rec.get("min"),
+                "max": rec.get("max"),
+                "equals": rec.get("equals") if "equals" in rec else None,
+                "passed": _expectation_passes(rec, value),
+                "truth_label": "Golden numeric expectations check plausible canonical engineering outputs, not permit approval.",
+            }
+        )
+    return results
+
+
 def run_golden_scenario(
     scenario_id: str,
     *,
@@ -163,6 +276,7 @@ def run_golden_scenario(
     summary = _readiness_summary(plan)
     gates = _scenario_gate_results(scenario, plan)
     signal_results = _canonical_signal_results(scenario, plan)
+    expectation_results = _benchmark_expectation_results(scenario, plan)
     false_production_ready = bool(summary.get("civil_production_ready")) and bool(gates)
     hard_failures = []
     if false_production_ready:
@@ -170,6 +284,9 @@ def run_golden_scenario(
     missing_signals = [item["signal"] for item in signal_results if not bool(item.get("present"))]
     if missing_signals:
         hard_failures.append("required_canonical_signals_missing")
+    failed_expectations = [item["metric"] for item in expectation_results if not bool(item.get("passed"))]
+    if failed_expectations:
+        hard_failures.append("benchmark_numeric_expectations_failed")
     if not safe_dict(plan.get("meta")).get("engine_readiness"):
         hard_failures.append("engine_readiness_missing")
     if not safe_dict(plan.get("meta")).get("civil_design_readiness"):
@@ -185,6 +302,8 @@ def run_golden_scenario(
         "gate_results": gates,
         "canonical_signal_results": signal_results,
         "missing_canonical_signals": missing_signals,
+        "benchmark_expectation_results": expectation_results,
+        "failed_benchmark_expectations": failed_expectations,
         "hard_failures": hard_failures,
         "benchmark_status": "failed" if hard_failures else "passed_with_expected_blockers",
         "truth_label": "Golden benchmark runner checks backend truth signals and blockers; it does not certify engineering design.",

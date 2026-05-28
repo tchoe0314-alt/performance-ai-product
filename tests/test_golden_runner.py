@@ -12,12 +12,12 @@ def _fake_plan(payload):
                 "layer": "SITE",
                 "canonical_source_type": "site",
                 "canonical_source_id": "site-1",
-                "width": 100.0,
-                "height": 100.0,
+                "width": 220.0,
+                "height": 160.0,
             }
         ],
         "meta": {
-            "lot": {"w": 100.0, "h": 100.0},
+            "lot": {"w": 220.0, "h": 160.0},
             "grading": {"proposed_surface": {"source": "test"}, "low_points": [{"id": "lp-1"}]},
             "drainage": {"basins": [{"id": "basin-1"}]},
             "storm_pipes": {"segments": [{"id": "storm-1", "length_ft": 50.0}]},
@@ -50,6 +50,7 @@ class GoldenRunnerTests(unittest.TestCase):
         self.assertFalse(result["readiness_summary"]["civil_production_ready"])
         self.assertTrue(result["gate_results"])
         self.assertFalse(result["missing_canonical_signals"])
+        self.assertFalse(result["failed_benchmark_expectations"])
         self.assertEqual(result["benchmark_status"], "passed_with_expected_blockers")
 
     def test_run_selected_golden_scenarios(self) -> None:
@@ -78,7 +79,23 @@ class GoldenRunnerTests(unittest.TestCase):
 
         self.assertFalse(result["success"])
         self.assertIn("required_canonical_signals_missing", result["hard_failures"])
+        self.assertIn("benchmark_numeric_expectations_failed", result["hard_failures"])
         self.assertIn("site_boundary", result["missing_canonical_signals"])
+
+    def test_run_scenario_fails_when_numeric_expectations_are_implausible(self) -> None:
+        def implausible_plan(payload):
+            plan = _fake_plan(payload)
+            plan["meta"]["lot"] = {"w": 10.0, "h": 10.0}
+            plan["meta"]["storm_pipes"] = {"segments": []}
+            plan["meta"]["quantities"] = {"totals": {"pipe_length_ft": 0.0}}
+            return plan
+
+        result = run_golden_scenario("small_commercial_pad", build_plan_fn=implausible_plan)
+
+        self.assertFalse(result["success"])
+        self.assertIn("benchmark_numeric_expectations_failed", result["hard_failures"])
+        self.assertIn("lot_area_sf", result["failed_benchmark_expectations"])
+        self.assertIn("storm_segment_count", result["failed_benchmark_expectations"])
 
 
 if __name__ == "__main__":

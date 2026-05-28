@@ -21,6 +21,8 @@ class GoldenScenarioTests(unittest.TestCase):
             self.assertTrue(scenario.required_canonical_signals)
             self.assertTrue(scenario.production_gates)
             self.assertTrue(scenario.blocked_without)
+            self.assertTrue(scenario.benchmark_expectations)
+            self.assertTrue(all(item.get("metric") for item in scenario.benchmark_expectations))
             self.assertTrue(scenario.benchmark_payload.get("project_name"))
 
     def test_manual_gate_scenario_preserves_manual_mode(self) -> None:
