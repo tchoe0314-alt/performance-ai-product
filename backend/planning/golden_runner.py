@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
-from .common import safe_dict, safe_list, safe_str
+from .common import safe_dict, safe_float, safe_int, safe_list, safe_str
 from .golden_scenarios import GoldenScenario, get_golden_scenario, golden_scenarios
 
 
@@ -58,6 +58,96 @@ def _scenario_gate_results(scenario: GoldenScenario, plan: Dict[str, Any]) -> Li
     return results
 
 
+def _has_required_signal(signal: str, plan: Dict[str, Any]) -> bool:
+    meta = safe_dict(plan.get("meta"))
+    actions = safe_list(plan.get("actions"))
+    signal_key = safe_str(signal)
+    if not signal_key:
+        return False
+
+    if signal_key == "site_boundary":
+        lot = safe_dict(meta.get("lot") or safe_dict(meta.get("site")).get("lot"))
+        if safe_float(lot.get("w"), 0.0) > 0.0 and safe_float(lot.get("h"), 0.0) > 0.0:
+            return True
+        return any(safe_str(action.get("canonical_source_type")) == "site" or safe_str(action.get("layer")).upper() == "SITE" for action in actions)
+    if signal_key == "building_count":
+        return safe_int(meta.get("building_count"), 0) > 0 or any(safe_str(action.get("layer")).upper() in {"BUILDING", "STRUCTURE"} for action in actions)
+    if signal_key == "existing_surface":
+        grading = safe_dict(meta.get("grading") or meta.get("grading_summary"))
+        return bool(safe_dict(grading.get("existing_surface")) or safe_dict(meta.get("existing_surface")) or safe_dict(meta.get("survey")))
+    if signal_key == "proposed_surface":
+        grading = safe_dict(meta.get("grading") or meta.get("grading_summary"))
+        return bool(safe_dict(grading.get("proposed_surface")))
+    if signal_key == "low_points":
+        grading = safe_dict(meta.get("grading") or meta.get("grading_summary"))
+        drainage = safe_dict(meta.get("drainage") or meta.get("drainage_canonical"))
+        return bool(safe_list(grading.get("low_points")) or safe_list(drainage.get("low_points")))
+    if signal_key == "basins":
+        drainage = safe_dict(meta.get("drainage") or meta.get("drainage_canonical"))
+        return bool(safe_list(drainage.get("basins")))
+    if signal_key == "detention_routing":
+        drainage = safe_dict(meta.get("drainage") or meta.get("drainage_canonical"))
+        return bool(safe_list(drainage.get("detention_routing")) or safe_list(drainage.get("stage_storage")) or safe_dict(meta.get("detention_routing")))
+    if signal_key == "floodplain_data":
+        return bool(safe_dict(meta.get("floodplain")) or safe_dict(safe_dict(meta.get("existing_conditions")).get("floodplain")))
+    if signal_key == "wetland_data":
+        return bool(safe_dict(meta.get("wetlands")) or safe_dict(safe_dict(meta.get("existing_conditions")).get("wetlands")))
+    if signal_key == "protected_zones":
+        return bool(safe_list(meta.get("protected_zones")) or safe_list(safe_dict(meta.get("existing_conditions")).get("protected_zones")))
+    if signal_key == "road_crown_controls":
+        grading = safe_dict(meta.get("grading") or meta.get("grading_summary"))
+        return bool(safe_list(grading.get("road_crown_controls")) or safe_list(meta.get("road_crown_controls")))
+    if signal_key == "wall_tie_in_checks":
+        structures = safe_dict(meta.get("structures"))
+        grading = safe_dict(meta.get("grading") or meta.get("grading_summary"))
+        return bool(safe_list(structures.get("wall_tie_in_checks")) or safe_list(grading.get("wall_tie_in_checks")))
+    if signal_key == "retaining_walls":
+        structures = safe_dict(meta.get("structures"))
+        return bool(safe_list(structures.get("retaining_walls")) or safe_list(meta.get("retaining_walls")))
+    if signal_key == "resolution_history":
+        coordination = safe_dict(meta.get("coordination") or meta.get("coordination_summary"))
+        return bool(safe_list(coordination.get("resolution_history")) or safe_list(coordination.get("resolved_conflicts")))
+    if signal_key == "sheet_registry":
+        return bool(safe_list(meta.get("sheet_registry")) or safe_dict(meta.get("sheet_registry")))
+    if signal_key == "existing_conditions":
+        return bool(safe_dict(meta.get("existing_conditions")) or safe_dict(meta.get("survey")) or safe_dict(meta.get("gis_layers")))
+    if signal_key in {"manual_validation", "truth_audit", "civil_design_readiness", "engine_readiness", "parking_program", "earthwork", "quantities", "coordination"}:
+        return bool(safe_dict(meta.get(signal_key)))
+    if signal_key == "grading":
+        return bool(safe_dict(meta.get("grading") or meta.get("grading_summary")))
+    if signal_key == "drainage":
+        return bool(safe_dict(meta.get("drainage") or meta.get("drainage_canonical")))
+    if signal_key == "storm_pipes":
+        return bool(safe_dict(meta.get("storm_pipes") or meta.get("storm_pipe_summary")))
+    if signal_key == "sanitary":
+        return bool(safe_dict(meta.get("sanitary") or meta.get("sanitary_summary")))
+    if signal_key == "utilities":
+        return bool(safe_dict(meta.get("utilities") or meta.get("utility_summary")))
+    if signal_key == "alignments":
+        return bool(safe_list(meta.get("alignments")))
+    if signal_key == "profiles":
+        return bool(safe_list(meta.get("profiles")))
+    if signal_key == "cross_sections":
+        return bool(safe_list(meta.get("cross_sections")))
+    if signal_key == "hydrology_summary":
+        return bool(safe_dict(meta.get("hydrology_summary")))
+    if signal_key == "missing_requirements":
+        readiness = safe_dict(meta.get("civil_design_readiness"))
+        return bool(safe_list(readiness.get("missing_requirements")) or safe_list(readiness.get("production_blockers")))
+    return bool(meta.get(signal_key))
+
+
+def _canonical_signal_results(scenario: GoldenScenario, plan: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return [
+        {
+            "signal": signal,
+            "present": _has_required_signal(signal, plan),
+            "truth_label": "Required canonical signal must be produced or explicitly blocked for this golden scenario.",
+        }
+        for signal in scenario.required_canonical_signals
+    ]
+
+
 def run_golden_scenario(
     scenario_id: str,
     *,
@@ -72,10 +162,14 @@ def run_golden_scenario(
     plan = runner(payload)
     summary = _readiness_summary(plan)
     gates = _scenario_gate_results(scenario, plan)
+    signal_results = _canonical_signal_results(scenario, plan)
     false_production_ready = bool(summary.get("civil_production_ready")) and bool(gates)
     hard_failures = []
     if false_production_ready:
         hard_failures.append("scenario_reported_production_ready_while_expected_blockers_exist")
+    missing_signals = [item["signal"] for item in signal_results if not bool(item.get("present"))]
+    if missing_signals:
+        hard_failures.append("required_canonical_signals_missing")
     if not safe_dict(plan.get("meta")).get("engine_readiness"):
         hard_failures.append("engine_readiness_missing")
     if not safe_dict(plan.get("meta")).get("civil_design_readiness"):
@@ -89,6 +183,8 @@ def run_golden_scenario(
         "production_gates": list(scenario.production_gates),
         "readiness_summary": summary,
         "gate_results": gates,
+        "canonical_signal_results": signal_results,
+        "missing_canonical_signals": missing_signals,
         "hard_failures": hard_failures,
         "benchmark_status": "failed" if hard_failures else "passed_with_expected_blockers",
         "truth_label": "Golden benchmark runner checks backend truth signals and blockers; it does not certify engineering design.",
