@@ -116,6 +116,33 @@ def reactive_report_from_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
     return build_reactive_update_report(changed_engine_ids=changed, stage_results=stages, stale_outputs=stale)
 
 
+def _completed_stage_names(meta: Dict[str, Any]) -> Set[str]:
+    completed: Set[str] = set()
+    for item in safe_list(meta.get("stage_results")):
+        row = safe_dict(item)
+        stage_name = safe_str(row.get("stage_name"))
+        if not stage_name:
+            continue
+        if bool(row.get("success")) and safe_str(row.get("completeness")).lower() in {
+            "complete",
+            "assumed",
+        }:
+            completed.add(stage_name)
+            continue
+        if bool(row.get("success")) and safe_str(row.get("action")).lower() == "run":
+            completed.add(stage_name)
+
+    completeness = safe_dict(meta.get("stage_completeness"))
+    for source in (
+        safe_dict(completeness.get("required_stage_status")),
+        safe_dict(completeness.get("statuses")),
+    ):
+        for stage_name, status in source.items():
+            if safe_str(status).lower() in {"complete", "assumed"}:
+                completed.add(safe_str(stage_name))
+    return completed
+
+
 def execute_reactive_rerun(
     base_payload: Dict[str, Any],
     *,
@@ -137,9 +164,20 @@ def execute_reactive_rerun(
     plan = build_plan_fn(payload)
     final_meta = safe_dict(plan.get("meta"))
     final_report = dict(report)
+    completed_stages = _completed_stage_names(final_meta)
+    impacted_stages = {safe_str(item) for item in safe_list(final_report.get("impacted_stages")) if safe_str(item)}
+    uncleared_stale = sorted(impacted_stages - completed_stages, key=_stage_index)
     final_report["execution_mode"] = "full_plan_rerun_with_downstream_dirty_metadata"
     final_report["partial_rerun_executed"] = False
     final_report["partial_rerun_blocker"] = "Planner entrypoint does not yet expose isolated stage execution for external reactive edits."
+    final_report["post_rerun_completed_stages"] = sorted(completed_stages, key=_stage_index)
+    final_report["post_rerun_stale_outputs"] = uncleared_stale
+    final_report["post_rerun_export_blocked"] = bool(uncleared_stale)
+    final_report["post_rerun_truth"] = (
+        "All impacted downstream stages reported complete or assumed-complete after rerun."
+        if not uncleared_stale
+        else "Some impacted downstream stages did not report completion after rerun; exports remain blocked for those outputs."
+    )
     final_report["post_rerun_production_ready"] = bool(safe_dict(final_meta.get("civil_design_readiness")).get("production_ready"))
     plan.setdefault("meta", {})["reactive_update_report"] = final_report
     return {

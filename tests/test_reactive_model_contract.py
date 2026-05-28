@@ -31,7 +31,24 @@ class ReactiveModelContractTests(unittest.TestCase):
 
     def test_execute_reactive_rerun_performs_safe_full_rerun_with_truth_label(self) -> None:
         def fake_build(payload):
-            return {"meta": {"civil_design_readiness": {"production_ready": False}, "payload": payload}}
+            return {
+                "meta": {
+                    "civil_design_readiness": {"production_ready": False},
+                    "payload": payload,
+                    "stage_results": [
+                        {"stage_name": "layout", "success": True, "completeness": "complete"},
+                        {"stage_name": "grading", "success": True, "completeness": "complete"},
+                        {"stage_name": "drainage", "success": True, "completeness": "complete"},
+                        {"stage_name": "storm_pipes", "success": True, "completeness": "complete"},
+                        {"stage_name": "sanitary", "success": True, "completeness": "complete"},
+                        {"stage_name": "utility_network", "success": True, "completeness": "complete"},
+                        {"stage_name": "coordination_resolution", "success": True, "completeness": "complete"},
+                        {"stage_name": "earthwork", "success": True, "completeness": "complete"},
+                        {"stage_name": "qa", "success": True, "completeness": "complete"},
+                        {"stage_name": "sheets", "success": True, "completeness": "complete"},
+                    ],
+                }
+            }
 
         result = execute_reactive_rerun(
             {"project_name": "Reactive", "meta": {}},
@@ -46,6 +63,33 @@ class ReactiveModelContractTests(unittest.TestCase):
         self.assertFalse(report["partial_rerun_executed"])
         self.assertIn("full rerun", result["truth_label"])
         self.assertIn("grading", report["impacted_engine_ids"])
+        self.assertFalse(report["post_rerun_export_blocked"])
+        self.assertFalse(report["post_rerun_stale_outputs"])
+
+    def test_execute_reactive_rerun_keeps_exports_blocked_when_impacted_stage_does_not_complete(self) -> None:
+        def fake_build(payload):
+            return {
+                "meta": {
+                    "civil_design_readiness": {"production_ready": False},
+                    "payload": payload,
+                    "stage_results": [
+                        {"stage_name": "layout", "success": True, "completeness": "complete"},
+                        {"stage_name": "grading", "success": True, "completeness": "complete"},
+                    ],
+                }
+            }
+
+        result = execute_reactive_rerun(
+            {"project_name": "Reactive", "meta": {}},
+            changed_engine_ids=["roadway_corridor"],
+            build_plan_fn=fake_build,
+        )
+
+        report = result["reactive_update_report"]
+
+        self.assertTrue(report["post_rerun_export_blocked"])
+        self.assertIn("storm_pipes", report["post_rerun_stale_outputs"])
+        self.assertIn("exports remain blocked", report["post_rerun_truth"])
 
 
 if __name__ == "__main__":
