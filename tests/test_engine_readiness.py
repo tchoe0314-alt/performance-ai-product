@@ -75,6 +75,65 @@ class EngineReadinessTests(unittest.TestCase):
         self.assertEqual(storm["status"], "concept_ready_needs_production_depth")
         self.assertIn("storm_depth", {item["area"] for item in storm["production_blockers"]})
 
+    def test_failed_truth_gates_block_qa_engine_readiness(self) -> None:
+        readiness = evaluate_engine_readiness(
+            {
+                "meta": {
+                    **_complete_meta(),
+                    "truth_audit": {"success": False, "summary": {"failing_checks": 1}},
+                    "manual_validation": {"success": False, "failures": [{"code": "MANUAL_STORM_GRAPH_INVALID"}]},
+                }
+            }
+        )
+
+        qa = readiness["engines"]["qa_validation"]
+        fields = {item["field"] for item in qa["production_blockers"]}
+        self.assertEqual(qa["status"], "concept_ready_needs_production_depth")
+        self.assertIn("truth_audit", fields)
+        self.assertIn("manual_validation", fields)
+
+    def test_quantity_trace_gaps_block_quantity_engine_readiness(self) -> None:
+        readiness = evaluate_engine_readiness(
+            {
+                "meta": {
+                    **_complete_meta(),
+                    "quantities": {
+                        "success": False,
+                        "totals": {"pipe_length_ft": 120.0},
+                        "explain": {
+                            "meta_summary": {"quantity_traceability_complete": False},
+                            "trace_gaps": {"pipe_length_ft": {"value": 120.0}},
+                        },
+                    },
+                }
+            }
+        )
+
+        quantity = readiness["engines"]["quantity"]
+        fields = {item["field"] for item in quantity["production_blockers"]}
+        self.assertEqual(quantity["status"], "concept_ready_needs_production_depth")
+        self.assertIn("quantity_success", fields)
+        self.assertIn("quantity_traceability", fields)
+        self.assertIn("trace_gaps", fields)
+
+    def test_stale_reactive_report_blocks_reactive_engine_readiness(self) -> None:
+        readiness = evaluate_engine_readiness(
+            {
+                "meta": {
+                    **_complete_meta(),
+                    "stage_results": {"grading": {"completed": True}},
+                    "reactive_update_report": {
+                        "export_blocked": True,
+                        "post_rerun_stale_outputs": ["drainage", "storm_pipes"],
+                    },
+                }
+            }
+        )
+
+        reactive = readiness["engines"]["reactive_model"]
+        self.assertEqual(reactive["status"], "concept_ready_needs_production_depth")
+        self.assertIn("stale_outputs", {item["field"] for item in reactive["production_blockers"]})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -212,6 +212,95 @@ def _depth_blockers_for_engine(engine_id: str, meta: Dict[str, Any]) -> List[Dic
     ]
 
 
+def _explicit_blockers_for_engine(engine_id: str, meta: Dict[str, Any]) -> List[Dict[str, Any]]:
+    blockers: List[Dict[str, Any]] = []
+    if engine_id == "qa_validation":
+        truth_audit = _safe_dict(meta.get("truth_audit"))
+        if truth_audit and truth_audit.get("success") is not True:
+            blockers.append(
+                {
+                    "area": "qa_validation",
+                    "field": "truth_audit",
+                    "message": "QA readiness is blocked because the canonical truth audit failed.",
+                    "severity": "blocker",
+                }
+            )
+        manual_validation = _safe_dict(meta.get("manual_validation"))
+        if manual_validation and manual_validation.get("success") is not True:
+            blockers.append(
+                {
+                    "area": "qa_validation",
+                    "field": "manual_validation",
+                    "message": "QA readiness is blocked because manual validation gates failed.",
+                    "severity": "blocker",
+                }
+            )
+    elif engine_id == "quantity":
+        quantities = _safe_dict(meta.get("quantities"))
+        explain = _safe_dict(quantities.get("explain"))
+        meta_summary = _safe_dict(explain.get("meta_summary"))
+        if quantities and quantities.get("success") is False:
+            blockers.append(
+                {
+                    "area": "quantity",
+                    "field": "quantity_success",
+                    "message": "Quantity readiness is blocked because the quantity engine reported failure.",
+                    "severity": "blocker",
+                }
+            )
+        if meta_summary and meta_summary.get("quantity_traceability_complete") is False:
+            blockers.append(
+                {
+                    "area": "quantity",
+                    "field": "quantity_traceability",
+                    "message": "Quantity readiness is blocked because material takeoff values are not traceable to canonical source IDs.",
+                    "severity": "blocker",
+                }
+            )
+        if _safe_dict(explain.get("trace_gaps")):
+            blockers.append(
+                {
+                    "area": "quantity",
+                    "field": "trace_gaps",
+                    "message": "Quantity readiness is blocked by unresolved source trace gaps.",
+                    "severity": "blocker",
+                }
+            )
+    elif engine_id == "export_cad":
+        export_audit = _safe_dict(meta.get("export_audit"))
+        if export_audit and (export_audit.get("ready") is False or export_audit.get("production_export_ready") is False or export_audit.get("export_blocked") is True):
+            blockers.append(
+                {
+                    "area": "cad_interop",
+                    "field": "export_audit",
+                    "message": "Export readiness is blocked because the export audit is not production-ready.",
+                    "severity": "blocker",
+                }
+            )
+        traceability = _safe_dict(export_audit.get("canonical_id_traceability"))
+        if traceability and traceability.get("ready") is not True:
+            blockers.append(
+                {
+                    "area": "cad_interop",
+                    "field": "canonical_id_traceability",
+                    "message": "Export readiness is blocked because exported objects are not fully mapped to canonical IDs.",
+                    "severity": "blocker",
+                }
+            )
+    elif engine_id == "reactive_model":
+        reactive = _safe_dict(meta.get("reactive_update_report"))
+        if reactive and (reactive.get("export_blocked") is True or _safe_list(reactive.get("post_rerun_stale_outputs"))):
+            blockers.append(
+                {
+                    "area": "reactive_model",
+                    "field": "stale_outputs",
+                    "message": "Reactive readiness is blocked because downstream outputs remain stale after rerun.",
+                    "severity": "blocker",
+                }
+            )
+    return blockers
+
+
 def _contract_gate_status(contract: EngineContract, *, production_ready: bool, evidence: Sequence[str], production_gaps: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     status = "passed" if production_ready else ("blocked" if production_gaps else "pending")
     return [
@@ -244,6 +333,7 @@ def evaluate_engine_readiness(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
         if depth_validation.get("production_ready"):
             evidence.append("depth_validation")
         production_gaps.extend(_depth_blockers_for_engine(contract.engine_id, meta))
+        production_gaps.extend(_explicit_blockers_for_engine(contract.engine_id, meta))
 
         if missing:
             status = "blocked"
