@@ -5,6 +5,7 @@ import importlib.util
 import json
 import re
 import zipfile
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -29,6 +30,8 @@ HEAVY_FORMAT_REQUIREMENTS = {
     ".las": "LAS point-cloud import requires laspy plus coordinate metadata validation.",
     ".laz": "LAZ point-cloud import requires laspy with LAZ backend support.",
 }
+GEOGRAPHIC_EPSG_CODES = {"4326", "4269", "4258"}
+ENGINEERING_UNITS = {"ft", "foot", "feet", "us-ft", "us_survey_ft", "survey_ft", "m", "meter", "meters", "metre", "metres"}
 
 
 def _normalized_field_map(fieldnames: Iterable[str]) -> Dict[str, str]:
@@ -55,20 +58,85 @@ def _bounds(points: List[Dict[str, Any]]) -> Optional[Dict[str, float]]:
 
 
 def _coordinate_key(value: Dict[str, Any]) -> str:
-    rec = safe_dict(value)
-    epsg = safe_str(rec.get("epsg") or rec.get("EPSG"))
+    rec = _normalize_coordinate_system(value)
+    epsg = safe_str(rec.get("epsg"))
     name = safe_str(rec.get("name") or rec.get("crs"))
-    units = safe_str(rec.get("units"))
-    return "|".join(part.lower() for part in (epsg, name, units) if part)
+    return (epsg or name).lower()
+
+
+def _epsg_code(value: str) -> str:
+    text = safe_str(value).upper().replace("EPSG::", "EPSG:")
+    match = re.search(r"(?:EPSG[:/ ]*)?(\d{4,6})", text)
+    return match.group(1) if match else ""
+
+
+def _normalize_units(value: str) -> str:
+    text = safe_str(value).strip().lower().replace(" ", "_")
+    aliases = {
+        "feet": "ft",
+        "foot": "ft",
+        "us_survey_foot": "us_survey_ft",
+        "us_survey_feet": "us_survey_ft",
+        "metres": "m",
+        "metre": "m",
+        "meters": "m",
+        "meter": "m",
+        "degree": "degrees",
+    }
+    return aliases.get(text, text)
+
+
+def _normalize_coordinate_system(value: Dict[str, Any]) -> Dict[str, Any]:
+    rec = deepcopy(safe_dict(value))
+    raw = safe_str(rec.get("epsg") or rec.get("EPSG") or rec.get("name") or rec.get("crs") or rec.get("projection"))
+    code = _epsg_code(raw)
+    if code:
+        rec["epsg"] = f"EPSG:{code}"
+    units = _normalize_units(safe_str(rec.get("units")))
+    if not units and code in GEOGRAPHIC_EPSG_CODES:
+        units = "degrees"
+    if units:
+        rec["units"] = units
+    rec["is_geographic"] = bool(code in GEOGRAPHIC_EPSG_CODES or units in {"degree", "degrees", "decimal_degrees"})
+    rec["is_projected"] = bool(code and not rec["is_geographic"])
+    return rec
+
+
+def _coordinate_validation(value: Dict[str, Any]) -> Dict[str, Any]:
+    coord = _normalize_coordinate_system(value)
+    missing: List[str] = []
+    blockers: List[Dict[str, Any]] = []
+    warnings: List[str] = []
+    if not safe_str(coord.get("epsg") or coord.get("name") or coord.get("crs")):
+        missing.append("epsg_or_projection")
+    units = safe_str(coord.get("units"))
+    if not units:
+        missing.append("units")
+    elif units not in ENGINEERING_UNITS:
+        blockers.append({"field": "coordinate_system", "reason": f"Coordinate units '{units}' are not engineering distance units."})
+    if bool(coord.get("is_geographic")):
+        blockers.append({"field": "coordinate_system", "reason": "Geographic latitude/longitude CRS is map context only; engineering quantities require a projected site CRS."})
+    if missing:
+        blockers.append({"field": "coordinate_system", "reason": "Coordinate system metadata is incomplete.", "missing_fields": missing})
+    if safe_str(coord.get("epsg")) in {"EPSG:3857", "EPSG:900913"}:
+        warnings.append("Web Mercator is not survey-grade for civil engineering quantities; confirm a local projected CRS.")
+    return {
+        "valid": not blockers,
+        "production_usable": not blockers,
+        "coordinate_system": coord,
+        "blockers": blockers,
+        "warnings": warnings,
+        "truth_label": "Coordinate systems must be projected with engineering distance units before imports are production-usable.",
+    }
 
 
 def _coordinate_from_import(rec: Dict[str, Any]) -> Dict[str, Any]:
     coordinate = safe_dict(rec.get("coordinate_system"))
     if coordinate:
-        return coordinate
+        return _normalize_coordinate_system(coordinate)
     surface = rec.get("surface")
     profile = safe_dict(getattr(surface, "_inferred_profile", {})) if surface is not None else {}
-    return safe_dict(profile.get("coordinate_system"))
+    return _normalize_coordinate_system(safe_dict(profile.get("coordinate_system")))
 
 
 def import_survey_csv(path: Path, *, coordinate_system: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -700,10 +768,10 @@ def _coordinate_from_geojson(payload: Dict[str, Any]) -> Dict[str, Any]:
     name = safe_str(props.get("name") or crs.get("name"))
     if not name:
         return {}
-    return {
+    return _normalize_coordinate_system({
         "name": name,
         "source": "geojson_crs",
-    }
+    })
 
 
 def merge_imported_existing_conditions(*imports: Dict[str, Any]) -> Dict[str, Any]:
@@ -749,7 +817,7 @@ def merge_imported_existing_conditions(*imports: Dict[str, Any]) -> Dict[str, An
         },
         "gis_layers": gis_layers,
         "existing_conditions": gis_layers,
-        "coordinate_system": coordinate_system,
+        "coordinate_system": _normalize_coordinate_system(coordinate_system),
         "coordinate_systems": coordinate_systems,
         "surfaces": surfaces,
         "warnings": warnings,
@@ -785,7 +853,7 @@ def validate_imported_existing_conditions_package(
             }
         )
 
-    coordinate = safe_dict(rec.get("coordinate_system"))
+    coordinate = _normalize_coordinate_system(safe_dict(rec.get("coordinate_system")))
     coordinate_systems = [safe_dict(item) for item in safe_list(rec.get("coordinate_systems")) if safe_dict(item)]
     coordinate_keys = sorted({key for key in (_coordinate_key(item) for item in coordinate_systems) if key})
     if not coordinate and not coordinate_keys:
@@ -798,6 +866,9 @@ def validate_imported_existing_conditions_package(
                 "coordinate_systems": coordinate_systems,
             }
         )
+    coordinate_validation = _coordinate_validation(coordinate or (coordinate_systems[0] if coordinate_systems else {}))
+    blockers.extend(safe_list(coordinate_validation.get("blockers")))
+    warnings.extend(safe_list(coordinate_validation.get("warnings")))
 
     survey = safe_dict(rec.get("survey"))
     point_count = safe_int(survey.get("point_count"), len(safe_list(survey.get("points"))))
@@ -839,6 +910,7 @@ def validate_imported_existing_conditions_package(
         "survey_point_count": point_count,
         "breakline_count": breakline_count,
         "layer_counts": layer_counts,
+        "coordinate_system_validation": coordinate_validation,
         "truth_label": "Successful import is not production approval; CRS, surface evidence, and required GIS layers must validate first.",
     }
 

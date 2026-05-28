@@ -7,6 +7,8 @@ from .common import safe_dict, safe_float, safe_int, safe_list, safe_str
 
 
 REQUIRED_GIS_LAYERS = ("parcels", "easements", "row", "floodplain", "wetlands", "existing_utilities")
+GEOGRAPHIC_EPSG_CODES = {"4326", "4269", "4258"}
+ENGINEERING_UNITS = {"ft", "foot", "feet", "us-ft", "us_survey_ft", "survey_ft", "m", "meter", "meters", "metre", "metres"}
 
 
 def _first_dict(*values: Any) -> Dict[str, Any]:
@@ -29,6 +31,60 @@ def _nested_lookup(mapping: Dict[str, Any], paths: Iterable[str]) -> Any:
         if found and current not in (None, "", [], {}):
             return current
     return None
+
+
+def _epsg_code(value: str) -> str:
+    text = safe_str(value).upper().replace("EPSG::", "EPSG:")
+    import re
+
+    match = re.search(r"(?:EPSG[:/ ]*)?(\d{4,6})", text)
+    return match.group(1) if match else ""
+
+
+def _normalize_units(value: str) -> str:
+    text = safe_str(value).strip().lower().replace(" ", "_")
+    aliases = {
+        "feet": "ft",
+        "foot": "ft",
+        "us_survey_foot": "us_survey_ft",
+        "us_survey_feet": "us_survey_ft",
+        "metres": "m",
+        "metre": "m",
+        "meters": "m",
+        "meter": "m",
+        "degree": "degrees",
+    }
+    return aliases.get(text, text)
+
+
+def _coordinate_quality(coord: Dict[str, Any], fallback_units: str = "ft") -> Dict[str, Any]:
+    rec = safe_dict(coord)
+    raw = safe_str(rec.get("epsg") or rec.get("epsg_code") or rec.get("srid") or rec.get("name") or rec.get("crs") or rec.get("projection"))
+    code = _epsg_code(raw)
+    epsg = f"EPSG:{code}" if code else safe_str(rec.get("epsg") or rec.get("epsg_code") or rec.get("srid"))
+    name = safe_str(rec.get("name") or rec.get("crs") or rec.get("projection"))
+    units = _normalize_units(safe_str(rec.get("units") or fallback_units))
+    is_geographic = code in GEOGRAPHIC_EPSG_CODES or units in {"degree", "degrees", "decimal_degrees"}
+    blockers: List[Dict[str, str]] = []
+    if not (epsg or name):
+        blockers.append({"field": "coordinate_system", "reason": "No CRS/EPSG/projection is attached for real-world coordinates."})
+    if not units:
+        blockers.append({"field": "coordinate_system", "reason": "Coordinate-system units are missing."})
+    elif units not in ENGINEERING_UNITS:
+        blockers.append({"field": "coordinate_system", "reason": f"Coordinate-system units '{units}' are not engineering distance units."})
+    if is_geographic:
+        blockers.append({"field": "coordinate_system", "reason": "Latitude/longitude CRS is not production-usable for civil engineering distances; use a projected site CRS."})
+    return {
+        "ready": bool(epsg or name),
+        "epsg": epsg,
+        "name": name,
+        "units": units,
+        "is_geographic": is_geographic,
+        "is_projected": bool((epsg or name) and not is_geographic),
+        "production_usable": not blockers,
+        "blockers": blockers,
+        "source": safe_str(rec.get("source"), "missing" if not (epsg or name) else "provided"),
+    }
 
 
 def _layer_count(value: Any) -> int:
@@ -128,17 +184,7 @@ def _coordinate_summary(meta: Dict[str, Any], parsed: Dict[str, Any]) -> Dict[st
         parsed.get("coordinate_system"),
         _nested_lookup(parsed, ("site_inputs.coordinate_system", "gis_layers.coordinate_system", "existing_conditions.coordinate_system")),
     )
-    epsg = safe_str(coord.get("epsg") or coord.get("epsg_code") or coord.get("srid"))
-    name = safe_str(coord.get("name") or coord.get("crs") or coord.get("projection"))
-    units = safe_str(coord.get("units") or parsed.get("units") or meta.get("units"), "ft")
-    ready = bool(epsg or name)
-    return {
-        "ready": ready,
-        "epsg": epsg,
-        "name": name,
-        "units": units,
-        "source": safe_str(coord.get("source"), "missing" if not ready else "provided"),
-    }
+    return _coordinate_quality(coord, fallback_units=safe_str(parsed.get("units") or meta.get("units"), "ft"))
 
 
 def summarize_existing_conditions(plan_or_meta: Dict[str, Any], parsed: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -158,6 +204,8 @@ def summarize_existing_conditions(plan_or_meta: Dict[str, Any], parsed: Optional
         missing.append({"field": "gis_layers", "reason": "No parcel, easement, ROW, floodplain, wetland, or existing utility layers are attached."})
     if not coordinate_system["ready"]:
         missing.append({"field": "coordinate_system", "reason": "No CRS/EPSG/projection is attached for real-world coordinates."})
+    elif not coordinate_system["production_usable"]:
+        missing.extend(deepcopy(safe_list(coordinate_system.get("blockers"))))
     if dem_lidar["ready"] and not dem_lidar["approved_for_production"]:
         warnings.append("DEM/LiDAR or terrain source is present but not marked production-approved.")
     if survey["ready"] and not survey["has_control"]:

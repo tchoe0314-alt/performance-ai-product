@@ -40,6 +40,24 @@ class ExistingConditionsTests(unittest.TestCase):
         self.assertTrue(summary["gis"]["ready"])
         self.assertTrue(summary["coordinate_system"]["ready"])
 
+    def test_geographic_coordinate_system_is_not_production_ready(self) -> None:
+        summary = summarize_existing_conditions(
+            {
+                "meta": {
+                    "grading": {"source_quality": "survey"},
+                    "survey": {"point_count": 8, "source": "uploaded_csv", "benchmark": "BM-1"},
+                    "gis_layers": {"parcels": [{"id": "P-1"}]},
+                    "coordinate_system": {"epsg": "EPSG:4326", "units": "degrees", "source": "geojson"},
+                }
+            }
+        )
+        fields = {item["field"] for item in summary["missing_requirements"]}
+
+        self.assertFalse(summary["production_ready"])
+        self.assertTrue(summary["coordinate_system"]["ready"])
+        self.assertFalse(summary["coordinate_system"]["production_usable"])
+        self.assertIn("coordinate_system", fields)
+
     def test_civil_readiness_blocks_missing_coordinate_system(self) -> None:
         readiness = civil_design_readiness({"meta": {"grading": {"source_quality": "survey"}, "survey": {"point_count": 4}, "gis_layers": {"parcels": [{}]}}})
         gaps = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
