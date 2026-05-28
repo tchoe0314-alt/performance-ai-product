@@ -334,6 +334,18 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertIn(("cad_interop", "civil3d_landxml"), gaps)
         self.assertIn(("optimization", "optimization_summary"), gaps)
 
+    def test_civil_readiness_blocks_geographic_coordinate_system_for_production(self) -> None:
+        meta = _complete_meta()
+        meta["survey"] = {"point_count": 8, "source": "survey_points"}
+        meta["gis_layers"] = {"parcels": [{}], "easements": [{}], "row": [{}], "existing_utilities": [{}]}
+        meta["coordinate_system"] = {"epsg": "EPSG:4326", "units": "degrees", "source": "geojson"}
+
+        readiness = civil_design_readiness({"meta": meta})
+        gaps = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
+
+        self.assertFalse(readiness["production_ready"])
+        self.assertIn(("existing_conditions", "coordinate_system"), gaps)
+
     def test_hydraulic_depth_blocks_surcharged_backwater_and_concept_proxy(self) -> None:
         meta = _complete_meta()
         meta["storm_pipes"].update(

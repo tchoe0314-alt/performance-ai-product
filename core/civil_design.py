@@ -567,6 +567,41 @@ def _standards_production_blockers(standards: Dict[str, Any], accepted_rules: Se
     return derived
 
 
+def _coordinate_system_blockers(coordinate: Dict[str, Any]) -> List[Dict[str, Any]]:
+    rec = _safe_dict(coordinate)
+    blockers = [_safe_dict(item) for item in _safe_list(rec.get("blockers")) if _safe_dict(item)]
+    if blockers:
+        return blockers
+    epsg_text = " ".join(
+        _safe_str(rec.get(key)).lower()
+        for key in ("epsg", "epsg_code", "srid", "name", "crs", "projection")
+        if _safe_str(rec.get(key))
+    )
+    units = _safe_str(rec.get("units")).lower().replace(" ", "_")
+    is_geographic = (
+        "4326" in epsg_text
+        or "4269" in epsg_text
+        or "4258" in epsg_text
+        or units in {"degree", "degrees", "decimal_degrees"}
+        or rec.get("is_geographic") is True
+    )
+    if is_geographic:
+        blockers.append(
+            {
+                "field": "coordinate_system",
+                "reason": "Latitude/longitude CRS is not production-usable for civil engineering distances; use a projected site CRS.",
+            }
+        )
+    if rec.get("production_usable") is False:
+        blockers.append(
+            {
+                "field": "coordinate_system",
+                "reason": "Coordinate system is marked not production-usable.",
+            }
+        )
+    return blockers
+
+
 def _has_any(mapping: Dict[str, Any], keys: Iterable[str]) -> bool:
     return any(mapping.get(key) not in (None, "", [], {}) for key in keys)
 
@@ -652,7 +687,9 @@ def check_existing_conditions_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
     gis = _safe_dict(meta.get("gis_layers") or meta.get("existing_conditions"))
     survey_ready = bool(summary_survey.get("ready")) or bool(survey) or source == "survey"
     gis_ready = bool(summary_gis.get("ready")) or _has_any(gis, ("parcels", "easements", "row", "floodplain", "wetlands", "existing_utilities"))
-    coordinate_ready = bool(summary_coordinate.get("ready")) or bool(_safe_dict(meta.get("coordinate_system")))
+    meta_coordinate = _safe_dict(meta.get("coordinate_system"))
+    coordinate_ready = bool(summary_coordinate.get("ready")) or bool(meta_coordinate)
+    coordinate_blockers = _coordinate_system_blockers(summary_coordinate or meta_coordinate)
     if source != "survey" and not survey_ready:
         gaps.append(
             _production_gap(
@@ -678,6 +715,15 @@ def check_existing_conditions_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
                 "coordinate_system",
                 "Production civil design needs a real CRS/EPSG/projection so survey, GIS, utilities, and exports share one coordinate truth.",
                 "Attach the project coordinate system or mark the design as local-coordinate concept only.",
+            )
+        )
+    for blocker in coordinate_blockers:
+        gaps.append(
+            _production_gap(
+                "existing_conditions",
+                _safe_str(blocker.get("field"), "coordinate_system"),
+                _safe_str(blocker.get("reason"), "Coordinate system is not production-usable."),
+                "Attach a projected engineering CRS with distance units before production coordination/export.",
             )
         )
     if source in {"terrain", "image_inferred", "address_context"}:
