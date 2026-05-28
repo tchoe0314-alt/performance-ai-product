@@ -20,12 +20,17 @@ def _readiness_summary(plan: Dict[str, Any]) -> Dict[str, Any]:
     meta = safe_dict(plan.get("meta"))
     civil = safe_dict(meta.get("civil_design_readiness"))
     engine = safe_dict(meta.get("engine_readiness"))
+    construction = safe_dict(meta.get("construction_readiness"))
+    construction_package = safe_dict(meta.get("construction_package_manifest"))
     return {
         "civil_status": safe_str(civil.get("status")),
         "civil_success": bool(civil.get("success")),
         "civil_production_ready": bool(civil.get("production_ready")),
+        "construction_ready": bool(construction.get("ready")),
+        "construction_release_allowed": bool(construction_package.get("release_allowed")),
         "critical_blocker_count": len(safe_list(civil.get("critical_blockers"))),
         "production_blocker_count": len(safe_list(civil.get("production_blockers"))),
+        "construction_blocker_count": len(safe_list(construction.get("blockers"))),
         "engine_production_ready": bool(engine.get("production_ready")),
         "blocked_engine_ids": safe_list(engine.get("blocked_engine_ids")),
         "production_blocked_engine_ids": safe_list(engine.get("production_blocked_engine_ids")),
