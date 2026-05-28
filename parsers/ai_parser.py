@@ -4,26 +4,22 @@ import json
 import os
 import re
 from copy import deepcopy
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
-from openai import OpenAI
+from backend.ai.provider import AIProviderUnavailable, get_legacy_responses_client
 
 load_dotenv()
 
-client: OpenAI | None = None
+client: Any | None = None
 
 
-def _get_client() -> OpenAI:
+def _get_client() -> Any:
     global client
     if client is not None:
         return client
 
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError("Missing OPENAI_API_KEY. Add it to your environment or .env file before using AI prompt parsing.")
-
-    client = OpenAI(api_key=api_key)
+    client = get_legacy_responses_client()
     return client
 
 
@@ -41,6 +37,10 @@ OPTIONAL_TOP_LEVEL_FIELDS = {
     "setback", "site_type", "street_edge", "layout_strategy", "intensity",
     "terrain", "acreage", "road", "bridge", "pool", "drainage",
     "subdivision", "grading", "utility_network",
+}
+
+OPTIONAL_TOP_LEVEL_OBJECT_FIELDS = {
+    "road", "bridge", "pool", "drainage", "subdivision", "grading", "utility_network",
 }
 
 OPTIONAL_NESTED_FIELD_PATHS = {
@@ -209,7 +209,8 @@ def _apply_three_state_field_contract(data: Dict[str, Any], prompt_text: str = "
         source = _field_source_for_prompt(detection_text, key, raw_value)
         wrapped = normalize_field_wrapper(raw_value, default_source=source)
         wrapped["source"] = source
-        data[key] = wrapped
+        if not (key in OPTIONAL_TOP_LEVEL_OBJECT_FIELDS and isinstance(raw_value, dict) and not _is_three_state_wrapper(raw_value)):
+            data[key] = wrapped
         field_states[key] = deepcopy(wrapped)
 
     for path in OPTIONAL_NESTED_FIELD_PATHS:
@@ -1740,32 +1741,209 @@ def _normalize_command_data(data: Dict[str, Any], prompt_text: str = "") -> Dict
     return data
 
 
-def ask_mode(user_text: str) -> str:
-    response = _get_client().responses.create(
-        model="gpt-5",
-        input=[
-            {"role": "system", "content": CHAT_SYSTEM_PROMPT},
-            {"role": "user", "content": user_text},
+def _first_number_from_patterns(text: str, patterns: List[str]) -> Optional[float]:
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return _safe_number(match.group(1))
+    return None
+
+
+def _first_int_from_patterns(text: str, patterns: List[str]) -> Optional[int]:
+    number = _first_number_from_patterns(text, patterns)
+    return _safe_int(number) if number is not None else None
+
+
+def _project_type_from_text(text: str) -> str:
+    lowered = text.lower()
+    if "subdivision" in lowered:
+        return "residential_subdivision"
+    if "mixed-use" in lowered or "mixed use" in lowered:
+        return "mixed_use"
+    if "multifamily" in lowered or "apartment" in lowered:
+        return "multifamily_site"
+    if "commercial" in lowered or "retail" in lowered or "pad" in lowered:
+        return "commercial_pad"
+    if "road" in lowered or "corridor" in lowered:
+        return "roadway_corridor"
+    if "drainage" in lowered and not any(token in lowered for token in ("building", "parking", "site plan")):
+        return "drainage_network"
+    return "commercial_pad"
+
+
+def _lot_from_text(text: str) -> Optional[Dict[str, float]]:
+    match = re.search(
+        r"(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|')?\s*(?:by|x|×)\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|')?\s*(?:lot|site|parcel|boundary)?",
+        text,
+        re.IGNORECASE,
+    )
+    if match:
+        return {"x": 0.0, "y": 0.0, "w": float(match.group(1)), "h": float(match.group(2))}
+    acres = _first_number_from_patterns(text, [r"(\d+(?:\.\d+)?)\s*[- ]?acre"])
+    if acres and acres > 0.0:
+        area = acres * 43560.0
+        width = (area * 1.35) ** 0.5
+        height = area / max(width, 1e-9)
+        return {"x": 0.0, "y": 0.0, "w": round(width, 3), "h": round(height, 3)}
+    return None
+
+
+def _buildings_from_text(text: str, lot: Optional[Dict[str, float]]) -> List[Dict[str, Any]]:
+    buildings: List[Dict[str, Any]] = []
+    for match in re.finditer(
+        r"(?:one|1|a|an)\s+(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|')?\s*(?:by|x|×)\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|')?\s+([a-z -]*?)building",
+        text,
+        re.IGNORECASE,
+    ):
+        width = float(match.group(1))
+        depth = float(match.group(2))
+        use = _normalize_building_use(match.group(3), _project_type_from_text(text))
+        buildings.append({"name": f"{use.replace('_', ' ').title()} 1", "use": use, "w": width, "d": depth, "footprint_type": "rectangular"})
+    for match in re.finditer(
+        r"(\d+)\s+([a-z -]*?)buildings?(?:,\s*each)?\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|')?\s*(?:by|x|×)\s*(\d+(?:\.\d+)?)",
+        text,
+        re.IGNORECASE,
+    ):
+        count = max(1, int(float(match.group(1))))
+        use_text = match.group(2).strip().lower()
+        width = float(match.group(3))
+        depth = float(match.group(4))
+        use = _normalize_building_use(use_text, _project_type_from_text(text))
+        for index in range(count):
+            buildings.append(
+                {
+                    "name": f"{use.replace('_', ' ').title()} {index + 1}",
+                    "use": use,
+                    "w": width,
+                    "d": depth,
+                    "footprint_type": "rectangular",
+                }
+            )
+    for match in re.finditer(
+        r"(?:one|1|a|an)\s+([a-z -]*?)building\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|')?\s*(?:by|x|×)\s*(\d+(?:\.\d+)?)",
+        text,
+        re.IGNORECASE,
+    ):
+        width = float(match.group(2))
+        depth = float(match.group(3))
+        use = _normalize_building_use(match.group(1), _project_type_from_text(text))
+        buildings.append({"name": f"{use.replace('_', ' ').title()} 1", "use": use, "w": width, "d": depth, "footprint_type": "rectangular"})
+    if not buildings:
+        width = _first_number_from_patterns(text, [r"building(?:\s+width)?\s*(\d+(?:\.\d+)?)"])
+        depth = _first_number_from_patterns(text, [r"building[^.]{0,40}(?:depth|deep)\s*(\d+(?:\.\d+)?)"])
+        if width and depth:
+            buildings.append({"name": "Building 1", "use": _normalize_building_use("", _project_type_from_text(text)), "w": width, "d": depth, "footprint_type": "rectangular"})
+    if buildings and lot:
+        x = lot.get("x", 0.0) + lot.get("w", 0.0) * 0.5
+        y = lot.get("y", 0.0) + lot.get("h", 0.0) * 0.5
+        for index, building in enumerate(buildings):
+            building.setdefault("x", round(x + (index % 3 - 1) * (building["w"] + 20.0), 3))
+            building.setdefault("y", round(y + (index // 3) * (building["d"] + 20.0), 3))
+    return buildings[:20]
+
+
+def _deterministic_command_data(user_text: str) -> Dict[str, Any]:
+    text = str(user_text or "")
+    lowered = text.lower()
+    lot = _lot_from_text(text)
+    buildings = _buildings_from_text(text, lot)
+    parking_count = _first_int_from_patterns(
+        text,
+        [
+            r"parking\s+for\s+(\d+)",
+            r"(\d+)\s+(?:parking\s+)?(?:cars|spaces|stalls)",
+            r"parking(?:\s+count)?\s*(?:of|=|:)?\s*(\d+)",
         ],
     )
-    return response.output_text
+    driveway_width = _first_number_from_patterns(text, [r"(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|')?\s+wide\s+driveway"])
+    setback = _first_number_from_patterns(text, [r"(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|')?\s+setbacks?"])
+    inlet_count = _first_int_from_patterns(text, [r"(\d+)\s+inlets?"])
+    pipe_count = _first_int_from_patterns(text, [r"(\d+)\s+pipes?"])
+    data: Dict[str, Any] = {
+        "project_name": "Civora Generated Plan",
+        "units": "ft",
+        "mode": "site_plan",
+        "project_type": _project_type_from_text(text),
+        "assumptions": [
+            "Parsed by Civora deterministic fallback because the language provider was unavailable or disabled."
+        ],
+        "meta": {
+            "language_provider": "deterministic_fallback",
+            "prompt_text": text,
+        },
+    }
+    if lot:
+        data["lot"] = lot
+    if buildings:
+        data["buildings"] = buildings
+    site_plan: Dict[str, Any] = {}
+    if lot:
+        site_plan["lot_width"] = lot["w"]
+        site_plan["lot_depth"] = lot["h"]
+    if buildings:
+        site_plan["building_width"] = buildings[0].get("w")
+        site_plan["building_depth"] = buildings[0].get("d")
+        site_plan["building_centered"] = "center" in lowered
+    if parking_count is not None:
+        site_plan["parking_count"] = parking_count
+    if driveway_width is not None:
+        site_plan["driveway_width"] = driveway_width
+    if setback is not None:
+        site_plan["setback"] = setback
+    if site_plan:
+        data["site_plan"] = site_plan
+    if any(token in lowered for token in ("drainage", "storm", "inlet", "pipe", "basin", "outfall", "detention")):
+        data["drainage"] = {
+            "inlet_count": inlet_count,
+            "pipe_count": pipe_count,
+            "pond_count": 1 if any(token in lowered for token in ("basin", "pond", "detention")) else None,
+            "detention_required": any(token in lowered for token in ("basin", "pond", "detention")),
+            "routing_required": True,
+        }
+    if any(token in lowered for token in ("grading", "contour", "spot elevation", "slope")):
+        data["grading"] = {"contours_required": "contour" in lowered, "spot_grade_count": None}
+    if any(token in lowered for token in ("utility", "utilities", "sanitary", "sewer", "water")):
+        data["utility_network"] = {"water": "water" in lowered, "sanitary": any(token in lowered for token in ("sanitary", "sewer"))}
+    if any(token in lowered for token in ("road", "drive", "access", "entrance")):
+        data["road"] = {"driveway_width": driveway_width}
+    return _normalize_command_data(data, prompt_text=text)
+
+
+def ask_mode(user_text: str) -> str:
+    try:
+        response = _get_client().responses.create(
+            model=os.getenv("CIVORA_CHAT_MODEL", "gpt-5"),
+            input=[
+                {"role": "system", "content": CHAT_SYSTEM_PROMPT},
+                {"role": "user", "content": user_text},
+            ],
+        )
+        return response.output_text
+    except AIProviderUnavailable:
+        return (
+            "Civora's language provider is disabled or unavailable. "
+            "The engineering engines can still run from structured inputs or supported deterministic prompts."
+        )
 
 
 def command_mode(user_text: str) -> Dict[str, Any]:
-    response = _get_client().responses.create(
-        model="gpt-5",
-        input=[
-            {"role": "system", "content": COMMAND_SYSTEM_PROMPT},
-            {"role": "user", "content": user_text},
-        ],
-        text={
-            "format": {
-                "type": "json_schema",
-                "name": "civil_ai_plan_compatible_expanded_v2",
-                "schema": COMMAND_SCHEMA,
-                "strict": True,
-            }
-        },
-    )
-    data = json.loads(response.output_text)
-    return _normalize_command_data(data)
+    try:
+        response = _get_client().responses.create(
+            model=os.getenv("CIVORA_COMMAND_MODEL", "gpt-5"),
+            input=[
+                {"role": "system", "content": COMMAND_SYSTEM_PROMPT},
+                {"role": "user", "content": user_text},
+            ],
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "civil_ai_plan_compatible_expanded_v2",
+                    "schema": COMMAND_SCHEMA,
+                    "strict": True,
+                }
+            },
+        )
+        data = json.loads(response.output_text)
+        return _normalize_command_data(data, prompt_text=user_text)
+    except AIProviderUnavailable:
+        return _deterministic_command_data(user_text)

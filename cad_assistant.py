@@ -1,10 +1,8 @@
 import os
 from dotenv import load_dotenv
-from openai import OpenAI
+from backend.ai.provider import AIProviderUnavailable, get_ai_provider
 
 load_dotenv()
-
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 SYSTEM_PROMPT = """
 You are an AI CAD assistant.
@@ -23,14 +21,21 @@ Rules:
 """
 
 def build_plan(user_text):
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_text}
-        ]
-    )
-    return response.choices[0].message.content
+    try:
+        response = get_ai_provider().generate_text(
+            model=os.getenv("CIVORA_CAD_ASSISTANT_MODEL", os.getenv("CIVORA_CHAT_MODEL", "gpt-5")),
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_text},
+            ],
+        )
+        return response.output_text
+    except AIProviderUnavailable as exc:
+        return (
+            '{"error":"language_provider_unavailable",'
+            f'"message":"{str(exc).replace(chr(34), chr(39))}",'
+            '"fallback":"Use structured UI inputs or enable CIVORA_AI_PROVIDER=openai/local."}'
+        )
 
 
 def main():

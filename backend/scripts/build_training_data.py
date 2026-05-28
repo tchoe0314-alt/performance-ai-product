@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set
 
+from backend.ai.provider import AIProviderUnavailable
 from parsers.ai_parser import _get_client
 
 
@@ -150,38 +151,41 @@ def _interaction_examples(
 def _generate_paraphrases(message: str, limit: int) -> List[str]:
     if not message or limit <= 0:
         return []
-    client = _get_client()
-    response = client.responses.create(
-        model=os.getenv("CIVORA_CHAT_MODEL", "gpt-5"),
-        input=[
-            {
-                "role": "system",
-                "content": (
-                    "Create concise paraphrases of the user message, preserving intent. "
-                    "Return only JSON matching the schema."
-                ),
-            },
-            {"role": "user", "content": message},
-        ],
-        text={
-            "format": {
-                "type": "json_schema",
-                "name": "chat_paraphrases",
-                "schema": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "properties": {
-                        "paraphrases": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                        }
-                    },
-                    "required": ["paraphrases"],
+    try:
+        client = _get_client()
+        response = client.responses.create(
+            model=os.getenv("CIVORA_CHAT_MODEL", "gpt-5"),
+            input=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Create concise paraphrases of the user message, preserving intent. "
+                        "Return only JSON matching the schema."
+                    ),
                 },
-                "strict": True,
-            }
-        },
-    )
+                {"role": "user", "content": message},
+            ],
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "chat_paraphrases",
+                    "schema": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "paraphrases": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            }
+                        },
+                        "required": ["paraphrases"],
+                    },
+                    "strict": True,
+                }
+            },
+        )
+    except AIProviderUnavailable:
+        return []
     data = json.loads(response.output_text)
     paraphrases = [str(item).strip() for item in data.get("paraphrases") or [] if str(item).strip()]
     return paraphrases[:limit]

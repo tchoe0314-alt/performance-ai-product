@@ -95,7 +95,7 @@ uvicorn backend.api.app:app --reload --port 8002
 
 - Auth is local to this app instance and is not yet production-grade identity.
 - Storage is SQLite and the job worker runs in-process, which is fine for a private beta but not a multi-instance deployment.
-- Prompt-based orchestration still requires a valid `OPENAI_API_KEY` in your backend environment.
+- Prompt-based orchestration can run with `CIVORA_AI_PROVIDER=openai`, `ollama`/`local`, or `none`; the `none` path uses deterministic Civora fallbacks instead of an external LLM.
 - Frontend build verification still depends on having `node` and `npm` installed on the machine running the app.
 
 ## Deploy online

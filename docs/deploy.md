@@ -20,10 +20,14 @@ Use the repo root as the Railway service source so Railway can build the root [D
 Set these Railway variables:
 
 ```bash
+CIVORA_AI_PROVIDER=openai
 OPENAI_API_KEY=your_real_key
 PERFORMANCE_AI_STORAGE_DIR=/data
 CORS_ALLOW_ORIGINS=https://your-frontend-domain.vercel.app
 ```
+
+For a deployment that avoids paid language calls, set `CIVORA_AI_PROVIDER=none`.
+For a self-hosted local model worker, set `CIVORA_AI_PROVIDER=ollama` and configure `CIVORA_OLLAMA_BASE_URL`.
 
 Attach a persistent Railway volume and mount it at:
 
