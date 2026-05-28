@@ -215,6 +215,52 @@ class Phase1Slice5ConsistencyTest(unittest.TestCase):
         self.assertTrue(checks["SANITARY_LENGTH_CONSISTENT"]["ok"])
         self.assertTrue(checks["EXPORT_OBJECT_MAPPING_COMPLETE"]["ok"])
 
+    def test_truth_audit_rejects_stale_quantity_lengths_that_disagree_with_canonical(self) -> None:
+        project, manager = _seed_project_and_manager()
+        actions = canonical_export_actions(project)
+        plan = {
+            "project_name": "Slice 5 Stale Quantities",
+            "units": "ft",
+            "actions": actions,
+            "meta": {
+                "drainage": deepcopy(project.meta["drainage_canonical"]),
+                "storm_pipes": deepcopy(project.meta["storm_pipe_summary"]),
+                "sanitary": deepcopy(project.meta["sanitary_summary"]),
+                "utilities": deepcopy(project.meta["utility_summary"]),
+                "coordination": deepcopy(project.meta["coordination_summary"]),
+                "manager_export": manager.export_metrics(),
+                "qa": {
+                    "stats": {
+                        "estimated_pipe_length_ft": 100.0,
+                        "estimated_utility_length_ft": 40.0,
+                    }
+                },
+                "quantities": {
+                    "success": True,
+                    "totals": {
+                        "pipe_length_ft": 77.0,
+                        "utility_length_ft": 41.0,
+                        "sanitary_length_ft": 120.0,
+                    },
+                },
+            },
+        }
+
+        truth = canonical_truth_audit(
+            {"mode": "site_plan"},
+            plan,
+            manager=manager,
+            sanitary_requested=lambda _parsed: True,
+        )
+        checks = {item["code"]: item for item in truth["checks"]}
+
+        self.assertFalse(truth["success"])
+        self.assertFalse(checks["PIPE_LENGTH_CONSISTENT"]["ok"])
+        self.assertFalse(checks["UTILITY_LENGTH_CONSISTENT"]["ok"])
+        self.assertFalse(checks["SANITARY_LENGTH_CONSISTENT"]["ok"])
+        self.assertEqual(checks["PIPE_LENGTH_CONSISTENT"]["context"]["quantity_delta_ft"], -23.0)
+        self.assertEqual(checks["SANITARY_LENGTH_CONSISTENT"]["context"]["quantity_delta_ft"], 40.0)
+
 
 if __name__ == "__main__":
     unittest.main()

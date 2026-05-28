@@ -722,14 +722,22 @@ class QuantityEngine:
         if storm_meta:
             storm_segments = [_safe_dict(item) for item in _safe_list(storm_meta.get("segments"))]
             if storm_segments:
-                canonical_pipe_length = max(
-                    _safe_float(storm_meta.get("total_length_ft"), 0.0),
-                    _safe_float(storm_stats.get("total_length_ft"), 0.0),
-                    sum(
-                        _safe_float(item.get("length_ft"), 0.0)
-                        or _polyline_length(_safe_list(item.get("path") or item.get("route_points")))
-                        for item in storm_segments
+                segment_pipe_length = sum(
+                    _safe_float(item.get("length_ft"), 0.0)
+                    or _polyline_length(_safe_list(item.get("path") or item.get("route_points")))
+                    for item in storm_segments
+                )
+                canonical_pipe_length = next(
+                    (
+                        value
+                        for value in (
+                            _safe_float(storm_meta.get("total_length_ft"), 0.0),
+                            _safe_float(storm_stats.get("total_length_ft"), 0.0),
+                            segment_pipe_length,
+                        )
+                        if value > 0.0
                     ),
+                    0.0,
                 )
                 counts["pipe_feature_count"] = len(storm_segments)
                 if canonical_pipe_length > 0.0:

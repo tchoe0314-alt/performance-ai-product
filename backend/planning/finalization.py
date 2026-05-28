@@ -477,6 +477,14 @@ def canonical_truth_audit(
                 return number, source
         return 0.0, "missing"
 
+    def length_matches(value: Any, truth: float) -> bool:
+        number = safe_float(value, 0.0)
+        if truth <= 0.0:
+            return True
+        if number <= 0.0:
+            return False
+        return abs(number - truth) <= max(0.01, truth * 0.005)
+
     qty_pipe = safe_float(qty_totals.get("pipe_length_ft"), 0.0)
     qa_pipe = safe_float(qa_stats.get("estimated_pipe_length_ft"), 0.0)
     storm_pipe_metric = safe_float(safe_dict(manager_metrics.get("storm_pipe_length_ft")).get("value"), 0.0)
@@ -495,7 +503,7 @@ def canonical_truth_audit(
     checks.append(
         {
             "code": "PIPE_LENGTH_CONSISTENT",
-            "ok": not (storm_truth > 0.0 and (qty_pipe <= 0.0 or qa_pipe <= 0.0)),
+            "ok": not (storm_truth > 0.0 and not length_matches(qty_pipe, storm_truth)),
             "severity": "error",
             "message": "Pipe length totals must agree across canonical storm, quantities, and QA state.",
             "context": {
@@ -503,6 +511,8 @@ def canonical_truth_audit(
                 "truth_source": storm_truth_source,
                 "quantity_pipe_length_ft": round(qty_pipe, 3),
                 "qa_pipe_length_ft": round(qa_pipe, 3),
+                "quantity_delta_ft": round(qty_pipe - storm_truth, 3) if storm_truth > 0.0 else 0.0,
+                "qa_delta_ft": round(qa_pipe - storm_truth, 3) if storm_truth > 0.0 else 0.0,
             },
         }
     )
@@ -525,7 +535,7 @@ def canonical_truth_audit(
     checks.append(
         {
             "code": "UTILITY_LENGTH_CONSISTENT",
-            "ok": not (utility_truth > 0.0 and (qty_utility <= 0.0 or qa_utility <= 0.0)),
+            "ok": not (utility_truth > 0.0 and not length_matches(qty_utility, utility_truth)),
             "severity": "error",
             "message": "Utility length totals must agree across canonical utility, quantities, and QA state.",
             "context": {
@@ -533,6 +543,8 @@ def canonical_truth_audit(
                 "truth_source": utility_truth_source,
                 "quantity_utility_length_ft": round(qty_utility, 3),
                 "qa_utility_length_ft": round(qa_utility, 3),
+                "quantity_delta_ft": round(qty_utility - utility_truth, 3) if utility_truth > 0.0 else 0.0,
+                "qa_delta_ft": round(qa_utility - utility_truth, 3) if utility_truth > 0.0 else 0.0,
             },
         }
     )
@@ -551,13 +563,14 @@ def canonical_truth_audit(
     checks.append(
         {
             "code": "SANITARY_LENGTH_CONSISTENT",
-            "ok": not (sanitary_truth > 0.0 and qty_sanitary <= 0.0),
+            "ok": not (sanitary_truth > 0.0 and not length_matches(qty_sanitary, sanitary_truth)),
             "severity": "error",
             "message": "Sanitary quantities must reflect canonical sanitary geometry.",
             "context": {
                 "truth_length_ft": round(sanitary_truth, 3),
                 "truth_source": sanitary_truth_source,
                 "quantity_sanitary_length_ft": round(qty_sanitary, 3),
+                "quantity_delta_ft": round(qty_sanitary - sanitary_truth, 3) if sanitary_truth > 0.0 else 0.0,
             },
         }
     )
