@@ -173,9 +173,15 @@ def _accepted_rules_from_meta(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
         _safe_dict(meta.get("jurisdiction_standards")),
         _safe_dict(meta.get("company_standards")),
     ):
-        rules.extend(_safe_dict(item) for item in _safe_list(source.get("rules")) if _safe_dict(item))
+        for item in _safe_list(source.get("rules")):
+            rule = _safe_dict(item)
+            if rule and _safe_str(rule.get("status"), "accepted").lower() == "accepted":
+                rules.append(rule)
     acceptance = _safe_dict(meta.get("standards_acceptance"))
-    rules.extend(_safe_dict(item) for item in _safe_list(acceptance.get("accepted_rules")) if _safe_dict(item))
+    for item in _safe_list(acceptance.get("accepted_rules")):
+        rule = _safe_dict(item)
+        if rule and _safe_str(rule.get("status"), "accepted").lower() == "accepted":
+            rules.append(rule)
     return rules
 
 
@@ -506,6 +512,61 @@ def _production_gap(area: str, field: str, why: str, action: str) -> Dict[str, A
     }
 
 
+def _standards_official_url(url: str) -> bool:
+    lowered = _safe_str(url).lower()
+    return (
+        lowered.startswith("https://")
+        and "google.com/search" not in lowered
+        and "bing.com/search" not in lowered
+        and not lowered.startswith("internal://")
+    )
+
+
+def _standards_production_blockers(standards: Dict[str, Any], accepted_rules: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    validation = _safe_dict(standards.get("production_validation"))
+    blockers = [_safe_dict(item) for item in _safe_list(validation.get("blockers")) if _safe_dict(item)]
+    if blockers:
+        return blockers
+    if standards.get("production_usable") is True:
+        source_urls = [_safe_str(url) for url in _safe_list(standards.get("source_urls")) if _safe_str(url)]
+        if not source_urls:
+            source_urls = [_safe_str(rule.get("source_url")) for rule in accepted_rules if _safe_str(rule.get("source_url"))]
+        has_official = any(_standards_official_url(url) for url in source_urls)
+        has_rules = bool(accepted_rules or _safe_list(standards.get("rules")))
+        has_traceable_authority = has_official and has_rules
+        if has_traceable_authority:
+            return []
+    derived: List[Dict[str, Any]] = []
+    if not accepted_rules and not _safe_list(standards.get("rules")):
+        derived.append({"field": "accepted_rules", "reason": "No accepted standards rules are available."})
+    source_urls = [_safe_str(url) for url in _safe_list(standards.get("source_urls")) if _safe_str(url)]
+    if not source_urls:
+        source_urls = [_safe_str(rule.get("source_url")) for rule in accepted_rules if _safe_str(rule.get("source_url"))]
+    if not any(_standards_official_url(url) for url in source_urls):
+        derived.append({"field": "official_sources", "reason": "Accepted standards do not cite an official HTTPS source.", "source_urls": source_urls})
+    baseline_rules = [
+        _safe_str(rule.get("rule_id"))
+        for rule in accepted_rules
+        if _safe_str(rule.get("source_url")).startswith("internal://")
+        or _safe_str(rule.get("confidence")).lower() == "baseline"
+        or _safe_str(rule.get("source_id")) == "civora_us_baseline"
+    ]
+    if baseline_rules:
+        derived.append({"field": "baseline_rules", "reason": "Baseline concept rules cannot be production authority without an official source.", "rule_ids": baseline_rules})
+    incomplete = []
+    for rule in accepted_rules:
+        missing = [
+            key
+            for key in ("discipline", "topic", "candidate_value", "source_url", "source_section")
+            if not _safe_str(rule.get(key))
+        ]
+        if missing:
+            incomplete.append({"rule_id": _safe_str(rule.get("rule_id"), "unnamed"), "missing": missing})
+    if incomplete:
+        derived.append({"field": "rule_metadata", "reason": "Accepted standards are missing traceable metadata.", "rules": incomplete})
+    return derived
+
+
 def _has_any(mapping: Dict[str, Any], keys: Iterable[str]) -> bool:
     return any(mapping.get(key) not in (None, "", [], {}) for key in keys)
 
@@ -514,13 +575,15 @@ def check_standards_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
     warnings: List[str] = []
     gaps: List[Dict[str, Any]] = []
     acceptance = _safe_dict(meta.get("standards_acceptance"))
-    accepted_rules = _safe_list(acceptance.get("accepted_rules"))
+    accepted_rules = [_safe_dict(item) for item in _safe_list(acceptance.get("accepted_rules")) if _safe_dict(item)]
     standards = _safe_dict(meta.get("design_standards") or meta.get("standards"))
     if not standards and accepted_rules:
         standards = {
             "source": "accepted_standards_review_packet",
             "accepted_rule_count": len(accepted_rules),
             "rules": accepted_rules,
+            "production_validation": _safe_dict(acceptance.get("production_validation")),
+            "production_usable": bool(acceptance.get("production_usable")),
         }
     jurisdiction = _safe_dict(meta.get("jurisdiction_standards"))
     company = _safe_dict(meta.get("company_standards"))
@@ -533,12 +596,28 @@ def check_standards_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
                 "Attach a jurisdiction/company standards profile before permit-grade design.",
             )
         )
+    else:
+        if not accepted_rules:
+            accepted_rules = [_safe_dict(item) for item in _safe_list(standards.get("rules")) if _safe_dict(item)]
+        for blocker in _standards_production_blockers(standards, accepted_rules):
+            field = _safe_str(blocker.get("field"), "standards_traceability")
+            reason = _safe_str(blocker.get("reason"), "Standards pack is not traceable enough for production QA.")
+            gaps.append(
+                _production_gap(
+                    "standards",
+                    field,
+                    reason,
+                    "Accept or edit standards rules from official jurisdiction/company sources before production QA.",
+                )
+            )
     if not jurisdiction:
         warnings.append("No jurisdiction standards profile is attached.")
     if not company:
         warnings.append("No company CAD/design standards profile is attached.")
     if _safe_dict(meta.get("standards_review_packet")) and not accepted_rules:
         warnings.append("Standards candidates exist, but no rules have been accepted for production QA.")
+    if standards and bool(standards.get("needs_source_review")):
+        warnings.append("Accepted standards still need source review before permit use.")
     status = "ready" if not gaps else "needs_production_input"
     return _system_result(
         status=status,
@@ -624,6 +703,20 @@ def check_hydraulic_depth_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
     storm = _safe_dict(meta.get("storm_pipes") or meta.get("storm_pipe_summary"))
     drainage = _safe_dict(meta.get("drainage") or meta.get("drainage_canonical"))
     if storm and _safe_list(storm.get("segments")):
+        source_text = " ".join(
+            _safe_str(storm.get(key)).lower()
+            for key in ("hydraulic_depth_source", "hydraulic_source", "source_detail", "source")
+            if _safe_str(storm.get(key))
+        )
+        if source_text and "concept" in source_text and "proxy" in source_text:
+            gaps.append(
+                _production_gap(
+                    "hydraulics",
+                    "hydraulic_depth_source",
+                    "Concept proxy HGL/EGL is not production hydraulic evidence.",
+                    "Run the storm hydraulic engine or attach traceable external hydraulic calculations.",
+                )
+            )
         required = {
             "hgl_profile": "Storm production design needs HGL to verify surcharging and inlet/junction elevations.",
             "egl_profile": "Storm production design needs EGL/energy losses for hydraulic grade review.",
@@ -650,6 +743,31 @@ def check_hydraulic_depth_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
                     "inlet_capacity_validity",
                     "Inlet spread, capacity, and bypass checks must pass before storm production review.",
                     "Adjust inlet type/count/capacity or revise catchment routing.",
+                )
+            )
+        backwater = _safe_dict(storm.get("backwater_validation"))
+        if backwater and backwater.get("valid") is False:
+            gaps.append(
+                _production_gap(
+                    "hydraulics",
+                    "backwater_validation",
+                    "Tailwater/backwater validation shows one or more storm segments are surcharged.",
+                    "Revise outfall/tailwater assumptions, pipe slope/size, or detention outlet controls.",
+                )
+            )
+        engine_summary = _safe_dict(storm.get("hydraulic_engine_summary"))
+        surcharged_nodes = [
+            _safe_dict(node)
+            for node in _safe_list(engine_summary.get("critical_nodes"))
+            if _safe_dict(node).get("surcharge_risk")
+        ]
+        if surcharged_nodes:
+            gaps.append(
+                _production_gap(
+                    "hydraulics",
+                    "node_surcharge",
+                    "Storm hydraulic engine reports node HGL surcharge risk.",
+                    "Lower HGL, add capacity, revise profile, or document a permitted surcharge condition.",
                 )
             )
     else:

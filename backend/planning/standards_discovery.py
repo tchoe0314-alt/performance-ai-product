@@ -235,7 +235,7 @@ def accept_standards_rules(review_packet: Dict[str, Any], accepted_rule_ids: Ite
         if url.startswith("https://")
         and not any(blocked in url.lower() for blocked in ("google.com/search", "bing.com/search", "internal://"))
     )
-    return {
+    result = {
         "success": bool(accepted_rules),
         "source": "standards_discovery_engine",
         "version": "standards_acceptance_v1",
@@ -246,9 +246,13 @@ def accept_standards_rules(review_packet: Dict[str, Any], accepted_rule_ids: Ite
         "source_urls": source_urls,
         "official_source_count": official_source_count,
         "needs_source_review": bool(accepted_rules and official_source_count <= 0),
-        "production_usable": bool(accepted_rules),
+        "accepted_for_qa": bool(accepted_rules),
         "truth_label": "Only accepted rules are eligible for production QA; baseline rules remain concept-only unless explicitly accepted.",
     }
+    validation = validate_standards_acceptance_for_production(result)
+    result["production_validation"] = validation
+    result["production_usable"] = bool(validation.get("production_usable"))
+    return result
 
 
 def standards_pack_from_acceptance(acceptance: Dict[str, Any]) -> Dict[str, Any]:
@@ -261,10 +265,11 @@ def standards_pack_from_acceptance(acceptance: Dict[str, Any]) -> Dict[str, Any]
         "source_urls": list(safe_list(acceptance.get("source_urls"))),
         "official_source_count": safe_dict(acceptance).get("official_source_count", 0),
         "needs_source_review": bool(acceptance.get("needs_source_review")),
-        "production_usable": bool(accepted_rules),
+        "accepted_for_qa": bool(accepted_rules),
         "truth_label": "User-accepted standards pack. Engineer review is still required for permit use.",
     }
     pack["production_validation"] = validate_standards_acceptance_for_production(pack)
+    pack["production_usable"] = bool(pack["production_validation"].get("production_usable"))
     return pack
 
 

@@ -1,5 +1,10 @@
 import unittest
 
+from backend.planning.standards_discovery import (
+    accept_standards_rules,
+    build_standards_review_packet,
+    standards_pack_from_acceptance,
+)
 import planner
 from core.civil_design import (
     civil_design_readiness,
@@ -246,9 +251,39 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertIn(("utilities", "hydrant_spacing"), fields)
         self.assertIn(("utilities", "fire_flow"), fields)
 
+    def test_claimed_production_standards_without_traceability_are_blocked(self) -> None:
+        meta = _complete_meta()
+        meta["design_standards"] = {
+            "source": "manual_override",
+            "version": "untraceable",
+            "rules": [{"rule_id": "cover", "topic": "Minimum utility cover", "candidate_value": "Minimum cover is 4 ft.", "status": "accepted"}],
+            "production_usable": True,
+        }
+
+        readiness = civil_design_readiness({"meta": meta})
+        fields = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
+
+        self.assertFalse(readiness["production_ready"])
+        self.assertIn(("standards", "official_sources"), fields)
+        self.assertIn(("standards", "rule_metadata"), fields)
+
     def test_production_depth_gates_clear_when_real_design_evidence_exists(self) -> None:
         meta = _complete_meta()
-        meta["design_standards"] = {"source": "test_jurisdiction_pack", "version": "2026.1"}
+        packet = build_standards_review_packet(
+            extracted_rules=[
+                {
+                    "rule_id": "city_storm_capacity",
+                    "discipline": "storm",
+                    "topic": "Pipe capacity ratio",
+                    "candidate_value": "Flag storm pipe segments above 95 percent capacity ratio.",
+                    "source_url": "https://city.example.gov/drainage-manual",
+                    "source_section": "Storm Drainage 5.2",
+                }
+            ]
+        )
+        accepted = accept_standards_rules(packet, ["city_storm_capacity"])
+        meta["standards_acceptance"] = accepted
+        meta["design_standards"] = standards_pack_from_acceptance(accepted)
         meta["jurisdiction_standards"] = {"agency": "Test City"}
         meta["company_standards"] = {"cad_layer_standard": "CIVORA_TEST"}
         meta["survey"] = {"point_count": 12, "source": "survey_points"}
@@ -298,6 +333,32 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertIn(("grading_detail", "ada_path_checks"), gaps)
         self.assertIn(("cad_interop", "civil3d_landxml"), gaps)
         self.assertIn(("optimization", "optimization_summary"), gaps)
+
+    def test_hydraulic_depth_blocks_surcharged_backwater_and_concept_proxy(self) -> None:
+        meta = _complete_meta()
+        meta["storm_pipes"].update(
+            {
+                "hydraulic_depth_source": "concept_hgl_egl_proxy",
+                "hgl_profile": [{"station_ft": 0.0, "hgl_ft": 99.0}],
+                "egl_profile": [{"station_ft": 0.0, "egl_ft": 99.2}],
+                "tailwater_elev_ft": 101.0,
+                "inlet_capacity_checks": [{"inlet": "INLET-1", "valid": True}],
+                "backwater_validation": {
+                    "valid": False,
+                    "surcharged_segments": [{"segment": "P-1", "max_hgl_above_crown_ft": 0.6}],
+                },
+                "hydraulic_engine_summary": {
+                    "critical_nodes": [{"name": "INLET-1", "surcharge_risk": True}],
+                },
+            }
+        )
+
+        readiness = civil_design_readiness({"meta": meta})
+        gaps = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
+
+        self.assertIn(("hydraulics", "hydraulic_depth_source"), gaps)
+        self.assertIn(("hydraulics", "backwater_validation"), gaps)
+        self.assertIn(("hydraulics", "node_surcharge"), gaps)
 
     def test_build_plan_attaches_civil_design_readiness_without_fake_success(self) -> None:
         plan = planner.build_plan(

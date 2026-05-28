@@ -17,7 +17,9 @@ class ApplicationStandardsWorkflowsTests(unittest.TestCase):
         self.assertTrue(discovery["success"])
         self.assertTrue(packet["candidate_rules"])
         self.assertTrue(accepted["success"])
-        self.assertTrue(accepted["design_standards"]["production_usable"])
+        self.assertFalse(accepted["design_standards"]["production_usable"])
+        self.assertTrue(accepted["design_standards"]["accepted_for_qa"])
+        self.assertTrue(accepted["design_standards"]["production_validation"]["blockers"])
 
 
 if __name__ == "__main__":

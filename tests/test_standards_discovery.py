@@ -28,14 +28,15 @@ class StandardsDiscoveryTests(unittest.TestCase):
         self.assertEqual(packet["accepted_rules"], [])
         self.assertIn("require user acceptance", packet["truth_label"])
 
-    def test_acceptance_builds_production_usable_standards_pack(self) -> None:
+    def test_acceptance_builds_concept_pack_until_official_source_is_accepted(self) -> None:
         packet = build_standards_review_packet()
         first_rule = packet["candidate_rules"][0]["rule_id"]
 
         accepted = accept_standards_rules(packet, [first_rule], edits={first_rule: {"candidate_value": "Accepted edited value"}})
         pack = standards_pack_from_acceptance(accepted)
 
-        self.assertTrue(accepted["production_usable"])
+        self.assertTrue(accepted["accepted_for_qa"])
+        self.assertFalse(accepted["production_usable"])
         self.assertEqual(accepted["accepted_rule_count"], 1)
         self.assertEqual(pack["rules"][0]["candidate_value"], "Accepted edited value")
         self.assertTrue(pack["needs_source_review"])
@@ -50,7 +51,9 @@ class StandardsDiscoveryTests(unittest.TestCase):
         standards = readiness["systems"]["standards"]
 
         self.assertEqual(standards["metrics"]["accepted_rule_count"], 1)
-        self.assertFalse(any(item["area"] == "standards" and item["field"] == "design_standards" for item in readiness["production_blockers"]))
+        fields = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
+        self.assertNotIn(("standards", "design_standards"), fields)
+        self.assertIn(("standards", "official_sources"), fields)
         self.assertFalse(readiness["production_ready"])
 
     def test_extract_rule_candidates_from_text_requires_acceptance(self) -> None:
