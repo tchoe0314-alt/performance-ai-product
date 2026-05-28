@@ -62,6 +62,9 @@ class Phase1Slice6DExportMetadataTest(unittest.TestCase):
         self.assertEqual(metadata["sheet_registry"], plan["meta"]["sheet_registry"])
         self.assertEqual(metadata["export_audit"], plan["meta"]["export_audit"])
         self.assertTrue(plan["meta"]["export_audit"]["sheet_registry_meta_matches_plan"])
+        self.assertTrue(plan["meta"]["export_audit"]["production_export_ready"])
+        self.assertTrue(plan["meta"]["export_audit"]["canonical_id_traceability"]["ready"])
+        self.assertEqual(plan["meta"]["export_audit"]["canonical_id_traceability"]["canonical_summary_ids"], ["storm-1"])
 
     def test_save_dxf_uses_matching_pre_finalized_metadata(self) -> None:
         plan = _export_plan()
@@ -95,6 +98,31 @@ class Phase1Slice6DExportMetadataTest(unittest.TestCase):
         self.assertEqual(plan["meta"]["sheet_registry"][0]["layout_name"], "SITE PLAN")
         self.assertEqual(plan["meta"]["export_audit"], metadata["export_audit"])
         self.assertTrue(plan["meta"]["export_audit"]["sheet_registry_meta_matches_plan"])
+
+    def test_export_audit_blocks_orphaned_engineering_ids(self) -> None:
+        plan = _export_plan()
+        plan["actions"][1]["canonical_source_id"] = "storm-from-stale-plan"
+
+        metadata = finalize_export_metadata(plan)
+        traceability = metadata["export_audit"]["canonical_id_traceability"]
+
+        self.assertFalse(metadata["export_audit"]["success"])
+        self.assertFalse(metadata["export_audit"]["production_export_ready"])
+        self.assertFalse(traceability["ready"])
+        self.assertEqual(traceability["orphaned_action_source_ids"], ["storm-from-stale-plan"])
+        self.assertEqual(traceability["unmapped_canonical_summary_ids"], ["storm-1"])
+
+    def test_export_audit_blocks_summary_without_stable_id(self) -> None:
+        plan = _export_plan()
+        plan["meta"]["storm_pipes"]["segments"] = [{"length_ft": 76.158}]
+
+        metadata = finalize_export_metadata(plan)
+        traceability = metadata["export_audit"]["canonical_id_traceability"]
+
+        self.assertFalse(metadata["export_audit"]["success"])
+        self.assertFalse(metadata["export_audit"]["production_export_ready"])
+        self.assertFalse(traceability["ready"])
+        self.assertEqual(traceability["missing_summary_source_ids"], ["storm[0]"])
 
 
 if __name__ == "__main__":

@@ -301,7 +301,11 @@ class CivilDesignReadinessTests(unittest.TestCase):
         meta["storm_pipes"]["egl_profile"] = [{"station": 0.0, "egl_ft": 98.2}]
         meta["storm_pipes"]["tailwater_elev_ft"] = 96.0
         meta["storm_pipes"]["inlet_capacity_checks"] = [{"inlet": "INLET-1", "spread_ft": 4.0, "bypass_cfs": 0.0}]
-        meta["export_audit"] = {"ready": True}
+        meta["export_audit"] = {
+            "ready": True,
+            "production_export_ready": True,
+            "canonical_id_traceability": {"ready": True},
+        }
         meta["sheet_registry"] = {"sheets": [{"id": "C-100"}]}
         meta["cad_interop"] = {"source": "test", "civil3d": True, "landxml": True, "pipe_network_export": True}
         meta["optimization_summary"] = {
@@ -345,6 +349,26 @@ class CivilDesignReadinessTests(unittest.TestCase):
 
         self.assertFalse(readiness["production_ready"])
         self.assertIn(("existing_conditions", "coordinate_system"), gaps)
+
+    def test_civil_readiness_blocks_exports_without_canonical_traceability(self) -> None:
+        meta = _complete_meta()
+        meta["export_audit"] = {
+            "ready": True,
+            "production_export_ready": False,
+            "canonical_id_traceability": {
+                "ready": False,
+                "orphaned_action_source_ids": ["storm-from-stale-plan"],
+            },
+        }
+        meta["sheet_registry"] = {"sheets": [{"id": "C-100"}]}
+        meta["cad_interop"] = {"source": "test", "civil3d": True, "landxml": True}
+
+        readiness = civil_design_readiness({"meta": meta})
+        gaps = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
+
+        self.assertFalse(readiness["production_ready"])
+        self.assertIn(("cad_interop", "export_readiness"), gaps)
+        self.assertIn(("cad_interop", "canonical_ids"), gaps)
 
     def test_hydraulic_depth_blocks_surcharged_backwater_and_concept_proxy(self) -> None:
         meta = _complete_meta()

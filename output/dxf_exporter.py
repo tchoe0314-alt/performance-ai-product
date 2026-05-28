@@ -3585,6 +3585,76 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
     ]
     mapped_engineering_actions = [action for action in engineering_actions if safe_text(action.get("canonical_source_id"))]
     action_mapping_complete = len(mapped_engineering_actions) == len(engineering_actions)
+    meta_engineering_sources = {
+        "storm": [
+            safe_dict(item)
+            for item in safe_list(safe_dict(meta.get("storm_pipes")).get("segments"))
+            if safe_dict(item)
+        ],
+        "sanitary": [
+            safe_dict(item)
+            for item in safe_list(safe_dict(meta.get("sanitary")).get("segments"))
+            if safe_dict(item)
+        ],
+        "utilities": [
+            safe_dict(item)
+            for item in safe_list(safe_dict(meta.get("utilities")).get("segments"))
+            if safe_dict(item)
+        ],
+        "drainage_structures": [
+            safe_dict(item)
+            for item in safe_list(safe_dict(meta.get("drainage")).get("structures"))
+            if safe_dict(item)
+        ],
+        "drainage_basins": [
+            safe_dict(item)
+            for item in safe_list(safe_dict(meta.get("drainage")).get("basins"))
+            if safe_dict(item)
+        ],
+    }
+
+    def source_id(item: Dict[str, Any]) -> str:
+        for key in ("canonical_id", "canonical_source_id", "id", "segment_id", "pipe", "name", "label"):
+            value = safe_text(item.get(key))
+            if value:
+                return value
+        return ""
+
+    canonical_summary_ids = {
+        source_id(item)
+        for group in meta_engineering_sources.values()
+        for item in group
+        if source_id(item)
+    }
+    missing_summary_source_ids = sorted(
+        {
+            f"{group_name}[{index}]"
+            for group_name, group in meta_engineering_sources.items()
+            for index, item in enumerate(group)
+            if not source_id(item)
+        }
+    )
+    mapped_action_ids = {
+        safe_text(action.get("canonical_source_id"))
+        for action in mapped_engineering_actions
+        if safe_text(action.get("canonical_source_id"))
+    }
+    missing_action_source_ids = [
+        {
+            "index": index,
+            "layer": get_layer(action, "SITE"),
+            "label": safe_text(action.get("label") or action.get("text") or action.get("task")),
+        }
+        for index, action in enumerate(engineering_actions)
+        if not safe_text(action.get("canonical_source_id"))
+    ]
+    unmapped_canonical_summary_ids = sorted(canonical_summary_ids - mapped_action_ids)
+    orphaned_action_source_ids = sorted(mapped_action_ids - canonical_summary_ids) if canonical_summary_ids else []
+    canonical_id_traceability_ready = (
+        action_mapping_complete
+        and not missing_summary_source_ids
+        and not orphaned_action_source_ids
+    )
     callouts = _collect_structure_callouts(plan)
     site_callouts_canonical = bool(callouts) and all(safe_text(item.get("name")) and safe_text(item.get("symbol")) for item in callouts)
     expected_profile = any(item in {"road_profile", "profiles"} for item in requested)
@@ -3631,11 +3701,19 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
         warnings.append("Requested profile deliverables were not backed by canonical profile data. Generate canonical profiles before export.")
     if requested_vs_produced["missing_requested_sections"]:
         warnings.append("Requested cross-section deliverables were not backed by canonical section data. Generate canonical cross sections before export.")
+    if not action_mapping_complete:
+        warnings.append("One or more engineering export entities were not mapped to canonical source IDs.")
+    if missing_summary_source_ids:
+        warnings.append("One or more canonical engineering summaries are missing stable IDs for export traceability.")
+    if orphaned_action_source_ids:
+        warnings.append("One or more engineering export entities reference canonical IDs that are not present in the final engineering summaries.")
     if stale_output_blocking:
         warnings.append("Export is blocked because one or more canonical outputs are dirty, stale, invalid, or cache-only.")
+    production_export_ready = not warnings and canonical_id_traceability_ready and not stale_output_blocking
     return {
         "success": not warnings,
         "ready": not warnings,
+        "production_export_ready": production_export_ready,
         "export_blocked": stale_output_blocking,
         "blocked_reasons": stale_blocking_reasons,
         "layout_order": layout_names,
@@ -3672,6 +3750,15 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
             "engineering_action_count": len(engineering_actions),
             "mapped_engineering_actions": len(mapped_engineering_actions),
             "all_engineering_actions_mapped": action_mapping_complete,
+        },
+        "canonical_id_traceability": {
+            "ready": canonical_id_traceability_ready,
+            "canonical_summary_ids": sorted(canonical_summary_ids),
+            "mapped_action_source_ids": sorted(mapped_action_ids),
+            "missing_action_source_ids": missing_action_source_ids,
+            "missing_summary_source_ids": missing_summary_source_ids,
+            "unmapped_canonical_summary_ids": unmapped_canonical_summary_ids,
+            "orphaned_action_source_ids": orphaned_action_source_ids,
         },
         "canonical_integrity": deepcopy(canonical_integrity),
         "warnings": warnings,

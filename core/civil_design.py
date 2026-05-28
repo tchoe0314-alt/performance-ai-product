@@ -873,6 +873,26 @@ def check_cad_interop_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
     cad = _safe_dict(meta.get("cad_interop") or meta.get("export_interop"))
     if not export_audit:
         gaps.append(_production_gap("cad_interop", "export_audit", "Export truth needs an audit before production deliverables.", "Finalize export metadata before artifact generation."))
+    else:
+        traceability = _safe_dict(export_audit.get("canonical_id_traceability"))
+        if export_audit.get("export_blocked") is True or export_audit.get("production_export_ready") is False:
+            gaps.append(
+                _production_gap(
+                    "cad_interop",
+                    "export_readiness",
+                    "Production deliverables must be generated from current, non-stale canonical engineering state.",
+                    "Resolve export audit blockers and regenerate deliverables from the final canonical model.",
+                )
+            )
+        if not traceability or traceability.get("ready") is not True:
+            gaps.append(
+                _production_gap(
+                    "cad_interop",
+                    "canonical_ids",
+                    "Production exports need stable canonical IDs for every exported engineering object.",
+                    "Attach canonical source IDs to export entities and final engineering summaries before export.",
+                )
+            )
     if not has_sheet_registry:
         gaps.append(_production_gap("cad_interop", "sheet_registry", "Production sheets need a sheet registry matching final canonical state.", "Finalize sheet registry before export."))
     interop_ready = (
@@ -896,7 +916,13 @@ def check_cad_interop_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
         status="ready" if not gaps else "needs_production_input",
         source=_safe_str(cad.get("source"), "dxf_concept_export"),
         warnings=warnings,
-        metrics={"production_gaps": gaps, "gap_count": len(gaps), "has_export_audit": bool(export_audit), "has_sheet_registry": has_sheet_registry},
+        metrics={
+            "production_gaps": gaps,
+            "gap_count": len(gaps),
+            "has_export_audit": bool(export_audit),
+            "has_sheet_registry": has_sheet_registry,
+            "production_export_ready": export_audit.get("production_export_ready") if export_audit else False,
+        },
     )
 
 
