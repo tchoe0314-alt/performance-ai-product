@@ -113,6 +113,17 @@ class GoldenRunnerTests(unittest.TestCase):
         self.assertGreater(result["readiness_summary"]["critical_blocker_count"], 0)
         self.assertFalse(result["readiness_summary"]["civil_production_ready"])
 
+    def test_real_golden_scenario_suite_passes_with_expected_blockers(self) -> None:
+        result = run_golden_scenarios()
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["scenario_count"], 10)
+        for scenario in result["results"]:
+            self.assertEqual(scenario["benchmark_status"], "passed_with_expected_blockers", scenario)
+            self.assertFalse(scenario["missing_canonical_signals"], scenario)
+            self.assertFalse(scenario["failed_benchmark_expectations"], scenario)
+            self.assertFalse(scenario["readiness_summary"]["civil_production_ready"], scenario)
+
 
 if __name__ == "__main__":
     unittest.main()

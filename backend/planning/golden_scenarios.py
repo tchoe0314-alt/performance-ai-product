@@ -169,7 +169,22 @@ GOLDEN_SCENARIO_REGISTRY: Tuple[GoldenScenario, ...] = (
             {"metric": "protected_zone_count", "min": 1},
             {"metric": "civil_production_ready", "equals": False},
         ),
-        benchmark_payload=_payload("Golden Floodplain Wetland", project_type="constrained_site", lot_w=420.0, lot_h=320.0),
+        benchmark_payload=_payload(
+            "Golden Floodplain Wetland",
+            project_type="constrained_site",
+            lot_w=420.0,
+            lot_h=320.0,
+            existing_conditions={
+                "source": "golden_fixture",
+                "parcels": [{"id": "PARCEL-1", "geometry": {"type": "Polygon"}}],
+                "easements": [{"id": "ESMT-1", "bounds": {"x": 40.0, "y": 0.0, "w": 30.0, "h": 320.0}}],
+                "row": [{"id": "ROW-SOUTH", "bounds": {"x": 0.0, "y": -40.0, "w": 420.0, "h": 40.0}}],
+                "floodplain": [{"id": "FEMA-ZONE-AE", "bounds": {"x": 260.0, "y": 0.0, "w": 160.0, "h": 135.0}}],
+                "wetlands": [{"id": "NWI-1", "bounds": {"x": 0.0, "y": 210.0, "w": 125.0, "h": 110.0}}],
+                "existing_utilities": [{"id": "EX-W-1", "system": "water", "points": [[0.0, -20.0], [420.0, -20.0]]}],
+            },
+            coordinate_system={"epsg": "EPSG:2276", "units": "ft", "source": "golden_fixture"},
+        ),
     ),
     GoldenScenario(
         scenario_id="retaining_wall_site",

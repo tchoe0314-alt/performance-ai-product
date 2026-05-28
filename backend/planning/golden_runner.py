@@ -110,8 +110,10 @@ def _has_required_signal(signal: str, plan: Dict[str, Any]) -> bool:
     if signal_key == "sheet_registry":
         return bool(safe_list(meta.get("sheet_registry")) or safe_dict(meta.get("sheet_registry")))
     if signal_key == "existing_conditions":
-        return bool(safe_dict(meta.get("existing_conditions")) or safe_dict(meta.get("survey")) or safe_dict(meta.get("gis_layers")))
-    if signal_key in {"manual_validation", "truth_audit", "civil_design_readiness", "engine_readiness", "parking_program", "earthwork", "quantities", "coordination"}:
+        return bool(safe_dict(meta.get("existing_conditions")) or safe_dict(meta.get("survey")) or safe_dict(meta.get("gis_layers")) or safe_dict(meta.get("existing_conditions_summary")))
+    if signal_key == "earthwork":
+        return bool(safe_dict(meta.get("earthwork")) or safe_dict(safe_dict(meta.get("grading") or meta.get("grading_summary")).get("earthwork")))
+    if signal_key in {"manual_validation", "truth_audit", "civil_design_readiness", "engine_readiness", "parking_program", "quantities", "coordination"}:
         return bool(safe_dict(meta.get(signal_key)))
     if signal_key == "grading":
         return bool(safe_dict(meta.get("grading") or meta.get("grading_summary")))
@@ -213,11 +215,14 @@ def _benchmark_metric_value(metric: str, plan: Dict[str, Any]) -> Any:
     if signal == "cross_section_count":
         return len(safe_list(meta.get("cross_sections")))
     if signal == "coordination_conflict_count":
+        realism = safe_dict(coordination.get("coordination_realism") or meta.get("coordination_realism"))
         return max(
             safe_int(coordination.get("detected_conflicts"), 0),
             safe_int(coordination.get("conflict_count"), 0),
             len(safe_list(coordination.get("conflicts"))),
             len(safe_list(coordination.get("resolved_conflicts"))),
+            len(safe_list(coordination.get("unresolved_conflicts"))),
+            len(safe_list(realism.get("best_near_valid_candidates"))),
         )
     if signal == "protected_zone_count":
         return max(len(safe_list(meta.get("protected_zones"))), len(safe_list(safe_dict(meta.get("existing_conditions")).get("protected_zones"))))

@@ -870,6 +870,126 @@ def _parking_program_context(parsed: Dict[str, Any], plan: Dict[str, Any]) -> Di
     return _parking_program_context_impl(parsed, plan)
 
 
+def _layer_records(value: Any, layer_name: str) -> List[Dict[str, Any]]:
+    if isinstance(value, list):
+        return [deepcopy(safe_dict(item)) for item in value if safe_dict(item)]
+    rec = safe_dict(value)
+    if not rec:
+        return []
+    rows = safe_list(rec.get("features") or rec.get("items") or rec.get("records"))
+    if rows:
+        return [deepcopy(safe_dict(item)) for item in rows if safe_dict(item)]
+    return [{"id": safe_str(rec.get("id") or rec.get("name"), layer_name), **deepcopy(rec)}]
+
+
+def _protected_zones_from_existing_conditions(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
+    existing = safe_dict(meta.get("existing_conditions") or meta.get("gis_layers"))
+    zones: List[Dict[str, Any]] = []
+    for layer_name, kind in (("wetlands", "wetland"), ("floodplain", "floodplain"), ("easements", "easement"), ("row", "right_of_way")):
+        for index, rec in enumerate(_layer_records(existing.get(layer_name), layer_name), start=1):
+            zones.append(
+                {
+                    "id": safe_str(rec.get("id") or rec.get("name"), f"{layer_name}-{index}"),
+                    "kind": kind,
+                    "source_layer": layer_name,
+                    "avoid": kind in {"wetland", "floodplain"},
+                    "geometry": deepcopy(rec.get("geometry") or rec.get("bounds") or rec.get("bbox")),
+                    "truth_label": "Protected zone came from attached existing-condition/GIS evidence.",
+                }
+            )
+    return zones
+
+
+def _synthesize_retaining_wall_summary(parsed: Dict[str, Any], plan: Dict[str, Any]) -> Dict[str, Any]:
+    meta = safe_dict(plan.get("meta"))
+    existing_summary = safe_dict(meta.get("structure_summary") or meta.get("structures"))
+    if safe_list(existing_summary.get("retaining_walls")) or safe_list(meta.get("retaining_walls")):
+        return existing_summary
+    project_type = lower_text(parsed.get("project_type"))
+    terrain = safe_dict(unwrap_fields_for_execution(parsed.get("terrain")))
+    fall_ft = safe_float(terrain.get("fall_ft"), 0.0)
+    if project_type != "retaining_wall_site" and fall_ft < 12.0:
+        return existing_summary
+    lot = safe_dict(unwrap_fields_for_execution(parsed.get("lot")))
+    width = safe_float(lot.get("w") or lot.get("width"), 0.0)
+    height = safe_float(lot.get("h") or lot.get("height"), 0.0)
+    wall_height = max(4.0, min(12.0, fall_ft * 0.45 if fall_ft > 0.0 else 6.0))
+    wall = {
+        "id": "RW-1",
+        "type": "concept_retaining_wall",
+        "alignment": [[round(width * 0.12, 3), round(height * 0.18, 3)], [round(width * 0.88, 3), round(height * 0.18, 3)]],
+        "length_ft": round(max(width * 0.76, 1.0), 3),
+        "max_exposed_height_ft": round(wall_height, 3),
+        "source": "terrain_fall_trigger",
+        "review_required": True,
+        "truth_label": "Concept retaining wall is generated from declared steep-site terrain and remains blocked for structural review.",
+    }
+    tie_check = {
+        "wall_id": wall["id"],
+        "status": "needs_structural_review",
+        "grading_tie_in_checked": bool(safe_dict(meta.get("grading")).get("proposed_surface")),
+        "utility_clearance_review_required": True,
+        "truth_label": "Wall tie-in check is a coordination placeholder, not a sealed structural design.",
+    }
+    return {
+        **existing_summary,
+        "retaining_walls": [wall],
+        "wall_tie_in_checks": [tie_check],
+        "source": "canonical_structure_synthesis",
+        "production_ready": False,
+    }
+
+
+def _synthesize_canonical_meta(parsed: Dict[str, Any], plan: Dict[str, Any]) -> None:
+    meta = plan.setdefault("meta", {})
+    grading = safe_dict(meta.get("grading") or meta.get("grading_summary"))
+    if safe_dict(grading.get("earthwork")) and not safe_dict(meta.get("earthwork")):
+        meta["earthwork"] = {
+            **deepcopy(safe_dict(grading.get("earthwork"))),
+            "source": "grading_surface_cut_fill",
+            "truth_label": "Earthwork totals are derived from the canonical grading surface.",
+        }
+
+    parking = safe_dict(meta.get("parking_program"))
+    if not parking or not bool(parking.get("traceable")):
+        synthesized_parking = _parking_program_context(parsed, plan)
+        if synthesized_parking.get("traceable") or safe_int(synthesized_parking.get("achieved_count"), 0) > 0:
+            meta["parking_program"] = synthesized_parking
+
+    parsed_existing = safe_dict(parsed.get("existing_conditions") or parsed.get("gis_layers"))
+    if parsed_existing and not safe_dict(meta.get("existing_conditions")):
+        meta["existing_conditions"] = deepcopy(parsed_existing)
+    for key in ("floodplain", "wetlands"):
+        if key in parsed_existing and key not in meta:
+            meta[key] = {"features": deepcopy(_layer_records(parsed_existing.get(key), key)), "source": "existing_conditions"}
+    protected_zones = _protected_zones_from_existing_conditions(meta)
+    if protected_zones and not safe_list(meta.get("protected_zones")):
+        meta["protected_zones"] = protected_zones
+
+    structures = _synthesize_retaining_wall_summary(parsed, plan)
+    if structures:
+        meta["structures"] = deepcopy(structures)
+        meta["structure_summary"] = deepcopy(structures)
+        if safe_list(structures.get("retaining_walls")) and not safe_list(meta.get("retaining_walls")):
+            meta["retaining_walls"] = deepcopy(safe_list(structures.get("retaining_walls")))
+
+    coordination = safe_dict(meta.get("coordination"))
+    if coordination and not safe_list(coordination.get("resolution_history")):
+        history: List[Dict[str, Any]] = []
+        for row in safe_list(coordination.get("resolved_conflicts")):
+            rec = safe_dict(row)
+            if rec:
+                history.append({"status": "resolved", "source": "coordination.resolved_conflicts", "record": deepcopy(rec)})
+        realism = safe_dict(coordination.get("coordination_realism") or meta.get("coordination_realism"))
+        for row in safe_list(realism.get("best_near_valid_candidates")):
+            rec = safe_dict(row)
+            if rec:
+                history.append({"status": "attempted_not_accepted", "source": "coordination_realism.best_near_valid_candidates", "record": deepcopy(rec)})
+        if history:
+            coordination["resolution_history"] = history
+            meta["coordination"] = coordination
+
+
 def _canonical_truth_audit(parsed: Dict[str, Any], plan: Dict[str, Any], manager: Optional[ProjectManager] = None) -> Dict[str, Any]:
     return _canonical_truth_audit_impl(
         parsed,
@@ -9760,6 +9880,7 @@ def _run_model_first_workflow(
     except Exception as exc:
         plan["meta"]["quantities"] = {"success": False, "message": f"Quantity computation failed: {exc}"}
 
+    _synthesize_canonical_meta(parsed, plan)
     plan["meta"]["optimization_summary"] = _build_optimization_summary(parsed, plan)
 
     try:
@@ -10189,6 +10310,10 @@ def finalize_plan(plan: Dict[str, Any], *, parsed: Dict[str, Any], route: Routin
     for key in ("survey", "gis_layers", "existing_conditions", "coordinate_system", "standards_review_packet", "standards_acceptance", "design_standards", "jurisdiction_standards", "company_standards"):
         if key in parsed_meta and key not in final["meta"]:
             final["meta"][key] = deepcopy(parsed_meta.get(key))
+    for key in ("survey", "gis_layers", "existing_conditions", "coordinate_system"):
+        if key in parsed and key not in final["meta"]:
+            final["meta"][key] = deepcopy(parsed.get(key))
+    _synthesize_canonical_meta(parsed, final)
     final["meta"].setdefault("routing", {"path": route.path, "reasons": list(route.reasons)})
     final["meta"].setdefault("parsed_mode", lower_text(parsed.get("mode")))
     final["meta"].setdefault("project_type", lower_text(parsed.get("project_type")))
