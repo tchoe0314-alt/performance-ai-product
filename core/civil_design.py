@@ -92,6 +92,10 @@ class CivilDesignStandards:
     min_emergency_overflow_freeboard_ft: float = 0.5
     max_sanitary_capacity_ratio: float = 0.85
     min_water_sanitary_vertical_separation_ft: float = 1.5
+    max_water_velocity_fps: float = 8.0
+    min_water_residual_pressure_psi: float = 20.0
+    max_hydrant_spacing_ft: float = 500.0
+    min_fire_flow_gpm: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -129,6 +133,33 @@ def _length_ft_from_rule_text(text: str) -> Optional[float]:
 def _hours_from_rule_text(text: str) -> Optional[float]:
     match = None
     for match in re.finditer(r"(\d+(?:\.\d+)?)\s*(hours|hour|hrs|hr)?", text, re.IGNORECASE):
+        pass
+    if match is None:
+        return None
+    return _safe_float(match.group(1), 0.0)
+
+
+def _flow_gpm_from_rule_text(text: str) -> Optional[float]:
+    match = None
+    for match in re.finditer(r"(\d+(?:\.\d+)?)\s*(gpm|gallons per minute)?", text, re.IGNORECASE):
+        pass
+    if match is None:
+        return None
+    return _safe_float(match.group(1), 0.0)
+
+
+def _plain_number_from_rule_text(text: str) -> Optional[float]:
+    match = None
+    for match in re.finditer(r"(\d+(?:\.\d+)?)", text, re.IGNORECASE):
+        pass
+    if match is None:
+        return None
+    return _safe_float(match.group(1), 0.0)
+
+
+def _psi_from_rule_text(text: str) -> Optional[float]:
+    match = None
+    for match in re.finditer(r"(\d+(?:\.\d+)?)\s*(psi)?", text, re.IGNORECASE):
         pass
     if match is None:
         return None
@@ -190,6 +221,22 @@ def standards_from_meta(meta: Dict[str, Any], base: CivilDesignStandards = DEFAU
             length = _length_ft_from_rule_text(text)
             if length is not None:
                 values["max_sanitary_manhole_spacing_ft"] = length
+        elif "hydrant" in text and "spacing" in text:
+            length = _length_ft_from_rule_text(text)
+            if length is not None:
+                values["max_hydrant_spacing_ft"] = length
+        elif "fire flow" in text:
+            flow = _flow_gpm_from_rule_text(text)
+            if flow is not None:
+                values["min_fire_flow_gpm"] = flow
+        elif "residual pressure" in text or "minimum pressure" in text:
+            pressure = _psi_from_rule_text(text)
+            if pressure is not None:
+                values["min_water_residual_pressure_psi"] = pressure
+        elif "water" in text and "velocity" in text:
+            velocity = _plain_number_from_rule_text(text)
+            if velocity is not None:
+                values["max_water_velocity_fps"] = velocity
         elif "drawdown" in text:
             hours = _hours_from_rule_text(text)
             if hours is not None:
@@ -590,6 +637,21 @@ def check_hydraulic_depth_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
                 present = bool(storm.get(field))
             if not present:
                 gaps.append(_production_gap("hydraulics", field, why, f"Run or attach {field.replace('_', ' ')} calculations."))
+        inlet_checks = [_safe_dict(item) for item in _safe_list(storm.get("inlet_capacity_checks"))]
+        invalid_inlets = [
+            _safe_str(item.get("inlet"), f"inlet_{index}")
+            for index, item in enumerate(inlet_checks, start=1)
+            if item.get("valid") is False
+        ]
+        if invalid_inlets:
+            gaps.append(
+                _production_gap(
+                    "hydraulics",
+                    "inlet_capacity_validity",
+                    "Inlet spread, capacity, and bypass checks must pass before storm production review.",
+                    "Adjust inlet type/count/capacity or revise catchment routing.",
+                )
+            )
     else:
         warnings.append("Storm network is not present; hydraulic depth checks are waiting on storm design.")
     detention_routes = _safe_list(drainage.get("detention_routing")) or _safe_list(drainage.get("stage_storage"))
@@ -966,6 +1028,27 @@ def check_utility_truth(utilities: Dict[str, Any], standards: CivilDesignStandar
                 )
     if separation_warnings:
         warnings.append("Utility horizontal separation needs review for one or more pairings.")
+    velocity_failures = [
+        _safe_str(_safe_dict(check).get("segment"), f"water_velocity_{index}")
+        for index, check in enumerate(_safe_list(utilities.get("velocity_checks")), start=1)
+        if _has_number(_safe_dict(check).get("velocity_fps"))
+        and _safe_float(_safe_dict(check).get("velocity_fps"), 0.0) > standards.max_water_velocity_fps
+    ]
+    if velocity_failures:
+        missing.append(_missing("utilities", "water_velocity", "Water velocity exceeds the active standards threshold.", "Upsize water pipe or revise demand allocation."))
+    pressure = _safe_dict(utilities.get("pressure_validation"))
+    if pressure and pressure.get("valid") is False:
+        missing.append(_missing("utilities", "water_pressure", "Water pressure validation failed or is missing required inputs.", "Provide source pressure and solve pressure graph."))
+    elif pressure and _has_number(pressure.get("min_pressure_psi")) and _safe_float(pressure.get("min_pressure_psi"), 0.0) < standards.min_water_residual_pressure_psi:
+        missing.append(_missing("utilities", "water_pressure", "Water residual pressure is below the active standards threshold.", "Upsize, loop, boost, or revise water source assumptions."))
+    hydrants = _safe_dict(utilities.get("hydrant_spacing_validation"))
+    if hydrants and _has_number(hydrants.get("max_spacing_ft")) and _safe_float(hydrants.get("max_spacing_ft"), 0.0) > standards.max_hydrant_spacing_ft:
+        missing.append(_missing("utilities", "hydrant_spacing", "Hydrant spacing exceeds the active standards threshold.", "Add hydrants or revise water main layout."))
+    fire = _safe_dict(utilities.get("fire_flow_validation"))
+    if fire and fire.get("valid") is False:
+        missing.append(_missing("utilities", "fire_flow", "Fire-flow validation failed or is missing required inputs.", "Provide required/available fire flow and residual pressure evidence."))
+    elif fire and standards.min_fire_flow_gpm > 0.0 and _safe_float(fire.get("available_fire_flow_gpm"), 0.0) < standards.min_fire_flow_gpm:
+        missing.append(_missing("utilities", "fire_flow", "Available fire flow is below the active standards threshold.", "Revise water source, loop, or pipe sizing."))
     return _system_result(
         status="ready" if not missing else "missing",
         source=source,
@@ -977,6 +1060,7 @@ def check_utility_truth(utilities: Dict[str, Any], standards: CivilDesignStandar
             "shallow_segment_count": len(shallow_segments),
             "separation_warning_count": len(separation_warnings),
             "separation_warnings": separation_warnings[:12],
+            "water_velocity_failure_count": len(velocity_failures),
         },
     )
 

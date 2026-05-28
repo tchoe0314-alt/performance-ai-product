@@ -37,6 +37,30 @@ class DepthValidatorTests(unittest.TestCase):
 
         self.assertTrue(result["production_ready"])
 
+    def test_stormwater_depth_blocks_invalid_inlet_or_overflow_evidence(self) -> None:
+        result = validate_stormwater_depth(
+            {
+                "meta": {
+                    "storm_pipes": {
+                        "segments": [{"name": "P-1", "tributary_area_sf": 10000.0}],
+                        "hgl_profile": [{"station_ft": 0.0, "hgl_ft": 99.0}],
+                        "egl_profile": [{"station_ft": 0.0, "egl_ft": 99.2}],
+                        "tailwater_elev_ft": 98.0,
+                        "inlet_capacity_checks": [{"inlet": "CB-1", "valid": False, "bypass_cfs": 1.2}],
+                    },
+                    "drainage": {
+                        "catchments": [{"name": "A", "runoff_c": 0.8}],
+                        "detention_routing": [{"basin": "B-1"}],
+                        "overflow_analysis": {"valid": False, "missing_inputs": [{"basin": "B-1"}]},
+                    },
+                }
+            }
+        )
+
+        self.assertFalse(result["production_ready"])
+        self.assertIn("Storm depth needs passing inlet capacity, spread, and bypass checks.", result["blockers"])
+        self.assertIn("Storm depth needs overflow routing evidence.", result["blockers"])
+
     def test_water_depth_requires_pressure_fire_flow_looping_and_velocity(self) -> None:
         result = validate_water_system_depth(
             {

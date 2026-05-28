@@ -5,6 +5,7 @@ from copy import deepcopy
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from engines.storm.hydraulic_engine import analyze_storm_hydraulics
+from engines.storm.inlet_engine import estimate_inlet_capture
 from engines.storm.storm_types import HydraulicAnalysisRequest, StormNode, StormPipe, StormPoint
 from engines.water_sizing_engine import WaterSizingEngine, analyze_water_pressure_graph
 
@@ -176,6 +177,8 @@ def enrich_drainage_production_depth(drainage: Dict[str, Any]) -> Dict[str, Any]
     enriched = deepcopy(safe_dict(drainage))
     routing: List[Dict[str, Any]] = []
     all_stage_storage: List[Dict[str, Any]] = []
+    overflow_paths: List[Dict[str, Any]] = []
+    overflow_missing: List[Dict[str, Any]] = []
     for index, basin_raw in enumerate(safe_list(enriched.get("basins")), start=1):
         basin = safe_dict(basin_raw)
         design = safe_dict(basin.get("detention_design")) or safe_dict(basin.get("engineering")) or basin
@@ -216,9 +219,53 @@ def enrich_drainage_production_depth(drainage: Dict[str, Any]) -> Dict[str, Any]
                 "truth_label": "concept-stage detention routing; verify against jurisdiction method before construction.",
             }
         )
+        overflow_elev = _finite_or_none(design.get("overflow_elev_ft") or basin.get("overflow_elev_ft") or design.get("emergency_overflow_elev_ft"))
+        overflow_target = (
+            safe_dict(design.get("overflow_target"))
+            or safe_dict(basin.get("overflow_target"))
+            or safe_dict(enriched.get("coordination", {}).get("preferred_outfall"))
+        )
+        basin_xy = _point_xy(basin.get("point")) or (
+            safe_float(basin.get("x"), float("nan")),
+            safe_float(basin.get("y"), float("nan")),
+        )
+        target_xy = _point_xy(overflow_target) or (
+            safe_float(overflow_target.get("x"), float("nan")),
+            safe_float(overflow_target.get("y"), float("nan")),
+        )
+        missing = []
+        if overflow_elev is None:
+            missing.append("overflow_elev_ft")
+        if not (math.isfinite(basin_xy[0]) and math.isfinite(basin_xy[1])):
+            missing.append("basin_point")
+        if not (math.isfinite(target_xy[0]) and math.isfinite(target_xy[1])):
+            missing.append("overflow_target_point")
+        if missing:
+            overflow_missing.append({"basin": basin_name, "missing_fields": missing})
+        else:
+            path = [[round(basin_xy[0], 3), round(basin_xy[1], 3)], [round(target_xy[0], 3), round(target_xy[1], 3)]]
+            overflow_paths.append(
+                {
+                    "name": f"{basin_name}-EMERGENCY-OVERFLOW",
+                    "basin": basin_name,
+                    "overflow_elev_ft": round(overflow_elev, 3),
+                    "target": safe_str(overflow_target.get("name") or overflow_target.get("target_name"), "selected_overflow_target"),
+                    "path": path,
+                    "length_ft": round(polyline_length(path), 3),
+                    "truth_label": "Emergency overflow route from explicit basin overflow elevation and target point.",
+                }
+            )
     if routing:
         enriched["detention_routing"] = routing
         enriched["stage_storage"] = all_stage_storage
+    if overflow_paths or overflow_missing:
+        enriched["overflow_paths"] = overflow_paths
+        enriched["overflow_analysis"] = {
+            "valid": bool(overflow_paths) and not overflow_missing,
+            "path_count": len(overflow_paths),
+            "missing_inputs": overflow_missing,
+            "truth_label": "Overflow routing only validates when basin overflow elevation and target geometry are explicit.",
+        }
     return enriched
 
 
@@ -384,16 +431,40 @@ def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict
             safe_float(structure.get("estimated_flow_cfs"), 0.0),
             safe_float(structure.get("contributing_runoff_cfs"), 0.0),
         )
-        capacity = max(demand * 1.25, safe_float(structure.get("capacity_cfs"), 0.0), 0.5)
+        supplied_capacity = safe_float(structure.get("capacity_cfs"), 0.0)
+        max_capture = max(
+            0.1,
+            supplied_capacity,
+            safe_float(structure.get("max_capture_cfs"), 0.0),
+            safe_float(structure.get("inlet_capacity_cfs"), 0.0),
+            10.0,
+        )
+        spread_limit = max(0.1, safe_float(structure.get("gutter_spread_limit_ft"), safe_float(structure.get("spread_limit_ft"), 8.0)))
+        sag = bool(structure.get("sag_point") or structure.get("sag") or safe_str(structure.get("inlet_role")).lower() == "sag")
+        capture = estimate_inlet_capture(
+            design_runoff_cfs=demand,
+            sag=sag,
+            max_capture_cfs=max_capture,
+            gutter_spread_limit_ft=spread_limit,
+        )
+        valid = demand > 0.0 and capture.bypass_cfs <= 0.001 and capture.spread_ft <= spread_limit
         inlet_checks.append(
             {
                 "inlet": name,
                 "demand_cfs": round(demand, 3),
-                "capacity_cfs": round(capacity, 3),
-                "capacity_ratio": round(demand / max(capacity, 1e-9), 4),
-                "spread_ft": round(max(2.0, demand * 3.0), 3),
-                "bypass_cfs": round(max(0.0, demand - capacity), 3),
-                "truth_label": "concept inlet capacity check; confirm grate/curb opening with local standard.",
+                "intercepted_cfs": capture.intercepted_cfs,
+                "capacity_cfs": round(max_capture, 3),
+                "capacity_source": "supplied_inlet_capacity" if supplied_capacity > 0.0 else "storm_inlet_engine_default",
+                "capacity_ratio": round(demand / max(max_capture, 1e-9), 4),
+                "capture_efficiency": capture.capture_efficiency,
+                "spread_ft": capture.spread_ft,
+                "spread_limit_ft": round(spread_limit, 3),
+                "bypass_cfs": capture.bypass_cfs,
+                "depth_ft": capture.depth_ft,
+                "sag_point": sag,
+                "valid": valid,
+                "warnings": list(capture.warnings) + ([] if demand > 0.0 else ["Inlet demand was not provided; capture cannot be production-valid."]),
+                "truth_label": "Storm inlet engine capture/spread/bypass check; confirm grate/curb opening and local inlet standard before construction.",
             }
         )
     if inlet_checks:

@@ -17,9 +17,12 @@ class ProductionDepthArtifactTests(unittest.TestCase):
     def test_drainage_adds_detention_routing_and_stage_storage(self) -> None:
         drainage = {
             "success": True,
+            "coordination": {"preferred_outfall": {"name": "OUTFALL-1", "x": 120.0, "y": 20.0}},
             "basins": [
                 {
                     "name": "BASIN-1",
+                    "x": 20.0,
+                    "y": 10.0,
                     "detention_design": {
                         "required_storage_cf": 4200.0,
                         "provided_storage_cf": 5100.0,
@@ -28,6 +31,7 @@ class ProductionDepthArtifactTests(unittest.TestCase):
                         "bottom_elev_ft": 96.0,
                         "normal_pool_elev_ft": 99.0,
                         "top_of_bank_elev_ft": 101.0,
+                        "overflow_elev_ft": 100.5,
                     },
                 }
             ],
@@ -38,6 +42,8 @@ class ProductionDepthArtifactTests(unittest.TestCase):
         self.assertEqual(enriched["detention_routing"][0]["basin"], "BASIN-1")
         self.assertEqual(enriched["detention_routing"][0]["status"], "adequate")
         self.assertGreaterEqual(len(enriched["stage_storage"]), 3)
+        self.assertTrue(enriched["overflow_analysis"]["valid"])
+        self.assertEqual(enriched["overflow_paths"][0]["basin"], "BASIN-1")
 
     def test_storm_adds_hgl_egl_tailwater_and_inlet_checks(self) -> None:
         storm = {
@@ -67,6 +73,8 @@ class ProductionDepthArtifactTests(unittest.TestCase):
         self.assertTrue(enriched["egl_profile"])
         self.assertEqual(enriched["tailwater_elev_ft"], 96.0)
         self.assertEqual(enriched["inlet_capacity_checks"][0]["inlet"], "INLET-1")
+        self.assertEqual(enriched["inlet_capacity_checks"][0]["capacity_source"], "storm_inlet_engine_default")
+        self.assertIn("capture_efficiency", enriched["inlet_capacity_checks"][0])
         self.assertEqual(enriched["controlling_segment"], "P-1")
 
     def test_storm_depth_uses_hydraulic_engine_for_capacity_velocity_and_hgl(self) -> None:

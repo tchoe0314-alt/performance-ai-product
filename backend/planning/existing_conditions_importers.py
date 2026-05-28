@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import importlib.util
 import json
+import re
 import zipfile
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -20,6 +21,7 @@ SURVEY_Z_COLUMNS = ("z", "elev", "elevation", "height")
 SURVEY_ID_COLUMNS = ("point_id", "point", "id", "name", "number")
 SURVEY_DESC_COLUMNS = ("description", "desc", "code", "feature", "label")
 HEAVY_FORMAT_REQUIREMENTS = {
+    ".dxf": "DXF import requires ezdxf.",
     ".shp": "Shapefile import requires fiona/geopandas or GDAL.",
     ".gpkg": "GeoPackage import requires fiona/geopandas or GDAL.",
     ".tif": "GeoTIFF import requires rasterio/GDAL.",
@@ -305,6 +307,14 @@ def classify_existing_conditions_file(path: Path) -> Dict[str, Any]:
         return {"supported": True, "format": "csv", "mode": "survey_or_surface_xyz"}
     if suffix in {".geojson", ".json"}:
         return {"supported": True, "format": "geojson", "mode": "gis_features"}
+    if suffix == ".dxf":
+        available = _module_available("ezdxf")
+        return {
+            "supported": available,
+            "format": "dxf",
+            "mode": "survey_breaklines_or_existing_utilities",
+            "required_dependency": "" if available else HEAVY_FORMAT_REQUIREMENTS[suffix],
+        }
     if suffix == ".xml" or suffix == ".landxml":
         return {"supported": True, "format": "landxml", "mode": "surface_or_alignment_metadata"}
     if suffix == ".zip":
@@ -341,6 +351,135 @@ def classify_existing_conditions_file(path: Path) -> Dict[str, Any]:
             "required_dependency": HEAVY_FORMAT_REQUIREMENTS[suffix],
         }
     return {"supported": False, "format": suffix.lstrip(".") or "unknown", "mode": "unsupported"}
+
+
+def _dxf_point_tuple(value: Any) -> Tuple[float, float, float]:
+    return (
+        safe_float(getattr(value, "x", 0.0), 0.0),
+        safe_float(getattr(value, "y", 0.0), 0.0),
+        safe_float(getattr(value, "z", 0.0), 0.0),
+    )
+
+
+def _dxf_feature(layer: str, geometry_type: str, coordinates: Any, *, source: Path, entity_type: str) -> Dict[str, Any]:
+    return {
+        "id": f"{entity_type}-{abs(hash((layer, safe_str(coordinates)))) % 1000000}",
+        "geometry": {"type": geometry_type, "coordinates": coordinates},
+        "properties": {"layer": layer, "type": entity_type, "source_format": "dxf"},
+        "source": str(source),
+    }
+
+
+def _dxf_polyline_coordinates(entity: Any) -> List[Tuple[float, float, float]]:
+    if entity.dxftype() == "LWPOLYLINE":
+        elevation = safe_float(getattr(entity.dxf, "elevation", 0.0), 0.0)
+        coords: List[Tuple[float, float, float]] = []
+        for point in entity.get_points("xy"):
+            coords.append((safe_float(point[0], 0.0), safe_float(point[1], 0.0), elevation))
+        return coords
+    if entity.dxftype() == "POLYLINE":
+        return [_dxf_point_tuple(vertex.dxf.location) for vertex in entity.vertices]
+    return []
+
+
+def _dxf_layer_kind(layer: str, entity_type: str) -> str:
+    haystack = f"{layer} {entity_type}".lower()
+    words = {part for part in re.split(r"[^a-z0-9]+", haystack) if part}
+    if any(token in words for token in ("contour", "breakline", "tin", "surface", "grade")):
+        return "surface"
+    if any(token in words for token in ("point", "points", "spot", "survey", "shot", "cogo")):
+        return "survey"
+    return "gis"
+
+
+def import_dxf_existing_conditions(path: Path, *, coordinate_system: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    if not _module_available("ezdxf"):
+        return {"success": False, "source": str(path), "source_type": "dxf_existing_conditions", "warnings": ["ezdxf is required for DXF import."]}
+    import ezdxf
+
+    warnings: List[str] = []
+    try:
+        doc = ezdxf.readfile(path)
+    except Exception as exc:
+        return {"success": False, "source": str(path), "source_type": "dxf_existing_conditions", "warnings": [safe_str(exc)]}
+
+    layers: Dict[str, List[Dict[str, Any]]] = {layer: [] for layer in REQUIRED_GIS_LAYERS}
+    survey_points: List[Dict[str, Any]] = []
+    breaklines: List[Dict[str, Any]] = []
+    unknown_feature_count = 0
+    entity_count = 0
+    for index, entity in enumerate(doc.modelspace(), start=1):
+        entity_count += 1
+        entity_type = safe_str(entity.dxftype())
+        layer = safe_str(getattr(entity.dxf, "layer", ""), "0")
+        kind = _dxf_layer_kind(layer, entity_type)
+        if entity_type == "POINT":
+            x, y, z = _dxf_point_tuple(entity.dxf.location)
+            survey_points.append(
+                {
+                    "point_id": safe_str(getattr(entity.dxf, "handle", ""), f"DXF-P-{index}"),
+                    "x": x,
+                    "y": y,
+                    "z": z,
+                    "description": layer,
+                    "source": str(path),
+                }
+            )
+            if kind == "survey":
+                continue
+            feature = _dxf_feature(layer, "Point", [x, y, z], source=path, entity_type=entity_type)
+        elif entity_type == "LINE":
+            start = _dxf_point_tuple(entity.dxf.start)
+            end = _dxf_point_tuple(entity.dxf.end)
+            coords = [start, end]
+            if kind == "surface":
+                breaklines.append({"name": f"{layer}-{index}", "layer": layer, "points": coords, "source": str(path), "entity_type": entity_type})
+                continue
+            feature = _dxf_feature(layer, "LineString", coords, source=path, entity_type=entity_type)
+        elif entity_type in {"LWPOLYLINE", "POLYLINE"}:
+            coords = _dxf_polyline_coordinates(entity)
+            if len(coords) < 2:
+                continue
+            closed = bool(getattr(entity, "closed", False))
+            if kind == "surface":
+                breaklines.append({"name": f"{layer}-{index}", "layer": layer, "points": coords, "closed": closed, "source": str(path), "entity_type": entity_type})
+                continue
+            geom_type = "Polygon" if closed else "LineString"
+            geom_coords = [coords] if closed else coords
+            feature = _dxf_feature(layer, geom_type, geom_coords, source=path, entity_type=entity_type)
+        elif entity_type == "INSERT":
+            insert = _dxf_point_tuple(entity.dxf.insert)
+            feature = _dxf_feature(layer, "Point", list(insert), source=path, entity_type=entity_type)
+        else:
+            continue
+
+        layer_name = _classify_geojson_layer({"properties": feature["properties"], "geometry": feature["geometry"]}, layer_hint=layer)
+        if layer_name in layers:
+            layers[layer_name].append(feature)
+        else:
+            unknown_feature_count += 1
+
+    if not coordinate_system:
+        warnings.append("DXF does not carry reliable CRS metadata here; production readiness remains blocked until CRS/EPSG is confirmed.")
+    point_elevations = [safe_float(point.get("z"), 0.0) for point in survey_points]
+    return {
+        "success": bool(survey_points or breaklines or any(layers.values())),
+        "source": str(path),
+        "source_type": "dxf_existing_conditions",
+        "entity_count": entity_count,
+        "point_count": len(survey_points),
+        "breakline_count": len(breaklines),
+        "points": survey_points,
+        "breaklines": breaklines,
+        "layers": layers,
+        "layer_counts": {layer: len(items) for layer, items in layers.items()},
+        "unknown_feature_count": unknown_feature_count,
+        "bounds": _bounds(survey_points),
+        "elevation_range": {"min": min(point_elevations), "max": max(point_elevations)} if point_elevations else None,
+        "coordinate_system": safe_dict(coordinate_system),
+        "warnings": warnings,
+        "truth_label": "DXF geometry was imported as existing-condition evidence; CRS, survey control, and layer semantics require review before production use.",
+    }
 
 
 def _classify_zip(path: Path) -> Dict[str, Any]:
@@ -552,6 +691,7 @@ def _coordinate_from_geojson(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 def merge_imported_existing_conditions(*imports: Dict[str, Any]) -> Dict[str, Any]:
     survey_points: List[Dict[str, Any]] = []
+    breaklines: List[Dict[str, Any]] = []
     gis_layers: Dict[str, List[Dict[str, Any]]] = {layer: [] for layer in REQUIRED_GIS_LAYERS}
     surfaces: List[Dict[str, Any]] = []
     warnings: List[str] = []
@@ -565,11 +705,13 @@ def merge_imported_existing_conditions(*imports: Dict[str, Any]) -> Dict[str, An
         warnings.extend(safe_list(rec.get("warnings")))
         if not coordinate_system:
             coordinate_system = safe_dict(rec.get("coordinate_system"))
-        if rec.get("source_type") in {"survey_csv", "las_point_cloud"}:
+        if rec.get("source_type") in {"survey_csv", "las_point_cloud", "dxf_existing_conditions"}:
             survey_points.extend(safe_list(rec.get("points")))
+        if rec.get("source_type") == "dxf_existing_conditions":
+            breaklines.extend(safe_list(rec.get("breaklines")))
         if rec.get("source_type") in {"surface_xyz_csv", "geotiff_surface"} and rec.get("surface") is not None:
             surfaces.append({"source": rec.get("source"), "surface": rec.get("surface"), "ncols": rec.get("ncols"), "nrows": rec.get("nrows")})
-        if rec.get("source_type") in {"geojson", "geospatial_vector"}:
+        if rec.get("source_type") in {"geojson", "geospatial_vector", "dxf_existing_conditions"}:
             for layer, features in safe_dict(rec.get("layers")).items():
                 if layer in gis_layers:
                     gis_layers[layer].extend(safe_list(features))
@@ -578,9 +720,11 @@ def merge_imported_existing_conditions(*imports: Dict[str, Any]) -> Dict[str, An
         "source_type": "merged_existing_conditions",
         "sources": sources,
         "survey": {
-            "source": "imported_survey_csv" if survey_points else "missing",
+            "source": "imported_existing_conditions" if survey_points else "missing",
             "point_count": len(survey_points),
             "points": survey_points,
+            "breakline_count": len(breaklines),
+            "breaklines": breaklines,
         },
         "gis_layers": gis_layers,
         "existing_conditions": gis_layers,
@@ -594,6 +738,7 @@ __all__ = [
     "import_geojson",
     "classify_existing_conditions_file",
     "import_geospatial_vector_file",
+    "import_dxf_existing_conditions",
     "import_geotiff_surface",
     "import_las_point_cloud",
     "import_landxml_metadata",

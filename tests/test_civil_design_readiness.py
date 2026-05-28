@@ -190,6 +190,62 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertIn(("storm_pipes", "max_capacity_ratio"), fields)
         self.assertIn(("utilities", "cover_ft"), fields)
 
+    def test_accepted_water_standards_tighten_utility_qa(self) -> None:
+        meta = _complete_meta()
+        meta["design_standards"] = {
+            "source": "accepted_standards_review_packet",
+            "version": "water_manual_2026",
+            "rules": [
+                {
+                    "rule_id": "hydrant_spacing",
+                    "topic": "Hydrant spacing",
+                    "candidate_value": "Hydrant spacing shall not exceed 300 feet.",
+                    "status": "accepted",
+                },
+                {
+                    "rule_id": "fire_flow",
+                    "topic": "Fire flow",
+                    "candidate_value": "Minimum required fire flow is 1500 gpm.",
+                    "status": "accepted",
+                },
+                {
+                    "rule_id": "residual_pressure",
+                    "topic": "Residual pressure",
+                    "candidate_value": "Minimum residual pressure shall be 35 psi.",
+                    "status": "accepted",
+                },
+                {
+                    "rule_id": "water_velocity",
+                    "topic": "Water velocity",
+                    "candidate_value": "Water velocity shall not exceed 6 fps.",
+                    "status": "accepted",
+                },
+            ],
+            "production_usable": True,
+        }
+        meta["utilities"].update(
+            {
+                "pressure_validation": {"valid": True, "min_pressure_psi": 30.0},
+                "fire_flow_validation": {"valid": True, "available_fire_flow_gpm": 1200.0},
+                "hydrant_spacing_validation": {"valid": True, "max_spacing_ft": 360.0},
+                "velocity_checks": [{"segment": "W-1", "velocity_fps": 7.1}],
+            }
+        )
+
+        active = standards_from_meta(meta)
+        readiness = civil_design_readiness({"meta": meta})
+        fields = {(item["system"], item["field"]) for item in readiness["missing_requirements"]}
+
+        self.assertEqual(active.version, "water_manual_2026")
+        self.assertAlmostEqual(active.max_hydrant_spacing_ft, 300.0)
+        self.assertAlmostEqual(active.min_fire_flow_gpm, 1500.0)
+        self.assertAlmostEqual(active.min_water_residual_pressure_psi, 35.0)
+        self.assertAlmostEqual(active.max_water_velocity_fps, 6.0)
+        self.assertIn(("utilities", "water_velocity"), fields)
+        self.assertIn(("utilities", "water_pressure"), fields)
+        self.assertIn(("utilities", "hydrant_spacing"), fields)
+        self.assertIn(("utilities", "fire_flow"), fields)
+
     def test_production_depth_gates_clear_when_real_design_evidence_exists(self) -> None:
         meta = _complete_meta()
         meta["design_standards"] = {"source": "test_jurisdiction_pack", "version": "2026.1"}

@@ -6,6 +6,7 @@ from pathlib import Path
 from backend.planning.existing_conditions import summarize_existing_conditions
 from backend.planning.existing_conditions_importers import (
     classify_existing_conditions_file,
+    import_dxf_existing_conditions,
     import_geospatial_vector_file,
     import_geotiff_surface,
     import_geojson,
@@ -85,6 +86,34 @@ class ExistingConditionsImporterTests(unittest.TestCase):
             self.assertEqual(surface.ncols, 2)
             self.assertEqual(surface.nrows, 2)
             self.assertEqual(getattr(surface, "_inferred_profile")["source_detail"], "surface_xyz_csv_import")
+
+    def test_dxf_import_reads_survey_points_breaklines_and_existing_utilities(self) -> None:
+        import ezdxf
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "existing.dxf"
+            doc = ezdxf.new()
+            msp = doc.modelspace()
+            msp.add_point((0.0, 0.0, 100.0), dxfattribs={"layer": "SURVEY_POINTS"})
+            msp.add_lwpolyline(
+                [(0.0, 0.0), (20.0, 0.0), (20.0, 20.0)],
+                dxfattribs={"layer": "BREAKLINE_EDGE", "elevation": 99.5},
+            )
+            msp.add_lwpolyline(
+                [(5.0, 5.0), (30.0, 5.0)],
+                dxfattribs={"layer": "EXISTING_WATER_UTILITY"},
+            )
+            doc.saveas(path)
+
+            imported = import_dxf_existing_conditions(path, coordinate_system={"epsg": "EPSG:2276"})
+            merged = merge_imported_existing_conditions(imported)
+
+            self.assertTrue(imported["success"])
+            self.assertEqual(imported["point_count"], 1)
+            self.assertEqual(imported["breakline_count"], 1)
+            self.assertEqual(imported["layer_counts"]["existing_utilities"], 1)
+            self.assertEqual(merged["survey"]["breakline_count"], 1)
+            self.assertEqual(merged["gis_layers"]["existing_utilities"][0]["properties"]["layer"], "EXISTING_WATER_UTILITY")
 
     def test_merge_imports_feed_existing_conditions_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

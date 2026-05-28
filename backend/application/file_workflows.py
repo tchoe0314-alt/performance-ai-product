@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse
 from backend.planning.existing_conditions import summarize_existing_conditions
 from backend.planning.existing_conditions_importers import (
     classify_existing_conditions_file,
+    import_dxf_existing_conditions,
     import_geospatial_vector_file,
     import_geotiff_surface,
     import_geojson,
@@ -152,6 +153,8 @@ def upload_existing_conditions_file(
             imports.append(import_geojson(target))
         except Exception as exc:
             warnings.append(f"GeoJSON import failed: {exc}")
+    elif suffix == ".dxf":
+        imports.append(import_dxf_existing_conditions(target))
     elif suffix in {".shp", ".gpkg"}:
         imports.append(import_geospatial_vector_file(target))
     elif suffix in {".tif", ".tiff"}:

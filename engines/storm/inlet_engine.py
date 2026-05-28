@@ -537,3 +537,18 @@ def place_storm_inlets(request: InletPlacementRequest) -> InletPlacementResult:
 
 def place_storm_inlets_with_hydrology(request: InletHydrologyRequest) -> InletEngineResult:
     return InletEngine().place_inlets_with_hydrology(request)
+
+
+def estimate_inlet_capture(
+    *,
+    design_runoff_cfs: float,
+    sag: bool = False,
+    max_capture_cfs: float = DEFAULT_MAX_CAPTURE_CFS_PER_INLET,
+    gutter_spread_limit_ft: float = DEFAULT_GUTTER_SPREAD_LIMIT_FT,
+) -> InletCaptureResult:
+    return InletEngine()._estimate_capture(
+        design_runoff_cfs=design_runoff_cfs,
+        sag=sag,
+        max_capture_cfs=max_capture_cfs,
+        gutter_spread_limit_ft=gutter_spread_limit_ft,
+    )

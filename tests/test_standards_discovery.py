@@ -37,6 +37,7 @@ class StandardsDiscoveryTests(unittest.TestCase):
         self.assertTrue(accepted["production_usable"])
         self.assertEqual(accepted["accepted_rule_count"], 1)
         self.assertEqual(pack["rules"][0]["candidate_value"], "Accepted edited value")
+        self.assertTrue(pack["needs_source_review"])
 
     def test_civil_readiness_can_use_accepted_standards_without_fake_jurisdiction(self) -> None:
         packet = build_standards_review_packet()
@@ -52,12 +53,19 @@ class StandardsDiscoveryTests(unittest.TestCase):
 
     def test_extract_rule_candidates_from_text_requires_acceptance(self) -> None:
         candidates = extract_rule_candidates_from_text(
-            "Accessible route cross slope shall not exceed 2 percent. Minimum utility cover shall be 3 feet.",
+            "Accessible route cross slope shall not exceed 2 percent. Minimum utility cover shall be 3 feet. "
+            "Hydrant spacing shall not exceed 300 feet. Required fire flow is 1500 gpm. "
+            "Residual pressure shall be 20 psi. Manhole spacing shall not exceed 400 feet.",
             source_id="test_city",
             source_url="https://example.gov/standards",
         )
 
-        self.assertGreaterEqual(len(candidates), 2)
+        topics = {item["topic"] for item in candidates}
+        self.assertGreaterEqual(len(candidates), 6)
+        self.assertIn("hydrant spacing", topics)
+        self.assertIn("fire flow", topics)
+        self.assertIn("residual pressure", topics)
+        self.assertIn("manhole spacing", topics)
         self.assertTrue(all(item["needs_human_confirmation"] for item in candidates))
 
     def test_fetch_and_extract_rule_candidates_from_html(self) -> None:

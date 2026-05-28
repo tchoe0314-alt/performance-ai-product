@@ -228,6 +228,13 @@ def accept_standards_rules(review_packet: Dict[str, Any], accepted_rule_ids: Ite
         else:
             edited["status"] = "not_accepted"
             rejected_rules.append(edited)
+    source_urls = sorted({safe_str(rule.get("source_url")) for rule in accepted_rules if safe_str(rule.get("source_url"))})
+    official_source_count = sum(
+        1
+        for url in source_urls
+        if url.startswith("https://")
+        and not any(blocked in url.lower() for blocked in ("google.com/search", "bing.com/search", "internal://"))
+    )
     return {
         "success": bool(accepted_rules),
         "source": "standards_discovery_engine",
@@ -236,6 +243,9 @@ def accept_standards_rules(review_packet: Dict[str, Any], accepted_rule_ids: Ite
         "accepted_rule_count": len(accepted_rules),
         "accepted_rules": accepted_rules,
         "rejected_rules": rejected_rules,
+        "source_urls": source_urls,
+        "official_source_count": official_source_count,
+        "needs_source_review": bool(accepted_rules and official_source_count <= 0),
         "production_usable": bool(accepted_rules),
         "truth_label": "Only accepted rules are eligible for production QA; baseline rules remain concept-only unless explicitly accepted.",
     }
@@ -248,6 +258,9 @@ def standards_pack_from_acceptance(acceptance: Dict[str, Any]) -> Dict[str, Any]
         "version": safe_str(acceptance.get("version"), "standards_acceptance_v1"),
         "accepted_rule_count": len(accepted_rules),
         "rules": accepted_rules,
+        "source_urls": list(safe_list(acceptance.get("source_urls"))),
+        "official_source_count": safe_dict(acceptance).get("official_source_count", 0),
+        "needs_source_review": bool(acceptance.get("needs_source_review")),
         "production_usable": bool(accepted_rules),
         "truth_label": "User-accepted standards pack. Engineer review is still required for permit use.",
     }
@@ -278,9 +291,15 @@ class _TextExtractor(HTMLParser):
 RULE_PATTERNS: Tuple[Tuple[str, str, str], ...] = (
     ("grading", "ADA slope", r"(?i)(ADA|accessible)[^.]{0,80}(slope|cross slope)[^.]{0,80}(\d+(?:\.\d+)?)\s*(%|percent)"),
     ("utilities", "minimum cover", r"(?i)(minimum|min\.?)[^.]{0,80}(cover)[^.]{0,80}(\d+(?:\.\d+)?)\s*(feet|foot|ft|'|inches|inch|in)"),
+    ("utilities", "vertical separation", r"(?i)(vertical)[^.]{0,80}(separation)[^.]{0,80}(\d+(?:\.\d+)?)\s*(feet|foot|ft|'|inches|inch|in)"),
     ("utilities", "utility separation", r"(?i)(water|sewer|sanitary|storm)[^.]{0,80}(separation)[^.]{0,80}(\d+(?:\.\d+)?)\s*(feet|foot|ft|'|inches|inch|in)"),
     ("storm", "detention drawdown", r"(?i)(detention|retention|stormwater)[^.]{0,100}(drawdown|release)[^.]{0,80}(\d+(?:\.\d+)?)\s*(hours|hour|hrs|hr)"),
     ("roadway", "maximum grade", r"(?i)(maximum|max\.?)[^.]{0,80}(grade|slope)[^.]{0,80}(\d+(?:\.\d+)?)\s*(%|percent)"),
+    ("sanitary", "manhole spacing", r"(?i)(manhole)[^.]{0,80}(spacing)[^.]{0,80}(\d+(?:\.\d+)?)\s*(feet|foot|ft|'|inches|inch|in)"),
+    ("water", "hydrant spacing", r"(?i)(hydrant)[^.]{0,80}(spacing)[^.]{0,80}(\d+(?:\.\d+)?)\s*(feet|foot|ft|'|inches|inch|in)"),
+    ("water", "fire flow", r"(?i)(fire\s*flow)[^.]{0,80}(\d+(?:\.\d+)?)\s*(gpm|gallons per minute)"),
+    ("water", "residual pressure", r"(?i)(residual\s*pressure|minimum\s*pressure)[^.]{0,80}(\d+(?:\.\d+)?)\s*(psi)"),
+    ("water", "maximum velocity", r"(?i)(water)[^.]{0,80}(velocity)[^.]{0,80}(\d+(?:\.\d+)?)\s*(fps|ft/s|feet per second)"),
 )
 
 

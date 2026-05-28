@@ -84,14 +84,26 @@ def validate_stormwater_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     segments = [safe_dict(item) for item in safe_list(storm.get("segments"))]
     catchments = safe_list(drainage.get("catchments") or storm.get("catchments"))
     basins = safe_list(drainage.get("basins") or storm.get("basins"))
+    inlet_checks = [safe_dict(item) for item in safe_list(storm.get("inlet_capacity_checks"))]
+    overflow_analysis = safe_dict(drainage.get("overflow_analysis"))
     checks = [
         _check("tributary_areas", any(safe_float(seg.get("tributary_area_sf") or seg.get("upstream_cumulative_area_sf"), 0.0) > 0.0 for seg in segments) or bool(catchments), evidence="tributary areas/catchments", blocker="Storm depth needs true tributary areas tied to pipes or catchments."),
         _check("runoff_coefficients", any(_present(safe_dict(item).get("runoff_c") or safe_dict(item).get("runoff_coefficient")) for item in catchments) or _present(drainage.get("runoff_coefficient")), evidence="runoff coefficients", blocker="Storm depth needs runoff coefficients by catchment/surface."),
         _check("hgl_egl_profiles", bool(safe_list(storm.get("hgl_profile")) and safe_list(storm.get("egl_profile"))), evidence="HGL/EGL profile rows", blocker="Storm depth needs HGL and EGL profiles."),
         _check("tailwater", _present(storm.get("tailwater_elev_ft")), evidence="tailwater elevation", blocker="Storm depth needs tailwater/backwater evidence."),
-        _check("inlet_capacity", bool(safe_list(storm.get("inlet_capacity_checks"))), evidence="inlet capacity/spread/bypass checks", blocker="Storm depth needs inlet capacity, spread, and bypass checks."),
+        _check(
+            "inlet_capacity",
+            bool(inlet_checks) and all(item.get("valid") is not False for item in inlet_checks),
+            evidence="inlet capacity/spread/bypass checks",
+            blocker="Storm depth needs passing inlet capacity, spread, and bypass checks.",
+        ),
         _check("detention_routing", any(safe_list(safe_dict(basin).get("detention_routing") or safe_dict(basin).get("stage_storage")) for basin in basins) or bool(safe_list(drainage.get("detention_routing"))), evidence="detention stage-storage/routing", blocker="Storm depth needs detention stage-storage/outlet/drawdown routing."),
-        _check("overflow_routing", bool(safe_list(drainage.get("overflow_paths") or storm.get("overflow_paths")) or safe_dict(drainage.get("overflow_analysis"))), evidence="overflow routing", blocker="Storm depth needs overflow routing evidence."),
+        _check(
+            "overflow_routing",
+            bool(safe_list(drainage.get("overflow_paths") or storm.get("overflow_paths"))) or overflow_analysis.get("valid") is True,
+            evidence="overflow routing",
+            blocker="Storm depth needs overflow routing evidence.",
+        ),
     ]
     return _finalize("stormwater_depth", checks)
 
