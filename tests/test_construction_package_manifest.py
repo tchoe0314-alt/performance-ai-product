@@ -279,6 +279,105 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         self.assertFalse(manifest["release_allowed"])
         self.assertIn(("deliverables", "construction_package_artifact_identity"), fields)
 
+    def test_manifest_blocks_package_model_reference_that_does_not_match_final_plan(self) -> None:
+        plan = {
+            "project_name": "Final Model Package",
+            "actions": [
+                {
+                    "task": "rectangle",
+                    "layer": "SITE",
+                    "canonical_source_id": "site-1",
+                    "canonical_source_type": "site",
+                }
+            ],
+            "meta": {
+                "revision": "IFC-1",
+                "issue_date": "2026-05-29",
+                "construction_readiness": {
+                    "ready": True,
+                    "status": "construction_ready",
+                    "score": 100.0,
+                    "evidence": {
+                        "civil_production_ready": True,
+                        "existing_conditions_production_ready": True,
+                        "standards_production_usable": True,
+                        "export_production_ready": True,
+                        "cost_production_usable": True,
+                        "professional_release": True,
+                    },
+                    "blockers": [],
+                    "warnings": [],
+                },
+                "construction_deliverable_package": {
+                    "release_ready": True,
+                    "canonical_model_id": "MODEL-OLD",
+                    "artifacts": [
+                        {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": "MODEL-OLD"},
+                        {"type": "cad_export", "id": "CAD-1", "current": True, "canonical_model_id": "MODEL-OLD"},
+                        {"type": "qa_report", "id": "QA-1", "current": True, "canonical_model_id": "MODEL-OLD"},
+                        {"type": "cost_estimate", "id": "COST-1", "current": True, "canonical_model_id": "MODEL-OLD"},
+                        {"type": "construction_manifest", "id": "MANIFEST-1", "current": True, "canonical_model_id": "MODEL-OLD"},
+                    ],
+                },
+            },
+        }
+
+        manifest = build_construction_package_manifest(plan)
+        fields = {(item["area"], item["field"]) for item in manifest["blockers"]}
+
+        self.assertFalse(manifest["release_allowed"])
+        self.assertTrue(manifest["expected_canonical_model_reference"].startswith("plan-sha256:"))
+        self.assertIn(("deliverables", "construction_package_model_mismatch"), fields)
+
+    def test_manifest_allows_package_matching_final_plan_fingerprint(self) -> None:
+        plan = {
+            "project_name": "Final Model Package",
+            "actions": [
+                {
+                    "task": "rectangle",
+                    "layer": "SITE",
+                    "canonical_source_id": "site-1",
+                    "canonical_source_type": "site",
+                }
+            ],
+            "meta": {
+                "revision": "IFC-1",
+                "issue_date": "2026-05-29",
+                "construction_readiness": {
+                    "ready": True,
+                    "status": "construction_ready",
+                    "score": 100.0,
+                    "evidence": {
+                        "civil_production_ready": True,
+                        "existing_conditions_production_ready": True,
+                        "standards_production_usable": True,
+                        "export_production_ready": True,
+                        "cost_production_usable": True,
+                        "professional_release": True,
+                    },
+                    "blockers": [],
+                    "warnings": [],
+                },
+            },
+        }
+        expected = build_construction_package_manifest(plan)["expected_canonical_model_reference"]
+        plan["meta"]["construction_deliverable_package"] = {
+            "release_ready": True,
+            "canonical_model_id": expected,
+            "artifacts": [
+                {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": expected},
+                {"type": "cad_export", "id": "CAD-1", "current": True, "canonical_model_id": expected},
+                {"type": "qa_report", "id": "QA-1", "current": True, "canonical_model_id": expected},
+                {"type": "cost_estimate", "id": "COST-1", "current": True, "canonical_model_id": expected},
+                {"type": "construction_manifest", "id": "MANIFEST-1", "current": True, "canonical_model_id": expected},
+            ],
+        }
+
+        manifest = build_construction_package_manifest(plan)
+
+        self.assertTrue(manifest["release_allowed"])
+        self.assertEqual(manifest["expected_canonical_model_reference"], expected)
+
 
 if __name__ == "__main__":
     unittest.main()

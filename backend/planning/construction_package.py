@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from copy import deepcopy
 from typing import Any, Dict, Iterable, List, Sequence
 
@@ -102,7 +104,50 @@ def _model_reference(rec: Dict[str, Any]) -> str:
     )
 
 
-def _construction_package_blockers(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _expected_model_reference(plan_or_meta: Dict[str, Any], meta: Dict[str, Any]) -> str:
+    explicit = _model_reference(meta)
+    if explicit:
+        return explicit
+
+    actions = safe_list(plan_or_meta.get("actions"))
+    if not actions:
+        return ""
+    canonical_actions: List[Dict[str, str]] = []
+    for action in actions:
+        rec = safe_dict(action)
+        source_id = safe_str(rec.get("canonical_source_id"))
+        source_type = safe_str(rec.get("canonical_source_type"))
+        if not source_id and not source_type:
+            continue
+        canonical_actions.append(
+            {
+                "canonical_source_id": source_id,
+                "canonical_source_type": source_type,
+                "layer": safe_str(rec.get("layer")),
+                "task": safe_str(rec.get("task")),
+            }
+        )
+    if not canonical_actions:
+        return ""
+    payload = {
+        "project_name": safe_str(plan_or_meta.get("project_name") or meta.get("project_name")),
+        "revision": safe_str(meta.get("revision")),
+        "issue_date": safe_str(meta.get("issue_date")),
+        "canonical_actions": sorted(
+            canonical_actions,
+            key=lambda item: (
+                item["canonical_source_type"],
+                item["canonical_source_id"],
+                item["layer"],
+                item["task"],
+            ),
+        ),
+    }
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    return f"plan-sha256:{digest[:16]}"
+
+
+def _construction_package_blockers(plan_or_meta: Dict[str, Any], meta: Dict[str, Any]) -> List[Dict[str, Any]]:
     package = safe_dict(
         meta.get("construction_deliverable_package")
         or meta.get("construction_package")
@@ -125,6 +170,7 @@ def _construction_package_blockers(meta: Dict[str, Any]) -> List[Dict[str, Any]]
         artifacts = [safe_dict(item) for item in safe_list(package.get("files"))]
     artifact_types = {_artifact_type(item) for item in artifacts if _artifact_type(item)}
     package_model_reference = _model_reference(package)
+    expected_model_reference = _expected_model_reference(plan_or_meta, meta)
     blockers: List[Dict[str, Any]] = []
     missing: List[str] = []
     for required in REQUIRED_CONSTRUCTION_ARTIFACTS:
@@ -177,6 +223,15 @@ def _construction_package_blockers(meta: Dict[str, Any]) -> List[Dict[str, Any]]
                 "field": "construction_package_model_reference",
                 "why_needed": "Construction package must identify the final canonical model used to generate its artifacts.",
                 "suggested_next_action": "Attach canonical_model_id/hash or source_model_id/hash to the assembled package.",
+            }
+        )
+    elif expected_model_reference and package_model_reference != expected_model_reference:
+        blockers.append(
+            {
+                "area": "deliverables",
+                "field": "construction_package_model_mismatch",
+                "why_needed": "Construction package model reference does not match the final canonical model fingerprint.",
+                "suggested_next_action": "Regenerate the package from the current final model and attach its canonical model fingerprint.",
             }
         )
     else:
@@ -273,7 +328,8 @@ def build_construction_package_manifest(plan_or_meta: Dict[str, Any]) -> Dict[st
     blockers = _unique_blockers(safe_list(readiness.get("blockers")))
     warnings = _unique_blockers(safe_list(readiness.get("warnings")))
     evidence = safe_dict(readiness.get("evidence"))
-    package_blockers = _construction_package_blockers(meta) if readiness.get("ready") is True else []
+    expected_model_reference = _expected_model_reference(plan_or_meta, meta)
+    package_blockers = _construction_package_blockers(plan_or_meta, meta) if readiness.get("ready") is True else []
     blockers = _unique_blockers([*blockers, *package_blockers])
     sections = [
         _section_status(section=section, blockers=blockers, warnings=warnings, evidence=evidence)
@@ -293,6 +349,7 @@ def build_construction_package_manifest(plan_or_meta: Dict[str, Any]) -> Dict[st
         "review_package_allowed": True,
         "construction_readiness_status": safe_str(readiness.get("status"), "not_construction_ready"),
         "construction_readiness_score": readiness.get("score"),
+        "expected_canonical_model_reference": expected_model_reference,
         "sections": sections,
         "blocked_sections": blocked_sections,
         "review_sections": review_sections,
