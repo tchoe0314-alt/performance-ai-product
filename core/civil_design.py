@@ -2420,6 +2420,11 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
         for item in structure_conflicts
         if _safe_dict(item).get("resolved") is not True and _safe_str(_safe_dict(item).get("status")).lower() not in {"resolved", "accepted"}
     ]
+    accepted_structure_conflicts = [
+        _safe_dict(item)
+        for item in structure_conflicts
+        if _safe_str(_safe_dict(item).get("status")).lower() == "accepted" and _safe_dict(item).get("resolved") is not True
+    ]
     if unresolved_structure_conflicts:
         blockers.append(
             _construction_gap(
@@ -2427,6 +2432,37 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                 "structure_conflicts",
                 "Construction release cannot proceed with unresolved structure conflicts.",
                 "Resolve or explicitly accept structure conflicts with reviewer signoff before release.",
+            )
+        )
+    unsigned_acceptances = [
+        _safe_str(item.get("id") or item.get("name") or item.get("conflict_id"), f"accepted_conflict_{index}")
+        for index, item in enumerate(accepted_structure_conflicts, start=1)
+        if not (
+            _safe_str(item.get("accepted_by") or item.get("reviewed_by") or item.get("engineer_name"))
+            and _safe_str(item.get("accepted_date") or item.get("review_date") or item.get("signoff_date"))
+        )
+    ]
+    stale_acceptances = [
+        _safe_str(item.get("id") or item.get("name") or item.get("conflict_id"), f"accepted_conflict_{index}")
+        for index, item in enumerate(accepted_structure_conflicts, start=1)
+        if expected_model_refs and _model_references(item).isdisjoint(expected_model_refs)
+    ]
+    if unsigned_acceptances:
+        blockers.append(
+            _construction_gap(
+                "structures",
+                "accepted_structure_conflict_signoff",
+                "Accepted structure conflicts require reviewer signoff before construction release.",
+                "Attach accepted_by/reviewed_by and accepted_date/review_date to every accepted structure conflict.",
+            )
+        )
+    if stale_acceptances:
+        blockers.append(
+            _construction_gap(
+                "structures",
+                "accepted_structure_conflict_model_trace",
+                "Accepted structure conflicts must reference the final canonical model.",
+                "Attach canonical_model_id/hash or final_model_id/hash to every accepted structure conflict.",
             )
         )
 

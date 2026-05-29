@@ -871,6 +871,90 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertFalse(readiness["ready"])
         self.assertIn(("structures", "structure_conflicts"), blockers)
 
+    def test_construction_readiness_requires_accepted_structure_conflict_signoff_and_trace(self) -> None:
+        meta = _production_ready_meta()
+        meta["professional_review"] = {
+            "status": "released_for_construction",
+            "sealed": True,
+            "engineer_name": "Alex Morgan",
+            "license_number": "TX-123456",
+            "review_date": "2026-05-28",
+            "jurisdiction": "Test City",
+            "license_jurisdiction": "TX",
+            "discipline": "civil",
+            "review_scope": "civil_site_construction_documents",
+            "canonical_model_id": "MODEL-FINAL-1",
+        }
+        meta["structure_conflicts"] = [{"id": "SC-1", "status": "accepted", "resolved": False}]
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("structures", "accepted_structure_conflict_signoff"), blockers)
+        self.assertIn(("structures", "accepted_structure_conflict_model_trace"), blockers)
+
+    def test_construction_readiness_blocks_stale_accepted_structure_conflict_trace(self) -> None:
+        meta = _production_ready_meta()
+        meta["professional_review"] = {
+            "status": "released_for_construction",
+            "sealed": True,
+            "engineer_name": "Alex Morgan",
+            "license_number": "TX-123456",
+            "review_date": "2026-05-28",
+            "jurisdiction": "Test City",
+            "license_jurisdiction": "TX",
+            "discipline": "civil",
+            "review_scope": "civil_site_construction_documents",
+            "canonical_model_id": "MODEL-FINAL-1",
+        }
+        meta["structure_conflicts"] = [
+            {
+                "id": "SC-1",
+                "status": "accepted",
+                "resolved": False,
+                "accepted_by": "Alex Morgan",
+                "accepted_date": "2026-05-28",
+                "canonical_model_id": "MODEL-OLD",
+            }
+        ]
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("structures", "accepted_structure_conflict_model_trace"), blockers)
+
+    def test_construction_readiness_accepts_signed_structure_conflict_acceptance(self) -> None:
+        meta = _production_ready_meta()
+        meta["professional_review"] = {
+            "status": "released_for_construction",
+            "sealed": True,
+            "engineer_name": "Alex Morgan",
+            "license_number": "TX-123456",
+            "review_date": "2026-05-28",
+            "jurisdiction": "Test City",
+            "license_jurisdiction": "TX",
+            "discipline": "civil",
+            "review_scope": "civil_site_construction_documents",
+            "canonical_model_id": "MODEL-FINAL-1",
+        }
+        meta["structure_conflicts"] = [
+            {
+                "id": "SC-1",
+                "status": "accepted",
+                "resolved": False,
+                "accepted_by": "Alex Morgan",
+                "accepted_date": "2026-05-28",
+                "canonical_model_id": "MODEL-FINAL-1",
+            }
+        ]
+
+        readiness = construction_readiness({"meta": meta})
+
+        self.assertTrue(readiness["ready"])
+        self.assertFalse(readiness["blockers"])
+
     def test_construction_readiness_accepts_foundation_and_bridge_with_traceable_coordination(self) -> None:
         meta = _production_ready_meta()
         meta["professional_review"] = {
