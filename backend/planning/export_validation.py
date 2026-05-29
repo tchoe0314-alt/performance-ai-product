@@ -248,6 +248,28 @@ def _storm_source_is_fallback(storm: Dict[str, Any], segments: List[Dict[str, An
     return False
 
 
+def _storm_uses_concept_hydraulic_depth(storm: Dict[str, Any], segments: List[Dict[str, Any]]) -> bool:
+    summary_source = safe_str(storm.get("hydraulic_depth_source")).lower()
+    if "concept" in summary_source or "proxy" in summary_source:
+        return True
+    for segment in segments:
+        segment_source = safe_str(safe_dict(segment).get("hydraulic_depth_source")).lower()
+        if "concept" in segment_source or "proxy" in segment_source:
+            return True
+    return False
+
+
+def _storm_backwater_or_surcharge_invalid(storm: Dict[str, Any]) -> bool:
+    backwater = safe_dict(storm.get("backwater_validation"))
+    if backwater.get("valid") is False:
+        return True
+    if safe_list(backwater.get("surcharged_segments")):
+        return True
+    engine_summary = safe_dict(storm.get("hydraulic_engine_summary"))
+    critical_nodes = [safe_dict(item) for item in safe_list(engine_summary.get("critical_nodes"))]
+    return any(bool(item.get("surcharge_risk")) for item in critical_nodes)
+
+
 def _storm_segments_from_project(project: ProjectModel, storm: Dict[str, Any]) -> List[Dict[str, Any]]:
     summary = safe_dict(storm)
     segments = [safe_dict(item) for item in safe_list(summary.get("segments")) if safe_dict(item)]
@@ -510,6 +532,10 @@ def storm_export_validation(
         reasons.append("storm_network_missing")
     if _storm_source_is_fallback(storm, segments):
         reasons.append("storm_fallback_used")
+    if _storm_uses_concept_hydraulic_depth(storm, segments):
+        reasons.append("storm_hgl_egl_concept_proxy")
+    if _storm_backwater_or_surcharge_invalid(storm):
+        reasons.append("storm_backwater_or_surcharge_invalid")
     if not storm_exportable and not bool(safe_dict(storm.get("graph_validation")).get("valid", False)):
         reasons.append("storm_graph_invalid")
     if not storm_exportable and not bool(safe_dict(storm.get("hydraulic_validation")).get("valid", False)):

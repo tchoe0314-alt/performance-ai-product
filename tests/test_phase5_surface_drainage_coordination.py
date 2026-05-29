@@ -561,6 +561,75 @@ class Phase5SurfaceDrainageCoordinationTests(unittest.TestCase):
         self.assertFalse(drainage_validation.get("ready"))
         self.assertNotIn("storm_network_missing", drainage_validation.get("reasons", []))
 
+    def test_storm_export_validation_blocks_concept_hgl_and_backwater_risk(self) -> None:
+        project = planner.ProjectModel(name="Concept HGL Storm Export")
+        project.meta["grading_summary"] = {
+            "success": True,
+            "fallback_used": False,
+            "existing_surface": {"nrows": 5, "ncols": 5},
+            "proposed_surface": {"nrows": 5, "ncols": 5},
+            "stats": {"proposed_contour_count": 3, "spot_grade_count": 2, "flow_arrow_count": 1},
+            "surface_controls": {
+                "has_primary_drainage_direction": True,
+                "primary_low_point": {"x": 10.0, "y": 10.0, "z": 95.0},
+            },
+        }
+        project.meta["drainage_canonical"] = {
+            "success": True,
+            "source": "drainage_engine",
+            "structures": [{"name": "INLET-1", "x": 10.0, "y": 10.0}],
+            "basins": [
+                {
+                    "id": "BASIN-1",
+                    "name": "BASIN-1",
+                    "canonical_type": "detention_basin",
+                    "exportable": True,
+                    "boundary_points": [[0.0, 0.0], [30.0, 0.0], [30.0, 30.0], [0.0, 30.0]],
+                    "detention_design": {"adequacy_status": "adequate", "provided_storage_cf": 3200.0},
+                    "geometry_quality": {"has_bottom": True, "footprint_consistency_ratio": 0.8},
+                    "overflow_spillway": {"capacity_cfs": 1.8, "verified": True},
+                }
+            ],
+            "stats": {"low_point_count": 1, "flow_path_count": 1},
+        }
+        project.meta["storm_pipe_summary"] = {
+            "success": True,
+            "source": "storm_engine",
+            "hydraulic_source": "engine",
+            "hydraulic_depth_source": "concept_hgl_egl_proxy",
+            "segments": [
+                {
+                    "pipe": "STORM-1",
+                    "route_points": [[10.0, 10.0], [40.0, 20.0]],
+                    "length_ft": 31.6,
+                    "diameter_in": 15.0,
+                    "flow_cfs": 0.8,
+                    "capacity_cfs": 1.6,
+                    "capacity_ratio": 0.5,
+                    "slope_ft_ft": 0.01,
+                    "start_invert_ft": 99.0,
+                    "end_invert_ft": 98.5,
+                    "cover_start_ft": 3.5,
+                    "cover_end_ft": 3.0,
+                    "hydraulic_depth_source": "concept_hgl_egl_proxy",
+                }
+            ],
+            "graph_validation": {"valid": True},
+            "hydraulic_validation": {"valid": True},
+            "backwater_validation": {
+                "valid": False,
+                "surcharged_segments": [{"segment": "STORM-1", "max_hgl_above_crown_ft": 0.6}],
+            },
+            "missing_data_segments": [],
+            "explain": {"implied_target_used": False},
+        }
+
+        storm_validation = planner._storm_export_validation(project)
+
+        self.assertFalse(storm_validation.get("ready"))
+        self.assertIn("storm_hgl_egl_concept_proxy", storm_validation.get("reasons", []))
+        self.assertIn("storm_backwater_or_surcharge_invalid", storm_validation.get("reasons", []))
+
     def test_storm_summary_is_exportable_blocks_segments_without_graph_flags(self) -> None:
         summary = {
             "success": True,

@@ -141,6 +141,24 @@ class ManualModeValidationTest(unittest.TestCase):
         self.assertNotIn("Deliverables suggest cross-section support, but no cross-section-like signal was found.", qa_messages)
         self.assertTrue((plan.get("meta") or {}).get("cross_sections"))
 
+    def test_manual_mode_exposes_ready_storm_export_after_verified_overflow(self) -> None:
+        plan = build_plan(
+            _manual_payload(
+                deliverables=["storm_pipe_plan"],
+                drainage={
+                    "verified_overflow_capacity_cfs": 12.0,
+                    "overflow_verification_source": "manual_test_fixture",
+                    "verified_tailwater_elev_ft": 96.0,
+                    "tailwater_verification_source": "manual_test_fixture",
+                },
+            )
+        )
+        meta = plan.get("meta") or {}
+        self.assertEqual(_failure_codes(plan), [])
+        self.assertIn("storm_pipe_plan", ((meta.get("deliverables") or {}).get("produced") or []))
+        self.assertTrue((((meta.get("storm_pipes") or {}).get("export_validation") or {}).get("ready")))
+        self.assertEqual((meta.get("storm_pipes") or {}).get("hydraulic_depth_source"), "storm_hydraulic_engine")
+
     def test_conflict_heavy_manual_path_keeps_sanitary_truth_valid_and_can_now_resolve(self) -> None:
         plan = build_plan(
             _manual_payload(

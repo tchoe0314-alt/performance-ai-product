@@ -75,6 +75,8 @@ def _healthy_scenario() -> Dict[str, Any]:
     verified_drainage = {
         "verified_overflow_capacity_cfs": 12.0,
         "overflow_verification_source": "benchmark_controlled_fixture",
+        "verified_tailwater_elev_ft": 96.0,
+        "tailwater_verification_source": "benchmark_controlled_fixture",
     }
     manual = build_plan(_mode_payload("manual", deliverables=deliverables, drainage=verified_drainage))
     assisted = build_plan(_mode_payload("assisted", deliverables=deliverables, drainage=verified_drainage))
@@ -87,6 +89,8 @@ def _conflict_heavy_scenario() -> Dict[str, Any]:
         "drainage": {
             "verified_overflow_capacity_cfs": 12.0,
             "overflow_verification_source": "benchmark_controlled_fixture",
+            "verified_tailwater_elev_ft": 96.0,
+            "tailwater_verification_source": "benchmark_controlled_fixture",
         },
         "site_plan": {
             "building_width": 52.0,

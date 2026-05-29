@@ -80,6 +80,36 @@ def _apply_verified_overflow_input(canonical_drainage: Dict[str, Any], execution
     return updated
 
 
+def _explicit_verified_tailwater_elev(drainage_profile: Dict[str, Any]) -> Optional[float]:
+    for key in ("verified_tailwater_elev_ft", "tailwater_elev_ft", "outfall_elev_ft"):
+        if key in drainage_profile and drainage_profile.get(key) is not None:
+            return safe_float(drainage_profile.get(key), 0.0)
+    return None
+
+
+def _apply_verified_tailwater_input(storm_pipe_summary: Dict[str, Any], drainage_profile: Dict[str, Any]) -> Dict[str, Any]:
+    tailwater_elev = _explicit_verified_tailwater_elev(drainage_profile)
+    if tailwater_elev is None:
+        return storm_pipe_summary
+    source = safe_str(
+        drainage_profile.get("tailwater_verification_source"),
+        "user_verified_input",
+    )
+    updated = deepcopy(storm_pipe_summary)
+    target = safe_dict(updated.get("target_outfall")) or safe_dict(updated.get("outfall_target_metadata"))
+    if not target:
+        target = {
+            "name": safe_str(updated.get("target_outfall_name") or updated.get("selected_outfall"), "OUTFALL"),
+            "target_name": safe_str(updated.get("target_outfall_name") or updated.get("selected_outfall"), "OUTFALL"),
+        }
+    target.update({"z": round(tailwater_elev, 3), "verified": True, "verification_source": source})
+    updated["target_outfall"] = deepcopy(target)
+    updated["outfall_target_metadata"] = deepcopy(target)
+    updated["tailwater_elev_ft"] = round(tailwater_elev, 3)
+    updated["tailwater_source"] = source
+    return updated
+
+
 def _storm_target_anchor(
     basin: Any,
     *,
@@ -1106,6 +1136,7 @@ def run_storm_pipe_stage(
             stats = safe_dict(storm_pipe_summary.get("stats"))
             stats.setdefault("target_outfall_name", preferred_target_name)
             storm_pipe_summary["stats"] = stats
+        storm_pipe_summary = _apply_verified_tailwater_input(storm_pipe_summary, drainage_profile)
         storm_pipe_summary = enrich_storm_production_depth(storm_pipe_summary, drainage_meta)
         selected_outfall_name = safe_str(safe_dict(storm_pipe_summary.get("explain")).get("selected_outfall_name"), "")
         selected_outfall = next(

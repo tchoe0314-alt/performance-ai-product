@@ -374,7 +374,15 @@ def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict
         enriched["segments"] = segments
         enriched.setdefault("hgl_profile", hgl_profile)
         enriched.setdefault("egl_profile", egl_profile)
-        enriched.setdefault("hydraulic_depth_source", "storm_hydraulic_engine_or_concept_proxy")
+        segment_sources = {
+            safe_str(segment.get("hydraulic_depth_source"))
+            for segment in segments
+            if safe_str(segment.get("hydraulic_depth_source"))
+        }
+        if segment_sources == {"storm_hydraulic_engine"}:
+            enriched["hydraulic_depth_source"] = "storm_hydraulic_engine"
+        else:
+            enriched.setdefault("hydraulic_depth_source", "storm_hydraulic_engine_or_concept_proxy")
     target = safe_dict(enriched.get("target_outfall")) or safe_dict(enriched.get("outfall_target_metadata")) or safe_dict(drainage_meta.get("coordination", {}).get("preferred_outfall"))
     tailwater = safe_float(target.get("z"), float("nan")) if target.get("z") is not None else float("nan")
     if not math.isfinite(tailwater) and hgl_profile:
