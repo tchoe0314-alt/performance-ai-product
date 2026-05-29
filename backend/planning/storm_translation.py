@@ -720,7 +720,13 @@ def storm_summary_from_network_result(
                 3,
             ),
             "selected_basin_spillway_capacity_cfs": round(
-                safe_float(selected_overflow.get("assumed_capacity_cfs"), 0.0), 3
+                max(
+                    safe_float(selected_overflow.get("capacity_cfs"), 0.0),
+                    safe_float(selected_overflow.get("design_capacity_cfs"), 0.0),
+                    safe_float(selected_overflow.get("spillway_capacity_cfs"), 0.0),
+                    safe_float(selected_overflow.get("assumed_capacity_cfs"), 0.0),
+                ),
+                3,
             ),
             "max_governing_flow_cfs": round(
                 max(

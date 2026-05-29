@@ -76,7 +76,7 @@ class Phase5SurfaceDrainageCoordinationTests(unittest.TestCase):
         self.assertEqual(summary["explain"]["selected_basin_name"], "DET-1")
         self.assertEqual(summary["warnings"][0].startswith("Storm stage synthesized"), True)
 
-    def test_detention_geometry_accepts_engineered_storage_and_overflow(self) -> None:
+    def test_detention_geometry_requires_verified_overflow_capacity_for_export(self) -> None:
         basin = {
             "name": "DET-1",
             "boundary_points": [[0.0, 0.0], [40.0, 0.0], [40.0, 30.0], [0.0, 30.0]],
@@ -90,6 +90,8 @@ class Phase5SurfaceDrainageCoordinationTests(unittest.TestCase):
             "geometry_quality": {"has_bottom": False, "footprint_consistency_ratio": 0.1},
         }
 
+        self.assertFalse(basin_has_exportable_detention_geometry(basin))
+        basin["overflow_spillway"] = {"capacity_cfs": 4.5, "verified": True}
         self.assertTrue(basin_has_exportable_detention_geometry(basin))
 
     def test_drainage_engine_carries_basin_runoff_into_inlet_context(self) -> None:
@@ -300,7 +302,7 @@ class Phase5SurfaceDrainageCoordinationTests(unittest.TestCase):
                     "boundary_points": [[0.0, 0.0], [20.0, 0.0], [20.0, 20.0], [0.0, 20.0]],
                     "detention_design": {"adequacy_status": "adequate"},
                     "geometry_quality": {"has_bottom": True, "footprint_consistency_ratio": 0.35},
-                    "overflow_spillway": {"assumed_capacity_cfs": 1.5},
+                    "overflow_spillway": {"capacity_cfs": 1.5, "verified": True},
                 }
             ],
             "stats": {
@@ -355,7 +357,7 @@ class Phase5SurfaceDrainageCoordinationTests(unittest.TestCase):
                     "boundary_points": [[0.0, 0.0], [20.0, 0.0], [20.0, 20.0], [0.0, 20.0]],
                     "detention_design": {"adequacy_status": "adequate"},
                     "geometry_quality": {"has_bottom": True, "footprint_consistency_ratio": 0.75},
-                    "overflow_spillway": {"assumed_capacity_cfs": 1.5},
+                    "overflow_spillway": {"capacity_cfs": 1.5, "verified": True},
                 }
             ],
             "stats": {
@@ -409,7 +411,7 @@ class Phase5SurfaceDrainageCoordinationTests(unittest.TestCase):
                     "boundary_points": [[0.0, 0.0], [30.0, 0.0], [30.0, 30.0], [0.0, 30.0]],
                     "detention_design": {"adequacy_status": "adequate"},
                     "geometry_quality": {"has_bottom": True, "footprint_consistency_ratio": 0.75},
-                    "overflow_spillway": {"assumed_capacity_cfs": 1.5},
+                    "overflow_spillway": {"capacity_cfs": 1.5, "verified": True},
                 }
             ],
             "stats": {
@@ -649,7 +651,7 @@ class Phase5SurfaceDrainageCoordinationTests(unittest.TestCase):
                     "boundary_points": [[30.0, 0.0], [70.0, 0.0], [70.0, 30.0], [30.0, 30.0]],
                     "detention_design": {"adequacy_status": "adequate"},
                     "geometry_quality": {"has_bottom": True, "footprint_consistency_ratio": 0.85},
-                    "overflow_spillway": {"assumed_capacity_cfs": 2.4},
+                    "overflow_spillway": {"capacity_cfs": 2.4, "verified": True},
                 },
             ],
             "stats": {

@@ -36,6 +36,50 @@ from .production_depth import enrich_drainage_production_depth, enrich_storm_pro
 from .runtime import PlannerExecutionContext, _mark_dependency_state
 
 
+def _explicit_verified_overflow_capacity(execution_payload: Dict[str, Any]) -> float:
+    drainage_profile = safe_dict(execution_payload.get("drainage"))
+    site_plan = safe_dict(execution_payload.get("site_plan"))
+    overflow_profile = safe_dict(drainage_profile.get("overflow_spillway"))
+    return max(
+        safe_float(drainage_profile.get("verified_overflow_capacity_cfs"), 0.0),
+        safe_float(drainage_profile.get("overflow_capacity_cfs"), 0.0),
+        safe_float(overflow_profile.get("capacity_cfs"), 0.0),
+        safe_float(overflow_profile.get("design_capacity_cfs"), 0.0),
+        safe_float(overflow_profile.get("spillway_capacity_cfs"), 0.0),
+        safe_float(site_plan.get("detention_overflow_capacity_cfs"), 0.0),
+    )
+
+
+def _apply_verified_overflow_input(canonical_drainage: Dict[str, Any], execution_payload: Dict[str, Any]) -> Dict[str, Any]:
+    capacity_cfs = _explicit_verified_overflow_capacity(execution_payload)
+    if capacity_cfs <= 0.0:
+        return canonical_drainage
+    drainage_profile = safe_dict(execution_payload.get("drainage"))
+    source = safe_str(
+        drainage_profile.get("overflow_verification_source"),
+        "user_verified_input",
+    )
+    updated = deepcopy(canonical_drainage)
+    for basin in safe_list(updated.get("basins")):
+        if not isinstance(basin, dict):
+            continue
+        role = lower_text(basin.get("engineering_role"))
+        if role and role != "primary_detention":
+            continue
+        overflow = safe_dict(basin.get("overflow_spillway"))
+        overflow.update(
+            {
+                "capacity_cfs": round(capacity_cfs, 3),
+                "verified": True,
+                "assumed": False,
+                "verification_source": source,
+            }
+        )
+        basin["overflow_spillway"] = overflow
+    updated["verified_overflow_capacity_source"] = source
+    return updated
+
+
 def _storm_target_anchor(
     basin: Any,
     *,
@@ -308,6 +352,11 @@ def run_drainage_stage(
                 message="Drainage stage accepted user-supplied geometry.",
             )
             canonical_drainage = enrich_drainage_production_depth(canonical_drainage)
+            canonical_drainage = _apply_verified_overflow_input(canonical_drainage, execution_payload)
+            canonical_drainage["export_validation"] = drainage_export_validation(
+                project,
+                drainage_override=canonical_drainage,
+            )
             project.meta["drainage_canonical"] = canonical_drainage
             manager.latest_outputs["drainage"] = deepcopy(canonical_drainage)
             project.meta["drainage_summary"] = type(
@@ -800,6 +849,7 @@ def run_drainage_stage(
             coordination=coordination,
         )
         canonical_drainage = enrich_drainage_production_depth(canonical_drainage)
+        canonical_drainage = _apply_verified_overflow_input(canonical_drainage, execution_payload)
         canonical_drainage["coordination"] = deepcopy(coordination)
         canonical_drainage["surface_guidance"] = {
             "downhill_vector": deepcopy(safe_dict(coordination.get("downhill_vector"))),

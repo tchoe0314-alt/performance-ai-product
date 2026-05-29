@@ -129,15 +129,53 @@ def detention_basin_score(rec: Dict[str, Any]) -> tuple:
     adequacy = safe_str(detention_design.get("adequacy_status"), "adequate").lower()
     has_bottom = bool(geometry_quality.get("has_bottom"))
     consistency = safe_float(geometry_quality.get("footprint_consistency_ratio"), 0.0)
-    spillway_capacity = safe_float(overflow.get("assumed_capacity_cfs"), 0.0)
+    spillway_capacity = max(
+        safe_float(overflow.get("capacity_cfs"), 0.0),
+        safe_float(overflow.get("design_capacity_cfs"), 0.0),
+        safe_float(overflow.get("spillway_capacity_cfs"), 0.0),
+        safe_float(overflow.get("assumed_capacity_cfs"), 0.0),
+    )
+    verified_capacity = max(
+        safe_float(overflow.get("capacity_cfs"), 0.0),
+        safe_float(overflow.get("design_capacity_cfs"), 0.0),
+        safe_float(overflow.get("spillway_capacity_cfs"), 0.0),
+    )
     return (
         1 if bool(rec.get("exportable")) else 0,
         1 if adequacy == "adequate" else 0,
+        1 if verified_capacity > 0.0 and not bool(overflow.get("assumed")) else 0,
         1 if spillway_capacity > 0.0 else 0,
         1 if has_bottom else 0,
         round(consistency, 3),
         round(safe_float(rec.get("storage_cf"), 0.0), 3),
         round(safe_float(rec.get("area_sf"), 0.0), 3),
+    )
+
+
+def _verified_overflow_capacity_cfs(overflow: Dict[str, Any]) -> float:
+    rec = safe_dict(overflow)
+    if bool(rec.get("assumed")):
+        return 0.0
+    if rec.get("verified") is True or rec.get("production_verified") is True:
+        return max(
+            safe_float(rec.get("capacity_cfs"), 0.0),
+            safe_float(rec.get("design_capacity_cfs"), 0.0),
+            safe_float(rec.get("spillway_capacity_cfs"), 0.0),
+        )
+    return max(
+        safe_float(rec.get("capacity_cfs"), 0.0),
+        safe_float(rec.get("design_capacity_cfs"), 0.0),
+        safe_float(rec.get("spillway_capacity_cfs"), 0.0),
+    )
+
+
+def _overflow_capacity_is_assumed(overflow: Dict[str, Any]) -> bool:
+    rec = safe_dict(overflow)
+    if bool(rec.get("assumed")):
+        return True
+    return (
+        safe_float(rec.get("assumed_capacity_cfs"), 0.0) > 0.0
+        and _verified_overflow_capacity_cfs(rec) <= 0.0
     )
 
 
@@ -154,7 +192,7 @@ def basin_has_exportable_detention_geometry(rec: Dict[str, Any]) -> bool:
         safe_float(item.get("top_of_bank_area_sf"), 0.0),
         safe_float(item.get("area_sf"), 0.0),
     )
-    spillway_capacity = safe_float(overflow.get("assumed_capacity_cfs"), 0.0)
+    spillway_capacity = _verified_overflow_capacity_cfs(overflow)
     if has_bottom and consistency >= 0.4:
         return True
     if (
@@ -364,14 +402,17 @@ def drainage_export_validation(
         weak_spillway = [
             item
             for item in validation_basins
-            if safe_float(
-                safe_dict(item.get("overflow_spillway")).get("assumed_capacity_cfs"),
-                0.0,
-            )
-            <= 0.0
+            if _verified_overflow_capacity_cfs(safe_dict(item.get("overflow_spillway"))) <= 0.0
         ]
         if weak_spillway:
             reasons.append("primary_detention_overflow_missing")
+        assumed_spillway = [
+            item
+            for item in validation_basins
+            if _overflow_capacity_is_assumed(safe_dict(item.get("overflow_spillway")))
+        ]
+        if assumed_spillway:
+            reasons.append("primary_detention_overflow_assumed")
         weak_geometry = [
             item
             for item in validation_basins
@@ -480,6 +521,7 @@ def storm_export_validation(
     for drainage_reason in (
         "primary_detention_inadequate",
         "primary_detention_overflow_missing",
+        "primary_detention_overflow_assumed",
         "primary_detention_geometry_weak",
     ):
         if drainage_reason in safe_list(drainage_validation.get("reasons")):

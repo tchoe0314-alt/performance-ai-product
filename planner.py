@@ -10102,6 +10102,15 @@ def _run_model_first_workflow(
         blocked_exports.append("utilities")
         blocked_reasons.extend(safe_str(item) for item in safe_list(utility_export.get("reasons")) if safe_str(item))
     storm_export = _storm_export_validation(manager.project)
+    if safe_dict(storm_export):
+        plan["meta"].setdefault("storm_pipes", {})
+        if isinstance(plan["meta"]["storm_pipes"], dict):
+            plan["meta"]["storm_pipes"]["export_validation"] = deepcopy(safe_dict(storm_export))
+        project_storm = safe_dict(manager.project.meta.get("storm_pipe_summary"))
+        if project_storm:
+            project_storm["export_validation"] = deepcopy(safe_dict(storm_export))
+            manager.project.meta["storm_pipe_summary"] = project_storm
+            manager.latest_outputs["storm_pipe_summary"] = deepcopy(project_storm)
     if safe_dict(storm_export) and not bool(safe_dict(storm_export).get("ready")):
         blocked_exports.append("storm")
         blocked_reasons.extend(safe_str(item) for item in safe_list(safe_dict(storm_export).get("reasons")) if safe_str(item))
@@ -10191,6 +10200,34 @@ def _run_model_first_workflow(
                 deduped_gate_failures = [
                     failure for failure in deduped_gate_failures if safe_str(failure.get("code")) not in stale_sanitary_codes
                 ]
+
+        current_deliverables = safe_dict(plan["meta"].get("deliverables"))
+        current_missing_deliverables = set(safe_str(item) for item in safe_list(current_deliverables.get("missing")) if safe_str(item))
+        current_truth_failures = {
+            safe_str(item.get("code"))
+            for item in safe_list(safe_dict(plan["meta"].get("truth_audit")).get("failing_checks"))
+            if isinstance(item, dict)
+        }
+        if not current_missing_deliverables:
+            deduped_gate_failures = [
+                failure
+                for failure in deduped_gate_failures
+                if safe_str(failure.get("code")) != "MANUAL_DELIVERABLES_MISSING"
+            ]
+        stale_truth_failure_codes = {
+            "MANUAL_STORM_DELIVERABLE_MATCH": "STORM_DELIVERABLE_MATCH",
+            "MANUAL_SANITARY_DELIVERABLE_MATCH": "SANITARY_DELIVERABLE_MATCH",
+            "MANUAL_UTILITY_SUMMARY_CURRENT": "UTILITY_SUMMARY_CURRENT",
+            "MANUAL_DRAINAGE_SUMMARY_CURRENT": "DRAINAGE_SUMMARY_CURRENT",
+        }
+        deduped_gate_failures = [
+            failure
+            for failure in deduped_gate_failures
+            if not (
+                safe_str(failure.get("code")) in stale_truth_failure_codes
+                and stale_truth_failure_codes[safe_str(failure.get("code"))] not in current_truth_failures
+            )
+        ]
 
         manual_validation = {
             "mode": "manual",

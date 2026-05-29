@@ -51,10 +51,12 @@ class ManualModeValidationTest(unittest.TestCase):
         self.assertTrue((meta.get("engineering_status") or {}).get("success"))
         self.assertEqual(((meta.get("parking_program") or {}).get("requested_target")), 24)
         produced = (meta.get("deliverables") or {}).get("produced") or []
-        self.assertIn("drainage_plan", produced)
-        self.assertIn("storm_pipe_plan", produced)
+        self.assertNotIn("drainage_plan", produced)
+        self.assertNotIn("storm_pipe_plan", produced)
         self.assertIn("utility_plan", produced)
-        self.assertEqual(((meta.get("qa") or {}).get("issues") or []), [])
+        self.assertIn("primary_detention_overflow_assumed", (((meta.get("drainage") or {}).get("export_validation") or {}).get("reasons") or []))
+        qa_issues = ((meta.get("qa") or {}).get("issues") or [])
+        self.assertFalse([issue for issue in qa_issues if issue.get("severity") == "error"])
         self.assertTrue((meta.get("truth_audit") or {}).get("success"))
         self.assertTrue(((meta.get("stage_completeness") or {}).get("all_required_complete")))
         self.assertGreaterEqual(((meta.get("engineering_status") or {}).get("engineering_trust_score") or 0.0), 70.0)
@@ -154,9 +156,14 @@ class ManualModeValidationTest(unittest.TestCase):
         self.assertNotIn("MANUAL_SANITARY_OUTPUT_MISSING", _failure_codes(plan))
         self.assertNotIn("MANUAL_SANITARY_GRAPH_INVALID", _failure_codes(plan))
         self.assertNotIn("MANUAL_SANITARY_NETWORK_INVALID", _failure_codes(plan))
-        self.assertEqual(_failure_codes(plan), [])
+        self.assertIn("MANUAL_DELIVERABLES_MISSING", _failure_codes(plan))
+        self.assertIn("MANUAL_STORM_DELIVERABLE_MATCH", _failure_codes(plan))
         self.assertEqual(len((meta.get("coordination") or {}).get("unresolved_conflicts") or []), 0)
-        self.assertTrue((meta.get("truth_audit") or {}).get("success"))
+        self.assertFalse((meta.get("truth_audit") or {}).get("success"))
+        self.assertIn(
+            "STORM_DELIVERABLE_MATCH",
+            [item.get("code") for item in ((meta.get("truth_audit") or {}).get("failing_checks") or [])],
+        )
 
     def test_manual_mode_fails_when_grading_falls_back(self) -> None:
         with patch("planner.GradingEngine.build", return_value=None):

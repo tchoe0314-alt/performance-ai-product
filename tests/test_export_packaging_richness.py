@@ -262,7 +262,7 @@ class ExportPackagingRichnessTest(unittest.TestCase):
             )
         )
 
-    def test_manual_mode_packages_canonical_engineering_layers_for_export(self) -> None:
+    def test_manual_mode_blocks_unverified_basin_storm_layers_from_production_export(self) -> None:
         plan = build_plan(
             {
                 "project_name": "Export Richness Test",
@@ -284,15 +284,17 @@ class ExportPackagingRichnessTest(unittest.TestCase):
             layer = str(action.get("layer") or "").upper()
             layer_counts[layer] = layer_counts.get(layer, 0) + 1
 
-        self.assertGreater(layer_counts.get("PIPE", 0), 0)
-        self.assertGreater(layer_counts.get("STRUCTURE", 0), 0)
+        self.assertEqual(layer_counts.get("PIPE", 0), 0)
+        self.assertEqual(layer_counts.get("STRUCTURE", 0), 0)
         self.assertGreater(layer_counts.get("UTILITY", 0), 0)
-        self.assertGreater(layer_counts.get("BASIN_BOUNDARY", 0), 0)
+        self.assertEqual(layer_counts.get("BASIN_BOUNDARY", 0), 0)
         pipe_actions = [action for action in plan.get("actions") or [] if str(action.get("layer") or "").upper() == "PIPE"]
-        self.assertTrue(pipe_actions)
-        self.assertTrue(all(str(action.get("canonical_source_type") or "") == "storm_pipe_segment" for action in pipe_actions))
+        self.assertFalse(pipe_actions)
+        export_validation = (((plan.get("meta") or {}).get("drainage") or {}).get("export_validation") or {})
+        self.assertFalse(export_validation.get("ready"))
+        self.assertIn("primary_detention_overflow_assumed", export_validation.get("reasons", []))
 
-    def test_engineered_basin_export_uses_computed_geometry_instead_of_symbol_circle(self) -> None:
+    def test_engineered_basin_geometry_stays_review_only_with_assumed_overflow(self) -> None:
         plan = build_plan(
             {
                 "project_name": "Engineered Basin Export Test",
@@ -325,7 +327,8 @@ class ExportPackagingRichnessTest(unittest.TestCase):
         self.assertTrue(all("target_drawdown_hours" in (basin.get("detention_design") or {}) for basin in primary_basins))
         self.assertTrue(all("assumed_capacity_cfs" in (basin.get("overflow_spillway") or {}) for basin in primary_basins))
         export_validation = (((plan.get("meta") or {}).get("drainage") or {}).get("export_validation") or {})
-        self.assertTrue(export_validation.get("ready"))
+        self.assertFalse(export_validation.get("ready"))
+        self.assertIn("primary_detention_overflow_assumed", export_validation.get("reasons", []))
         self.assertEqual(export_validation.get("primary_basin_count"), len(primary_basins))
         self.assertGreater(export_validation.get("low_point_count", 0), 0)
         self.assertGreater(export_validation.get("flow_path_count", 0), 0)
@@ -343,17 +346,12 @@ class ExportPackagingRichnessTest(unittest.TestCase):
             action for action in plan.get("actions") or []
             if str(action.get("canonical_source_type") or "") == "drainage_low_point"
         ]
-        self.assertTrue(basin_actions)
-        self.assertTrue(all(str(action.get("task") or "").lower() == "polyline" for action in basin_actions))
-        self.assertTrue(any("DETENTION BASIN" in str(action.get("text") or "") for action in plan.get("actions") or []))
-        self.assertTrue(flow_actions)
-        self.assertTrue(low_point_actions)
-        self.assertEqual(
-            len({str(action.get("canonical_source_id") or "") for action in basin_actions}),
-            len(primary_basins),
-        )
+        self.assertFalse(basin_actions)
+        self.assertFalse(any("DETENTION BASIN" in str(action.get("text") or "") for action in plan.get("actions") or []))
+        self.assertFalse(flow_actions)
+        self.assertFalse(low_point_actions)
         pond_count = ((((plan.get("meta") or {}).get("quantities") or {}).get("totals") or {}).get("pond_count"))
-        self.assertEqual(int(pond_count), len(primary_basins))
+        self.assertGreaterEqual(int(pond_count), len(primary_basins))
 
     def test_sanitary_request_packages_real_san_layer_from_canonical_state(self) -> None:
         plan = build_plan(

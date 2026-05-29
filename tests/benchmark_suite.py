@@ -72,14 +72,22 @@ def _summarize(plan: Dict[str, Any]) -> Dict[str, Any]:
 
 def _healthy_scenario() -> Dict[str, Any]:
     deliverables = ["road_profile", "cross_sections", "storm_pipe_plan", "utility_plan"]
-    manual = build_plan(_mode_payload("manual", deliverables=deliverables))
-    assisted = build_plan(_mode_payload("assisted", deliverables=deliverables))
+    verified_drainage = {
+        "verified_overflow_capacity_cfs": 12.0,
+        "overflow_verification_source": "benchmark_controlled_fixture",
+    }
+    manual = build_plan(_mode_payload("manual", deliverables=deliverables, drainage=verified_drainage))
+    assisted = build_plan(_mode_payload("assisted", deliverables=deliverables, drainage=verified_drainage))
     return {"name": "healthy_clean", "manual": _summarize(manual), "assisted": _summarize(assisted)}
 
 
 def _conflict_heavy_scenario() -> Dict[str, Any]:
     payload_overrides = {
         "deliverables": ["road_profile", "cross_sections", "storm_pipe_plan", "sanitary_plan", "utility_plan"],
+        "drainage": {
+            "verified_overflow_capacity_cfs": 12.0,
+            "overflow_verification_source": "benchmark_controlled_fixture",
+        },
         "site_plan": {
             "building_width": 52.0,
             "building_depth": 36.0,

@@ -406,6 +406,11 @@ def canonical_truth_audit(
 
     if safe_list(storm.get("segments")):
         graph = safe_dict(storm.get("graph_validation"))
+        storm_export_ready = bool(safe_dict(storm.get("export_validation")).get("ready"))
+        storm_deliverable_requested = any(
+            any(token in item for token in ("storm", "pipe"))
+            for item in requested_deliverables(parsed)
+        )
         checks.extend(
             [
                 {
@@ -435,9 +440,9 @@ def canonical_truth_audit(
                 },
                 {
                     "code": "STORM_DELIVERABLE_MATCH",
-                    "ok": "storm_pipe_plan" in produced,
+                    "ok": (not storm_deliverable_requested and not storm_export_ready) or "storm_pipe_plan" in produced,
                     "severity": "error",
-                    "message": "Storm deliverables must be present when canonical storm geometry exists.",
+                    "message": "Storm deliverables must be present when requested or export-ready canonical storm geometry exists.",
                 },
             ]
         )
@@ -811,22 +816,26 @@ def produced_deliverables(plan: Dict[str, Any]) -> List[str]:
         [lower_text(action.get("text")) for action in actions if isinstance(action, dict) and safe_str(action.get("text"))]
         + [lower_text(action.get("label")) for action in actions if isinstance(action, dict) and safe_str(action.get("label"))]
     )
+    grading_export_ready = bool(safe_dict(safe_dict(meta.get("grading")).get("export_validation")).get("ready"))
+    drainage_export_ready = bool(safe_dict(safe_dict(meta.get("drainage")).get("export_validation")).get("ready"))
+    storm_export_ready = bool(safe_dict(safe_dict(meta.get("storm_pipes")).get("export_validation")).get("ready"))
+    utility_export_ready = bool(safe_dict(safe_dict(meta.get("utilities")).get("export_validation")).get("ready"))
 
     if actions:
         produced.append("site_plan")
     if "ROAD" in layers:
         produced.append("roadway_plan")
-    if any(layer in layers for layer in {"FG_CONTOUR", "EG_CONTOUR", "SPOT_FG", "DRAIN_FLOW"}):
+    if grading_export_ready and any(layer in layers for layer in {"FG_CONTOUR", "EG_CONTOUR", "SPOT_FG", "DRAIN_FLOW"}):
         produced.extend(["grading_plan", "contours"])
-    if "SPOT_FG" in layers:
+    if grading_export_ready and "SPOT_FG" in layers:
         produced.append("spot_grades")
-    if "DRAIN_FLOW" in layers:
+    if grading_export_ready and "DRAIN_FLOW" in layers:
         produced.append("flow_arrows")
-    if safe_dict(meta.get("storm_pipes")).get("pipe_count", 0) or safe_dict(meta.get("storm_pipes")).get("segments"):
+    if storm_export_ready and (safe_dict(meta.get("storm_pipes")).get("pipe_count", 0) or safe_dict(meta.get("storm_pipes")).get("segments")):
         produced.append("storm_pipe_plan")
-    if any(layer in layers for layer in {"STRUCTURE", "BASIN_BOUNDARY", "PIPE"}):
+    if drainage_export_ready and any(layer in layers for layer in {"STRUCTURE", "BASIN_BOUNDARY", "PIPE"}):
         produced.append("drainage_plan")
-    if safe_dict(meta.get("utilities")).get("route_count", 0) > 0:
+    if utility_export_ready and safe_dict(meta.get("utilities")).get("route_count", 0) > 0:
         produced.append("utility_plan")
     sanitary = safe_dict(meta.get("sanitary"))
     utility_system = lower_text(safe_dict(meta.get("utilities")).get("system_type"))

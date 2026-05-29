@@ -175,7 +175,15 @@ class BasinConnectionEngine:
             "adequacy_status": str(detention_meta.get("adequacy_status") or "unknown"),
             "drawdown_hours": None if drawdown_hours is None else round(drawdown_hours, 3),
             "overflow_path_generated": overflow_path is not None,
-            "spillway_capacity_cfs": round(float(overflow_meta.get("assumed_capacity_cfs") or 0.0), 3),
+            "spillway_capacity_cfs": round(
+                max(
+                    float(overflow_meta.get("capacity_cfs") or 0.0),
+                    float(overflow_meta.get("design_capacity_cfs") or 0.0),
+                    float(overflow_meta.get("spillway_capacity_cfs") or 0.0),
+                    float(overflow_meta.get("assumed_capacity_cfs") or 0.0),
+                ),
+                3,
+            ),
         }
 
         explain = self._build_explain(
@@ -423,7 +431,12 @@ class BasinConnectionEngine:
         if isinstance(basin.meta, dict):
             overflow_meta = dict(basin.meta).get("overflow_spillway", {}) or {}
             if overflow_meta:
-                explain.overflow_summary["spillway_capacity_cfs"] = overflow_meta.get("assumed_capacity_cfs")
+                explain.overflow_summary["spillway_capacity_cfs"] = max(
+                    float(overflow_meta.get("capacity_cfs") or 0.0),
+                    float(overflow_meta.get("design_capacity_cfs") or 0.0),
+                    float(overflow_meta.get("spillway_capacity_cfs") or 0.0),
+                    float(overflow_meta.get("assumed_capacity_cfs") or 0.0),
+                )
                 explain.overflow_summary["spillway_crest_elev_ft"] = overflow_meta.get("crest_elev_ft")
         explain.warnings = list(warnings)
         return explain

@@ -684,7 +684,13 @@ class StormNetworkEngine:
             drawdown_quality = max(0.0, 48.0 - min(drawdown_hours, 96.0)) / 48.0
         spillway_quality = 0.0
         if overflow_meta:
-            spillway_quality = min(float(overflow_meta.get("assumed_capacity_cfs") or 0.0), 10.0) / 10.0
+            spillway_capacity = max(
+                float(overflow_meta.get("capacity_cfs") or 0.0),
+                float(overflow_meta.get("design_capacity_cfs") or 0.0),
+                float(overflow_meta.get("spillway_capacity_cfs") or 0.0),
+                float(overflow_meta.get("assumed_capacity_cfs") or 0.0),
+            )
+            spillway_quality = min(spillway_capacity, 10.0) / 10.0
         depth_quality = min(float(basin.depth_ft or 0.0), 20.0)
         return (
             -adequacy_rank,
