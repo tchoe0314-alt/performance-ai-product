@@ -507,6 +507,8 @@ def construction_release_blockers_from_meta(meta: Dict[str, Any], *, requires_co
             blockers.append("construction_package_model_reference_missing")
         elif artifact_status.get("model_matches_expected") is False:
             blockers.append("construction_package_model_mismatch")
+        if artifact_status.get("release_ready_flag") is not True:
+            blockers.append("construction_package_release_not_marked_ready")
         if list(artifact_status.get("untraced") or []):
             blockers.append("construction_package_untraced_artifacts")
         if list(artifact_status.get("mismatched") or []):

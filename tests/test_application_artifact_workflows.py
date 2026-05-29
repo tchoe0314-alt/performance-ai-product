@@ -831,6 +831,7 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
                                 "stale": ["SHEETS-OLD"],
                                 "model_reference_present": True,
                                 "model_matches_expected": False,
+                                "release_ready_flag": None,
                                 "untraced": ["QA-1"],
                                 "mismatched": [],
                             },
@@ -845,6 +846,7 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertIn("construction_package_missing_artifacts", review["blocked_reasons"])
         self.assertIn("construction_package_stale_artifacts", review["blocked_reasons"])
         self.assertIn("construction_package_model_mismatch", review["blocked_reasons"])
+        self.assertIn("construction_package_release_not_marked_ready", review["blocked_reasons"])
         self.assertIn("construction_package_untraced_artifacts", review["blocked_reasons"])
 
     def test_build_preview_response_blocks_construction_ready_without_manifest(self):
