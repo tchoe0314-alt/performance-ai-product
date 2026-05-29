@@ -141,6 +141,53 @@ class StandardsDiscoveryTests(unittest.TestCase):
         self.assertEqual(evidence["jurisdiction_standards"]["state"], "Texas")
         self.assertTrue(evidence["company_standards"]["production_usable"])
 
+    def test_project_standards_evidence_requires_company_profile_for_production(self) -> None:
+        packet = build_standards_review_packet(
+            city="Austin",
+            state="Texas",
+            extracted_rules=[
+                {
+                    "rule_id": "city_cover",
+                    "discipline": "utilities",
+                    "topic": "minimum cover",
+                    "candidate_value": "Minimum cover shall be 4 feet.",
+                    "source_url": "https://city.example.gov/manual",
+                    "source_section": "Section 5.1",
+                }
+            ],
+        )
+        accepted = accept_standards_rules(packet, ["city_cover"])
+
+        evidence = standards_project_evidence_from_acceptance(accepted, review_packet=packet)
+
+        self.assertFalse(evidence["production_usable"])
+        self.assertFalse(evidence["company_standards"]["production_usable"])
+        self.assertEqual(evidence["company_standards"]["source"], "civora_default_company_standards_placeholder")
+
+    def test_civil_readiness_blocks_missing_company_standards(self) -> None:
+        packet = build_standards_review_packet(
+            city="Austin",
+            state="Texas",
+            extracted_rules=[
+                {
+                    "rule_id": "city_cover",
+                    "discipline": "utilities",
+                    "topic": "minimum cover",
+                    "candidate_value": "Minimum cover shall be 4 feet.",
+                    "source_url": "https://city.example.gov/manual",
+                    "source_section": "Section 5.1",
+                }
+            ],
+        )
+        accepted = accept_standards_rules(packet, ["city_cover"])
+        evidence = standards_project_evidence_from_acceptance(accepted, review_packet=packet)
+
+        readiness = civil_design_readiness({"meta": evidence})
+
+        fields = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
+        self.assertIn(("standards", "company_standards"), fields)
+        self.assertFalse(readiness["production_ready"])
+
     def test_baseline_or_search_sources_are_not_production_authority(self) -> None:
         packet = build_standards_review_packet()
         baseline = packet["candidate_rules"][0]["rule_id"]

@@ -702,6 +702,23 @@ def check_standards_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
         warnings.append("No jurisdiction standards profile is attached.")
     if not company:
         warnings.append("No company CAD/design standards profile is attached.")
+        gaps.append(
+            _production_gap(
+                "standards",
+                "company_standards",
+                "Construction release needs company CAD/design/detail standards, not only jurisdiction rules.",
+                "Attach production-usable company standards before production QA and deliverable issue.",
+            )
+        )
+    elif company.get("production_usable") is not True:
+        gaps.append(
+            _production_gap(
+                "standards",
+                "company_standards",
+                "Company standards are not marked production-usable.",
+                "Attach approved company CAD/layer/sheet/detail standards or mark the current profile production-usable with review evidence.",
+            )
+        )
     if _safe_dict(meta.get("standards_review_packet")) and not accepted_rules:
         warnings.append("Standards candidates exist, but no rules have been accepted for production QA.")
     if standards and bool(standards.get("needs_source_review")):

@@ -306,7 +306,11 @@ def standards_project_evidence_from_acceptance(
         "design_standards": pack,
         "jurisdiction_standards": jurisdiction_profile,
         "company_standards": company_profile,
-        "production_usable": bool(pack.get("production_usable")) and bool(jurisdiction_profile.get("production_usable")),
+        "production_usable": (
+            bool(pack.get("production_usable"))
+            and bool(jurisdiction_profile.get("production_usable"))
+            and bool(company_profile.get("production_usable"))
+        ),
         "truth_label": "Project standards evidence is production-usable only after accepted official rules and jurisdiction traceability are present.",
     }
 
