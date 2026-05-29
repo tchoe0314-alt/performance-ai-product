@@ -462,6 +462,23 @@ def construction_release_blockers_from_meta(meta: Dict[str, Any]) -> list[str]:
     package = dict(meta.get("construction_package_manifest") or {})
     if package and package.get("release_allowed") is not True:
         blockers.append("construction_package_blocked")
+        artifact_status = dict(package.get("construction_package_artifact_status") or {})
+        if artifact_status.get("package_present") is False:
+            blockers.append("construction_package_missing")
+        if list(artifact_status.get("missing") or []):
+            blockers.append("construction_package_missing_artifacts")
+        if list(artifact_status.get("anonymous") or []):
+            blockers.append("construction_package_anonymous_artifacts")
+        if list(artifact_status.get("stale") or []):
+            blockers.append("construction_package_stale_artifacts")
+        if artifact_status.get("model_reference_present") is False:
+            blockers.append("construction_package_model_reference_missing")
+        elif artifact_status.get("model_matches_expected") is False:
+            blockers.append("construction_package_model_mismatch")
+        if list(artifact_status.get("untraced") or []):
+            blockers.append("construction_package_untraced_artifacts")
+        if list(artifact_status.get("mismatched") or []):
+            blockers.append("construction_package_mismatched_artifacts")
     return blockers
 
 

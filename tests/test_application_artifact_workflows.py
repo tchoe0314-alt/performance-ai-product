@@ -824,6 +824,16 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
                         "construction_package_manifest": {
                             "release_allowed": False,
                             "blockers": [{"area": "deliverables", "field": "construction_package_artifacts"}],
+                            "construction_package_artifact_status": {
+                                "package_present": True,
+                                "missing": ["cad_export"],
+                                "anonymous": [],
+                                "stale": ["SHEETS-OLD"],
+                                "model_reference_present": True,
+                                "model_matches_expected": False,
+                                "untraced": ["QA-1"],
+                                "mismatched": [],
+                            },
                         }
                     },
                 },
@@ -832,6 +842,10 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         review = response["summary"]["review"]
         self.assertEqual(review["release_status"], "blocked")
         self.assertIn("construction_package_blocked", review["blocked_reasons"])
+        self.assertIn("construction_package_missing_artifacts", review["blocked_reasons"])
+        self.assertIn("construction_package_stale_artifacts", review["blocked_reasons"])
+        self.assertIn("construction_package_model_mismatch", review["blocked_reasons"])
+        self.assertIn("construction_package_untraced_artifacts", review["blocked_reasons"])
 
     def test_build_preview_response_normalizes_phase_checkpoints_for_release_ready_runs(self):
         service = FakeArtifactService()
