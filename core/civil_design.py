@@ -1461,6 +1461,43 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                 "Attach survey points/surface, benchmark, datum, and source metadata.",
             )
         )
+    else:
+        if _safe_int(survey.get("point_count"), 0) < 3:
+            blockers.append(
+                _construction_gap(
+                    "existing_conditions",
+                    "survey_point_count",
+                    "Construction release requires enough survey points to establish a usable existing surface/control basis.",
+                    "Attach at least three non-collinear survey/control points or an approved existing surface.",
+                )
+            )
+        if not _safe_str(survey.get("benchmark") or survey.get("benchmark_id")):
+            blockers.append(
+                _construction_gap(
+                    "existing_conditions",
+                    "survey_benchmark",
+                    "Construction release requires benchmark evidence for vertical control.",
+                    "Attach benchmark ID/elevation metadata from the survey/control package.",
+                )
+            )
+        if not _safe_str(survey.get("datum") or survey.get("vertical_datum")):
+            blockers.append(
+                _construction_gap(
+                    "existing_conditions",
+                    "survey_datum",
+                    "Construction release requires the survey vertical datum.",
+                    "Attach vertical datum metadata such as NAVD88 or the project datum used by the survey.",
+                )
+            )
+        if survey.get("control_verified") is False:
+            blockers.append(
+                _construction_gap(
+                    "existing_conditions",
+                    "survey_control_verified",
+                    "Construction release cannot use survey/control evidence explicitly marked unverified.",
+                    "Verify survey control or attach corrected survey/control metadata.",
+                )
+            )
     coordinate_system = _safe_dict(meta.get("coordinate_system"))
     if not coordinate_system or _safe_str(coordinate_system.get("units")).lower() in {"degrees", "degree"}:
         blockers.append(
@@ -1471,6 +1508,34 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                 "Set a projected CRS, units, datum/source, and control evidence.",
             )
         )
+    else:
+        for gap in _coordinate_system_blockers(coordinate_system):
+            blockers.append(
+                _construction_gap(
+                    "existing_conditions",
+                    _safe_str(gap.get("field"), "coordinate_system"),
+                    _safe_str(gap.get("reason"), "Coordinate system is not production-usable."),
+                    "Set a projected, production-usable CRS with source/control evidence.",
+                )
+            )
+        if coordinate_system.get("production_usable") is not True:
+            blockers.append(
+                _construction_gap(
+                    "existing_conditions",
+                    "coordinate_system_production_usable",
+                    "Construction release requires the coordinate system to be explicitly marked production-usable.",
+                    "Validate CRS/source/control evidence and mark coordinate_system.production_usable true.",
+                )
+            )
+        if not _safe_str(coordinate_system.get("source") or coordinate_system.get("authority") or coordinate_system.get("control_source")):
+            blockers.append(
+                _construction_gap(
+                    "existing_conditions",
+                    "coordinate_system_source",
+                    "Construction release requires coordinate-system source/control evidence.",
+                    "Attach CRS source metadata from survey control, GIS authority, or project control documentation.",
+                )
+            )
 
     standards_pack = _safe_dict(meta.get("design_standards"))
     if standards_pack.get("production_usable") is not True:

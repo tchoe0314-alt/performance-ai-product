@@ -413,6 +413,28 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertIn(("cost", "source"), blockers)
         self.assertFalse(readiness["evidence"]["cost_production_usable"])
 
+    def test_construction_readiness_requires_survey_control_metadata(self) -> None:
+        meta = _production_ready_meta()
+        meta["survey"] = {"point_count": 18, "source": "survey_points"}
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("existing_conditions", "survey_benchmark"), blockers)
+        self.assertIn(("existing_conditions", "survey_datum"), blockers)
+
+    def test_construction_readiness_requires_production_usable_coordinate_source(self) -> None:
+        meta = _production_ready_meta()
+        meta["coordinate_system"] = {"epsg": "EPSG:2276", "units": "ft"}
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("existing_conditions", "coordinate_system_production_usable"), blockers)
+        self.assertIn(("existing_conditions", "coordinate_system_source"), blockers)
+
     def test_construction_readiness_can_clear_with_verified_professional_release(self) -> None:
         meta = _production_ready_meta()
         meta["professional_review"] = {
