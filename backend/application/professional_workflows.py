@@ -13,6 +13,9 @@ def professional_release_response(
     review_date: str = "",
     sealed: bool = True,
     jurisdiction: str = "",
+    license_jurisdiction: str = "",
+    discipline: str = "civil",
+    review_scope: str = "civil_site_construction_documents",
     notes: str = "",
 ) -> Dict[str, Any]:
     record = build_professional_review_record(
@@ -22,6 +25,9 @@ def professional_release_response(
         review_date=review_date,
         sealed=sealed,
         jurisdiction=jurisdiction,
+        license_jurisdiction=license_jurisdiction,
+        discipline=discipline,
+        review_scope=review_scope,
         notes=notes,
     )
     return {

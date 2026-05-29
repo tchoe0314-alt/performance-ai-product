@@ -484,6 +484,10 @@ class CivilDesignReadinessTests(unittest.TestCase):
             "engineer_name": "Alex Morgan",
             "license_number": "TX-123456",
             "review_date": "2026-05-28",
+            "jurisdiction": "Test City",
+            "license_jurisdiction": "TX",
+            "discipline": "civil",
+            "review_scope": "civil_site_construction_documents",
         }
         meta["export_audit"] = {"production_export_ready": True, "export_blocked": False}
         meta["sheet_registry"] = {"source": "placeholder"}
@@ -503,6 +507,10 @@ class CivilDesignReadinessTests(unittest.TestCase):
             "engineer_name": "Alex Morgan",
             "license_number": "TX-123456",
             "review_date": "2026-05-28",
+            "jurisdiction": "Test City",
+            "license_jurisdiction": "TX",
+            "discipline": "civil",
+            "review_scope": "civil_site_construction_documents",
         }
 
         readiness = construction_readiness({"meta": meta})

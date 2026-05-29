@@ -312,6 +312,9 @@ class ProfessionalReleasePayload(BaseModel):
     review_date: str = ""
     sealed: bool = True
     jurisdiction: str = ""
+    license_jurisdiction: str = ""
+    discipline: str = "civil"
+    review_scope: str = "civil_site_construction_documents"
     notes: str = ""
 
 
@@ -882,6 +885,9 @@ def build_professional_release(
         review_date=payload.review_date,
         sealed=payload.sealed,
         jurisdiction=payload.jurisdiction,
+        license_jurisdiction=payload.license_jurisdiction,
+        discipline=payload.discipline,
+        review_scope=payload.review_scope,
         notes=payload.notes,
     )
 

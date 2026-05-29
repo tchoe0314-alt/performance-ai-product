@@ -24,23 +24,45 @@ class ProfessionalReleaseTests(unittest.TestCase):
             license_number="TX-123456",
             review_date="2026-05-28",
             jurisdiction="Test City",
+            license_jurisdiction="TX",
         )
 
         self.assertTrue(record["validation"]["success"])
         self.assertTrue(record["validation"]["released_for_construction"])
         self.assertEqual(record["status"], "released_for_construction")
+        self.assertEqual(record["discipline"], "civil")
 
     def test_application_professional_release_response_is_explicit_about_stamp_boundary(self) -> None:
         response = professional_release_response(
             engineer_name="Alex Morgan",
             license_number="TX-123456",
             review_date="2026-05-28",
+            jurisdiction="Test City",
+            license_jurisdiction="TX",
         )
         validation = validate_professional_release_response(response["professional_review"])
 
         self.assertTrue(response["success"])
         self.assertTrue(validation["success"])
         self.assertIn("does not stamp", response["truth_label"])
+
+    def test_professional_release_requires_license_jurisdiction_and_civil_scope(self) -> None:
+        validation = validate_professional_release(
+            {
+                "engineer_name": "Alex Morgan",
+                "license_number": "TX-123456",
+                "status": "released_for_construction",
+                "sealed": True,
+                "review_date": "2026-05-28",
+                "jurisdiction": "Test City",
+            }
+        )
+        fields = {item["field"] for item in validation["blockers"]}
+
+        self.assertFalse(validation["success"])
+        self.assertIn("license_jurisdiction", fields)
+        self.assertIn("discipline", fields)
+        self.assertIn("review_scope", fields)
 
     def test_construction_readiness_requires_complete_professional_release_metadata(self) -> None:
         meta = {
