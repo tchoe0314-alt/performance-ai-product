@@ -485,6 +485,17 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertFalse(readiness["ready"])
         self.assertIn(("existing_conditions", "survey_benchmark"), blockers)
         self.assertIn(("existing_conditions", "survey_datum"), blockers)
+        self.assertIn(("existing_conditions", "survey_control_verified"), blockers)
+
+    def test_construction_readiness_requires_survey_control_verified_true(self) -> None:
+        meta = _production_ready_meta()
+        meta["survey"].pop("control_verified", None)
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("existing_conditions", "survey_control_verified"), blockers)
 
     def test_civil_readiness_blocks_survey_file_without_points_or_approval(self) -> None:
         meta = _production_ready_meta()

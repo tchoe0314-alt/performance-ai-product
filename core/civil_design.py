@@ -1697,13 +1697,13 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                     "Attach vertical datum metadata such as NAVD88 or the project datum used by the survey.",
                 )
             )
-        if survey.get("control_verified") is False:
+        if survey.get("control_verified") is not True:
             blockers.append(
                 _construction_gap(
                     "existing_conditions",
                     "survey_control_verified",
-                    "Construction release cannot use survey/control evidence explicitly marked unverified.",
-                    "Verify survey control or attach corrected survey/control metadata.",
+                    "Construction release requires survey/control evidence explicitly marked verified.",
+                    "Verify survey control and attach control_verified=true metadata.",
                 )
             )
     gis_layers = _safe_dict(meta.get("gis_layers") or meta.get("existing_conditions"))
