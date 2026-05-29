@@ -91,12 +91,13 @@ class ConstructionPackageManifestTests(unittest.TestCase):
             },
             "construction_deliverable_package": {
                 "release_ready": True,
+                "canonical_model_id": "MODEL-FINAL-1",
                 "artifacts": [
-                    {"type": "sheets", "id": "SHEETS-1", "current": True},
-                    {"type": "cad_export", "id": "CAD-1", "current": True},
-                    {"type": "qa_report", "id": "QA-1", "current": True},
-                    {"type": "cost_estimate", "id": "COST-1", "current": True},
-                    {"type": "construction_manifest", "id": "MANIFEST-1", "current": True},
+                    {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "cad_export", "id": "CAD-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "qa_report", "id": "QA-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "cost_estimate", "id": "COST-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "construction_manifest", "id": "MANIFEST-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
                 ],
             },
         }
@@ -153,9 +154,45 @@ class ConstructionPackageManifestTests(unittest.TestCase):
             },
             "construction_deliverable_package": {
                 "release_ready": True,
+                "canonical_model_id": "MODEL-FINAL-1",
+                "artifacts": [
+                    {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "cad_export", "id": "CAD-1", "stale": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "qa_report", "id": "QA-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "cost_estimate", "id": "COST-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "construction_manifest", "id": "MANIFEST-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                ],
+            },
+        }
+
+        manifest = build_construction_package_manifest({"meta": meta})
+        fields = {(item["area"], item["field"]) for item in manifest["blockers"]}
+
+        self.assertFalse(manifest["release_allowed"])
+        self.assertIn(("deliverables", "stale_construction_package_artifacts"), fields)
+
+    def test_manifest_blocks_package_without_final_model_reference(self) -> None:
+        meta = {
+            "construction_readiness": {
+                "ready": True,
+                "status": "construction_ready",
+                "score": 100.0,
+                "evidence": {
+                    "civil_production_ready": True,
+                    "existing_conditions_production_ready": True,
+                    "standards_production_usable": True,
+                    "export_production_ready": True,
+                    "cost_production_usable": True,
+                    "professional_release": True,
+                },
+                "blockers": [],
+                "warnings": [],
+            },
+            "construction_deliverable_package": {
+                "release_ready": True,
                 "artifacts": [
                     {"type": "sheets", "id": "SHEETS-1", "current": True},
-                    {"type": "cad_export", "id": "CAD-1", "stale": True},
+                    {"type": "cad_export", "id": "CAD-1", "current": True},
                     {"type": "qa_report", "id": "QA-1", "current": True},
                     {"type": "cost_estimate", "id": "COST-1", "current": True},
                     {"type": "construction_manifest", "id": "MANIFEST-1", "current": True},
@@ -167,7 +204,44 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         fields = {(item["area"], item["field"]) for item in manifest["blockers"]}
 
         self.assertFalse(manifest["release_allowed"])
-        self.assertIn(("deliverables", "stale_construction_package_artifacts"), fields)
+        self.assertIn(("deliverables", "construction_package_model_reference"), fields)
+
+    def test_manifest_blocks_untraced_and_mismatched_package_artifacts(self) -> None:
+        meta = {
+            "construction_readiness": {
+                "ready": True,
+                "status": "construction_ready",
+                "score": 100.0,
+                "evidence": {
+                    "civil_production_ready": True,
+                    "existing_conditions_production_ready": True,
+                    "standards_production_usable": True,
+                    "export_production_ready": True,
+                    "cost_production_usable": True,
+                    "professional_release": True,
+                },
+                "blockers": [],
+                "warnings": [],
+            },
+            "construction_deliverable_package": {
+                "release_ready": True,
+                "canonical_model_id": "MODEL-FINAL-1",
+                "artifacts": [
+                    {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "cad_export", "id": "CAD-1", "current": True},
+                    {"type": "qa_report", "id": "QA-1", "current": True, "canonical_model_id": "MODEL-OLD"},
+                    {"type": "cost_estimate", "id": "COST-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "construction_manifest", "id": "MANIFEST-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                ],
+            },
+        }
+
+        manifest = build_construction_package_manifest({"meta": meta})
+        fields = {(item["area"], item["field"]) for item in manifest["blockers"]}
+
+        self.assertFalse(manifest["release_allowed"])
+        self.assertIn(("deliverables", "untraced_construction_package_artifacts"), fields)
+        self.assertIn(("deliverables", "mismatched_construction_package_artifacts"), fields)
 
 
 if __name__ == "__main__":

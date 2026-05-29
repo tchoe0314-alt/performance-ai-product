@@ -91,6 +91,17 @@ def _artifact_type(rec: Dict[str, Any]) -> str:
     return safe_str(rec.get("type") or rec.get("artifact_type") or rec.get("kind") or rec.get("name")).lower()
 
 
+def _model_reference(rec: Dict[str, Any]) -> str:
+    return safe_str(
+        rec.get("canonical_model_id")
+        or rec.get("canonical_model_hash")
+        or rec.get("source_model_id")
+        or rec.get("source_model_hash")
+        or rec.get("final_model_id")
+        or rec.get("final_model_hash")
+    )
+
+
 def _construction_package_blockers(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
     package = safe_dict(
         meta.get("construction_deliverable_package")
@@ -113,6 +124,7 @@ def _construction_package_blockers(meta: Dict[str, Any]) -> List[Dict[str, Any]]
     if not artifacts:
         artifacts = [safe_dict(item) for item in safe_list(package.get("files"))]
     artifact_types = {_artifact_type(item) for item in artifacts if _artifact_type(item)}
+    package_model_reference = _model_reference(package)
     blockers: List[Dict[str, Any]] = []
     missing: List[str] = []
     for required in REQUIRED_CONSTRUCTION_ARTIFACTS:
@@ -142,6 +154,47 @@ def _construction_package_blockers(meta: Dict[str, Any]) -> List[Dict[str, Any]]
                 "suggested_next_action": "Regenerate stale package artifacts from the final canonical model.",
             }
         )
+    if not package_model_reference:
+        blockers.append(
+            {
+                "area": "deliverables",
+                "field": "construction_package_model_reference",
+                "why_needed": "Construction package must identify the final canonical model used to generate its artifacts.",
+                "suggested_next_action": "Attach canonical_model_id/hash or source_model_id/hash to the assembled package.",
+            }
+        )
+    else:
+        untraced_artifacts: List[str] = []
+        mismatched_artifacts: List[str] = []
+        for item in artifacts:
+            artifact_name = safe_str(item.get("id") or item.get("name") or item.get("type") or item.get("artifact_type"), "artifact")
+            artifact_model_reference = _model_reference(item)
+            if not artifact_model_reference:
+                untraced_artifacts.append(artifact_name)
+            elif artifact_model_reference != package_model_reference:
+                mismatched_artifacts.append(artifact_name)
+        if untraced_artifacts:
+            blockers.append(
+                {
+                    "area": "deliverables",
+                    "field": "untraced_construction_package_artifacts",
+                    "why_needed": "Construction package artifacts are missing final canonical model traceability: "
+                    + ", ".join(untraced_artifacts[:5])
+                    + ".",
+                    "suggested_next_action": "Regenerate or annotate package artifacts with the final canonical model reference.",
+                }
+            )
+        if mismatched_artifacts:
+            blockers.append(
+                {
+                    "area": "deliverables",
+                    "field": "mismatched_construction_package_artifacts",
+                    "why_needed": "Construction package artifacts do not all reference the package final canonical model: "
+                    + ", ".join(mismatched_artifacts[:5])
+                    + ".",
+                    "suggested_next_action": "Regenerate mismatched package artifacts from the final canonical model.",
+                }
+            )
     if package.get("production_ready") is False or package.get("release_ready") is False:
         blockers.append(
             {
