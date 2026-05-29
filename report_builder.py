@@ -51,6 +51,7 @@ class ReportPayload:
     alternatives: List[Dict[str, Any]] = field(default_factory=list)
     assumptions: List[Dict[str, Any]] = field(default_factory=list)
     exports: Dict[str, Any] = field(default_factory=dict)
+    release: Dict[str, Any] = field(default_factory=dict)
     sections: List[ReportSection] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -267,6 +268,55 @@ def _top_metric_rows(manager_metrics: Dict[str, Any]) -> List[Dict[str, Any]]:
     return rows
 
 
+def _release_review_block(final_plan: Dict[str, Any], request_metadata: Dict[str, Any]) -> Dict[str, Any]:
+    meta = _extract_plan_meta(final_plan)
+    review = deepcopy(_safe_dict(request_metadata.get("release_review")) or _safe_dict(meta.get("release_review")))
+    blockers = [
+        _safe_str(item)
+        for item in list(_safe_list(review.get("blocked_reasons")) + _safe_list(review.get("blocked_exports")))
+        if _safe_str(item)
+    ]
+    release_status = _safe_str(review.get("release_status") or meta.get("release_status"), "unknown")
+    release_ready = release_status == "ready" and not blockers
+    if "release_ready" in review:
+        release_ready = bool(review.get("release_ready")) and not blockers
+    elif "release_ready" in meta:
+        release_ready = bool(meta.get("release_ready")) and not blockers
+    package = _safe_dict(meta.get("construction_package_manifest") or meta.get("construction_package"))
+    package_id = _safe_str(
+        package.get("id")
+        or package.get("package_id")
+        or package.get("manifest_id")
+        or package.get("construction_package_id")
+    )
+    model_reference = {
+        key: value
+        for key, value in {
+            "canonical_model_id": meta.get("canonical_model_id") or meta.get("model_id"),
+            "canonical_model_hash": meta.get("canonical_model_hash") or meta.get("model_hash"),
+            "source_model_id": meta.get("source_model_id"),
+            "source_model_hash": meta.get("source_model_hash"),
+            "final_model_id": meta.get("final_model_id"),
+            "final_model_hash": meta.get("final_model_hash"),
+        }.items()
+        if value not in (None, "")
+    }
+    return {
+        "release_status": release_status,
+        "release_ready": release_ready,
+        "release_note": _safe_str(review.get("release_note"), ""),
+        "blocked_reasons": list(dict.fromkeys(_safe_str(item) for item in _safe_list(review.get("blocked_reasons")) if _safe_str(item))),
+        "blocked_exports": list(dict.fromkeys(_safe_str(item) for item in _safe_list(review.get("blocked_exports")) if _safe_str(item))),
+        "release_blockers": list(dict.fromkeys(blockers)),
+        "construction_release_required": bool(meta.get("construction_release_required")),
+        "construction_readiness": deepcopy(_safe_dict(meta.get("construction_readiness"))),
+        "construction_package_id": package_id,
+        "construction_package_artifact_status": deepcopy(_safe_dict(package.get("construction_package_artifact_status"))),
+        "professional_package_release_status": deepcopy(_safe_dict(package.get("professional_package_release_status"))),
+        "canonical_model_reference": model_reference,
+    }
+
+
 # =============================================================================
 # REPORT BUILDER
 # =============================================================================
@@ -303,9 +353,11 @@ class ReportBuilder:
         assumptions_list = _coerce_assumptions(list(assumptions) if assumptions is not None else list(final_plan.get("assumptions") or []))
         warning_list = list(warnings or [])
         error_list = list(errors or [])
+        request_meta = deepcopy(request_metadata) if isinstance(request_metadata, dict) else {}
 
         qa = _qa_block(final_plan)
         manager_score = self._manager_score(manager_metrics)
+        release = _release_review_block(final_plan, request_meta)
 
         summary = {
             "project_name": _safe_str(final_plan.get("project_name"), "Generated Plan"),
@@ -317,6 +369,9 @@ class ReportBuilder:
             "error_count": _safe_int(qa.get("error_count"), 0),
             "workflow": _safe_str(orchestrator_metadata.get("workflow"), ""),
             "recommended_option_name": _safe_str(orchestrator_metadata.get("recommended_option_name"), ""),
+            "release_status": release["release_status"],
+            "release_ready": release["release_ready"],
+            "release_blocker_count": len(release["release_blockers"]),
         }
 
         executive = _build_executive_summary(
@@ -361,6 +416,11 @@ class ReportBuilder:
                 },
             ),
             ReportSection(
+                section_id="release",
+                title="Release Review",
+                content=deepcopy(release),
+            ),
+            ReportSection(
                 section_id="alternatives",
                 title="Alternatives",
                 content={"alternatives": deepcopy(alternatives_summary)},
@@ -389,11 +449,12 @@ class ReportBuilder:
                 "report_sections": [s.section_id for s in sections],
                 "top_metric_rows": _top_metric_rows(manager_metrics),
             },
+            release=release,
             sections=sections,
             metadata={
                 "orchestrator_metadata": deepcopy(orchestrator_metadata),
                 "coordination_metadata": deepcopy(coordination_metadata),
-                "request_metadata": deepcopy(request_metadata) if isinstance(request_metadata, dict) else {},
+                "request_metadata": deepcopy(request_meta),
             },
         )
 
@@ -449,6 +510,7 @@ def build_report(
         "alternatives": deepcopy(report.alternatives),
         "assumptions": deepcopy(report.assumptions),
         "exports": deepcopy(report.exports),
+        "release": deepcopy(report.release),
         "sections": [
             {
                 "section_id": s.section_id,

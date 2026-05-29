@@ -1,0 +1,73 @@
+import unittest
+
+import report_builder
+
+
+class ReportBuilderTest(unittest.TestCase):
+    def test_build_report_exposes_blocked_release_review_as_first_class_section(self):
+        report = report_builder.build_report(
+            final_plan={
+                "project_name": "Construction Report",
+                "actions": [{"task": "polyline", "layer": "LOT"}],
+                "meta": {
+                    "construction_release_required": True,
+                    "canonical_model_id": "model-1",
+                    "canonical_model_hash": "hash-1",
+                    "construction_readiness": {"ready": False, "status": "not_construction_ready"},
+                    "construction_package_manifest": {
+                        "package_id": "pkg-1",
+                        "construction_package_artifact_status": {"complete_for_release": False},
+                        "professional_package_release_status": {"model_matches_package": False},
+                    },
+                },
+            },
+            request_metadata={
+                "release_review": {
+                    "release_status": "blocked",
+                    "release_note": "Blocked until construction package is complete.",
+                    "blocked_reasons": ["construction_readiness_blocked"],
+                    "blocked_exports": ["dxf_export_blocked"],
+                }
+            },
+        )
+
+        self.assertEqual(report["summary"]["release_status"], "blocked")
+        self.assertFalse(report["summary"]["release_ready"])
+        self.assertEqual(report["summary"]["release_blocker_count"], 2)
+        self.assertEqual(report["release"]["release_status"], "blocked")
+        self.assertFalse(report["release"]["release_ready"])
+        self.assertEqual(
+            report["release"]["release_blockers"],
+            ["construction_readiness_blocked", "dxf_export_blocked"],
+        )
+        self.assertTrue(report["release"]["construction_release_required"])
+        self.assertEqual(report["release"]["construction_package_id"], "pkg-1")
+        self.assertEqual(report["release"]["canonical_model_reference"]["canonical_model_hash"], "hash-1")
+        self.assertIn("release", report["exports"]["report_sections"])
+        release_sections = [section for section in report["sections"] if section["section_id"] == "release"]
+        self.assertEqual(len(release_sections), 1)
+        self.assertEqual(release_sections[0]["content"]["release_status"], "blocked")
+
+    def test_build_report_keeps_release_ready_false_when_metadata_has_blockers(self):
+        report = report_builder.build_report(
+            final_plan={
+                "project_name": "Construction Report",
+                "actions": [{"task": "polyline", "layer": "LOT"}],
+                "meta": {
+                    "release_status": "ready",
+                    "release_ready": True,
+                    "release_review": {
+                        "release_status": "blocked",
+                        "blocked_reasons": ["construction_package_blocked"],
+                    },
+                },
+            },
+        )
+
+        self.assertEqual(report["release"]["release_status"], "blocked")
+        self.assertFalse(report["release"]["release_ready"])
+        self.assertEqual(report["summary"]["release_blocker_count"], 1)
+
+
+if __name__ == "__main__":
+    unittest.main()
