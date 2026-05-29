@@ -115,6 +115,12 @@ def _build_workflow_summary(
     latest_reliability = dict(latest_run.get("reliability_summary") or {})
     latest_convergence = dict(latest_run.get("convergence_summary") or {})
     latest_artifact = dict(artifacts[0]) if artifacts else {}
+    latest_blockers = _latest_release_blockers(
+        latest_run=latest_run,
+        latest_reliability=latest_reliability,
+        latest_convergence=latest_convergence,
+    )
+    latest_release_ready = bool(latest_reliability.get("release_ready")) and not latest_blockers
     return {
         "run_count": len(runs),
         "artifact_count": len(artifacts),
@@ -127,11 +133,47 @@ def _build_workflow_summary(
         "latest_unresolved_conflict_count": int(latest_reliability.get("unresolved_conflict_count") or 0),
         "latest_failed_deliverable_count": int(latest_reliability.get("failed_deliverable_count") or 0),
         "latest_converged": bool(latest_convergence.get("converged")),
-        "latest_release_ready": bool(latest_reliability.get("release_ready")),
+        "latest_release_ready": latest_release_ready,
+        "latest_release_blockers": latest_blockers,
         "latest_artifact_id": str(latest_artifact.get("artifact_id") or ""),
         "latest_artifact_kind": str(latest_artifact.get("kind") or ""),
         "latest_artifact_created_at": latest_artifact.get("created_at"),
     }
+
+
+def _latest_release_blockers(
+    *,
+    latest_run: Dict[str, Any],
+    latest_reliability: Dict[str, Any],
+    latest_convergence: Dict[str, Any],
+) -> list[str]:
+    blockers: list[str] = []
+
+    def _extend(values: Any) -> None:
+        for value in list(values or []):
+            if isinstance(value, dict):
+                text = str(value.get("code") or value.get("reason") or value.get("message") or "").strip()
+            else:
+                text = str(value).strip()
+            if text and text not in blockers:
+                blockers.append(text)
+
+    _extend(latest_convergence.get("blocked_reasons"))
+    _extend(latest_convergence.get("blocked_exports"))
+    _extend(latest_run.get("failed_deliverables"))
+    _extend(latest_run.get("manual_failures"))
+
+    if int(latest_reliability.get("blocked_export_count") or 0) > 0:
+        blockers.append("blocked_exports")
+    if int(latest_reliability.get("unresolved_conflict_count") or 0) > 0:
+        blockers.append("unresolved_conflicts")
+    if int(latest_reliability.get("failed_deliverable_count") or 0) > 0:
+        blockers.append("failed_deliverables")
+    if int(latest_reliability.get("manual_failure_count") or 0) > 0:
+        blockers.append("manual_validation_failures")
+    if latest_run.get("final_plan_release_ready") is False:
+        blockers.append("final_plan_release_blocked")
+    return list(dict.fromkeys(blockers))
 
 
 def _project_operational_summary(record: Dict[str, Any]) -> Dict[str, Any]:
@@ -140,6 +182,7 @@ def _project_operational_summary(record: Dict[str, Any]) -> Dict[str, Any]:
         "operational_state": str(workflow_summary.get("latest_operational_state") or ""),
         "primary_attention": str(workflow_summary.get("latest_primary_attention") or ""),
         "release_ready": bool(workflow_summary.get("latest_release_ready")),
+        "release_blockers": list(workflow_summary.get("latest_release_blockers") or []),
         "run_count": int(workflow_summary.get("run_count") or 0),
         "artifact_count": int(workflow_summary.get("artifact_count") or 0),
         "latest_run_id": str(workflow_summary.get("latest_run_id") or ""),

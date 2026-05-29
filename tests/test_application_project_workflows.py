@@ -218,6 +218,59 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertEqual(merged["workflow"]["summary"]["latest_operational_state"], "ready")
         self.assertEqual(merged["workflow"]["summary"]["latest_artifact_id"], "artifact_new")
 
+    def test_merge_project_metadata_blocks_release_when_construction_gate_blocks(self):
+        merged = merge_project_metadata(
+            {},
+            run_summary={
+                "run_id": "run_blocked",
+                "created_at": 123.0,
+                "source": "unit_test",
+                "convergence_summary": {
+                    "converged": True,
+                    "blocked_exports": [],
+                    "blocked_reasons": ["construction_package_blocked"],
+                },
+                "reliability_summary": {
+                    "operational_state": "ready",
+                    "primary_attention": "",
+                    "blocked_export_count": 0,
+                    "unresolved_conflict_count": 0,
+                    "failed_deliverable_count": 0,
+                    "release_ready": True,
+                },
+            },
+        )
+        summary = merged["workflow"]["summary"]
+        self.assertFalse(summary["latest_release_ready"])
+        self.assertEqual(summary["latest_release_blockers"], ["construction_package_blocked"])
+
+    def test_operational_summary_exposes_project_release_blockers(self):
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Demo",
+                "metadata": {
+                    "workflow": {
+                        "summary": {
+                            "latest_operational_state": "ready",
+                            "latest_primary_attention": "construction_readiness_blocked",
+                            "latest_release_ready": False,
+                            "latest_release_blockers": ["construction_readiness_blocked"],
+                            "run_count": 1,
+                            "artifact_count": 0,
+                            "latest_run_id": "run_1",
+                            "latest_artifact_id": "",
+                        }
+                    }
+                },
+            }
+        )
+        response = list_projects(project_store=store, user_id="u1")
+        operational = response["projects"][0]["operational_summary"]
+        self.assertFalse(operational["release_ready"])
+        self.assertEqual(operational["release_blockers"], ["construction_readiness_blocked"])
+
     def test_save_project_workflow_update_persists_metadata(self):
         store = FakeProjectStore(
             {
