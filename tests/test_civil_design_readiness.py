@@ -197,6 +197,7 @@ def _production_ready_meta() -> dict:
     }
     meta["quantities"] = {
         "success": True,
+        "canonical_model_id": "MODEL-FINAL-1",
         "totals": {"pipe_length_ft": 1000.0},
         "explain": {
             "meta_summary": {"quantity_traceability_complete": True},
@@ -217,6 +218,7 @@ def _production_ready_meta() -> dict:
     cost = compute_cost_estimate({"meta": meta})
     meta["cost_estimate"] = {
         "success": cost.success,
+        "canonical_model_id": "MODEL-FINAL-1",
         "totals": cost.totals,
         "explain": cost.explain,
         "line_items": cost.line_items,
@@ -494,6 +496,26 @@ class CivilDesignReadinessTests(unittest.TestCase):
 
         self.assertFalse(readiness["ready"])
         self.assertIn(("cost", "cost_quantity_trace"), blockers)
+
+    def test_construction_readiness_blocks_quantity_without_model_trace(self) -> None:
+        meta = _production_ready_meta()
+        meta["quantities"].pop("canonical_model_id", None)
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("cost", "quantity_model_trace"), blockers)
+
+    def test_construction_readiness_blocks_cost_estimate_model_mismatch(self) -> None:
+        meta = _production_ready_meta()
+        meta["cost_estimate"]["canonical_model_id"] = "MODEL-OLD"
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("cost", "cost_estimate_model_trace"), blockers)
 
     def test_construction_readiness_requires_survey_control_metadata(self) -> None:
         meta = _production_ready_meta()

@@ -2125,6 +2125,15 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                 "Fix quantity trace gaps and regenerate cost from traceable quantities.",
             )
         )
+    elif expected_model_refs and _model_references(quantities).isdisjoint(expected_model_refs):
+        blockers.append(
+            _construction_gap(
+                "cost",
+                "quantity_model_trace",
+                "Construction release requires quantity takeoff evidence tied to the final canonical model.",
+                "Regenerate quantities from the final model and attach canonical_model_id/hash or final_model_id/hash metadata.",
+            )
+        )
 
     cost = _safe_dict(meta.get("cost_estimate"))
     cost_totals = _safe_dict(cost.get("totals"))
@@ -2146,6 +2155,15 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                 "cost_success",
                 "Construction release cannot use a failed or review-only cost estimate.",
                 "Resolve cost estimate blockers and regenerate from traceable quantities.",
+            )
+        )
+    elif expected_model_refs and _model_references(cost).isdisjoint(expected_model_refs):
+        blockers.append(
+            _construction_gap(
+                "cost",
+                "cost_estimate_model_trace",
+                "Construction release requires cost estimates to identify the final canonical model priced.",
+                "Regenerate the cost estimate from the final model and attach canonical_model_id/hash or final_model_id/hash metadata.",
             )
         )
     if cost and cost_totals.get("production_usable") is not True:
