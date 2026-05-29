@@ -4,6 +4,22 @@ import planner
 from backend.planning.construction_package import build_construction_package_manifest
 
 
+def _valid_professional_review(model_id: str = "MODEL-FINAL-1", package_id: str = "PKG-IFC-1") -> dict:
+    return {
+        "status": "released_for_construction",
+        "sealed": True,
+        "engineer_name": "Alex Morgan",
+        "license_number": "TX-123456",
+        "review_date": "2026-05-29",
+        "jurisdiction": "Test City",
+        "license_jurisdiction": "TX",
+        "discipline": "civil",
+        "review_scope": "civil_site_construction_documents",
+        "canonical_model_id": model_id,
+        "reviewed_package_id": package_id,
+    }
+
+
 class ConstructionPackageManifestTests(unittest.TestCase):
     def test_build_plan_attaches_blocking_manifest_for_concept_plan(self) -> None:
         plan = planner.build_plan(
@@ -125,19 +141,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
                     {"type": "construction_manifest", "id": "MANIFEST-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
                 ],
             },
-            "professional_review": {
-                "status": "released_for_construction",
-                "sealed": True,
-                "engineer_name": "Alex Morgan",
-                "license_number": "TX-123456",
-                "review_date": "2026-05-29",
-                "jurisdiction": "Test City",
-                "license_jurisdiction": "TX",
-                "discipline": "civil",
-                "review_scope": "civil_site_construction_documents",
-                "canonical_model_id": "MODEL-FINAL-1",
-                "reviewed_package_id": "PKG-IFC-1",
-            },
+            "professional_review": _valid_professional_review(),
         }
 
         manifest = build_construction_package_manifest({"meta": meta})
@@ -408,10 +412,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
                     {"type": "construction_manifest", "id": "MANIFEST-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
                 ],
             },
-            "professional_review": {
-                "canonical_model_id": "MODEL-OLD",
-                "reviewed_package_id": "PKG-OLD",
-            },
+            "professional_review": _valid_professional_review(model_id="MODEL-OLD", package_id="PKG-OLD"),
         }
 
         manifest = build_construction_package_manifest({"meta": meta})
@@ -543,10 +544,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
                 {"type": "construction_manifest", "id": "MANIFEST-1", "current": True, "canonical_model_id": expected},
             ],
         }
-        plan["meta"]["professional_review"] = {
-            "canonical_model_id": expected,
-            "reviewed_package_id": "PKG-IFC-1",
-        }
+        plan["meta"]["professional_review"] = _valid_professional_review(model_id=expected)
 
         manifest = build_construction_package_manifest(plan)
 
@@ -556,6 +554,69 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         self.assertTrue(artifact_status["model_matches_expected"])
         self.assertTrue(artifact_status["complete_for_release"])
         self.assertTrue(manifest["professional_package_release_status"]["model_matches_package"])
+        self.assertTrue(manifest["professional_package_release_status"]["professional_release_valid"])
+
+    def test_manifest_blocks_professional_reference_without_valid_release_metadata(self) -> None:
+        meta = {
+            "construction_readiness": {
+                "ready": True,
+                "status": "construction_ready",
+                "score": 100.0,
+                "evidence": {
+                    "civil_production_ready": True,
+                    "existing_conditions_production_ready": True,
+                    "standards_production_usable": True,
+                    "export_production_ready": True,
+                    "cost_production_usable": True,
+                    "professional_release": True,
+                },
+                "blockers": [],
+                "warnings": [],
+            },
+            "cost_estimate": {
+                "success": True,
+                "totals": {"production_usable": True, "total_cost": 1000.0, "cost_estimate_hash": "COST-HASH-1"},
+                "line_items": [{"metric": "pipe_length_ft", "quantity": 10.0, "amount": 1000.0}],
+                "explain": {
+                    "cost_estimate_reference": {
+                        "cost_estimate_hash": "COST-HASH-1",
+                        "quantity_model_hash": "QTY-HASH-1",
+                        "price_book_hash": "PRICE-HASH-1",
+                    },
+                    "quantity_model_reference": {"quantity_model_hash": "QTY-HASH-1"},
+                    "pricing": {"price_book_hash": "PRICE-HASH-1"},
+                },
+            },
+            "construction_deliverable_package": {
+                "id": "PKG-IFC-1",
+                "release_ready": True,
+                "canonical_model_id": "MODEL-FINAL-1",
+                "artifacts": [
+                    {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "cad_export", "id": "CAD-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "qa_report", "id": "QA-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {
+                        "type": "cost_estimate",
+                        "id": "COST-1",
+                        "current": True,
+                        "canonical_model_id": "MODEL-FINAL-1",
+                        "cost_estimate_hash": "COST-HASH-1",
+                    },
+                    {"type": "construction_manifest", "id": "MANIFEST-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                ],
+            },
+            "professional_review": {
+                "canonical_model_id": "MODEL-FINAL-1",
+                "reviewed_package_id": "PKG-IFC-1",
+            },
+        }
+
+        manifest = build_construction_package_manifest({"meta": meta})
+        fields = {(item["area"], item["field"]) for item in manifest["blockers"]}
+
+        self.assertFalse(manifest["release_allowed"])
+        self.assertIn(("professional_review", "professional_release_validation"), fields)
+        self.assertFalse(manifest["professional_package_release_status"]["professional_release_valid"])
 
     def test_manifest_blocks_cost_artifact_not_tied_to_current_cost_estimate(self) -> None:
         meta = {
@@ -600,10 +661,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
                     {"type": "construction_manifest", "id": "MANIFEST-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
                 ],
             },
-            "professional_review": {
-                "canonical_model_id": "MODEL-FINAL-1",
-                "reviewed_package_id": "PKG-IFC-1",
-            },
+            "professional_review": _valid_professional_review(),
         }
 
         manifest = build_construction_package_manifest({"meta": meta})
@@ -664,10 +722,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
                     {"type": "construction_manifest", "id": "MANIFEST-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
                 ],
             },
-            "professional_review": {
-                "canonical_model_id": "MODEL-FINAL-1",
-                "reviewed_package_id": "PKG-IFC-1",
-            },
+            "professional_review": _valid_professional_review(),
         }
 
         manifest = build_construction_package_manifest({"meta": meta})

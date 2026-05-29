@@ -6,6 +6,7 @@ from copy import deepcopy
 from typing import Any, Dict, Iterable, List, Sequence
 
 from core.civil_design import construction_readiness
+from core.professional_release import validate_professional_release
 
 from .common import safe_dict, safe_list, safe_str
 
@@ -336,6 +337,7 @@ def _construction_package_artifact_status(plan_or_meta: Dict[str, Any], meta: Di
 
 def _professional_package_release_status(meta: Dict[str, Any], package: Dict[str, Any], artifact_status: Dict[str, Any]) -> Dict[str, Any]:
     professional = safe_dict(meta.get("professional_review") or meta.get("engineer_review"))
+    validation = validate_professional_release(professional)
     package_identity = safe_str(artifact_status.get("package_identity")) or _package_identity(package)
     package_model_reference = safe_str(artifact_status.get("package_model_reference")) or _model_reference(package)
     professional_model_reference = _model_reference(professional)
@@ -347,6 +349,8 @@ def _professional_package_release_status(meta: Dict[str, Any], package: Dict[str
     )
     return {
         "professional_review_present": bool(professional),
+        "professional_release_valid": validation.get("released_for_construction") is True,
+        "professional_release_validation": validation,
         "professional_model_reference": professional_model_reference,
         "professional_package_reference": professional_package_reference,
         "model_matches_package": bool(
@@ -498,6 +502,24 @@ def _construction_package_blockers(plan_or_meta: Dict[str, Any], meta: Dict[str,
                 "field": "released_package_reference",
                 "why_needed": "Construction package release requires professional review evidence tied to the released package.",
                 "suggested_next_action": "Attach professional_review metadata with reviewed package and canonical model references.",
+            }
+        )
+    elif not bool(professional_release_status.get("professional_release_valid")):
+        validation = safe_dict(professional_release_status.get("professional_release_validation"))
+        validation_fields = [
+            safe_str(item.get("field"))
+            for item in safe_list(validation.get("blockers"))
+            if safe_str(safe_dict(item).get("field"))
+        ]
+        blockers.append(
+            {
+                "area": "professional_review",
+                "field": "professional_release_validation",
+                "why_needed": "Construction package release requires valid licensed professional release metadata, not only a package/model reference.",
+                "suggested_next_action": (
+                    "Complete professional release metadata before release"
+                    + (": " + ", ".join(validation_fields[:6]) if validation_fields else ".")
+                ),
             }
         )
     elif not safe_str(professional_release_status.get("professional_model_reference")):
