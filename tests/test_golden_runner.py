@@ -117,6 +117,33 @@ class GoldenRunnerTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertIn("construction_release_allowed_without_readiness", result["hard_failures"])
         self.assertIn("construction_release_allowed_without_civil_production_ready", result["hard_failures"])
+        self.assertIn("construction_release_allowed_with_incomplete_package", result["hard_failures"])
+        self.assertIn("construction_release_allowed_with_unverified_package_model", result["hard_failures"])
+
+    def test_run_scenario_fails_when_construction_release_package_is_incomplete(self) -> None:
+        def incomplete_release_package(payload):
+            plan = _fake_plan(payload)
+            plan["meta"]["civil_design_readiness"]["production_ready"] = True
+            plan["meta"]["construction_readiness"] = {"ready": True, "status": "construction_ready", "blockers": []}
+            plan["meta"]["construction_package_manifest"] = {
+                "release_allowed": True,
+                "construction_package_artifact_status": {
+                    "complete_for_release": False,
+                    "model_matches_expected": False,
+                    "missing": ["cad_export", "qa_report"],
+                },
+            }
+            return plan
+
+        result = run_golden_scenario("small_commercial_pad", build_plan_fn=incomplete_release_package)
+
+        self.assertFalse(result["success"])
+        self.assertIn("construction_release_allowed_with_incomplete_package", result["hard_failures"])
+        self.assertIn("construction_release_allowed_with_unverified_package_model", result["hard_failures"])
+        self.assertEqual(
+            result["readiness_summary"]["construction_package_missing_artifacts"],
+            ["cad_export", "qa_report"],
+        )
 
     def test_run_scenario_fails_when_numeric_expectations_are_implausible(self) -> None:
         def implausible_plan(payload):

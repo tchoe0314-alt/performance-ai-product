@@ -22,12 +22,16 @@ def _readiness_summary(plan: Dict[str, Any]) -> Dict[str, Any]:
     engine = safe_dict(meta.get("engine_readiness"))
     construction = safe_dict(meta.get("construction_readiness"))
     construction_package = safe_dict(meta.get("construction_package_manifest"))
+    artifact_status = safe_dict(construction_package.get("construction_package_artifact_status"))
     return {
         "civil_status": safe_str(civil.get("status")),
         "civil_success": bool(civil.get("success")),
         "civil_production_ready": bool(civil.get("production_ready")),
         "construction_ready": bool(construction.get("ready")),
         "construction_release_allowed": bool(construction_package.get("release_allowed")),
+        "construction_package_complete_for_release": bool(artifact_status.get("complete_for_release")),
+        "construction_package_model_matches_expected": bool(artifact_status.get("model_matches_expected")),
+        "construction_package_missing_artifacts": safe_list(artifact_status.get("missing")),
         "critical_blocker_count": len(safe_list(civil.get("critical_blockers"))),
         "production_blocker_count": len(safe_list(civil.get("production_blockers"))),
         "construction_blocker_count": len(safe_list(construction.get("blockers"))),
@@ -311,6 +315,10 @@ def run_golden_scenario(
         hard_failures.append("construction_release_allowed_without_readiness")
     if bool(summary.get("construction_release_allowed")) and not bool(summary.get("civil_production_ready")):
         hard_failures.append("construction_release_allowed_without_civil_production_ready")
+    if bool(summary.get("construction_release_allowed")) and not bool(summary.get("construction_package_complete_for_release")):
+        hard_failures.append("construction_release_allowed_with_incomplete_package")
+    if bool(summary.get("construction_release_allowed")) and not bool(summary.get("construction_package_model_matches_expected")):
+        hard_failures.append("construction_release_allowed_with_unverified_package_model")
     return {
         "success": not hard_failures,
         "scenario_id": scenario.scenario_id,
