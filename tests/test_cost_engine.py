@@ -90,6 +90,40 @@ class CostEngineTests(unittest.TestCase):
         self.assertFalse(result.explain["pricing"]["production_validation"]["success"])
         self.assertIn("Attached unit-price book is not production-usable", result.assumptions[0])
 
+    def test_cost_engine_blocks_production_when_price_book_misses_positive_quantity_metric(self) -> None:
+        result = compute_cost_estimate(
+            {
+                "meta": {
+                    "cost_pricing": {
+                        "source": "company_2026_bid_book",
+                        "location": "Austin, TX",
+                        "effective_date": "2026-05-01",
+                        "approved_by": "Estimator",
+                        "approval_date": "2026-05-02",
+                        "unit_prices": {
+                            "pipe_length_ft": {"item": "RCP storm pipe", "category": "storm", "unit": "ft", "unit_cost": 100.0}
+                        },
+                    },
+                    "quantities": {
+                        "success": True,
+                        "totals": {"pipe_length_ft": 50.0, "parking_area_sf": 1000.0},
+                        "explain": {
+                            "quantity_audit": {
+                                "pipe_length_ft": {"source_object_ids": ["P-1"]},
+                                "parking_area_sf": {"source_object_ids": ["PK-1"]},
+                            }
+                        },
+                    },
+                }
+            }
+        )
+
+        self.assertTrue(result.success)
+        self.assertFalse(result.totals["production_usable"])
+        self.assertIn("parking_area_sf", result.explain["pricing_coverage_gaps"])
+        parking = next(item for item in result.line_items if item["metric"] == "parking_area_sf")
+        self.assertFalse(parking["production_price"])
+
     def test_unit_price_book_from_csv_normalizes_and_validates(self) -> None:
         price_book = unit_price_book_from_csv(
             "metric,item,category,unit,unit_cost,bid_item_id\npipe_length_ft,RCP storm pipe,storm,ft,125,ST-01\n",
@@ -165,7 +199,7 @@ class CostEngineTests(unittest.TestCase):
                     },
                     "cost_estimate": {
                         "success": True,
-                        "explain": {"pricing": {"production_usable": False}, "trace_gaps": {}},
+                        "explain": {"pricing": {"production_usable": False}, "trace_gaps": {}, "pricing_coverage_gaps": {}},
                     },
                 }
             }
@@ -173,6 +207,33 @@ class CostEngineTests(unittest.TestCase):
 
         quantity = readiness["engines"]["quantity"]
         self.assertIn("pricing_source", {item["field"] for item in quantity["production_blockers"]})
+
+    def test_quantity_engine_readiness_reports_price_book_coverage_gaps(self) -> None:
+        readiness = evaluate_engine_readiness(
+            {
+                "meta": {
+                    "quantities": {
+                        "success": True,
+                        "totals": {"parking_area_sf": 1000.0},
+                        "explain": {
+                            "meta_summary": {"quantity_traceability_complete": True},
+                            "trace_gaps": {},
+                        },
+                    },
+                    "cost_estimate": {
+                        "success": True,
+                        "explain": {
+                            "pricing": {"production_usable": True},
+                            "trace_gaps": {},
+                            "pricing_coverage_gaps": {"parking_area_sf": {"quantity": 1000.0}},
+                        },
+                    },
+                }
+            }
+        )
+
+        quantity = readiness["engines"]["quantity"]
+        self.assertIn("pricing_coverage", {item["field"] for item in quantity["production_blockers"]})
 
 
 if __name__ == "__main__":

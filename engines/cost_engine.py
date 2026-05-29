@@ -268,6 +268,7 @@ def _unit_price_book(meta: Dict[str, Any]) -> Tuple[Dict[str, Dict[str, Any]], D
         "price_book_hash": _safe_str(normalized.get("price_book_hash") if normalized else ""),
         "contingency_pct": _safe_float(normalized.get("contingency_pct") if normalized else None, 15.0),
         "production_validation": validation,
+        "production_metric_keys": sorted(user_prices.keys()),
     }
     return prices, pricing_meta
 
@@ -302,6 +303,8 @@ def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
     line_items: List[Dict[str, Any]] = []
     category_subtotals: Dict[str, float] = {}
     trace_gaps: Dict[str, Dict[str, Any]] = {}
+    pricing_coverage_gaps: Dict[str, Dict[str, Any]] = {}
+    production_metric_keys = set(_safe_list(pricing_meta.get("production_metric_keys")))
     for metric, price in prices.items():
         quantity = _safe_float(totals.get(metric), 0.0)
         unit_cost = _safe_float(price.get("unit_cost"), 0.0)
@@ -323,11 +326,18 @@ def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
             "source_object_ids": source_ids,
             "trace_complete": bool(source_ids),
             "pricing_source": pricing_meta["source"],
+            "production_price": metric in production_metric_keys,
         }
         line_items.append(line)
         category_subtotals[category] = round(category_subtotals.get(category, 0.0) + amount, 2)
         if not source_ids:
             trace_gaps[metric] = {"quantity": quantity, "item": line["item"]}
+        if pricing_meta["production_usable"] and metric not in production_metric_keys:
+            pricing_coverage_gaps[metric] = {
+                "quantity": quantity,
+                "item": line["item"],
+                "reason": "Positive quantity was priced with Civora concept defaults because the production unit-price book does not include this metric.",
+            }
 
     direct_cost = round(sum(item["amount"] for item in line_items), 2)
     contingency_pct = max(0.0, _safe_float(pricing_meta.get("contingency_pct"), 0.0))
@@ -336,10 +346,13 @@ def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
     traceability_complete = not bool(trace_gaps)
     if trace_gaps:
         warnings.append("Some priced quantities do not trace to canonical source object IDs.")
+    if pricing_coverage_gaps:
+        warnings.append("Some positive quantities are missing from the production unit-price book and were priced with concept defaults.")
     if not line_items:
         warnings.append("No positive priced quantities were found.")
 
     success = bool(line_items) and traceability_complete and quantities.get("success") is not False
+    pricing_coverage_complete = not bool(pricing_coverage_gaps)
     return CostResult(
         success=success,
         message=(
@@ -354,7 +367,7 @@ def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
             "total_cost": total,
             "currency": pricing_meta["currency"],
             "line_item_count": len(line_items),
-            "production_usable": bool(pricing_meta["production_usable"] and success),
+            "production_usable": bool(pricing_meta["production_usable"] and pricing_coverage_complete and success),
         },
         line_items=line_items,
         category_subtotals=category_subtotals,
@@ -365,6 +378,8 @@ def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
             "pricing": pricing_meta,
             "traceability_complete": traceability_complete,
             "trace_gaps": trace_gaps,
+            "pricing_coverage_complete": pricing_coverage_complete,
+            "pricing_coverage_gaps": pricing_coverage_gaps,
             "truth_label": "Cost estimates are only as reliable as quantity traceability and the attached unit-price book.",
         },
     )

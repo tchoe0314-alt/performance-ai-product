@@ -295,6 +295,15 @@ def _explicit_blockers_for_engine(engine_id: str, meta: Dict[str, Any]) -> List[
                     "severity": "blocker",
                 }
             )
+        if _safe_dict(cost_explain.get("pricing_coverage_gaps")):
+            blockers.append(
+                {
+                    "area": "quantity",
+                    "field": "pricing_coverage",
+                    "message": "Cost readiness is blocked because one or more positive quantities are missing from the production unit-price book.",
+                    "severity": "blocker",
+                }
+            )
         pricing = _safe_dict(cost_explain.get("pricing"))
         if pricing and pricing.get("production_usable") is not True:
             blockers.append(
