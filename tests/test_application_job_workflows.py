@@ -494,6 +494,103 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
             "ready",
         )
 
+    def test_build_orchestrate_job_runner_blocks_construction_release_without_readiness(self):
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Demo",
+                "description": "",
+                "session_id": None,
+                "tags": [],
+                "project_input": {},
+                "latest_result": {},
+                "session_state": {},
+                "metadata": {},
+            }
+        )
+
+        def plan_builder(result, **kwargs):
+            return {
+                "project_name": "Demo",
+                "actions": [{"layer": "BUILDING", "task": "rectangle", "x": 0, "y": 0, "w": 10, "h": 10}],
+                "meta": dict(result.get("final_plan", {}).get("meta") or {}),
+            }
+
+        runner = build_orchestrate_job_runner(
+            project_store=store,
+            update_job_progress=lambda *args, **kwargs: None,
+            run_orchestration=lambda payload: {
+                "success": True,
+                "final_plan": {
+                    "project_name": "Demo",
+                    "actions": [{"layer": "BUILDING", "task": "rectangle", "x": 0, "y": 0, "w": 10, "h": 10}],
+                    "meta": {"construction_release_required": True},
+                },
+                "metadata": {
+                    "runtime_phase_checkpoint": {
+                        "stage_name": "coordination_resolution",
+                        "status": "complete",
+                        "yielded": False,
+                    }
+                },
+            },
+            build_run_summary=lambda result, **kwargs: {
+                "run_id": "run_complete",
+                "job_id": kwargs.get("job_id"),
+                "convergence_summary": {
+                    "assumption_summary": {"count": 0, "categories": [], "examples": []},
+                    "unresolved_issue_categories": [],
+                    "blocked_reasons": [],
+                    "blocked_exports": [],
+                },
+                "reliability_summary": {
+                    "operational_state": "review",
+                    "primary_attention": "",
+                    "release_ready": False,
+                },
+                "phase_checkpoints": {
+                    "layout": {"status": "complete", "ready": True},
+                    "grading": {"status": "complete", "ready": True},
+                    "drainage_storm": {"status": "complete", "ready": True},
+                    "utilities": {"status": "complete", "ready": True},
+                    "coordination_validation": {"status": "complete", "ready": True},
+                    "combined_view": {
+                        "status": "review",
+                        "ready": False,
+                        "completed_phase_count": 5,
+                        "total_phase_count": 5,
+                    },
+                },
+                "requested_deliverables": [],
+                "produced_deliverables": [],
+                "failed_deliverables": [],
+                "ready_deliverables": [],
+                "extra_deliverables": [],
+            },
+            merge_project_metadata=lambda metadata, **kwargs: {"workflow": {"runs": [kwargs["run_summary"]]}},
+            final_plan_from_result=plan_builder,
+        )
+
+        result = runner(
+            {
+                "job_id": "job_construction_missing",
+                "job_type": "orchestrate",
+                "user_id": "u1",
+                "project_id": "p1",
+                "payload": {"prompt_text": "run"},
+            }
+        )
+
+        self.assertFalse(result["final_plan"]["release_ready"])
+        self.assertEqual(result["final_plan"]["release_status"], "blocked")
+        self.assertIn("construction_readiness_missing", result["final_plan"]["blockers"])
+        self.assertFalse(result["final_plan"]["meta"]["phase_checkpoints"]["combined_view"]["ready"])
+        self.assertEqual(
+            store.saved_payload["latest_result"]["final_plan"]["meta"]["release_review"]["release_status"],
+            "blocked",
+        )
+
     def test_build_orchestrate_job_runner_preserves_current_export_guard_failures(self):
         store = FakeProjectStore(
             {

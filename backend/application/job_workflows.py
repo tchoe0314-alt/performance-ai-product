@@ -7,7 +7,10 @@ from typing import Any, Callable, Dict, Optional, Protocol
 
 from fastapi import HTTPException
 from backend.planning.common import safe_dict, safe_float, safe_int, safe_list, safe_str
-from backend.application.design_workflows import construction_release_blockers_from_meta
+from backend.application.design_workflows import (
+    construction_release_blockers_from_meta,
+    final_plan_requires_construction_release,
+)
 from core.utils import safe_bool
 from core.config import POND_RADIUS
 
@@ -896,7 +899,11 @@ def build_orchestrate_job_runner(
         if final_plan:
             convergence["blocked_reasons"] = list(blocked_reasons)
             convergence["blocked_exports"] = list(blocked_exports)
-            for construction_blocker in construction_release_blockers_from_meta(final_meta):
+            construction_release_required = final_plan_requires_construction_release(final_plan)
+            for construction_blocker in construction_release_blockers_from_meta(
+                final_meta,
+                requires_construction_release=construction_release_required,
+            ):
                 if construction_blocker not in blocked_reasons:
                     blocked_reasons.append(construction_blocker)
             convergence["blocked_reasons"] = list(blocked_reasons)
