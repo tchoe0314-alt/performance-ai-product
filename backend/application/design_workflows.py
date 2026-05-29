@@ -460,6 +460,18 @@ def construction_release_blockers_from_meta(meta: Dict[str, Any]) -> list[str]:
     if construction and construction.get("ready") is not True:
         blockers.append("construction_readiness_blocked")
     package = dict(meta.get("construction_package_manifest") or {})
+    if construction.get("ready") is True and not package:
+        blockers.append("construction_package_manifest_missing")
+    if package and package.get("release_allowed") is True:
+        artifact_status = dict(package.get("construction_package_artifact_status") or {})
+        professional_status = dict(package.get("professional_package_release_status") or {})
+        if artifact_status and artifact_status.get("complete_for_release") is not True:
+            blockers.append("construction_package_incomplete_release")
+        if professional_status and (
+            professional_status.get("model_matches_package") is not True
+            or professional_status.get("package_matches_review") is not True
+        ):
+            blockers.append("construction_professional_release_untraced")
     if package and package.get("release_allowed") is not True:
         blockers.append("construction_package_blocked")
         artifact_status = dict(package.get("construction_package_artifact_status") or {})
