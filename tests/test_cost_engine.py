@@ -172,6 +172,23 @@ class CostEngineTests(unittest.TestCase):
         self.assertFalse(result.success)
         self.assertIn("road_area_sf", result.explain["trace_gaps"])
 
+    def test_cost_engine_requires_explicit_successful_quantity_model(self) -> None:
+        result = compute_cost_estimate(
+            {
+                "meta": {
+                    "quantities": {
+                        "totals": {"pipe_length_ft": 50.0},
+                        "explain": {"quantity_audit": {"pipe_length_ft": {"source_object_ids": ["P-1"]}}},
+                    }
+                }
+            }
+        )
+
+        self.assertFalse(result.success)
+        self.assertFalse(result.totals["production_usable"])
+        self.assertIn("Quantity engine is not explicitly production-successful", result.warnings[0])
+        self.assertIsNone(result.explain["quantity_model_reference"]["quantity_success"])
+
     def test_build_plan_attaches_cost_estimate(self) -> None:
         plan = planner.build_plan(
             {

@@ -312,8 +312,8 @@ def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
             warnings=["No quantity result is attached to the plan."],
             explain={"pricing": pricing_meta, "traceability_complete": False},
         )
-    if quantities.get("success") is False:
-        warnings.append("Quantity engine is not production-successful; cost estimate is for review only.")
+    if quantities.get("success") is not True:
+        warnings.append("Quantity engine is not explicitly production-successful; cost estimate is for review only.")
     quantity_model_reference = _quantity_model_reference(quantities)
     if not pricing_meta["production_usable"]:
         if pricing_meta["source"] == "civora_concept_default_unit_prices":
@@ -373,7 +373,7 @@ def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
     if not line_items:
         warnings.append("No positive priced quantities were found.")
 
-    success = bool(line_items) and traceability_complete and quantities.get("success") is not False
+    success = bool(line_items) and traceability_complete and quantities.get("success") is True
     pricing_coverage_complete = not bool(pricing_coverage_gaps)
     return CostResult(
         success=success,
