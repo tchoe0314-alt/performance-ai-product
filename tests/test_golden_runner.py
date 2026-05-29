@@ -37,6 +37,16 @@ def _fake_plan(payload):
                 "blocked_engine_ids": [],
                 "production_blocked_engine_ids": ["gis_existing_conditions"],
             },
+            "construction_readiness": {
+                "ready": False,
+                "status": "not_construction_ready",
+                "blockers": [{"area": "existing_conditions", "field": "survey"}],
+            },
+            "construction_package_manifest": {
+                "release_allowed": False,
+                "construction_ready": False,
+                "blockers": [{"area": "existing_conditions", "field": "survey"}],
+            },
         },
     }
 
@@ -81,6 +91,32 @@ class GoldenRunnerTests(unittest.TestCase):
         self.assertIn("required_canonical_signals_missing", result["hard_failures"])
         self.assertIn("benchmark_numeric_expectations_failed", result["hard_failures"])
         self.assertIn("site_boundary", result["missing_canonical_signals"])
+
+    def test_run_scenario_fails_when_construction_release_gates_are_missing(self) -> None:
+        def missing_construction_gates(payload):
+            plan = _fake_plan(payload)
+            plan["meta"].pop("construction_readiness", None)
+            plan["meta"].pop("construction_package_manifest", None)
+            return plan
+
+        result = run_golden_scenario("small_commercial_pad", build_plan_fn=missing_construction_gates)
+
+        self.assertFalse(result["success"])
+        self.assertIn("construction_readiness_missing", result["hard_failures"])
+        self.assertIn("construction_package_manifest_missing", result["hard_failures"])
+
+    def test_run_scenario_fails_when_construction_release_is_allowed_without_civil_readiness(self) -> None:
+        def false_release(payload):
+            plan = _fake_plan(payload)
+            plan["meta"]["construction_readiness"] = {"ready": False, "status": "not_construction_ready"}
+            plan["meta"]["construction_package_manifest"] = {"release_allowed": True}
+            return plan
+
+        result = run_golden_scenario("small_commercial_pad", build_plan_fn=false_release)
+
+        self.assertFalse(result["success"])
+        self.assertIn("construction_release_allowed_without_readiness", result["hard_failures"])
+        self.assertIn("construction_release_allowed_without_civil_production_ready", result["hard_failures"])
 
     def test_run_scenario_fails_when_numeric_expectations_are_implausible(self) -> None:
         def implausible_plan(payload):

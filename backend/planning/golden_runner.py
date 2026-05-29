@@ -303,6 +303,14 @@ def run_golden_scenario(
         hard_failures.append("engine_readiness_missing")
     if not safe_dict(plan.get("meta")).get("civil_design_readiness"):
         hard_failures.append("civil_design_readiness_missing")
+    if not safe_dict(plan.get("meta")).get("construction_readiness"):
+        hard_failures.append("construction_readiness_missing")
+    if not safe_dict(plan.get("meta")).get("construction_package_manifest"):
+        hard_failures.append("construction_package_manifest_missing")
+    if bool(summary.get("construction_release_allowed")) and not bool(summary.get("construction_ready")):
+        hard_failures.append("construction_release_allowed_without_readiness")
+    if bool(summary.get("construction_release_allowed")) and not bool(summary.get("civil_production_ready")):
+        hard_failures.append("construction_release_allowed_without_civil_production_ready")
     return {
         "success": not hard_failures,
         "scenario_id": scenario.scenario_id,
