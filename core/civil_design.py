@@ -1938,6 +1938,10 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
             or _safe_str(company.get("title_block"))
             or _safe_str(company.get("qa_standard"))
         )
+        has_company_approval = bool(
+            _safe_str(company.get("approved_by") or company.get("reviewed_by") or company.get("engineer_name"))
+            and _safe_str(company.get("approval_date") or company.get("review_date") or company.get("effective_date"))
+        )
         if not (has_company_source and has_company_scope):
             blockers.append(
                 _construction_gap(
@@ -1945,6 +1949,15 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                     "company_standards_traceability",
                     "Construction release requires traceable company standards with CAD/sheet/QA scope.",
                     "Attach company standard source/version plus layer, sheet, title block, or QA standard metadata.",
+                )
+            )
+        if not has_company_approval:
+            blockers.append(
+                _construction_gap(
+                    "standards",
+                    "company_standards_approval",
+                    "Construction release requires approved company standards evidence, not only a named profile.",
+                    "Attach approved_by/reviewed_by and approval_date/review_date/effective_date to company standards.",
                 )
             )
 

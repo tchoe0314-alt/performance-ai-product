@@ -123,6 +123,8 @@ def _production_ready_meta() -> dict:
         "version": "2026.05",
         "cad_layer_standard": "CIVORA_TEST",
         "title_block": "CIVORA",
+        "approved_by": "QA Manager",
+        "approval_date": "2026-05-01",
         "production_usable": True,
     }
     meta["survey"] = {
@@ -600,6 +602,18 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertFalse(readiness["ready"])
         self.assertIn(("standards", "company_standards_production_usable"), blockers)
         self.assertIn(("standards", "company_standards_traceability"), blockers)
+        self.assertIn(("standards", "company_standards_approval"), blockers)
+
+    def test_construction_readiness_blocks_unapproved_company_standards(self) -> None:
+        meta = _production_ready_meta()
+        meta["company_standards"].pop("approved_by", None)
+        meta["company_standards"].pop("approval_date", None)
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("standards", "company_standards_approval"), blockers)
 
     def test_construction_readiness_requires_qa_and_reactive_reports_to_exist(self) -> None:
         meta = _production_ready_meta()
