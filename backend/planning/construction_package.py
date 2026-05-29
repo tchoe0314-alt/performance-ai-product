@@ -104,6 +104,17 @@ def _model_reference(rec: Dict[str, Any]) -> str:
     )
 
 
+def _package_identity(rec: Dict[str, Any]) -> str:
+    return safe_str(
+        rec.get("id")
+        or rec.get("package_id")
+        or rec.get("manifest_id")
+        or rec.get("name")
+        or rec.get("filename")
+        or rec.get("path")
+    )
+
+
 def _expected_model_reference(plan_or_meta: Dict[str, Any], meta: Dict[str, Any]) -> str:
     explicit = _model_reference(meta)
     if explicit:
@@ -170,6 +181,7 @@ def _construction_package_artifact_status(plan_or_meta: Dict[str, Any], meta: Di
     package = _construction_package_record(meta)
     artifacts = _construction_package_artifacts(package)
     artifact_types = {_artifact_type(item) for item in artifacts if _artifact_type(item)}
+    package_identity = _package_identity(package)
     package_model_reference = _model_reference(package)
     expected_model_reference = _expected_model_reference(plan_or_meta, meta)
     missing: List[str] = []
@@ -209,6 +221,7 @@ def _construction_package_artifact_status(plan_or_meta: Dict[str, Any], meta: Di
     )
     complete_for_release = bool(
         package
+        and package_identity
         and not missing
         and not anonymous
         and not stale
@@ -220,6 +233,8 @@ def _construction_package_artifact_status(plan_or_meta: Dict[str, Any], meta: Di
     )
     return {
         "package_present": bool(package),
+        "package_identity": package_identity,
+        "package_identity_present": bool(package_identity),
         "artifact_count": len(artifacts),
         "required": [safe_str(item.get("artifact_id")) for item in REQUIRED_CONSTRUCTION_ARTIFACTS],
         "present": present,
@@ -236,6 +251,30 @@ def _construction_package_artifact_status(plan_or_meta: Dict[str, Any], meta: Di
         "production_ready_flag": production_flag,
         "complete_for_release": complete_for_release,
         "review_package_state": "assembled_traceable" if complete_for_release else "review_only_incomplete",
+}
+
+
+def _professional_package_release_status(meta: Dict[str, Any], package: Dict[str, Any], artifact_status: Dict[str, Any]) -> Dict[str, Any]:
+    professional = safe_dict(meta.get("professional_review") or meta.get("engineer_review"))
+    package_identity = safe_str(artifact_status.get("package_identity")) or _package_identity(package)
+    package_model_reference = safe_str(artifact_status.get("package_model_reference")) or _model_reference(package)
+    professional_model_reference = _model_reference(professional)
+    professional_package_reference = safe_str(
+        professional.get("construction_package_id")
+        or professional.get("reviewed_package_id")
+        or professional.get("package_id")
+        or professional.get("released_package_id")
+    )
+    return {
+        "professional_review_present": bool(professional),
+        "professional_model_reference": professional_model_reference,
+        "professional_package_reference": professional_package_reference,
+        "model_matches_package": bool(
+            professional_model_reference and package_model_reference and professional_model_reference == package_model_reference
+        ),
+        "package_matches_review": bool(
+            professional_package_reference and package_identity and professional_package_reference == package_identity
+        ),
     }
 
 
@@ -251,9 +290,19 @@ def _construction_package_blockers(plan_or_meta: Dict[str, Any], meta: Dict[str,
             }
         ]
     artifact_status = _construction_package_artifact_status(plan_or_meta, meta)
+    professional_release_status = _professional_package_release_status(meta, package, artifact_status)
     package_model_reference = _model_reference(package)
     expected_model_reference = safe_str(artifact_status.get("expected_model_reference"))
     blockers: List[Dict[str, Any]] = []
+    if not bool(artifact_status.get("package_identity_present")):
+        blockers.append(
+            {
+                "area": "deliverables",
+                "field": "construction_package_identity",
+                "why_needed": "Construction package needs a stable package ID/name/path so professional signoff can trace the released package.",
+                "suggested_next_action": "Assign a stable construction package ID or manifest ID before release.",
+            }
+        )
     missing = [safe_str(item) for item in safe_list(artifact_status.get("missing")) if safe_str(item)]
     if missing:
         blockers.append(
@@ -338,6 +387,52 @@ def _construction_package_blockers(plan_or_meta: Dict[str, Any], meta: Dict[str,
                 "suggested_next_action": "Resolve package assembly blockers and mark the package release-ready.",
             }
         )
+    if not bool(professional_release_status.get("professional_review_present")):
+        blockers.append(
+            {
+                "area": "professional_review",
+                "field": "released_package_reference",
+                "why_needed": "Construction package release requires professional review evidence tied to the released package.",
+                "suggested_next_action": "Attach professional_review metadata with reviewed package and canonical model references.",
+            }
+        )
+    elif not safe_str(professional_release_status.get("professional_model_reference")):
+        blockers.append(
+            {
+                "area": "professional_review",
+                "field": "released_model_reference",
+                "why_needed": "Professional release must identify the final canonical model it reviewed.",
+                "suggested_next_action": "Attach canonical_model_id/hash to professional_review before release.",
+            }
+        )
+    elif not bool(professional_release_status.get("model_matches_package")):
+        blockers.append(
+            {
+                "area": "professional_review",
+                "field": "released_model_mismatch",
+                "why_needed": "Professional release canonical model reference does not match the construction package model.",
+                "suggested_next_action": "Reissue professional release evidence against the current final package model reference.",
+            }
+        )
+    if bool(professional_release_status.get("professional_review_present")):
+        if not safe_str(professional_release_status.get("professional_package_reference")):
+            blockers.append(
+                {
+                    "area": "professional_review",
+                    "field": "released_package_reference",
+                    "why_needed": "Professional release must identify the construction package it reviewed.",
+                    "suggested_next_action": "Attach reviewed_package_id or construction_package_id to professional_review.",
+                }
+            )
+        elif not bool(professional_release_status.get("package_matches_review")):
+            blockers.append(
+                {
+                    "area": "professional_review",
+                    "field": "released_package_mismatch",
+                    "why_needed": "Professional release package reference does not match the assembled construction package.",
+                    "suggested_next_action": "Reissue professional release evidence against the current construction package ID.",
+                }
+            )
     return blockers
 
 
@@ -393,6 +488,11 @@ def build_construction_package_manifest(plan_or_meta: Dict[str, Any]) -> Dict[st
     evidence = safe_dict(readiness.get("evidence"))
     expected_model_reference = _expected_model_reference(plan_or_meta, meta)
     artifact_status = _construction_package_artifact_status(plan_or_meta, meta)
+    professional_release_status = _professional_package_release_status(
+        meta,
+        _construction_package_record(meta),
+        artifact_status,
+    )
     package_blockers = _construction_package_blockers(plan_or_meta, meta) if readiness.get("ready") is True else []
     blockers = _unique_blockers([*blockers, *package_blockers])
     sections = [
@@ -415,6 +515,7 @@ def build_construction_package_manifest(plan_or_meta: Dict[str, Any]) -> Dict[st
         "construction_readiness_score": readiness.get("score"),
         "expected_canonical_model_reference": expected_model_reference,
         "construction_package_artifact_status": artifact_status,
+        "professional_package_release_status": professional_release_status,
         "sections": sections,
         "blocked_sections": blocked_sections,
         "review_sections": review_sections,

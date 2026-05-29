@@ -94,6 +94,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
                 "warnings": [],
             },
             "construction_deliverable_package": {
+                "id": "PKG-IFC-1",
                 "release_ready": True,
                 "canonical_model_id": "MODEL-FINAL-1",
                 "artifacts": [
@@ -104,6 +105,19 @@ class ConstructionPackageManifestTests(unittest.TestCase):
                     {"type": "construction_manifest", "id": "MANIFEST-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
                 ],
             },
+            "professional_review": {
+                "status": "released_for_construction",
+                "sealed": True,
+                "engineer_name": "Alex Morgan",
+                "license_number": "TX-123456",
+                "review_date": "2026-05-29",
+                "jurisdiction": "Test City",
+                "license_jurisdiction": "TX",
+                "discipline": "civil",
+                "review_scope": "civil_site_construction_documents",
+                "canonical_model_id": "MODEL-FINAL-1",
+                "reviewed_package_id": "PKG-IFC-1",
+            },
         }
 
         manifest = build_construction_package_manifest({"meta": meta})
@@ -113,10 +127,13 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         self.assertFalse(manifest["blocked_sections"])
         artifact_status = manifest["construction_package_artifact_status"]
         self.assertTrue(artifact_status["package_present"])
+        self.assertEqual(artifact_status["package_identity"], "PKG-IFC-1")
         self.assertTrue(artifact_status["complete_for_release"])
         self.assertEqual(artifact_status["package_model_reference"], "MODEL-FINAL-1")
         self.assertFalse(artifact_status["missing"])
         self.assertFalse(artifact_status["untraced"])
+        self.assertTrue(manifest["professional_package_release_status"]["model_matches_package"])
+        self.assertTrue(manifest["professional_package_release_status"]["package_matches_review"])
         self.assertTrue(all(section["ready"] for section in manifest["sections"]))
 
     def test_manifest_blocks_ready_engineering_without_assembled_package_artifacts(self) -> None:
@@ -301,6 +318,91 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         self.assertIn(("deliverables", "construction_package_artifact_identity"), fields)
         self.assertEqual(manifest["construction_package_artifact_status"]["anonymous"], ["sheets"])
 
+    def test_manifest_blocks_package_without_stable_package_identity(self) -> None:
+        meta = {
+            "construction_readiness": {
+                "ready": True,
+                "status": "construction_ready",
+                "score": 100.0,
+                "evidence": {
+                    "civil_production_ready": True,
+                    "existing_conditions_production_ready": True,
+                    "standards_production_usable": True,
+                    "export_production_ready": True,
+                    "cost_production_usable": True,
+                    "professional_release": True,
+                },
+                "blockers": [],
+                "warnings": [],
+            },
+            "construction_deliverable_package": {
+                "release_ready": True,
+                "canonical_model_id": "MODEL-FINAL-1",
+                "artifacts": [
+                    {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "cad_export", "id": "CAD-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "qa_report", "id": "QA-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "cost_estimate", "id": "COST-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "construction_manifest", "id": "MANIFEST-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                ],
+            },
+            "professional_review": {
+                "canonical_model_id": "MODEL-FINAL-1",
+                "reviewed_package_id": "PKG-MISSING",
+            },
+        }
+
+        manifest = build_construction_package_manifest({"meta": meta})
+        fields = {(item["area"], item["field"]) for item in manifest["blockers"]}
+
+        self.assertFalse(manifest["release_allowed"])
+        self.assertIn(("deliverables", "construction_package_identity"), fields)
+        self.assertFalse(manifest["construction_package_artifact_status"]["package_identity_present"])
+
+    def test_manifest_blocks_professional_release_not_tied_to_final_package(self) -> None:
+        meta = {
+            "construction_readiness": {
+                "ready": True,
+                "status": "construction_ready",
+                "score": 100.0,
+                "evidence": {
+                    "civil_production_ready": True,
+                    "existing_conditions_production_ready": True,
+                    "standards_production_usable": True,
+                    "export_production_ready": True,
+                    "cost_production_usable": True,
+                    "professional_release": True,
+                },
+                "blockers": [],
+                "warnings": [],
+            },
+            "construction_deliverable_package": {
+                "id": "PKG-IFC-1",
+                "release_ready": True,
+                "canonical_model_id": "MODEL-FINAL-1",
+                "artifacts": [
+                    {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "cad_export", "id": "CAD-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "qa_report", "id": "QA-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "cost_estimate", "id": "COST-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "construction_manifest", "id": "MANIFEST-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                ],
+            },
+            "professional_review": {
+                "canonical_model_id": "MODEL-OLD",
+                "reviewed_package_id": "PKG-OLD",
+            },
+        }
+
+        manifest = build_construction_package_manifest({"meta": meta})
+        fields = {(item["area"], item["field"]) for item in manifest["blockers"]}
+
+        self.assertFalse(manifest["release_allowed"])
+        self.assertIn(("professional_review", "released_model_mismatch"), fields)
+        self.assertIn(("professional_review", "released_package_mismatch"), fields)
+        self.assertFalse(manifest["professional_package_release_status"]["model_matches_package"])
+        self.assertFalse(manifest["professional_package_release_status"]["package_matches_review"])
+
     def test_manifest_blocks_package_model_reference_that_does_not_match_final_plan(self) -> None:
         plan = {
             "project_name": "Final Model Package",
@@ -331,6 +433,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
                     "warnings": [],
                 },
                 "construction_deliverable_package": {
+                    "id": "PKG-IFC-1",
                     "release_ready": True,
                     "canonical_model_id": "MODEL-OLD",
                     "artifacts": [
@@ -340,6 +443,10 @@ class ConstructionPackageManifestTests(unittest.TestCase):
                         {"type": "cost_estimate", "id": "COST-1", "current": True, "canonical_model_id": "MODEL-OLD"},
                         {"type": "construction_manifest", "id": "MANIFEST-1", "current": True, "canonical_model_id": "MODEL-OLD"},
                     ],
+                },
+                "professional_review": {
+                    "canonical_model_id": "MODEL-OLD",
+                    "reviewed_package_id": "PKG-IFC-1",
                 },
             },
         }
@@ -385,6 +492,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         }
         expected = build_construction_package_manifest(plan)["expected_canonical_model_reference"]
         plan["meta"]["construction_deliverable_package"] = {
+            "id": "PKG-IFC-1",
             "release_ready": True,
             "canonical_model_id": expected,
             "artifacts": [
@@ -395,6 +503,10 @@ class ConstructionPackageManifestTests(unittest.TestCase):
                 {"type": "construction_manifest", "id": "MANIFEST-1", "current": True, "canonical_model_id": expected},
             ],
         }
+        plan["meta"]["professional_review"] = {
+            "canonical_model_id": expected,
+            "reviewed_package_id": "PKG-IFC-1",
+        }
 
         manifest = build_construction_package_manifest(plan)
 
@@ -403,6 +515,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         artifact_status = manifest["construction_package_artifact_status"]
         self.assertTrue(artifact_status["model_matches_expected"])
         self.assertTrue(artifact_status["complete_for_release"])
+        self.assertTrue(manifest["professional_package_release_status"]["model_matches_package"])
 
 
 if __name__ == "__main__":
