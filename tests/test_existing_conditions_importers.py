@@ -202,6 +202,33 @@ class ExistingConditionsImporterTests(unittest.TestCase):
             "sources": [{"source": "merged", "source_type": "test", "success": True}],
             "survey": {
                 "point_count": 4,
+                "benchmark": "BM-1",
+                "datum": "NAVD88",
+                "control_verified": True,
+                "points": [
+                    {"x": 0.0, "y": 0.0, "z": 100.0},
+                    {"x": 10.0, "y": 0.0, "z": 101.0},
+                    {"x": 0.0, "y": 10.0, "z": 99.0},
+                    {"x": 10.0, "y": 10.0, "z": 100.0},
+                ],
+                "breakline_count": 1,
+                "breaklines": [{"name": "BL-1"}],
+            },
+            "gis_layers": {layer: [{"id": layer}] for layer in ("parcels", "easements", "row", "floodplain", "wetlands", "existing_utilities")},
+            "coordinate_system": {"epsg": "EPSG:2276", "units": "ft", "source": "survey_control"},
+            "coordinate_systems": [{"epsg": "EPSG:2276", "units": "ft", "source": "survey_control"}],
+        }
+
+        validation = validate_imported_existing_conditions_package(merged)
+
+        self.assertTrue(validation["production_usable"])
+        self.assertFalse(validation["blockers"])
+
+    def test_import_package_validation_blocks_missing_control_metadata(self) -> None:
+        merged = {
+            "sources": [{"source": "merged", "source_type": "test", "success": True}],
+            "survey": {
+                "point_count": 4,
                 "points": [
                     {"x": 0.0, "y": 0.0, "z": 100.0},
                     {"x": 10.0, "y": 0.0, "z": 101.0},
@@ -217,9 +244,13 @@ class ExistingConditionsImporterTests(unittest.TestCase):
         }
 
         validation = validate_imported_existing_conditions_package(merged)
+        fields = {item["field"] for item in validation["blockers"]}
 
-        self.assertTrue(validation["production_usable"])
-        self.assertFalse(validation["blockers"])
+        self.assertFalse(validation["production_usable"])
+        self.assertIn("coordinate_system_source", fields)
+        self.assertIn("survey_benchmark", fields)
+        self.assertIn("survey_datum", fields)
+        self.assertIn("survey_control_verified", fields)
 
     def test_import_package_validation_blocks_geographic_crs_for_engineering_truth(self) -> None:
         merged = {

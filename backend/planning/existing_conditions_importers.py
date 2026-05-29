@@ -32,6 +32,7 @@ HEAVY_FORMAT_REQUIREMENTS = {
 }
 GEOGRAPHIC_EPSG_CODES = {"4326", "4269", "4258"}
 ENGINEERING_UNITS = {"ft", "foot", "feet", "us-ft", "us_survey_ft", "survey_ft", "m", "meter", "meters", "metre", "metres"}
+COORDINATE_SOURCE_KEYS = ("source", "authority", "control_source", "source_url", "official_source_url", "survey_control")
 
 
 def _normalized_field_map(fieldnames: Iterable[str]) -> Dict[str, str]:
@@ -140,6 +141,13 @@ def _coordinate_validation(value: Dict[str, Any]) -> Dict[str, Any]:
         blockers.append({"field": "coordinate_system", "reason": "Coordinate system metadata is incomplete.", "missing_fields": missing})
     if safe_str(coord.get("epsg")) in {"EPSG:3857", "EPSG:900913"}:
         warnings.append("Web Mercator is not survey-grade for civil engineering quantities; confirm a local projected CRS.")
+    if not any(safe_str(coord.get(key)) for key in COORDINATE_SOURCE_KEYS):
+        blockers.append(
+            {
+                "field": "coordinate_system_source",
+                "reason": "Coordinate system needs source/control metadata before imported conditions are production-usable.",
+            }
+        )
     return {
         "valid": not blockers,
         "production_usable": not blockers,
@@ -929,6 +937,28 @@ def validate_imported_existing_conditions_package(
         )
     elif point_count >= 3 and breakline_count <= 0:
         warnings.append("Survey points are present, but no breaklines were imported.")
+    if point_count > 0:
+        if not safe_str(survey.get("benchmark") or survey.get("benchmark_id")):
+            blockers.append(
+                {
+                    "field": "survey_benchmark",
+                    "reason": "Survey import needs benchmark evidence before it is production-usable.",
+                }
+            )
+        if not safe_str(survey.get("datum") or survey.get("vertical_datum")):
+            blockers.append(
+                {
+                    "field": "survey_datum",
+                    "reason": "Survey import needs vertical datum evidence before it is production-usable.",
+                }
+            )
+        if survey.get("control_verified") is not True:
+            blockers.append(
+                {
+                    "field": "survey_control_verified",
+                    "reason": "Survey/control evidence must be explicitly verified before production use.",
+                }
+            )
 
     gis_layers = safe_dict(rec.get("gis_layers") or rec.get("existing_conditions"))
     layer_counts = {layer: len(safe_list(gis_layers.get(layer))) for layer in REQUIRED_GIS_LAYERS}
