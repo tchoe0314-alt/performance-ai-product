@@ -63,7 +63,7 @@ class Phase1TruthGateTests(unittest.TestCase):
         self.assertTrue(audit["canonical_integrity"]["blocked"])
         self.assertIn("storm_pipes", audit["canonical_integrity"]["cache_only_stages"])
         self.assertIn("storm_pipes", audit["canonical_integrity"]["dirty_stages"])
-        self.assertFalse(audit["summary"]["stale_output_blocking"])
+        self.assertTrue(audit["summary"]["stale_output_blocking"])
 
     def test_quantity_result_is_not_production_success_when_canonical_integrity_is_blocked(self) -> None:
         plan = _site_plan()

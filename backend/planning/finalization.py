@@ -646,7 +646,7 @@ def canonical_truth_audit(
             "graph_validity": not any(safe_str(item.get("code")) in {"STORM_GRAPH_VALID", "SANITARY_GRAPH_VALID"} for item in failing),
             "quantity_alignment": not any(safe_str(item.get("code")) in {"PIPE_LENGTH_CONSISTENT", "UTILITY_LENGTH_CONSISTENT", "SANITARY_LENGTH_CONSISTENT", "QUANTITY_AREA_VALID"} for item in failing),
             "conflict_integrity": not any(safe_str(item.get("code")) == "CONFLICT_INTEGRITY" for item in failing),
-            "stale_output_blocking": not bool(integrity.get("blocked")),
+            "stale_output_blocking": bool(integrity.get("blocked")),
         },
         "canonical_integrity": deepcopy(integrity),
         "engineering_trust_score": round(max(0.0, 100.0 - penalty), 1),
