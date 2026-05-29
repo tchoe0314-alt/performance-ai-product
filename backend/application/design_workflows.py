@@ -511,6 +511,10 @@ def construction_release_blockers_from_meta(meta: Dict[str, Any], *, requires_co
             blockers.append("construction_package_untraced_artifacts")
         if list(artifact_status.get("mismatched") or []):
             blockers.append("construction_package_mismatched_artifacts")
+        if list(artifact_status.get("cost_untraced") or []):
+            blockers.append("construction_package_cost_untraced")
+        if list(artifact_status.get("cost_mismatched") or []):
+            blockers.append("construction_package_cost_mismatched")
     return blockers
 
 

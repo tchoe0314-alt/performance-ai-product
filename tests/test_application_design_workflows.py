@@ -370,6 +370,46 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertEqual(summary["reliability_summary"]["operational_state"], "retryable")
         self.assertIn("construction_readiness_blocked", summary["convergence_summary"]["blocked_reasons"])
 
+    def test_build_run_summary_surfaces_untraced_cost_package_artifact(self):
+        summary = build_run_summary(
+            {
+                "success": True,
+                "final_plan": {
+                    "actions": [{"layer": "SITE"}],
+                    "meta": {
+                        "deliverables": {"requested": [], "produced": [], "failed": []},
+                        "convergence_summary": {
+                            "converged": True,
+                            "blocked_exports": [],
+                            "blocked_reasons": [],
+                            "unresolved_conflict_count": 0,
+                        },
+                        "construction_readiness": {"ready": True, "status": "construction_ready", "blockers": []},
+                        "construction_package_manifest": {
+                            "release_allowed": False,
+                            "construction_package_artifact_status": {
+                                "package_present": True,
+                                "missing": [],
+                                "anonymous": [],
+                                "stale": [],
+                                "model_reference_present": True,
+                                "model_matches_expected": True,
+                                "untraced": [],
+                                "mismatched": [],
+                                "cost_untraced": ["COST-1"],
+                            },
+                        },
+                    },
+                },
+            },
+            source="unit_test",
+        )
+
+        reasons = summary["convergence_summary"]["blocked_reasons"]
+        self.assertFalse(summary["reliability_summary"]["release_ready"])
+        self.assertIn("construction_package_blocked", reasons)
+        self.assertIn("construction_package_cost_untraced", reasons)
+
     def test_build_run_summary_marks_release_ready_skipped_phases_complete(self):
         summary = build_run_summary(
             {
