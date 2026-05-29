@@ -243,6 +243,42 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         self.assertIn(("deliverables", "untraced_construction_package_artifacts"), fields)
         self.assertIn(("deliverables", "mismatched_construction_package_artifacts"), fields)
 
+    def test_manifest_blocks_anonymous_package_artifacts(self) -> None:
+        meta = {
+            "construction_readiness": {
+                "ready": True,
+                "status": "construction_ready",
+                "score": 100.0,
+                "evidence": {
+                    "civil_production_ready": True,
+                    "existing_conditions_production_ready": True,
+                    "standards_production_usable": True,
+                    "export_production_ready": True,
+                    "cost_production_usable": True,
+                    "professional_release": True,
+                },
+                "blockers": [],
+                "warnings": [],
+            },
+            "construction_deliverable_package": {
+                "release_ready": True,
+                "canonical_model_id": "MODEL-FINAL-1",
+                "artifacts": [
+                    {"type": "sheets", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "cad_export", "id": "CAD-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "qa_report", "id": "QA-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "cost_estimate", "id": "COST-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "construction_manifest", "id": "MANIFEST-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                ],
+            },
+        }
+
+        manifest = build_construction_package_manifest({"meta": meta})
+        fields = {(item["area"], item["field"]) for item in manifest["blockers"]}
+
+        self.assertFalse(manifest["release_allowed"])
+        self.assertIn(("deliverables", "construction_package_artifact_identity"), fields)
+
 
 if __name__ == "__main__":
     unittest.main()

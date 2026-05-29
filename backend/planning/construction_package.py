@@ -140,6 +140,22 @@ def _construction_package_blockers(meta: Dict[str, Any]) -> List[Dict[str, Any]]
                 "suggested_next_action": "Regenerate the construction deliverable package with every required artifact type.",
             }
         )
+    anonymous = [
+        safe_str(item.get("type") or item.get("artifact_type"), "artifact")
+        for item in artifacts
+        if not safe_str(item.get("id") or item.get("artifact_id") or item.get("name") or item.get("filename") or item.get("path"))
+    ]
+    if anonymous:
+        blockers.append(
+            {
+                "area": "deliverables",
+                "field": "construction_package_artifact_identity",
+                "why_needed": "Construction package artifacts need stable IDs, names, filenames, or paths for release traceability: "
+                + ", ".join(anonymous[:5])
+                + ".",
+                "suggested_next_action": "Regenerate or annotate package artifacts with stable IDs/filenames before release.",
+            }
+        )
     stale = [
         safe_str(item.get("id") or item.get("name") or item.get("type") or item.get("artifact_type"), "artifact")
         for item in artifacts
