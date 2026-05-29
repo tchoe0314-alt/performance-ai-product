@@ -1213,6 +1213,31 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
             "dxf",
         )
 
+    def test_export_dxf_artifact_blocks_required_construction_release_without_readiness(self):
+        service = FakeArtifactService()
+        store = FakeProjectStore()
+        result_data = {
+            "final_plan": {
+                "project_name": "Blocked IFC DXF",
+                "actions": [{"task": "polyline", "layer": "LOT", "points": [[0, 0], [1, 0]]}],
+                "meta": {"construction_release_required": True},
+            }
+        }
+
+        with self.assertRaises(HTTPException) as ctx:
+            export_dxf_artifact(
+                artifact_service=service,
+                project_store=store,
+                user_id="u1",
+                project_id="p1",
+                result_data=result_data,
+                filename_stem="blocked-ifc",
+            )
+
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn("construction_readiness_missing", str(ctx.exception.detail))
+        self.assertIsNone(service.dxf_export)
+
     def test_export_report_artifact_updates_project_workflow(self):
         service = FakeArtifactService()
         store = FakeProjectStore()

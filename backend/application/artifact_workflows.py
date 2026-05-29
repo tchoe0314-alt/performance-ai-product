@@ -920,6 +920,20 @@ def export_dxf_artifact(
         project_id=project_id,
     )
     final_plan = _display_plan_from_result(result_data, enforce_export_guards=False)
+    final_meta = dict(final_plan.get("meta") or {})
+    if final_plan_requires_construction_release(final_plan):
+        construction_blockers = construction_release_blockers_from_meta(
+            final_meta,
+            requires_construction_release=True,
+        )
+        if construction_blockers:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "DXF export is blocked because construction release evidence is incomplete: "
+                    + ", ".join(construction_blockers)
+                ),
+            )
     from output.dxf_exporter import finalize_export_metadata
 
     finalize_export_metadata(final_plan)
