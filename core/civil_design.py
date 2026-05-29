@@ -1791,6 +1791,13 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
         )
 
     wall = _safe_dict(meta.get("retaining_wall_summary"))
+    structures_meta = _safe_dict(meta.get("structures") or meta.get("structure_summary"))
+    grading_meta = _safe_dict(meta.get("grading") or meta.get("grading_summary"))
+    retaining_walls = (
+        _safe_list(meta.get("retaining_walls"))
+        or _safe_list(structures_meta.get("retaining_walls"))
+        or _safe_list(grading_meta.get("retaining_walls"))
+    )
     if wall and wall.get("review_required") is True:
         blockers.append(
             _construction_gap(
@@ -1800,6 +1807,64 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                 "Attach sealed wall calculations or remove construction-ready wall claims.",
             )
         )
+    if retaining_walls:
+        wall_tie_in_checks = (
+            _safe_list(wall.get("wall_tie_in_checks"))
+            or _safe_list(structures_meta.get("wall_tie_in_checks"))
+            or _safe_list(grading_meta.get("wall_tie_in_checks"))
+        )
+        if not wall_tie_in_checks:
+            blockers.append(
+                _construction_gap(
+                    "structures",
+                    "retaining_wall_tie_ins",
+                    "Construction release requires retaining wall top/bottom tie-in checks against grading.",
+                    "Run retaining wall tie-in validation and attach wall_tie_in_checks.",
+                )
+            )
+        missing_height = False
+        tall_wall = False
+        for index, raw_wall in enumerate(retaining_walls, start=1):
+            rec = _safe_dict(raw_wall)
+            height = max(
+                _safe_float(rec.get("height_ft"), 0.0),
+                _safe_float(rec.get("max_height_ft"), 0.0),
+                _safe_float(rec.get("exposed_height_ft"), 0.0),
+            )
+            if height <= 0.0:
+                missing_height = True
+            if height > 4.0:
+                tall_wall = True
+            if not _safe_str(rec.get("id") or rec.get("name")):
+                missing_height = True
+        if missing_height:
+            blockers.append(
+                _construction_gap(
+                    "structures",
+                    "retaining_wall_geometry",
+                    "Construction release requires retaining wall IDs and height evidence for structural review.",
+                    "Attach retaining wall IDs/names and max/exposed height metadata.",
+                )
+            )
+        structural_review = _safe_dict(
+            meta.get("retaining_wall_design_review")
+            or wall.get("structural_review")
+            or structures_meta.get("retaining_wall_design_review")
+        )
+        review_cleared = (
+            structural_review.get("sealed") is True
+            and bool(_safe_str(structural_review.get("reviewed_by") or structural_review.get("engineer_name")))
+            and bool(_safe_str(structural_review.get("review_date") or structural_review.get("sealed_date")))
+        )
+        if tall_wall and not review_cleared:
+            blockers.append(
+                _construction_gap(
+                    "structures",
+                    "retaining_wall_structural_review",
+                    "Retaining walls taller than 4 ft need structural review evidence before construction release.",
+                    "Attach sealed retaining wall design review with reviewer and review date metadata.",
+                )
+            )
 
     professional = _safe_dict(meta.get("professional_review") or meta.get("engineer_review"))
     professional_validation = validate_professional_release(professional)

@@ -499,6 +499,54 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertIn(("deliverables", "canonical_id_traceability"), blockers)
         self.assertIn(("deliverables", "sheet_registry"), blockers)
 
+    def test_construction_readiness_blocks_retaining_wall_without_tie_ins_and_structural_review(self) -> None:
+        meta = _production_ready_meta()
+        meta["professional_review"] = {
+            "status": "released_for_construction",
+            "sealed": True,
+            "engineer_name": "Alex Morgan",
+            "license_number": "TX-123456",
+            "review_date": "2026-05-28",
+            "jurisdiction": "Test City",
+            "license_jurisdiction": "TX",
+            "discipline": "civil",
+            "review_scope": "civil_site_construction_documents",
+        }
+        meta["retaining_walls"] = [{"id": "RW-1", "max_height_ft": 6.5}]
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("structures", "retaining_wall_tie_ins"), blockers)
+        self.assertIn(("structures", "retaining_wall_structural_review"), blockers)
+
+    def test_construction_readiness_accepts_retaining_wall_with_traceable_review(self) -> None:
+        meta = _production_ready_meta()
+        meta["professional_review"] = {
+            "status": "released_for_construction",
+            "sealed": True,
+            "engineer_name": "Alex Morgan",
+            "license_number": "TX-123456",
+            "review_date": "2026-05-28",
+            "jurisdiction": "Test City",
+            "license_jurisdiction": "TX",
+            "discipline": "civil",
+            "review_scope": "civil_site_construction_documents",
+        }
+        meta["retaining_walls"] = [{"id": "RW-1", "max_height_ft": 6.5}]
+        meta["structures"] = {"wall_tie_in_checks": [{"wall_id": "RW-1", "valid": True}]}
+        meta["retaining_wall_design_review"] = {
+            "sealed": True,
+            "reviewed_by": "Structural Engineer",
+            "review_date": "2026-05-28",
+        }
+
+        readiness = construction_readiness({"meta": meta})
+
+        self.assertTrue(readiness["ready"])
+        self.assertFalse(readiness["blockers"])
+
     def test_construction_readiness_can_clear_with_verified_professional_release(self) -> None:
         meta = _production_ready_meta()
         meta["professional_review"] = {
