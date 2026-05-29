@@ -303,6 +303,44 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertEqual(summary["convergence_summary"]["blocked_exports"], [])
         self.assertEqual(summary["convergence_summary"]["blocked_reasons"], [])
 
+    def test_build_run_summary_does_not_count_assumed_stage_as_complete(self):
+        summary = build_run_summary(
+            {
+                "success": True,
+                "final_plan": {
+                    "actions": [{"layer": "SITE"}],
+                    "meta": {
+                        "stage_completeness": {
+                            "statuses": {
+                                "layout": "complete",
+                                "sanitary": "assumed",
+                            },
+                            "stages": [
+                                {"stage_name": "layout", "completeness": "complete"},
+                                {
+                                    "stage_name": "sanitary",
+                                    "message": "Sanitary placeholder assumed without tie-in evidence.",
+                                    "completeness": "assumed",
+                                },
+                            ],
+                        },
+                        "deliverables": {"requested": [], "produced": [], "failed": []},
+                        "convergence_summary": {
+                            "converged": False,
+                            "blocked_exports": [],
+                            "blocked_reasons": [],
+                            "unresolved_conflict_count": 0,
+                        },
+                    },
+                },
+            },
+            source="unit_test",
+        )
+
+        self.assertEqual(summary["phase_checkpoints"]["utilities"]["status"], "partial")
+        self.assertFalse(summary["phase_checkpoints"]["utilities"]["ready"])
+        self.assertEqual(summary["phase_checkpoints"]["combined_view"]["completed_phase_count"], 1)
+
     def test_build_run_summary_blocks_release_when_construction_gate_is_blocked(self):
         summary = build_run_summary(
             {

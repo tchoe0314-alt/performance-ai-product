@@ -186,8 +186,10 @@ def _build_phase_checkpoints(
             return "failed"
         if raw_status in {"running", "in_progress", "started"}:
             return "running"
-        if raw_status in {"complete", "assumed"}:
+        if raw_status == "complete":
             return "complete"
+        if raw_status == "assumed":
+            return "pending" if _is_benign_skip_message(_stage_message(stage_name)) else "partial"
         if raw_status == "partial" and _is_benign_skip_message(_stage_message(stage_name)):
             return "complete"
         return raw_status

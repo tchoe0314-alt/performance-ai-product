@@ -608,8 +608,10 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
 
         def _normalized_stage_state(stage_key: str) -> str:
             raw = compact_stage_statuses.get(stage_key, "")
-            if raw in {"complete", "assumed"}:
+            if raw == "complete":
                 return "complete"
+            if raw == "assumed":
+                return "partial"
             if raw in {"running", "in_progress", "started"}:
                 return "running"
             if raw == "failed":

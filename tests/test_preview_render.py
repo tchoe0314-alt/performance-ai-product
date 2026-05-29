@@ -1,6 +1,7 @@
 import unittest
 
 from output.preview import (
+    build_preview_annotations,
     _choose_view_bounds,
     _expand_bounds,
     _filtered_preview_actions,
@@ -49,6 +50,41 @@ class PreviewRenderTests(unittest.TestCase):
 
         self.assertLess(_preview_draw_priority(pavement), _preview_draw_priority(drain))
         self.assertLess(_preview_draw_priority(drain), _preview_draw_priority(label))
+
+    def test_preview_stage_diagnostics_do_not_treat_assumed_as_complete(self):
+        annotations = build_preview_annotations(
+            {
+                "actions": [
+                    {
+                        "task": "rectangle",
+                        "layer": "SITE",
+                        "x": 0,
+                        "y": 0,
+                        "w": 100,
+                        "h": 80,
+                        "meta": {"preview_role": "final", "system": "layout"},
+                    }
+                ],
+                "meta": {
+                    "stage_completeness": {
+                        "statuses": {"layout": "assumed"},
+                        "stages": [
+                            {
+                                "stage_name": "layout",
+                                "message": "Layout used an assumed placeholder.",
+                                "completeness": "assumed",
+                            }
+                        ],
+                    }
+                },
+            },
+            preview_mode="engineering",
+        )
+
+        self.assertEqual(
+            annotations["audit"]["stage_diagnostics"]["layout"]["status"],
+            "partial",
+        )
 
     def test_choose_view_bounds_prefers_primary_layout_cluster(self):
         drawn_items = [

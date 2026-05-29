@@ -306,8 +306,10 @@ def _safe_stage_status(raw: str) -> str:
     status = safe_text(raw, "").strip().lower()
     if not status:
         return "pending"
-    if status in {"complete", "assumed", "partial"}:
-        return "complete" if status in {"complete", "assumed"} else "partial"
+    if status == "complete":
+        return "complete"
+    if status in {"assumed", "partial"}:
+        return "partial"
     if status in {"failed", "blocked"}:
         return "failed"
     if status in {"running", "started", "in_progress"}:

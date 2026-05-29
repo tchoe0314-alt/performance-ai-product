@@ -1133,6 +1133,45 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertEqual(review["phase_checkpoints"]["combined_view"]["status"], "partial")
         self.assertEqual(review["phase_checkpoints"]["combined_view"]["completed_phase_count"], 3)
 
+    def test_build_preview_response_does_not_count_assumed_stage_as_complete(self):
+        service = FakeArtifactService()
+        response = build_preview_response(
+            artifact_service=service,
+            result_data={
+                "run_summary": {
+                    "engineering_status": {"trust_score": 60.0},
+                    "reliability_summary": {"operational_state": "review", "release_ready": False},
+                    "optimization_summary": {},
+                    "convergence_summary": {"converged": False, "blocked_exports": [], "blocked_reasons": []},
+                    "phase_checkpoints": {
+                        "layout": {"label": "Layout", "status": "complete", "ready": True, "has_data": True},
+                        "grading": {"label": "Grading", "status": "pending", "ready": False, "has_data": False},
+                        "drainage_storm": {"label": "Drainage and Storm", "status": "pending", "ready": False, "has_data": False},
+                        "utilities": {"label": "Utilities", "status": "pending", "ready": False, "has_data": False},
+                        "coordination_validation": {"label": "Coordination and Validation", "status": "pending", "ready": False, "has_data": False},
+                        "combined_view": {"label": "Combined View", "status": "partial", "ready": False, "completed_phase_count": 1, "total_phase_count": 5},
+                    },
+                },
+                "final_plan": {
+                    "project_name": "Assumed Utilities",
+                    "actions": [{"layer": "SITE"}],
+                    "meta": {
+                        "stage_completeness": {
+                            "statuses": {
+                                "layout": "complete",
+                                "sanitary": "assumed",
+                            }
+                        }
+                    },
+                },
+            },
+        )
+
+        review = response["summary"]["review"]
+        self.assertEqual(review["phase_checkpoints"]["utilities"]["status"], "partial")
+        self.assertFalse(review["phase_checkpoints"]["utilities"]["ready"])
+        self.assertEqual(review["phase_checkpoints"]["combined_view"]["completed_phase_count"], 1)
+
     def test_build_preview_response_drops_general_when_other_review_categories_exist(self):
         service = FakeArtifactService()
         response = build_preview_response(
