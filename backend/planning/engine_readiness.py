@@ -239,6 +239,8 @@ def _explicit_blockers_for_engine(engine_id: str, meta: Dict[str, Any]) -> List[
         quantities = _safe_dict(meta.get("quantities"))
         explain = _safe_dict(quantities.get("explain"))
         meta_summary = _safe_dict(explain.get("meta_summary"))
+        cost = _safe_dict(meta.get("cost_estimate"))
+        cost_explain = _safe_dict(cost.get("explain"))
         if quantities and quantities.get("success") is False:
             blockers.append(
                 {
@@ -263,6 +265,43 @@ def _explicit_blockers_for_engine(engine_id: str, meta: Dict[str, Any]) -> List[
                     "area": "quantity",
                     "field": "trace_gaps",
                     "message": "Quantity readiness is blocked by unresolved source trace gaps.",
+                    "severity": "blocker",
+                }
+            )
+        if not cost:
+            blockers.append(
+                {
+                    "area": "quantity",
+                    "field": "cost_estimate",
+                    "message": "Quantity readiness is blocked because no cost estimate has been generated from the takeoff.",
+                    "severity": "blocker",
+                }
+            )
+        elif cost.get("success") is False:
+            blockers.append(
+                {
+                    "area": "quantity",
+                    "field": "cost_success",
+                    "message": "Quantity readiness is blocked because the cost engine reported review-only or failed cost output.",
+                    "severity": "blocker",
+                }
+            )
+        if _safe_dict(cost_explain.get("trace_gaps")):
+            blockers.append(
+                {
+                    "area": "quantity",
+                    "field": "cost_traceability",
+                    "message": "Cost readiness is blocked because priced quantities are not traceable to canonical source IDs.",
+                    "severity": "blocker",
+                }
+            )
+        pricing = _safe_dict(cost_explain.get("pricing"))
+        if pricing and pricing.get("production_usable") is not True:
+            blockers.append(
+                {
+                    "area": "quantity",
+                    "field": "pricing_source",
+                    "message": "Cost readiness is blocked for production because unit prices are concept defaults or lack production source approval.",
                     "severity": "blocker",
                 }
             )

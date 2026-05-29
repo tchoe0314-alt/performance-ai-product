@@ -322,9 +322,10 @@ class JobQueueService:
         )
         result.update(_job_progress_payload("Queued Next Phase", detail, 64))
         self._update_job_state(job_id, status="queued", result=result, error=None)
-        self._queue.put(job_id)
         updated = self.get_job(user_id=user_id, job_id=job_id)
-        return None if updated is None else self._job_summary(updated)
+        summary = None if updated is None else self._job_summary(updated)
+        self._queue.put(job_id)
+        return summary
 
     def revise_job(
         self,
@@ -350,9 +351,10 @@ class JobQueueService:
         if payload is not None:
             self._update_job_payload(job_id, payload)
         self._update_job_state(job_id, status="queued", result=result, error=None)
-        self._queue.put(job_id)
         updated = self.get_job(user_id=user_id, job_id=job_id)
-        return None if updated is None else self._job_summary(updated)
+        summary = None if updated is None else self._job_summary(updated)
+        self._queue.put(job_id)
+        return summary
 
     def _enqueue_pending_jobs(self, job_type: str) -> None:
         connection = self.db.connect()

@@ -114,6 +114,7 @@ from engines.storm.storm_types import (
 )
 from engines.surface_engine import SurfaceEngine, GridSurface
 from engines.utility_engine import UtilityEngine, UtilityNodeSpec, UtilityRequest
+from engines.cost_engine import compute_cost_estimate
 
 from geometry.layout_engine import expand_plan
 from output.dxf_exporter import (
@@ -844,6 +845,20 @@ def _manual_gate_plan(ctx: PlannerExecutionContext) -> Dict[str, Any]:
         }
     except Exception as exc:
         plan["meta"]["quantities"] = {"success": False, "message": f"Quantity computation failed: {exc}", "totals": {}}
+    try:
+        cost = compute_cost_estimate(plan)
+        plan["meta"]["cost_estimate"] = {
+            "success": getattr(cost, "success", True),
+            "message": getattr(cost, "message", ""),
+            "totals": deepcopy(getattr(cost, "totals", {})),
+            "line_items": deepcopy(getattr(cost, "line_items", [])),
+            "category_subtotals": deepcopy(getattr(cost, "category_subtotals", {})),
+            "warnings": list(getattr(cost, "warnings", [])),
+            "assumptions": list(getattr(cost, "assumptions", [])),
+            "explain": deepcopy(getattr(cost, "explain", {})),
+        }
+    except Exception as exc:
+        plan["meta"]["cost_estimate"] = {"success": False, "message": f"Cost computation failed: {exc}", "totals": {}}
     plan["meta"]["stats"] = collect_plan_stats(plan)
     return plan
 
@@ -9882,6 +9897,20 @@ def _run_model_first_workflow(
         }
     except Exception as exc:
         plan["meta"]["quantities"] = {"success": False, "message": f"Quantity computation failed: {exc}"}
+    try:
+        cost = compute_cost_estimate(plan)
+        plan["meta"]["cost_estimate"] = {
+            "success": getattr(cost, "success", True),
+            "message": getattr(cost, "message", ""),
+            "totals": deepcopy(getattr(cost, "totals", {})),
+            "line_items": deepcopy(getattr(cost, "line_items", [])),
+            "category_subtotals": deepcopy(getattr(cost, "category_subtotals", {})),
+            "warnings": list(getattr(cost, "warnings", [])),
+            "assumptions": list(getattr(cost, "assumptions", [])),
+            "explain": deepcopy(getattr(cost, "explain", {})),
+        }
+    except Exception as exc:
+        plan["meta"]["cost_estimate"] = {"success": False, "message": f"Cost computation failed: {exc}", "totals": {}}
 
     _synthesize_canonical_meta(parsed, plan)
     plan["meta"]["optimization_summary"] = _build_optimization_summary(parsed, plan)
@@ -10321,6 +10350,35 @@ def finalize_plan(plan: Dict[str, Any], *, parsed: Dict[str, Any], route: Routin
     final["meta"].setdefault("parsed_mode", lower_text(parsed.get("mode")))
     final["meta"].setdefault("project_type", lower_text(parsed.get("project_type")))
     final["meta"].setdefault("stats", collect_plan_stats(final))
+    if "quantities" not in final["meta"]:
+        try:
+            qty = compute_plan_quantities(final)
+            final["meta"]["quantities"] = {
+                "success": getattr(qty, "success", True),
+                "message": getattr(qty, "message", ""),
+                "totals": deepcopy(getattr(qty, "totals", {})),
+                "tables": deepcopy(getattr(qty, "tables", {})),
+                "warnings": list(getattr(qty, "warnings", [])),
+                "assumptions": list(getattr(qty, "assumptions", [])),
+                "explain": deepcopy(getattr(qty, "explain", {})),
+            }
+        except Exception as exc:
+            final["meta"]["quantities"] = {"success": False, "message": f"Quantity computation failed: {exc}", "totals": {}}
+    if "cost_estimate" not in final["meta"]:
+        try:
+            cost = compute_cost_estimate(final)
+            final["meta"]["cost_estimate"] = {
+                "success": getattr(cost, "success", True),
+                "message": getattr(cost, "message", ""),
+                "totals": deepcopy(getattr(cost, "totals", {})),
+                "line_items": deepcopy(getattr(cost, "line_items", [])),
+                "category_subtotals": deepcopy(getattr(cost, "category_subtotals", {})),
+                "warnings": list(getattr(cost, "warnings", [])),
+                "assumptions": list(getattr(cost, "assumptions", [])),
+                "explain": deepcopy(getattr(cost, "explain", {})),
+            }
+        except Exception as exc:
+            final["meta"]["cost_estimate"] = {"success": False, "message": f"Cost computation failed: {exc}", "totals": {}}
     try:
         finalize_export_metadata(final)
     except Exception as exc:
