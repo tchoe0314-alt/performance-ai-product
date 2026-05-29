@@ -242,6 +242,7 @@ def _production_ready_meta() -> dict:
                 "name": "B",
                 "geometry_committed": True,
                 "accepted": True,
+                "canonical_model_id": "MODEL-FINAL-1",
                 "geometry_snapshot_id": "SNAP-B",
             },
         ],
@@ -1267,6 +1268,16 @@ class CivilDesignReadinessTests(unittest.TestCase):
 
         self.assertFalse(readiness["production_ready"])
         self.assertIn(("optimization", "committed_alternatives"), gaps)
+
+    def test_civil_readiness_blocks_stale_optimization_alternative_model_trace(self) -> None:
+        meta = _production_ready_meta()
+        meta["optimization_summary"]["alternatives"][1]["canonical_model_id"] = "MODEL-OLD"
+
+        readiness = civil_design_readiness({"meta": meta})
+        gaps = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
+
+        self.assertFalse(readiness["production_ready"])
+        self.assertIn(("optimization", "alternative_model_trace"), gaps)
 
     def test_civil_readiness_blocks_optimization_without_runner_up(self) -> None:
         meta = _production_ready_meta()

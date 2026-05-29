@@ -1209,6 +1209,7 @@ def check_optimization_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
     warnings: List[str] = []
     gaps: List[Dict[str, Any]] = []
     optimization = _safe_dict(meta.get("optimization_summary"))
+    expected_model_refs = _model_references(meta)
     if not optimization:
         gaps.append(_production_gap("optimization", "optimization_summary", "Production design should compare buildable alternatives, not only one generated option.", "Run multi-option optimization after core systems are ready."))
     else:
@@ -1224,6 +1225,15 @@ def check_optimization_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
             gaps.append(_production_gap("optimization", "alternatives", "Production design needs a best option and runner-up/tradeoff explanation.", "Generate and compare design alternatives."))
         elif _safe_str(comparison.get("comparison_mode")) == "baseline_plus_uncommitted_recommendations" or len(committed_alternatives) < 2:
             gaps.append(_production_gap("optimization", "committed_alternatives", "Optimization alternatives are not accepted, traceable geometry yet.", "Run and accept at least two buildable alternatives with canonical geometry references before production optimization signoff."))
+        elif expected_model_refs and any(_model_references(item).isdisjoint(expected_model_refs) for item in committed_alternatives):
+            gaps.append(
+                _production_gap(
+                    "optimization",
+                    "alternative_model_trace",
+                    "Accepted optimization alternatives must reference the final canonical model they compare.",
+                    "Rerun or re-accept optimization alternatives after final model generation and attach canonical_model_id/hash metadata.",
+                )
+            )
         elif not _safe_str(comparison.get("recommended_option_name")) or not _safe_str(comparison.get("runner_up_option_name")):
             gaps.append(_production_gap("optimization", "alternatives", "Production optimization needs a recommended option and a runner-up/tradeoff comparison.", "Attach comparison summary naming the recommended option and runner-up."))
         if not optimization.get("recommendations"):
