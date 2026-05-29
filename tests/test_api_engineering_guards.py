@@ -6,10 +6,15 @@ from backend.api.app import (
     OrchestratePayload,
     QueueOrchestratePayload,
     SaveProjectPayload,
+    UnitPriceBookCsvPayload,
+    UnitPriceBookPayload,
     _final_plan_from_result,
     _model_to_dict,
     _queue_request_payload_with_project,
     _run_orchestration,
+    normalize_unit_price_book,
+    unit_price_book_from_csv,
+    validate_unit_price_book,
 )
 from backend.planning.runtime import sanitize_plan
 
@@ -175,6 +180,32 @@ class ApiEngineeringGuardsTest(unittest.TestCase):
         data = _model_to_dict(payload)
         self.assertIn("latest_result", data)
         self.assertIsNone(data["latest_result"])
+
+    def test_cost_price_book_api_helpers_validate_csv_and_json_payloads(self) -> None:
+        current_user = {"user_id": "u1"}
+        csv_response = unit_price_book_from_csv(
+            UnitPriceBookCsvPayload(
+                csv_text="metric,item,category,unit,unit_cost\npipe_length_ft,RCP storm pipe,storm,ft,125\n",
+                source="company_2026_bid_book",
+                location="Austin, TX",
+                effective_date="2026-05-01",
+                approved_by="Estimator",
+                approval_date="2026-05-02",
+            ),
+            current_user=current_user,
+        )
+        validation_response = validate_unit_price_book(
+            UnitPriceBookPayload(unit_price_book=csv_response["unit_price_book"]),
+            current_user=current_user,
+        )
+        normalized_response = normalize_unit_price_book(
+            UnitPriceBookPayload(unit_price_book={"unit_prices": {}}),
+            current_user=current_user,
+        )
+
+        self.assertTrue(csv_response["validation"]["production_usable"])
+        self.assertTrue(validation_response["success"])
+        self.assertFalse(normalized_response["unit_price_book"]["production_usable"])
 
 
 if __name__ == "__main__":
