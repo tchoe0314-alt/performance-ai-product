@@ -277,6 +277,27 @@ def _quantity_trace(quantities: Dict[str, Any], metric: str) -> Dict[str, Any]:
     return _safe_dict(_safe_dict(_safe_dict(quantities.get("explain")).get("quantity_audit")).get(metric))
 
 
+def _quantity_model_reference(quantities: Dict[str, Any]) -> Dict[str, Any]:
+    explain = _safe_dict(quantities.get("explain"))
+    payload = {
+        "success": quantities.get("success"),
+        "totals": _safe_dict(quantities.get("totals")),
+        "quantity_audit": _safe_dict(explain.get("quantity_audit")),
+        "trace_gaps": _safe_dict(explain.get("trace_gaps")),
+    }
+    stable = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
+    return {
+        "quantity_model_hash": hashlib.sha256(stable.encode("utf-8")).hexdigest(),
+        "quantity_success": quantities.get("success"),
+        "quantity_traceability_complete": not bool(_safe_dict(explain.get("trace_gaps"))),
+        "priced_quantity_metrics": sorted(
+            metric
+            for metric, value in _safe_dict(quantities.get("totals")).items()
+            if _safe_float(value, 0.0) > 0.0
+        ),
+    }
+
+
 def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
     meta = _safe_dict(plan_or_meta.get("meta")) if "meta" in plan_or_meta else _safe_dict(plan_or_meta)
     quantities = _safe_dict(meta.get("quantities"))
@@ -293,6 +314,7 @@ def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
         )
     if quantities.get("success") is False:
         warnings.append("Quantity engine is not production-successful; cost estimate is for review only.")
+    quantity_model_reference = _quantity_model_reference(quantities)
     if not pricing_meta["production_usable"]:
         if pricing_meta["source"] == "civora_concept_default_unit_prices":
             assumptions.append("Default concept unit prices are used because no production unit-price book is attached.")
@@ -380,6 +402,7 @@ def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
             "trace_gaps": trace_gaps,
             "pricing_coverage_complete": pricing_coverage_complete,
             "pricing_coverage_gaps": pricing_coverage_gaps,
+            "quantity_model_reference": quantity_model_reference,
             "truth_label": "Cost estimates are only as reliable as quantity traceability and the attached unit-price book.",
         },
     )

@@ -16,6 +16,7 @@ from core.civil_design import (
     station_point,
     utility_pairing_rule,
 )
+from engines.cost_engine import compute_cost_estimate
 
 
 def _complete_meta() -> dict:
@@ -174,21 +175,31 @@ def _production_ready_meta() -> dict:
         "canonical_id_traceability": {"ready": True},
     }
     meta["sheet_registry"] = {"sheets": [{"id": "C-100", "title": "Civil Site Plan"}]}
-    meta["cost_estimate"] = {
+    meta["quantities"] = {
         "success": True,
-        "totals": {"production_usable": True, "total_cost": 125000.0},
+        "totals": {"pipe_length_ft": 1000.0},
         "explain": {
-            "pricing": {
-                "production_usable": True,
-                "source": "company_2026_bid_book",
-                "location": "Test City",
-                "effective_date": "2026-05-01",
-                "approved_by": "Estimator",
-                "approval_date": "2026-05-02",
-                "production_validation": {"production_usable": True, "blockers": []},
-            },
+            "meta_summary": {"quantity_traceability_complete": True},
+            "quantity_audit": {"pipe_length_ft": {"source_object_ids": ["storm-1"]}},
             "trace_gaps": {},
         },
+    }
+    meta["cost_pricing"] = {
+        "source": "company_2026_bid_book",
+        "location": "Test City",
+        "effective_date": "2026-05-01",
+        "approved_by": "Estimator",
+        "approval_date": "2026-05-02",
+        "unit_prices": {
+            "pipe_length_ft": {"item": "RCP storm pipe", "category": "storm", "unit": "ft", "unit_cost": 125.0}
+        },
+    }
+    cost = compute_cost_estimate({"meta": meta})
+    meta["cost_estimate"] = {
+        "success": cost.success,
+        "totals": cost.totals,
+        "explain": cost.explain,
+        "line_items": cost.line_items,
     }
     meta["cad_interop"] = {"source": "test", "civil3d": True, "landxml": True, "pipe_network_export": True}
     meta["optimization_summary"] = {
@@ -418,6 +429,36 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertIn(("cost", "production_unit_price_book"), blockers)
         self.assertIn(("cost", "source"), blockers)
         self.assertFalse(readiness["evidence"]["cost_production_usable"])
+
+    def test_construction_readiness_blocks_cost_without_quantity_model(self) -> None:
+        meta = _production_ready_meta()
+        meta.pop("quantities", None)
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("cost", "quantity_model"), blockers)
+
+    def test_construction_readiness_blocks_stale_cost_quantity_model(self) -> None:
+        meta = _production_ready_meta()
+        meta["quantities"]["totals"]["pipe_length_ft"] = 1200.0
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("cost", "cost_quantity_model_mismatch"), blockers)
+
+    def test_construction_readiness_blocks_cost_missing_quantity_hash(self) -> None:
+        meta = _production_ready_meta()
+        meta["cost_estimate"]["explain"].pop("quantity_model_reference", None)
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("cost", "cost_quantity_trace"), blockers)
 
     def test_construction_readiness_requires_survey_control_metadata(self) -> None:
         meta = _production_ready_meta()

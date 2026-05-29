@@ -64,6 +64,10 @@ class CostEngineTests(unittest.TestCase):
         self.assertEqual(result.totals["total_cost"], 5500.0)
         self.assertFalse(result.assumptions)
         self.assertTrue(result.explain["pricing"]["production_validation"]["success"])
+        reference = result.explain["quantity_model_reference"]
+        self.assertTrue(reference["quantity_traceability_complete"])
+        self.assertTrue(reference["quantity_model_hash"])
+        self.assertEqual(reference["priced_quantity_metrics"], ["pipe_length_ft"])
 
     def test_cost_engine_does_not_trust_claimed_production_book_without_approval_metadata(self) -> None:
         result = compute_cost_estimate(

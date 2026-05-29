@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict, replace
+import hashlib
+import json
 from math import hypot
 import re
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -42,6 +44,22 @@ def _safe_dict(value: Any) -> Dict[str, Any]:
 
 def _safe_list(value: Any) -> List[Any]:
     return value if isinstance(value, list) else []
+
+
+def _quantity_model_reference(quantities: Dict[str, Any]) -> Dict[str, Any]:
+    explain = _safe_dict(quantities.get("explain"))
+    payload = {
+        "success": quantities.get("success"),
+        "totals": _safe_dict(quantities.get("totals")),
+        "quantity_audit": _safe_dict(explain.get("quantity_audit")),
+        "trace_gaps": _safe_dict(explain.get("trace_gaps")),
+    }
+    stable = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
+    return {
+        "quantity_model_hash": hashlib.sha256(stable.encode("utf-8")).hexdigest(),
+        "quantity_success": quantities.get("success"),
+        "quantity_traceability_complete": not bool(_safe_dict(explain.get("trace_gaps"))),
+    }
 
 
 def _truthy_mapping(value: Any) -> bool:
@@ -1747,6 +1765,36 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
             )
         )
 
+    quantities = _safe_dict(meta.get("quantities"))
+    quantity_ref = _quantity_model_reference(quantities) if quantities else {}
+    if not quantities:
+        blockers.append(
+            _construction_gap(
+                "cost",
+                "quantity_model",
+                "Construction release requires canonical quantity takeoff evidence before cost/bid claims.",
+                "Run quantities from the final canonical model before generating the cost estimate.",
+            )
+        )
+    elif quantities.get("success") is not True:
+        blockers.append(
+            _construction_gap(
+                "cost",
+                "quantity_success",
+                "Construction release cannot use a cost estimate based on failed or review-only quantities.",
+                "Resolve quantity traceability/canonical blockers and regenerate the cost estimate.",
+            )
+        )
+    elif not bool(quantity_ref.get("quantity_traceability_complete")):
+        blockers.append(
+            _construction_gap(
+                "cost",
+                "quantity_traceability",
+                "Construction release requires every priced quantity to trace to canonical source objects.",
+                "Fix quantity trace gaps and regenerate cost from traceable quantities.",
+            )
+        )
+
     cost = _safe_dict(meta.get("cost_estimate"))
     cost_totals = _safe_dict(cost.get("totals"))
     cost_explain = _safe_dict(cost.get("explain"))
@@ -1789,6 +1837,35 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                 "Fix the unit-price book metadata or line item and rerun cost validation.",
             )
         )
+    cost_quantity_ref = _safe_dict(cost_explain.get("quantity_model_reference"))
+    if cost and quantities:
+        if not cost_quantity_ref:
+            blockers.append(
+                _construction_gap(
+                    "cost",
+                    "cost_quantity_trace",
+                    "Construction release requires cost estimates to declare the quantity model hash they priced.",
+                    "Regenerate cost estimate from the final canonical quantity model.",
+                )
+            )
+        elif _safe_str(cost_quantity_ref.get("quantity_model_hash")) != _safe_str(quantity_ref.get("quantity_model_hash")):
+            blockers.append(
+                _construction_gap(
+                    "cost",
+                    "cost_quantity_model_mismatch",
+                    "Construction release cannot use a stale cost estimate from a different quantity model.",
+                    "Regenerate quantities and cost estimate from the same final canonical model.",
+                )
+            )
+        elif cost_quantity_ref.get("quantity_success") is not True or cost_quantity_ref.get("quantity_traceability_complete") is not True:
+            blockers.append(
+                _construction_gap(
+                    "cost",
+                    "cost_quantity_model_not_production_traceable",
+                    "Construction release requires cost to be based on successful, traceable quantities.",
+                    "Resolve quantity traceability blockers and regenerate the cost estimate.",
+                )
+            )
 
     wall = _safe_dict(meta.get("retaining_wall_summary"))
     structures_meta = _safe_dict(meta.get("structures") or meta.get("structure_summary"))
