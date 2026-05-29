@@ -1865,6 +1865,111 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                     "Attach sealed retaining wall design review with reviewer and review date metadata.",
                 )
             )
+    foundations = _safe_list(meta.get("foundations")) or _safe_list(structures_meta.get("foundations"))
+    if foundations:
+        foundation_review = _safe_dict(
+            meta.get("foundation_coordination_review")
+            or structures_meta.get("foundation_coordination_review")
+            or structures_meta.get("foundation_review")
+        )
+        footing_elevations = (
+            _safe_list(foundation_review.get("footing_elevations"))
+            or _safe_list(structures_meta.get("footing_elevations"))
+        )
+        utility_clearance_checks = (
+            _safe_list(foundation_review.get("utility_clearance_checks"))
+            or _safe_list(structures_meta.get("foundation_utility_clearance_checks"))
+        )
+        excavation_limits = (
+            _safe_list(foundation_review.get("excavation_limits"))
+            or _safe_list(structures_meta.get("foundation_excavation_limits"))
+        )
+        if not footing_elevations:
+            blockers.append(
+                _construction_gap(
+                    "structures",
+                    "foundation_footing_elevations",
+                    "Construction release requires foundation/footing elevation evidence tied to grading.",
+                    "Attach footing elevation schedule or foundation coordination review metadata.",
+                )
+            )
+        if not utility_clearance_checks:
+            blockers.append(
+                _construction_gap(
+                    "structures",
+                    "foundation_utility_clearance",
+                    "Construction release requires foundation clearance checks against utilities.",
+                    "Run utility/foundation clearance coordination and attach clearance check results.",
+                )
+            )
+        if not excavation_limits:
+            blockers.append(
+                _construction_gap(
+                    "structures",
+                    "foundation_excavation_limits",
+                    "Construction release requires excavation limit evidence for foundation work.",
+                    "Attach foundation excavation limits or earthwork coordination metadata.",
+                )
+            )
+    bridge_interfaces = _safe_list(meta.get("bridge_interfaces")) or _safe_list(structures_meta.get("bridge_interfaces"))
+    if bridge_interfaces:
+        bridge_review = _safe_dict(
+            meta.get("bridge_interface_review")
+            or structures_meta.get("bridge_interface_review")
+        )
+        grading_checks = _safe_list(bridge_review.get("grading_interaction_checks")) or _safe_list(
+            structures_meta.get("bridge_grading_interaction_checks")
+        )
+        utility_checks = _safe_list(bridge_review.get("utility_clearance_checks")) or _safe_list(
+            structures_meta.get("bridge_utility_clearance_checks")
+        )
+        sealed_review = (
+            bridge_review.get("sealed") is True
+            and bool(_safe_str(bridge_review.get("reviewed_by") or bridge_review.get("engineer_name")))
+            and bool(_safe_str(bridge_review.get("review_date") or bridge_review.get("sealed_date")))
+        )
+        if not grading_checks:
+            blockers.append(
+                _construction_gap(
+                    "structures",
+                    "bridge_grading_interaction",
+                    "Construction release requires bridge interface grading interaction checks.",
+                    "Attach bridge/interface grading checks tied to finished grade and profiles.",
+                )
+            )
+        if not utility_checks:
+            blockers.append(
+                _construction_gap(
+                    "structures",
+                    "bridge_utility_clearance",
+                    "Construction release requires bridge interface utility clearance checks.",
+                    "Run bridge/utility interface clearance checks and attach results.",
+                )
+            )
+        if not sealed_review:
+            blockers.append(
+                _construction_gap(
+                    "structures",
+                    "bridge_interface_structural_review",
+                    "Construction release requires sealed bridge interface review evidence.",
+                    "Attach sealed bridge interface review with reviewer and date metadata.",
+                )
+            )
+    structure_conflicts = _safe_list(meta.get("structure_conflicts")) or _safe_list(structures_meta.get("structure_conflicts"))
+    unresolved_structure_conflicts = [
+        _safe_dict(item)
+        for item in structure_conflicts
+        if _safe_dict(item).get("resolved") is not True and _safe_str(_safe_dict(item).get("status")).lower() not in {"resolved", "accepted"}
+    ]
+    if unresolved_structure_conflicts:
+        blockers.append(
+            _construction_gap(
+                "structures",
+                "structure_conflicts",
+                "Construction release cannot proceed with unresolved structure conflicts.",
+                "Resolve or explicitly accept structure conflicts with reviewer signoff before release.",
+            )
+        )
 
     professional = _safe_dict(meta.get("professional_review") or meta.get("engineer_review"))
     professional_validation = validate_professional_release(professional)

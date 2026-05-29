@@ -547,6 +547,107 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertTrue(readiness["ready"])
         self.assertFalse(readiness["blockers"])
 
+    def test_construction_readiness_blocks_foundations_without_coordination_evidence(self) -> None:
+        meta = _production_ready_meta()
+        meta["professional_review"] = {
+            "status": "released_for_construction",
+            "sealed": True,
+            "engineer_name": "Alex Morgan",
+            "license_number": "TX-123456",
+            "review_date": "2026-05-28",
+            "jurisdiction": "Test City",
+            "license_jurisdiction": "TX",
+            "discipline": "civil",
+            "review_scope": "civil_site_construction_documents",
+        }
+        meta["foundations"] = [{"id": "F-1", "building_id": "B-1"}]
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("structures", "foundation_footing_elevations"), blockers)
+        self.assertIn(("structures", "foundation_utility_clearance"), blockers)
+        self.assertIn(("structures", "foundation_excavation_limits"), blockers)
+
+    def test_construction_readiness_blocks_bridge_interfaces_without_sealed_coordination(self) -> None:
+        meta = _production_ready_meta()
+        meta["professional_review"] = {
+            "status": "released_for_construction",
+            "sealed": True,
+            "engineer_name": "Alex Morgan",
+            "license_number": "TX-123456",
+            "review_date": "2026-05-28",
+            "jurisdiction": "Test City",
+            "license_jurisdiction": "TX",
+            "discipline": "civil",
+            "review_scope": "civil_site_construction_documents",
+        }
+        meta["bridge_interfaces"] = [{"id": "BR-IF-1", "bridge_id": "BR-1"}]
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("structures", "bridge_grading_interaction"), blockers)
+        self.assertIn(("structures", "bridge_utility_clearance"), blockers)
+        self.assertIn(("structures", "bridge_interface_structural_review"), blockers)
+
+    def test_construction_readiness_blocks_unresolved_structure_conflicts(self) -> None:
+        meta = _production_ready_meta()
+        meta["professional_review"] = {
+            "status": "released_for_construction",
+            "sealed": True,
+            "engineer_name": "Alex Morgan",
+            "license_number": "TX-123456",
+            "review_date": "2026-05-28",
+            "jurisdiction": "Test City",
+            "license_jurisdiction": "TX",
+            "discipline": "civil",
+            "review_scope": "civil_site_construction_documents",
+        }
+        meta["structure_conflicts"] = [{"id": "SC-1", "status": "open", "resolved": False}]
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("structures", "structure_conflicts"), blockers)
+
+    def test_construction_readiness_accepts_foundation_and_bridge_with_traceable_coordination(self) -> None:
+        meta = _production_ready_meta()
+        meta["professional_review"] = {
+            "status": "released_for_construction",
+            "sealed": True,
+            "engineer_name": "Alex Morgan",
+            "license_number": "TX-123456",
+            "review_date": "2026-05-28",
+            "jurisdiction": "Test City",
+            "license_jurisdiction": "TX",
+            "discipline": "civil",
+            "review_scope": "civil_site_construction_documents",
+        }
+        meta["foundations"] = [{"id": "F-1", "building_id": "B-1"}]
+        meta["foundation_coordination_review"] = {
+            "footing_elevations": [{"foundation_id": "F-1", "bottom_elev_ft": 98.0}],
+            "utility_clearance_checks": [{"foundation_id": "F-1", "clear": True}],
+            "excavation_limits": [{"foundation_id": "F-1", "offset_ft": 5.0}],
+        }
+        meta["bridge_interfaces"] = [{"id": "BR-IF-1", "bridge_id": "BR-1"}]
+        meta["bridge_interface_review"] = {
+            "sealed": True,
+            "reviewed_by": "Bridge Engineer",
+            "review_date": "2026-05-28",
+            "grading_interaction_checks": [{"interface_id": "BR-IF-1", "valid": True}],
+            "utility_clearance_checks": [{"interface_id": "BR-IF-1", "clear": True}],
+        }
+        meta["structure_conflicts"] = [{"id": "SC-1", "status": "resolved", "resolved": True}]
+
+        readiness = construction_readiness({"meta": meta})
+
+        self.assertTrue(readiness["ready"])
+        self.assertFalse(readiness["blockers"])
+
     def test_construction_readiness_can_clear_with_verified_professional_release(self) -> None:
         meta = _production_ready_meta()
         meta["professional_review"] = {
