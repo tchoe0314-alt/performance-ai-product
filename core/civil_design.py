@@ -1918,6 +1918,7 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                 )
             )
 
+    expected_model_refs = _model_references(meta)
     truth = _safe_dict(meta.get("truth_audit"))
     if not truth:
         blockers.append(
@@ -1935,6 +1936,15 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                 "truth_audit",
                 "Construction release cannot proceed with failing canonical truth audit checks.",
                 "Resolve truth_audit failing checks and rerun finalization.",
+            )
+        )
+    elif expected_model_refs and _model_references(truth).isdisjoint(expected_model_refs):
+        blockers.append(
+            _construction_gap(
+                "qa",
+                "truth_audit_model_trace",
+                "Construction release requires truth audit evidence tied to the final canonical model.",
+                "Rerun the canonical truth audit and attach canonical_model_id/hash or final_model_id/hash metadata.",
             )
         )
     manual = _safe_dict(meta.get("manual_validation"))
@@ -1956,6 +1966,15 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                 "Resolve manual validation failures before release.",
             )
         )
+    elif expected_model_refs and _model_references(manual).isdisjoint(expected_model_refs):
+        blockers.append(
+            _construction_gap(
+                "qa",
+                "manual_validation_model_trace",
+                "Construction release requires manual validation evidence tied to the final canonical model.",
+                "Rerun manual validation on the final model and attach canonical_model_id/hash or final_model_id/hash metadata.",
+            )
+        )
     reactive = _safe_dict(meta.get("reactive_update_report"))
     if not reactive:
         blockers.append(
@@ -1973,6 +1992,15 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                 "stale_outputs",
                 "Construction release cannot include stale downstream outputs.",
                 "Complete dependency-aware reruns and regenerate exports from the final canonical model.",
+            )
+        )
+    elif expected_model_refs and _model_references(reactive).isdisjoint(expected_model_refs):
+        blockers.append(
+            _construction_gap(
+                "reactive_model",
+                "reactive_update_model_trace",
+                "Construction release requires the reactive update report to reference the final canonical model.",
+                "Rerun dependency-aware finalization and attach canonical_model_id/hash or final_model_id/hash metadata.",
             )
         )
 

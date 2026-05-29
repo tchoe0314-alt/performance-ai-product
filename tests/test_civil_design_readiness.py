@@ -165,10 +165,19 @@ def _production_ready_meta() -> dict:
         "water": {"production_ready": True, "blockers": []},
         "roadway_corridor": {"production_ready": True, "blockers": []},
     }
-    meta["truth_audit"] = {"success": True}
-    meta["manual_validation"] = {"success": True, "failed": False, "failures": []}
-    meta["reactive_update_report"] = {"export_blocked": False, "post_rerun_stale_outputs": []}
     meta["canonical_model_id"] = "MODEL-FINAL-1"
+    meta["truth_audit"] = {"success": True, "canonical_model_id": "MODEL-FINAL-1"}
+    meta["manual_validation"] = {
+        "success": True,
+        "failed": False,
+        "failures": [],
+        "canonical_model_id": "MODEL-FINAL-1",
+    }
+    meta["reactive_update_report"] = {
+        "export_blocked": False,
+        "post_rerun_stale_outputs": [],
+        "canonical_model_id": "MODEL-FINAL-1",
+    }
     meta["export_audit"] = {
         "ready": True,
         "production_export_ready": True,
@@ -581,6 +590,37 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertIn(("qa", "truth_audit"), blockers)
         self.assertIn(("qa", "manual_validation"), blockers)
         self.assertIn(("reactive_model", "reactive_update_report"), blockers)
+
+    def test_construction_readiness_blocks_stale_qa_model_trace(self) -> None:
+        meta = _production_ready_meta()
+        meta["truth_audit"] = {"success": True, "canonical_model_id": "MODEL-OLD"}
+        meta["manual_validation"] = {
+            "success": True,
+            "failed": False,
+            "failures": [],
+            "canonical_model_id": "MODEL-OLD",
+        }
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("qa", "truth_audit_model_trace"), blockers)
+        self.assertIn(("qa", "manual_validation_model_trace"), blockers)
+
+    def test_construction_readiness_blocks_stale_reactive_update_model_trace(self) -> None:
+        meta = _production_ready_meta()
+        meta["reactive_update_report"] = {
+            "export_blocked": False,
+            "post_rerun_stale_outputs": [],
+            "canonical_model_id": "MODEL-OLD",
+        }
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("reactive_model", "reactive_update_model_trace"), blockers)
 
     def test_construction_readiness_requires_export_traceability_and_sheet_items(self) -> None:
         meta = _production_ready_meta()
