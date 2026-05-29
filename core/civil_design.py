@@ -77,6 +77,43 @@ def _sheet_registry_items(value: Any) -> List[Dict[str, Any]]:
     return [_safe_dict(item) for item in (_safe_list(value) or _safe_list(registry.get("sheets")))]
 
 
+def _model_references(value: Dict[str, Any]) -> set[str]:
+    return {
+        ref
+        for ref in (
+            _safe_str(value.get("canonical_model_id")),
+            _safe_str(value.get("canonical_model_hash")),
+            _safe_str(value.get("source_model_id")),
+            _safe_str(value.get("source_model_hash")),
+            _safe_str(value.get("final_model_id")),
+            _safe_str(value.get("final_model_hash")),
+            _safe_str(value.get("model_id")),
+            _safe_str(value.get("model_hash")),
+        )
+        if ref
+    }
+
+
+def _sheet_registry_model_trace_gaps(
+    sheet_items: Sequence[Dict[str, Any]],
+    *,
+    registry: Optional[Dict[str, Any]] = None,
+    expected_refs: Optional[set[str]] = None,
+) -> List[str]:
+    registry_refs = _model_references(_safe_dict(registry))
+    expected = expected_refs or set()
+    gaps: List[str] = []
+    for index, item in enumerate(sheet_items, start=1):
+        identity = _safe_str(item.get("id") or item.get("sheet_id") or item.get("title"), f"sheet_{index}")
+        refs = _model_references(item) or registry_refs
+        if not refs:
+            gaps.append(identity)
+            continue
+        if expected and refs.isdisjoint(expected):
+            gaps.append(identity)
+    return gaps
+
+
 def _optimization_alternative_committed(item: Dict[str, Any]) -> bool:
     if item.get("geometry_committed") is not True:
         return False
@@ -1095,6 +1132,7 @@ def check_cad_interop_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
             for index, item in enumerate(sheet_items, start=1)
             if not _safe_str(item.get("id") or item.get("sheet_id")) or not _safe_str(item.get("title"))
         ]
+        missing_model_trace = _sheet_registry_model_trace_gaps(sheet_items, registry=sheet_registry)
         if _contains_concept_marker(registry_source) or sheet_registry.get("ready") is False or stale_sheets or missing_identity:
             gaps.append(
                 _production_gap(
@@ -1102,6 +1140,15 @@ def check_cad_interop_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
                     "sheet_registry",
                     "Production sheets need current, identified, non-placeholder registry rows.",
                     "Regenerate sheet registry rows with sheet IDs, titles, current status, and canonical model traceability.",
+                )
+            )
+        if missing_model_trace:
+            gaps.append(
+                _production_gap(
+                    "cad_interop",
+                    "sheet_registry_model_trace",
+                    "Production sheet registry rows must identify the canonical/final model they were generated from.",
+                    "Regenerate sheet registry rows with canonical_model_id/hash or final_model_id/hash metadata.",
                 )
             )
     if export_audit and (export_audit.get("sheet_registry_meta_matches_plan") is False or export_audit.get("sheet_registry_matches_outputs") is False):
@@ -1987,6 +2034,12 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
             for index, item in enumerate(sheet_items, start=1)
             if not _safe_str(item.get("id") or item.get("sheet_id")) or not _safe_str(item.get("title"))
         ]
+        expected_model_refs = _model_references(meta)
+        missing_model_trace = _sheet_registry_model_trace_gaps(
+            sheet_items,
+            registry=sheet_registry_map,
+            expected_refs=expected_model_refs,
+        )
         if _contains_concept_marker(registry_source) or sheet_registry_map.get("ready") is False or stale_sheets or missing_identity:
             blockers.append(
                 _construction_gap(
@@ -1994,6 +2047,15 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                     "sheet_registry",
                     "Construction release requires current, identified, non-placeholder sheet registry rows.",
                     "Regenerate sheet registry rows with sheet IDs, titles, current status, and canonical model traceability.",
+                )
+            )
+        if missing_model_trace:
+            blockers.append(
+                _construction_gap(
+                    "deliverables",
+                    "sheet_registry_model_trace",
+                    "Construction release requires every sheet registry row to trace to the final canonical model.",
+                    "Regenerate sheet registry rows with canonical_model_id/hash or final_model_id/hash matching the final model.",
                 )
             )
 

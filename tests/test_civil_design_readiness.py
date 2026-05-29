@@ -168,13 +168,24 @@ def _production_ready_meta() -> dict:
     meta["truth_audit"] = {"success": True}
     meta["manual_validation"] = {"success": True, "failed": False, "failures": []}
     meta["reactive_update_report"] = {"export_blocked": False, "post_rerun_stale_outputs": []}
+    meta["canonical_model_id"] = "MODEL-FINAL-1"
     meta["export_audit"] = {
         "ready": True,
         "production_export_ready": True,
         "export_blocked": False,
         "canonical_id_traceability": {"ready": True},
     }
-    meta["sheet_registry"] = {"ready": True, "sheets": [{"id": "C-100", "title": "Civil Site Plan", "current": True}]}
+    meta["sheet_registry"] = {
+        "ready": True,
+        "sheets": [
+            {
+                "id": "C-100",
+                "title": "Civil Site Plan",
+                "current": True,
+                "canonical_model_id": "MODEL-FINAL-1",
+            }
+        ],
+    }
     meta["quantities"] = {
         "success": True,
         "totals": {"pipe_length_ft": 1000.0},
@@ -594,6 +605,26 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertIn(("deliverables", "canonical_id_traceability"), blockers)
         self.assertIn(("deliverables", "sheet_registry"), blockers)
 
+    def test_construction_readiness_blocks_sheet_registry_without_model_trace(self) -> None:
+        meta = _production_ready_meta()
+        meta["sheet_registry"] = {"ready": True, "sheets": [{"id": "C-100", "title": "Civil Site Plan", "current": True}]}
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("deliverables", "sheet_registry_model_trace"), blockers)
+
+    def test_construction_readiness_blocks_sheet_registry_model_mismatch(self) -> None:
+        meta = _production_ready_meta()
+        meta["sheet_registry"]["sheets"][0]["canonical_model_id"] = "MODEL-OLD"
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("deliverables", "sheet_registry_model_trace"), blockers)
+
     def test_construction_readiness_blocks_retaining_wall_without_tie_ins_and_structural_review(self) -> None:
         meta = _production_ready_meta()
         meta["professional_review"] = {
@@ -838,6 +869,16 @@ class CivilDesignReadinessTests(unittest.TestCase):
 
         self.assertFalse(readiness["production_ready"])
         self.assertIn(("cad_interop", "sheet_registry_consistency"), gaps)
+
+    def test_civil_readiness_blocks_sheet_registry_without_model_trace(self) -> None:
+        meta = _production_ready_meta()
+        meta["sheet_registry"] = {"ready": True, "sheets": [{"id": "C-100", "title": "Civil Site Plan", "current": True}]}
+
+        readiness = civil_design_readiness({"meta": meta})
+        gaps = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
+
+        self.assertFalse(readiness["production_ready"])
+        self.assertIn(("cad_interop", "sheet_registry_model_trace"), gaps)
 
     def test_civil_readiness_blocks_uncommitted_optimization_alternatives(self) -> None:
         meta = _production_ready_meta()
