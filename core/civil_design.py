@@ -46,6 +46,32 @@ def _safe_list(value: Any) -> List[Any]:
     return value if isinstance(value, list) else []
 
 
+_CONCEPT_MARKERS = ("concept", "proxy", "fallback", "placeholder", "verify")
+
+
+def _contains_concept_marker(value: Any) -> bool:
+    text = _safe_str(value).lower()
+    return any(marker in text for marker in _CONCEPT_MARKERS)
+
+
+def _row_has_concept_marker(row: Dict[str, Any]) -> bool:
+    fields = (
+        "source",
+        "source_detail",
+        "control_source",
+        "routing_source",
+        "routing_method",
+        "truth_label",
+        "hydraulic_depth_source",
+    )
+    return any(_contains_concept_marker(row.get(field)) for field in fields)
+
+
+def _rows_all_valid(rows: Iterable[Dict[str, Any]]) -> bool:
+    checked = [_safe_dict(row) for row in rows]
+    return bool(checked) and all(row.get("valid") is True for row in checked)
+
+
 def _quantity_model_reference(quantities: Dict[str, Any]) -> Dict[str, Any]:
     explain = _safe_dict(quantities.get("explain"))
     payload = {
@@ -870,6 +896,25 @@ def check_hydraulic_depth_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
             if not present:
                 gaps.append(_production_gap("hydraulics", field, why, f"Run or attach {field.replace('_', ' ')} calculations."))
         inlet_checks = [_safe_dict(item) for item in _safe_list(storm.get("inlet_capacity_checks"))]
+        profile_rows = [_safe_dict(item) for item in _safe_list(storm.get("hgl_profile")) + _safe_list(storm.get("egl_profile"))]
+        if any(_row_has_concept_marker(item) for item in profile_rows):
+            gaps.append(
+                _production_gap(
+                    "hydraulics",
+                    "hydraulic_depth_source",
+                    "Concept proxy HGL/EGL rows are not production hydraulic evidence.",
+                    "Run the storm hydraulic engine or attach traceable external hydraulic calculations.",
+                )
+            )
+        if inlet_checks and not _rows_all_valid(inlet_checks):
+            gaps.append(
+                _production_gap(
+                    "hydraulics",
+                    "inlet_capacity_validity",
+                    "Inlet spread, capacity, and bypass checks must explicitly pass before storm production review.",
+                    "Run inlet capacity/spread/bypass calculations and resolve failed or incomplete rows.",
+                )
+            )
         invalid_inlets = [
             _safe_str(item.get("inlet"), f"inlet_{index}")
             for index, item in enumerate(inlet_checks, start=1)
@@ -912,6 +957,7 @@ def check_hydraulic_depth_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
     else:
         warnings.append("Storm network is not present; hydraulic depth checks are waiting on storm design.")
     detention_routes = _safe_list(drainage.get("detention_routing")) or _safe_list(drainage.get("stage_storage"))
+    concept_detention_routes = [_safe_dict(item) for item in detention_routes if _row_has_concept_marker(_safe_dict(item))]
     if drainage and _safe_list(drainage.get("basins")) and not detention_routes:
         gaps.append(
             _production_gap(
@@ -919,6 +965,15 @@ def check_hydraulic_depth_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
                 "detention_routing",
                 "Permit-grade stormwater needs stage-storage, outlet, drawdown, and overflow routing.",
                 "Run detention routing for the selected basin/outfall.",
+            )
+        )
+    elif concept_detention_routes:
+        gaps.append(
+            _production_gap(
+                "hydraulics",
+                "detention_routing",
+                "Concept-stage detention routing is not production stormwater evidence.",
+                "Run production detention stage-storage, outlet, drawdown, and overflow routing.",
             )
         )
     return _system_result(
@@ -943,6 +998,16 @@ def check_grading_detail_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
     for field, why in detail_fields.items():
         if not grading.get(field):
             gaps.append(_production_gap("grading_detail", field, why, f"Generate {field.replace('_', ' ')} from the finished surface."))
+    concept_crowns = [
+        _safe_dict(item)
+        for item in _safe_list(grading.get("road_crown_controls"))
+        if _row_has_concept_marker(_safe_dict(item))
+    ]
+    if concept_crowns:
+        gaps.append(_production_gap("grading_detail", "road_crown_controls", "Concept road crown controls are not production roadway grading evidence.", "Tie crown controls to a profile, cross-section, and accepted roadway standard."))
+    ada_rows = [_safe_dict(item) for item in _safe_list(grading.get("ada_path_checks"))]
+    if ada_rows and not _rows_all_valid(ada_rows):
+        gaps.append(_production_gap("grading_detail", "ada_path_checks", "ADA path checks must explicitly pass before production grading review.", "Repair failed/incomplete ADA running-slope and cross-slope checks."))
     if not _has_any(grading, ("contour_interval_ft", "contours")):
         warnings.append("Contour interval/output is incomplete.")
     if _safe_list(grading.get("retaining_walls")):

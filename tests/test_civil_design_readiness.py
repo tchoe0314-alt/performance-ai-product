@@ -158,7 +158,7 @@ def _production_ready_meta() -> dict:
     meta["storm_pipes"]["hgl_profile"] = [{"station": 0.0, "hgl_ft": 98.0}]
     meta["storm_pipes"]["egl_profile"] = [{"station": 0.0, "egl_ft": 98.2}]
     meta["storm_pipes"]["tailwater_elev_ft"] = 96.0
-    meta["storm_pipes"]["inlet_capacity_checks"] = [{"inlet": "INLET-1", "spread_ft": 4.0, "bypass_cfs": 0.0}]
+    meta["storm_pipes"]["inlet_capacity_checks"] = [{"inlet": "INLET-1", "spread_ft": 4.0, "bypass_cfs": 0.0, "valid": True}]
     meta["storm_pipes"]["backwater_validation"] = {"valid": True, "surcharged_segments": []}
     meta["depth_validation"] = {
         "stormwater": {"production_ready": True, "blockers": []},
@@ -809,6 +809,46 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertIn(("hydraulics", "hydraulic_depth_source"), gaps)
         self.assertIn(("hydraulics", "backwater_validation"), gaps)
         self.assertIn(("hydraulics", "node_surcharge"), gaps)
+
+    def test_civil_readiness_blocks_incomplete_hydraulic_depth_evidence(self) -> None:
+        meta = _production_ready_meta()
+        meta["storm_pipes"]["egl_profile"] = [
+            {"station_ft": 0.0, "egl_ft": 98.2, "hydraulic_depth_source": "concept_hgl_egl_proxy"}
+        ]
+        meta["storm_pipes"]["inlet_capacity_checks"] = [{"inlet": "INLET-1", "spread_ft": 4.0, "bypass_cfs": 0.0}]
+        meta["drainage"]["detention_routing"] = [
+            {
+                "basin": "BASIN-1",
+                "routing_source": "concept_detention_design",
+                "routing_method": "stage_storage_concept",
+            }
+        ]
+
+        readiness = civil_design_readiness({"meta": meta})
+        gaps = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
+
+        self.assertFalse(readiness["production_ready"])
+        self.assertIn(("hydraulics", "hydraulic_depth_source"), gaps)
+        self.assertIn(("hydraulics", "inlet_capacity_validity"), gaps)
+        self.assertIn(("hydraulics", "detention_routing"), gaps)
+
+    def test_civil_readiness_blocks_concept_grading_detail_evidence(self) -> None:
+        meta = _production_ready_meta()
+        meta["grading"]["road_crown_controls"] = [
+            {
+                "road": "A",
+                "control_source": "grade_element",
+                "truth_label": "concept road crown control; verify profile and cross-slope against road standard.",
+            }
+        ]
+        meta["grading"]["ada_path_checks"] = [{"path": "ADA-1", "valid": False}]
+
+        readiness = civil_design_readiness({"meta": meta})
+        gaps = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
+
+        self.assertFalse(readiness["production_ready"])
+        self.assertIn(("grading_detail", "road_crown_controls"), gaps)
+        self.assertIn(("grading_detail", "ada_path_checks"), gaps)
 
     def test_build_plan_attaches_civil_design_readiness_without_fake_success(self) -> None:
         plan = planner.build_plan(
