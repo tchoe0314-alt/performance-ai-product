@@ -244,6 +244,44 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertFalse(summary["latest_release_ready"])
         self.assertEqual(summary["latest_release_blockers"], ["construction_package_blocked"])
 
+    def test_merge_project_metadata_blocks_release_when_latest_artifact_is_blocked(self):
+        merged = merge_project_metadata(
+            {},
+            run_summary={
+                "run_id": "run_ready",
+                "created_at": 123.0,
+                "source": "unit_test",
+                "convergence_summary": {
+                    "converged": True,
+                    "blocked_exports": [],
+                    "blocked_reasons": [],
+                },
+                "reliability_summary": {
+                    "operational_state": "ready",
+                    "primary_attention": "",
+                    "blocked_export_count": 0,
+                    "unresolved_conflict_count": 0,
+                    "failed_deliverable_count": 0,
+                    "release_ready": True,
+                },
+            },
+            artifact_summary={
+                "artifact_id": "artifact_blocked",
+                "kind": "report",
+                "release_status": "blocked",
+                "release_ready": False,
+                "release_blockers": ["construction_readiness_missing"],
+            },
+        )
+        summary = merged["workflow"]["summary"]
+        self.assertFalse(summary["latest_release_ready"])
+        self.assertEqual(
+            summary["latest_release_blockers"],
+            ["construction_readiness_missing", "latest_artifact_release_blocked"],
+        )
+        self.assertEqual(summary["latest_artifact_release_status"], "blocked")
+        self.assertFalse(summary["latest_artifact_release_ready"])
+
     def test_operational_summary_exposes_project_release_blockers(self):
         store = FakeProjectStore(
             {
@@ -579,6 +617,39 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertEqual(summary["kind"], "dxf")
         self.assertEqual(summary["filename"], "plan.dxf")
         self.assertEqual(summary["project_name"], "Civora Plan")
+
+    def test_artifact_summary_carries_release_and_model_trace(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "plan.json"
+            path.write_text("x")
+            summary = artifact_summary(
+                path=path,
+                artifact_kind="report",
+                project_id="p1",
+                result_data={
+                    "request_metadata": {
+                        "release_review": {
+                            "release_status": "blocked",
+                            "blocked_reasons": ["construction_package_blocked"],
+                            "blocked_exports": ["dxf_export_blocked"],
+                        }
+                    },
+                    "final_plan": {
+                        "project_name": "Civora Plan",
+                        "meta": {
+                            "canonical_model_id": "model-1",
+                            "canonical_model_hash": "hash-1",
+                            "construction_package_manifest": {"package_id": "pkg-1"},
+                        },
+                    },
+                },
+            )
+        self.assertEqual(summary["release_status"], "blocked")
+        self.assertFalse(summary["release_ready"])
+        self.assertEqual(summary["release_blockers"], ["construction_package_blocked", "dxf_export_blocked"])
+        self.assertEqual(summary["canonical_model_reference"]["canonical_model_id"], "model-1")
+        self.assertEqual(summary["canonical_model_reference"]["canonical_model_hash"], "hash-1")
+        self.assertEqual(summary["construction_package_id"], "pkg-1")
 
 
 if __name__ == "__main__":

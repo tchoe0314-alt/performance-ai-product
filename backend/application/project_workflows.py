@@ -119,6 +119,7 @@ def _build_workflow_summary(
         latest_run=latest_run,
         latest_reliability=latest_reliability,
         latest_convergence=latest_convergence,
+        latest_artifact=latest_artifact,
     )
     latest_release_ready = bool(latest_reliability.get("release_ready")) and not latest_blockers
     return {
@@ -138,6 +139,10 @@ def _build_workflow_summary(
         "latest_artifact_id": str(latest_artifact.get("artifact_id") or ""),
         "latest_artifact_kind": str(latest_artifact.get("kind") or ""),
         "latest_artifact_created_at": latest_artifact.get("created_at"),
+        "latest_artifact_release_status": str(latest_artifact.get("release_status") or ""),
+        "latest_artifact_release_ready": bool(latest_artifact.get("release_ready")),
+        "latest_artifact_release_blockers": list(latest_artifact.get("release_blockers") or []),
+        "latest_artifact_model_reference": dict(latest_artifact.get("canonical_model_reference") or {}),
     }
 
 
@@ -146,6 +151,7 @@ def _latest_release_blockers(
     latest_run: Dict[str, Any],
     latest_reliability: Dict[str, Any],
     latest_convergence: Dict[str, Any],
+    latest_artifact: Optional[Dict[str, Any]] = None,
 ) -> list[str]:
     blockers: list[str] = []
 
@@ -162,6 +168,8 @@ def _latest_release_blockers(
     _extend(latest_convergence.get("blocked_exports"))
     _extend(latest_run.get("failed_deliverables"))
     _extend(latest_run.get("manual_failures"))
+    artifact = dict(latest_artifact or {})
+    _extend(artifact.get("release_blockers"))
 
     if int(latest_reliability.get("blocked_export_count") or 0) > 0:
         blockers.append("blocked_exports")
@@ -173,6 +181,8 @@ def _latest_release_blockers(
         blockers.append("manual_validation_failures")
     if latest_run.get("final_plan_release_ready") is False:
         blockers.append("final_plan_release_blocked")
+    if str(artifact.get("release_status") or "").lower() == "blocked":
+        blockers.append("latest_artifact_release_blocked")
     return list(dict.fromkeys(blockers))
 
 
@@ -187,6 +197,8 @@ def _project_operational_summary(record: Dict[str, Any]) -> Dict[str, Any]:
         "artifact_count": int(workflow_summary.get("artifact_count") or 0),
         "latest_run_id": str(workflow_summary.get("latest_run_id") or ""),
         "latest_artifact_id": str(workflow_summary.get("latest_artifact_id") or ""),
+        "latest_artifact_release_status": str(workflow_summary.get("latest_artifact_release_status") or ""),
+        "latest_artifact_release_ready": bool(workflow_summary.get("latest_artifact_release_ready")),
     }
 
 
@@ -264,7 +276,27 @@ def artifact_summary(
     result_data: Dict[str, Any],
 ) -> Dict[str, Any]:
     final_plan = dict(result_data.get("final_plan") or {})
-    return {
+    final_meta = dict(final_plan.get("meta") or {})
+    request_metadata = dict(result_data.get("request_metadata") or {})
+    release_review = dict(request_metadata.get("release_review") or final_meta.get("release_review") or {})
+    blocked_reasons = [str(item) for item in list(release_review.get("blocked_reasons") or []) if str(item)]
+    blocked_exports = [str(item) for item in list(release_review.get("blocked_exports") or []) if str(item)]
+    release_blockers = list(dict.fromkeys(blocked_reasons + blocked_exports))
+    release_status = str(release_review.get("release_status") or final_meta.get("release_status") or "")
+    canonical_model_reference = {
+        key: value
+        for key, value in {
+            "canonical_model_id": final_meta.get("canonical_model_id") or final_meta.get("model_id"),
+            "canonical_model_hash": final_meta.get("canonical_model_hash") or final_meta.get("model_hash"),
+            "source_model_id": final_meta.get("source_model_id"),
+            "source_model_hash": final_meta.get("source_model_hash"),
+            "final_model_id": final_meta.get("final_model_id"),
+            "final_model_hash": final_meta.get("final_model_hash"),
+        }.items()
+        if value not in (None, "")
+    }
+    package = dict(final_meta.get("construction_package_manifest") or final_meta.get("construction_package") or {})
+    artifact = {
         "artifact_id": new_workflow_id("artifact"),
         "kind": artifact_kind,
         "project_id": project_id,
@@ -273,6 +305,24 @@ def artifact_summary(
         "project_name": str(final_plan.get("project_name") or "Generated Plan"),
         "download_path": f"/api/artifacts/{path.name}",
     }
+    if release_status:
+        artifact["release_status"] = release_status
+        artifact["release_ready"] = release_status == "ready" and not release_blockers
+    elif "release_ready" in final_meta:
+        artifact["release_ready"] = bool(final_meta.get("release_ready"))
+    if release_blockers:
+        artifact["release_blockers"] = release_blockers
+    if canonical_model_reference:
+        artifact["canonical_model_reference"] = canonical_model_reference
+    package_id = (
+        package.get("id")
+        or package.get("package_id")
+        or package.get("manifest_id")
+        or package.get("construction_package_id")
+    )
+    if package_id:
+        artifact["construction_package_id"] = str(package_id)
+    return artifact
 
 
 def list_projects(
