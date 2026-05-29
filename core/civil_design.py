@@ -1648,7 +1648,30 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                 "Regenerate export audit and resolve stale/orphaned export blockers.",
             )
         )
-    if not (_truthy_mapping(meta.get("sheet_registry")) or bool(_safe_list(meta.get("sheet_registry")))):
+    else:
+        traceability = _safe_dict(export.get("canonical_id_traceability"))
+        if not traceability or traceability.get("ready") is not True:
+            blockers.append(
+                _construction_gap(
+                    "deliverables",
+                    "canonical_id_traceability",
+                    "Construction release requires export canonical ID traceability to prove deliverables match the final model.",
+                    "Regenerate export audit and resolve orphaned/missing canonical ID mappings.",
+                )
+            )
+        if export.get("sheet_registry_meta_matches_plan") is False or export.get("sheet_registry_matches_outputs") is False:
+            blockers.append(
+                _construction_gap(
+                    "deliverables",
+                    "sheet_registry_consistency",
+                    "Construction release requires sheet registry metadata to match the final plan and exported outputs.",
+                    "Regenerate sheet registry/export metadata from the final canonical model.",
+                )
+            )
+    sheet_registry_raw = meta.get("sheet_registry")
+    sheet_registry_map = _safe_dict(sheet_registry_raw)
+    sheet_items = _safe_list(sheet_registry_raw) or _safe_list(sheet_registry_map.get("sheets"))
+    if not sheet_items:
         blockers.append(
             _construction_gap(
                 "deliverables",

@@ -449,6 +449,25 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertIn(("qa", "manual_validation"), blockers)
         self.assertIn(("reactive_model", "reactive_update_report"), blockers)
 
+    def test_construction_readiness_requires_export_traceability_and_sheet_items(self) -> None:
+        meta = _production_ready_meta()
+        meta["professional_review"] = {
+            "status": "released_for_construction",
+            "sealed": True,
+            "engineer_name": "Alex Morgan",
+            "license_number": "TX-123456",
+            "review_date": "2026-05-28",
+        }
+        meta["export_audit"] = {"production_export_ready": True, "export_blocked": False}
+        meta["sheet_registry"] = {"source": "placeholder"}
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("deliverables", "canonical_id_traceability"), blockers)
+        self.assertIn(("deliverables", "sheet_registry"), blockers)
+
     def test_construction_readiness_can_clear_with_verified_professional_release(self) -> None:
         meta = _production_ready_meta()
         meta["professional_review"] = {
