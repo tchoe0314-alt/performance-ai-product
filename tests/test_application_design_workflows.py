@@ -511,41 +511,43 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 409)
         self.assertIn("construction_readiness_missing", str(ctx.exception.detail))
 
-    def test_final_plan_from_result_accepts_viable_fallback_utility_export(self):
-        plan = final_plan_from_result(
-            {
-                "final_plan": {
-                    "actions": [{"task": "polyline", "layer": "UTILITY"}],
-                    "meta": {
-                        "deliverables": {"requested": ["utility_plan"], "produced": ["utility_plan"]},
-                        "utilities": {
-                            "export_validation": {"ready": False, "reasons": ["utility_fallback_used"]},
-                            "success": True,
-                            "fallback_used": True,
-                            "route_count": 1,
-                            "shallow_segment_count": 0,
-                            "gravity_slope_issue_count": 0,
-                            "conflict_hooks": {
-                                "utility_segments": [
-                                    {
-                                        "name": "WATER-1",
-                                        "hydraulic_mode": "pressurized",
-                                        "route_points": [[10.0, 10.0], [60.0, 10.0], [90.0, 40.0]],
-                                        "cover_start_ft": 4.0,
-                                        "cover_end_ft": 4.0,
-                                    }
-                                ]
-                            },
-                            "coordination": {
-                                "utility_related_unresolved_conflict_count": 0,
-                                "post_validation_valid": True,
+    def test_final_plan_from_result_blocks_viable_fallback_utility_export(self):
+        with self.assertRaises(HTTPException) as ctx:
+            final_plan_from_result(
+                {
+                    "final_plan": {
+                        "actions": [{"task": "polyline", "layer": "UTILITY"}],
+                        "meta": {
+                            "deliverables": {"requested": ["utility_plan"], "produced": ["utility_plan"]},
+                            "utilities": {
+                                "export_validation": {"ready": False, "reasons": ["utility_fallback_used"]},
+                                "success": True,
+                                "fallback_used": True,
+                                "route_count": 1,
+                                "shallow_segment_count": 0,
+                                "gravity_slope_issue_count": 0,
+                                "conflict_hooks": {
+                                    "utility_segments": [
+                                        {
+                                            "name": "WATER-1",
+                                            "hydraulic_mode": "pressurized",
+                                            "route_points": [[10.0, 10.0], [60.0, 10.0], [90.0, 40.0]],
+                                            "cover_start_ft": 4.0,
+                                            "cover_end_ft": 4.0,
+                                        }
+                                    ]
+                                },
+                                "coordination": {
+                                    "utility_related_unresolved_conflict_count": 0,
+                                    "post_validation_valid": True,
+                                },
                             },
                         },
-                    },
+                    }
                 }
-            }
-        )
-        self.assertEqual(plan["actions"][0]["layer"], "UTILITY")
+            )
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn("utility_fallback_used", str(ctx.exception.detail))
 
     def test_final_plan_from_result_accepts_ready_storm_export_validation(self):
         plan = final_plan_from_result(

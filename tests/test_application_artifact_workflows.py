@@ -685,7 +685,7 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertEqual(review["phase_checkpoints"]["layout"]["status"], "ready")
         self.assertEqual(review["phase_checkpoints"]["combined_view"]["total_phase_count"], 5)
 
-    def test_build_preview_response_prefers_current_export_guard_over_stale_saved_blockers(self):
+    def test_build_preview_response_keeps_current_fallback_utility_blocker(self):
         service = FakeArtifactService()
         response = build_preview_response(
             artifact_service=service,
@@ -749,8 +749,8 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
             },
         )
         review = response["summary"]["review"]
-        self.assertEqual(review["blocked_exports"], [])
-        self.assertEqual(review["blocked_reasons"], [])
+        self.assertEqual(review["blocked_exports"], ["utilities"])
+        self.assertEqual(review["blocked_reasons"], ["utility_fallback_used"])
 
     def test_build_preview_response_prefers_reliability_release_ready_over_review_status(self):
         service = FakeArtifactService()

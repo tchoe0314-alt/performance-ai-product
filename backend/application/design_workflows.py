@@ -777,11 +777,6 @@ def final_plan_from_result(
             utility_export.get("reasons"),
             "utility_export_not_ready",
         )
-        if not utility_ready and utility_reasons == ["utility_fallback_used"]:
-            from backend.planning.export_validation import utility_summary_is_exportable
-
-            if utility_summary_is_exportable(utilities):
-                utility_ready = True
         if enforce_export_guards and needs_utility_truth and not utility_ready:
             reasons = utility_reasons
             raise HTTPException(

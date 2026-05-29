@@ -578,7 +578,7 @@ class Phase5SurfaceDrainageCoordinationTests(unittest.TestCase):
 
         self.assertFalse(storm_summary_is_exportable(summary))
 
-    def test_utility_export_validation_accepts_viable_fallback_network(self) -> None:
+    def test_utility_export_validation_blocks_viable_fallback_network(self) -> None:
         project = planner.ProjectModel(name="Utility Fallback Export")
         project.meta["utility_summary"] = {
             "success": True,
@@ -605,8 +605,8 @@ class Phase5SurfaceDrainageCoordinationTests(unittest.TestCase):
 
         validation = planner._utility_export_validation(project)
 
-        self.assertTrue(validation.get("ready"))
-        self.assertNotIn("utility_fallback_used", validation.get("reasons", []))
+        self.assertFalse(validation.get("ready"))
+        self.assertIn("utility_fallback_used", validation.get("reasons", []))
         self.assertNotIn("utility_network_missing", validation.get("reasons", []))
 
     def test_drainage_export_validation_prefers_best_primary_basin_when_selected_name_missing(self) -> None:

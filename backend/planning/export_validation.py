@@ -237,11 +237,30 @@ def _utility_segment_is_exportable(segment: Dict[str, Any]) -> bool:
     )
 
 
+def _utility_source_is_fallback(utilities: Dict[str, Any], segments: List[Dict[str, Any]]) -> bool:
+    summary = safe_dict(utilities)
+    if bool(summary.get("fallback_used")):
+        return True
+    source = safe_str(summary.get("source") or summary.get("source_detail")).lower()
+    if source in {"fallback", "utility_fallback", "synthesized"}:
+        return True
+    for segment in segments:
+        rec = safe_dict(segment)
+        if bool(rec.get("fallback_used")):
+            return True
+        segment_source = safe_str(rec.get("source") or rec.get("source_detail")).lower()
+        if segment_source in {"fallback", "utility_fallback", "synthesized"}:
+            return True
+    return False
+
+
 def utility_summary_is_exportable(utilities: Dict[str, Any]) -> bool:
     summary = safe_dict(utilities)
     hooks = safe_dict(summary.get("conflict_hooks"))
     segments = [safe_dict(item) for item in safe_list(hooks.get("utility_segments")) if safe_dict(item)]
     if safe_int(summary.get("route_count"), 0) <= 0 or not segments:
+        return False
+    if _utility_source_is_fallback(summary, segments):
         return False
     if not all(_utility_segment_is_exportable(item) for item in segments):
         return False
@@ -488,7 +507,7 @@ def utility_export_validation(
     utility_exportable = utility_summary_is_exportable(utilities)
     if not bool(utilities.get("success", False)):
         reasons.append("utility_stage_invalid")
-    if bool(utilities.get("fallback_used")) and not utility_exportable:
+    if _utility_source_is_fallback(utilities, [safe_dict(item) for item in segments if safe_dict(item)]):
         reasons.append("utility_fallback_used")
     if safe_int(utilities.get("route_count"), 0) <= 0 or not segments:
         reasons.append("utility_network_missing")
