@@ -61,6 +61,15 @@ CONSTRUCTION_PACKAGE_SECTIONS: Sequence[Dict[str, Any]] = (
 )
 
 
+REQUIRED_CONSTRUCTION_ARTIFACTS: Sequence[Dict[str, Any]] = (
+    {"artifact_id": "sheets", "aliases": {"sheets", "sheet_set", "sheet_registry", "pdf_sheets"}},
+    {"artifact_id": "cad_export", "aliases": {"cad_export", "dxf", "dwg", "civil3d", "landxml"}},
+    {"artifact_id": "qa_report", "aliases": {"qa_report", "truth_audit", "validation_report"}},
+    {"artifact_id": "cost_estimate", "aliases": {"cost_estimate", "takeoff", "quantity_cost"}},
+    {"artifact_id": "construction_manifest", "aliases": {"construction_manifest", "release_manifest", "package_manifest"}},
+)
+
+
 def _unique_blockers(blockers: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
     seen = set()
     out: List[Dict[str, Any]] = []
@@ -76,6 +85,73 @@ def _unique_blockers(blockers: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]
         seen.add(key)
         out.append(deepcopy(rec))
     return out
+
+
+def _artifact_type(rec: Dict[str, Any]) -> str:
+    return safe_str(rec.get("type") or rec.get("artifact_type") or rec.get("kind") or rec.get("name")).lower()
+
+
+def _construction_package_blockers(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
+    package = safe_dict(
+        meta.get("construction_deliverable_package")
+        or meta.get("construction_package")
+        or meta.get("deliverable_package")
+    )
+    packages = safe_list(meta.get("deliverable_packages"))
+    if not package and packages:
+        package = safe_dict(packages[-1])
+    if not package:
+        return [
+            {
+                "area": "deliverables",
+                "field": "construction_package_artifacts",
+                "why_needed": "Construction release requires an assembled deliverable package, not only readiness metadata.",
+                "suggested_next_action": "Assemble sheets, CAD exports, QA report, cost estimate, and package manifest artifacts.",
+            }
+        ]
+    artifacts = [safe_dict(item) for item in safe_list(package.get("artifacts"))]
+    if not artifacts:
+        artifacts = [safe_dict(item) for item in safe_list(package.get("files"))]
+    artifact_types = {_artifact_type(item) for item in artifacts if _artifact_type(item)}
+    blockers: List[Dict[str, Any]] = []
+    missing: List[str] = []
+    for required in REQUIRED_CONSTRUCTION_ARTIFACTS:
+        aliases = set(required.get("aliases") or ())
+        if not artifact_types.intersection(aliases):
+            missing.append(safe_str(required.get("artifact_id")))
+    if missing:
+        blockers.append(
+            {
+                "area": "deliverables",
+                "field": "construction_package_artifacts",
+                "why_needed": "Construction package is missing required artifact types: " + ", ".join(missing) + ".",
+                "suggested_next_action": "Regenerate the construction deliverable package with every required artifact type.",
+            }
+        )
+    stale = [
+        safe_str(item.get("id") or item.get("name") or item.get("type") or item.get("artifact_type"), "artifact")
+        for item in artifacts
+        if safe_dict(item).get("stale") is True or safe_dict(item).get("current") is False
+    ]
+    if stale:
+        blockers.append(
+            {
+                "area": "deliverables",
+                "field": "stale_construction_package_artifacts",
+                "why_needed": "Construction package contains stale artifacts: " + ", ".join(stale[:5]) + ".",
+                "suggested_next_action": "Regenerate stale package artifacts from the final canonical model.",
+            }
+        )
+    if package.get("production_ready") is False or package.get("release_ready") is False:
+        blockers.append(
+            {
+                "area": "deliverables",
+                "field": "construction_package_release_ready",
+                "why_needed": "Construction package is explicitly marked not ready for release.",
+                "suggested_next_action": "Resolve package assembly blockers and mark the package release-ready.",
+            }
+        )
+    return blockers
 
 
 def _section_status(
@@ -128,6 +204,8 @@ def build_construction_package_manifest(plan_or_meta: Dict[str, Any]) -> Dict[st
     blockers = _unique_blockers(safe_list(readiness.get("blockers")))
     warnings = _unique_blockers(safe_list(readiness.get("warnings")))
     evidence = safe_dict(readiness.get("evidence"))
+    package_blockers = _construction_package_blockers(meta) if readiness.get("ready") is True else []
+    blockers = _unique_blockers([*blockers, *package_blockers])
     sections = [
         _section_status(section=section, blockers=blockers, warnings=warnings, evidence=evidence)
         for section in CONSTRUCTION_PACKAGE_SECTIONS
@@ -151,6 +229,13 @@ def build_construction_package_manifest(plan_or_meta: Dict[str, Any]) -> Dict[st
         "review_sections": review_sections,
         "blockers": blockers,
         "warnings": warnings,
+        "package_artifact_requirements": [
+            {
+                "artifact_id": safe_str(item.get("artifact_id")),
+                "aliases": sorted(str(alias) for alias in (item.get("aliases") or ())),
+            }
+            for item in REQUIRED_CONSTRUCTION_ARTIFACTS
+        ],
         "next_actions": [safe_str(item.get("suggested_next_action")) for item in blockers[:10] if safe_str(item.get("suggested_next_action"))],
         "truth_label": (
             "Review packages may be generated while blocked, but construction release requires all sections ready "
@@ -159,4 +244,4 @@ def build_construction_package_manifest(plan_or_meta: Dict[str, Any]) -> Dict[st
     }
 
 
-__all__ = ["CONSTRUCTION_PACKAGE_SECTIONS", "build_construction_package_manifest"]
+__all__ = ["CONSTRUCTION_PACKAGE_SECTIONS", "REQUIRED_CONSTRUCTION_ARTIFACTS", "build_construction_package_manifest"]

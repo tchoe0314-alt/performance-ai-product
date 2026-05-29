@@ -88,7 +88,17 @@ class ConstructionPackageManifestTests(unittest.TestCase):
                 },
                 "blockers": [],
                 "warnings": [],
-            }
+            },
+            "construction_deliverable_package": {
+                "release_ready": True,
+                "artifacts": [
+                    {"type": "sheets", "id": "SHEETS-1", "current": True},
+                    {"type": "cad_export", "id": "CAD-1", "current": True},
+                    {"type": "qa_report", "id": "QA-1", "current": True},
+                    {"type": "cost_estimate", "id": "COST-1", "current": True},
+                    {"type": "construction_manifest", "id": "MANIFEST-1", "current": True},
+                ],
+            },
         }
 
         manifest = build_construction_package_manifest({"meta": meta})
@@ -97,6 +107,67 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         self.assertTrue(manifest["construction_export_allowed"])
         self.assertFalse(manifest["blocked_sections"])
         self.assertTrue(all(section["ready"] for section in manifest["sections"]))
+
+    def test_manifest_blocks_ready_engineering_without_assembled_package_artifacts(self) -> None:
+        meta = {
+            "construction_readiness": {
+                "ready": True,
+                "status": "construction_ready",
+                "score": 100.0,
+                "evidence": {
+                    "civil_production_ready": True,
+                    "existing_conditions_production_ready": True,
+                    "standards_production_usable": True,
+                    "export_production_ready": True,
+                    "cost_production_usable": True,
+                    "professional_release": True,
+                },
+                "blockers": [],
+                "warnings": [],
+            }
+        }
+
+        manifest = build_construction_package_manifest({"meta": meta})
+        fields = {(item["area"], item["field"]) for item in manifest["blockers"]}
+
+        self.assertFalse(manifest["release_allowed"])
+        self.assertIn("deliverables", manifest["blocked_sections"])
+        self.assertIn(("deliverables", "construction_package_artifacts"), fields)
+
+    def test_manifest_blocks_stale_construction_package_artifacts(self) -> None:
+        meta = {
+            "construction_readiness": {
+                "ready": True,
+                "status": "construction_ready",
+                "score": 100.0,
+                "evidence": {
+                    "civil_production_ready": True,
+                    "existing_conditions_production_ready": True,
+                    "standards_production_usable": True,
+                    "export_production_ready": True,
+                    "cost_production_usable": True,
+                    "professional_release": True,
+                },
+                "blockers": [],
+                "warnings": [],
+            },
+            "construction_deliverable_package": {
+                "release_ready": True,
+                "artifacts": [
+                    {"type": "sheets", "id": "SHEETS-1", "current": True},
+                    {"type": "cad_export", "id": "CAD-1", "stale": True},
+                    {"type": "qa_report", "id": "QA-1", "current": True},
+                    {"type": "cost_estimate", "id": "COST-1", "current": True},
+                    {"type": "construction_manifest", "id": "MANIFEST-1", "current": True},
+                ],
+            },
+        }
+
+        manifest = build_construction_package_manifest({"meta": meta})
+        fields = {(item["area"], item["field"]) for item in manifest["blockers"]}
+
+        self.assertFalse(manifest["release_allowed"])
+        self.assertIn(("deliverables", "stale_construction_package_artifacts"), fields)
 
 
 if __name__ == "__main__":
