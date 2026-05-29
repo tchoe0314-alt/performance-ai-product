@@ -147,7 +147,7 @@ def _expected_model_reference(plan_or_meta: Dict[str, Any], meta: Dict[str, Any]
     return f"plan-sha256:{digest[:16]}"
 
 
-def _construction_package_blockers(plan_or_meta: Dict[str, Any], meta: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _construction_package_record(meta: Dict[str, Any]) -> Dict[str, Any]:
     package = safe_dict(
         meta.get("construction_deliverable_package")
         or meta.get("construction_package")
@@ -156,6 +156,91 @@ def _construction_package_blockers(plan_or_meta: Dict[str, Any], meta: Dict[str,
     packages = safe_list(meta.get("deliverable_packages"))
     if not package and packages:
         package = safe_dict(packages[-1])
+    return package
+
+
+def _construction_package_artifacts(package: Dict[str, Any]) -> List[Dict[str, Any]]:
+    artifacts = [safe_dict(item) for item in safe_list(package.get("artifacts"))]
+    if not artifacts:
+        artifacts = [safe_dict(item) for item in safe_list(package.get("files"))]
+    return artifacts
+
+
+def _construction_package_artifact_status(plan_or_meta: Dict[str, Any], meta: Dict[str, Any]) -> Dict[str, Any]:
+    package = _construction_package_record(meta)
+    artifacts = _construction_package_artifacts(package)
+    artifact_types = {_artifact_type(item) for item in artifacts if _artifact_type(item)}
+    package_model_reference = _model_reference(package)
+    expected_model_reference = _expected_model_reference(plan_or_meta, meta)
+    missing: List[str] = []
+    present: List[str] = []
+    for required in REQUIRED_CONSTRUCTION_ARTIFACTS:
+        artifact_id = safe_str(required.get("artifact_id"))
+        aliases = set(required.get("aliases") or ())
+        if artifact_types.intersection(aliases):
+            present.append(artifact_id)
+        else:
+            missing.append(artifact_id)
+    anonymous = [
+        safe_str(item.get("type") or item.get("artifact_type"), "artifact")
+        for item in artifacts
+        if not safe_str(item.get("id") or item.get("artifact_id") or item.get("name") or item.get("filename") or item.get("path"))
+    ]
+    stale = [
+        safe_str(item.get("id") or item.get("name") or item.get("type") or item.get("artifact_type"), "artifact")
+        for item in artifacts
+        if safe_dict(item).get("stale") is True or safe_dict(item).get("current") is False
+    ]
+    untraced: List[str] = []
+    mismatched: List[str] = []
+    if package_model_reference and (not expected_model_reference or package_model_reference == expected_model_reference):
+        for item in artifacts:
+            artifact_name = safe_str(item.get("id") or item.get("name") or item.get("type") or item.get("artifact_type"), "artifact")
+            artifact_model_reference = _model_reference(item)
+            if not artifact_model_reference:
+                untraced.append(artifact_name)
+            elif artifact_model_reference != package_model_reference:
+                mismatched.append(artifact_name)
+    release_flag = package.get("release_ready")
+    production_flag = package.get("production_ready")
+    explicit_release_block = release_flag is False or production_flag is False
+    model_matches_expected = bool(
+        package_model_reference and (not expected_model_reference or package_model_reference == expected_model_reference)
+    )
+    complete_for_release = bool(
+        package
+        and not missing
+        and not anonymous
+        and not stale
+        and package_model_reference
+        and model_matches_expected
+        and not untraced
+        and not mismatched
+        and not explicit_release_block
+    )
+    return {
+        "package_present": bool(package),
+        "artifact_count": len(artifacts),
+        "required": [safe_str(item.get("artifact_id")) for item in REQUIRED_CONSTRUCTION_ARTIFACTS],
+        "present": present,
+        "missing": missing,
+        "anonymous": anonymous,
+        "stale": stale,
+        "untraced": untraced,
+        "mismatched": mismatched,
+        "package_model_reference": package_model_reference,
+        "expected_model_reference": expected_model_reference,
+        "model_reference_present": bool(package_model_reference),
+        "model_matches_expected": model_matches_expected,
+        "release_ready_flag": release_flag,
+        "production_ready_flag": production_flag,
+        "complete_for_release": complete_for_release,
+        "review_package_state": "assembled_traceable" if complete_for_release else "review_only_incomplete",
+    }
+
+
+def _construction_package_blockers(plan_or_meta: Dict[str, Any], meta: Dict[str, Any]) -> List[Dict[str, Any]]:
+    package = _construction_package_record(meta)
     if not package:
         return [
             {
@@ -165,18 +250,11 @@ def _construction_package_blockers(plan_or_meta: Dict[str, Any], meta: Dict[str,
                 "suggested_next_action": "Assemble sheets, CAD exports, QA report, cost estimate, and package manifest artifacts.",
             }
         ]
-    artifacts = [safe_dict(item) for item in safe_list(package.get("artifacts"))]
-    if not artifacts:
-        artifacts = [safe_dict(item) for item in safe_list(package.get("files"))]
-    artifact_types = {_artifact_type(item) for item in artifacts if _artifact_type(item)}
+    artifact_status = _construction_package_artifact_status(plan_or_meta, meta)
     package_model_reference = _model_reference(package)
-    expected_model_reference = _expected_model_reference(plan_or_meta, meta)
+    expected_model_reference = safe_str(artifact_status.get("expected_model_reference"))
     blockers: List[Dict[str, Any]] = []
-    missing: List[str] = []
-    for required in REQUIRED_CONSTRUCTION_ARTIFACTS:
-        aliases = set(required.get("aliases") or ())
-        if not artifact_types.intersection(aliases):
-            missing.append(safe_str(required.get("artifact_id")))
+    missing = [safe_str(item) for item in safe_list(artifact_status.get("missing")) if safe_str(item)]
     if missing:
         blockers.append(
             {
@@ -186,11 +264,7 @@ def _construction_package_blockers(plan_or_meta: Dict[str, Any], meta: Dict[str,
                 "suggested_next_action": "Regenerate the construction deliverable package with every required artifact type.",
             }
         )
-    anonymous = [
-        safe_str(item.get("type") or item.get("artifact_type"), "artifact")
-        for item in artifacts
-        if not safe_str(item.get("id") or item.get("artifact_id") or item.get("name") or item.get("filename") or item.get("path"))
-    ]
+    anonymous = [safe_str(item) for item in safe_list(artifact_status.get("anonymous")) if safe_str(item)]
     if anonymous:
         blockers.append(
             {
@@ -202,11 +276,7 @@ def _construction_package_blockers(plan_or_meta: Dict[str, Any], meta: Dict[str,
                 "suggested_next_action": "Regenerate or annotate package artifacts with stable IDs/filenames before release.",
             }
         )
-    stale = [
-        safe_str(item.get("id") or item.get("name") or item.get("type") or item.get("artifact_type"), "artifact")
-        for item in artifacts
-        if safe_dict(item).get("stale") is True or safe_dict(item).get("current") is False
-    ]
+    stale = [safe_str(item) for item in safe_list(artifact_status.get("stale")) if safe_str(item)]
     if stale:
         blockers.append(
             {
@@ -235,15 +305,8 @@ def _construction_package_blockers(plan_or_meta: Dict[str, Any], meta: Dict[str,
             }
         )
     else:
-        untraced_artifacts: List[str] = []
-        mismatched_artifacts: List[str] = []
-        for item in artifacts:
-            artifact_name = safe_str(item.get("id") or item.get("name") or item.get("type") or item.get("artifact_type"), "artifact")
-            artifact_model_reference = _model_reference(item)
-            if not artifact_model_reference:
-                untraced_artifacts.append(artifact_name)
-            elif artifact_model_reference != package_model_reference:
-                mismatched_artifacts.append(artifact_name)
+        untraced_artifacts = [safe_str(item) for item in safe_list(artifact_status.get("untraced")) if safe_str(item)]
+        mismatched_artifacts = [safe_str(item) for item in safe_list(artifact_status.get("mismatched")) if safe_str(item)]
         if untraced_artifacts:
             blockers.append(
                 {
@@ -329,6 +392,7 @@ def build_construction_package_manifest(plan_or_meta: Dict[str, Any]) -> Dict[st
     warnings = _unique_blockers(safe_list(readiness.get("warnings")))
     evidence = safe_dict(readiness.get("evidence"))
     expected_model_reference = _expected_model_reference(plan_or_meta, meta)
+    artifact_status = _construction_package_artifact_status(plan_or_meta, meta)
     package_blockers = _construction_package_blockers(plan_or_meta, meta) if readiness.get("ready") is True else []
     blockers = _unique_blockers([*blockers, *package_blockers])
     sections = [
@@ -350,6 +414,7 @@ def build_construction_package_manifest(plan_or_meta: Dict[str, Any]) -> Dict[st
         "construction_readiness_status": safe_str(readiness.get("status"), "not_construction_ready"),
         "construction_readiness_score": readiness.get("score"),
         "expected_canonical_model_reference": expected_model_reference,
+        "construction_package_artifact_status": artifact_status,
         "sections": sections,
         "blocked_sections": blocked_sections,
         "review_sections": review_sections,

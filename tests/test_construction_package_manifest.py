@@ -24,6 +24,10 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         self.assertIn("existing_conditions", manifest["blocked_sections"])
         self.assertIn("standards", manifest["blocked_sections"])
         self.assertIn("professional_release", manifest["blocked_sections"])
+        artifact_status = manifest["construction_package_artifact_status"]
+        self.assertFalse(artifact_status["package_present"])
+        self.assertEqual(set(artifact_status["missing"]), {"sheets", "cad_export", "qa_report", "cost_estimate", "construction_manifest"})
+        self.assertFalse(artifact_status["complete_for_release"])
         self.assertTrue(manifest["next_actions"])
 
     def test_manifest_groups_blockers_into_actionable_release_sections(self) -> None:
@@ -107,6 +111,12 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         self.assertEqual(manifest["release_state"], "released_for_construction")
         self.assertTrue(manifest["construction_export_allowed"])
         self.assertFalse(manifest["blocked_sections"])
+        artifact_status = manifest["construction_package_artifact_status"]
+        self.assertTrue(artifact_status["package_present"])
+        self.assertTrue(artifact_status["complete_for_release"])
+        self.assertEqual(artifact_status["package_model_reference"], "MODEL-FINAL-1")
+        self.assertFalse(artifact_status["missing"])
+        self.assertFalse(artifact_status["untraced"])
         self.assertTrue(all(section["ready"] for section in manifest["sections"]))
 
     def test_manifest_blocks_ready_engineering_without_assembled_package_artifacts(self) -> None:
@@ -134,6 +144,10 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         self.assertFalse(manifest["release_allowed"])
         self.assertIn("deliverables", manifest["blocked_sections"])
         self.assertIn(("deliverables", "construction_package_artifacts"), fields)
+        artifact_status = manifest["construction_package_artifact_status"]
+        self.assertFalse(artifact_status["package_present"])
+        self.assertEqual(artifact_status["artifact_count"], 0)
+        self.assertEqual(artifact_status["review_package_state"], "review_only_incomplete")
 
     def test_manifest_blocks_stale_construction_package_artifacts(self) -> None:
         meta = {
@@ -170,6 +184,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
 
         self.assertFalse(manifest["release_allowed"])
         self.assertIn(("deliverables", "stale_construction_package_artifacts"), fields)
+        self.assertEqual(manifest["construction_package_artifact_status"]["stale"], ["CAD-1"])
 
     def test_manifest_blocks_package_without_final_model_reference(self) -> None:
         meta = {
@@ -205,6 +220,9 @@ class ConstructionPackageManifestTests(unittest.TestCase):
 
         self.assertFalse(manifest["release_allowed"])
         self.assertIn(("deliverables", "construction_package_model_reference"), fields)
+        artifact_status = manifest["construction_package_artifact_status"]
+        self.assertFalse(artifact_status["model_reference_present"])
+        self.assertFalse(artifact_status["complete_for_release"])
 
     def test_manifest_blocks_untraced_and_mismatched_package_artifacts(self) -> None:
         meta = {
@@ -242,6 +260,9 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         self.assertFalse(manifest["release_allowed"])
         self.assertIn(("deliverables", "untraced_construction_package_artifacts"), fields)
         self.assertIn(("deliverables", "mismatched_construction_package_artifacts"), fields)
+        artifact_status = manifest["construction_package_artifact_status"]
+        self.assertEqual(artifact_status["untraced"], ["CAD-1"])
+        self.assertEqual(artifact_status["mismatched"], ["QA-1"])
 
     def test_manifest_blocks_anonymous_package_artifacts(self) -> None:
         meta = {
@@ -278,6 +299,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
 
         self.assertFalse(manifest["release_allowed"])
         self.assertIn(("deliverables", "construction_package_artifact_identity"), fields)
+        self.assertEqual(manifest["construction_package_artifact_status"]["anonymous"], ["sheets"])
 
     def test_manifest_blocks_package_model_reference_that_does_not_match_final_plan(self) -> None:
         plan = {
@@ -328,6 +350,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         self.assertFalse(manifest["release_allowed"])
         self.assertTrue(manifest["expected_canonical_model_reference"].startswith("plan-sha256:"))
         self.assertIn(("deliverables", "construction_package_model_mismatch"), fields)
+        self.assertFalse(manifest["construction_package_artifact_status"]["model_matches_expected"])
 
     def test_manifest_allows_package_matching_final_plan_fingerprint(self) -> None:
         plan = {
@@ -377,6 +400,9 @@ class ConstructionPackageManifestTests(unittest.TestCase):
 
         self.assertTrue(manifest["release_allowed"])
         self.assertEqual(manifest["expected_canonical_model_reference"], expected)
+        artifact_status = manifest["construction_package_artifact_status"]
+        self.assertTrue(artifact_status["model_matches_expected"])
+        self.assertTrue(artifact_status["complete_for_release"])
 
 
 if __name__ == "__main__":
