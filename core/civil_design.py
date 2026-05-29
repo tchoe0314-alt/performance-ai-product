@@ -1905,6 +1905,7 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                 )
             )
 
+    expected_model_refs = _model_references(meta)
     depth = _safe_dict(meta.get("depth_validation"))
     for key in ("stormwater", "water", "roadway_corridor"):
         result = _safe_dict(depth.get(key))
@@ -1917,8 +1918,16 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                     f"Resolve {key} depth validation blockers and rerun readiness.",
                 )
             )
+        elif expected_model_refs and _model_references(result).isdisjoint(expected_model_refs):
+            blockers.append(
+                _construction_gap(
+                    "depth_validation",
+                    f"{key}_model_trace",
+                    f"{key.replace('_', ' ').title()} depth validation must reference the final canonical model.",
+                    f"Rerun {key} depth validation on the final model and attach canonical_model_id/hash or final_model_id/hash metadata.",
+                )
+            )
 
-    expected_model_refs = _model_references(meta)
     truth = _safe_dict(meta.get("truth_audit"))
     if not truth:
         blockers.append(
@@ -2380,6 +2389,15 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                 "sealed_release",
                 "Civora can prepare and audit engineering packages, but construction release requires licensed professional review.",
                 "Attach reviewer, license, review date, and sealed/released-for-construction status.",
+            )
+        )
+    elif expected_model_refs and _model_references(professional).isdisjoint(expected_model_refs):
+        blockers.append(
+            _construction_gap(
+                "professional_review",
+                "professional_release_model_trace",
+                "Professional release evidence must reference the final canonical model reviewed for construction.",
+                "Attach canonical_model_id/hash or final_model_id/hash to the professional release record.",
             )
         )
     for gap in _safe_list(professional_validation.get("blockers")):

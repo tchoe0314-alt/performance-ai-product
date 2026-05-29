@@ -161,9 +161,9 @@ def _production_ready_meta() -> dict:
     meta["storm_pipes"]["inlet_capacity_checks"] = [{"inlet": "INLET-1", "spread_ft": 4.0, "bypass_cfs": 0.0, "valid": True}]
     meta["storm_pipes"]["backwater_validation"] = {"valid": True, "surcharged_segments": []}
     meta["depth_validation"] = {
-        "stormwater": {"production_ready": True, "blockers": []},
-        "water": {"production_ready": True, "blockers": []},
-        "roadway_corridor": {"production_ready": True, "blockers": []},
+        "stormwater": {"production_ready": True, "blockers": [], "canonical_model_id": "MODEL-FINAL-1"},
+        "water": {"production_ready": True, "blockers": [], "canonical_model_id": "MODEL-FINAL-1"},
+        "roadway_corridor": {"production_ready": True, "blockers": [], "canonical_model_id": "MODEL-FINAL-1"},
     }
     meta["canonical_model_id"] = "MODEL-FINAL-1"
     meta["truth_audit"] = {"success": True, "canonical_model_id": "MODEL-FINAL-1"}
@@ -591,6 +591,18 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertIn(("qa", "manual_validation"), blockers)
         self.assertIn(("reactive_model", "reactive_update_report"), blockers)
 
+    def test_construction_readiness_blocks_stale_depth_validation_model_trace(self) -> None:
+        meta = _production_ready_meta()
+        meta["depth_validation"]["stormwater"]["canonical_model_id"] = "MODEL-OLD"
+        meta["depth_validation"]["water"].pop("canonical_model_id", None)
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("depth_validation", "stormwater_model_trace"), blockers)
+        self.assertIn(("depth_validation", "water_model_trace"), blockers)
+
     def test_construction_readiness_blocks_stale_qa_model_trace(self) -> None:
         meta = _production_ready_meta()
         meta["truth_audit"] = {"success": True, "canonical_model_id": "MODEL-OLD"}
@@ -622,6 +634,27 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertFalse(readiness["ready"])
         self.assertIn(("reactive_model", "reactive_update_model_trace"), blockers)
 
+    def test_construction_readiness_blocks_stale_professional_release_model_trace(self) -> None:
+        meta = _production_ready_meta()
+        meta["professional_review"] = {
+            "status": "released_for_construction",
+            "sealed": True,
+            "engineer_name": "Alex Morgan",
+            "license_number": "TX-123456",
+            "review_date": "2026-05-28",
+            "jurisdiction": "Test City",
+            "license_jurisdiction": "TX",
+            "discipline": "civil",
+            "review_scope": "civil_site_construction_documents",
+            "canonical_model_id": "MODEL-OLD",
+        }
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("professional_review", "professional_release_model_trace"), blockers)
+
     def test_construction_readiness_requires_export_traceability_and_sheet_items(self) -> None:
         meta = _production_ready_meta()
         meta["professional_review"] = {
@@ -634,6 +667,7 @@ class CivilDesignReadinessTests(unittest.TestCase):
             "license_jurisdiction": "TX",
             "discipline": "civil",
             "review_scope": "civil_site_construction_documents",
+            "canonical_model_id": "MODEL-FINAL-1",
         }
         meta["export_audit"] = {"production_export_ready": True, "export_blocked": False}
         meta["sheet_registry"] = {"source": "placeholder"}
@@ -677,6 +711,7 @@ class CivilDesignReadinessTests(unittest.TestCase):
             "license_jurisdiction": "TX",
             "discipline": "civil",
             "review_scope": "civil_site_construction_documents",
+            "canonical_model_id": "MODEL-FINAL-1",
         }
         meta["retaining_walls"] = [{"id": "RW-1", "max_height_ft": 6.5}]
 
@@ -699,6 +734,7 @@ class CivilDesignReadinessTests(unittest.TestCase):
             "license_jurisdiction": "TX",
             "discipline": "civil",
             "review_scope": "civil_site_construction_documents",
+            "canonical_model_id": "MODEL-FINAL-1",
         }
         meta["retaining_walls"] = [{"id": "RW-1", "max_height_ft": 6.5}]
         meta["structures"] = {"wall_tie_in_checks": [{"wall_id": "RW-1", "valid": True}]}
@@ -725,6 +761,7 @@ class CivilDesignReadinessTests(unittest.TestCase):
             "license_jurisdiction": "TX",
             "discipline": "civil",
             "review_scope": "civil_site_construction_documents",
+            "canonical_model_id": "MODEL-FINAL-1",
         }
         meta["foundations"] = [{"id": "F-1", "building_id": "B-1"}]
 
@@ -748,6 +785,7 @@ class CivilDesignReadinessTests(unittest.TestCase):
             "license_jurisdiction": "TX",
             "discipline": "civil",
             "review_scope": "civil_site_construction_documents",
+            "canonical_model_id": "MODEL-FINAL-1",
         }
         meta["bridge_interfaces"] = [{"id": "BR-IF-1", "bridge_id": "BR-1"}]
 
@@ -771,6 +809,7 @@ class CivilDesignReadinessTests(unittest.TestCase):
             "license_jurisdiction": "TX",
             "discipline": "civil",
             "review_scope": "civil_site_construction_documents",
+            "canonical_model_id": "MODEL-FINAL-1",
         }
         meta["structure_conflicts"] = [{"id": "SC-1", "status": "open", "resolved": False}]
 
@@ -792,6 +831,7 @@ class CivilDesignReadinessTests(unittest.TestCase):
             "license_jurisdiction": "TX",
             "discipline": "civil",
             "review_scope": "civil_site_construction_documents",
+            "canonical_model_id": "MODEL-FINAL-1",
         }
         meta["foundations"] = [{"id": "F-1", "building_id": "B-1"}]
         meta["foundation_coordination_review"] = {
@@ -826,6 +866,7 @@ class CivilDesignReadinessTests(unittest.TestCase):
             "license_jurisdiction": "TX",
             "discipline": "civil",
             "review_scope": "civil_site_construction_documents",
+            "canonical_model_id": "MODEL-FINAL-1",
         }
 
         readiness = construction_readiness({"meta": meta})
