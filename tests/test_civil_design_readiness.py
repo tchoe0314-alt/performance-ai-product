@@ -117,7 +117,11 @@ def _production_ready_meta() -> dict:
     accepted = accept_standards_rules(packet, ["city_storm_capacity", "city_utility_cover"])
     meta["standards_acceptance"] = accepted
     meta["design_standards"] = standards_pack_from_acceptance(accepted)
-    meta["jurisdiction_standards"] = {"agency": "Test City", "source_url": "https://city.example.gov/engineering-standards"}
+    meta["jurisdiction_standards"] = {
+        "agency": "Test City",
+        "source_url": "https://city.example.gov/engineering-standards",
+        "production_usable": True,
+    }
     meta["company_standards"] = {
         "source": "company_manual",
         "version": "2026.05",
@@ -591,6 +595,16 @@ class CivilDesignReadinessTests(unittest.TestCase):
 
         self.assertFalse(readiness["ready"])
         self.assertIn(("standards", "jurisdiction_standards_traceability"), blockers)
+
+    def test_construction_readiness_requires_jurisdiction_standards_production_usable(self) -> None:
+        meta = _production_ready_meta()
+        meta["jurisdiction_standards"].pop("production_usable", None)
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("standards", "jurisdiction_standards_production_usable"), blockers)
 
     def test_construction_readiness_requires_company_standards_production_evidence(self) -> None:
         meta = _production_ready_meta()

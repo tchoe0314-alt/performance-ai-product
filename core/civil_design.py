@@ -1873,12 +1873,12 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
         )
     else:
         jurisdiction = _safe_dict(meta.get("jurisdiction_standards"))
-        if jurisdiction.get("production_usable") is False:
+        if jurisdiction.get("production_usable") is not True:
             blockers.append(
                 _construction_gap(
                     "standards",
                     "jurisdiction_standards_production_usable",
-                    "Construction release cannot use jurisdiction standards explicitly marked review-only.",
+                    "Construction release requires jurisdiction standards explicitly marked production-usable.",
                     "Accept official jurisdiction rules and mark jurisdiction_standards.production_usable true.",
                 )
             )
