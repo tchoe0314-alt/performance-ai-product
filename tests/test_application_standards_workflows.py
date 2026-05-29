@@ -49,6 +49,7 @@ class ApplicationStandardsWorkflowsTests(unittest.TestCase):
         self.assertTrue(accepted["production_usable"])
         self.assertTrue(accepted["design_standards"]["production_usable"])
         self.assertTrue(accepted["jurisdiction_standards"]["production_usable"])
+        self.assertEqual(accepted["standards_acceptance"]["accepted_rules"][0]["accepted_by"], "user")
         self.assertEqual(accepted["company_standards"]["cad_layers"], "CIVORA")
         self.assertIn("official rules", accepted["truth_label"])
 

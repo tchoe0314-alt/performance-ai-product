@@ -693,7 +693,7 @@ def _standards_production_blockers(standards: Dict[str, Any], accepted_rules: Se
     for rule in accepted_rules:
         missing = [
             key
-            for key in ("discipline", "topic", "candidate_value", "source_url", "source_section")
+            for key in ("discipline", "topic", "candidate_value", "source_url", "source_section", "accepted_by", "accepted_date")
             if not _safe_str(rule.get(key))
         ]
         if missing:

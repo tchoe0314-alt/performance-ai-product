@@ -209,7 +209,13 @@ def build_standards_review_packet(
     }
 
 
-def accept_standards_rules(review_packet: Dict[str, Any], accepted_rule_ids: Iterable[str], edits: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Any]:
+def accept_standards_rules(
+    review_packet: Dict[str, Any],
+    accepted_rule_ids: Iterable[str],
+    edits: Optional[Dict[str, Dict[str, Any]]] = None,
+    *,
+    accepted_by: str = "user",
+) -> Dict[str, Any]:
     accepted = {safe_str(item) for item in accepted_rule_ids if safe_str(item)}
     edit_map = safe_dict(edits)
     candidates = [safe_dict(item) for item in safe_list(review_packet.get("candidate_rules"))]
@@ -223,6 +229,7 @@ def accept_standards_rules(review_packet: Dict[str, Any], accepted_rule_ids: Ite
         if rule_id in accepted:
             edited["status"] = "accepted"
             edited["accepted_date"] = _today()
+            edited["accepted_by"] = safe_str(accepted_by, "user")
             edited["needs_human_confirmation"] = False
             accepted_rules.append(edited)
         else:
@@ -365,7 +372,7 @@ def validate_standards_acceptance_for_production(standards: Dict[str, Any]) -> D
     for rule in rules:
         missing = [
             key
-            for key in ("discipline", "topic", "candidate_value", "source_url", "source_section")
+            for key in ("discipline", "topic", "candidate_value", "source_url", "source_section", "accepted_by", "accepted_date")
             if not safe_str(rule.get(key))
         ]
         if missing:

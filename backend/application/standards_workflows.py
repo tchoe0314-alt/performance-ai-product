@@ -46,8 +46,9 @@ def accept_standards_response(
     accepted_rule_ids: Iterable[str],
     edits: Optional[Dict[str, Dict[str, Any]]] = None,
     company_standards: Optional[Dict[str, Any]] = None,
+    accepted_by: str = "user",
 ) -> Dict[str, Any]:
-    acceptance = accept_standards_rules(review_packet, accepted_rule_ids, edits=edits)
+    acceptance = accept_standards_rules(review_packet, accepted_rule_ids, edits=edits, accepted_by=accepted_by)
     evidence = standards_project_evidence_from_acceptance(
         acceptance,
         review_packet=review_packet,
