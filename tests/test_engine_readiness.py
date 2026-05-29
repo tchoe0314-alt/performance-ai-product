@@ -23,6 +23,7 @@ class EngineReadinessTests(unittest.TestCase):
         self.assertIn("storm_pipe", readiness["production_blocked_engine_ids"])
         self.assertIn("export_cad", readiness["production_blocked_engine_ids"])
         self.assertIn("gis_existing_conditions", readiness["production_blocked_engine_ids"])
+        self.assertIn("structure", readiness["not_evidenced_engine_ids"])
         self.assertIn("coordinate_system", {item["field"] for item in readiness["engines"]["gis_existing_conditions"]["production_blockers"]})
         storm = readiness["engines"]["storm_pipe"]
         self.assertEqual(storm["status"], "concept_ready_needs_production_depth")
@@ -133,6 +134,30 @@ class EngineReadinessTests(unittest.TestCase):
         reactive = readiness["engines"]["reactive_model"]
         self.assertEqual(reactive["status"], "concept_ready_needs_production_depth")
         self.assertIn("stale_outputs", {item["field"] for item in reactive["production_blockers"]})
+
+    def test_structure_engine_is_not_production_ready_without_evidence(self) -> None:
+        readiness = evaluate_engine_readiness({"meta": _complete_meta()})
+
+        structure = readiness["engines"]["structure"]
+
+        self.assertEqual(structure["status"], "not_evidenced")
+        self.assertIn("structure", readiness["not_evidenced_engine_ids"])
+        self.assertFalse(readiness["production_ready"])
+
+    def test_unresolved_structure_conflicts_block_structure_engine_readiness(self) -> None:
+        readiness = evaluate_engine_readiness(
+            {
+                "meta": {
+                    **_complete_meta(),
+                    "structure_conflicts": [{"id": "SC-1", "status": "open", "resolved": False}],
+                }
+            }
+        )
+
+        structure = readiness["engines"]["structure"]
+
+        self.assertEqual(structure["status"], "concept_ready_needs_production_depth")
+        self.assertIn("structure_conflicts", {item["field"] for item in structure["production_blockers"]})
 
 
 if __name__ == "__main__":

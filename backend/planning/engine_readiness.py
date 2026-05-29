@@ -100,7 +100,7 @@ def _engine_evidence(engine_id: str, meta: Dict[str, Any]) -> List[str]:
         if _has_any(meta, ("alignments", "profiles", "cross_sections")):
             evidence.append("alignment_or_sheet_views")
     elif engine_id == "structure":
-        if _has_any(meta, ("structure_summary", "retaining_walls", "bridge_interfaces")):
+        if _has_any(meta, ("structure_summary", "retaining_walls", "foundations", "bridge_interfaces", "structure_conflicts")):
             evidence.append("structure_outputs")
     elif engine_id == "earthwork":
         if _has_any(meta, ("earthwork", "quantities")):
@@ -139,6 +139,8 @@ def _engine_evidence(engine_id: str, meta: Dict[str, Any]) -> List[str]:
 
 def _production_gaps_for_systems(civil_readiness: Dict[str, Any], system_names: Sequence[str]) -> List[Dict[str, Any]]:
     gaps = []
+    if not system_names:
+        return gaps
     area_aliases = {
         "hydraulic_depth": {"hydraulics"},
         "cad_interop": {"cad_interop"},
@@ -346,6 +348,23 @@ def _explicit_blockers_for_engine(engine_id: str, meta: Dict[str, Any]) -> List[
                     "severity": "blocker",
                 }
             )
+    elif engine_id == "structure":
+        structures = _safe_dict(meta.get("structures") or meta.get("structure_summary"))
+        conflicts = _safe_list(meta.get("structure_conflicts")) or _safe_list(structures.get("structure_conflicts"))
+        unresolved = [
+            _safe_dict(item)
+            for item in conflicts
+            if _safe_dict(item).get("resolved") is not True and _safe_str(_safe_dict(item).get("status")).lower() not in {"resolved", "accepted"}
+        ]
+        if unresolved:
+            blockers.append(
+                {
+                    "area": "structure",
+                    "field": "structure_conflicts",
+                    "message": "Structure readiness is blocked because unresolved structure conflicts remain.",
+                    "severity": "blocker",
+                }
+            )
     return blockers
 
 
@@ -390,7 +409,7 @@ def evaluate_engine_readiness(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
             status = "concept_ready_needs_production_depth"
             production_blocked.append(contract.engine_id)
             concept_ready.append(contract.engine_id)
-        elif not evidence and contract.engine_id not in {"structure", "gis_existing_conditions"}:
+        elif not evidence:
             status = "not_evidenced"
             no_evidence.append(contract.engine_id)
         elif warnings:
