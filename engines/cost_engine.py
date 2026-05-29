@@ -373,12 +373,14 @@ def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
     if not line_items:
         warnings.append("No positive priced quantities were found.")
 
-    success = bool(line_items) and traceability_complete and quantities.get("success") is True
     pricing_coverage_complete = not bool(pricing_coverage_gaps)
+    calculation_complete = bool(line_items) and traceability_complete and quantities.get("success") is True
+    production_pricing_ready = bool(pricing_meta["production_usable"] and pricing_coverage_complete)
+    success = calculation_complete and production_pricing_ready
     return CostResult(
         success=success,
         message=(
-            "Cost estimate completed."
+            "Cost estimate completed with production-usable pricing."
             if success
             else "Cost estimate completed for review, but production/bid signoff is blocked."
         ),
@@ -399,6 +401,7 @@ def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
             "method": "quantity_x_unit_price",
             "pricing": pricing_meta,
             "traceability_complete": traceability_complete,
+            "calculation_complete": calculation_complete,
             "trace_gaps": trace_gaps,
             "pricing_coverage_complete": pricing_coverage_complete,
             "pricing_coverage_gaps": pricing_coverage_gaps,

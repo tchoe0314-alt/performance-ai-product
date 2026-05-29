@@ -6,7 +6,7 @@ from engines.cost_engine import compute_cost_estimate, normalize_unit_price_book
 
 
 class CostEngineTests(unittest.TestCase):
-    def test_cost_engine_prices_traceable_quantity_takeoff_with_default_pricing(self) -> None:
+    def test_cost_engine_blocks_success_for_default_concept_pricing(self) -> None:
         plan = {
             "meta": {
                 "quantities": {
@@ -25,10 +25,11 @@ class CostEngineTests(unittest.TestCase):
 
         result = compute_cost_estimate(plan)
 
-        self.assertTrue(result.success)
+        self.assertFalse(result.success)
         self.assertEqual(result.totals["direct_cost"], 20900.0)
         self.assertEqual(result.totals["total_cost"], 24035.0)
         self.assertFalse(result.totals["production_usable"])
+        self.assertTrue(result.explain["calculation_complete"])
         self.assertTrue(result.assumptions)
         self.assertEqual(len(result.line_items), 3)
 
@@ -89,8 +90,9 @@ class CostEngineTests(unittest.TestCase):
             }
         )
 
-        self.assertTrue(result.success)
+        self.assertFalse(result.success)
         self.assertFalse(result.totals["production_usable"])
+        self.assertTrue(result.explain["calculation_complete"])
         self.assertFalse(result.explain["pricing"]["production_validation"]["success"])
         self.assertIn("Attached unit-price book is not production-usable", result.assumptions[0])
 
@@ -122,8 +124,9 @@ class CostEngineTests(unittest.TestCase):
             }
         )
 
-        self.assertTrue(result.success)
+        self.assertFalse(result.success)
         self.assertFalse(result.totals["production_usable"])
+        self.assertTrue(result.explain["calculation_complete"])
         self.assertIn("parking_area_sf", result.explain["pricing_coverage_gaps"])
         parking = next(item for item in result.line_items if item["metric"] == "parking_area_sf")
         self.assertFalse(parking["production_price"])
