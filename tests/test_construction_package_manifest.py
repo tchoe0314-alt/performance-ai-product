@@ -83,6 +83,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
                     "existing_conditions_production_ready": True,
                     "standards_production_usable": True,
                     "export_production_ready": True,
+                    "cost_production_usable": True,
                     "professional_release": True,
                 },
                 "blockers": [],

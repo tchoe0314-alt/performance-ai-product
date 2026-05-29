@@ -45,6 +45,13 @@ CONSTRUCTION_PACKAGE_SECTIONS: Sequence[Dict[str, Any]] = (
         "required": ("export audit", "sheet registry", "canonical ID traceability"),
     },
     {
+        "section_id": "cost",
+        "label": "Cost / Takeoff",
+        "areas": {"cost"},
+        "evidence_keys": ("cost_production_usable",),
+        "required": ("traceable quantities", "approved unit-price book", "current cost estimate"),
+    },
+    {
         "section_id": "professional_release",
         "label": "Professional Release",
         "areas": {"professional_review"},

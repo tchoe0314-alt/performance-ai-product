@@ -1566,6 +1566,49 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
             )
         )
 
+    cost = _safe_dict(meta.get("cost_estimate"))
+    cost_totals = _safe_dict(cost.get("totals"))
+    cost_explain = _safe_dict(cost.get("explain"))
+    pricing = _safe_dict(cost_explain.get("pricing"))
+    if not cost:
+        blockers.append(
+            _construction_gap(
+                "cost",
+                "cost_estimate",
+                "Construction release requires a current cost/takeoff estimate tied to the canonical quantity model.",
+                "Regenerate quantities and cost estimate from the final canonical model.",
+            )
+        )
+    elif cost.get("success") is not True:
+        blockers.append(
+            _construction_gap(
+                "cost",
+                "cost_success",
+                "Construction release cannot use a failed or review-only cost estimate.",
+                "Resolve cost estimate blockers and regenerate from traceable quantities.",
+            )
+        )
+    if cost and cost_totals.get("production_usable") is not True:
+        blockers.append(
+            _construction_gap(
+                "cost",
+                "production_unit_price_book",
+                "Construction release requires a production-usable unit-price book for bid/cost claims.",
+                "Attach a regional/company unit-price book with source, effective date, approval, and positive unit prices.",
+            )
+        )
+    pricing_validation = _safe_dict(pricing.get("production_validation"))
+    for gap in _safe_list(pricing_validation.get("blockers")):
+        rec = _safe_dict(gap)
+        blockers.append(
+            _construction_gap(
+                "cost",
+                _safe_str(rec.get("field"), "unit_price_book"),
+                _safe_str(rec.get("reason"), "Unit-price book production validation failed."),
+                "Fix the unit-price book metadata or line item and rerun cost validation.",
+            )
+        )
+
     wall = _safe_dict(meta.get("retaining_wall_summary"))
     if wall and wall.get("review_required") is True:
         blockers.append(
@@ -1619,6 +1662,7 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
             "existing_conditions_production_ready": existing.get("production_ready") is True if existing else False,
             "standards_production_usable": standards_pack.get("production_usable") is True,
             "export_production_ready": export.get("production_export_ready") is True if export else False,
+            "cost_production_usable": cost_totals.get("production_usable") is True if cost else False,
             "professional_release": professionally_released,
             "professional_release_validation": professional_validation,
         },

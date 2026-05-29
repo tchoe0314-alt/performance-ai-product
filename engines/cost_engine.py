@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import csv
+import hashlib
+import io
+import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Tuple
 
@@ -26,6 +30,18 @@ def _safe_dict(value: Any) -> Dict[str, Any]:
 
 def _safe_list(value: Any) -> List[Any]:
     return value if isinstance(value, list) else []
+
+
+def _dedupe(values: Iterable[str]) -> List[str]:
+    out: List[str] = []
+    seen = set()
+    for value in values:
+        text = _safe_str(value)
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append(text)
+    return out
 
 
 @dataclass
@@ -55,10 +71,184 @@ DEFAULT_UNIT_PRICES: Dict[str, Dict[str, Any]] = {
 }
 
 
+def normalize_unit_price_book(raw: Dict[str, Any]) -> Dict[str, Any]:
+    source = _safe_str(raw.get("source") or raw.get("source_id"))
+    location = _safe_str(raw.get("location") or raw.get("region") or raw.get("jurisdiction"))
+    effective_date = _safe_str(raw.get("effective_date") or raw.get("date"))
+    approved_by = _safe_str(raw.get("approved_by") or raw.get("reviewed_by"))
+    approval_date = _safe_str(raw.get("approval_date") or raw.get("review_date"))
+    currency = _safe_str(raw.get("currency"), "USD").upper()
+    contingency_pct = _safe_float(raw.get("contingency_pct"), 15.0)
+    unit_prices: Dict[str, Dict[str, Any]] = {}
+    raw_prices = raw.get("unit_prices")
+    if isinstance(raw_prices, list):
+        iterable = raw_prices
+    elif isinstance(raw_prices, dict):
+        iterable = []
+        for key, value in raw_prices.items():
+            rec = dict(_safe_dict(value))
+            rec.setdefault("metric", key)
+            iterable.append(rec)
+    else:
+        iterable = []
+    for value in iterable:
+        rec = _safe_dict(value)
+        metric = _safe_str(rec.get("metric") or rec.get("quantity_metric") or rec.get("key"))
+        if not metric:
+            continue
+        normalized = {
+            "metric": metric,
+            "item": _safe_str(rec.get("item") or rec.get("description") or rec.get("name"), metric),
+            "category": _safe_str(rec.get("category") or rec.get("discipline"), "general"),
+            "unit": _safe_str(rec.get("unit") or rec.get("units")),
+            "unit_cost": _safe_float(rec.get("unit_cost") or rec.get("price") or rec.get("cost")),
+            "source_item_id": _safe_str(rec.get("source_item_id") or rec.get("bid_item_id") or rec.get("item_id")),
+            "notes": _safe_str(rec.get("notes")),
+        }
+        unit_prices[metric] = normalized
+    normalized = {
+        "version": "unit_price_book_v1",
+        "source": source,
+        "location": location,
+        "effective_date": effective_date,
+        "approved_by": approved_by,
+        "approval_date": approval_date,
+        "currency": currency,
+        "contingency_pct": max(0.0, contingency_pct),
+        "unit_prices": unit_prices,
+    }
+    stable_payload = json.dumps(normalized, sort_keys=True, separators=(",", ":"))
+    normalized["price_book_hash"] = hashlib.sha256(stable_payload.encode("utf-8")).hexdigest()
+    validation = validate_unit_price_book_for_production(normalized, attach_validation=False)
+    normalized["production_usable"] = bool(validation.get("production_usable"))
+    normalized["production_validation"] = validation
+    normalized["truth_label"] = (
+        "Unit price books are production-usable only when source, location, effective date, approval, "
+        "and positive traceable unit prices are present."
+    )
+    return normalized
+
+
+def validate_unit_price_book_for_production(
+    price_book: Dict[str, Any],
+    *,
+    attach_validation: bool = True,
+) -> Dict[str, Any]:
+    book = _safe_dict(price_book)
+    unit_prices = _safe_dict(book.get("unit_prices"))
+    blockers: List[Dict[str, Any]] = []
+    warnings: List[Dict[str, Any]] = []
+    for field_name, reason in (
+        ("source", "Production cost estimates require a traceable source such as a company bid book, DOT schedule, or approved estimator file."),
+        ("location", "Production cost estimates require a region/jurisdiction because unit prices are location-sensitive."),
+        ("effective_date", "Production cost estimates require the price book effective date."),
+        ("approved_by", "Production cost estimates require reviewer/estimator approval evidence."),
+        ("approval_date", "Production cost estimates require the date the price book was approved for use."),
+    ):
+        if not _safe_str(book.get(field_name)):
+            blockers.append({"field": field_name, "reason": reason, "severity": "blocker"})
+    if not unit_prices:
+        blockers.append(
+            {
+                "field": "unit_prices",
+                "reason": "Production cost estimates require at least one positive unit price.",
+                "severity": "blocker",
+            }
+        )
+    known_metrics = set(DEFAULT_UNIT_PRICES.keys())
+    for metric, value in unit_prices.items():
+        rec = _safe_dict(value)
+        if _safe_float(rec.get("unit_cost"), 0.0) <= 0.0:
+            blockers.append(
+                {
+                    "field": f"unit_prices.{metric}.unit_cost",
+                    "reason": "Each production unit price must be a positive number.",
+                    "severity": "blocker",
+                }
+            )
+        if not _safe_str(rec.get("unit")):
+            blockers.append(
+                {
+                    "field": f"unit_prices.{metric}.unit",
+                    "reason": "Each production unit price must declare its measurement unit.",
+                    "severity": "blocker",
+                }
+            )
+        if not _safe_str(rec.get("item")):
+            blockers.append(
+                {
+                    "field": f"unit_prices.{metric}.item",
+                    "reason": "Each production unit price must include a readable item description.",
+                    "severity": "blocker",
+                }
+            )
+        if metric not in known_metrics:
+            warnings.append(
+                {
+                    "field": f"unit_prices.{metric}",
+                    "reason": "This unit price metric is not consumed by the current quantity engine unless matching quantities are present.",
+                    "severity": "warning",
+                }
+            )
+    validation = {
+        "success": not blockers,
+        "production_usable": not blockers,
+        "blockers": blockers,
+        "warnings": warnings,
+        "required_fields": ["source", "location", "effective_date", "approved_by", "approval_date", "unit_prices"],
+        "truth_label": "Civora blocks bid-ready cost output unless the unit-price book has traceable source and approval metadata.",
+    }
+    if attach_validation and isinstance(price_book, dict):
+        price_book["production_validation"] = validation
+        price_book["production_usable"] = bool(validation["production_usable"])
+    return validation
+
+
+def unit_price_book_from_csv(
+    csv_text: str,
+    *,
+    source: str = "",
+    location: str = "",
+    effective_date: str = "",
+    approved_by: str = "",
+    approval_date: str = "",
+    currency: str = "USD",
+    contingency_pct: float = 15.0,
+) -> Dict[str, Any]:
+    reader = csv.DictReader(io.StringIO(csv_text or ""))
+    unit_prices: Dict[str, Dict[str, Any]] = {}
+    for row in reader:
+        metric = _safe_str(row.get("metric") or row.get("quantity_metric") or row.get("key"))
+        if not metric:
+            continue
+        unit_prices[metric] = {
+            "metric": metric,
+            "item": _safe_str(row.get("item") or row.get("description") or row.get("name"), metric),
+            "category": _safe_str(row.get("category") or row.get("discipline"), "general"),
+            "unit": _safe_str(row.get("unit") or row.get("units")),
+            "unit_cost": _safe_float(row.get("unit_cost") or row.get("price") or row.get("cost")),
+            "source_item_id": _safe_str(row.get("source_item_id") or row.get("bid_item_id") or row.get("item_id")),
+            "notes": _safe_str(row.get("notes")),
+        }
+    return normalize_unit_price_book(
+        {
+            "source": source,
+            "location": location,
+            "effective_date": effective_date,
+            "approved_by": approved_by,
+            "approval_date": approval_date,
+            "currency": currency,
+            "contingency_pct": contingency_pct,
+            "unit_prices": unit_prices,
+        }
+    )
+
+
 def _unit_price_book(meta: Dict[str, Any]) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Any]]:
     raw = _safe_dict(meta.get("cost_pricing") or meta.get("unit_price_book") or meta.get("unit_prices"))
+    normalized = normalize_unit_price_book(raw) if raw else {}
     prices = dict(DEFAULT_UNIT_PRICES)
-    user_prices = _safe_dict(raw.get("unit_prices") if raw else {})
+    user_prices = _safe_dict(normalized.get("unit_prices") if normalized else {})
     for key, value in user_prices.items():
         rec = _safe_dict(value)
         if not rec:
@@ -66,13 +256,18 @@ def _unit_price_book(meta: Dict[str, Any]) -> Tuple[Dict[str, Dict[str, Any]], D
         merged = dict(prices.get(key, {}))
         merged.update(rec)
         prices[key] = merged
+    validation = _safe_dict(normalized.get("production_validation"))
     pricing_meta = {
-        "source": _safe_str(raw.get("source"), "civora_concept_default_unit_prices" if not raw else "user_unit_price_book"),
-        "production_usable": raw.get("production_usable") is True,
-        "currency": _safe_str(raw.get("currency"), "USD"),
-        "location": _safe_str(raw.get("location")),
-        "effective_date": _safe_str(raw.get("effective_date")),
-        "contingency_pct": _safe_float(raw.get("contingency_pct"), 15.0),
+        "source": _safe_str(normalized.get("source") if normalized else "", "civora_concept_default_unit_prices" if not raw else "user_unit_price_book"),
+        "production_usable": bool(validation.get("production_usable")) if raw else False,
+        "currency": _safe_str(normalized.get("currency") if normalized else "", "USD"),
+        "location": _safe_str(normalized.get("location") if normalized else ""),
+        "effective_date": _safe_str(normalized.get("effective_date") if normalized else ""),
+        "approved_by": _safe_str(normalized.get("approved_by") if normalized else ""),
+        "approval_date": _safe_str(normalized.get("approval_date") if normalized else ""),
+        "price_book_hash": _safe_str(normalized.get("price_book_hash") if normalized else ""),
+        "contingency_pct": _safe_float(normalized.get("contingency_pct") if normalized else None, 15.0),
+        "production_validation": validation,
     }
     return prices, pricing_meta
 
@@ -98,8 +293,11 @@ def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
     if quantities.get("success") is False:
         warnings.append("Quantity engine is not production-successful; cost estimate is for review only.")
     if not pricing_meta["production_usable"]:
-        assumptions.append("Default concept unit prices are used because no production unit-price book is attached.")
-        warnings.append("Unit prices are concept defaults and are not production/bid authority.")
+        if pricing_meta["source"] == "civora_concept_default_unit_prices":
+            assumptions.append("Default concept unit prices are used because no production unit-price book is attached.")
+        else:
+            assumptions.append("Attached unit-price book is not production-usable until validation blockers are cleared.")
+        warnings.append("Unit prices are concept/default or unapproved and are not production/bid authority.")
 
     line_items: List[Dict[str, Any]] = []
     category_subtotals: Dict[str, float] = {}
@@ -172,4 +370,11 @@ def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
     )
 
 
-__all__ = ["CostResult", "DEFAULT_UNIT_PRICES", "compute_cost_estimate"]
+__all__ = [
+    "CostResult",
+    "DEFAULT_UNIT_PRICES",
+    "compute_cost_estimate",
+    "normalize_unit_price_book",
+    "unit_price_book_from_csv",
+    "validate_unit_price_book_for_production",
+]

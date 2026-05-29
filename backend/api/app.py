@@ -35,6 +35,11 @@ from backend.application.auth_workflows import (
     register_user as application_register_user,
 )
 from backend.application.chat_workflows import decide_chat as application_decide_chat
+from backend.application.cost_workflows import (
+    normalize_unit_price_book_response as application_normalize_unit_price_book_response,
+    unit_price_book_from_csv_response as application_unit_price_book_from_csv_response,
+    validate_unit_price_book_response as application_validate_unit_price_book_response,
+)
 from backend.application.file_workflows import (
     download_artifact_response as application_download_artifact_response,
     existing_conditions_online_sources as application_existing_conditions_online_sources,
@@ -283,6 +288,21 @@ class StandardsExtractPayload(BaseModel):
 
 class GoldenScenarioRunPayload(BaseModel):
     scenario_ids: List[str] = Field(default_factory=list)
+
+
+class UnitPriceBookPayload(BaseModel):
+    unit_price_book: Dict[str, Any] = Field(default_factory=dict)
+
+
+class UnitPriceBookCsvPayload(BaseModel):
+    csv_text: str = ""
+    source: str = ""
+    location: str = ""
+    effective_date: str = ""
+    approved_by: str = ""
+    approval_date: str = ""
+    currency: str = "USD"
+    contingency_pct: float = 15.0
 
 
 class ProfessionalReleasePayload(BaseModel):
@@ -810,6 +830,42 @@ def run_golden_scenarios(
     _ = current_user
     return application_run_golden_scenarios_response(
         scenario_ids=payload.scenario_ids or None,
+    )
+
+
+@app.post("/api/cost/unit-price-book/normalize")
+def normalize_unit_price_book(
+    payload: UnitPriceBookPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    _ = current_user
+    return application_normalize_unit_price_book_response(payload.unit_price_book)
+
+
+@app.post("/api/cost/unit-price-book/validate")
+def validate_unit_price_book(
+    payload: UnitPriceBookPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    _ = current_user
+    return application_validate_unit_price_book_response(payload.unit_price_book)
+
+
+@app.post("/api/cost/unit-price-book/from-csv")
+def unit_price_book_from_csv(
+    payload: UnitPriceBookCsvPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    _ = current_user
+    return application_unit_price_book_from_csv_response(
+        csv_text=payload.csv_text,
+        source=payload.source,
+        location=payload.location,
+        effective_date=payload.effective_date,
+        approved_by=payload.approved_by,
+        approval_date=payload.approval_date,
+        currency=payload.currency,
+        contingency_pct=payload.contingency_pct,
     )
 
 

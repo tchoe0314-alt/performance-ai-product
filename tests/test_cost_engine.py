@@ -2,7 +2,7 @@ import unittest
 
 import planner
 from backend.planning.engine_readiness import evaluate_engine_readiness
-from engines.cost_engine import compute_cost_estimate
+from engines.cost_engine import compute_cost_estimate, normalize_unit_price_book, unit_price_book_from_csv
 
 
 class CostEngineTests(unittest.TestCase):
@@ -39,6 +39,10 @@ class CostEngineTests(unittest.TestCase):
                     "source": "company_2026_bid_book",
                     "production_usable": True,
                     "currency": "USD",
+                    "location": "Austin, TX",
+                    "effective_date": "2026-05-01",
+                    "approved_by": "Estimator",
+                    "approval_date": "2026-05-02",
                     "contingency_pct": 10,
                     "unit_prices": {
                         "pipe_length_ft": {"item": "RCP storm pipe", "category": "storm", "unit": "ft", "unit_cost": 100.0}
@@ -59,6 +63,60 @@ class CostEngineTests(unittest.TestCase):
         self.assertEqual(result.totals["direct_cost"], 5000.0)
         self.assertEqual(result.totals["total_cost"], 5500.0)
         self.assertFalse(result.assumptions)
+        self.assertTrue(result.explain["pricing"]["production_validation"]["success"])
+
+    def test_cost_engine_does_not_trust_claimed_production_book_without_approval_metadata(self) -> None:
+        result = compute_cost_estimate(
+            {
+                "meta": {
+                    "cost_pricing": {
+                        "source": "company_2026_bid_book",
+                        "production_usable": True,
+                        "unit_prices": {
+                            "pipe_length_ft": {"item": "RCP storm pipe", "category": "storm", "unit": "ft", "unit_cost": 100.0}
+                        },
+                    },
+                    "quantities": {
+                        "success": True,
+                        "totals": {"pipe_length_ft": 50.0},
+                        "explain": {"quantity_audit": {"pipe_length_ft": {"source_object_ids": ["P-1"]}}},
+                    },
+                }
+            }
+        )
+
+        self.assertTrue(result.success)
+        self.assertFalse(result.totals["production_usable"])
+        self.assertFalse(result.explain["pricing"]["production_validation"]["success"])
+        self.assertIn("Attached unit-price book is not production-usable", result.assumptions[0])
+
+    def test_unit_price_book_from_csv_normalizes_and_validates(self) -> None:
+        price_book = unit_price_book_from_csv(
+            "metric,item,category,unit,unit_cost,bid_item_id\npipe_length_ft,RCP storm pipe,storm,ft,125,ST-01\n",
+            source="company_bid_book",
+            location="Austin, TX",
+            effective_date="2026-05-01",
+            approved_by="Estimator",
+            approval_date="2026-05-02",
+            contingency_pct=8,
+        )
+
+        self.assertTrue(price_book["production_usable"])
+        self.assertTrue(price_book["production_validation"]["success"])
+        self.assertEqual(price_book["unit_prices"]["pipe_length_ft"]["source_item_id"], "ST-01")
+        self.assertEqual(price_book["contingency_pct"], 8.0)
+
+    def test_unit_price_book_validation_blocks_missing_required_metadata(self) -> None:
+        price_book = normalize_unit_price_book(
+            {"unit_prices": {"pipe_length_ft": {"item": "Pipe", "unit": "ft", "unit_cost": 100.0}}}
+        )
+
+        fields = {item["field"] for item in price_book["production_validation"]["blockers"]}
+
+        self.assertFalse(price_book["production_usable"])
+        self.assertIn("source", fields)
+        self.assertIn("location", fields)
+        self.assertIn("approved_by", fields)
 
     def test_cost_engine_blocks_untraceable_priced_quantities(self) -> None:
         result = compute_cost_estimate(

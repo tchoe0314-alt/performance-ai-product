@@ -168,6 +168,22 @@ def _production_ready_meta() -> dict:
         "canonical_id_traceability": {"ready": True},
     }
     meta["sheet_registry"] = {"sheets": [{"id": "C-100", "title": "Civil Site Plan"}]}
+    meta["cost_estimate"] = {
+        "success": True,
+        "totals": {"production_usable": True, "total_cost": 125000.0},
+        "explain": {
+            "pricing": {
+                "production_usable": True,
+                "source": "company_2026_bid_book",
+                "location": "Test City",
+                "effective_date": "2026-05-01",
+                "approved_by": "Estimator",
+                "approval_date": "2026-05-02",
+                "production_validation": {"production_usable": True, "blockers": []},
+            },
+            "trace_gaps": {},
+        },
+    }
     meta["cad_interop"] = {"source": "test", "civil3d": True, "landxml": True, "pipe_network_export": True}
     meta["optimization_summary"] = {
         "source": "test",
@@ -376,6 +392,26 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertEqual(readiness["status"], "not_construction_ready")
         self.assertIn(("professional_review", "sealed_release"), blockers)
         self.assertIn("Civora does not stamp drawings", readiness["truth_label"])
+
+    def test_construction_readiness_blocks_unapproved_cost_book(self) -> None:
+        meta = _production_ready_meta()
+        meta["cost_estimate"]["totals"]["production_usable"] = False
+        meta["cost_estimate"]["explain"]["pricing"] = {
+            "production_usable": False,
+            "source": "civora_concept_default_unit_prices",
+            "production_validation": {
+                "production_usable": False,
+                "blockers": [{"field": "source", "reason": "Missing approved price source."}],
+            },
+        }
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("cost", "production_unit_price_book"), blockers)
+        self.assertIn(("cost", "source"), blockers)
+        self.assertFalse(readiness["evidence"]["cost_production_usable"])
 
     def test_construction_readiness_can_clear_with_verified_professional_release(self) -> None:
         meta = _production_ready_meta()
