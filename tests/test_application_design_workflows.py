@@ -303,6 +303,35 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertEqual(summary["convergence_summary"]["blocked_exports"], [])
         self.assertEqual(summary["convergence_summary"]["blocked_reasons"], [])
 
+    def test_build_run_summary_blocks_release_when_construction_gate_is_blocked(self):
+        summary = build_run_summary(
+            {
+                "success": True,
+                "final_plan": {
+                    "actions": [{"layer": "SITE"}],
+                    "meta": {
+                        "deliverables": {"requested": [], "produced": [], "failed": []},
+                        "convergence_summary": {
+                            "converged": True,
+                            "blocked_exports": [],
+                            "blocked_reasons": [],
+                            "unresolved_conflict_count": 0,
+                        },
+                        "construction_readiness": {
+                            "ready": False,
+                            "status": "not_construction_ready",
+                            "blockers": [{"area": "qa", "field": "truth_audit"}],
+                        },
+                    },
+                },
+            },
+            source="unit_test",
+        )
+
+        self.assertFalse(summary["reliability_summary"]["release_ready"])
+        self.assertEqual(summary["reliability_summary"]["operational_state"], "retryable")
+        self.assertIn("construction_readiness_blocked", summary["convergence_summary"]["blocked_reasons"])
+
     def test_build_run_summary_marks_release_ready_skipped_phases_complete(self):
         summary = build_run_summary(
             {

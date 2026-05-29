@@ -454,6 +454,17 @@ def count_unresolved_conflicts(final_plan: Dict[str, Any]) -> int:
     return len(unresolved)
 
 
+def construction_release_blockers_from_meta(meta: Dict[str, Any]) -> list[str]:
+    blockers: list[str] = []
+    construction = dict(meta.get("construction_readiness") or {})
+    if construction and construction.get("ready") is not True:
+        blockers.append("construction_readiness_blocked")
+    package = dict(meta.get("construction_package_manifest") or {})
+    if package and package.get("release_allowed") is not True:
+        blockers.append("construction_package_blocked")
+    return blockers
+
+
 def build_run_summary(
     result_data: Dict[str, Any],
     *,
@@ -503,6 +514,9 @@ def build_run_summary(
         if "blocked_reasons" in final_release_review
         else (convergence.get("blocked_reasons") or [])
     )
+    for construction_blocker in construction_release_blockers_from_meta(plan_meta):
+        if construction_blocker not in blocked_reasons:
+            blocked_reasons.append(construction_blocker)
     unresolved_conflict_count = int(convergence.get("unresolved_conflict_count") or 0)
     failed_deliverables = list(deliverables.get("failed") or [])
     normalized_assumptions = _normalized_assumption_summary(dict(convergence.get("assumption_summary") or {}))
