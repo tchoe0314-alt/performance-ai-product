@@ -1179,6 +1179,26 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertIn(("cad_interop", "export_readiness"), gaps)
         self.assertIn(("cad_interop", "canonical_ids"), gaps)
 
+    def test_civil_readiness_blocks_stale_export_audit_model_trace(self) -> None:
+        meta = _production_ready_meta()
+        meta["export_audit"]["canonical_model_id"] = "MODEL-OLD"
+
+        readiness = civil_design_readiness({"meta": meta})
+        gaps = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
+
+        self.assertFalse(readiness["production_ready"])
+        self.assertIn(("cad_interop", "export_audit_model_trace"), gaps)
+
+    def test_civil_readiness_blocks_export_audit_without_model_trace(self) -> None:
+        meta = _production_ready_meta()
+        meta["export_audit"].pop("canonical_model_id", None)
+
+        readiness = civil_design_readiness({"meta": meta})
+        gaps = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
+
+        self.assertFalse(readiness["production_ready"])
+        self.assertIn(("cad_interop", "export_audit_model_trace"), gaps)
+
     def test_civil_readiness_blocks_placeholder_or_stale_sheet_registry(self) -> None:
         meta = _production_ready_meta()
         meta["sheet_registry"] = {"source": "placeholder", "sheets": [{"id": "C-100", "title": "Civil Site Plan"}]}

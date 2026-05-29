@@ -1092,6 +1092,7 @@ def check_cad_interop_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
     sheet_items = _sheet_registry_items(sheet_registry_raw)
     has_sheet_registry = bool(sheet_items)
     cad = _safe_dict(meta.get("cad_interop") or meta.get("export_interop"))
+    expected_model_refs = _model_references(meta)
     if not export_audit:
         gaps.append(_production_gap("cad_interop", "export_audit", "Export truth needs an audit before production deliverables.", "Finalize export metadata before artifact generation."))
     else:
@@ -1114,6 +1115,15 @@ def check_cad_interop_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
                     "Attach canonical source IDs to export entities and final engineering summaries before export.",
                 )
             )
+        if expected_model_refs and _model_references(export_audit).isdisjoint(expected_model_refs):
+            gaps.append(
+                _production_gap(
+                    "cad_interop",
+                    "export_audit_model_trace",
+                    "Production export audits must identify the final canonical model they were generated from.",
+                    "Regenerate export audit from the final model and attach canonical_model_id/hash or final_model_id/hash metadata.",
+                )
+            )
     if not has_sheet_registry:
         gaps.append(_production_gap("cad_interop", "sheet_registry", "Production sheets need a sheet registry matching final canonical state.", "Finalize sheet registry before export."))
     else:
@@ -1132,7 +1142,11 @@ def check_cad_interop_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
             for index, item in enumerate(sheet_items, start=1)
             if not _safe_str(item.get("id") or item.get("sheet_id")) or not _safe_str(item.get("title"))
         ]
-        missing_model_trace = _sheet_registry_model_trace_gaps(sheet_items, registry=sheet_registry)
+        missing_model_trace = _sheet_registry_model_trace_gaps(
+            sheet_items,
+            registry=sheet_registry,
+            expected_refs=expected_model_refs,
+        )
         if _contains_concept_marker(registry_source) or sheet_registry.get("ready") is False or stale_sheets or missing_identity:
             gaps.append(
                 _production_gap(
