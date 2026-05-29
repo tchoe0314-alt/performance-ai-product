@@ -2077,6 +2077,15 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                     "Regenerate export audit and resolve orphaned/missing canonical ID mappings.",
                 )
             )
+        if expected_model_refs and _model_references(export).isdisjoint(expected_model_refs):
+            blockers.append(
+                _construction_gap(
+                    "deliverables",
+                    "export_audit_model_trace",
+                    "Construction release requires export audit evidence tied to the final canonical model.",
+                    "Regenerate export audit from the final model and attach canonical_model_id/hash or final_model_id/hash metadata.",
+                )
+            )
         if export.get("sheet_registry_meta_matches_plan") is False or export.get("sheet_registry_matches_outputs") is False:
             blockers.append(
                 _construction_gap(

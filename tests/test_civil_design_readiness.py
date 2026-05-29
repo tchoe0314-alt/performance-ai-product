@@ -183,6 +183,7 @@ def _production_ready_meta() -> dict:
         "production_export_ready": True,
         "export_blocked": False,
         "canonical_id_traceability": {"ready": True},
+        "canonical_model_id": "MODEL-FINAL-1",
     }
     meta["sheet_registry"] = {
         "ready": True,
@@ -760,6 +761,26 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertFalse(readiness["ready"])
         self.assertIn(("deliverables", "canonical_id_traceability"), blockers)
         self.assertIn(("deliverables", "sheet_registry"), blockers)
+
+    def test_construction_readiness_blocks_stale_export_audit_model_trace(self) -> None:
+        meta = _production_ready_meta()
+        meta["export_audit"]["canonical_model_id"] = "MODEL-OLD"
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("deliverables", "export_audit_model_trace"), blockers)
+
+    def test_construction_readiness_blocks_export_audit_without_model_trace(self) -> None:
+        meta = _production_ready_meta()
+        meta["export_audit"].pop("canonical_model_id", None)
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("deliverables", "export_audit_model_trace"), blockers)
 
     def test_construction_readiness_blocks_sheet_registry_without_model_trace(self) -> None:
         meta = _production_ready_meta()
