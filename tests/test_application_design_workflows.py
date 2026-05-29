@@ -460,6 +460,19 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 409)
         self.assertIn("utility_fallback_used", str(ctx.exception.detail))
 
+    def test_final_plan_from_result_blocks_required_construction_release_without_readiness(self):
+        with self.assertRaises(HTTPException) as ctx:
+            final_plan_from_result(
+                {
+                    "final_plan": {
+                        "actions": [{"task": "polyline", "layer": "LOT", "points": [[0, 0], [100, 0]]}],
+                        "meta": {"construction_release_required": True},
+                    }
+                }
+            )
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn("construction_readiness_missing", str(ctx.exception.detail))
+
     def test_final_plan_from_result_accepts_viable_fallback_utility_export(self):
         plan = final_plan_from_result(
             {

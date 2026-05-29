@@ -714,6 +714,19 @@ def final_plan_from_result(
         storm = dict(meta.get("storm_pipes") or {})
         utilities = dict(meta.get("utilities") or {})
         deliverables = dict(meta.get("deliverables") or {})
+        if enforce_export_guards and final_plan_requires_construction_release(final_plan):
+            construction_blockers = construction_release_blockers_from_meta(
+                meta,
+                requires_construction_release=True,
+            )
+            if construction_blockers:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "Export is blocked because construction release evidence is incomplete: "
+                        + ", ".join(construction_blockers)
+                    ),
+                )
         produced = {str(item).lower() for item in list(deliverables.get("produced") or [])}
         requested = {str(item).lower() for item in list(deliverables.get("requested") or [])}
         engineering_layers = {
