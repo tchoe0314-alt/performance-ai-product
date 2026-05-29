@@ -77,6 +77,21 @@ def _sheet_registry_items(value: Any) -> List[Dict[str, Any]]:
     return [_safe_dict(item) for item in (_safe_list(value) or _safe_list(registry.get("sheets")))]
 
 
+def _optimization_alternative_committed(item: Dict[str, Any]) -> bool:
+    if item.get("geometry_committed") is not True:
+        return False
+    if item.get("accepted") is False or item.get("stale") is True:
+        return False
+    has_identity = bool(_safe_str(item.get("id") or item.get("alternative_id") or item.get("candidate_id") or item.get("name")))
+    has_geometry_ref = bool(
+        _safe_str(item.get("canonical_model_id"))
+        or _safe_str(item.get("geometry_snapshot_id"))
+        or _safe_str(item.get("accepted_geometry_id"))
+        or _safe_str(item.get("source_candidate_id"))
+    )
+    return has_identity and has_geometry_ref
+
+
 def _quantity_model_reference(quantities: Dict[str, Any]) -> Dict[str, Any]:
     explain = _safe_dict(quantities.get("explain"))
     payload = {
@@ -1141,13 +1156,15 @@ def check_optimization_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
         alternatives = _safe_list(optimization.get("alternatives"))
         comparison = _safe_dict(optimization.get("comparison_summary"))
         committed_alternatives = [
-            item for item in alternatives
-            if _safe_dict(item).get("geometry_committed", True) is not False
+            _safe_dict(item) for item in alternatives
+            if _optimization_alternative_committed(_safe_dict(item))
         ]
         if not (comparison or alternatives):
             gaps.append(_production_gap("optimization", "alternatives", "Production design needs a best option and runner-up/tradeoff explanation.", "Generate and compare design alternatives."))
         elif _safe_str(comparison.get("comparison_mode")) == "baseline_plus_uncommitted_recommendations" or len(committed_alternatives) < 2:
-            gaps.append(_production_gap("optimization", "committed_alternatives", "Optimization recommendations are not accepted alternative geometry yet.", "Run and accept at least two buildable alternatives before production optimization signoff."))
+            gaps.append(_production_gap("optimization", "committed_alternatives", "Optimization alternatives are not accepted, traceable geometry yet.", "Run and accept at least two buildable alternatives with canonical geometry references before production optimization signoff."))
+        elif not _safe_str(comparison.get("recommended_option_name")) or not _safe_str(comparison.get("runner_up_option_name")):
+            gaps.append(_production_gap("optimization", "alternatives", "Production optimization needs a recommended option and a runner-up/tradeoff comparison.", "Attach comparison summary naming the recommended option and runner-up."))
         if not optimization.get("recommendations"):
             warnings.append("Optimization has no recommendations.")
     return _system_result(

@@ -206,7 +206,22 @@ def _production_ready_meta() -> dict:
         "source": "test",
         "overall_score": 92.0,
         "component_scores": {"grading": 90.0, "drainage": 93.0},
-        "alternatives": [{"name": "A"}, {"name": "B"}],
+        "alternatives": [
+            {
+                "id": "ALT-A",
+                "name": "A",
+                "geometry_committed": True,
+                "accepted": True,
+                "canonical_model_id": "MODEL-FINAL-1",
+            },
+            {
+                "id": "ALT-B",
+                "name": "B",
+                "geometry_committed": True,
+                "accepted": True,
+                "geometry_snapshot_id": "SNAP-B",
+            },
+        ],
         "comparison_summary": {"recommended_option_name": "A", "runner_up_option_name": "B"},
         "recommendations": ["Use option A."],
     }
@@ -812,6 +827,26 @@ class CivilDesignReadinessTests(unittest.TestCase):
 
         self.assertFalse(readiness["production_ready"])
         self.assertIn(("cad_interop", "sheet_registry_consistency"), gaps)
+
+    def test_civil_readiness_blocks_uncommitted_optimization_alternatives(self) -> None:
+        meta = _production_ready_meta()
+        meta["optimization_summary"]["alternatives"] = [{"name": "A"}, {"name": "B", "geometry_committed": True}]
+
+        readiness = civil_design_readiness({"meta": meta})
+        gaps = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
+
+        self.assertFalse(readiness["production_ready"])
+        self.assertIn(("optimization", "committed_alternatives"), gaps)
+
+    def test_civil_readiness_blocks_optimization_without_runner_up(self) -> None:
+        meta = _production_ready_meta()
+        meta["optimization_summary"]["comparison_summary"] = {"recommended_option_name": "A"}
+
+        readiness = civil_design_readiness({"meta": meta})
+        gaps = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
+
+        self.assertFalse(readiness["production_ready"])
+        self.assertIn(("optimization", "alternatives"), gaps)
 
     def test_hydraulic_depth_blocks_surcharged_backwater_and_concept_proxy(self) -> None:
         meta = _complete_meta()
