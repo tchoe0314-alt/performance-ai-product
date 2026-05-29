@@ -174,7 +174,7 @@ def _production_ready_meta() -> dict:
         "export_blocked": False,
         "canonical_id_traceability": {"ready": True},
     }
-    meta["sheet_registry"] = {"sheets": [{"id": "C-100", "title": "Civil Site Plan"}]}
+    meta["sheet_registry"] = {"ready": True, "sheets": [{"id": "C-100", "title": "Civil Site Plan", "current": True}]}
     meta["quantities"] = {
         "success": True,
         "totals": {"pipe_length_ft": 1000.0},
@@ -783,6 +783,35 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertFalse(readiness["production_ready"])
         self.assertIn(("cad_interop", "export_readiness"), gaps)
         self.assertIn(("cad_interop", "canonical_ids"), gaps)
+
+    def test_civil_readiness_blocks_placeholder_or_stale_sheet_registry(self) -> None:
+        meta = _production_ready_meta()
+        meta["sheet_registry"] = {"source": "placeholder", "sheets": [{"id": "C-100", "title": "Civil Site Plan"}]}
+
+        readiness = civil_design_readiness({"meta": meta})
+        gaps = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
+
+        self.assertFalse(readiness["production_ready"])
+        self.assertIn(("cad_interop", "sheet_registry"), gaps)
+
+        meta = _production_ready_meta()
+        meta["sheet_registry"] = {"ready": True, "sheets": [{"id": "C-100", "title": "Civil Site Plan", "current": False}]}
+
+        readiness = civil_design_readiness({"meta": meta})
+        gaps = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
+
+        self.assertFalse(readiness["production_ready"])
+        self.assertIn(("cad_interop", "sheet_registry"), gaps)
+
+    def test_civil_readiness_blocks_sheet_registry_export_mismatch(self) -> None:
+        meta = _production_ready_meta()
+        meta["export_audit"]["sheet_registry_matches_outputs"] = False
+
+        readiness = civil_design_readiness({"meta": meta})
+        gaps = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
+
+        self.assertFalse(readiness["production_ready"])
+        self.assertIn(("cad_interop", "sheet_registry_consistency"), gaps)
 
     def test_hydraulic_depth_blocks_surcharged_backwater_and_concept_proxy(self) -> None:
         meta = _complete_meta()

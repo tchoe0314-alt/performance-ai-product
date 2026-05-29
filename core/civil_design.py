@@ -72,6 +72,11 @@ def _rows_all_valid(rows: Iterable[Dict[str, Any]]) -> bool:
     return bool(checked) and all(row.get("valid") is True for row in checked)
 
 
+def _sheet_registry_items(value: Any) -> List[Dict[str, Any]]:
+    registry = _safe_dict(value)
+    return [_safe_dict(item) for item in (_safe_list(value) or _safe_list(registry.get("sheets")))]
+
+
 def _quantity_model_reference(quantities: Dict[str, Any]) -> Dict[str, Any]:
     explain = _safe_dict(quantities.get("explain"))
     payload = {
@@ -1032,7 +1037,8 @@ def check_cad_interop_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
     export_audit = _safe_dict(meta.get("export_audit"))
     sheet_registry_raw = meta.get("sheet_registry")
     sheet_registry = _safe_dict(sheet_registry_raw)
-    has_sheet_registry = bool(sheet_registry) or bool(_safe_list(sheet_registry_raw))
+    sheet_items = _sheet_registry_items(sheet_registry_raw)
+    has_sheet_registry = bool(sheet_items)
     cad = _safe_dict(meta.get("cad_interop") or meta.get("export_interop"))
     if not export_audit:
         gaps.append(_production_gap("cad_interop", "export_audit", "Export truth needs an audit before production deliverables.", "Finalize export metadata before artifact generation."))
@@ -1058,6 +1064,40 @@ def check_cad_interop_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
             )
     if not has_sheet_registry:
         gaps.append(_production_gap("cad_interop", "sheet_registry", "Production sheets need a sheet registry matching final canonical state.", "Finalize sheet registry before export."))
+    else:
+        registry_source = " ".join(
+            _safe_str(sheet_registry.get(key)).lower()
+            for key in ("source", "status", "truth_label")
+            if _safe_str(sheet_registry.get(key))
+        )
+        stale_sheets = [
+            _safe_str(item.get("id") or item.get("sheet_id") or item.get("title"), f"sheet_{index}")
+            for index, item in enumerate(sheet_items, start=1)
+            if item.get("stale") is True or item.get("current") is False
+        ]
+        missing_identity = [
+            f"sheet_{index}"
+            for index, item in enumerate(sheet_items, start=1)
+            if not _safe_str(item.get("id") or item.get("sheet_id")) or not _safe_str(item.get("title"))
+        ]
+        if _contains_concept_marker(registry_source) or sheet_registry.get("ready") is False or stale_sheets or missing_identity:
+            gaps.append(
+                _production_gap(
+                    "cad_interop",
+                    "sheet_registry",
+                    "Production sheets need current, identified, non-placeholder registry rows.",
+                    "Regenerate sheet registry rows with sheet IDs, titles, current status, and canonical model traceability.",
+                )
+            )
+    if export_audit and (export_audit.get("sheet_registry_meta_matches_plan") is False or export_audit.get("sheet_registry_matches_outputs") is False):
+        gaps.append(
+            _production_gap(
+                "cad_interop",
+                "sheet_registry_consistency",
+                "Production sheet registry metadata must match the final plan and exported outputs.",
+                "Regenerate sheet registry/export metadata from the final canonical model.",
+            )
+        )
     interop_ready = (
         cad.get("civil3d") is True
         or cad.get("landxml") is True
@@ -1904,7 +1944,7 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
             )
     sheet_registry_raw = meta.get("sheet_registry")
     sheet_registry_map = _safe_dict(sheet_registry_raw)
-    sheet_items = _safe_list(sheet_registry_raw) or _safe_list(sheet_registry_map.get("sheets"))
+    sheet_items = _sheet_registry_items(sheet_registry_raw)
     if not sheet_items:
         blockers.append(
             _construction_gap(
@@ -1914,6 +1954,31 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                 "Generate/finalize sheet registry and title block metadata.",
             )
         )
+    else:
+        registry_source = " ".join(
+            _safe_str(sheet_registry_map.get(key)).lower()
+            for key in ("source", "status", "truth_label")
+            if _safe_str(sheet_registry_map.get(key))
+        )
+        stale_sheets = [
+            _safe_str(item.get("id") or item.get("sheet_id") or item.get("title"), f"sheet_{index}")
+            for index, item in enumerate(sheet_items, start=1)
+            if item.get("stale") is True or item.get("current") is False
+        ]
+        missing_identity = [
+            f"sheet_{index}"
+            for index, item in enumerate(sheet_items, start=1)
+            if not _safe_str(item.get("id") or item.get("sheet_id")) or not _safe_str(item.get("title"))
+        ]
+        if _contains_concept_marker(registry_source) or sheet_registry_map.get("ready") is False or stale_sheets or missing_identity:
+            blockers.append(
+                _construction_gap(
+                    "deliverables",
+                    "sheet_registry",
+                    "Construction release requires current, identified, non-placeholder sheet registry rows.",
+                    "Regenerate sheet registry rows with sheet IDs, titles, current status, and canonical model traceability.",
+                )
+            )
 
     quantities = _safe_dict(meta.get("quantities"))
     quantity_ref = _quantity_model_reference(quantities) if quantities else {}
