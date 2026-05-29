@@ -471,6 +471,22 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertIn(("existing_conditions", "survey_benchmark"), blockers)
         self.assertIn(("existing_conditions", "survey_datum"), blockers)
 
+    def test_construction_readiness_requires_complete_gis_layer_evidence(self) -> None:
+        meta = _production_ready_meta()
+        meta["gis_layers"] = {
+            "parcels": [{"id": "P-1"}],
+            "easements": [{"id": "E-1"}],
+            "row": [{"id": "ROW-1"}],
+            "floodplain": {"verified_absent": True, "source": "FEMA FIRM"},
+        }
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("existing_conditions", "gis_wetlands"), blockers)
+        self.assertIn(("existing_conditions", "gis_existing_utilities"), blockers)
+
     def test_construction_readiness_requires_production_usable_coordinate_source(self) -> None:
         meta = _production_ready_meta()
         meta["coordinate_system"] = {"epsg": "EPSG:2276", "units": "ft"}

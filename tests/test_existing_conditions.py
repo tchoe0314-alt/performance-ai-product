@@ -26,8 +26,8 @@ class ExistingConditionsTests(unittest.TestCase):
                         "parcels": [{"id": "P-1"}],
                         "easements": [{"id": "E-1"}],
                         "row": [{"id": "ROW-1"}],
-                        "floodplain": [],
-                        "wetlands": [],
+                        "floodplain": {"verified_absent": True, "source": "FEMA FIRM panel"},
+                        "wetlands": {"verified_absent": True, "source": "NWI review"},
                         "existing_utilities": [{"id": "EX-W"}],
                     },
                     "coordinate_system": {"epsg": "EPSG:2276", "units": "ft", "source": "survey"},
@@ -39,6 +39,23 @@ class ExistingConditionsTests(unittest.TestCase):
         self.assertTrue(summary["survey"]["ready"])
         self.assertTrue(summary["gis"]["ready"])
         self.assertTrue(summary["coordinate_system"]["ready"])
+
+    def test_partial_gis_layers_do_not_clear_production_existing_conditions(self) -> None:
+        summary = summarize_existing_conditions(
+            {
+                "meta": {
+                    "grading": {"source_quality": "survey"},
+                    "survey": {"point_count": 8, "source": "uploaded_csv", "benchmark": "BM-1"},
+                    "gis_layers": {"parcels": [{"id": "P-1"}]},
+                    "coordinate_system": {"epsg": "EPSG:2276", "units": "ft", "source": "survey"},
+                }
+            }
+        )
+
+        self.assertFalse(summary["production_ready"])
+        self.assertFalse(summary["gis"]["ready"])
+        self.assertIn("wetlands", summary["gis"]["missing_layers"])
+        self.assertIn("existing_utilities", summary["gis"]["missing_layers"])
 
     def test_geographic_coordinate_system_is_not_production_ready(self) -> None:
         summary = summarize_existing_conditions(

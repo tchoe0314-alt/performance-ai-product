@@ -95,6 +95,26 @@ def _layer_count(value: Any) -> int:
     return 1 if value not in (None, "", [], {}) else 0
 
 
+def _layer_evidence(value: Any) -> Dict[str, Any]:
+    rec = safe_dict(value)
+    count = _layer_count(value)
+    verified_absent = bool(
+        rec.get("verified_absent")
+        or rec.get("absence_verified")
+        or rec.get("not_present")
+        or safe_str(rec.get("status")).lower() in {"verified_absent", "absent", "none_present", "not_present"}
+    )
+    source = safe_str(rec.get("source") or rec.get("provider") or rec.get("source_url") or rec.get("file"))
+    present = value not in (None, "", [], {}) and count > 0 and not verified_absent
+    return {
+        "present": present,
+        "count": count if present else 0,
+        "verified_absent": verified_absent,
+        "source": source,
+        "has_evidence": present or verified_absent,
+    }
+
+
 def _survey_summary(meta: Dict[str, Any], parsed: Dict[str, Any], grading: Dict[str, Any]) -> Dict[str, Any]:
     existing_surface = safe_dict(grading.get("existing_surface"))
     survey = _first_dict(
@@ -165,16 +185,12 @@ def _gis_summary(meta: Dict[str, Any], parsed: Dict[str, Any]) -> Dict[str, Any]
     )
     layers: Dict[str, Dict[str, Any]] = {}
     for layer in REQUIRED_GIS_LAYERS:
-        raw = gis.get(layer)
-        layers[layer] = {
-            "present": raw not in (None, "", [], {}),
-            "count": _layer_count(raw),
-        }
+        layers[layer] = _layer_evidence(gis.get(layer))
     return {
-        "ready": any(item["present"] for item in layers.values()),
+        "ready": all(item["has_evidence"] for item in layers.values()),
         "source": safe_str(gis.get("source") or gis.get("provider"), "missing"),
         "layers": layers,
-        "missing_layers": [layer for layer, item in layers.items() if not item["present"]],
+        "missing_layers": [layer for layer, item in layers.items() if not item["has_evidence"]],
     }
 
 

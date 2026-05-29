@@ -66,6 +66,29 @@ def _truthy_mapping(value: Any) -> bool:
     return bool(_safe_dict(value))
 
 
+def _gis_layer_has_evidence(value: Any) -> bool:
+    rec = _safe_dict(value)
+    verified_absent = bool(
+        rec.get("verified_absent")
+        or rec.get("absence_verified")
+        or rec.get("not_present")
+        or _safe_str(rec.get("status")).lower() in {"verified_absent", "absent", "none_present", "not_present"}
+    )
+    if verified_absent:
+        return True
+    if isinstance(value, list):
+        return bool(value)
+    if isinstance(value, dict):
+        if "features" in value:
+            return bool(_safe_list(value.get("features")))
+        if "items" in value:
+            return bool(_safe_list(value.get("items")))
+        if "records" in value:
+            return bool(_safe_list(value.get("records")))
+        return bool(value)
+    return value not in (None, "", [], {})
+
+
 def _first_number(*values: Any, default: float = 0.0) -> float:
     for value in values:
         number = _safe_float(value, float("nan"))
@@ -716,7 +739,15 @@ def check_existing_conditions_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
     survey = _safe_dict(meta.get("survey") or meta.get("survey_file") or _safe_dict(grading.get("existing_surface")).get("survey"))
     gis = _safe_dict(meta.get("gis_layers") or meta.get("existing_conditions"))
     survey_ready = bool(summary_survey.get("ready")) or bool(survey) or source == "survey"
-    gis_ready = bool(summary_gis.get("ready")) or _has_any(gis, ("parcels", "easements", "row", "floodplain", "wetlands", "existing_utilities"))
+    required_gis_layers = ("parcels", "easements", "row", "floodplain", "wetlands", "existing_utilities")
+    summary_layers = _safe_dict(summary_gis.get("layers"))
+    missing_gis_layers = [
+        layer
+        for layer in required_gis_layers
+        if not bool(_safe_dict(summary_layers.get(layer)).get("has_evidence"))
+        and not _gis_layer_has_evidence(gis.get(layer))
+    ]
+    gis_ready = bool(summary_gis.get("ready")) or not missing_gis_layers
     meta_coordinate = _safe_dict(meta.get("coordinate_system"))
     coordinate_ready = bool(summary_coordinate.get("ready")) or bool(meta_coordinate)
     coordinate_blockers = _coordinate_system_blockers(summary_coordinate or meta_coordinate)
@@ -736,6 +767,15 @@ def check_existing_conditions_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
                 "gis_layers",
                 "Real coordination needs parcels, ROW/easements, floodplain/wetlands, and existing utilities where available.",
                 "Attach GIS/existing-condition layers before production coordination.",
+            )
+        )
+    for layer in missing_gis_layers:
+        gaps.append(
+            _production_gap(
+                "existing_conditions",
+                f"gis_{layer}",
+                f"Production coordination needs {layer.replace('_', ' ')} evidence or explicit verified-absent documentation.",
+                "Attach the GIS layer from an official/source-controlled dataset or mark it verified_absent with source evidence.",
             )
         )
     if not coordinate_ready:
@@ -1516,6 +1556,23 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                     "Verify survey control or attach corrected survey/control metadata.",
                 )
             )
+    gis_layers = _safe_dict(meta.get("gis_layers") or meta.get("existing_conditions"))
+    existing_summary = _safe_dict(meta.get("existing_conditions_summary"))
+    summary_gis_layers = _safe_dict(_safe_dict(existing_summary.get("gis")).get("layers"))
+    required_gis_layers = ("parcels", "easements", "row", "floodplain", "wetlands", "existing_utilities")
+    for layer in required_gis_layers:
+        summary_layer = _safe_dict(summary_gis_layers.get(layer))
+        has_summary_evidence = bool(summary_layer.get("has_evidence"))
+        if has_summary_evidence or _gis_layer_has_evidence(gis_layers.get(layer)):
+            continue
+        blockers.append(
+            _construction_gap(
+                "existing_conditions",
+                f"gis_{layer}",
+                f"Construction release requires {layer.replace('_', ' ')} evidence or explicit verified-absent documentation.",
+                "Attach the GIS/existing-conditions layer from an official/source-controlled dataset or mark it verified_absent with source evidence.",
+            )
+        )
     coordinate_system = _safe_dict(meta.get("coordinate_system"))
     if not coordinate_system or _safe_str(coordinate_system.get("units")).lower() in {"degrees", "degree"}:
         blockers.append(

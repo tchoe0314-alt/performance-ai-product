@@ -162,9 +162,11 @@ class ExistingConditionsImporterTests(unittest.TestCase):
             summary = summarize_existing_conditions({"meta": meta})
 
             self.assertTrue(summary["survey"]["ready"])
-            self.assertTrue(summary["gis"]["ready"])
+            self.assertFalse(summary["gis"]["ready"])
             self.assertTrue(summary["coordinate_system"]["ready"])
-            self.assertTrue(summary["production_ready"])
+            self.assertFalse(summary["production_ready"])
+            self.assertIn("wetlands", summary["gis"]["missing_layers"])
+            self.assertIn("existing_utilities", summary["gis"]["missing_layers"])
 
     def test_import_package_validation_blocks_crs_conflicts_and_missing_layers(self) -> None:
         merged = merge_imported_existing_conditions(
