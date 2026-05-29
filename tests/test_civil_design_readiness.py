@@ -842,6 +842,9 @@ class CivilDesignReadinessTests(unittest.TestCase):
             }
         ]
         meta["grading"]["ada_path_checks"] = [{"path": "ADA-1", "valid": False}]
+        meta["grading"]["pad_tie_ins"] = [{"building": "B-1", "valid": False}]
+        meta["grading"]["retaining_walls"] = [{"id": "RW-1"}]
+        meta["grading"]["wall_tie_in_checks"] = [{"wall_id": "RW-1", "valid": False}]
 
         readiness = civil_design_readiness({"meta": meta})
         gaps = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
@@ -849,6 +852,8 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertFalse(readiness["production_ready"])
         self.assertIn(("grading_detail", "road_crown_controls"), gaps)
         self.assertIn(("grading_detail", "ada_path_checks"), gaps)
+        self.assertIn(("grading_detail", "pad_tie_ins"), gaps)
+        self.assertIn(("grading_detail", "wall_tie_in_checks"), gaps)
 
     def test_build_plan_attaches_civil_design_readiness_without_fake_success(self) -> None:
         plan = planner.build_plan(

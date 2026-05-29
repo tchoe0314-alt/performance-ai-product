@@ -1008,11 +1008,16 @@ def check_grading_detail_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
     ada_rows = [_safe_dict(item) for item in _safe_list(grading.get("ada_path_checks"))]
     if ada_rows and not _rows_all_valid(ada_rows):
         gaps.append(_production_gap("grading_detail", "ada_path_checks", "ADA path checks must explicitly pass before production grading review.", "Repair failed/incomplete ADA running-slope and cross-slope checks."))
+    pad_rows = [_safe_dict(item) for item in _safe_list(grading.get("pad_tie_ins"))]
+    if pad_rows and not _rows_all_valid(pad_rows):
+        gaps.append(_production_gap("grading_detail", "pad_tie_ins", "Building pad tie-ins must explicitly pass before production grading review.", "Repair pad tie-in elevations and positive drainage checks."))
     if not _has_any(grading, ("contour_interval_ft", "contours")):
         warnings.append("Contour interval/output is incomplete.")
     if _safe_list(grading.get("retaining_walls")):
         if not grading.get("wall_tie_in_checks"):
             gaps.append(_production_gap("grading_detail", "wall_tie_in_checks", "Retaining walls need top/bottom tie-in checks.", "Run retaining wall tie-in validation."))
+        elif not _rows_all_valid(_safe_dict(item) for item in _safe_list(grading.get("wall_tie_in_checks"))):
+            gaps.append(_production_gap("grading_detail", "wall_tie_in_checks", "Retaining wall tie-in checks must explicitly pass before production grading review.", "Repair top/bottom wall grading tie-ins."))
     return _system_result(
         status="ready" if not gaps else "needs_production_input",
         source=_safe_str(grading.get("source_quality") or grading.get("grading_source_quality"), "missing"),
