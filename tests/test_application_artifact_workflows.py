@@ -790,6 +790,49 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertEqual(review["release_status"], "ready")
         self.assertEqual(review["review_categories"], [])
 
+    def test_build_preview_response_blocks_stale_ready_when_construction_package_blocks(self):
+        service = FakeArtifactService()
+        response = build_preview_response(
+            artifact_service=service,
+            result_data={
+                "run_summary": {
+                    "engineering_status": {"trust_score": 90.0},
+                    "reliability_summary": {"operational_state": "ready", "release_ready": True},
+                    "optimization_summary": {},
+                    "convergence_summary": {
+                        "converged": True,
+                        "passes_run": 1,
+                        "unresolved_conflict_count": 0,
+                        "assumption_summary": {"count": 0, "categories": [], "examples": []},
+                        "fix_summary": {"autofix_actions": []},
+                        "rerun_summary": {"total_reruns": 0, "stage_counts": {}, "reason_counts": {}},
+                        "dominant_issue_categories": [],
+                        "unresolved_issue_categories": [],
+                        "blocked_exports": [],
+                        "blocked_reasons": [],
+                    },
+                    "requested_deliverables": ["site_plan"],
+                    "produced_deliverables": ["site_plan"],
+                    "failed_deliverables": [],
+                    "ready_deliverables": ["site_plan"],
+                    "extra_deliverables": [],
+                },
+                "final_plan": {
+                    "project_name": "Blocked Construction Package",
+                    "actions": [{"layer": "BUILDING"}],
+                    "meta": {
+                        "construction_package_manifest": {
+                            "release_allowed": False,
+                            "blockers": [{"area": "deliverables", "field": "construction_package_artifacts"}],
+                        }
+                    },
+                },
+            },
+        )
+        review = response["summary"]["review"]
+        self.assertEqual(review["release_status"], "blocked")
+        self.assertIn("construction_package_blocked", review["blocked_reasons"])
+
     def test_build_preview_response_normalizes_phase_checkpoints_for_release_ready_runs(self):
         service = FakeArtifactService()
         response = build_preview_response(

@@ -6,7 +6,11 @@ from typing import Any, Dict, Optional, Protocol
 
 from fastapi import HTTPException
 
-from backend.application.design_workflows import build_run_summary, final_plan_from_result
+from backend.application.design_workflows import (
+    build_run_summary,
+    construction_release_blockers_from_meta,
+    final_plan_from_result,
+)
 from backend.application.protocols import ArtifactServiceProtocol
 from backend.application.project_workflows import artifact_summary, save_project_workflow_update
 from geometry.layout_engine import _build_expanded_plan
@@ -734,6 +738,11 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
     ):
         blocked_exports = current_blocked_exports
         blocked_reasons = current_blocked_reasons
+    for construction_blocker in construction_release_blockers_from_meta(final_meta):
+        if construction_blocker not in blocked_reasons:
+            blocked_reasons.append(construction_blocker)
+    if final_meta.get("release_ready") is False and "final_plan_release_blocked" not in blocked_reasons:
+        blocked_reasons.append("final_plan_release_blocked")
     rerun_stages = dict(rerun_summary.get("stage_counts") or {})
     dominant_rerun_stages = [
         str(name)
