@@ -259,10 +259,17 @@ def _construction_package_artifact_status(plan_or_meta: Dict[str, Any], meta: Di
                 mismatched.append(artifact_name)
     cost_untraced: List[str] = []
     cost_mismatched: List[str] = []
-    if safe_str(current_cost_reference.get("cost_estimate_hash")) or safe_str(current_cost_reference.get("quantity_model_hash")):
-        for item in artifacts:
-            if _artifact_type(item) not in cost_aliases:
-                continue
+    cost_artifacts = [item for item in artifacts if _artifact_type(item) in cost_aliases]
+    if cost_artifacts and not (
+        safe_str(current_cost_reference.get("cost_estimate_hash"))
+        or safe_str(current_cost_reference.get("quantity_model_hash"))
+    ):
+        cost_untraced.extend(
+            safe_str(item.get("id") or item.get("name") or item.get("type") or item.get("artifact_type"), "cost_estimate")
+            for item in cost_artifacts
+        )
+    elif cost_artifacts:
+        for item in cost_artifacts:
             artifact_name = safe_str(item.get("id") or item.get("name") or item.get("type") or item.get("artifact_type"), "cost_estimate")
             artifact_cost_hash = safe_str(item.get("cost_estimate_hash") or item.get("source_cost_estimate_hash") or item.get("cost_hash"))
             artifact_quantity_hash = safe_str(item.get("quantity_model_hash") or item.get("source_quantity_model_hash"))

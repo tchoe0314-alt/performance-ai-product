@@ -93,6 +93,20 @@ class ConstructionPackageManifestTests(unittest.TestCase):
                 "blockers": [],
                 "warnings": [],
             },
+            "cost_estimate": {
+                "success": True,
+                "totals": {"production_usable": True, "total_cost": 1000.0, "cost_estimate_hash": "COST-HASH-1"},
+                "line_items": [{"metric": "pipe_length_ft", "quantity": 10.0, "amount": 1000.0}],
+                "explain": {
+                    "cost_estimate_reference": {
+                        "cost_estimate_hash": "COST-HASH-1",
+                        "quantity_model_hash": "QTY-HASH-1",
+                        "price_book_hash": "PRICE-HASH-1",
+                    },
+                    "quantity_model_reference": {"quantity_model_hash": "QTY-HASH-1"},
+                    "pricing": {"price_book_hash": "PRICE-HASH-1"},
+                },
+            },
             "construction_deliverable_package": {
                 "id": "PKG-IFC-1",
                 "release_ready": True,
@@ -101,7 +115,13 @@ class ConstructionPackageManifestTests(unittest.TestCase):
                     {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
                     {"type": "cad_export", "id": "CAD-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
                     {"type": "qa_report", "id": "QA-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
-                    {"type": "cost_estimate", "id": "COST-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {
+                        "type": "cost_estimate",
+                        "id": "COST-1",
+                        "current": True,
+                        "canonical_model_id": "MODEL-FINAL-1",
+                        "cost_estimate_hash": "COST-HASH-1",
+                    },
                     {"type": "construction_manifest", "id": "MANIFEST-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
                 ],
             },
@@ -491,6 +511,20 @@ class ConstructionPackageManifestTests(unittest.TestCase):
             },
         }
         expected = build_construction_package_manifest(plan)["expected_canonical_model_reference"]
+        plan["meta"]["cost_estimate"] = {
+            "success": True,
+            "totals": {"production_usable": True, "total_cost": 1000.0, "cost_estimate_hash": "COST-HASH-1"},
+            "line_items": [{"metric": "pipe_length_ft", "quantity": 10.0, "amount": 1000.0}],
+            "explain": {
+                "cost_estimate_reference": {
+                    "cost_estimate_hash": "COST-HASH-1",
+                    "quantity_model_hash": "QTY-HASH-1",
+                    "price_book_hash": "PRICE-HASH-1",
+                },
+                "quantity_model_reference": {"quantity_model_hash": "QTY-HASH-1"},
+                "pricing": {"price_book_hash": "PRICE-HASH-1"},
+            },
+        }
         plan["meta"]["construction_deliverable_package"] = {
             "id": "PKG-IFC-1",
             "release_ready": True,
@@ -499,7 +533,13 @@ class ConstructionPackageManifestTests(unittest.TestCase):
                 {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": expected},
                 {"type": "cad_export", "id": "CAD-1", "current": True, "canonical_model_id": expected},
                 {"type": "qa_report", "id": "QA-1", "current": True, "canonical_model_id": expected},
-                {"type": "cost_estimate", "id": "COST-1", "current": True, "canonical_model_id": expected},
+                {
+                    "type": "cost_estimate",
+                    "id": "COST-1",
+                    "current": True,
+                    "canonical_model_id": expected,
+                    "cost_estimate_hash": "COST-HASH-1",
+                },
                 {"type": "construction_manifest", "id": "MANIFEST-1", "current": True, "canonical_model_id": expected},
             ],
         }
