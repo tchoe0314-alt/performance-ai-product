@@ -298,6 +298,31 @@ def _quantity_model_reference(quantities: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _cost_estimate_reference(
+    *,
+    totals: Dict[str, Any],
+    line_items: List[Dict[str, Any]],
+    category_subtotals: Dict[str, float],
+    pricing_meta: Dict[str, Any],
+    quantity_model_reference: Dict[str, Any],
+) -> Dict[str, Any]:
+    payload = {
+        "totals": totals,
+        "line_items": line_items,
+        "category_subtotals": category_subtotals,
+        "price_book_hash": _safe_str(pricing_meta.get("price_book_hash")),
+        "pricing_source": _safe_str(pricing_meta.get("source")),
+        "quantity_model_hash": _safe_str(quantity_model_reference.get("quantity_model_hash")),
+    }
+    stable = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
+    return {
+        "cost_estimate_hash": hashlib.sha256(stable.encode("utf-8")).hexdigest(),
+        "quantity_model_hash": _safe_str(quantity_model_reference.get("quantity_model_hash")),
+        "price_book_hash": _safe_str(pricing_meta.get("price_book_hash")),
+        "pricing_source": _safe_str(pricing_meta.get("source")),
+    }
+
+
 def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
     meta = _safe_dict(plan_or_meta.get("meta")) if "meta" in plan_or_meta else _safe_dict(plan_or_meta)
     quantities = _safe_dict(meta.get("quantities"))
@@ -377,6 +402,23 @@ def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
     calculation_complete = bool(line_items) and traceability_complete and quantities.get("success") is True
     production_pricing_ready = bool(pricing_meta["production_usable"] and pricing_coverage_complete)
     success = calculation_complete and production_pricing_ready
+    result_totals = {
+        "direct_cost": direct_cost,
+        "contingency_pct": contingency_pct,
+        "contingency": contingency,
+        "total_cost": total,
+        "currency": pricing_meta["currency"],
+        "line_item_count": len(line_items),
+        "production_usable": bool(pricing_meta["production_usable"] and pricing_coverage_complete and success),
+    }
+    cost_reference = _cost_estimate_reference(
+        totals=result_totals,
+        line_items=line_items,
+        category_subtotals=category_subtotals,
+        pricing_meta=pricing_meta,
+        quantity_model_reference=quantity_model_reference,
+    )
+    result_totals["cost_estimate_hash"] = cost_reference["cost_estimate_hash"]
     return CostResult(
         success=success,
         message=(
@@ -384,15 +426,7 @@ def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
             if success
             else "Cost estimate completed for review, but production/bid signoff is blocked."
         ),
-        totals={
-            "direct_cost": direct_cost,
-            "contingency_pct": contingency_pct,
-            "contingency": contingency,
-            "total_cost": total,
-            "currency": pricing_meta["currency"],
-            "line_item_count": len(line_items),
-            "production_usable": bool(pricing_meta["production_usable"] and pricing_coverage_complete and success),
-        },
+        totals=result_totals,
         line_items=line_items,
         category_subtotals=category_subtotals,
         warnings=sorted(set(warnings)),
@@ -406,6 +440,7 @@ def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
             "pricing_coverage_complete": pricing_coverage_complete,
             "pricing_coverage_gaps": pricing_coverage_gaps,
             "quantity_model_reference": quantity_model_reference,
+            "cost_estimate_reference": cost_reference,
             "truth_label": "Cost estimates are only as reliable as quantity traceability and the attached unit-price book.",
         },
     )

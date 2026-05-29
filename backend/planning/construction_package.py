@@ -115,6 +115,48 @@ def _package_identity(rec: Dict[str, Any]) -> str:
     )
 
 
+def _cost_artifact_aliases() -> set:
+    for required in REQUIRED_CONSTRUCTION_ARTIFACTS:
+        if safe_str(required.get("artifact_id")) == "cost_estimate":
+            return set(required.get("aliases") or ())
+    return {"cost_estimate", "takeoff", "quantity_cost"}
+
+
+def _current_cost_reference(meta: Dict[str, Any]) -> Dict[str, Any]:
+    cost = safe_dict(meta.get("cost_estimate"))
+    if not cost:
+        return {}
+    explain = safe_dict(cost.get("explain"))
+    reference = safe_dict(explain.get("cost_estimate_reference"))
+    quantity_reference = safe_dict(explain.get("quantity_model_reference"))
+    pricing = safe_dict(explain.get("pricing"))
+    cost_hash = safe_str(
+        reference.get("cost_estimate_hash")
+        or safe_dict(cost.get("totals")).get("cost_estimate_hash")
+        or cost.get("cost_estimate_hash")
+        or cost.get("hash")
+    )
+    quantity_hash = safe_str(reference.get("quantity_model_hash") or quantity_reference.get("quantity_model_hash"))
+    price_hash = safe_str(reference.get("price_book_hash") or pricing.get("price_book_hash"))
+    if not cost_hash:
+        payload = {
+            "totals": safe_dict(cost.get("totals")),
+            "line_items": safe_list(cost.get("line_items")),
+            "category_subtotals": safe_dict(cost.get("category_subtotals")),
+            "quantity_model_hash": quantity_hash,
+            "price_book_hash": price_hash,
+        }
+        if any(payload.values()):
+            cost_hash = hashlib.sha256(json.dumps(payload, sort_keys=True, default=str, separators=(",", ":")).encode("utf-8")).hexdigest()
+    return {
+        "cost_estimate_hash": cost_hash,
+        "quantity_model_hash": quantity_hash,
+        "price_book_hash": price_hash,
+        "cost_success": cost.get("success"),
+        "production_usable": safe_dict(cost.get("totals")).get("production_usable"),
+    }
+
+
 def _expected_model_reference(plan_or_meta: Dict[str, Any], meta: Dict[str, Any]) -> str:
     explicit = _model_reference(meta)
     if explicit:
@@ -181,6 +223,8 @@ def _construction_package_artifact_status(plan_or_meta: Dict[str, Any], meta: Di
     package = _construction_package_record(meta)
     artifacts = _construction_package_artifacts(package)
     artifact_types = {_artifact_type(item) for item in artifacts if _artifact_type(item)}
+    cost_aliases = _cost_artifact_aliases()
+    current_cost_reference = _current_cost_reference(meta)
     package_identity = _package_identity(package)
     package_model_reference = _model_reference(package)
     expected_model_reference = _expected_model_reference(plan_or_meta, meta)
@@ -213,6 +257,30 @@ def _construction_package_artifact_status(plan_or_meta: Dict[str, Any], meta: Di
                 untraced.append(artifact_name)
             elif artifact_model_reference != package_model_reference:
                 mismatched.append(artifact_name)
+    cost_untraced: List[str] = []
+    cost_mismatched: List[str] = []
+    if safe_str(current_cost_reference.get("cost_estimate_hash")) or safe_str(current_cost_reference.get("quantity_model_hash")):
+        for item in artifacts:
+            if _artifact_type(item) not in cost_aliases:
+                continue
+            artifact_name = safe_str(item.get("id") or item.get("name") or item.get("type") or item.get("artifact_type"), "cost_estimate")
+            artifact_cost_hash = safe_str(item.get("cost_estimate_hash") or item.get("source_cost_estimate_hash") or item.get("cost_hash"))
+            artifact_quantity_hash = safe_str(item.get("quantity_model_hash") or item.get("source_quantity_model_hash"))
+            artifact_price_hash = safe_str(item.get("price_book_hash") or item.get("source_price_book_hash"))
+            current_cost_hash = safe_str(current_cost_reference.get("cost_estimate_hash"))
+            current_quantity_hash = safe_str(current_cost_reference.get("quantity_model_hash"))
+            current_price_hash = safe_str(current_cost_reference.get("price_book_hash"))
+            matches_cost_hash = bool(artifact_cost_hash and current_cost_hash and artifact_cost_hash == current_cost_hash)
+            matches_quantity_and_price = bool(
+                artifact_quantity_hash
+                and current_quantity_hash
+                and artifact_quantity_hash == current_quantity_hash
+                and (not current_price_hash or artifact_price_hash == current_price_hash)
+            )
+            if not artifact_cost_hash and not artifact_quantity_hash:
+                cost_untraced.append(artifact_name)
+            elif not matches_cost_hash and not matches_quantity_and_price:
+                cost_mismatched.append(artifact_name)
     release_flag = package.get("release_ready")
     production_flag = package.get("production_ready")
     explicit_release_block = release_flag is False or production_flag is False
@@ -229,6 +297,8 @@ def _construction_package_artifact_status(plan_or_meta: Dict[str, Any], meta: Di
         and model_matches_expected
         and not untraced
         and not mismatched
+        and not cost_untraced
+        and not cost_mismatched
         and not explicit_release_block
     )
     return {
@@ -243,6 +313,9 @@ def _construction_package_artifact_status(plan_or_meta: Dict[str, Any], meta: Di
         "stale": stale,
         "untraced": untraced,
         "mismatched": mismatched,
+        "cost_untraced": cost_untraced,
+        "cost_mismatched": cost_mismatched,
+        "current_cost_reference": current_cost_reference,
         "package_model_reference": package_model_reference,
         "expected_model_reference": expected_model_reference,
         "model_reference_present": bool(package_model_reference),
@@ -376,6 +449,30 @@ def _construction_package_blockers(plan_or_meta: Dict[str, Any], meta: Dict[str,
                     + ", ".join(mismatched_artifacts[:5])
                     + ".",
                     "suggested_next_action": "Regenerate mismatched package artifacts from the final canonical model.",
+                }
+            )
+        cost_untraced = [safe_str(item) for item in safe_list(artifact_status.get("cost_untraced")) if safe_str(item)]
+        cost_mismatched = [safe_str(item) for item in safe_list(artifact_status.get("cost_mismatched")) if safe_str(item)]
+        if cost_untraced:
+            blockers.append(
+                {
+                    "area": "cost",
+                    "field": "cost_estimate_artifact_traceability",
+                    "why_needed": "Cost estimate artifacts must identify the exact cost estimate or quantity/price-book hashes they package: "
+                    + ", ".join(cost_untraced[:5])
+                    + ".",
+                    "suggested_next_action": "Regenerate the cost artifact from the current cost estimate and attach cost_estimate_hash or quantity_model_hash/price_book_hash.",
+                }
+            )
+        if cost_mismatched:
+            blockers.append(
+                {
+                    "area": "cost",
+                    "field": "cost_estimate_artifact_mismatch",
+                    "why_needed": "Cost estimate artifacts do not match the current cost estimate: "
+                    + ", ".join(cost_mismatched[:5])
+                    + ".",
+                    "suggested_next_action": "Regenerate stale cost artifacts from the current canonical quantity model and unit-price book.",
                 }
             )
     if package.get("production_ready") is False or package.get("release_ready") is False:
