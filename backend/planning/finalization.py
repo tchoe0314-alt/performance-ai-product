@@ -199,6 +199,21 @@ def _completed_integrity_stages(plan: Dict[str, Any]) -> List[str]:
     meta = safe_dict(plan.get("meta"))
     completeness = safe_dict(meta.get("stage_completeness"))
     completed: List[str] = []
+
+    def _benign_skip_message(message: str) -> bool:
+        lowered = safe_str(message).strip().lower()
+        if not lowered:
+            return False
+        return any(
+            token in lowered
+            for token in (
+                "was not requested",
+                "omitted by user intent",
+                "source=omit",
+                "no profile or cross-section deliverables were requested",
+            )
+        )
+
     for name, status in safe_dict(completeness.get("required_stage_status")).items():
         if safe_str(status).lower() == "complete":
             completed.append(canonical_stage_name(name))
@@ -207,7 +222,9 @@ def _completed_integrity_stages(plan: Dict[str, Any]) -> List[str]:
         stage_name = safe_str(rec.get("stage_name"))
         row_meta = safe_dict(rec.get("meta"))
         row_completeness = safe_str(row_meta.get("completeness")).lower()
-        if bool(rec.get("success")) and row_completeness in {"complete", "assumed", ""}:
+        if bool(rec.get("success")) and row_completeness == "complete":
+            completed.append(canonical_stage_name(stage_name))
+        elif bool(rec.get("success")) and _benign_skip_message(safe_str(rec.get("message"))):
             completed.append(canonical_stage_name(stage_name))
     return dedupe_keep_order([item for item in completed if item])
 

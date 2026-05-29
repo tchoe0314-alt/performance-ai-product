@@ -65,6 +65,29 @@ class Phase1TruthGateTests(unittest.TestCase):
         self.assertIn("storm_pipes", audit["canonical_integrity"]["dirty_stages"])
         self.assertTrue(audit["summary"]["stale_output_blocking"])
 
+    def test_truth_audit_does_not_clear_dirty_stage_with_assumed_completion(self) -> None:
+        manager = ProjectManager()
+        manager.mark_system_dirty("storm_pipes", reason="Storm pipe output still assumed.", source="test")
+        plan = _site_plan()
+        plan["meta"]["stage_results"] = [
+            {
+                "stage_name": "storm_pipes",
+                "success": True,
+                "meta": {"completeness": "assumed"},
+            }
+        ]
+
+        audit = canonical_truth_audit(
+            {"mode": "site_plan", "deliverables": ["storm_pipe_plan"], "lot": {"w": 100.0, "h": 100.0}},
+            plan,
+            manager=manager,
+            sanitary_requested=lambda _parsed: False,
+        )
+
+        self.assertTrue(audit["canonical_integrity"]["blocked"])
+        self.assertIn("storm_pipes", audit["canonical_integrity"]["dirty_stages"])
+        self.assertTrue(audit["summary"]["stale_output_blocking"])
+
     def test_quantity_result_is_not_production_success_when_canonical_integrity_is_blocked(self) -> None:
         plan = _site_plan()
         plan["meta"]["canonical_integrity"] = {
