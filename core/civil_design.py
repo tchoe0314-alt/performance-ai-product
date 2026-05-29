@@ -2291,6 +2291,15 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                     "Attach sealed retaining wall design review with reviewer and review date metadata.",
                 )
             )
+        elif tall_wall and expected_model_refs and _model_references(structural_review).isdisjoint(expected_model_refs):
+            blockers.append(
+                _construction_gap(
+                    "structures",
+                    "retaining_wall_structural_review_model_trace",
+                    "Retaining wall structural review must reference the final canonical model.",
+                    "Attach canonical_model_id/hash or final_model_id/hash to retaining_wall_design_review.",
+                )
+            )
     foundations = _safe_list(meta.get("foundations")) or _safe_list(structures_meta.get("foundations"))
     if foundations:
         foundation_review = _safe_dict(
@@ -2337,6 +2346,21 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                     "Attach foundation excavation limits or earthwork coordination metadata.",
                 )
             )
+        if (
+            footing_elevations
+            and utility_clearance_checks
+            and excavation_limits
+            and expected_model_refs
+            and _model_references(foundation_review).isdisjoint(expected_model_refs)
+        ):
+            blockers.append(
+                _construction_gap(
+                    "structures",
+                    "foundation_coordination_model_trace",
+                    "Foundation coordination review must reference the final canonical model.",
+                    "Attach canonical_model_id/hash or final_model_id/hash to foundation_coordination_review.",
+                )
+            )
     bridge_interfaces = _safe_list(meta.get("bridge_interfaces")) or _safe_list(structures_meta.get("bridge_interfaces"))
     if bridge_interfaces:
         bridge_review = _safe_dict(
@@ -2379,6 +2403,15 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                     "bridge_interface_structural_review",
                     "Construction release requires sealed bridge interface review evidence.",
                     "Attach sealed bridge interface review with reviewer and date metadata.",
+                )
+            )
+        elif grading_checks and utility_checks and expected_model_refs and _model_references(bridge_review).isdisjoint(expected_model_refs):
+            blockers.append(
+                _construction_gap(
+                    "structures",
+                    "bridge_interface_review_model_trace",
+                    "Bridge interface review must reference the final canonical model.",
+                    "Attach canonical_model_id/hash or final_model_id/hash to bridge_interface_review.",
                 )
             )
     structure_conflicts = _safe_list(meta.get("structure_conflicts")) or _safe_list(structures_meta.get("structure_conflicts"))
