@@ -1133,6 +1133,26 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertFalse(readiness["blockers"])
         self.assertTrue(readiness["evidence"]["professional_release"])
 
+    def test_civil_readiness_blocks_missing_final_model_identity(self) -> None:
+        meta = _production_ready_meta()
+        meta.pop("canonical_model_id", None)
+
+        readiness = civil_design_readiness({"meta": meta})
+        gaps = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
+
+        self.assertFalse(readiness["production_ready"])
+        self.assertIn(("canonical_model", "final_model_identity"), gaps)
+
+    def test_construction_readiness_blocks_missing_final_model_identity(self) -> None:
+        meta = _production_ready_meta()
+        meta.pop("canonical_model_id", None)
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("canonical_model", "final_model_identity"), blockers)
+
     def test_production_depth_gates_name_every_major_real_world_gap(self) -> None:
         readiness = civil_design_readiness({"meta": _complete_meta()})
         gaps = {(item["area"], item["field"]) for item in readiness["production_blockers"]}

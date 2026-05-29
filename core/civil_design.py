@@ -1637,6 +1637,15 @@ def civil_design_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
         production_blockers.extend(_safe_list(_safe_dict(result.get("metrics")).get("production_gaps")))
         for warning in _safe_list(result.get("warnings")):
             warnings.append({"system": system, "message": _safe_str(warning)})
+    if not _model_references(meta):
+        production_blockers.append(
+            _production_gap(
+                "canonical_model",
+                "final_model_identity",
+                "Production readiness requires one declared final canonical model identity for all downstream evidence.",
+                "Finalize the canonical model and attach canonical_model_id/hash or final_model_id/hash metadata.",
+            )
+        )
     critical_blockers = [
         item
         for item in missing_requirements
@@ -1688,6 +1697,7 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
 
     blockers: List[Dict[str, Any]] = []
     warnings: List[Dict[str, Any]] = []
+    expected_model_refs = _model_references(meta)
 
     if civil.get("production_ready") is not True:
         blockers.append(
@@ -1711,6 +1721,15 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
             )
 
     existing = _safe_dict(meta.get("existing_conditions_summary"))
+    if not expected_model_refs:
+        blockers.append(
+            _construction_gap(
+                "canonical_model",
+                "final_model_identity",
+                "Construction release requires one declared final canonical model identity before evidence can be trusted.",
+                "Finalize the canonical model and attach canonical_model_id/hash or final_model_id/hash metadata.",
+            )
+        )
     if existing and existing.get("production_ready") is not True:
         blockers.append(
             _construction_gap(
@@ -1919,7 +1938,6 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                 )
             )
 
-    expected_model_refs = _model_references(meta)
     depth = _safe_dict(meta.get("depth_validation"))
     for key in ("stormwater", "water", "roadway_corridor"):
         result = _safe_dict(depth.get(key))
