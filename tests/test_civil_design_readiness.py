@@ -471,6 +471,18 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertIn(("existing_conditions", "survey_benchmark"), blockers)
         self.assertIn(("existing_conditions", "survey_datum"), blockers)
 
+    def test_civil_readiness_blocks_survey_file_without_points_or_approval(self) -> None:
+        meta = _production_ready_meta()
+        meta["grading"]["source_quality"] = "terrain"
+        meta["survey"] = {"source": "survey.csv"}
+        meta["existing_conditions_summary"] = {}
+
+        readiness = civil_design_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
+
+        self.assertFalse(readiness["production_ready"])
+        self.assertIn(("existing_conditions", "survey_surface"), blockers)
+
     def test_construction_readiness_requires_complete_gis_layer_evidence(self) -> None:
         meta = _production_ready_meta()
         meta["gis_layers"] = {

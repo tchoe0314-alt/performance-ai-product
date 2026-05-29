@@ -738,7 +738,13 @@ def check_existing_conditions_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
     )
     survey = _safe_dict(meta.get("survey") or meta.get("survey_file") or _safe_dict(grading.get("existing_surface")).get("survey"))
     gis = _safe_dict(meta.get("gis_layers") or meta.get("existing_conditions"))
-    survey_ready = bool(summary_survey.get("ready")) or bool(survey) or source == "survey"
+    survey_point_count = max(_safe_int(summary_survey.get("point_count"), 0), _safe_int(survey.get("point_count"), 0))
+    survey_ready = (
+        bool(summary_survey.get("ready"))
+        or survey_point_count >= 3
+        or bool(survey.get("approved_for_production") or survey.get("surface_approved") or survey.get("control_verified"))
+        or source == "survey"
+    )
     required_gis_layers = ("parcels", "easements", "row", "floodplain", "wetlands", "existing_utilities")
     summary_layers = _safe_dict(summary_gis.get("layers"))
     missing_gis_layers = [

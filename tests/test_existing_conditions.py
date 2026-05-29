@@ -57,6 +57,28 @@ class ExistingConditionsTests(unittest.TestCase):
         self.assertIn("wetlands", summary["gis"]["missing_layers"])
         self.assertIn("existing_utilities", summary["gis"]["missing_layers"])
 
+    def test_survey_source_name_alone_does_not_clear_survey_readiness(self) -> None:
+        summary = summarize_existing_conditions(
+            {
+                "meta": {
+                    "survey": {"source": "survey.csv"},
+                    "gis_layers": {
+                        "parcels": [{"id": "P-1"}],
+                        "easements": [{"id": "E-1"}],
+                        "row": [{"id": "ROW-1"}],
+                        "floodplain": {"verified_absent": True, "source": "FEMA FIRM"},
+                        "wetlands": {"verified_absent": True, "source": "NWI"},
+                        "existing_utilities": {"verified_absent": True, "source": "utility atlas"},
+                    },
+                    "coordinate_system": {"epsg": "EPSG:2276", "units": "ft", "source": "survey"},
+                }
+            }
+        )
+
+        self.assertFalse(summary["survey"]["ready"])
+        self.assertFalse(summary["production_ready"])
+        self.assertIn("survey_surface", {item["field"] for item in summary["missing_requirements"]})
+
     def test_geographic_coordinate_system_is_not_production_ready(self) -> None:
         summary = summarize_existing_conditions(
             {

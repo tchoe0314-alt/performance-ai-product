@@ -139,13 +139,15 @@ def _survey_summary(meta: Dict[str, Any], parsed: Dict[str, Any], grading: Dict[
         or safe_str(existing_surface.get("source_quality"))
     )
     source = safe_str(survey.get("source") or survey.get("file") or meta.get("survey_file") or parsed.get("survey_file"))
-    ready = point_count >= 3 or surface_source == "survey" or bool(source)
+    approved_surface = bool(survey.get("approved_for_production") or survey.get("surface_approved") or survey.get("control_verified"))
+    ready = point_count >= 3 or surface_source == "survey" or (bool(source) and approved_surface)
     return {
         "ready": ready,
         "point_count": point_count,
         "source": source or ("survey_surface" if surface_source == "survey" else "missing"),
         "surface_source": surface_source or "missing",
         "has_control": bool(survey.get("control_points") or survey.get("benchmark") or survey.get("datum")),
+        "approved_surface": approved_surface,
     }
 
 
