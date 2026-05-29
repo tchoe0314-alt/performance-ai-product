@@ -56,6 +56,15 @@ def _has_valid_velocity(row: Dict[str, Any]) -> bool:
     return safe_float(velocity, -1.0) > 0.0
 
 
+def _valid_flag(value: Any) -> bool:
+    return safe_dict(value).get("valid") is True
+
+
+def _all_rows_valid(rows: Iterable[Dict[str, Any]]) -> bool:
+    clean_rows = [safe_dict(row) for row in rows]
+    return bool(clean_rows) and all(row.get("valid") is True for row in clean_rows)
+
+
 def _check(name: str, ok: bool, *, evidence: str = "", blocker: str = "") -> Dict[str, Any]:
     return {
         "name": name,
@@ -143,11 +152,11 @@ def validate_stormwater_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     checks = [
         _check("tributary_areas", any(safe_float(seg.get("tributary_area_sf") or seg.get("upstream_cumulative_area_sf"), 0.0) > 0.0 for seg in segments) or bool(catchments), evidence="tributary areas/catchments", blocker="Storm depth needs true tributary areas tied to pipes or catchments."),
         _check("runoff_coefficients", any(_present(safe_dict(item).get("runoff_c") or safe_dict(item).get("runoff_coefficient")) for item in catchments) or _present(drainage.get("runoff_coefficient")), evidence="runoff coefficients", blocker="Storm depth needs runoff coefficients by catchment/surface."),
-        _check("hgl_egl_profiles", bool(hgl_rows and egl_rows and (_has_production_rows(hgl_rows) or storm.get("hydraulic_source") == "engine")), evidence="HGL/EGL profile rows", blocker="Storm depth needs HGL and EGL profiles from production hydraulic evidence."),
+        _check("hgl_egl_profiles", bool(hgl_rows and egl_rows and ((_has_production_rows(hgl_rows) and _has_production_rows(egl_rows)) or storm.get("hydraulic_source") == "engine")), evidence="HGL/EGL profile rows", blocker="Storm depth needs HGL and EGL profiles from production hydraulic evidence."),
         _check("tailwater", _present(storm.get("tailwater_elev_ft")), evidence="tailwater elevation", blocker="Storm depth needs tailwater/backwater evidence."),
         _check(
             "inlet_capacity",
-            bool(inlet_checks) and all(item.get("valid") is not False for item in inlet_checks),
+            _all_rows_valid(inlet_checks),
             evidence="inlet capacity/spread/bypass checks",
             blocker="Storm depth needs passing inlet capacity, spread, and bypass checks.",
         ),
@@ -176,7 +185,7 @@ def validate_water_system_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     checks = [
         _check("pressure_zones", bool(safe_list(source.get("pressure_zones")) or safe_dict(source.get("pressure_zone"))), evidence="pressure zones", blocker="Water depth needs pressure zones."),
         _check("hydrant_spacing", bool(hydrants and safe_dict(source.get("hydrant_spacing_validation")).get("valid") is True), evidence="hydrant spacing evidence", blocker="Water depth needs passing hydrant spacing coverage."),
-        _check("fire_flow", bool(safe_dict(source.get("fire_flow_validation")).get("valid") or safe_float(source.get("available_fire_flow_gpm"), 0.0) > 0.0), evidence="fire flow validation", blocker="Water depth needs fire-flow validation."),
+        _check("fire_flow", _valid_flag(source.get("fire_flow_validation")), evidence="fire flow validation", blocker="Water depth needs passing fire-flow validation."),
         _check("looping", looped, evidence="looped network graph", blocker="Water depth needs looping/redundancy evidence."),
         _check("pressure_validation", bool(pressure and pressure.get("valid") is True), evidence="pressure validation", blocker="Water depth needs passing pressure validation."),
         _check("velocity_checks", bool(velocity_checks) and all(_has_valid_velocity(safe_dict(item)) for item in velocity_checks), evidence="velocity checks", blocker="Water depth needs passing velocity checks."),
@@ -189,6 +198,9 @@ def validate_roadway_corridor_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, A
     meta = safe_dict(plan_or_meta.get("meta")) if "meta" in plan_or_meta else safe_dict(plan_or_meta)
     grading_detail = safe_dict(meta.get("grading_detail"))
     crown_rows = [safe_dict(row) for row in safe_list(grading_detail.get("road_crown_controls") or meta.get("road_crowns"))]
+    ada_rows = [safe_dict(row) for row in safe_list(grading_detail.get("ada_path_checks"))]
+    ada_summary = safe_dict(meta.get("ada_compliance"))
+    ada_ready = _all_rows_valid(ada_rows) or _valid_flag(ada_summary)
     checks = [
         _check("alignments", bool(safe_list(meta.get("alignments") or meta.get("road_alignments"))), evidence="road alignments", blocker="Roadway depth needs alignments."),
         _check("profiles", bool(safe_list(meta.get("profiles") or meta.get("road_profiles"))), evidence="road profiles", blocker="Roadway depth needs profiles."),
@@ -196,7 +208,7 @@ def validate_roadway_corridor_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, A
         _check("curb_returns", bool(safe_list(meta.get("curb_returns"))), evidence="curb returns", blocker="Roadway depth needs curb-return geometry."),
         _check("crowns", any(_has_verified_crown(row) for row in crown_rows), evidence="road crown controls", blocker="Roadway depth needs verified road crown controls tied to a profile or standard."),
         _check("sidewalks", bool(safe_list(meta.get("sidewalks") or meta.get("pedestrian_paths"))), evidence="sidewalk/pedestrian paths", blocker="Roadway depth needs sidewalk/path geometry."),
-        _check("ada", bool(safe_list(grading_detail.get("ada_path_checks")) or safe_dict(meta.get("ada_compliance"))), evidence="ADA compliance checks", blocker="Roadway depth needs ADA checks."),
+        _check("ada", ada_ready, evidence="ADA compliance checks", blocker="Roadway depth needs passing ADA checks."),
         _check("sections", bool(safe_list(meta.get("cross_sections") or meta.get("corridor_sections"))), evidence="corridor sections", blocker="Roadway depth needs corridor sections."),
     ]
     return _finalize("roadway_corridor_depth", checks)
