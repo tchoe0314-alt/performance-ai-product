@@ -1556,16 +1556,82 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                 "Attach the city/county/DOT/utility standards pack used for review.",
             )
         )
+    else:
+        jurisdiction = _safe_dict(meta.get("jurisdiction_standards"))
+        if jurisdiction.get("production_usable") is False:
+            blockers.append(
+                _construction_gap(
+                    "standards",
+                    "jurisdiction_standards_production_usable",
+                    "Construction release cannot use jurisdiction standards explicitly marked review-only.",
+                    "Accept official jurisdiction rules and mark jurisdiction_standards.production_usable true.",
+                )
+            )
+        jurisdiction_sources = _safe_list(jurisdiction.get("source_urls"))
+        has_jurisdiction_source = bool(
+            _safe_str(jurisdiction.get("source_url"))
+            or _safe_str(jurisdiction.get("source"))
+            or _safe_str(jurisdiction.get("official_source_url"))
+            or jurisdiction_sources
+        )
+        has_jurisdiction_identity = bool(
+            _safe_str(jurisdiction.get("agency"))
+            or _safe_str(jurisdiction.get("city"))
+            or _safe_str(jurisdiction.get("county"))
+            or _safe_str(jurisdiction.get("state"))
+            or _safe_str(jurisdiction.get("utility_provider"))
+        )
+        if not (has_jurisdiction_source and has_jurisdiction_identity):
+            blockers.append(
+                _construction_gap(
+                    "standards",
+                    "jurisdiction_standards_traceability",
+                    "Construction release requires traceable jurisdiction identity and source evidence.",
+                    "Attach governing agency/city/county/state plus official source URL or standards-discovery evidence.",
+                )
+            )
     if not _truthy_mapping(meta.get("company_standards")):
-        warnings.append(
+        blockers.append(
             _construction_gap(
                 "standards",
                 "company_standards",
-                "Company CAD/QA standards are not attached.",
+                "Construction release requires company CAD/sheet/QA standards, not only jurisdiction rules.",
                 "Attach company layer, sheet, title block, and QA standards before final issue.",
-                severity="warning",
             )
         )
+    else:
+        company = _safe_dict(meta.get("company_standards"))
+        if company.get("production_usable") is not True:
+            blockers.append(
+                _construction_gap(
+                    "standards",
+                    "company_standards_production_usable",
+                    "Construction release cannot rely on company standards unless they are explicitly production-usable.",
+                    "Attach approved company standards metadata and set company_standards.production_usable true.",
+                )
+            )
+        has_company_source = bool(
+            _safe_str(company.get("source"))
+            or _safe_str(company.get("source_url"))
+            or _safe_str(company.get("version"))
+            or _safe_str(company.get("standard_id"))
+        )
+        has_company_scope = bool(
+            _safe_str(company.get("cad_layer_standard"))
+            or _safe_str(company.get("cad_layers"))
+            or _safe_str(company.get("sheet_standard"))
+            or _safe_str(company.get("title_block"))
+            or _safe_str(company.get("qa_standard"))
+        )
+        if not (has_company_source and has_company_scope):
+            blockers.append(
+                _construction_gap(
+                    "standards",
+                    "company_standards_traceability",
+                    "Construction release requires traceable company standards with CAD/sheet/QA scope.",
+                    "Attach company standard source/version plus layer, sheet, title block, or QA standard metadata.",
+                )
+            )
 
     depth = _safe_dict(meta.get("depth_validation"))
     for key in ("stormwater", "water", "roadway_corridor"):

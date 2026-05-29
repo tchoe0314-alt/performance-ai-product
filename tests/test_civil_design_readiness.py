@@ -117,7 +117,13 @@ def _production_ready_meta() -> dict:
     meta["standards_acceptance"] = accepted
     meta["design_standards"] = standards_pack_from_acceptance(accepted)
     meta["jurisdiction_standards"] = {"agency": "Test City", "source_url": "https://city.example.gov/engineering-standards"}
-    meta["company_standards"] = {"cad_layer_standard": "CIVORA_TEST", "title_block": "CIVORA"}
+    meta["company_standards"] = {
+        "source": "company_manual",
+        "version": "2026.05",
+        "cad_layer_standard": "CIVORA_TEST",
+        "title_block": "CIVORA",
+        "production_usable": True,
+    }
     meta["survey"] = {
         "point_count": 18,
         "source": "survey_points",
@@ -434,6 +440,27 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertFalse(readiness["ready"])
         self.assertIn(("existing_conditions", "coordinate_system_production_usable"), blockers)
         self.assertIn(("existing_conditions", "coordinate_system_source"), blockers)
+
+    def test_construction_readiness_requires_jurisdiction_standards_traceability(self) -> None:
+        meta = _production_ready_meta()
+        meta["jurisdiction_standards"] = {"production_usable": True}
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("standards", "jurisdiction_standards_traceability"), blockers)
+
+    def test_construction_readiness_requires_company_standards_production_evidence(self) -> None:
+        meta = _production_ready_meta()
+        meta["company_standards"] = {"cad_layer_standard": "CIVORA_TEST"}
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("standards", "company_standards_production_usable"), blockers)
+        self.assertIn(("standards", "company_standards_traceability"), blockers)
 
     def test_construction_readiness_requires_qa_and_reactive_reports_to_exist(self) -> None:
         meta = _production_ready_meta()
