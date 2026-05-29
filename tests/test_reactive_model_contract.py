@@ -108,6 +108,39 @@ class ReactiveModelContractTests(unittest.TestCase):
         self.assertIn("storm_pipes", report["post_rerun_stale_outputs"])
         self.assertIn("exports remain blocked", report["post_rerun_truth"])
 
+    def test_execute_reactive_rerun_does_not_clear_stale_outputs_with_assumed_stages(self) -> None:
+        def fake_build(payload):
+            return {
+                "meta": {
+                    "civil_design_readiness": {"production_ready": False},
+                    "payload": payload,
+                    "stage_results": [
+                        {"stage_name": "layout", "success": True, "completeness": "complete"},
+                        {"stage_name": "grading", "success": True, "completeness": "assumed"},
+                        {"stage_name": "drainage", "success": True, "completeness": "assumed"},
+                        {"stage_name": "storm_pipes", "success": True, "completeness": "assumed"},
+                    ],
+                    "stage_completeness": {
+                        "statuses": {
+                            "grading": "assumed",
+                            "drainage": "assumed",
+                            "storm_pipes": "assumed",
+                        }
+                    },
+                }
+            }
+
+        result = execute_reactive_rerun(
+            {"project_name": "Reactive", "meta": {}},
+            changed_engine_ids=["roadway_corridor"],
+            build_plan_fn=fake_build,
+        )
+
+        report = result["reactive_update_report"]
+        self.assertTrue(report["post_rerun_export_blocked"])
+        self.assertIn("grading", report["post_rerun_stale_outputs"])
+        self.assertIn("storm_pipes", report["post_rerun_stale_outputs"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -54,8 +54,10 @@ def mark_stage_skipped_clean(ctx: PlannerExecutionContext, stage_name: str) -> N
     preserved_completeness = ""
     if prior is not None:
         preserved_completeness = safe_str(safe_dict(prior.meta).get("completeness")).strip().lower()
-        if preserved_completeness not in {"complete", "assumed"} and bool(safe_dict(prior.meta).get("resumed_from_checkpoint")) and bool(prior.success):
+        if not preserved_completeness and bool(safe_dict(prior.meta).get("resumed_from_checkpoint")) and bool(prior.success):
             preserved_completeness = "complete"
+        elif preserved_completeness != "complete":
+            preserved_completeness = ""
     ctx.add_stage(
         stage_name,
         True,

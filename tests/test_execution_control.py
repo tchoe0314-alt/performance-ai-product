@@ -79,6 +79,26 @@ class ExecutionControlTest(unittest.TestCase):
         self.assertEqual(latest.stage_name, "layout")
         self.assertEqual(latest.meta.get("completeness"), "complete")
 
+    def test_skipped_clean_does_not_promote_assumed_prior_stage(self):
+        ctx = PlannerExecutionContext(
+            parsed={},
+            manager=_DummyManager(),
+            route=RoutingDecision(path="test", reasons=[]),
+        )
+        ctx.add_stage(
+            "layout",
+            True,
+            "Restored layout state from assumed checkpoint.",
+            resumed_from_checkpoint=True,
+            completeness="assumed",
+        )
+
+        mark_stage_skipped_clean(ctx, "layout")
+
+        latest = ctx.stage_results[-1]
+        self.assertEqual(latest.stage_name, "layout")
+        self.assertEqual(latest.meta.get("completeness"), "partial")
+
     def test_grading_dirty_reruns_dependent_chain_only(self):
         ctx = self._clean_second_pass_context()
         ctx.manager.system_dirty_state["grading"] = {"state": "dirty", "reasons": ["grading changed"]}

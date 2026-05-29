@@ -674,8 +674,10 @@ def build_orchestrate_job_runner(
 
         def _normalized_stage_state(stage_key: str) -> str:
             raw = str(stage_statuses.get(stage_key) or "").strip().lower()
-            if raw in {"complete", "assumed"}:
+            if raw == "complete":
                 return "complete"
+            if raw == "assumed":
+                return "partial"
             if raw in {"running", "in_progress", "started"}:
                 return "running"
             if raw == "failed":

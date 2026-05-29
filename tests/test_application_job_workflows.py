@@ -1149,6 +1149,91 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
             2,
         )
 
+    def test_build_orchestrate_job_runner_does_not_count_assumed_stage_progress_complete(self):
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Demo",
+                "description": "",
+                "session_id": None,
+                "tags": [],
+                "project_input": {},
+                "latest_result": {
+                    "final_plan": {
+                        "actions": [{"task": "rectangle", "layer": "SITE"}],
+                        "meta": {
+                            "stage_completeness": {
+                                "statuses": {
+                                    "layout": "complete",
+                                    "sanitary": "assumed",
+                                }
+                            },
+                            "phase_checkpoints": {
+                                "layout": {"status": "complete", "ready": True},
+                                "utilities": {"status": "pending", "ready": False},
+                            },
+                        },
+                    },
+                    "metadata": {"run_summary": {}},
+                },
+                "session_state": {},
+                "metadata": {},
+            }
+        )
+
+        def run_orchestration(payload, progress_callback=None):
+            progress_callback("layout", "complete", 18, "Layout complete.")
+            return {"success": True, "final_plan": {"project_name": "Demo", "meta": {}}}
+
+        runner = build_orchestrate_job_runner(
+            project_store=store,
+            update_job_progress=lambda *_args, **_kwargs: None,
+            run_orchestration=run_orchestration,
+            build_run_summary=lambda result, **kwargs: {
+                "run_id": "run_assumed",
+                "job_id": kwargs.get("job_id"),
+                "source": "queued_job",
+                "convergence_summary": {
+                    "assumption_summary": {"count": 0, "categories": [], "examples": []},
+                    "unresolved_issue_categories": [],
+                    "blocked_reasons": [],
+                    "blocked_exports": [],
+                },
+                "reliability_summary": {"operational_state": "review", "release_ready": False},
+                "phase_checkpoints": {
+                    "layout": {"status": "complete", "ready": True},
+                    "combined_view": {"status": "partial", "ready": False},
+                },
+                "requested_deliverables": [],
+                "produced_deliverables": [],
+                "ready_deliverables": [],
+                "extra_deliverables": [],
+                "failed_deliverables": [],
+            },
+            merge_project_metadata=lambda metadata, **kwargs: {"workflow": {"runs": [kwargs["run_summary"]]}},
+            final_plan_from_result=lambda result, **kwargs: {"project_name": "Demo", "meta": {}},
+        )
+
+        runner(
+            {
+                "job_id": "job_assumed_progress",
+                "job_type": "orchestrate",
+                "user_id": "u1",
+                "project_id": "p1",
+                "payload": {"prompt_text": "run"},
+            }
+        )
+
+        phase_save = store.save_calls[0]
+        phase_run = phase_save["metadata"]["workflow"]["runs"][0]
+        self.assertEqual(phase_run["phase_checkpoints"]["utilities"]["status"], "partial")
+        self.assertFalse(phase_run["phase_checkpoints"]["utilities"]["ready"])
+        self.assertEqual(
+            phase_save["latest_result"]["final_plan"]["meta"]["phase_checkpoints"]["combined_view"]["completed_phase_count"],
+            1,
+        )
+
     def test_build_orchestrate_job_runner_resumes_from_saved_checkpoint_state(self):
         captured_payload = {}
         store = FakeProjectStore(

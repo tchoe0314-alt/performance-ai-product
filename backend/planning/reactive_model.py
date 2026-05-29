@@ -144,10 +144,7 @@ def _completed_stage_names(meta: Dict[str, Any]) -> Set[str]:
         stage_name = safe_str(row.get("stage_name"))
         if not stage_name:
             continue
-        if bool(row.get("success")) and safe_str(row.get("completeness")).lower() in {
-            "complete",
-            "assumed",
-        }:
+        if bool(row.get("success")) and safe_str(row.get("completeness")).lower() == "complete":
             completed.add(stage_name)
             continue
         if bool(row.get("success")) and safe_str(row.get("action")).lower() == "run":
@@ -159,7 +156,7 @@ def _completed_stage_names(meta: Dict[str, Any]) -> Set[str]:
         safe_dict(completeness.get("statuses")),
     ):
         for stage_name, status in source.items():
-            if safe_str(status).lower() in {"complete", "assumed"}:
+            if safe_str(status).lower() == "complete":
                 completed.add(safe_str(stage_name))
     return completed
 
@@ -195,7 +192,7 @@ def execute_reactive_rerun(
     final_report["post_rerun_stale_outputs"] = uncleared_stale
     final_report["post_rerun_export_blocked"] = bool(uncleared_stale)
     final_report["post_rerun_truth"] = (
-        "All impacted downstream stages reported complete or assumed-complete after rerun."
+        "All impacted downstream stages reported complete after rerun."
         if not uncleared_stale
         else "Some impacted downstream stages did not report completion after rerun; exports remain blocked for those outputs."
     )
