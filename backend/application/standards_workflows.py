@@ -9,6 +9,7 @@ from backend.planning.standards_discovery import (
     discover_standards_sources,
     fetch_and_extract_rule_candidates,
     standards_pack_from_acceptance,
+    standards_project_evidence_from_acceptance,
 )
 
 
@@ -44,13 +45,16 @@ def accept_standards_response(
     review_packet: Dict[str, Any],
     accepted_rule_ids: Iterable[str],
     edits: Optional[Dict[str, Dict[str, Any]]] = None,
+    company_standards: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     acceptance = accept_standards_rules(review_packet, accepted_rule_ids, edits=edits)
-    return {
-        "success": bool(acceptance.get("success")),
-        "standards_acceptance": acceptance,
-        "design_standards": standards_pack_from_acceptance(acceptance),
-    }
+    evidence = standards_project_evidence_from_acceptance(
+        acceptance,
+        review_packet=review_packet,
+        company_standards=company_standards,
+    )
+    evidence["design_standards"] = standards_pack_from_acceptance(acceptance)
+    return evidence
 
 
 def extract_standards_candidates_response(*, source_url: str, source_id: str = "official_source") -> Dict[str, Any]:

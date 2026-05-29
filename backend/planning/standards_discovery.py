@@ -273,6 +273,44 @@ def standards_pack_from_acceptance(acceptance: Dict[str, Any]) -> Dict[str, Any]
     return pack
 
 
+def standards_project_evidence_from_acceptance(
+    acceptance: Dict[str, Any],
+    *,
+    review_packet: Optional[Dict[str, Any]] = None,
+    company_standards: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    pack = standards_pack_from_acceptance(acceptance)
+    discovery = safe_dict(safe_dict(review_packet).get("discovery"))
+    jurisdiction = safe_dict(discovery.get("jurisdiction"))
+    source_urls = list(safe_list(pack.get("source_urls")))
+    jurisdiction_profile = {
+        "source": "standards_discovery_engine",
+        "city": safe_str(jurisdiction.get("city")),
+        "county": safe_str(jurisdiction.get("county")),
+        "state": safe_str(jurisdiction.get("state")),
+        "utility_provider": safe_str(jurisdiction.get("utility_provider")),
+        "source_urls": source_urls,
+        "official_source_count": pack.get("official_source_count", 0),
+        "production_usable": bool(pack.get("production_usable")) and bool(source_urls),
+    }
+    company_profile = safe_dict(company_standards)
+    if not company_profile:
+        company_profile = {
+            "source": "civora_default_company_standards_placeholder",
+            "production_usable": False,
+            "truth_label": "Company standards were not supplied; attach CAD/layer/sheet/detail standards before final issue.",
+        }
+    return {
+        "success": bool(acceptance.get("success")),
+        "standards_acceptance": acceptance,
+        "design_standards": pack,
+        "jurisdiction_standards": jurisdiction_profile,
+        "company_standards": company_profile,
+        "production_usable": bool(pack.get("production_usable")) and bool(jurisdiction_profile.get("production_usable")),
+        "truth_label": "Project standards evidence is production-usable only after accepted official rules and jurisdiction traceability are present.",
+    }
+
+
 def _source_url_is_official(url: str) -> bool:
     lowered = safe_str(url).lower()
     return (
@@ -466,5 +504,6 @@ __all__ = [
     "extract_text_from_html",
     "fetch_and_extract_rule_candidates",
     "standards_pack_from_acceptance",
+    "standards_project_evidence_from_acceptance",
     "validate_standards_acceptance_for_production",
 ]

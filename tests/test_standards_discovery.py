@@ -7,6 +7,7 @@ from backend.planning.standards_discovery import (
     extract_rule_candidates_from_text,
     fetch_and_extract_rule_candidates,
     standards_pack_from_acceptance,
+    standards_project_evidence_from_acceptance,
     validate_standards_acceptance_for_production,
 )
 from core.civil_design import civil_design_readiness
@@ -111,6 +112,34 @@ class StandardsDiscoveryTests(unittest.TestCase):
 
         self.assertTrue(validation["production_usable"])
         self.assertEqual(validation["official_source_count"], 1)
+
+    def test_project_standards_evidence_carries_jurisdiction_and_company_profiles(self) -> None:
+        packet = build_standards_review_packet(
+            city="Austin",
+            state="Texas",
+            extracted_rules=[
+                {
+                    "rule_id": "city_cover",
+                    "discipline": "utilities",
+                    "topic": "minimum cover",
+                    "candidate_value": "Minimum cover shall be 4 feet.",
+                    "source_url": "https://city.example.gov/manual",
+                    "source_section": "Section 5.1",
+                }
+            ],
+        )
+        accepted = accept_standards_rules(packet, ["city_cover"])
+
+        evidence = standards_project_evidence_from_acceptance(
+            accepted,
+            review_packet=packet,
+            company_standards={"source": "company_manual", "production_usable": True},
+        )
+
+        self.assertTrue(evidence["production_usable"])
+        self.assertEqual(evidence["jurisdiction_standards"]["city"], "Austin")
+        self.assertEqual(evidence["jurisdiction_standards"]["state"], "Texas")
+        self.assertTrue(evidence["company_standards"]["production_usable"])
 
     def test_baseline_or_search_sources_are_not_production_authority(self) -> None:
         packet = build_standards_review_packet()

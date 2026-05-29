@@ -273,6 +273,7 @@ class StandardsAcceptancePayload(BaseModel):
     review_packet: Dict[str, Any] = Field(default_factory=dict)
     accepted_rule_ids: List[str] = Field(default_factory=list)
     edits: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    company_standards: Dict[str, Any] = Field(default_factory=dict)
 
 
 class StandardsExtractPayload(BaseModel):
@@ -785,6 +786,7 @@ def accept_standards(
         review_packet=payload.review_packet,
         accepted_rule_ids=payload.accepted_rule_ids,
         edits=payload.edits,
+        company_standards=payload.company_standards,
     )
 
 
