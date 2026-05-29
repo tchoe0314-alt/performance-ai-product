@@ -30,12 +30,11 @@ def _has_digit(value: str) -> bool:
     return any(ch.isdigit() for ch in value)
 
 
-def _valid_date(value: str) -> bool:
+def _parse_date(value: str) -> date | None:
     try:
-        date.fromisoformat(value)
-        return True
+        return date.fromisoformat(value)
     except ValueError:
-        return False
+        return None
 
 
 def validate_professional_release(record: Dict[str, Any]) -> Dict[str, Any]:
@@ -126,8 +125,12 @@ def validate_professional_release(record: Dict[str, Any]) -> Dict[str, Any]:
     review_date = _safe_str(rec.get("review_date") or rec.get("sealed_date") or rec.get("approved_date"))
     if not review_date:
         blockers.append({"field": "review_date", "reason": "Professional release is missing review/seal date."})
-    elif not _valid_date(review_date):
-        blockers.append({"field": "review_date", "reason": "Professional release review date must be ISO format YYYY-MM-DD."})
+    else:
+        parsed_review_date = _parse_date(review_date)
+        if parsed_review_date is None:
+            blockers.append({"field": "review_date", "reason": "Professional release review date must be ISO format YYYY-MM-DD."})
+        elif parsed_review_date > date.today():
+            blockers.append({"field": "review_date", "reason": "Professional release review date cannot be in the future."})
     return {
         "success": not blockers,
         "released_for_construction": not blockers,

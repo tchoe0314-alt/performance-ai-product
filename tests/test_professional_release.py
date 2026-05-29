@@ -64,6 +64,26 @@ class ProfessionalReleaseTests(unittest.TestCase):
         self.assertIn("discipline", fields)
         self.assertIn("review_scope", fields)
 
+    def test_professional_release_blocks_future_review_date(self) -> None:
+        validation = validate_professional_release(
+            {
+                "engineer_name": "Alex Morgan",
+                "license_number": "TX-123456",
+                "status": "released_for_construction",
+                "sealed": True,
+                "review_date": "2999-01-01",
+                "jurisdiction": "Test City",
+                "license_jurisdiction": "TX",
+                "discipline": "civil",
+                "review_scope": "civil_site_construction_documents",
+            }
+        )
+        blockers = {(item["field"], item["reason"]) for item in validation["blockers"]}
+
+        self.assertFalse(validation["success"])
+        self.assertFalse(validation["released_for_construction"])
+        self.assertIn(("review_date", "Professional release review date cannot be in the future."), blockers)
+
     def test_construction_readiness_requires_complete_professional_release_metadata(self) -> None:
         meta = {
             "civil_design_readiness": {"production_ready": True, "score": 100.0, "production_blockers": []},
