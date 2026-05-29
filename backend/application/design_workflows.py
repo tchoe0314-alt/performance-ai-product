@@ -812,16 +812,13 @@ def final_plan_from_result(
                 )
                 if isinstance(item, dict)
             ]
-            storm_ready = storm_summary_is_exportable({**storm, "segments": persisted_segments}) or (
-                bool(dict(storm.get("graph_validation") or {}).get("valid", False))
-                and bool(dict(storm.get("hydraulic_validation") or {}).get("valid", False))
-                and not list(storm.get("missing_data_segments") or [])
-            )
+            storm_ready = storm_summary_is_exportable({**storm, "segments": persisted_segments})
         storm_only_drainage_reasons = {
             "storm_network_missing",
             "storm_graph_invalid",
             "storm_hydraulics_invalid",
             "storm_segments_incomplete",
+            "storm_fallback_used",
         }
         if (
             not drainage_ready

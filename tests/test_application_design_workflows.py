@@ -567,44 +567,46 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         )
         self.assertEqual(plan["actions"][0]["layer"], "PIPE")
 
-    def test_final_plan_from_result_accepts_persisted_storm_segments_without_summary_flags(self):
-        plan = final_plan_from_result(
-            {
-                "final_plan": {
-                    "actions": [{"task": "polyline", "layer": "PIPE"}],
-                    "meta": {
-                        "deliverables": {"requested": ["storm_pipe_plan"], "produced": ["storm_pipe_plan"]},
-                        "drainage": {
-                            "export_validation": {
-                                "ready": False,
-                                "reasons": [
-                                    "storm_network_missing",
-                                    "storm_graph_invalid",
-                                    "storm_hydraulics_invalid",
-                                ],
-                            }
-                        },
-                        "storm_pipes": {
-                            "graph_validation": None,
-                            "hydraulic_validation": None,
-                            "missing_data_segments": None,
-                            "storm_pipe_segments": [
-                                {
-                                    "id": "P-001",
-                                    "route_points": [[0.0, 0.0], [50.0, 0.0], [100.0, 25.0]],
-                                    "length_ft": 110.0,
-                                    "diameter_in": 24.0,
-                                    "flow_cfs": 0.4,
-                                    "source": "surface_fallback",
+    def test_final_plan_from_result_blocks_persisted_storm_segments_without_summary_flags(self):
+        with self.assertRaises(HTTPException) as ctx:
+            final_plan_from_result(
+                {
+                    "final_plan": {
+                        "actions": [{"task": "polyline", "layer": "PIPE"}],
+                        "meta": {
+                            "deliverables": {"requested": ["storm_pipe_plan"], "produced": ["storm_pipe_plan"]},
+                            "drainage": {
+                                "export_validation": {
+                                    "ready": False,
+                                    "reasons": [
+                                        "storm_network_missing",
+                                        "storm_graph_invalid",
+                                        "storm_hydraulics_invalid",
+                                    ],
                                 }
-                            ],
-                            "source": "surface_fallback",
+                            },
+                            "storm_pipes": {
+                                "graph_validation": None,
+                                "hydraulic_validation": None,
+                                "missing_data_segments": None,
+                                "storm_pipe_segments": [
+                                    {
+                                        "id": "P-001",
+                                        "route_points": [[0.0, 0.0], [50.0, 0.0], [100.0, 25.0]],
+                                        "length_ft": 110.0,
+                                        "diameter_in": 24.0,
+                                        "flow_cfs": 0.4,
+                                        "source": "surface_fallback",
+                                    }
+                                ],
+                                "source": "surface_fallback",
+                            },
                         },
-                    },
+                    }
                 }
-            }
-        )
-        self.assertEqual(plan["actions"][0]["layer"], "PIPE")
+            )
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn("storm_graph_invalid", str(ctx.exception.detail))
 
     def test_final_plan_from_result_accepts_visible_grading_layers_when_export_flag_is_stale(self):
         plan = final_plan_from_result(

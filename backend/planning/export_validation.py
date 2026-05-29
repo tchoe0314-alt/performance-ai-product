@@ -187,16 +187,26 @@ def storm_summary_is_exportable(storm: Dict[str, Any]) -> bool:
         return False
     if safe_list(summary.get("missing_data_segments")):
         return False
-    if bool(safe_dict(summary.get("graph_validation")).get("valid", False)) and bool(
-        safe_dict(summary.get("hydraulic_validation")).get("valid", False)
-    ):
-        return True
     source = safe_str(summary.get("source"))
-    if source == "surface_fallback":
+    if source in {"surface_fallback", "fallback", "synthesized"}:
+        return False
+    return bool(safe_dict(summary.get("graph_validation")).get("valid", False)) and bool(
+        safe_dict(summary.get("hydraulic_validation")).get("valid", False)
+    )
+
+
+def _storm_source_is_fallback(storm: Dict[str, Any], segments: List[Dict[str, Any]]) -> bool:
+    summary = safe_dict(storm)
+    source = safe_str(summary.get("source")).lower()
+    if source in {"surface_fallback", "fallback", "synthesized"}:
         return True
-    has_route_count = safe_int(summary.get("pipe_count"), 0) > 0 or safe_int(summary.get("route_count"), 0) > 0
-    if has_route_count or segments:
-        return True
+    for segment in segments:
+        if safe_str(safe_dict(segment).get("source")).lower() in {
+            "surface_fallback",
+            "fallback",
+            "synthesized",
+        }:
+            return True
     return False
 
 
@@ -365,12 +375,12 @@ def drainage_export_validation(
             reasons.append("drainage_surface_alignment_missing")
 
     storm_segments = _storm_segments_from_project(project, storm)
-    storm_exportable = storm_summary_is_exportable({**storm, "segments": storm_segments}) or _storm_segments_are_viable(
-        storm_segments
-    )
+    storm_exportable = storm_summary_is_exportable({**storm, "segments": storm_segments})
     if primary_basins:
         if not storm_segments:
             reasons.append("storm_network_missing")
+        if _storm_source_is_fallback(storm, storm_segments):
+            reasons.append("storm_fallback_used")
         if not storm_exportable and not bool(safe_dict(storm.get("graph_validation")).get("valid", False)):
             reasons.append("storm_graph_invalid")
         if not storm_exportable and not bool(safe_dict(storm.get("hydraulic_validation")).get("valid", False)):
@@ -432,14 +442,14 @@ def storm_export_validation(
     storm = safe_dict(
         storm_override if storm_override is not None else project.meta.get("storm_pipe_summary")
     )
-    drainage_validation = drainage_export_validation(project)
+    drainage_validation = drainage_export_validation(project, storm_override=storm)
     reasons: List[str] = []
     segments = _storm_segments_from_project(project, storm)
-    storm_exportable = storm_summary_is_exportable({**storm, "segments": segments}) or _storm_segments_are_viable(
-        segments
-    )
+    storm_exportable = storm_summary_is_exportable({**storm, "segments": segments})
     if not segments:
         reasons.append("storm_network_missing")
+    if _storm_source_is_fallback(storm, segments):
+        reasons.append("storm_fallback_used")
     if not storm_exportable and not bool(safe_dict(storm.get("graph_validation")).get("valid", False)):
         reasons.append("storm_graph_invalid")
     if not storm_exportable and not bool(safe_dict(storm.get("hydraulic_validation")).get("valid", False)):

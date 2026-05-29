@@ -868,6 +868,21 @@ def _attach_canonical_stage_outputs(plan: Dict[str, Any], project: ProjectModel,
     meta["grading"] = canonical_stage_output(project, manager, "grading")
     meta["drainage"] = canonical_stage_output(project, manager, "drainage")
     meta["storm_pipes"] = canonical_stage_output(project, manager, "storm_pipes")
+    drainage_output = safe_dict(meta.get("drainage"))
+    storm_output = safe_dict(meta.get("storm_pipes"))
+    if drainage_output:
+        drainage_output["export_validation"] = _drainage_export_validation(
+            project,
+            drainage_override=drainage_output,
+            storm_override=storm_output,
+        )
+        meta["drainage"] = drainage_output
+    if storm_output:
+        storm_output["export_validation"] = _storm_export_validation(
+            project,
+            storm_override=storm_output,
+        )
+        meta["storm_pipes"] = storm_output
     sanitary_output = safe_dict(canonical_stage_output(project, manager, "sanitary"))
     meta["sanitary"] = (
         sanitary_output

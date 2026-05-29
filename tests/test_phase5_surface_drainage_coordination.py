@@ -435,7 +435,7 @@ class Phase5SurfaceDrainageCoordinationTests(unittest.TestCase):
         self.assertNotIn("primary_detention_missing", drainage_validation.get("reasons", []))
         self.assertEqual(drainage_validation.get("primary_basin_count"), 1)
 
-    def test_storm_export_validation_accepts_viable_surface_fallback_network(self) -> None:
+    def test_storm_export_validation_blocks_surface_fallback_network(self) -> None:
         project = planner.ProjectModel(name="Surface Fallback Storm Export")
         project.meta["grading_summary"] = {
             "success": True,
@@ -487,12 +487,13 @@ class Phase5SurfaceDrainageCoordinationTests(unittest.TestCase):
 
         storm_validation = planner._storm_export_validation(project)
 
-        self.assertTrue(storm_validation.get("ready"))
-        self.assertNotIn("storm_graph_invalid", storm_validation.get("reasons", []))
-        self.assertNotIn("storm_hydraulics_invalid", storm_validation.get("reasons", []))
-        self.assertNotIn("storm_downstream_target_implied", storm_validation.get("reasons", []))
+        self.assertFalse(storm_validation.get("ready"))
+        self.assertIn("storm_fallback_used", storm_validation.get("reasons", []))
+        self.assertIn("storm_graph_invalid", storm_validation.get("reasons", []))
+        self.assertIn("storm_hydraulics_invalid", storm_validation.get("reasons", []))
+        self.assertIn("storm_downstream_target_implied", storm_validation.get("reasons", []))
 
-    def test_storm_export_validation_uses_persisted_segments_when_summary_segments_missing(self) -> None:
+    def test_storm_export_validation_blocks_persisted_segments_without_summary_flags(self) -> None:
         project = planner.ProjectModel(name="Persisted Storm Segments Export")
         project.meta["grading_summary"] = {
             "success": True,
@@ -551,14 +552,14 @@ class Phase5SurfaceDrainageCoordinationTests(unittest.TestCase):
         storm_validation = planner._storm_export_validation(project)
         drainage_validation = planner._drainage_export_validation(project)
 
-        self.assertTrue(storm_validation.get("ready"))
+        self.assertFalse(storm_validation.get("ready"))
         self.assertNotIn("storm_network_missing", storm_validation.get("reasons", []))
-        self.assertNotIn("storm_graph_invalid", storm_validation.get("reasons", []))
-        self.assertNotIn("storm_hydraulics_invalid", storm_validation.get("reasons", []))
-        self.assertTrue(drainage_validation.get("ready"))
+        self.assertIn("storm_graph_invalid", storm_validation.get("reasons", []))
+        self.assertIn("storm_hydraulics_invalid", storm_validation.get("reasons", []))
+        self.assertFalse(drainage_validation.get("ready"))
         self.assertNotIn("storm_network_missing", drainage_validation.get("reasons", []))
 
-    def test_storm_summary_is_exportable_accepts_persisted_summary_segments_without_graph_flags(self) -> None:
+    def test_storm_summary_is_exportable_blocks_segments_without_graph_flags(self) -> None:
         summary = {
             "success": True,
             "segments": [
@@ -575,7 +576,7 @@ class Phase5SurfaceDrainageCoordinationTests(unittest.TestCase):
             "missing_data_segments": [],
         }
 
-        self.assertTrue(storm_summary_is_exportable(summary))
+        self.assertFalse(storm_summary_is_exportable(summary))
 
     def test_utility_export_validation_accepts_viable_fallback_network(self) -> None:
         project = planner.ProjectModel(name="Utility Fallback Export")
