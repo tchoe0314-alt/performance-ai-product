@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from backend.application.design_workflows import (
     build_run_summary,
     construction_release_blockers_from_meta,
+    final_plan_requires_construction_release,
     final_plan_from_result,
 )
 from backend.application.protocols import ArtifactServiceProtocol
@@ -738,7 +739,10 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
     ):
         blocked_exports = current_blocked_exports
         blocked_reasons = current_blocked_reasons
-    for construction_blocker in construction_release_blockers_from_meta(final_meta):
+    for construction_blocker in construction_release_blockers_from_meta(
+        final_meta,
+        requires_construction_release=final_plan_requires_construction_release(final_plan),
+    ):
         if construction_blocker not in blocked_reasons:
             blocked_reasons.append(construction_blocker)
     if final_meta.get("release_ready") is False and "final_plan_release_blocked" not in blocked_reasons:
