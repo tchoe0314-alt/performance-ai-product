@@ -124,6 +124,21 @@ class Phase1Slice6DExportMetadataTest(unittest.TestCase):
         self.assertFalse(traceability["ready"])
         self.assertEqual(traceability["missing_summary_source_ids"], ["storm[0]"])
 
+    def test_export_audit_blocks_concept_or_fallback_engineering_sources(self) -> None:
+        plan = _export_plan()
+        plan["meta"]["storm_pipes"]["segments"][0]["source"] = "surface_fallback"
+        plan["meta"]["storm_pipes"]["segments"][0]["hydraulic_basis"] = "rational_method_concept"
+
+        metadata = finalize_export_metadata(plan)
+        audit = metadata["export_audit"]
+        traceability = audit["canonical_id_traceability"]
+
+        self.assertFalse(audit["success"])
+        self.assertFalse(audit["production_export_ready"])
+        self.assertTrue(audit["export_blocked"])
+        self.assertIn("concept_or_fallback_engineering_sources", audit["blocked_reasons"])
+        self.assertEqual(traceability["concept_engineering_source_ids"], ["storm-1"])
+
     def test_export_audit_blocks_when_release_review_is_blocked(self) -> None:
         plan = _export_plan()
         plan["meta"]["release_review"] = {

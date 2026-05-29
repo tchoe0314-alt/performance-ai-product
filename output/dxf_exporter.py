@@ -3655,6 +3655,19 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
         and not missing_summary_source_ids
         and not orphaned_action_source_ids
     )
+
+    concept_source_tokens = ("concept", "fallback", "assumed", "synthetic", "proxy")
+    concept_engineering_sources: List[str] = []
+    for group_name, group in meta_engineering_sources.items():
+        for index, item in enumerate(group):
+            source_blob = " ".join(
+                safe_text(item.get(key)).lower()
+                for key in ("source", "hydraulic_source", "source_detail", "hydraulic_basis", "release_basis")
+                if safe_text(item.get(key))
+            )
+            if bool(item.get("fallback_used")) or any(token in source_blob for token in concept_source_tokens):
+                concept_engineering_sources.append(source_id(item) or f"{group_name}[{index}]")
+    concept_engineering_sources = sorted(dict.fromkeys(concept_engineering_sources))
     callouts = _collect_structure_callouts(plan)
     site_callouts_canonical = bool(callouts) and all(safe_text(item.get("name")) and safe_text(item.get("symbol")) for item in callouts)
     expected_profile = any(item in {"road_profile", "profiles"} for item in requested)
@@ -3730,12 +3743,21 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
         warnings.append("One or more canonical engineering summaries are missing stable IDs for export traceability.")
     if orphaned_action_source_ids:
         warnings.append("One or more engineering export entities reference canonical IDs that are not present in the final engineering summaries.")
+    if concept_engineering_sources:
+        warnings.append("One or more engineering export entities are based on concept, fallback, assumed, synthetic, or proxy data and cannot be production-export-ready.")
     if stale_output_blocking:
         warnings.append("Export is blocked because one or more canonical outputs are dirty, stale, invalid, or cache-only.")
     if release_output_blocking:
         warnings.append("Export is blocked because the final plan release review is not production-ready.")
-    export_blocked = stale_output_blocking or release_output_blocking
-    blocked_reasons = list(dict.fromkeys(stale_blocking_reasons + release_blockers))
+    concept_output_blocking = bool(concept_engineering_sources)
+    export_blocked = stale_output_blocking or release_output_blocking or concept_output_blocking
+    blocked_reasons = list(
+        dict.fromkeys(
+            stale_blocking_reasons
+            + release_blockers
+            + (["concept_or_fallback_engineering_sources"] if concept_output_blocking else [])
+        )
+    )
     production_export_ready = not warnings and canonical_id_traceability_ready and not export_blocked
     return {
         "success": not warnings,
@@ -3786,6 +3808,7 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
             "missing_summary_source_ids": missing_summary_source_ids,
             "unmapped_canonical_summary_ids": unmapped_canonical_summary_ids,
             "orphaned_action_source_ids": orphaned_action_source_ids,
+            "concept_engineering_source_ids": concept_engineering_sources,
         },
         "canonical_integrity": deepcopy(canonical_integrity),
         "release_readiness": {
