@@ -1581,7 +1581,16 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
             )
 
     truth = _safe_dict(meta.get("truth_audit"))
-    if truth and truth.get("success") is not True:
+    if not truth:
+        blockers.append(
+            _construction_gap(
+                "qa",
+                "truth_audit",
+                "Construction release requires a completed canonical truth audit.",
+                "Run final QA/canonical truth audit and attach passing truth_audit metadata.",
+            )
+        )
+    elif truth.get("success") is not True:
         blockers.append(
             _construction_gap(
                 "qa",
@@ -1591,7 +1600,16 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
             )
         )
     manual = _safe_dict(meta.get("manual_validation"))
-    if manual and manual.get("success") is not True:
+    if not manual:
+        blockers.append(
+            _construction_gap(
+                "qa",
+                "manual_validation",
+                "Construction release requires manual validation gates to be executed.",
+                "Run manual validation gates and attach passing manual_validation metadata.",
+            )
+        )
+    elif manual.get("success") is not True or manual.get("failed") is True:
         blockers.append(
             _construction_gap(
                 "qa",
@@ -1601,7 +1619,16 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
             )
         )
     reactive = _safe_dict(meta.get("reactive_update_report"))
-    if reactive and (reactive.get("export_blocked") is True or _safe_list(reactive.get("post_rerun_stale_outputs"))):
+    if not reactive:
+        blockers.append(
+            _construction_gap(
+                "reactive_model",
+                "reactive_update_report",
+                "Construction release requires a reactive update report proving downstream outputs are current.",
+                "Run dependency-aware rerun/finalization and attach reactive_update_report metadata.",
+            )
+        )
+    elif reactive.get("export_blocked") is True or _safe_list(reactive.get("post_rerun_stale_outputs")):
         blockers.append(
             _construction_gap(
                 "reactive_model",

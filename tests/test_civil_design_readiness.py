@@ -435,6 +435,20 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertIn(("existing_conditions", "coordinate_system_production_usable"), blockers)
         self.assertIn(("existing_conditions", "coordinate_system_source"), blockers)
 
+    def test_construction_readiness_requires_qa_and_reactive_reports_to_exist(self) -> None:
+        meta = _production_ready_meta()
+        meta.pop("truth_audit")
+        meta.pop("manual_validation")
+        meta.pop("reactive_update_report")
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("qa", "truth_audit"), blockers)
+        self.assertIn(("qa", "manual_validation"), blockers)
+        self.assertIn(("reactive_model", "reactive_update_report"), blockers)
+
     def test_construction_readiness_can_clear_with_verified_professional_release(self) -> None:
         meta = _production_ready_meta()
         meta["professional_review"] = {
