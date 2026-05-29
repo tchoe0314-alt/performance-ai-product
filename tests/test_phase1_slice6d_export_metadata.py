@@ -124,6 +124,38 @@ class Phase1Slice6DExportMetadataTest(unittest.TestCase):
         self.assertFalse(traceability["ready"])
         self.assertEqual(traceability["missing_summary_source_ids"], ["storm[0]"])
 
+    def test_export_audit_blocks_when_release_review_is_blocked(self) -> None:
+        plan = _export_plan()
+        plan["meta"]["release_review"] = {
+            "release_status": "blocked",
+            "release_ready": False,
+            "blocked_reasons": ["construction_package_blocked"],
+        }
+
+        metadata = finalize_export_metadata(plan)
+        audit = metadata["export_audit"]
+
+        self.assertFalse(audit["success"])
+        self.assertFalse(audit["production_export_ready"])
+        self.assertTrue(audit["export_blocked"])
+        self.assertIn("construction_package_blocked", audit["blocked_reasons"])
+        self.assertIn("release_status_blocked", audit["blocked_reasons"])
+        self.assertIn("final_plan_release_not_ready", audit["blocked_reasons"])
+        self.assertEqual(audit["release_readiness"]["release_status"], "blocked")
+
+    def test_export_audit_blocks_required_construction_release_without_readiness(self) -> None:
+        plan = _export_plan()
+        plan["meta"]["construction_release_required"] = True
+
+        metadata = finalize_export_metadata(plan)
+        audit = metadata["export_audit"]
+
+        self.assertFalse(audit["success"])
+        self.assertFalse(audit["production_export_ready"])
+        self.assertTrue(audit["export_blocked"])
+        self.assertIn("construction_readiness_missing", audit["blocked_reasons"])
+        self.assertTrue(audit["release_readiness"]["construction_release_required"])
+
 
 if __name__ == "__main__":
     unittest.main()

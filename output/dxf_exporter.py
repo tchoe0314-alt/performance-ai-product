@@ -3676,6 +3676,29 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
     canonical_integrity = safe_dict(meta.get("canonical_integrity") or safe_dict(meta.get("truth_audit")).get("canonical_integrity"))
     stale_output_blocking = bool(canonical_integrity.get("blocked"))
     stale_blocking_reasons = [safe_text(item) for item in safe_list(canonical_integrity.get("blocking_reasons")) if safe_text(item)]
+    release_review = safe_dict(meta.get("release_review"))
+    release_status = safe_text(release_review.get("release_status") or meta.get("release_status"), "").lower()
+    release_ready_value = release_review.get("release_ready") if "release_ready" in release_review else meta.get("release_ready")
+    release_blockers = [
+        safe_text(item)
+        for item in safe_list(release_review.get("blocked_reasons")) + safe_list(release_review.get("blocked_exports"))
+        if safe_text(item)
+    ]
+    construction_required = bool(meta.get("construction_release_required"))
+    construction_readiness = safe_dict(meta.get("construction_readiness"))
+    construction_package = safe_dict(meta.get("construction_package_manifest") or meta.get("construction_package"))
+    if release_status == "blocked":
+        release_blockers.append("release_status_blocked")
+    if release_ready_value is False:
+        release_blockers.append("final_plan_release_not_ready")
+    if construction_required and construction_readiness.get("ready") is not True:
+        release_blockers.append("construction_readiness_missing")
+    if construction_required and construction_readiness.get("ready") is True and not construction_package:
+        release_blockers.append("construction_package_manifest_missing")
+    if construction_required and construction_package and construction_package.get("release_allowed") is False:
+        release_blockers.append("construction_package_blocked")
+    release_blockers = list(dict.fromkeys(item for item in release_blockers if item))
+    release_output_blocking = bool(release_blockers)
     warnings: List[str] = []
     if canonical_profiles and not any(name.startswith("PROFILE") for name in layout_names):
         warnings.append("Canonical profiles exist but no profile layouts were exported.")
@@ -3709,13 +3732,17 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
         warnings.append("One or more engineering export entities reference canonical IDs that are not present in the final engineering summaries.")
     if stale_output_blocking:
         warnings.append("Export is blocked because one or more canonical outputs are dirty, stale, invalid, or cache-only.")
-    production_export_ready = not warnings and canonical_id_traceability_ready and not stale_output_blocking
+    if release_output_blocking:
+        warnings.append("Export is blocked because the final plan release review is not production-ready.")
+    export_blocked = stale_output_blocking or release_output_blocking
+    blocked_reasons = list(dict.fromkeys(stale_blocking_reasons + release_blockers))
+    production_export_ready = not warnings and canonical_id_traceability_ready and not export_blocked
     return {
         "success": not warnings,
         "ready": not warnings,
         "production_export_ready": production_export_ready,
-        "export_blocked": stale_output_blocking,
-        "blocked_reasons": stale_blocking_reasons,
+        "export_blocked": export_blocked,
+        "blocked_reasons": blocked_reasons,
         "layout_order": layout_names,
         "sheet_total": len(sheet_registry),
         "sheet_titles": [safe_text(item.get("sheet_title")) for item in sheet_registry],
@@ -3761,6 +3788,14 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
             "orphaned_action_source_ids": orphaned_action_source_ids,
         },
         "canonical_integrity": deepcopy(canonical_integrity),
+        "release_readiness": {
+            "release_status": release_status,
+            "release_ready": bool(release_ready_value) if release_ready_value is not None else None,
+            "construction_release_required": construction_required,
+            "construction_readiness_ready": construction_readiness.get("ready") if construction_readiness else None,
+            "construction_package_present": bool(construction_package),
+            "release_blockers": release_blockers,
+        },
         "warnings": warnings,
     }
 
