@@ -2013,6 +2013,49 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
             )
         )
 
+    coordination_meta = _safe_dict(meta.get("coordination") or meta.get("coordination_summary"))
+    utility_coordination_meta = _safe_dict(_safe_dict(meta.get("utilities")).get("coordination"))
+    accepted_coordination_conflicts: List[Dict[str, Any]] = []
+    for source in (coordination_meta, utility_coordination_meta):
+        accepted_coordination_conflicts.extend(_safe_dict(item) for item in _safe_list(source.get("accepted_conflicts")))
+        accepted_coordination_conflicts.extend(
+            _safe_dict(item)
+            for item in _safe_list(source.get("unresolved_conflicts") or source.get("conflicts"))
+            if _safe_str(_safe_dict(item).get("status")).lower() == "accepted" and _safe_dict(item).get("resolved") is not True
+        )
+    accepted_coordination_conflicts = [item for item in accepted_coordination_conflicts if item]
+    unsigned_coordination_acceptances = [
+        _safe_str(item.get("id") or item.get("name") or item.get("conflict_id") or item.get("conflict_type"), f"accepted_coordination_conflict_{index}")
+        for index, item in enumerate(accepted_coordination_conflicts, start=1)
+        if not (
+            _safe_str(item.get("accepted_by") or item.get("reviewed_by") or item.get("engineer_name"))
+            and _safe_str(item.get("accepted_date") or item.get("review_date") or item.get("signoff_date"))
+        )
+    ]
+    stale_coordination_acceptances = [
+        _safe_str(item.get("id") or item.get("name") or item.get("conflict_id") or item.get("conflict_type"), f"accepted_coordination_conflict_{index}")
+        for index, item in enumerate(accepted_coordination_conflicts, start=1)
+        if expected_model_refs and _model_references(item).isdisjoint(expected_model_refs)
+    ]
+    if unsigned_coordination_acceptances:
+        blockers.append(
+            _construction_gap(
+                "coordination",
+                "accepted_coordination_conflict_signoff",
+                "Accepted coordination conflicts require reviewer signoff before construction release.",
+                "Attach accepted_by/reviewed_by and accepted_date/review_date to every accepted coordination conflict.",
+            )
+        )
+    if stale_coordination_acceptances:
+        blockers.append(
+            _construction_gap(
+                "coordination",
+                "accepted_coordination_conflict_model_trace",
+                "Accepted coordination conflicts must reference the final canonical model.",
+                "Attach canonical_model_id/hash or final_model_id/hash to every accepted coordination conflict.",
+            )
+        )
+
     export = _safe_dict(meta.get("export_audit"))
     if not export or export.get("production_export_ready") is not True or export.get("export_blocked") is True:
         blockers.append(
