@@ -8,6 +8,21 @@ def _append_once(items: list[str], value: str) -> None:
         items.append(value)
 
 
+def _construction_package_record(meta: Dict[str, Any]) -> Dict[str, Any]:
+    package = dict(
+        meta.get("construction_package_manifest")
+        or meta.get("construction_package")
+        or meta.get("construction_deliverable_package")
+        or meta.get("deliverable_package")
+        or {}
+    )
+    if not package:
+        packages = list(meta.get("deliverable_packages") or [])
+        if packages and isinstance(packages[-1], dict):
+            package = dict(packages[-1])
+    return package
+
+
 def _artifact_status_blockers(artifact_status: Dict[str, Any]) -> list[str]:
     blockers: list[str] = []
     if artifact_status.get("package_present") is False:
@@ -51,6 +66,9 @@ def final_plan_requires_construction_release(final_plan: Dict[str, Any]) -> bool
             "construction_readiness",
             "construction_package_manifest",
             "construction_package",
+            "construction_deliverable_package",
+            "deliverable_package",
+            "deliverable_packages",
             "professional_package_release_status",
         )
     )
@@ -63,7 +81,7 @@ def construction_release_blockers_from_meta(meta: Dict[str, Any], *, requires_co
         blockers.append("construction_readiness_missing")
     if construction and construction.get("ready") is not True:
         blockers.append("construction_readiness_blocked")
-    package = dict(meta.get("construction_package_manifest") or meta.get("construction_package") or {})
+    package = _construction_package_record(meta)
     if construction.get("ready") is True and not package:
         blockers.append("construction_package_manifest_missing")
     if package and package.get("release_allowed") is True:

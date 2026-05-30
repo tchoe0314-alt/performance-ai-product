@@ -170,6 +170,29 @@ class ReleaseGateTests(unittest.TestCase):
 
         self.assertIn("construction_package_production_not_marked_ready", blockers)
 
+    def test_deliverable_package_alias_requires_construction_release_gates(self) -> None:
+        final_plan = {
+            "meta": {
+                "construction_deliverable_package": {
+                    "id": "PKG-RAW-1",
+                    "release_ready": True,
+                    "production_ready": True,
+                    "artifacts": [],
+                },
+            },
+        }
+
+        self.assertTrue(final_plan_requires_construction_release(final_plan))
+
+        blockers = construction_release_blockers_from_meta(
+            final_plan["meta"],
+            requires_construction_release=final_plan_requires_construction_release(final_plan),
+        )
+
+        self.assertIn("construction_readiness_missing", blockers)
+        self.assertIn("construction_package_blocked", blockers)
+        self.assertIn("construction_package_artifact_status_missing", blockers)
+
     def test_blocked_package_still_requires_artifact_status_audit(self) -> None:
         meta = {
             "construction_readiness": {"ready": True},
