@@ -989,6 +989,17 @@ def build_orchestrate_job_runner(
             for failed_blocker in failed_deliverable_blockers:
                 if failed_blocker not in blocked_reasons:
                     blocked_reasons.append(failed_blocker)
+            produced_set = {safe_str(item) for item in produced_deliverables if safe_str(item)}
+            failed_set = {safe_str(item) for item in failed_deliverables if safe_str(item)}
+            missing_deliverables = [
+                safe_str(item)
+                for item in requested_deliverables
+                if safe_str(item) and safe_str(item) not in produced_set and safe_str(item) not in failed_set
+            ]
+            for missing_deliverable in missing_deliverables:
+                missing_blocker = f"missing_deliverable_{missing_deliverable.lower().replace(' ', '_')}"
+                if missing_blocker not in blocked_reasons:
+                    blocked_reasons.append(missing_blocker)
             for manual_failure in manual_failures:
                 failure_key = safe_str(manual_failure.get("code") or "manual_validation_failure")
                 if not failure_key:
@@ -1073,6 +1084,7 @@ def build_orchestrate_job_runner(
                 "failed": failed_deliverables,
                 "ready": ready_deliverables,
                 "extra": extra_deliverables,
+                "missing": missing_deliverables,
             }
             final_plan["meta"] = final_meta
             final_plan["export_ready"] = not bool(blocked_reasons or blocked_exports or failed_deliverables or manual_failures)
@@ -1085,6 +1097,7 @@ def build_orchestrate_job_runner(
                 "failed": failed_deliverables,
                 "ready": ready_deliverables,
                 "extra": extra_deliverables,
+                "missing": missing_deliverables,
             }
             enriched["final_plan"] = final_plan
 

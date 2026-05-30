@@ -331,6 +331,34 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertEqual(summary["convergence_summary"]["blocked_reasons"], ["failed_deliverable_report"])
         self.assertEqual(summary["reliability_summary"]["primary_attention"], "failed_deliverable_report")
 
+    def test_build_run_summary_blocks_missing_requested_deliverables(self):
+        summary = build_run_summary(
+            {
+                "success": True,
+                "final_plan": {
+                    "actions": [{"layer": "LOT"}],
+                    "meta": {
+                        "deliverables": {
+                            "requested": ["site_plan", "report"],
+                            "produced": ["site_plan"],
+                            "failed": [],
+                        },
+                        "convergence_summary": {
+                            "converged": True,
+                            "blocked_exports": [],
+                            "blocked_reasons": [],
+                            "unresolved_conflict_count": 0,
+                        },
+                    },
+                },
+            },
+            source="unit_test",
+        )
+
+        self.assertFalse(summary["reliability_summary"]["release_ready"])
+        self.assertIn("missing_deliverable_report", summary["convergence_summary"]["blocked_reasons"])
+        self.assertEqual(summary["reliability_summary"]["primary_attention"], "missing_deliverable_report")
+
     def test_build_run_summary_blocks_manual_validation_failures(self):
         summary = build_run_summary(
             {

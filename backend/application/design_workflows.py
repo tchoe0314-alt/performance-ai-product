@@ -138,6 +138,18 @@ def _failed_deliverable_blockers(failed_deliverables: list[str]) -> list[str]:
     )
 
 
+def _missing_deliverable_blockers(requested_deliverables: list[str], produced_deliverables: list[str], failed_deliverables: list[str]) -> list[str]:
+    produced = {str(item).strip() for item in produced_deliverables if str(item).strip()}
+    failed = {str(item).strip() for item in failed_deliverables if str(item).strip()}
+    return list(
+        dict.fromkeys(
+            f"missing_deliverable_{str(item).strip().lower().replace(' ', '_')}"
+            for item in requested_deliverables
+            if str(item).strip() and str(item).strip() not in produced and str(item).strip() not in failed
+        )
+    )
+
+
 def _reactive_release_blockers(meta: Dict[str, Any]) -> list[str]:
     reactive_report = dict(meta.get("reactive_update_report") or {})
     blockers = [
@@ -571,6 +583,13 @@ def build_run_summary(
     for failed_blocker in _failed_deliverable_blockers(failed_deliverables):
         if failed_blocker not in blocked_reasons:
             blocked_reasons.append(failed_blocker)
+    for missing_blocker in _missing_deliverable_blockers(
+        deliverable_summary["requested"],
+        deliverable_summary["produced"],
+        failed_deliverables,
+    ):
+        if missing_blocker not in blocked_reasons:
+            blocked_reasons.append(missing_blocker)
     release_ready = (
         success
         and converged
