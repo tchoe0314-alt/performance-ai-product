@@ -162,6 +162,62 @@ def _completed_stage_names(meta: Dict[str, Any]) -> Set[str]:
     return completed
 
 
+def _post_rerun_release_blockers(plan: Dict[str, Any], meta: Dict[str, Any]) -> List[str]:
+    blockers: List[str] = []
+
+    def _add(value: Any) -> None:
+        text = safe_str(value).strip()
+        if text and text not in blockers:
+            blockers.append(text)
+
+    release_review = safe_dict(meta.get("release_review"))
+    for item in safe_list(release_review.get("blocked_reasons")) + safe_list(release_review.get("blocked_exports")):
+        _add(item)
+    release_status = safe_str(release_review.get("release_status") or meta.get("release_status")).lower()
+    release_ready = release_review.get("release_ready") if "release_ready" in release_review else meta.get("release_ready")
+    if release_status == "blocked":
+        _add("release_status_blocked")
+    if release_ready is False:
+        _add("final_plan_release_not_ready")
+
+    for item in construction_release_blockers_from_meta(
+        meta,
+        requires_construction_release=final_plan_requires_construction_release(plan),
+    ):
+        _add(item)
+
+    deliverables = safe_dict(meta.get("deliverables"))
+    for failed_deliverable in safe_list(deliverables.get("failed")):
+        failed_name = safe_str(failed_deliverable).strip()
+        if failed_name:
+            _add(f"failed_deliverable_{failed_name.lower().replace(' ', '_')}")
+
+    manual_validation = safe_dict(meta.get("manual_validation"))
+    for failure in [item for item in safe_list(manual_validation.get("failures")) if isinstance(item, dict)]:
+        failure_key = safe_str(
+            failure.get("code")
+            or failure.get("rule")
+            or failure.get("system")
+            or failure.get("message")
+            or "manual_validation_failure"
+        ).strip()
+        if not failure_key:
+            failure_key = "manual_validation_failure"
+        _add(f"manual_validation_{failure_key.lower().replace(' ', '_')}")
+
+    export_audit = safe_dict(meta.get("export_audit"))
+    if export_audit:
+        if (
+            export_audit.get("export_blocked") is True
+            or export_audit.get("production_export_ready") is False
+            or export_audit.get("ready") is False
+        ):
+            _add("export_audit_blocked")
+        for item in safe_list(export_audit.get("blocked_reasons")):
+            _add(item)
+    return blockers
+
+
 def execute_reactive_rerun(
     base_payload: Dict[str, Any],
     *,
@@ -201,10 +257,12 @@ def execute_reactive_rerun(
         final_meta,
         requires_construction_release=final_plan_requires_construction_release(plan),
     )
+    release_blockers = _post_rerun_release_blockers(plan, final_meta)
     final_report["post_rerun_construction_release_blockers"] = construction_release_blockers
+    final_report["post_rerun_release_blockers"] = release_blockers
     final_report["post_rerun_production_ready"] = bool(
         safe_dict(final_meta.get("civil_design_readiness")).get("production_ready")
-    ) and not construction_release_blockers
+    ) and not final_report["post_rerun_export_blocked"] and not release_blockers
     plan.setdefault("meta", {})["reactive_update_report"] = final_report
     return {
         "success": True,
