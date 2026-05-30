@@ -997,6 +997,61 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
             review["phase_checkpoints"]["combined_view"]["blocked_reasons"],
         )
 
+    def test_build_preview_response_blocks_reactive_post_rerun_release_failures(self):
+        service = FakeArtifactService()
+        response = build_preview_response(
+            artifact_service=service,
+            result_data={
+                "run_summary": {
+                    "engineering_status": {"trust_score": 90.0},
+                    "reliability_summary": {"operational_state": "ready", "release_ready": True},
+                    "optimization_summary": {},
+                    "convergence_summary": {
+                        "converged": True,
+                        "passes_run": 1,
+                        "unresolved_conflict_count": 0,
+                        "assumption_summary": {"count": 0, "categories": [], "examples": []},
+                        "fix_summary": {"autofix_actions": []},
+                        "rerun_summary": {"total_reruns": 0, "stage_counts": {}, "reason_counts": {}},
+                        "dominant_issue_categories": [],
+                        "unresolved_issue_categories": [],
+                        "blocked_exports": [],
+                        "blocked_reasons": [],
+                    },
+                    "requested_deliverables": ["site_plan"],
+                    "produced_deliverables": ["site_plan"],
+                    "failed_deliverables": [],
+                    "ready_deliverables": ["site_plan"],
+                    "extra_deliverables": [],
+                    "manual_failures": [],
+                    "phase_checkpoints": {
+                        "layout": {"label": "Layout", "status": "complete", "ready": True, "has_data": True},
+                        "combined_view": {"label": "Combined View", "status": "ready", "ready": True, "completed_phase_count": 1, "total_phase_count": 1},
+                    },
+                },
+                "final_plan": {
+                    "project_name": "Reactive Blocked Preview",
+                    "actions": [{"layer": "BUILDING"}],
+                    "meta": {
+                        "release_ready": True,
+                        "release_status": "ready",
+                        "reactive_update_report": {
+                            "post_rerun_production_ready": False,
+                            "post_rerun_release_blockers": ["manual_validation_manual_storm_hydraulic_invalid"],
+                        },
+                    },
+                },
+            },
+        )
+
+        review = response["summary"]["review"]
+        self.assertEqual(review["release_status"], "blocked")
+        self.assertFalse(review["release_ready"])
+        self.assertIn("reactive_post_rerun_not_ready", review["blocked_reasons"])
+        self.assertIn("manual_validation_manual_storm_hydraulic_invalid", review["blocked_reasons"])
+        self.assertEqual(review["phase_checkpoints"]["combined_view"]["status"], "blocked")
+        self.assertFalse(review["phase_checkpoints"]["combined_view"]["ready"])
+
     def test_build_preview_response_blocks_stale_ready_when_construction_package_blocks(self):
         service = FakeArtifactService()
         response = build_preview_response(

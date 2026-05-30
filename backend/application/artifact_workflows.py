@@ -792,6 +792,13 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         blocked_reasons.append("release_review_not_ready")
     if final_meta.get("release_ready") is False and "final_plan_release_blocked" not in blocked_reasons:
         blocked_reasons.append("final_plan_release_blocked")
+    reactive_report = dict(final_meta.get("reactive_update_report") or {})
+    if reactive_report.get("post_rerun_production_ready") is False and "reactive_post_rerun_not_ready" not in blocked_reasons:
+        blocked_reasons.append("reactive_post_rerun_not_ready")
+    for blocker in list(reactive_report.get("post_rerun_release_blockers") or []):
+        blocker_name = str(blocker).strip()
+        if blocker_name and blocker_name not in blocked_reasons:
+            blocked_reasons.append(blocker_name)
     rerun_stages = dict(rerun_summary.get("stage_counts") or {})
     dominant_rerun_stages = [
         str(name)
