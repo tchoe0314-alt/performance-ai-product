@@ -812,7 +812,10 @@ def produced_deliverables(plan: Dict[str, Any]) -> List[str]:
     meta = safe_dict(plan.get("meta"))
     failed_set = {
         lower_text(item)
-        for item in safe_list(safe_dict(meta.get("deliverables")).get("failed"))
+        for item in (
+            safe_list(safe_dict(meta.get("deliverables")).get("failed"))
+            + safe_list(safe_dict(meta.get("release_review")).get("failed_deliverables"))
+        )
         if lower_text(item)
     }
     produced: List[str] = []

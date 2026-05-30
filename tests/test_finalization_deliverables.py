@@ -72,6 +72,28 @@ class FinalizationDeliverablesTest(unittest.TestCase):
         self.assertNotIn("site_plan", produced)
         self.assertNotIn("storm_pipe_plan", produced)
 
+    def test_release_review_failed_deliverables_are_not_reported_as_produced(self) -> None:
+        plan = {
+            "actions": [
+                {"task": "rectangle", "layer": "BUILDING", "x": 0.0, "y": 0.0, "width": 50.0, "height": 30.0},
+                {"task": "polyline", "layer": "PIPE", "points": [[0.0, 0.0], [50.0, 0.0]]},
+            ],
+            "meta": {
+                "storm_pipes": {
+                    "pipe_count": 1,
+                    "export_validation": {"ready": True},
+                },
+                "release_review": {
+                    "failed_deliverables": ["site_plan", "storm_pipe_plan"],
+                },
+            },
+        }
+
+        produced = produced_deliverables(plan)
+
+        self.assertNotIn("site_plan", produced)
+        self.assertNotIn("storm_pipe_plan", produced)
+
 
 if __name__ == "__main__":
     unittest.main()
