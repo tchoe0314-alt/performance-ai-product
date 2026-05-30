@@ -946,9 +946,14 @@ def build_orchestrate_job_runner(
                 if reactive_blocker_name and reactive_blocker_name not in blocked_reasons:
                     blocked_reasons.append(reactive_blocker_name)
             final_deliverables = dict(final_meta.get("deliverables") or final_plan.get("deliverables") or {})
+            final_release_review = safe_dict(final_meta.get("release_review"))
 
             def _merged_deliverables(run_key: str, final_key: str) -> list[str]:
-                values = list(run_summary.get(run_key) or []) + list(final_deliverables.get(final_key) or [])
+                values = (
+                    list(run_summary.get(run_key) or [])
+                    + list(final_deliverables.get(final_key) or [])
+                    + list(final_release_review.get(run_key) or [])
+                )
                 return list(dict.fromkeys([safe_str(item) for item in values if safe_str(item)]))
 
             requested_deliverables = _merged_deliverables("requested_deliverables", "requested")
@@ -975,12 +980,6 @@ def build_orchestrate_job_runner(
                 failure_record.setdefault("code", failure_key)
                 if failure_record not in manual_failures:
                     manual_failures.append(failure_record)
-            run_summary["requested_deliverables"] = requested_deliverables
-            run_summary["produced_deliverables"] = produced_deliverables
-            run_summary["failed_deliverables"] = failed_deliverables
-            run_summary["ready_deliverables"] = ready_deliverables
-            run_summary["extra_deliverables"] = extra_deliverables
-            run_summary["manual_failures"] = manual_failures
             failed_deliverable_blockers = [
                 f"failed_deliverable_{safe_str(item).lower().replace(' ', '_')}"
                 for item in failed_deliverables
@@ -989,8 +988,13 @@ def build_orchestrate_job_runner(
             for failed_blocker in failed_deliverable_blockers:
                 if failed_blocker not in blocked_reasons:
                     blocked_reasons.append(failed_blocker)
-            produced_set = {safe_str(item) for item in produced_deliverables if safe_str(item)}
             failed_set = {safe_str(item) for item in failed_deliverables if safe_str(item)}
+            produced_deliverables = [
+                item
+                for item in produced_deliverables
+                if safe_str(item) and safe_str(item) not in failed_set
+            ]
+            produced_set = {safe_str(item) for item in produced_deliverables if safe_str(item)}
             missing_deliverables = [
                 safe_str(item)
                 for item in requested_deliverables
@@ -1006,6 +1010,12 @@ def build_orchestrate_job_runner(
                 and item not in missing_set
                 and (not requested_set or item in requested_set)
             ]
+            run_summary["requested_deliverables"] = requested_deliverables
+            run_summary["produced_deliverables"] = produced_deliverables
+            run_summary["failed_deliverables"] = failed_deliverables
+            run_summary["ready_deliverables"] = ready_deliverables
+            run_summary["extra_deliverables"] = extra_deliverables
+            run_summary["manual_failures"] = manual_failures
             run_summary["missing_deliverables"] = missing_deliverables
             run_summary["ready_deliverables"] = ready_deliverables
             reliability["missing_deliverable_count"] = len(missing_deliverables)
@@ -1085,6 +1095,12 @@ def build_orchestrate_job_runner(
                 "release_status": release_status,
                 "release_note": release_note,
                 "release_ready": bool(reliability.get("release_ready")),
+                "requested_deliverables": requested_deliverables,
+                "produced_deliverables": produced_deliverables,
+                "ready_deliverables": ready_deliverables,
+                "failed_deliverables": failed_deliverables,
+                "missing_deliverables": missing_deliverables,
+                "extra_deliverables": extra_deliverables,
                 "manual_failures": manual_failures,
             }
             final_meta["blockers"] = blocked_reasons or blocked_exports
