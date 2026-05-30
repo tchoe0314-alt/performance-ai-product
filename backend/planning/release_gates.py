@@ -60,6 +60,18 @@ def final_plan_requires_construction_release(final_plan: Dict[str, Any]) -> bool
         return True
     if final_plan.get("construction_release_required") is True:
         return True
+    if meta.get("construction_export_allowed") is True or final_plan.get("construction_export_allowed") is True:
+        return True
+    if meta.get("construction_release_allowed") is True or final_plan.get("construction_release_allowed") is True:
+        return True
+    release_state = str(meta.get("release_state") or final_plan.get("release_state") or "").lower()
+    construction_release_state = str(
+        meta.get("construction_release_state") or final_plan.get("construction_release_state") or ""
+    ).lower()
+    if release_state in {"released_for_construction", "issued_for_construction"}:
+        return True
+    if construction_release_state in {"released_for_construction", "issued_for_construction"}:
+        return True
     return any(
         bool(meta.get(key))
         for key in (
