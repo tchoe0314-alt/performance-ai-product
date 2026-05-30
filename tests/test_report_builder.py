@@ -162,6 +162,30 @@ class ReportBuilderTest(unittest.TestCase):
         )
         self.assertEqual(report["summary"]["release_blocker_count"], 1)
 
+    def test_build_report_surfaces_reactive_post_rerun_release_blockers(self):
+        report = report_builder.build_report(
+            final_plan={
+                "project_name": "Construction Report",
+                "actions": [{"task": "polyline", "layer": "LOT"}],
+                "meta": {
+                    "release_status": "ready",
+                    "release_ready": True,
+                    "reactive_update_report": {
+                        "post_rerun_production_ready": False,
+                        "post_rerun_release_blockers": ["manual_validation_manual_storm_hydraulic_invalid"],
+                    },
+                },
+            },
+        )
+
+        self.assertFalse(report["release"]["release_ready"])
+        self.assertIn("reactive_post_rerun_not_ready", report["release"]["release_blockers"])
+        self.assertIn(
+            "manual_validation_manual_storm_hydraulic_invalid",
+            report["release"]["release_blockers"],
+        )
+        self.assertEqual(report["summary"]["release_blocker_count"], 2)
+
     def test_build_report_blocks_stale_ready_with_construction_package_metadata(self):
         report = report_builder.build_report(
             final_plan={

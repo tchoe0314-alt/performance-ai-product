@@ -292,6 +292,13 @@ def _release_review_block(final_plan: Dict[str, Any], request_metadata: Dict[str
         blockers.append("release_review_not_ready")
     if meta.get("release_ready") is False and "final_plan_release_blocked" not in blockers:
         blockers.append("final_plan_release_blocked")
+    reactive_report = _safe_dict(meta.get("reactive_update_report"))
+    if reactive_report.get("post_rerun_production_ready") is False and "reactive_post_rerun_not_ready" not in blockers:
+        blockers.append("reactive_post_rerun_not_ready")
+    for reactive_blocker in _safe_list(reactive_report.get("post_rerun_release_blockers")):
+        reactive_blocker_name = _safe_str(reactive_blocker)
+        if reactive_blocker_name and reactive_blocker_name not in blockers:
+            blockers.append(reactive_blocker_name)
     deliverables = _safe_dict(meta.get("deliverables"))
     for failed_deliverable in _safe_list(deliverables.get("failed")):
         failed_blocker = f"failed_deliverable_{_safe_str(failed_deliverable).lower().replace(' ', '_')}"
