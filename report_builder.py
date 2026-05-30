@@ -293,6 +293,8 @@ def _release_review_block(final_plan: Dict[str, Any], request_metadata: Dict[str
     if meta.get("release_ready") is False and "final_plan_release_blocked" not in blockers:
         blockers.append("final_plan_release_blocked")
     release_status = _safe_str(review.get("release_status") or meta.get("release_status"), "unknown")
+    if release_status.lower() == "blocked" and not blockers:
+        blockers.append("release_status_blocked")
     release_ready = release_status == "ready" and not blockers
     if "release_ready" in review:
         release_ready = bool(review.get("release_ready")) and not blockers

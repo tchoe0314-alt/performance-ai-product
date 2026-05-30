@@ -790,6 +790,29 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertFalse(summary["release_ready"])
         self.assertIn("release_review_not_ready", summary["release_blockers"])
 
+    def test_artifact_summary_blocks_explicit_blocked_release_status_without_reasons(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "plan.json"
+            path.write_text("x")
+            summary = artifact_summary(
+                path=path,
+                artifact_kind="report",
+                project_id="p1",
+                result_data={
+                    "final_plan": {
+                        "project_name": "Blocked Status Artifact",
+                        "meta": {
+                            "release_ready": True,
+                            "release_review": {"release_status": "blocked"},
+                        },
+                    },
+                },
+            )
+
+        self.assertEqual(summary["release_status"], "blocked")
+        self.assertFalse(summary["release_ready"])
+        self.assertIn("release_status_blocked", summary["release_blockers"])
+
 
 if __name__ == "__main__":
     unittest.main()
