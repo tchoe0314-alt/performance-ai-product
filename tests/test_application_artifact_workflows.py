@@ -955,6 +955,14 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
                     "ready_deliverables": ["site_plan"],
                     "extra_deliverables": [],
                     "manual_failures": [],
+                    "phase_checkpoints": {
+                        "layout": {"label": "Layout", "status": "complete", "ready": True, "has_data": True},
+                        "grading": {"label": "Grading", "status": "complete", "ready": True, "has_data": True},
+                        "drainage_storm": {"label": "Drainage and Storm", "status": "complete", "ready": True, "has_data": True},
+                        "utilities": {"label": "Utilities", "status": "complete", "ready": True, "has_data": True},
+                        "coordination_validation": {"label": "Coordination and Validation", "status": "complete", "ready": True, "has_data": True},
+                        "combined_view": {"label": "Combined View", "status": "ready", "ready": True, "completed_phase_count": 5, "total_phase_count": 5},
+                    },
                 },
                 "final_plan": {
                     "project_name": "Manual Validation Failed Preview",
@@ -982,6 +990,12 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertFalse(review["release_ready"])
         self.assertEqual(review["manual_failures"][0]["code"], "MANUAL_STORM_HYDRAULIC_INVALID")
         self.assertIn("manual_validation_manual_storm_hydraulic_invalid", review["blocked_reasons"])
+        self.assertEqual(review["phase_checkpoints"]["combined_view"]["status"], "blocked")
+        self.assertFalse(review["phase_checkpoints"]["combined_view"]["ready"])
+        self.assertIn(
+            "manual_validation_manual_storm_hydraulic_invalid",
+            review["phase_checkpoints"]["combined_view"]["blocked_reasons"],
+        )
 
     def test_build_preview_response_blocks_stale_ready_when_construction_package_blocks(self):
         service = FakeArtifactService()

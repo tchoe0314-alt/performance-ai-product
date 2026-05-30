@@ -567,6 +567,7 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         blocked_exports: list[str],
         blocked_reasons: list[str],
         failed_deliverables: list[str],
+        manual_failures: list[Dict[str, Any]],
         stage_statuses: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         normalized = {
@@ -664,7 +665,37 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
             combined["total_phase_count"] = total_phase_count
             normalized["combined_view"] = combined
 
-        if release_status == "ready" and not blocked_exports and not blocked_reasons and not failed_deliverables:
+        if blocked_exports or blocked_reasons or failed_deliverables or manual_failures:
+            combined = dict(normalized.get("combined_view") or {})
+            blockers = list(
+                dict.fromkeys(
+                    list(blocked_reasons or [])
+                    + list(blocked_exports or [])
+                    + [
+                        f"failed_deliverable_{str(item).strip().lower().replace(' ', '_')}"
+                        for item in failed_deliverables
+                        if str(item).strip()
+                    ]
+                    + [
+                        f"manual_validation_{str(item.get('code') or 'manual_validation_failure').strip().lower().replace(' ', '_')}"
+                        for item in manual_failures
+                        if isinstance(item, dict)
+                    ]
+                )
+            )
+            combined["label"] = str(combined.get("label") or "Combined View")
+            combined["status"] = "blocked" if blockers or release_status == "blocked" else "review"
+            combined["ready"] = False
+            combined["blocked_exports"] = list(blocked_exports or [])
+            combined["blocked_reasons"] = blockers
+            combined["note"] = "Combined engineering view is blocked by release gates." if blockers else "Combined engineering view needs engineering review."
+            normalized["combined_view"] = combined
+            return normalized
+
+        if release_status != "ready":
+            return normalized
+
+        if release_status == "ready":
             for name, phase in normalized.items():
                 if name == "combined_view":
                     continue
@@ -858,6 +889,7 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         blocked_exports=blocked_exports,
         blocked_reasons=blocked_reasons,
         failed_deliverables=failed_deliverables,
+        manual_failures=manual_failures,
         stage_statuses=dict(dict(final_plan.get("meta") or {}).get("stage_completeness") or {}).get("statuses"),
     )
     return {
