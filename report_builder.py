@@ -297,6 +297,25 @@ def _release_review_block(final_plan: Dict[str, Any], request_metadata: Dict[str
         failed_blocker = f"failed_deliverable_{_safe_str(failed_deliverable).lower().replace(' ', '_')}"
         if failed_blocker.strip() and failed_blocker not in blockers:
             blockers.append(failed_blocker)
+    manual_validation = _safe_dict(meta.get("manual_validation"))
+    manual_failures = [
+        failure
+        for failure in _safe_list(manual_validation.get("failures"))
+        if isinstance(failure, dict)
+    ]
+    for failure in manual_failures:
+        failure_key = _safe_str(
+            failure.get("code")
+            or failure.get("rule")
+            or failure.get("system")
+            or failure.get("message"),
+            "manual_validation_failure",
+        )
+        if not failure_key:
+            failure_key = "manual_validation_failure"
+        blocker = f"manual_validation_{failure_key.lower().replace(' ', '_')}"
+        if blocker not in blockers:
+            blockers.append(blocker)
     release_status = _safe_str(review.get("release_status") or meta.get("release_status"), "unknown")
     if release_status.lower() == "blocked" and not blockers:
         blockers.append("release_status_blocked")

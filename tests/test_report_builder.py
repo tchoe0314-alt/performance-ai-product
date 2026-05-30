@@ -133,6 +133,35 @@ class ReportBuilderTest(unittest.TestCase):
         self.assertIn("failed_deliverable_report", report["release"]["release_blockers"])
         self.assertEqual(report["summary"]["release_blocker_count"], 1)
 
+    def test_build_report_surfaces_manual_validation_failures_as_release_blockers(self):
+        report = report_builder.build_report(
+            final_plan={
+                "project_name": "Construction Report",
+                "actions": [{"task": "polyline", "layer": "LOT"}],
+                "meta": {
+                    "release_status": "ready",
+                    "release_ready": True,
+                    "manual_validation": {
+                        "failures": [
+                            {
+                                "code": "MANUAL_STORM_HYDRAULIC_INVALID",
+                                "message": "Manual storm pipe hydraulic validation failed.",
+                                "system": "storm",
+                                "rule": "hydraulic_capacity",
+                            }
+                        ]
+                    },
+                },
+            },
+        )
+
+        self.assertFalse(report["release"]["release_ready"])
+        self.assertIn(
+            "manual_validation_manual_storm_hydraulic_invalid",
+            report["release"]["release_blockers"],
+        )
+        self.assertEqual(report["summary"]["release_blocker_count"], 1)
+
     def test_build_report_blocks_stale_ready_with_construction_package_metadata(self):
         report = report_builder.build_report(
             final_plan={
