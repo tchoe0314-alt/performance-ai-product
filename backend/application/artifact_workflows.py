@@ -749,6 +749,8 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
     ):
         if construction_blocker not in blocked_reasons:
             blocked_reasons.append(construction_blocker)
+    if final_release_review.get("release_ready") is False and "release_review_not_ready" not in blocked_reasons:
+        blocked_reasons.append("release_review_not_ready")
     if final_meta.get("release_ready") is False and "final_plan_release_blocked" not in blocked_reasons:
         blocked_reasons.append("final_plan_release_blocked")
     rerun_stages = dict(rerun_summary.get("stage_counts") or {})
@@ -841,6 +843,7 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         "rerun_reasons": dominant_rerun_reasons[:3],
         "phase_checkpoints": phase_checkpoints,
         "release_status": release_status,
+        "release_ready": effective_release_ready,
         "release_note": release_note,
         "engineering_status": str((final_plan.get("meta") or {}).get("engineering_status") or ""),
         "reliability": reliability,

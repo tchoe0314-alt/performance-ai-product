@@ -300,6 +300,10 @@ def artifact_summary(
     ):
         if blocker not in release_blockers:
             release_blockers.append(blocker)
+    if release_review.get("release_ready") is False and "release_review_not_ready" not in release_blockers:
+        release_blockers.append("release_review_not_ready")
+    if final_meta.get("release_ready") is False and "final_plan_release_blocked" not in release_blockers:
+        release_blockers.append("final_plan_release_blocked")
     release_status = str(release_review.get("release_status") or final_meta.get("release_status") or "")
     canonical_model_reference = {
         key: value

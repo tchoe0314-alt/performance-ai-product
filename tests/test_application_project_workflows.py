@@ -737,6 +737,32 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertIn("construction_package_blocked", summary["release_blockers"])
         self.assertIn("construction_package_release_not_marked_ready", summary["release_blockers"])
 
+    def test_artifact_summary_blocks_explicit_release_review_not_ready(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "plan.json"
+            path.write_text("x")
+            summary = artifact_summary(
+                path=path,
+                artifact_kind="report",
+                project_id="p1",
+                result_data={
+                    "request_metadata": {
+                        "release_review": {
+                            "release_status": "ready",
+                            "release_ready": False,
+                        }
+                    },
+                    "final_plan": {
+                        "project_name": "Review False Artifact",
+                        "meta": {"release_ready": True},
+                    },
+                },
+            )
+
+        self.assertEqual(summary["release_status"], "ready")
+        self.assertFalse(summary["release_ready"])
+        self.assertIn("release_review_not_ready", summary["release_blockers"])
+
 
 if __name__ == "__main__":
     unittest.main()
