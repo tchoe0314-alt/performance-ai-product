@@ -839,7 +839,15 @@ def produced_deliverables(plan: Dict[str, Any]) -> List[str]:
         produced.append("utility_plan")
     sanitary = safe_dict(meta.get("sanitary"))
     utility_system = lower_text(safe_dict(meta.get("utilities")).get("system_type"))
-    if safe_int(sanitary.get("route_count"), 0) > 0 or "sanitary" in utility_system or "SAN" in layers:
+    sanitary_ready = (
+        bool(sanitary.get("success"))
+        and safe_int(sanitary.get("route_count"), 0) > 0
+        and bool(safe_dict(sanitary.get("graph_validation")).get("valid"))
+        and bool(safe_dict(sanitary.get("network_validation")).get("valid"))
+        and not safe_list(sanitary.get("missing_service_buildings"))
+        and not safe_list(safe_dict(sanitary.get("service_coverage")).get("missing_buildings"))
+    )
+    if sanitary_ready and (safe_int(sanitary.get("route_count"), 0) > 0 or "sanitary" in utility_system or "SAN" in layers):
         produced.append("sanitary_plan")
     if "profile" in text_blob or safe_list(meta.get("profiles")):
         produced.extend(["profiles", "road_profile"])

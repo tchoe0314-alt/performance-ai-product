@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from core.project_manager import ProjectManager
+from backend.planning.finalization import produced_deliverables
 from planner import _recompute_sanitary_summary, build_plan
 
 
@@ -72,6 +73,54 @@ class SanitaryStageTest(unittest.TestCase):
         produced = ((plan.get("meta") or {}).get("deliverables") or {}).get("produced") or []
         self.assertEqual(sanitary, {})
         self.assertNotIn("sanitary_plan", produced)
+
+    def test_sanitary_plan_is_not_packaged_when_network_validation_fails(self) -> None:
+        plan = {
+            "actions": [{"task": "polyline", "layer": "SAN", "points": [[0.0, 0.0], [80.0, 0.0]]}],
+            "meta": {
+                "sanitary": {
+                    "success": True,
+                    "route_count": 1,
+                    "missing_service_buildings": ["BLDG-2"],
+                    "graph_validation": {"valid": True},
+                    "network_validation": {
+                        "valid": False,
+                        "service_coverage": {
+                            "expected_buildings": ["BLDG-1", "BLDG-2"],
+                            "served_buildings": ["BLDG-1"],
+                            "missing_buildings": ["BLDG-2"],
+                            "valid": False,
+                        },
+                    },
+                }
+            },
+        }
+
+        self.assertNotIn("sanitary_plan", produced_deliverables(plan))
+
+    def test_sanitary_plan_is_packaged_only_after_canonical_sanitary_validation(self) -> None:
+        plan = {
+            "actions": [{"task": "polyline", "layer": "SAN", "points": [[0.0, 0.0], [80.0, 0.0]]}],
+            "meta": {
+                "sanitary": {
+                    "success": True,
+                    "route_count": 1,
+                    "missing_service_buildings": [],
+                    "graph_validation": {"valid": True},
+                    "network_validation": {
+                        "valid": True,
+                        "service_coverage": {
+                            "expected_buildings": ["BLDG-1"],
+                            "served_buildings": ["BLDG-1"],
+                            "missing_buildings": [],
+                            "valid": True,
+                        },
+                    },
+                }
+            },
+        }
+
+        self.assertIn("sanitary_plan", produced_deliverables(plan))
 
     def test_post_reroute_recompute_rolls_service_flow_into_main_and_blocks_missing_service(self) -> None:
         manager = ProjectManager()
