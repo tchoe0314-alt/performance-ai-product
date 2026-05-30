@@ -112,6 +112,29 @@ class ReportBuilderTest(unittest.TestCase):
         self.assertIn("release_status_blocked", report["release"]["release_blockers"])
         self.assertEqual(report["summary"]["release_blocker_count"], 1)
 
+    def test_build_report_blocks_release_when_report_errors_are_present(self):
+        report = report_builder.build_report(
+            final_plan={
+                "project_name": "Construction Report",
+                "actions": [{"task": "polyline", "layer": "LOT"}],
+                "meta": {
+                    "release_status": "ready",
+                    "release_ready": True,
+                    "deliverables": {
+                        "requested": ["site_plan", "report"],
+                        "produced": ["site_plan", "report"],
+                    },
+                },
+            },
+            errors=["Report artifact assembly failed to include a requested table."],
+        )
+
+        self.assertEqual(report["release"]["release_status"], "ready")
+        self.assertFalse(report["release"]["release_ready"])
+        self.assertIn("report_errors_present", report["release"]["release_blockers"])
+        self.assertEqual(report["summary"]["error_count"], 1)
+        self.assertEqual(report["summary"]["release_blocker_count"], 1)
+
     def test_build_report_surfaces_failed_deliverables_as_release_blockers(self):
         report = report_builder.build_report(
             final_plan={
@@ -149,6 +172,32 @@ class ReportBuilderTest(unittest.TestCase):
             },
         )
 
+        self.assertFalse(report["release"]["release_ready"])
+        self.assertIn("missing_deliverable_report", report["release"]["release_blockers"])
+        self.assertEqual(report["summary"]["release_blocker_count"], 1)
+
+    def test_build_report_merges_release_review_deliverable_evidence(self):
+        report = report_builder.build_report(
+            final_plan={
+                "project_name": "Construction Report",
+                "actions": [{"task": "polyline", "layer": "LOT"}],
+                "meta": {
+                    "release_status": "ready",
+                    "release_ready": True,
+                },
+            },
+            request_metadata={
+                "release_review": {
+                    "release_status": "ready",
+                    "release_ready": True,
+                    "requested_deliverables": ["site_plan", "report"],
+                    "produced_deliverables": ["site_plan"],
+                    "failed_deliverables": [],
+                }
+            },
+        )
+
+        self.assertEqual(report["release"]["release_status"], "ready")
         self.assertFalse(report["release"]["release_ready"])
         self.assertIn("missing_deliverable_report", report["release"]["release_blockers"])
         self.assertEqual(report["summary"]["release_blocker_count"], 1)

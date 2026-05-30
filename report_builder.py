@@ -273,7 +273,12 @@ def _top_metric_rows(manager_metrics: Dict[str, Any]) -> List[Dict[str, Any]]:
     return rows
 
 
-def _release_review_block(final_plan: Dict[str, Any], request_metadata: Dict[str, Any]) -> Dict[str, Any]:
+def _release_review_block(
+    final_plan: Dict[str, Any],
+    request_metadata: Dict[str, Any],
+    *,
+    runtime_error_count: int = 0,
+) -> Dict[str, Any]:
     meta = _extract_plan_meta(final_plan)
     review = deepcopy(_safe_dict(request_metadata.get("release_review")) or _safe_dict(meta.get("release_review")))
     construction_release_required = final_plan_requires_construction_release(final_plan)
@@ -292,6 +297,8 @@ def _release_review_block(final_plan: Dict[str, Any], request_metadata: Dict[str
         blockers.append("release_review_not_ready")
     if meta.get("release_ready") is False and "final_plan_release_blocked" not in blockers:
         blockers.append("final_plan_release_blocked")
+    if runtime_error_count > 0 and "report_errors_present" not in blockers:
+        blockers.append("report_errors_present")
     reactive_report = _safe_dict(meta.get("reactive_update_report"))
     if reactive_report.get("post_rerun_production_ready") is False and "reactive_post_rerun_not_ready" not in blockers:
         blockers.append("reactive_post_rerun_not_ready")
@@ -300,15 +307,42 @@ def _release_review_block(final_plan: Dict[str, Any], request_metadata: Dict[str
         if reactive_blocker_name and reactive_blocker_name not in blockers:
             blockers.append(reactive_blocker_name)
     deliverables = _safe_dict(meta.get("deliverables"))
-    for failed_deliverable in _safe_list(deliverables.get("failed")):
+
+    def _merged_deliverables(*values: Any) -> List[str]:
+        merged: List[str] = []
+        for value in values:
+            for item in _safe_list(value):
+                name = _safe_str(item)
+                if name and name not in merged:
+                    merged.append(name)
+        return merged
+
+    requested_deliverables = _merged_deliverables(
+        deliverables.get("requested"),
+        review.get("requested_deliverables"),
+    )
+    produced_deliverable_list = _merged_deliverables(
+        deliverables.get("produced"),
+        review.get("produced_deliverables"),
+    )
+    failed_deliverable_list = _merged_deliverables(
+        deliverables.get("failed"),
+        review.get("failed_deliverables"),
+    )
+    explicit_missing_deliverables = _merged_deliverables(
+        deliverables.get("missing"),
+        review.get("missing_deliverables"),
+    )
+
+    for failed_deliverable in failed_deliverable_list:
         failed_blocker = f"failed_deliverable_{_safe_str(failed_deliverable).lower().replace(' ', '_')}"
         if failed_blocker.strip() and failed_blocker not in blockers:
             blockers.append(failed_blocker)
-    produced_deliverables = {_safe_str(item) for item in _safe_list(deliverables.get("produced")) if _safe_str(item)}
-    failed_deliverables = {_safe_str(item) for item in _safe_list(deliverables.get("failed")) if _safe_str(item)}
-    missing_deliverables = _safe_list(deliverables.get("missing")) + [
+    produced_deliverables = {_safe_str(item) for item in produced_deliverable_list if _safe_str(item)}
+    failed_deliverables = {_safe_str(item) for item in failed_deliverable_list if _safe_str(item)}
+    missing_deliverables = explicit_missing_deliverables + [
         item
-        for item in _safe_list(deliverables.get("requested"))
+        for item in requested_deliverables
         if _safe_str(item) and _safe_str(item) not in produced_deliverables and _safe_str(item) not in failed_deliverables
     ]
     for missing_deliverable in missing_deliverables:
@@ -417,7 +451,11 @@ class ReportBuilder:
 
         qa = _qa_block(final_plan)
         manager_score = self._manager_score(manager_metrics)
-        release = _release_review_block(final_plan, request_meta)
+        release = _release_review_block(
+            final_plan,
+            request_meta,
+            runtime_error_count=len(error_list),
+        )
 
         summary = {
             "project_name": _safe_str(final_plan.get("project_name"), "Generated Plan"),
@@ -426,7 +464,7 @@ class ReportBuilder:
             "planner_score": _planner_score(final_plan),
             "manager_score": manager_score,
             "warning_count": _safe_int(qa.get("warning_count"), 0),
-            "error_count": _safe_int(qa.get("error_count"), 0),
+            "error_count": _safe_int(qa.get("error_count"), 0) + len(error_list),
             "workflow": _safe_str(orchestrator_metadata.get("workflow"), ""),
             "recommended_option_name": _safe_str(orchestrator_metadata.get("recommended_option_name"), ""),
             "release_status": release["release_status"],
