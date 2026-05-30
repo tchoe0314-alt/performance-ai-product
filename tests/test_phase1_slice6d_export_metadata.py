@@ -270,6 +270,39 @@ class Phase1Slice6DExportMetadataTest(unittest.TestCase):
         self.assertIn("construction_readiness_missing", audit["blocked_reasons"])
         self.assertIn("construction_package_blocked", audit["blocked_reasons"])
         self.assertIn("construction_package_artifact_status_missing", audit["blocked_reasons"])
+        self.assertTrue(audit["release_readiness"]["construction_package_present"])
+        self.assertEqual(audit["release_readiness"]["construction_package_id"], "PKG-RAW-1")
+
+    def test_export_audit_uses_latest_deliverable_package_alias_for_readiness_trace(self) -> None:
+        plan = _export_plan()
+        plan["meta"]["construction_readiness"] = {"ready": True, "status": "construction_ready"}
+        plan["meta"]["deliverable_packages"] = [
+            {
+                "package_id": "PKG-OLD",
+                "release_allowed": False,
+            },
+            {
+                "package_id": "PKG-LATEST",
+                "release_allowed": False,
+                "construction_package_artifact_status": {
+                    "package_present": True,
+                    "release_ready_flag": None,
+                    "production_ready_flag": True,
+                },
+            },
+        ]
+
+        metadata = finalize_export_metadata(plan)
+        audit = metadata["export_audit"]
+
+        self.assertFalse(audit["success"])
+        self.assertFalse(audit["production_export_ready"])
+        self.assertTrue(audit["export_blocked"])
+        self.assertTrue(audit["release_readiness"]["construction_release_required"])
+        self.assertTrue(audit["release_readiness"]["construction_package_present"])
+        self.assertEqual(audit["release_readiness"]["construction_package_id"], "PKG-LATEST")
+        self.assertIn("construction_package_blocked", audit["blocked_reasons"])
+        self.assertIn("construction_package_release_not_marked_ready", audit["blocked_reasons"])
 
     def test_export_audit_blocks_direct_construction_export_claim_without_release_evidence(self) -> None:
         plan = _export_plan()

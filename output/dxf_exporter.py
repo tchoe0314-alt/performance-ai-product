@@ -1208,6 +1208,21 @@ def _release_truth_blockers(plan: Dict[str, Any], meta: Dict[str, Any], release_
     return list(dict.fromkeys(item for item in release_blockers if item))
 
 
+def _construction_package_record(meta: Dict[str, Any]) -> Dict[str, Any]:
+    package = safe_dict(
+        meta.get("construction_package_manifest")
+        or meta.get("construction_package")
+        or meta.get("construction_deliverable_package")
+        or meta.get("deliverable_package")
+    )
+    if package:
+        return package
+    packages = safe_list(meta.get("deliverable_packages"))
+    if packages:
+        return safe_dict(packages[-1])
+    return {}
+
+
 def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     prepared: List[Dict[str, Any]] = []
     engineering_profile = _modelspace_engineering_profile(plan)
@@ -3792,7 +3807,13 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
     release_blockers = _release_truth_blockers(plan, meta, release_review)
     construction_required = final_plan_requires_construction_release(plan)
     construction_readiness = safe_dict(meta.get("construction_readiness"))
-    construction_package = safe_dict(meta.get("construction_package_manifest") or meta.get("construction_package"))
+    construction_package = _construction_package_record(meta)
+    construction_package_id = safe_text(
+        construction_package.get("id")
+        or construction_package.get("package_id")
+        or construction_package.get("manifest_id")
+        or construction_package.get("construction_package_id")
+    )
     if release_status == "blocked":
         release_blockers.append("release_status_blocked")
     if release_ready_value is False:
@@ -3910,6 +3931,7 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
             "construction_release_required": construction_required,
             "construction_readiness_ready": construction_readiness.get("ready") if construction_readiness else None,
             "construction_package_present": bool(construction_package),
+            "construction_package_id": construction_package_id,
             "release_blockers": release_blockers,
         },
         "warnings": warnings,
