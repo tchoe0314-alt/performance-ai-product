@@ -26,6 +26,8 @@ def _artifact_status_blockers(artifact_status: Dict[str, Any]) -> list[str]:
         _append_once(blockers, "construction_package_model_mismatch")
     if artifact_status.get("release_ready_flag") is not True:
         _append_once(blockers, "construction_package_release_not_marked_ready")
+    if artifact_status.get("production_ready_flag") is not True:
+        _append_once(blockers, "construction_package_production_not_marked_ready")
     if list(artifact_status.get("untraced") or []):
         _append_once(blockers, "construction_package_untraced_artifacts")
     if list(artifact_status.get("mismatched") or []):

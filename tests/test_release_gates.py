@@ -38,6 +38,7 @@ class ReleaseGateTests(unittest.TestCase):
                 "construction_package_artifact_status": {
                     "complete_for_release": True,
                     "release_ready_flag": True,
+                    "production_ready_flag": True,
                     "model_matches_expected": True,
                 },
             },
@@ -58,6 +59,7 @@ class ReleaseGateTests(unittest.TestCase):
                 "construction_package_artifact_status": {
                     "complete_for_release": False,
                     "release_ready_flag": True,
+                    "production_ready_flag": True,
                     "package_present": True,
                     "package_identity_present": False,
                     "missing": ["qa_report"],
@@ -102,6 +104,7 @@ class ReleaseGateTests(unittest.TestCase):
                 "construction_package_artifact_status": {
                     "complete_for_release": True,
                     "release_ready_flag": True,
+                    "production_ready_flag": True,
                     "model_matches_expected": True,
                 },
             },
@@ -141,6 +144,32 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertIn("construction_package_artifact_status_missing", blockers)
         self.assertIn("construction_package_release_not_marked_ready", blockers)
 
+    def test_release_allowed_package_requires_production_ready_artifact_audit(self) -> None:
+        meta = {
+            "construction_readiness": {"ready": True},
+            "construction_package": {
+                "release_allowed": True,
+                "construction_package_artifact_status": {
+                    "complete_for_release": True,
+                    "release_ready_flag": True,
+                    "production_ready_flag": None,
+                    "model_matches_expected": True,
+                },
+                "professional_package_release_status": {
+                    "professional_release_valid": True,
+                    "model_matches_package": True,
+                    "package_matches_review": True,
+                },
+            },
+        }
+
+        blockers = construction_release_blockers_from_meta(
+            meta,
+            requires_construction_release=True,
+        )
+
+        self.assertIn("construction_package_production_not_marked_ready", blockers)
+
     def test_blocked_package_still_requires_artifact_status_audit(self) -> None:
         meta = {
             "construction_readiness": {"ready": True},
@@ -170,6 +199,7 @@ class ReleaseGateTests(unittest.TestCase):
                 "construction_package_artifact_status": {
                     "complete_for_release": True,
                     "release_ready_flag": True,
+                    "production_ready_flag": True,
                     "model_matches_expected": True,
                 },
             },

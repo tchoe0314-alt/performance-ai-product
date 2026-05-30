@@ -308,6 +308,7 @@ def _construction_package_artifact_status(plan_or_meta: Dict[str, Any], meta: Di
         and not cost_untraced
         and not cost_mismatched
         and release_flag is True
+        and production_flag is True
         and not explicit_release_block
     )
     return {
@@ -496,13 +497,13 @@ def _construction_package_blockers(plan_or_meta: Dict[str, Any], meta: Dict[str,
                 "suggested_next_action": "Resolve package assembly blockers and mark the audited package release_ready true.",
             }
         )
-    elif package.get("production_ready") is False:
+    if package.get("production_ready") is not True:
         blockers.append(
             {
                 "area": "deliverables",
-                "field": "construction_package_release_ready",
-                "why_needed": "Construction package is explicitly marked not ready for release.",
-                "suggested_next_action": "Resolve package assembly blockers and mark the package release-ready.",
+                "field": "construction_package_production_ready",
+                "why_needed": "Construction package must be explicitly marked production_ready true after release audit.",
+                "suggested_next_action": "Resolve package assembly blockers and mark the audited package production_ready true.",
             }
         )
     if not bool(professional_release_status.get("professional_review_present")):

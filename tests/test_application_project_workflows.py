@@ -879,6 +879,7 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
                 "construction_readiness_missing",
                 "construction_package_artifact_status_missing",
                 "construction_package_release_not_marked_ready",
+                "construction_package_production_not_marked_ready",
             ],
         )
         self.assertEqual(summary["canonical_model_reference"]["canonical_model_id"], "model-1")

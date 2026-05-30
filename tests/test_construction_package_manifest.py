@@ -126,6 +126,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
             "construction_deliverable_package": {
                 "id": "PKG-IFC-1",
                 "release_ready": True,
+                "production_ready": True,
                 "canonical_model_id": "MODEL-FINAL-1",
                 "artifacts": [
                     {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
@@ -201,6 +202,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
             "construction_deliverable_package": {
                 "id": "PKG-IFC-1",
                 "release_ready": True,
+                "production_ready": True,
                 "canonical_model_id": "MODEL-FINAL-1",
                 "artifacts": [
                     {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
@@ -276,6 +278,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
             },
             "construction_deliverable_package": {
                 "release_ready": True,
+                "production_ready": True,
                 "canonical_model_id": "MODEL-FINAL-1",
                 "artifacts": [
                     {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
@@ -313,6 +316,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
             },
             "construction_deliverable_package": {
                 "release_ready": True,
+                "production_ready": True,
                 "artifacts": [
                     {"type": "sheets", "id": "SHEETS-1", "current": True},
                     {"type": "cad_export", "id": "CAD-1", "current": True},
@@ -351,6 +355,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
             },
             "construction_deliverable_package": {
                 "release_ready": True,
+                "production_ready": True,
                 "canonical_model_id": "MODEL-FINAL-1",
                 "artifacts": [
                     {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
@@ -391,6 +396,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
             },
             "construction_deliverable_package": {
                 "release_ready": True,
+                "production_ready": True,
                 "canonical_model_id": "MODEL-FINAL-1",
                 "artifacts": [
                     {"type": "sheets", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
@@ -428,6 +434,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
             },
             "construction_deliverable_package": {
                 "release_ready": True,
+                "production_ready": True,
                 "canonical_model_id": "MODEL-FINAL-1",
                 "artifacts": [
                     {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
@@ -510,6 +517,67 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         self.assertIsNone(artifact_status["release_ready_flag"])
         self.assertFalse(artifact_status["complete_for_release"])
 
+    def test_manifest_blocks_package_without_explicit_production_ready_flag(self) -> None:
+        meta = {
+            "construction_readiness": {
+                "ready": True,
+                "status": "construction_ready",
+                "score": 100.0,
+                "evidence": {
+                    "civil_production_ready": True,
+                    "existing_conditions_production_ready": True,
+                    "standards_production_usable": True,
+                    "export_production_ready": True,
+                    "cost_production_usable": True,
+                    "professional_release": True,
+                },
+                "blockers": [],
+                "warnings": [],
+            },
+            "cost_estimate": {
+                "success": True,
+                "totals": {"production_usable": True, "total_cost": 1000.0, "cost_estimate_hash": "COST-HASH-1"},
+                "line_items": [{"metric": "pipe_length_ft", "quantity": 10.0, "amount": 1000.0}],
+                "explain": {
+                    "cost_estimate_reference": {
+                        "cost_estimate_hash": "COST-HASH-1",
+                        "quantity_model_hash": "QTY-HASH-1",
+                        "price_book_hash": "PRICE-HASH-1",
+                    },
+                    "quantity_model_reference": {"quantity_model_hash": "QTY-HASH-1"},
+                    "pricing": {"price_book_hash": "PRICE-HASH-1"},
+                },
+            },
+            "construction_deliverable_package": {
+                "id": "PKG-IFC-1",
+                "release_ready": True,
+                "canonical_model_id": "MODEL-FINAL-1",
+                "artifacts": [
+                    {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "cad_export", "id": "CAD-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "qa_report", "id": "QA-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {
+                        "type": "cost_estimate",
+                        "id": "COST-1",
+                        "current": True,
+                        "canonical_model_id": "MODEL-FINAL-1",
+                        "cost_estimate_hash": "COST-HASH-1",
+                    },
+                    {"type": "construction_manifest", "id": "MANIFEST-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                ],
+            },
+            "professional_review": _valid_professional_review(),
+        }
+
+        manifest = build_construction_package_manifest({"meta": meta})
+        fields = {(item["area"], item["field"]) for item in manifest["blockers"]}
+
+        self.assertFalse(manifest["release_allowed"])
+        self.assertIn(("deliverables", "construction_package_production_ready"), fields)
+        artifact_status = manifest["construction_package_artifact_status"]
+        self.assertIsNone(artifact_status["production_ready_flag"])
+        self.assertFalse(artifact_status["complete_for_release"])
+
     def test_manifest_blocks_professional_release_not_tied_to_final_package(self) -> None:
         meta = {
             "construction_readiness": {
@@ -530,6 +598,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
             "construction_deliverable_package": {
                 "id": "PKG-IFC-1",
                 "release_ready": True,
+                "production_ready": True,
                 "canonical_model_id": "MODEL-FINAL-1",
                 "artifacts": [
                     {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
@@ -583,6 +652,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
                 "construction_deliverable_package": {
                     "id": "PKG-IFC-1",
                     "release_ready": True,
+                    "production_ready": True,
                     "canonical_model_id": "MODEL-OLD",
                     "artifacts": [
                         {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": "MODEL-OLD"},
@@ -656,6 +726,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         plan["meta"]["construction_deliverable_package"] = {
             "id": "PKG-IFC-1",
             "release_ready": True,
+            "production_ready": True,
             "canonical_model_id": expected,
             "artifacts": [
                 {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": expected},
@@ -717,6 +788,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
             "construction_deliverable_package": {
                 "id": "PKG-IFC-1",
                 "release_ready": True,
+                "production_ready": True,
                 "canonical_model_id": "MODEL-FINAL-1",
                 "artifacts": [
                     {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
@@ -779,6 +851,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
             "construction_deliverable_package": {
                 "id": "PKG-IFC-1",
                 "release_ready": True,
+                "production_ready": True,
                 "canonical_model_id": "MODEL-FINAL-1",
                 "artifacts": [
                     {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
@@ -834,6 +907,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
             "construction_deliverable_package": {
                 "id": "PKG-IFC-1",
                 "release_ready": True,
+                "production_ready": True,
                 "canonical_model_id": "MODEL-FINAL-1",
                 "artifacts": [
                     {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
