@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.services.chat_learning_store import append_chat_interaction_event
+from backend.services.chat_learning_store import append_chat_interaction_event, chat_learning_enabled
 
 
 class ChatLearningStoreTest(unittest.TestCase):
@@ -18,6 +18,7 @@ class ChatLearningStoreTest(unittest.TestCase):
                 "CIVORA_DISABLE_CHAT_LEARNING": "",
             }
             with patch.dict(os.environ, env, clear=False):
+                self.assertTrue(chat_learning_enabled())
                 append_chat_interaction_event({"message": "hello"})
 
             rows = [json.loads(line) for line in path.read_text().splitlines()]
@@ -36,6 +37,7 @@ class ChatLearningStoreTest(unittest.TestCase):
                 "CIVORA_DISABLE_CHAT_LEARNING": "",
             }
             with patch.dict(os.environ, env, clear=False):
+                self.assertFalse(chat_learning_enabled())
                 append_chat_interaction_event({"message": "hello"})
 
             self.assertFalse(path.exists())
@@ -49,6 +51,7 @@ class ChatLearningStoreTest(unittest.TestCase):
             }
             with patch.dict(os.environ, env, clear=False):
                 append_chat_interaction_event({"message": "hello"})
+                self.assertFalse(chat_learning_enabled())
 
             self.assertFalse(path.exists())
 

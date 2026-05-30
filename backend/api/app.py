@@ -1180,6 +1180,10 @@ def chat_learning_cron(
             token = auth_value[7:].strip()
     if CRON_SECRET and token != CRON_SECRET:
         raise HTTPException(status_code=401, detail="Invalid cron secret.")
+    from backend.services.chat_learning_store import chat_learning_enabled
+
+    if not chat_learning_enabled():
+        return {"success": True, "disabled": True, "result": None}
     from backend.services.chat_learning_pipeline import run_chat_learning_pipeline
 
     result = run_chat_learning_pipeline(
@@ -1200,6 +1204,10 @@ def chat_learning_report(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
     _ = current_user
+    from backend.services.chat_learning_store import chat_learning_enabled
+
+    if not chat_learning_enabled():
+        return {"success": True, "disabled": True, "report": None}
     report_path = Path(payload.report_path or CHAT_LEARNING_REPORT_PATH).resolve()
     base = DATA_DIR.resolve()
     if base not in report_path.parents and report_path != base:

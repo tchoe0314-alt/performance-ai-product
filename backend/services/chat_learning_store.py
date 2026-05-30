@@ -21,6 +21,10 @@ def _chat_learning_disabled() -> bool:
     return not _truthy_env("CIVORA_ENABLE_CHAT_LEARNING")
 
 
+def chat_learning_enabled() -> bool:
+    return not _chat_learning_disabled()
+
+
 def _learning_path() -> Path:
     override = os.environ.get("CIVORA_CHAT_LEARNING_PATH")
     if override:

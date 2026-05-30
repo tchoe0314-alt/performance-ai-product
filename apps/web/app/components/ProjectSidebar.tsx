@@ -1,11 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 
-import type { ChatMessage, LearningReport } from "../types";
 import {
-  computeLearningScore,
   formatCount,
   formatMetric,
   joinNatural,
@@ -35,11 +33,6 @@ type QuantityRow = {
 };
 
 type ProjectSidebarProps = {
-  onNewProject: () => void;
-  chatMessages: ChatMessage[];
-  learningReport: LearningReport | null;
-  learningReportUpdatedAt: number | null;
-  onRefreshLearningReport: () => void;
   previewAssumptionCategories: string[];
   previewFixActions: string[];
   previewFixTargets: string[];
@@ -100,11 +93,6 @@ type ProjectSidebarProps = {
 };
 
 export default function ProjectSidebar({
-  onNewProject,
-  chatMessages,
-  learningReport,
-  learningReportUpdatedAt,
-  onRefreshLearningReport,
   previewAssumptionCategories,
   previewFixActions,
   previewFixTargets,
@@ -152,7 +140,6 @@ export default function ProjectSidebar({
   onToggleQuantityRollups,
   quantityRows,
 }: ProjectSidebarProps) {
-  const [showLearningPanel, setShowLearningPanel] = useState(true);
   const [collapsed, setCollapsed] = useState(false);
   const [sidebarSections, setSidebarSections] = useState<Record<string, boolean>>({
     assumptions: true,
@@ -170,16 +157,6 @@ export default function ProjectSidebar({
     coverage: false,
   });
 
-  const learningSummary = useMemo(() => {
-    const sessionLearning = computeLearningScore(chatMessages);
-    const reportScore = learningReport?.feedback?.score_percent;
-    const reportTotal = learningReport?.feedback?.total;
-    const datasetCount = learningReport?.training_examples?.count;
-    const lastRun = learningReportUpdatedAt
-      ? new Date(learningReportUpdatedAt).toLocaleString()
-      : null;
-    return { sessionLearning, reportScore, reportTotal, datasetCount, lastRun };
-  }, [chatMessages, learningReport, learningReportUpdatedAt]);
   const hasDrainageMetrics =
     Number(totalPipeLength || 0) > 0 ||
     Number(maxSlope || 0) > 0 ||
@@ -247,60 +224,6 @@ export default function ProjectSidebar({
 
       {collapsed ? null : (
         <div className="space-y-6 overflow-y-auto p-4">
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-              Learning
-            </p>
-            <button
-              type="button"
-              onClick={() => setShowLearningPanel((value) => !value)}
-              className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 transition hover:bg-slate-100"
-            >
-              {showLearningPanel ? "Hide" : "Show"}
-            </button>
-          </div>
-          {showLearningPanel ? (
-            <div className="rounded-2xl border border-slate-200 bg-white p-3 text-xs text-slate-600">
-              <div className="space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  {learningSummary.sessionLearning.total ? (
-                    <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700">
-                      Session {learningSummary.sessionLearning.score}% (
-                      {learningSummary.sessionLearning.total})
-                    </span>
-                  ) : null}
-                  {typeof learningSummary.reportScore === "number" ? (
-                    <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700">
-                      Global {learningSummary.reportScore}% (
-                      {learningSummary.reportTotal ?? 0})
-                    </span>
-                  ) : null}
-                  {typeof learningSummary.datasetCount === "number" ? (
-                    <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700">
-                      Training {learningSummary.datasetCount}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={onRefreshLearningReport}
-                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
-                  >
-                    Refresh
-                  </button>
-                  {learningSummary.lastRun ? (
-                    <span className="text-[11px] text-slate-400">
-                      Last refresh: {learningSummary.lastRun}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </div>
-
         {renderSidebarSection(
           "assumptions",
           "Assumptions",
