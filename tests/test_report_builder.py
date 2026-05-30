@@ -313,6 +313,38 @@ class ReportBuilderTest(unittest.TestCase):
         self.assertFalse(report["release"]["release_ready"])
         self.assertIn("construction_package_stale_artifacts", report["release"]["release_blockers"])
 
+    def test_build_report_exposes_deliverable_package_alias_trace(self):
+        report = report_builder.build_report(
+            final_plan={
+                "project_name": "Construction Report",
+                "actions": [{"task": "polyline", "layer": "LOT"}],
+                "meta": {
+                    "release_status": "ready",
+                    "release_ready": True,
+                    "construction_readiness": {"ready": True, "status": "construction_ready"},
+                    "deliverable_package": {
+                        "package_id": "pkg-alias-1",
+                        "release_allowed": False,
+                        "construction_package_artifact_status": {
+                            "package_present": True,
+                            "release_ready_flag": None,
+                            "production_ready_flag": True,
+                        },
+                    },
+                },
+            },
+        )
+
+        self.assertTrue(report["release"]["construction_release_required"])
+        self.assertFalse(report["release"]["release_ready"])
+        self.assertEqual(report["release"]["construction_package_id"], "pkg-alias-1")
+        self.assertEqual(
+            report["release"]["construction_package_artifact_status"]["production_ready_flag"],
+            True,
+        )
+        self.assertIn("construction_package_blocked", report["release"]["release_blockers"])
+        self.assertIn("construction_package_release_not_marked_ready", report["release"]["release_blockers"])
+
 
 if __name__ == "__main__":
     unittest.main()

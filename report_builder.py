@@ -148,6 +148,21 @@ def _extract_plan_meta(final_plan: Dict[str, Any]) -> Dict[str, Any]:
     return deepcopy(_safe_dict(final_plan.get("meta")))
 
 
+def _construction_package_record(meta: Dict[str, Any]) -> Dict[str, Any]:
+    package = _safe_dict(
+        meta.get("construction_package_manifest")
+        or meta.get("construction_package")
+        or meta.get("construction_deliverable_package")
+        or meta.get("deliverable_package")
+    )
+    if package:
+        return deepcopy(package)
+    packages = _safe_list(meta.get("deliverable_packages"))
+    if packages and isinstance(packages[-1], dict):
+        return deepcopy(packages[-1])
+    return {}
+
+
 def _planner_score(final_plan: Dict[str, Any]) -> float:
     meta = _extract_plan_meta(final_plan)
     return _safe_float(_safe_dict(meta.get("planner_score")).get("total"), 0.0)
@@ -376,7 +391,7 @@ def _release_review_block(
         release_ready = bool(review.get("release_ready")) and not blockers
     elif "release_ready" in meta:
         release_ready = bool(meta.get("release_ready")) and not blockers
-    package = _safe_dict(meta.get("construction_package_manifest") or meta.get("construction_package"))
+    package = _construction_package_record(meta)
     package_id = _safe_str(
         package.get("id")
         or package.get("package_id")

@@ -923,6 +923,39 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertIn("construction_package_blocked", summary["release_blockers"])
         self.assertIn("construction_package_release_not_marked_ready", summary["release_blockers"])
 
+    def test_artifact_summary_carries_deliverable_package_alias_id(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "plan.json"
+            path.write_text("x")
+            summary = artifact_summary(
+                path=path,
+                artifact_kind="report",
+                project_id="p1",
+                result_data={
+                    "final_plan": {
+                        "project_name": "Alias Package Artifact",
+                        "meta": {
+                            "release_ready": True,
+                            "construction_readiness": {"ready": True, "status": "construction_ready"},
+                            "deliverable_package": {
+                                "package_id": "pkg-alias-1",
+                                "release_allowed": False,
+                                "construction_package_artifact_status": {
+                                    "package_present": True,
+                                    "release_ready_flag": None,
+                                    "production_ready_flag": True,
+                                },
+                            },
+                        },
+                    },
+                },
+            )
+
+        self.assertEqual(summary["construction_package_id"], "pkg-alias-1")
+        self.assertFalse(summary["release_ready"])
+        self.assertIn("construction_package_blocked", summary["release_blockers"])
+        self.assertIn("construction_package_release_not_marked_ready", summary["release_blockers"])
+
     def test_artifact_summary_blocks_explicit_release_review_not_ready(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "plan.json"
