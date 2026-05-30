@@ -370,7 +370,7 @@ def _release_review_block(
         if blocker not in blockers:
             blockers.append(blocker)
     release_status = _safe_str(review.get("release_status") or meta.get("release_status"), "unknown")
-    if release_status.lower() == "blocked" and not blockers:
+    if release_status.lower() == "blocked" and "release_status_blocked" not in blockers:
         blockers.append("release_status_blocked")
     release_ready = release_status == "ready" and not blockers
     if "release_ready" in review:

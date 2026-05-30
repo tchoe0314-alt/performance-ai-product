@@ -450,7 +450,7 @@ def artifact_summary(
         if blocker_name and blocker_name not in release_blockers:
             release_blockers.append(blocker_name)
     release_status = str(release_review.get("release_status") or final_meta.get("release_status") or "")
-    if release_status.lower() == "blocked" and not release_blockers:
+    if release_status.lower() == "blocked" and "release_status_blocked" not in release_blockers:
         release_blockers.append("release_status_blocked")
     canonical_model_reference = {
         key: value

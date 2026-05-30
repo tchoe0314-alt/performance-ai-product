@@ -33,7 +33,7 @@ class ReportBuilderTest(unittest.TestCase):
 
         self.assertEqual(report["summary"]["release_status"], "blocked")
         self.assertFalse(report["summary"]["release_ready"])
-        self.assertEqual(report["summary"]["release_blocker_count"], 5)
+        self.assertEqual(report["summary"]["release_blocker_count"], 6)
         self.assertEqual(report["release"]["release_status"], "blocked")
         self.assertFalse(report["release"]["release_ready"])
         self.assertEqual(
@@ -44,6 +44,7 @@ class ReportBuilderTest(unittest.TestCase):
                 "construction_package_blocked",
                 "construction_package_release_not_marked_ready",
                 "construction_package_production_not_marked_ready",
+                "release_status_blocked",
             ],
         )
         self.assertTrue(report["release"]["construction_release_required"])
@@ -72,7 +73,9 @@ class ReportBuilderTest(unittest.TestCase):
 
         self.assertEqual(report["release"]["release_status"], "blocked")
         self.assertFalse(report["release"]["release_ready"])
-        self.assertEqual(report["summary"]["release_blocker_count"], 1)
+        self.assertIn("construction_package_blocked", report["release"]["release_blockers"])
+        self.assertIn("release_status_blocked", report["release"]["release_blockers"])
+        self.assertEqual(report["summary"]["release_blocker_count"], 2)
 
     def test_build_report_explains_explicit_release_review_not_ready(self):
         report = report_builder.build_report(

@@ -944,6 +944,7 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
                 "construction_package_artifact_status_missing",
                 "construction_package_release_not_marked_ready",
                 "construction_package_production_not_marked_ready",
+                "release_status_blocked",
             ],
         )
         self.assertEqual(summary["canonical_model_reference"]["canonical_model_id"], "model-1")
@@ -1103,6 +1104,33 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
 
         self.assertEqual(summary["release_status"], "blocked")
         self.assertFalse(summary["release_ready"])
+        self.assertIn("release_status_blocked", summary["release_blockers"])
+
+    def test_artifact_summary_keeps_blocked_status_trace_with_other_blockers(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "plan.json"
+            path.write_text("x")
+            summary = artifact_summary(
+                path=path,
+                artifact_kind="report",
+                project_id="p1",
+                result_data={
+                    "final_plan": {
+                        "project_name": "Blocked Status With Reason Artifact",
+                        "meta": {
+                            "release_ready": True,
+                            "release_review": {
+                                "release_status": "blocked",
+                                "blocked_reasons": ["construction_package_blocked"],
+                            },
+                        },
+                    },
+                },
+            )
+
+        self.assertEqual(summary["release_status"], "blocked")
+        self.assertFalse(summary["release_ready"])
+        self.assertIn("construction_package_blocked", summary["release_blockers"])
         self.assertIn("release_status_blocked", summary["release_blockers"])
 
     def test_artifact_summary_blocks_failed_deliverables_from_final_meta(self):

@@ -782,12 +782,7 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         if construction_blocker not in blocked_reasons:
             blocked_reasons.append(construction_blocker)
     final_release_status = str(final_release_review.get("release_status") or final_meta.get("release_status") or "").lower()
-    if (
-        final_release_status == "blocked"
-        and not blocked_reasons
-        and not blocked_exports
-        and "release_status_blocked" not in blocked_reasons
-    ):
+    if final_release_status == "blocked" and "release_status_blocked" not in blocked_reasons:
         blocked_reasons.append("release_status_blocked")
     if final_release_review.get("release_ready") is False and "release_review_not_ready" not in blocked_reasons:
         blocked_reasons.append("release_review_not_ready")
