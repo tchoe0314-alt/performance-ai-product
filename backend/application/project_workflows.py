@@ -191,6 +191,8 @@ def _latest_release_blockers(
         blockers.append("failed_deliverables")
     if int(latest_reliability.get("manual_failure_count") or 0) > 0:
         blockers.append("manual_validation_failures")
+    if latest_reliability.get("release_ready") is False:
+        blockers.append("latest_run_release_not_ready")
     if latest_run.get("final_plan_release_ready") is False:
         blockers.append("final_plan_release_blocked")
     if str(artifact.get("release_status") or "").lower() == "blocked":
