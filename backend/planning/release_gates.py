@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from backend.planning.professional_release import RELEASE_STATUSES
+
 
 def _append_once(items: list[str], value: str) -> None:
     if value not in items:
@@ -27,9 +29,13 @@ def _professional_release_claimed(record: Any) -> bool:
     if not isinstance(record, dict):
         return False
     status = str(record.get("status") or "").strip().lower()
-    if status in {"released_for_construction", "issued_for_construction"}:
+    if status in RELEASE_STATUSES:
         return True
-    return record.get("released_for_construction") is True or record.get("issued_for_construction") is True
+    return (
+        record.get("sealed") is True
+        or record.get("released_for_construction") is True
+        or record.get("issued_for_construction") is True
+    )
 
 
 def _artifact_status_blockers(artifact_status: Dict[str, Any]) -> list[str]:

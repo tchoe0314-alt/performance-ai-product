@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from .common import safe_dict, safe_float, safe_int, safe_list, safe_str
 from .golden_scenarios import GoldenScenario, get_golden_scenario, golden_scenarios
+from .professional_release import RELEASE_STATUSES
 
 
 BuildPlanFn = Callable[[Dict[str, Any]], Dict[str, Any]]
@@ -52,7 +53,8 @@ def _construction_release_claimed(plan: Dict[str, Any], meta: Dict[str, Any], pa
     return bool(
         any(item.get("release_allowed") is True or item.get("construction_export_allowed") is True for item in package_claims)
         or any(
-            safe_str(item.get("status")).lower() in {"released_for_construction", "issued_for_construction"}
+            safe_str(item.get("status")).lower() in RELEASE_STATUSES
+            or item.get("sealed") is True
             or item.get("released_for_construction") is True
             or item.get("issued_for_construction") is True
             for item in professional_claims
