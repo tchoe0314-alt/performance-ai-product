@@ -197,8 +197,29 @@ def _latest_release_blockers(
 
     _extend(latest_convergence.get("blocked_reasons"))
     _extend(latest_convergence.get("blocked_exports"))
-    _extend(latest_run.get("failed_deliverables"))
-    for missing in list(latest_run.get("missing_deliverables") or []):
+    deliverables = dict(latest_run.get("deliverables") or {})
+    failed_deliverables = list(latest_run.get("failed_deliverables") or []) + list(deliverables.get("failed") or [])
+    for failed in failed_deliverables:
+        failed_name = str(failed).strip()
+        if not failed_name:
+            continue
+        blocker = f"failed_deliverable_{failed_name.lower().replace(' ', '_')}"
+        if blocker not in blockers:
+            blockers.append(blocker)
+    requested_deliverables = list(latest_run.get("requested_deliverables") or []) + list(deliverables.get("requested") or [])
+    produced_set = {
+        str(item).strip()
+        for item in list(latest_run.get("produced_deliverables") or []) + list(deliverables.get("produced") or [])
+        if str(item).strip()
+    }
+    failed_set = {str(item).strip() for item in failed_deliverables if str(item).strip()}
+    missing_deliverables = list(latest_run.get("missing_deliverables") or []) + list(deliverables.get("missing") or [])
+    missing_deliverables.extend(
+        str(item).strip()
+        for item in requested_deliverables
+        if str(item).strip() and str(item).strip() not in produced_set and str(item).strip() not in failed_set
+    )
+    for missing in list(dict.fromkeys(str(item).strip() for item in missing_deliverables if str(item).strip())):
         missing_name = str(missing).strip()
         if not missing_name:
             continue

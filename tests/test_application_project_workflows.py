@@ -275,6 +275,66 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertIn("missing_deliverable_report", summary["latest_release_blockers"])
         self.assertIn("missing_deliverables", summary["latest_release_blockers"])
 
+    def test_merge_project_metadata_derives_missing_deliverables_from_stale_run_summary(self):
+        merged = merge_project_metadata(
+            {},
+            run_summary={
+                "run_id": "run_stale_missing_deliverable",
+                "created_at": 123.0,
+                "source": "unit_test",
+                "convergence_summary": {
+                    "converged": True,
+                    "blocked_exports": [],
+                    "blocked_reasons": [],
+                },
+                "requested_deliverables": ["site_plan", "report"],
+                "produced_deliverables": ["site_plan"],
+                "reliability_summary": {
+                    "operational_state": "ready",
+                    "primary_attention": "",
+                    "blocked_export_count": 0,
+                    "unresolved_conflict_count": 0,
+                    "failed_deliverable_count": 0,
+                    "missing_deliverable_count": 0,
+                    "release_ready": True,
+                },
+            },
+        )
+        summary = merged["workflow"]["summary"]
+        self.assertFalse(summary["latest_release_ready"])
+        self.assertIn("missing_deliverable_report", summary["latest_release_blockers"])
+
+    def test_merge_project_metadata_normalizes_failed_deliverable_names(self):
+        merged = merge_project_metadata(
+            {},
+            run_summary={
+                "run_id": "run_failed_deliverable",
+                "created_at": 123.0,
+                "source": "unit_test",
+                "convergence_summary": {
+                    "converged": True,
+                    "blocked_exports": [],
+                    "blocked_reasons": [],
+                },
+                "deliverables": {
+                    "requested": ["site_plan", "report"],
+                    "produced": ["site_plan", "report"],
+                    "failed": ["report"],
+                },
+                "reliability_summary": {
+                    "operational_state": "ready",
+                    "primary_attention": "",
+                    "blocked_export_count": 0,
+                    "unresolved_conflict_count": 0,
+                    "failed_deliverable_count": 0,
+                    "release_ready": True,
+                },
+            },
+        )
+        summary = merged["workflow"]["summary"]
+        self.assertFalse(summary["latest_release_ready"])
+        self.assertIn("failed_deliverable_report", summary["latest_release_blockers"])
+
     def test_merge_project_metadata_explains_false_latest_run_release_ready(self):
         merged = merge_project_metadata(
             {},
