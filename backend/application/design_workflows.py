@@ -487,6 +487,8 @@ def construction_release_blockers_from_meta(meta: Dict[str, Any], *, requires_co
         professional_status = dict(package.get("professional_package_release_status") or {})
         if artifact_status and artifact_status.get("complete_for_release") is not True:
             blockers.append("construction_package_incomplete_release")
+        if professional_status and professional_status.get("professional_release_valid") is False:
+            blockers.append("construction_professional_release_invalid")
         if professional_status and (
             professional_status.get("model_matches_package") is not True
             or professional_status.get("package_matches_review") is not True
@@ -517,6 +519,9 @@ def construction_release_blockers_from_meta(meta: Dict[str, Any], *, requires_co
             blockers.append("construction_package_cost_untraced")
         if list(artifact_status.get("cost_mismatched") or []):
             blockers.append("construction_package_cost_mismatched")
+        professional_status = dict(package.get("professional_package_release_status") or {})
+        if professional_status.get("professional_release_valid") is False:
+            blockers.append("construction_professional_release_invalid")
     return blockers
 
 
