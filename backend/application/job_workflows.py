@@ -934,6 +934,11 @@ def build_orchestrate_job_runner(
                 if construction_blocker not in blocked_reasons:
                     blocked_reasons.append(construction_blocker)
             final_release_review = safe_dict(final_meta.get("release_review"))
+            final_release_status = safe_str(
+                final_release_review.get("release_status") or final_meta.get("release_status") or final_plan.get("release_status")
+            ).lower()
+            if final_release_status == "blocked" and "release_status_blocked" not in blocked_reasons:
+                blocked_reasons.append("release_status_blocked")
             if final_release_review.get("release_ready") is False and "release_review_not_ready" not in blocked_reasons:
                 blocked_reasons.append("release_review_not_ready")
             if final_meta.get("release_ready") is False and "final_plan_release_blocked" not in blocked_reasons:
