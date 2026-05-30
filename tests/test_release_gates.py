@@ -59,6 +59,7 @@ class ReleaseGateTests(unittest.TestCase):
                     "complete_for_release": False,
                     "release_ready_flag": True,
                     "package_present": True,
+                    "package_identity_present": False,
                     "missing": ["qa_report"],
                     "anonymous": ["sheets"],
                     "stale": ["C-300"],
@@ -83,6 +84,7 @@ class ReleaseGateTests(unittest.TestCase):
         )
 
         self.assertIn("construction_package_incomplete_release", blockers)
+        self.assertIn("construction_package_identity_missing", blockers)
         self.assertIn("construction_package_missing_artifacts", blockers)
         self.assertIn("construction_package_anonymous_artifacts", blockers)
         self.assertIn("construction_package_stale_artifacts", blockers)

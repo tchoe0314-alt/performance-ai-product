@@ -12,6 +12,8 @@ def _artifact_status_blockers(artifact_status: Dict[str, Any]) -> list[str]:
     blockers: list[str] = []
     if artifact_status.get("package_present") is False:
         _append_once(blockers, "construction_package_missing")
+    if artifact_status.get("package_identity_present") is False:
+        _append_once(blockers, "construction_package_identity_missing")
     if list(artifact_status.get("missing") or []):
         _append_once(blockers, "construction_package_missing_artifacts")
     if list(artifact_status.get("anonymous") or []):
