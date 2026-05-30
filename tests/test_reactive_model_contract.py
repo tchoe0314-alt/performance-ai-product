@@ -293,6 +293,72 @@ class ReactiveModelContractTests(unittest.TestCase):
         self.assertFalse(report["post_rerun_production_ready"])
         self.assertIn("missing_deliverable_report", report["post_rerun_release_blockers"])
 
+    def test_execute_reactive_rerun_blocks_release_review_missing_deliverables(self) -> None:
+        def fake_build(payload):
+            return {
+                "meta": {
+                    "civil_design_readiness": {"production_ready": True},
+                    "release_review": {
+                        "requested_deliverables": ["site_plan", "report"],
+                        "produced_deliverables": ["site_plan"],
+                    },
+                    "stage_results": [
+                        {"stage_name": "layout", "success": True, "completeness": "complete"},
+                        {"stage_name": "grading", "success": True, "completeness": "complete"},
+                        {"stage_name": "drainage", "success": True, "completeness": "complete"},
+                        {"stage_name": "storm_pipes", "success": True, "completeness": "complete"},
+                        {"stage_name": "sanitary", "success": True, "completeness": "complete"},
+                        {"stage_name": "utility_network", "success": True, "completeness": "complete"},
+                        {"stage_name": "coordination_resolution", "success": True, "completeness": "complete"},
+                        {"stage_name": "earthwork", "success": True, "completeness": "complete"},
+                        {"stage_name": "qa", "success": True, "completeness": "complete"},
+                        {"stage_name": "sheets", "success": True, "completeness": "complete"},
+                    ],
+                }
+            }
+
+        result = execute_reactive_rerun(
+            {"project_name": "Reactive", "meta": {}},
+            changed_engine_ids=["roadway_corridor"],
+            build_plan_fn=fake_build,
+        )
+
+        report = result["reactive_update_report"]
+        self.assertFalse(report["post_rerun_production_ready"])
+        self.assertIn("missing_deliverable_report", report["post_rerun_release_blockers"])
+
+    def test_execute_reactive_rerun_blocks_stored_run_errors(self) -> None:
+        def fake_build(payload):
+            return {
+                "meta": {
+                    "civil_design_readiness": {"production_ready": True},
+                    "run_summary": {"success": False, "error_count": 1},
+                    "stage_results": [
+                        {"stage_name": "layout", "success": True, "completeness": "complete"},
+                        {"stage_name": "grading", "success": True, "completeness": "complete"},
+                        {"stage_name": "drainage", "success": True, "completeness": "complete"},
+                        {"stage_name": "storm_pipes", "success": True, "completeness": "complete"},
+                        {"stage_name": "sanitary", "success": True, "completeness": "complete"},
+                        {"stage_name": "utility_network", "success": True, "completeness": "complete"},
+                        {"stage_name": "coordination_resolution", "success": True, "completeness": "complete"},
+                        {"stage_name": "earthwork", "success": True, "completeness": "complete"},
+                        {"stage_name": "qa", "success": True, "completeness": "complete"},
+                        {"stage_name": "sheets", "success": True, "completeness": "complete"},
+                    ],
+                }
+            }
+
+        result = execute_reactive_rerun(
+            {"project_name": "Reactive", "meta": {}},
+            changed_engine_ids=["roadway_corridor"],
+            build_plan_fn=fake_build,
+        )
+
+        report = result["reactive_update_report"]
+        self.assertFalse(report["post_rerun_production_ready"])
+        self.assertIn("planner_run_failed", report["post_rerun_release_blockers"])
+        self.assertIn("planner_errors_present", report["post_rerun_release_blockers"])
+
 
 if __name__ == "__main__":
     unittest.main()

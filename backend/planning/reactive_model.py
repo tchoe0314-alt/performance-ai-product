@@ -162,6 +162,23 @@ def _completed_stage_names(meta: Dict[str, Any]) -> Set[str]:
     return completed
 
 
+def _merged_release_deliverables(*values: Any) -> List[str]:
+    merged: List[str] = []
+    for value in values:
+        for item in safe_list(value):
+            name = safe_str(item).strip()
+            if name and name not in merged:
+                merged.append(name)
+    return merged
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _post_rerun_release_blockers(plan: Dict[str, Any], meta: Dict[str, Any]) -> List[str]:
     blockers: List[str] = []
 
@@ -187,19 +204,35 @@ def _post_rerun_release_blockers(plan: Dict[str, Any], meta: Dict[str, Any]) -> 
         _add(item)
 
     deliverables = safe_dict(meta.get("deliverables"))
-    for failed_deliverable in safe_list(deliverables.get("failed")):
+    failed_deliverables = _merged_release_deliverables(
+        deliverables.get("failed"),
+        release_review.get("failed_deliverables"),
+    )
+    for failed_deliverable in failed_deliverables:
         failed_name = safe_str(failed_deliverable).strip()
         if failed_name:
             _add(f"failed_deliverable_{failed_name.lower().replace(' ', '_')}")
-    produced_deliverables = {safe_str(item).strip() for item in safe_list(deliverables.get("produced")) if safe_str(item).strip()}
-    failed_deliverables = {safe_str(item).strip() for item in safe_list(deliverables.get("failed")) if safe_str(item).strip()}
-    missing_deliverables = safe_list(deliverables.get("missing")) + [
+    requested_deliverables = _merged_release_deliverables(
+        deliverables.get("requested"),
+        release_review.get("requested_deliverables"),
+    )
+    produced_deliverables = _merged_release_deliverables(
+        deliverables.get("produced"),
+        release_review.get("produced_deliverables"),
+    )
+    missing_deliverables = _merged_release_deliverables(
+        deliverables.get("missing"),
+        release_review.get("missing_deliverables"),
+    )
+    produced_set = {safe_str(item).strip() for item in produced_deliverables if safe_str(item).strip()}
+    failed_set = {safe_str(item).strip() for item in failed_deliverables if safe_str(item).strip()}
+    missing_deliverables.extend(
         item
-        for item in safe_list(deliverables.get("requested"))
+        for item in requested_deliverables
         if safe_str(item).strip()
-        and safe_str(item).strip() not in produced_deliverables
-        and safe_str(item).strip() not in failed_deliverables
-    ]
+        and safe_str(item).strip() not in produced_set
+        and safe_str(item).strip() not in failed_set
+    )
     for missing_deliverable in missing_deliverables:
         missing_name = safe_str(missing_deliverable).strip()
         if missing_name:
@@ -228,6 +261,11 @@ def _post_rerun_release_blockers(plan: Dict[str, Any], meta: Dict[str, Any]) -> 
             _add("export_audit_blocked")
         for item in safe_list(export_audit.get("blocked_reasons")):
             _add(item)
+    run_summary = safe_dict(meta.get("run_summary"))
+    if run_summary.get("success") is False:
+        _add("planner_run_failed")
+    if _safe_int(run_summary.get("error_count")) > 0:
+        _add("planner_errors_present")
     return blockers
 
 
