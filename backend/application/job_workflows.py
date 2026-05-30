@@ -924,11 +924,31 @@ def build_orchestrate_job_runner(
             failed_deliverables = _merged_deliverables("failed_deliverables", "failed")
             ready_deliverables = _merged_deliverables("ready_deliverables", "ready")
             extra_deliverables = _merged_deliverables("extra_deliverables", "extra")
+            final_manual_validation = safe_dict(final_meta.get("manual_validation"))
+            manual_failures: list[Dict[str, Any]] = []
+            for failure in list(run_summary.get("manual_failures") or []) + list(final_manual_validation.get("failures") or []):
+                if not isinstance(failure, dict):
+                    continue
+                failure_key = safe_str(
+                    failure.get("code")
+                    or failure.get("rule")
+                    or failure.get("system")
+                    or failure.get("reason")
+                    or failure.get("message")
+                    or "manual_validation_failure"
+                )
+                if not failure_key:
+                    failure_key = "manual_validation_failure"
+                failure_record = dict(failure)
+                failure_record.setdefault("code", failure_key)
+                if failure_record not in manual_failures:
+                    manual_failures.append(failure_record)
             run_summary["requested_deliverables"] = requested_deliverables
             run_summary["produced_deliverables"] = produced_deliverables
             run_summary["failed_deliverables"] = failed_deliverables
             run_summary["ready_deliverables"] = ready_deliverables
             run_summary["extra_deliverables"] = extra_deliverables
+            run_summary["manual_failures"] = manual_failures
             failed_deliverable_blockers = [
                 f"failed_deliverable_{safe_str(item).lower().replace(' ', '_')}"
                 for item in failed_deliverables
@@ -937,14 +957,22 @@ def build_orchestrate_job_runner(
             for failed_blocker in failed_deliverable_blockers:
                 if failed_blocker not in blocked_reasons:
                     blocked_reasons.append(failed_blocker)
+            for manual_failure in manual_failures:
+                failure_key = safe_str(manual_failure.get("code") or "manual_validation_failure")
+                if not failure_key:
+                    failure_key = "manual_validation_failure"
+                manual_blocker = f"manual_validation_{failure_key.lower().replace(' ', '_')}"
+                if manual_blocker not in blocked_reasons:
+                    blocked_reasons.append(manual_blocker)
             convergence["blocked_reasons"] = list(blocked_reasons)
-            reliability["release_ready"] = not bool(blocked_reasons or blocked_exports or failed_deliverables)
+            reliability["release_ready"] = not bool(blocked_reasons or blocked_exports or failed_deliverables or manual_failures)
             reliability["blocked_export_count"] = len(blocked_exports)
+            reliability["manual_failure_count"] = len(manual_failures)
             if blocked_reasons or blocked_exports:
                 reliability["primary_attention"] = (blocked_reasons[:1] or blocked_exports[:1])[0]
             elif failed_deliverables:
                 reliability["primary_attention"] = failed_deliverables[0]
-            release_status = "blocked" if (blocked_reasons or blocked_exports or failed_deliverables) else ("ready" if bool(reliability.get("release_ready")) else "review")
+            release_status = "blocked" if (blocked_reasons or blocked_exports or failed_deliverables or manual_failures) else ("ready" if bool(reliability.get("release_ready")) else "review")
             release_note = (
                 "Blocked until outstanding export issues are resolved."
                 if release_status == "blocked"
@@ -965,6 +993,7 @@ def build_orchestrate_job_runner(
                 not blocked_reasons
                 and not blocked_exports
                 and not failed_deliverables
+                and not manual_failures
                 and not bool(runtime_checkpoint.get("yielded"))
                 and total_phase_count > 0
                 and completed_phase_count >= total_phase_count
@@ -998,9 +1027,10 @@ def build_orchestrate_job_runner(
                 "release_status": release_status,
                 "release_note": release_note,
                 "release_ready": bool(reliability.get("release_ready")),
+                "manual_failures": manual_failures,
             }
             final_meta["blockers"] = blocked_reasons or blocked_exports
-            final_meta["export_ready"] = not bool(blocked_reasons or blocked_exports or failed_deliverables)
+            final_meta["export_ready"] = not bool(blocked_reasons or blocked_exports or failed_deliverables or manual_failures)
             final_meta["release_ready"] = bool(reliability.get("release_ready"))
             final_meta["release_status"] = release_status
             final_meta["deliverables"] = {
@@ -1011,7 +1041,7 @@ def build_orchestrate_job_runner(
                 "extra": extra_deliverables,
             }
             final_plan["meta"] = final_meta
-            final_plan["export_ready"] = not bool(blocked_reasons or blocked_exports or failed_deliverables)
+            final_plan["export_ready"] = not bool(blocked_reasons or blocked_exports or failed_deliverables or manual_failures)
             final_plan["release_ready"] = bool(reliability.get("release_ready"))
             final_plan["release_status"] = release_status
             final_plan["blockers"] = blocked_reasons or blocked_exports
