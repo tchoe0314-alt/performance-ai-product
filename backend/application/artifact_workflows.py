@@ -1098,7 +1098,21 @@ def export_dxf_artifact(
             )
     from output.dxf_exporter import finalize_export_metadata
 
-    finalize_export_metadata(final_plan)
+    export_metadata = finalize_export_metadata(final_plan)
+    export_audit = dict(export_metadata.get("export_audit") or dict(final_plan.get("meta") or {}).get("export_audit") or {})
+    if bool(export_audit.get("export_blocked")):
+        blocked_reasons = [
+            str(item).strip()
+            for item in list(export_audit.get("blocked_reasons") or [])
+            if str(item).strip()
+        ]
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "DXF export is blocked because the final plan is not production-export-ready: "
+                + ", ".join(blocked_reasons or ["export_audit_blocked"])
+            ),
+        )
     stem = filename_stem or str(final_plan.get("project_name") or "civora-ai-plan")
     path = artifact_service.export_dxf(
         user_id=user_id,

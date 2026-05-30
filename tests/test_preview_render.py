@@ -130,6 +130,61 @@ class PreviewRenderTests(unittest.TestCase):
 
         self.assertEqual(profile, "utilities")
 
+    def test_preview_profile_does_not_complete_with_release_review_missing_deliverables(self):
+        profile = _preview_engineering_profile(
+            {
+                "actions": [],
+                "meta": {
+                    "release_status": "ready",
+                    "release_ready": True,
+                    "engineering_status": "complete",
+                    "release_review": {
+                        "release_status": "ready",
+                        "release_ready": True,
+                        "requested_deliverables": ["site_plan", "report"],
+                        "produced_deliverables": ["site_plan"],
+                    },
+                    "phase_checkpoints": {
+                        "grading": {"ready": True},
+                        "drainage_storm": {"ready": True},
+                        "utilities": {"ready": True},
+                        "coordination_validation": {"ready": True},
+                        "combined_view": {
+                            "completed_phase_count": 5,
+                            "total_phase_count": 5,
+                        },
+                    },
+                },
+            }
+        )
+
+        self.assertEqual(profile, "utilities")
+
+    def test_preview_profile_does_not_complete_with_stored_run_errors(self):
+        profile = _preview_engineering_profile(
+            {
+                "actions": [],
+                "meta": {
+                    "release_status": "ready",
+                    "release_ready": True,
+                    "engineering_status": "complete",
+                    "run_summary": {"success": True, "error_count": 1},
+                    "phase_checkpoints": {
+                        "grading": {"ready": True},
+                        "drainage_storm": {"ready": True},
+                        "utilities": {"ready": True},
+                        "coordination_validation": {"ready": True},
+                        "combined_view": {
+                            "completed_phase_count": 5,
+                            "total_phase_count": 5,
+                        },
+                    },
+                },
+            }
+        )
+
+        self.assertEqual(profile, "utilities")
+
     def test_preview_profile_does_not_complete_with_manual_validation_failures(self):
         profile = _preview_engineering_profile(
             {

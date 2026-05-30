@@ -173,6 +173,41 @@ class Phase1Slice6DExportMetadataTest(unittest.TestCase):
         self.assertIn("failed_deliverable_report", audit["blocked_reasons"])
         self.assertIn("failed_deliverable_report", audit["release_readiness"]["release_blockers"])
 
+    def test_export_audit_blocks_missing_deliverables_from_release_review(self) -> None:
+        plan = _export_plan()
+        plan["meta"]["release_status"] = "ready"
+        plan["meta"]["release_ready"] = True
+        plan["meta"]["release_review"] = {
+            "release_status": "ready",
+            "release_ready": True,
+            "requested_deliverables": ["storm_pipe_plan", "report"],
+            "produced_deliverables": ["storm_pipe_plan"],
+        }
+
+        metadata = finalize_export_metadata(plan)
+        audit = metadata["export_audit"]
+
+        self.assertFalse(audit["success"])
+        self.assertFalse(audit["production_export_ready"])
+        self.assertTrue(audit["export_blocked"])
+        self.assertIn("missing_deliverable_report", audit["blocked_reasons"])
+        self.assertIn("missing_deliverable_report", audit["release_readiness"]["release_blockers"])
+
+    def test_export_audit_blocks_stored_run_errors(self) -> None:
+        plan = _export_plan()
+        plan["meta"]["release_status"] = "ready"
+        plan["meta"]["release_ready"] = True
+        plan["meta"]["run_summary"] = {"success": True, "error_count": 1}
+
+        metadata = finalize_export_metadata(plan)
+        audit = metadata["export_audit"]
+
+        self.assertFalse(audit["success"])
+        self.assertFalse(audit["production_export_ready"])
+        self.assertTrue(audit["export_blocked"])
+        self.assertIn("planner_errors_present", audit["blocked_reasons"])
+        self.assertIn("planner_errors_present", audit["release_readiness"]["release_blockers"])
+
     def test_export_audit_blocks_manual_validation_failures_from_final_meta(self) -> None:
         plan = _export_plan()
         plan["meta"]["release_status"] = "ready"

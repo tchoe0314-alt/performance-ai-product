@@ -2791,31 +2791,7 @@ def _preview_engineering_profile(plan):
         else meta.get("release_ready")
     )
     release_not_ready = release_ready_value is False
-    construction_blockers = construction_release_blockers_from_meta(
-        meta,
-        requires_construction_release=final_plan_requires_construction_release(plan),
-    )
-    release_blockers = list(construction_blockers)
-    if isinstance(release_review, dict):
-        release_blockers.extend(str(item) for item in list(release_review.get("blocked_reasons") or []) if str(item))
-        release_blockers.extend(str(item) for item in list(release_review.get("blocked_exports") or []) if str(item))
-    for failed_deliverable in list((meta.get("deliverables") or {}).get("failed") or []):
-        failed_name = safe_text(failed_deliverable, "").strip()
-        if failed_name:
-            release_blockers.append(f"failed_deliverable_{failed_name.lower().replace(' ', '_')}")
-    manual_validation = meta.get("manual_validation") or {}
-    for failure in [item for item in list(manual_validation.get("failures") or []) if isinstance(item, dict)]:
-        failure_key = safe_text(
-            failure.get("code")
-            or failure.get("rule")
-            or failure.get("system")
-            or failure.get("message"),
-            "manual_validation_failure",
-        ).strip()
-        if not failure_key:
-            failure_key = "manual_validation_failure"
-        release_blockers.append(f"manual_validation_{failure_key.lower().replace(' ', '_')}")
-    release_blockers = list(dict.fromkeys(item for item in release_blockers if item))
+    release_blockers = _preview_release_truth_blockers(plan, meta, release_review if isinstance(release_review, dict) else {})
     runtime_checkpoint = meta.get("runtime_phase_checkpoint") or {}
     checkpoint_stage = safe_text(runtime_checkpoint.get("stage_name"), "").lower()
     grading_complete = bool((phase_checkpoints.get("grading") or {}).get("ready"))
@@ -2844,6 +2820,80 @@ def _preview_engineering_profile(plan):
     elif grading_complete or checkpoint_stage == "grading":
         engineering_profile = "grading"
     return engineering_profile
+
+
+def _preview_merged_release_deliverables(*values: Any) -> List[str]:
+    merged: List[str] = []
+    for value in values:
+        for item in list(value or []):
+            name = safe_text(item, "").strip()
+            if name and name not in merged:
+                merged.append(name)
+    return merged
+
+
+def _preview_release_truth_blockers(plan: Dict[str, Any], meta: Dict[str, Any], release_review: Dict[str, Any]) -> List[str]:
+    release_blockers = list(
+        construction_release_blockers_from_meta(
+            meta,
+            requires_construction_release=final_plan_requires_construction_release(plan),
+        )
+    )
+    release_blockers.extend(str(item) for item in list(release_review.get("blocked_reasons") or []) if str(item))
+    release_blockers.extend(str(item) for item in list(release_review.get("blocked_exports") or []) if str(item))
+    deliverables = meta.get("deliverables") or {}
+    requested_deliverables = _preview_merged_release_deliverables(
+        deliverables.get("requested"),
+        release_review.get("requested_deliverables"),
+    )
+    produced_deliverables = _preview_merged_release_deliverables(
+        deliverables.get("produced"),
+        release_review.get("produced_deliverables"),
+    )
+    failed_deliverables = _preview_merged_release_deliverables(
+        deliverables.get("failed"),
+        release_review.get("failed_deliverables"),
+    )
+    missing_deliverables = _preview_merged_release_deliverables(
+        deliverables.get("missing"),
+        release_review.get("missing_deliverables"),
+    )
+    produced_set = {safe_text(item, "").strip() for item in produced_deliverables if safe_text(item, "").strip()}
+    failed_set = {safe_text(item, "").strip() for item in failed_deliverables if safe_text(item, "").strip()}
+    for failed_deliverable in failed_deliverables:
+        failed_name = safe_text(failed_deliverable, "").strip()
+        if failed_name:
+            release_blockers.append(f"failed_deliverable_{failed_name.lower().replace(' ', '_')}")
+    missing_deliverables.extend(
+        name
+        for name in requested_deliverables
+        if safe_text(name, "").strip()
+        and safe_text(name, "").strip() not in produced_set
+        and safe_text(name, "").strip() not in failed_set
+    )
+    for missing_deliverable in missing_deliverables:
+        missing_name = safe_text(missing_deliverable, "").strip()
+        if missing_name:
+            release_blockers.append(f"missing_deliverable_{missing_name.lower().replace(' ', '_')}")
+    manual_validation = meta.get("manual_validation") or {}
+    for failure in [item for item in list(manual_validation.get("failures") or []) if isinstance(item, dict)]:
+        failure_key = safe_text(
+            failure.get("code")
+            or failure.get("rule")
+            or failure.get("system")
+            or failure.get("message"),
+            "manual_validation_failure",
+        ).strip()
+        if not failure_key:
+            failure_key = "manual_validation_failure"
+        release_blockers.append(f"manual_validation_{failure_key.lower().replace(' ', '_')}")
+    run_summary = meta.get("run_summary") or {}
+    if isinstance(run_summary, dict):
+        if run_summary.get("success") is False:
+            release_blockers.append("planner_run_failed")
+        if int(safe_num(run_summary.get("error_count"))) > 0:
+            release_blockers.append("planner_errors_present")
+    return list(dict.fromkeys(item for item in release_blockers if item))
 
 
 def _infer_profile_from_actions(actions, current_profile, *, allow_profile_inference: bool = False):
