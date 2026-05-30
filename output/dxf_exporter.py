@@ -1103,6 +1103,27 @@ def _modelspace_engineering_profile(plan: Dict[str, Any]) -> str:
         meta,
         requires_construction_release=final_plan_requires_construction_release(plan),
     )
+    release_blockers = list(construction_blockers)
+    release_blockers.extend(safe_text(item) for item in safe_list(release_review.get("blocked_reasons")) if safe_text(item))
+    release_blockers.extend(safe_text(item) for item in safe_list(release_review.get("blocked_exports")) if safe_text(item))
+    deliverables = safe_dict(meta.get("deliverables"))
+    for failed_deliverable in safe_list(deliverables.get("failed")):
+        failed_name = safe_text(failed_deliverable).strip()
+        if failed_name:
+            release_blockers.append(f"failed_deliverable_{failed_name.lower().replace(' ', '_')}")
+    manual_validation = safe_dict(meta.get("manual_validation"))
+    for failure in [item for item in safe_list(manual_validation.get("failures")) if isinstance(item, dict)]:
+        failure_key = safe_text(
+            failure.get("code")
+            or failure.get("rule")
+            or failure.get("system")
+            or failure.get("message"),
+            "manual_validation_failure",
+        ).strip()
+        if not failure_key:
+            failure_key = "manual_validation_failure"
+        release_blockers.append(f"manual_validation_{failure_key.lower().replace(' ', '_')}")
+    release_blockers = list(dict.fromkeys(item for item in release_blockers if item))
     runtime_checkpoint = safe_dict(meta.get("runtime_phase_checkpoint"))
     checkpoint_stage = safe_text(runtime_checkpoint.get("stage_name"), "").lower()
     grading_complete = bool(safe_dict(phase_checkpoints.get("grading")).get("ready"))
@@ -1112,7 +1133,7 @@ def _modelspace_engineering_profile(plan: Dict[str, Any]) -> str:
     if (
         not release_not_ready
         and
-        not construction_blockers
+        not release_blockers
         and (
             (total_phases > 0 and completed_phases >= total_phases)
             or release_status == "ready"

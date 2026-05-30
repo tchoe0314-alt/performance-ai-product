@@ -2795,6 +2795,27 @@ def _preview_engineering_profile(plan):
         meta,
         requires_construction_release=final_plan_requires_construction_release(plan),
     )
+    release_blockers = list(construction_blockers)
+    if isinstance(release_review, dict):
+        release_blockers.extend(str(item) for item in list(release_review.get("blocked_reasons") or []) if str(item))
+        release_blockers.extend(str(item) for item in list(release_review.get("blocked_exports") or []) if str(item))
+    for failed_deliverable in list((meta.get("deliverables") or {}).get("failed") or []):
+        failed_name = safe_text(failed_deliverable, "").strip()
+        if failed_name:
+            release_blockers.append(f"failed_deliverable_{failed_name.lower().replace(' ', '_')}")
+    manual_validation = meta.get("manual_validation") or {}
+    for failure in [item for item in list(manual_validation.get("failures") or []) if isinstance(item, dict)]:
+        failure_key = safe_text(
+            failure.get("code")
+            or failure.get("rule")
+            or failure.get("system")
+            or failure.get("message"),
+            "manual_validation_failure",
+        ).strip()
+        if not failure_key:
+            failure_key = "manual_validation_failure"
+        release_blockers.append(f"manual_validation_{failure_key.lower().replace(' ', '_')}")
+    release_blockers = list(dict.fromkeys(item for item in release_blockers if item))
     runtime_checkpoint = meta.get("runtime_phase_checkpoint") or {}
     checkpoint_stage = safe_text(runtime_checkpoint.get("stage_name"), "").lower()
     grading_complete = bool((phase_checkpoints.get("grading") or {}).get("ready"))
@@ -2805,7 +2826,7 @@ def _preview_engineering_profile(plan):
     if (
         not release_not_ready
         and
-        not construction_blockers
+        not release_blockers
         and (
             (total_phases > 0 and completed_phases >= total_phases)
             or release_status == "ready"

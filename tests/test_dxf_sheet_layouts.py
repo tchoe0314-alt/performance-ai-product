@@ -236,6 +236,47 @@ class DxfSheetLayoutsTest(unittest.TestCase):
             self.assertIn("FG_CONTOUR", modelspace_layers)
             self.assertNotEqual(_modelspace_engineering_profile(plan), "complete")
 
+    def test_modelspace_does_not_use_completed_scene_when_deliverables_fail(self) -> None:
+        plan = _sheet_test_plan()
+        meta = plan.setdefault("meta", {})
+        meta["release_status"] = "ready"
+        meta["release_ready"] = True
+        meta["deliverables"] = {"failed": ["report"]}
+        meta["phase_checkpoints"] = {
+            "grading": {"ready": True},
+            "drainage_storm": {"ready": True},
+            "utilities": {"ready": True},
+            "coordination_validation": {"ready": True},
+            "combined_view": {"completed_phase_count": 5, "total_phase_count": 5},
+        }
+        meta["engineering_status"] = "complete"
+
+        self.assertEqual(_modelspace_engineering_profile(plan), "utilities")
+
+    def test_modelspace_does_not_use_completed_scene_when_manual_validation_fails(self) -> None:
+        plan = _sheet_test_plan()
+        meta = plan.setdefault("meta", {})
+        meta["release_status"] = "ready"
+        meta["release_ready"] = True
+        meta["manual_validation"] = {
+            "failures": [
+                {
+                    "code": "MANUAL_STORM_HYDRAULIC_INVALID",
+                    "message": "Storm hydraulic review failed.",
+                }
+            ]
+        }
+        meta["phase_checkpoints"] = {
+            "grading": {"ready": True},
+            "drainage_storm": {"ready": True},
+            "utilities": {"ready": True},
+            "coordination_validation": {"ready": True},
+            "combined_view": {"completed_phase_count": 5, "total_phase_count": 5},
+        }
+        meta["engineering_status"] = "complete"
+
+        self.assertEqual(_modelspace_engineering_profile(plan), "utilities")
+
     def test_modelspace_suppresses_route_and_point_noise_in_layout_scene(self) -> None:
         plan = _sheet_test_plan()
         actions = plan.setdefault("actions", [])

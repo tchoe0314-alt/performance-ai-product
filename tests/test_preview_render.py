@@ -105,6 +105,63 @@ class PreviewRenderTests(unittest.TestCase):
 
         self.assertEqual(profile, "utilities")
 
+    def test_preview_profile_does_not_complete_with_failed_deliverables(self):
+        profile = _preview_engineering_profile(
+            {
+                "actions": [],
+                "meta": {
+                    "release_status": "ready",
+                    "release_ready": True,
+                    "engineering_status": "complete",
+                    "deliverables": {"failed": ["report"]},
+                    "phase_checkpoints": {
+                        "grading": {"ready": True},
+                        "drainage_storm": {"ready": True},
+                        "utilities": {"ready": True},
+                        "coordination_validation": {"ready": True},
+                        "combined_view": {
+                            "completed_phase_count": 5,
+                            "total_phase_count": 5,
+                        },
+                    },
+                },
+            }
+        )
+
+        self.assertEqual(profile, "utilities")
+
+    def test_preview_profile_does_not_complete_with_manual_validation_failures(self):
+        profile = _preview_engineering_profile(
+            {
+                "actions": [],
+                "meta": {
+                    "release_status": "ready",
+                    "release_ready": True,
+                    "engineering_status": "complete",
+                    "manual_validation": {
+                        "failures": [
+                            {
+                                "code": "MANUAL_STORM_HYDRAULIC_INVALID",
+                                "message": "Storm hydraulic review failed.",
+                            }
+                        ]
+                    },
+                    "phase_checkpoints": {
+                        "grading": {"ready": True},
+                        "drainage_storm": {"ready": True},
+                        "utilities": {"ready": True},
+                        "coordination_validation": {"ready": True},
+                        "combined_view": {
+                            "completed_phase_count": 5,
+                            "total_phase_count": 5,
+                        },
+                    },
+                },
+            }
+        )
+
+        self.assertEqual(profile, "utilities")
+
     def test_preview_stage_diagnostics_do_not_treat_assumed_as_complete(self):
         annotations = build_preview_annotations(
             {
