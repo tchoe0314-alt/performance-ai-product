@@ -2779,7 +2779,18 @@ def _preview_engineering_profile(plan):
     completed_phases = safe_num(combined_view.get("completed_phase_count"))
     total_phases = safe_num(combined_view.get("total_phase_count"))
     engineering_status = safe_text(meta.get("engineering_status"), "").lower()
-    release_status = safe_text(meta.get("release_status"), "").lower()
+    release_review = meta.get("release_review") or {}
+    release_status = safe_text(
+        (release_review.get("release_status") if isinstance(release_review, dict) else None)
+        or meta.get("release_status"),
+        "",
+    ).lower()
+    release_ready_value = (
+        release_review.get("release_ready")
+        if isinstance(release_review, dict) and "release_ready" in release_review
+        else meta.get("release_ready")
+    )
+    release_not_ready = release_ready_value is False
     construction_blockers = construction_release_blockers_from_meta(
         meta,
         requires_construction_release=final_plan_requires_construction_release(plan),
@@ -2792,6 +2803,8 @@ def _preview_engineering_profile(plan):
     coordination_complete = bool((phase_checkpoints.get("coordination_validation") or {}).get("ready"))
     engineering_profile = "layout"
     if (
+        not release_not_ready
+        and
         not construction_blockers
         and (
             (total_phases > 0 and completed_phases >= total_phases)

@@ -81,6 +81,30 @@ class PreviewRenderTests(unittest.TestCase):
 
         self.assertEqual(profile, "grading")
 
+    def test_preview_profile_does_not_complete_when_release_ready_is_false(self):
+        profile = _preview_engineering_profile(
+            {
+                "actions": [],
+                "meta": {
+                    "release_status": "ready",
+                    "release_ready": False,
+                    "engineering_status": "complete",
+                    "phase_checkpoints": {
+                        "grading": {"ready": True},
+                        "drainage_storm": {"ready": True},
+                        "utilities": {"ready": True},
+                        "coordination_validation": {"ready": True},
+                        "combined_view": {
+                            "completed_phase_count": 5,
+                            "total_phase_count": 5,
+                        },
+                    },
+                },
+            }
+        )
+
+        self.assertEqual(profile, "utilities")
+
     def test_preview_stage_diagnostics_do_not_treat_assumed_as_complete(self):
         annotations = build_preview_annotations(
             {

@@ -1087,9 +1087,54 @@ def _surface_contour_actions(plan: Dict[str, Any], *, engineering_profile: str =
     return actions
 
 
+def _modelspace_engineering_profile(plan: Dict[str, Any]) -> str:
+    engineering_profile = "layout"
+    meta = safe_dict(plan.get("meta"))
+    phase_checkpoints = safe_dict(meta.get("phase_checkpoints"))
+    combined_view = safe_dict(phase_checkpoints.get("combined_view"))
+    completed_phases = safe_num(combined_view.get("completed_phase_count"), 0.0)
+    total_phases = safe_num(combined_view.get("total_phase_count"), 0.0)
+    engineering_status = safe_text(meta.get("engineering_status"), "").lower()
+    release_review = safe_dict(meta.get("release_review"))
+    release_status = safe_text(release_review.get("release_status") or meta.get("release_status"), "").lower()
+    release_ready_value = release_review.get("release_ready") if "release_ready" in release_review else meta.get("release_ready")
+    release_not_ready = release_ready_value is False
+    construction_blockers = construction_release_blockers_from_meta(
+        meta,
+        requires_construction_release=final_plan_requires_construction_release(plan),
+    )
+    runtime_checkpoint = safe_dict(meta.get("runtime_phase_checkpoint"))
+    checkpoint_stage = safe_text(runtime_checkpoint.get("stage_name"), "").lower()
+    grading_complete = bool(safe_dict(phase_checkpoints.get("grading")).get("ready"))
+    drainage_complete = bool(safe_dict(phase_checkpoints.get("drainage_storm")).get("ready"))
+    utilities_complete = bool(safe_dict(phase_checkpoints.get("utilities")).get("ready"))
+    coordination_complete = bool(safe_dict(phase_checkpoints.get("coordination_validation")).get("ready"))
+    if (
+        not release_not_ready
+        and
+        not construction_blockers
+        and (
+            (total_phases > 0 and completed_phases >= total_phases)
+            or release_status == "ready"
+            or engineering_status in {"complete", "ready", "release_ready"}
+            or coordination_complete
+        )
+    ):
+        engineering_profile = "complete"
+    elif utilities_complete or checkpoint_stage in {"sanitary", "utility_network"}:
+        engineering_profile = "utilities"
+    elif checkpoint_stage == "storm_pipes":
+        engineering_profile = "storm"
+    elif drainage_complete or checkpoint_stage == "drainage":
+        engineering_profile = "drainage"
+    elif grading_complete or checkpoint_stage == "grading":
+        engineering_profile = "grading"
+    return engineering_profile
+
+
 def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     prepared: List[Dict[str, Any]] = []
-    engineering_profile = "layout"
+    engineering_profile = _modelspace_engineering_profile(plan)
     try:
         from output.preview import (
             _dedupe_primary_layout_records,
@@ -1099,41 +1144,6 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
         )  # reuse layout-first synthesis for modelspace
         synthesized_actions = _synthesize_layout_preview_actions([safe_dict(action) for action in actions if isinstance(action, dict)])
         synthesized_actions = _dedupe_primary_layout_records(synthesized_actions)
-        meta = safe_dict(plan.get("meta"))
-        phase_checkpoints = safe_dict(meta.get("phase_checkpoints"))
-        combined_view = safe_dict(phase_checkpoints.get("combined_view"))
-        completed_phases = safe_num(combined_view.get("completed_phase_count"), 0.0)
-        total_phases = safe_num(combined_view.get("total_phase_count"), 0.0)
-        engineering_status = safe_text(meta.get("engineering_status"), "").lower()
-        release_status = safe_text(meta.get("release_status"), "").lower()
-        construction_blockers = construction_release_blockers_from_meta(
-            meta,
-            requires_construction_release=final_plan_requires_construction_release(plan),
-        )
-        runtime_checkpoint = safe_dict(meta.get("runtime_phase_checkpoint"))
-        checkpoint_stage = safe_text(runtime_checkpoint.get("stage_name"), "").lower()
-        grading_complete = bool(safe_dict(phase_checkpoints.get("grading")).get("ready"))
-        drainage_complete = bool(safe_dict(phase_checkpoints.get("drainage_storm")).get("ready"))
-        utilities_complete = bool(safe_dict(phase_checkpoints.get("utilities")).get("ready"))
-        coordination_complete = bool(safe_dict(phase_checkpoints.get("coordination_validation")).get("ready"))
-        if (
-            not construction_blockers
-            and (
-                (total_phases > 0 and completed_phases >= total_phases)
-                or release_status == "ready"
-                or engineering_status in {"complete", "ready", "release_ready"}
-                or coordination_complete
-            )
-        ):
-            engineering_profile = "complete"
-        elif utilities_complete or checkpoint_stage in {"sanitary", "utility_network"}:
-            engineering_profile = "utilities"
-        elif checkpoint_stage == "storm_pipes":
-            engineering_profile = "storm"
-        elif drainage_complete or checkpoint_stage == "drainage":
-            engineering_profile = "drainage"
-        elif grading_complete or checkpoint_stage == "grading":
-            engineering_profile = "grading"
         engineering_profile = _normalize_engineering_profile(engineering_profile)
         curated_engineering_overlay_keys = {
             repr(action)
