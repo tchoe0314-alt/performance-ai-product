@@ -312,7 +312,7 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
                     "meta": {
                         "deliverables": {
                             "requested": ["site_plan", "report"],
-                            "produced": ["site_plan"],
+                            "produced": ["site_plan", "report"],
                             "failed": ["report"],
                         },
                         "convergence_summary": {
@@ -328,6 +328,8 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         )
 
         self.assertFalse(summary["reliability_summary"]["release_ready"])
+        self.assertEqual(summary["ready_deliverables"], ["site_plan"])
+        self.assertEqual(summary["produced_deliverables"], ["site_plan", "report"])
         self.assertEqual(summary["convergence_summary"]["blocked_reasons"], ["failed_deliverable_report"])
         self.assertEqual(summary["reliability_summary"]["primary_attention"], "failed_deliverable_report")
 

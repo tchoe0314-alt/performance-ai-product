@@ -117,7 +117,8 @@ def _deliverable_summary(deliverables: Dict[str, Any]) -> Dict[str, list[str]]:
     requested = [str(item) for item in list(deliverables.get("requested") or []) if str(item)]
     produced = [str(item) for item in list(deliverables.get("produced") or []) if str(item)]
     failed = [str(item) for item in list(deliverables.get("failed") or []) if str(item)]
-    ready_requested = [item for item in requested if item in produced]
+    failed_set = set(failed)
+    ready_requested = [item for item in requested if item in produced and item not in failed_set]
     extra_produced = [item for item in produced if item not in requested]
     return {
         "requested": requested,
