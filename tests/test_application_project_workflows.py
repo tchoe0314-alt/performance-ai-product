@@ -282,6 +282,47 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertEqual(summary["latest_artifact_release_status"], "blocked")
         self.assertFalse(summary["latest_artifact_release_ready"])
 
+    def test_merge_project_metadata_blocks_stale_ready_latest_artifact_with_blockers(self):
+        merged = merge_project_metadata(
+            {},
+            run_summary={
+                "run_id": "run_ready",
+                "created_at": 123.0,
+                "source": "unit_test",
+                "convergence_summary": {
+                    "converged": True,
+                    "blocked_exports": [],
+                    "blocked_reasons": [],
+                },
+                "reliability_summary": {
+                    "operational_state": "ready",
+                    "primary_attention": "",
+                    "blocked_export_count": 0,
+                    "unresolved_conflict_count": 0,
+                    "failed_deliverable_count": 0,
+                    "release_ready": True,
+                },
+            },
+            artifact_summary={
+                "artifact_id": "artifact_stale_ready",
+                "kind": "report",
+                "release_status": "ready",
+                "release_ready": True,
+                "release_blockers": ["construction_package_release_not_marked_ready"],
+            },
+        )
+        summary = merged["workflow"]["summary"]
+        self.assertFalse(summary["latest_release_ready"])
+        self.assertFalse(summary["latest_artifact_release_ready"])
+        self.assertEqual(
+            summary["latest_artifact_release_blockers"],
+            ["construction_package_release_not_marked_ready"],
+        )
+        self.assertEqual(
+            summary["latest_release_blockers"],
+            ["construction_package_release_not_marked_ready"],
+        )
+
     def test_operational_summary_exposes_project_release_blockers(self):
         store = FakeProjectStore(
             {

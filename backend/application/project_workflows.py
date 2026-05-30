@@ -126,6 +126,11 @@ def _build_workflow_summary(
         latest_convergence=latest_convergence,
         latest_artifact=latest_artifact,
     )
+    latest_artifact_blockers = list(latest_artifact.get("release_blockers") or [])
+    latest_artifact_status = str(latest_artifact.get("release_status") or "")
+    latest_artifact_release_ready = bool(latest_artifact.get("release_ready")) and not latest_artifact_blockers
+    if latest_artifact_status.lower() == "blocked":
+        latest_artifact_release_ready = False
     latest_release_ready = bool(latest_reliability.get("release_ready")) and not latest_blockers
     return {
         "run_count": len(runs),
@@ -144,9 +149,9 @@ def _build_workflow_summary(
         "latest_artifact_id": str(latest_artifact.get("artifact_id") or ""),
         "latest_artifact_kind": str(latest_artifact.get("kind") or ""),
         "latest_artifact_created_at": latest_artifact.get("created_at"),
-        "latest_artifact_release_status": str(latest_artifact.get("release_status") or ""),
-        "latest_artifact_release_ready": bool(latest_artifact.get("release_ready")),
-        "latest_artifact_release_blockers": list(latest_artifact.get("release_blockers") or []),
+        "latest_artifact_release_status": latest_artifact_status,
+        "latest_artifact_release_ready": latest_artifact_release_ready,
+        "latest_artifact_release_blockers": latest_artifact_blockers,
         "latest_artifact_model_reference": dict(latest_artifact.get("canonical_model_reference") or {}),
     }
 
