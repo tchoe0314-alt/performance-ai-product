@@ -646,10 +646,55 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
             )
         self.assertEqual(summary["release_status"], "blocked")
         self.assertFalse(summary["release_ready"])
-        self.assertEqual(summary["release_blockers"], ["construction_package_blocked", "dxf_export_blocked"])
+        self.assertEqual(
+            summary["release_blockers"],
+            [
+                "construction_package_blocked",
+                "dxf_export_blocked",
+                "construction_readiness_missing",
+                "construction_package_release_not_marked_ready",
+            ],
+        )
         self.assertEqual(summary["canonical_model_reference"]["canonical_model_id"], "model-1")
         self.assertEqual(summary["canonical_model_reference"]["canonical_model_hash"], "hash-1")
         self.assertEqual(summary["construction_package_id"], "pkg-1")
+
+    def test_artifact_summary_blocks_stale_final_meta_release_ready_with_package_blockers(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "plan.json"
+            path.write_text("x")
+            summary = artifact_summary(
+                path=path,
+                artifact_kind="report",
+                project_id="p1",
+                result_data={
+                    "final_plan": {
+                        "project_name": "Stale Ready Artifact",
+                        "meta": {
+                            "release_ready": True,
+                            "construction_readiness": {"ready": True, "status": "construction_ready"},
+                            "construction_package_manifest": {
+                                "release_allowed": False,
+                                "construction_package_artifact_status": {
+                                    "package_present": True,
+                                    "missing": [],
+                                    "anonymous": [],
+                                    "stale": [],
+                                    "model_reference_present": True,
+                                    "model_matches_expected": True,
+                                    "release_ready_flag": None,
+                                    "untraced": [],
+                                    "mismatched": [],
+                                },
+                            },
+                        },
+                    },
+                },
+            )
+
+        self.assertFalse(summary["release_ready"])
+        self.assertIn("construction_package_blocked", summary["release_blockers"])
+        self.assertIn("construction_package_release_not_marked_ready", summary["release_blockers"])
 
 
 if __name__ == "__main__":

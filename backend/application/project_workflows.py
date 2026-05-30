@@ -5,7 +5,12 @@ from typing import Any, Callable, Dict, Optional, Protocol
 
 from fastapi import HTTPException
 
-from backend.application.design_workflows import new_workflow_id, now_ts
+from backend.application.design_workflows import (
+    construction_release_blockers_from_meta,
+    final_plan_requires_construction_release,
+    new_workflow_id,
+    now_ts,
+)
 from backend.application.protocols import ArtifactServiceProtocol
 from backend.application.job_workflows import JobQueueProtocol
 
@@ -282,6 +287,12 @@ def artifact_summary(
     blocked_reasons = [str(item) for item in list(release_review.get("blocked_reasons") or []) if str(item)]
     blocked_exports = [str(item) for item in list(release_review.get("blocked_exports") or []) if str(item)]
     release_blockers = list(dict.fromkeys(blocked_reasons + blocked_exports))
+    for blocker in construction_release_blockers_from_meta(
+        final_meta,
+        requires_construction_release=final_plan_requires_construction_release(final_plan),
+    ):
+        if blocker not in release_blockers:
+            release_blockers.append(blocker)
     release_status = str(release_review.get("release_status") or final_meta.get("release_status") or "")
     canonical_model_reference = {
         key: value
@@ -309,7 +320,7 @@ def artifact_summary(
         artifact["release_status"] = release_status
         artifact["release_ready"] = release_status == "ready" and not release_blockers
     elif "release_ready" in final_meta:
-        artifact["release_ready"] = bool(final_meta.get("release_ready"))
+        artifact["release_ready"] = bool(final_meta.get("release_ready")) and not release_blockers
     if release_blockers:
         artifact["release_blockers"] = release_blockers
     if canonical_model_reference:
