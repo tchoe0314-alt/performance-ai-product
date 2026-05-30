@@ -33,12 +33,17 @@ class ReportBuilderTest(unittest.TestCase):
 
         self.assertEqual(report["summary"]["release_status"], "blocked")
         self.assertFalse(report["summary"]["release_ready"])
-        self.assertEqual(report["summary"]["release_blocker_count"], 2)
+        self.assertEqual(report["summary"]["release_blocker_count"], 4)
         self.assertEqual(report["release"]["release_status"], "blocked")
         self.assertFalse(report["release"]["release_ready"])
         self.assertEqual(
             report["release"]["release_blockers"],
-            ["construction_readiness_blocked", "dxf_export_blocked"],
+            [
+                "construction_readiness_blocked",
+                "dxf_export_blocked",
+                "construction_package_blocked",
+                "construction_package_release_not_marked_ready",
+            ],
         )
         self.assertTrue(report["release"]["construction_release_required"])
         self.assertEqual(report["release"]["construction_package_id"], "pkg-1")
@@ -67,6 +72,38 @@ class ReportBuilderTest(unittest.TestCase):
         self.assertEqual(report["release"]["release_status"], "blocked")
         self.assertFalse(report["release"]["release_ready"])
         self.assertEqual(report["summary"]["release_blocker_count"], 1)
+
+    def test_build_report_blocks_stale_ready_with_construction_package_metadata(self):
+        report = report_builder.build_report(
+            final_plan={
+                "project_name": "Construction Report",
+                "actions": [{"task": "polyline", "layer": "LOT"}],
+                "meta": {
+                    "release_status": "ready",
+                    "release_ready": True,
+                    "construction_readiness": {"ready": True, "status": "construction_ready"},
+                    "construction_package_manifest": {
+                        "release_allowed": False,
+                        "construction_package_artifact_status": {
+                            "package_present": True,
+                            "missing": [],
+                            "anonymous": [],
+                            "stale": [],
+                            "model_reference_present": True,
+                            "model_matches_expected": True,
+                            "release_ready_flag": None,
+                            "untraced": [],
+                            "mismatched": [],
+                        },
+                    },
+                },
+            },
+        )
+
+        self.assertEqual(report["release"]["release_status"], "ready")
+        self.assertFalse(report["release"]["release_ready"])
+        self.assertIn("construction_package_blocked", report["release"]["release_blockers"])
+        self.assertIn("construction_package_release_not_marked_ready", report["release"]["release_blockers"])
 
 
 if __name__ == "__main__":

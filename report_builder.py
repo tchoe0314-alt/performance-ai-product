@@ -28,6 +28,11 @@ from dataclasses import dataclass, field
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Sequence
 
+from backend.application.design_workflows import (
+    construction_release_blockers_from_meta,
+    final_plan_requires_construction_release,
+)
+
 
 # =============================================================================
 # DATA MODELS
@@ -276,6 +281,12 @@ def _release_review_block(final_plan: Dict[str, Any], request_metadata: Dict[str
         for item in list(_safe_list(review.get("blocked_reasons")) + _safe_list(review.get("blocked_exports")))
         if _safe_str(item)
     ]
+    for blocker in construction_release_blockers_from_meta(
+        meta,
+        requires_construction_release=final_plan_requires_construction_release(final_plan),
+    ):
+        if blocker not in blockers:
+            blockers.append(blocker)
     release_status = _safe_str(review.get("release_status") or meta.get("release_status"), "unknown")
     release_ready = release_status == "ready" and not blockers
     if "release_ready" in review:
