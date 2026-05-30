@@ -820,8 +820,26 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         if str(name)
     ]
     final_deliverables = dict(final_meta.get("deliverables") or final_plan.get("deliverables") or {})
-    requested_deliverables = list(run_summary.get("requested_deliverables") or final_deliverables.get("requested") or [])
-    produced_deliverables = list(run_summary.get("produced_deliverables") or final_deliverables.get("produced") or [])
+    requested_deliverables = list(
+        dict.fromkeys(
+            [
+                str(item).strip()
+                for item in list(run_summary.get("requested_deliverables") or [])
+                + list(final_deliverables.get("requested") or [])
+                if str(item).strip()
+            ]
+        )
+    )
+    produced_deliverables = list(
+        dict.fromkeys(
+            [
+                str(item).strip()
+                for item in list(run_summary.get("produced_deliverables") or [])
+                + list(final_deliverables.get("produced") or [])
+                if str(item).strip()
+            ]
+        )
+    )
     failed_deliverables = list(
         dict.fromkeys(
             [
