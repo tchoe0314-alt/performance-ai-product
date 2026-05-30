@@ -908,6 +908,11 @@ def build_orchestrate_job_runner(
             ):
                 if construction_blocker not in blocked_reasons:
                     blocked_reasons.append(construction_blocker)
+            final_release_review = safe_dict(final_meta.get("release_review"))
+            if final_release_review.get("release_ready") is False and "release_review_not_ready" not in blocked_reasons:
+                blocked_reasons.append("release_review_not_ready")
+            if final_meta.get("release_ready") is False and "final_plan_release_blocked" not in blocked_reasons:
+                blocked_reasons.append("final_plan_release_blocked")
             convergence["blocked_reasons"] = list(blocked_reasons)
             reliability["release_ready"] = not bool(blocked_reasons or blocked_exports)
             reliability["blocked_export_count"] = len(blocked_exports)
@@ -967,6 +972,7 @@ def build_orchestrate_job_runner(
                 "phase_checkpoints": dict(run_summary.get("phase_checkpoints") or {}),
                 "release_status": release_status,
                 "release_note": release_note,
+                "release_ready": bool(reliability.get("release_ready")),
             }
             final_meta["blockers"] = blocked_reasons or blocked_exports
             final_meta["export_ready"] = not bool(blocked_reasons or blocked_exports)

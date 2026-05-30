@@ -1012,6 +1012,94 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
             dict(result["metadata"]["runtime_phase_checkpoint"]).get("yielded")
         )
 
+    def test_build_orchestrate_job_runner_does_not_promote_explicit_not_ready_final_plan(self):
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Demo",
+                "description": "",
+                "session_id": None,
+                "tags": [],
+                "project_input": {},
+                "latest_result": {},
+                "session_state": {},
+                "metadata": {},
+            }
+        )
+
+        def run_orchestration(payload, progress_callback=None):
+            return {
+                "success": True,
+                "final_plan": {
+                    "project_name": "Demo",
+                    "actions": [{"task": "rectangle", "layer": "BUILDING"}],
+                    "meta": {"release_ready": False},
+                },
+            }
+
+        runner = build_orchestrate_job_runner(
+            project_store=store,
+            update_job_progress=lambda *_args, **_kwargs: None,
+            run_orchestration=run_orchestration,
+            build_run_summary=lambda result, **kwargs: {
+                "run_id": "run_explicit_block",
+                "job_id": kwargs.get("job_id"),
+                "source": "queued_job",
+                "convergence_summary": {
+                    "assumption_summary": {"count": 0, "categories": [], "examples": []},
+                    "unresolved_issue_categories": [],
+                    "blocked_reasons": [],
+                    "blocked_exports": [],
+                },
+                "reliability_summary": {
+                    "operational_state": "ready",
+                    "release_ready": True,
+                },
+                "phase_checkpoints": {
+                    "layout": {"status": "complete", "ready": True},
+                    "grading": {"status": "complete", "ready": True},
+                    "drainage_storm": {"status": "complete", "ready": True},
+                    "utilities": {"status": "complete", "ready": True},
+                    "coordination_validation": {"status": "complete", "ready": True},
+                    "combined_view": {
+                        "status": "ready",
+                        "ready": True,
+                        "completed_phase_count": 5,
+                        "total_phase_count": 5,
+                    },
+                },
+                "requested_deliverables": [],
+                "produced_deliverables": [],
+                "ready_deliverables": [],
+                "extra_deliverables": [],
+                "failed_deliverables": [],
+            },
+            merge_project_metadata=lambda metadata, **kwargs: {"workflow": {"runs": [kwargs["run_summary"]]}},
+            final_plan_from_result=lambda result, **kwargs: dict(result.get("final_plan") or {}),
+        )
+
+        result = runner(
+            {
+                "job_id": "job_explicit_block",
+                "job_type": "orchestrate",
+                "user_id": "u1",
+                "project_id": "p1",
+                "payload": {"prompt_text": "run"},
+            }
+        )
+
+        final_plan = result["final_plan"]
+        release_review = final_plan["meta"]["release_review"]
+        self.assertFalse(final_plan["release_ready"])
+        self.assertEqual(final_plan["release_status"], "blocked")
+        self.assertIn("final_plan_release_blocked", final_plan["blockers"])
+        self.assertFalse(release_review["release_ready"])
+        self.assertIn("final_plan_release_blocked", release_review["blocked_reasons"])
+        saved_plan = store.saved_payload["latest_result"]["final_plan"]
+        self.assertFalse(saved_plan["release_ready"])
+        self.assertIn("final_plan_release_blocked", saved_plan["blockers"])
+
     def test_build_orchestrate_job_runner_persists_phase_checkpoints_mid_run(self):
         store = FakeProjectStore(
             {
