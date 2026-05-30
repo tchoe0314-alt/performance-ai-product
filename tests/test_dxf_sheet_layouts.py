@@ -236,6 +236,21 @@ class DxfSheetLayoutsTest(unittest.TestCase):
             self.assertIn("FG_CONTOUR", modelspace_layers)
             self.assertNotEqual(_modelspace_engineering_profile(plan), "complete")
 
+    def test_modelspace_does_not_use_completed_scene_when_release_status_is_blocked_without_reasons(self) -> None:
+        plan = _sheet_test_plan()
+        meta = plan.setdefault("meta", {})
+        meta["release_status"] = "blocked"
+        meta["phase_checkpoints"] = {
+            "grading": {"ready": True},
+            "drainage_storm": {"ready": True},
+            "utilities": {"ready": True},
+            "coordination_validation": {"ready": True},
+            "combined_view": {"completed_phase_count": 5, "total_phase_count": 5},
+        }
+        meta["engineering_status"] = "complete"
+
+        self.assertEqual(_modelspace_engineering_profile(plan), "utilities")
+
     def test_modelspace_does_not_use_completed_scene_when_deliverables_fail(self) -> None:
         plan = _sheet_test_plan()
         meta = plan.setdefault("meta", {})

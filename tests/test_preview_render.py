@@ -105,6 +105,29 @@ class PreviewRenderTests(unittest.TestCase):
 
         self.assertEqual(profile, "utilities")
 
+    def test_preview_profile_does_not_complete_when_release_status_is_blocked_without_reasons(self):
+        profile = _preview_engineering_profile(
+            {
+                "actions": [],
+                "meta": {
+                    "release_status": "blocked",
+                    "engineering_status": "complete",
+                    "phase_checkpoints": {
+                        "grading": {"ready": True},
+                        "drainage_storm": {"ready": True},
+                        "utilities": {"ready": True},
+                        "coordination_validation": {"ready": True},
+                        "combined_view": {
+                            "completed_phase_count": 5,
+                            "total_phase_count": 5,
+                        },
+                    },
+                },
+            }
+        )
+
+        self.assertEqual(profile, "utilities")
+
     def test_preview_profile_does_not_complete_with_failed_deliverables(self):
         profile = _preview_engineering_profile(
             {

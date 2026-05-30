@@ -1146,6 +1146,12 @@ def _release_truth_blockers(plan: Dict[str, Any], meta: Dict[str, Any], release_
             requires_construction_release=final_plan_requires_construction_release(plan),
         )
     )
+    release_status = safe_text(release_review.get("release_status") or meta.get("release_status"), "").lower()
+    release_ready_value = release_review.get("release_ready") if "release_ready" in release_review else meta.get("release_ready")
+    if release_status == "blocked":
+        release_blockers.append("release_status_blocked")
+    if release_ready_value is False:
+        release_blockers.append("final_plan_release_not_ready")
     release_blockers.extend(safe_text(item) for item in safe_list(release_review.get("blocked_reasons")) if safe_text(item))
     release_blockers.extend(safe_text(item) for item in safe_list(release_review.get("blocked_exports")) if safe_text(item))
     deliverables = safe_dict(meta.get("deliverables"))
