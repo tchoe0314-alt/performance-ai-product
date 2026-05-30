@@ -1188,6 +1188,98 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertFalse(saved_plan["export_ready"])
         self.assertIn("failed_deliverable_report", saved_plan["blockers"])
 
+    def test_build_orchestrate_job_runner_preserves_failed_deliverables_from_final_meta(self):
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Demo",
+                "description": "",
+                "session_id": None,
+                "tags": [],
+                "project_input": {},
+                "latest_result": {},
+                "session_state": {},
+                "metadata": {},
+            }
+        )
+
+        def run_orchestration(payload, progress_callback=None):
+            return {
+                "success": True,
+                "final_plan": {
+                    "project_name": "Demo",
+                    "actions": [{"task": "rectangle", "layer": "BUILDING"}],
+                    "meta": {
+                        "release_ready": True,
+                        "release_status": "ready",
+                        "deliverables": {
+                            "requested": ["site_plan", "report"],
+                            "produced": ["site_plan"],
+                            "ready": ["site_plan"],
+                            "failed": ["report"],
+                        },
+                    },
+                },
+            }
+
+        runner = build_orchestrate_job_runner(
+            project_store=store,
+            update_job_progress=lambda *_args, **_kwargs: None,
+            run_orchestration=run_orchestration,
+            build_run_summary=lambda result, **kwargs: {
+                "run_id": "run_meta_failed_deliverable",
+                "job_id": kwargs.get("job_id"),
+                "source": "queued_job",
+                "convergence_summary": {
+                    "assumption_summary": {"count": 0, "categories": [], "examples": []},
+                    "unresolved_issue_categories": [],
+                    "blocked_reasons": [],
+                    "blocked_exports": [],
+                },
+                "reliability_summary": {
+                    "operational_state": "ready",
+                    "release_ready": True,
+                },
+                "phase_checkpoints": {
+                    "layout": {"status": "complete", "ready": True},
+                    "combined_view": {"status": "ready", "ready": True, "completed_phase_count": 1, "total_phase_count": 1},
+                },
+                "requested_deliverables": ["site_plan", "report"],
+                "produced_deliverables": ["site_plan"],
+                "ready_deliverables": ["site_plan"],
+                "extra_deliverables": [],
+                "failed_deliverables": [],
+            },
+            merge_project_metadata=lambda metadata, **kwargs: {"workflow": {"runs": [kwargs["run_summary"]]}},
+            final_plan_from_result=lambda result, **kwargs: dict(result.get("final_plan") or {}),
+        )
+
+        result = runner(
+            {
+                "job_id": "job_meta_failed_deliverable",
+                "job_type": "orchestrate",
+                "user_id": "u1",
+                "project_id": "p1",
+                "payload": {"prompt_text": "run"},
+            }
+        )
+
+        final_plan = result["final_plan"]
+        final_meta = final_plan["meta"]
+        release_review = final_meta["release_review"]
+        self.assertEqual(final_plan["release_status"], "blocked")
+        self.assertFalse(final_plan["release_ready"])
+        self.assertFalse(final_plan["export_ready"])
+        self.assertEqual(final_plan["deliverables"]["failed"], ["report"])
+        self.assertEqual(final_meta["deliverables"]["failed"], ["report"])
+        self.assertEqual(final_meta["run_summary"]["failed_deliverables"], ["report"])
+        self.assertIn("failed_deliverable_report", final_plan["blockers"])
+        self.assertIn("failed_deliverable_report", release_review["blocked_reasons"])
+        saved_plan = store.saved_payload["latest_result"]["final_plan"]
+        self.assertFalse(saved_plan["release_ready"])
+        self.assertEqual(saved_plan["deliverables"]["failed"], ["report"])
+
     def test_build_orchestrate_job_runner_persists_phase_checkpoints_mid_run(self):
         store = FakeProjectStore(
             {

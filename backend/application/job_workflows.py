@@ -913,7 +913,22 @@ def build_orchestrate_job_runner(
                 blocked_reasons.append("release_review_not_ready")
             if final_meta.get("release_ready") is False and "final_plan_release_blocked" not in blocked_reasons:
                 blocked_reasons.append("final_plan_release_blocked")
-            failed_deliverables = [str(item) for item in list(run_summary.get("failed_deliverables") or []) if str(item)]
+            final_deliverables = dict(final_meta.get("deliverables") or final_plan.get("deliverables") or {})
+
+            def _merged_deliverables(run_key: str, final_key: str) -> list[str]:
+                values = list(run_summary.get(run_key) or []) + list(final_deliverables.get(final_key) or [])
+                return list(dict.fromkeys([safe_str(item) for item in values if safe_str(item)]))
+
+            requested_deliverables = _merged_deliverables("requested_deliverables", "requested")
+            produced_deliverables = _merged_deliverables("produced_deliverables", "produced")
+            failed_deliverables = _merged_deliverables("failed_deliverables", "failed")
+            ready_deliverables = _merged_deliverables("ready_deliverables", "ready")
+            extra_deliverables = _merged_deliverables("extra_deliverables", "extra")
+            run_summary["requested_deliverables"] = requested_deliverables
+            run_summary["produced_deliverables"] = produced_deliverables
+            run_summary["failed_deliverables"] = failed_deliverables
+            run_summary["ready_deliverables"] = ready_deliverables
+            run_summary["extra_deliverables"] = extra_deliverables
             failed_deliverable_blockers = [
                 f"failed_deliverable_{safe_str(item).lower().replace(' ', '_')}"
                 for item in failed_deliverables
@@ -989,11 +1004,11 @@ def build_orchestrate_job_runner(
             final_meta["release_ready"] = bool(reliability.get("release_ready"))
             final_meta["release_status"] = release_status
             final_meta["deliverables"] = {
-                "requested": list(run_summary.get("requested_deliverables") or []),
-                "produced": list(run_summary.get("produced_deliverables") or []),
-                "failed": list(run_summary.get("failed_deliverables") or []),
-                "ready": list(run_summary.get("ready_deliverables") or []),
-                "extra": list(run_summary.get("extra_deliverables") or []),
+                "requested": requested_deliverables,
+                "produced": produced_deliverables,
+                "failed": failed_deliverables,
+                "ready": ready_deliverables,
+                "extra": extra_deliverables,
             }
             final_plan["meta"] = final_meta
             final_plan["export_ready"] = not bool(blocked_reasons or blocked_exports or failed_deliverables)
@@ -1001,11 +1016,11 @@ def build_orchestrate_job_runner(
             final_plan["release_status"] = release_status
             final_plan["blockers"] = blocked_reasons or blocked_exports
             final_plan["deliverables"] = {
-                "requested": list(run_summary.get("requested_deliverables") or []),
-                "produced": list(run_summary.get("produced_deliverables") or []),
-                "failed": list(run_summary.get("failed_deliverables") or []),
-                "ready": list(run_summary.get("ready_deliverables") or []),
-                "extra": list(run_summary.get("extra_deliverables") or []),
+                "requested": requested_deliverables,
+                "produced": produced_deliverables,
+                "failed": failed_deliverables,
+                "ready": ready_deliverables,
+                "extra": extra_deliverables,
             }
             enriched["final_plan"] = final_plan
 
