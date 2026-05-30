@@ -303,6 +303,34 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertEqual(summary["convergence_summary"]["blocked_exports"], [])
         self.assertEqual(summary["convergence_summary"]["blocked_reasons"], [])
 
+    def test_build_run_summary_surfaces_failed_deliverables_as_blockers(self):
+        summary = build_run_summary(
+            {
+                "success": True,
+                "final_plan": {
+                    "actions": [{"layer": "LOT"}],
+                    "meta": {
+                        "deliverables": {
+                            "requested": ["site_plan", "report"],
+                            "produced": ["site_plan"],
+                            "failed": ["report"],
+                        },
+                        "convergence_summary": {
+                            "converged": True,
+                            "blocked_exports": [],
+                            "blocked_reasons": [],
+                            "unresolved_conflict_count": 0,
+                        },
+                    },
+                },
+            },
+            source="unit_test",
+        )
+
+        self.assertFalse(summary["reliability_summary"]["release_ready"])
+        self.assertEqual(summary["convergence_summary"]["blocked_reasons"], ["failed_deliverable_report"])
+        self.assertEqual(summary["reliability_summary"]["primary_attention"], "failed_deliverable_report")
+
     def test_build_run_summary_does_not_count_assumed_stage_as_complete(self):
         summary = build_run_summary(
             {

@@ -128,6 +128,16 @@ def _deliverable_summary(deliverables: Dict[str, Any]) -> Dict[str, list[str]]:
     }
 
 
+def _failed_deliverable_blockers(failed_deliverables: list[str]) -> list[str]:
+    return list(
+        dict.fromkeys(
+            f"failed_deliverable_{str(item).strip().lower().replace(' ', '_')}"
+            for item in failed_deliverables
+            if str(item).strip()
+        )
+    )
+
+
 def _build_phase_checkpoints(
     *,
     final_plan: Dict[str, Any],
@@ -536,6 +546,9 @@ def build_run_summary(
         }
         for item in list(manual_validation.get("failures") or [])
     ]
+    for failed_blocker in _failed_deliverable_blockers(failed_deliverables):
+        if failed_blocker not in blocked_reasons:
+            blocked_reasons.append(failed_blocker)
     release_ready = success and converged and unresolved_conflict_count == 0 and not blocked_exports and not blocked_reasons and not failed_deliverables
     retryable = not release_ready and (not success or bool(blocked_exports or blocked_reasons or unresolved_conflict_count or error_count or manual_failures))
     primary_attention = (

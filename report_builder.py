@@ -292,6 +292,11 @@ def _release_review_block(final_plan: Dict[str, Any], request_metadata: Dict[str
         blockers.append("release_review_not_ready")
     if meta.get("release_ready") is False and "final_plan_release_blocked" not in blockers:
         blockers.append("final_plan_release_blocked")
+    deliverables = _safe_dict(meta.get("deliverables"))
+    for failed_deliverable in _safe_list(deliverables.get("failed")):
+        failed_blocker = f"failed_deliverable_{_safe_str(failed_deliverable).lower().replace(' ', '_')}"
+        if failed_blocker.strip() and failed_blocker not in blockers:
+            blockers.append(failed_blocker)
     release_status = _safe_str(review.get("release_status") or meta.get("release_status"), "unknown")
     if release_status.lower() == "blocked" and not blockers:
         blockers.append("release_status_blocked")

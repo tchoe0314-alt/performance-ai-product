@@ -538,7 +538,7 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertEqual(review["trust_score"], 92.0)
         self.assertEqual(review["assumption_count"], 2)
         self.assertEqual(review["autofix_actions"], ["storm_validation_retry"])
-        self.assertEqual(review["blocked_reasons"], [])
+        self.assertEqual(review["blocked_reasons"], ["failed_deliverable_utility_plan"])
         self.assertEqual(review["requested_deliverables"], ["site_plan", "grading_plan", "utility_plan"])
         self.assertEqual(review["produced_deliverables"], ["site_plan", "grading_plan"])
         self.assertEqual(review["failed_deliverables"], ["utility_plan"])

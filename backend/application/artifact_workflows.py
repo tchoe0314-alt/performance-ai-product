@@ -784,6 +784,10 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
     requested_deliverables = list(run_summary.get("requested_deliverables") or [])
     produced_deliverables = list(run_summary.get("produced_deliverables") or [])
     failed_deliverables = list(run_summary.get("failed_deliverables") or [])
+    for failed_deliverable in failed_deliverables:
+        failed_blocker = f"failed_deliverable_{str(failed_deliverable).strip().lower().replace(' ', '_')}"
+        if failed_blocker.strip() and failed_blocker not in blocked_reasons:
+            blocked_reasons.append(failed_blocker)
     ready_deliverables = list(run_summary.get("ready_deliverables") or [])
     extra_deliverables = list(run_summary.get("extra_deliverables") or [])
     release_ready = bool(reliability.get("release_ready")) or bool(final_meta.get("release_ready"))
