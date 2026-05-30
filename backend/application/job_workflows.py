@@ -914,11 +914,13 @@ def build_orchestrate_job_runner(
             if final_meta.get("release_ready") is False and "final_plan_release_blocked" not in blocked_reasons:
                 blocked_reasons.append("final_plan_release_blocked")
             convergence["blocked_reasons"] = list(blocked_reasons)
-            reliability["release_ready"] = not bool(blocked_reasons or blocked_exports)
+            failed_deliverables = [str(item) for item in list(run_summary.get("failed_deliverables") or []) if str(item)]
+            reliability["release_ready"] = not bool(blocked_reasons or blocked_exports or failed_deliverables)
             reliability["blocked_export_count"] = len(blocked_exports)
             if blocked_reasons or blocked_exports:
                 reliability["primary_attention"] = (blocked_reasons[:1] or blocked_exports[:1])[0]
-            failed_deliverables = [str(item) for item in list(run_summary.get("failed_deliverables") or []) if str(item)]
+            elif failed_deliverables:
+                reliability["primary_attention"] = failed_deliverables[0]
             release_status = "blocked" if (blocked_reasons or blocked_exports or failed_deliverables) else ("ready" if bool(reliability.get("release_ready")) else "review")
             release_note = (
                 "Blocked until outstanding export issues are resolved."
@@ -975,7 +977,7 @@ def build_orchestrate_job_runner(
                 "release_ready": bool(reliability.get("release_ready")),
             }
             final_meta["blockers"] = blocked_reasons or blocked_exports
-            final_meta["export_ready"] = not bool(blocked_reasons or blocked_exports)
+            final_meta["export_ready"] = not bool(blocked_reasons or blocked_exports or failed_deliverables)
             final_meta["release_ready"] = bool(reliability.get("release_ready"))
             final_meta["release_status"] = release_status
             final_meta["deliverables"] = {
@@ -986,7 +988,7 @@ def build_orchestrate_job_runner(
                 "extra": list(run_summary.get("extra_deliverables") or []),
             }
             final_plan["meta"] = final_meta
-            final_plan["export_ready"] = not bool(blocked_reasons or blocked_exports)
+            final_plan["export_ready"] = not bool(blocked_reasons or blocked_exports or failed_deliverables)
             final_plan["release_ready"] = bool(reliability.get("release_ready"))
             final_plan["release_status"] = release_status
             final_plan["blockers"] = blocked_reasons or blocked_exports
