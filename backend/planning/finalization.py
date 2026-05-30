@@ -810,6 +810,11 @@ def canonical_area_accounting(parsed: Dict[str, Any], plan: Dict[str, Any]) -> D
 def produced_deliverables(plan: Dict[str, Any]) -> List[str]:
     actions = safe_list(plan.get("actions"))
     meta = safe_dict(plan.get("meta"))
+    failed_set = {
+        lower_text(item)
+        for item in safe_list(safe_dict(meta.get("deliverables")).get("failed"))
+        if lower_text(item)
+    }
     produced: List[str] = []
     layers = {safe_str(action.get("layer"), "").upper() for action in actions if isinstance(action, dict)}
     grading_export_ready = bool(safe_dict(safe_dict(meta.get("grading")).get("export_validation")).get("ready"))
@@ -849,7 +854,11 @@ def produced_deliverables(plan: Dict[str, Any]) -> List[str]:
         produced.extend(["profiles", "road_profile"])
     if safe_list(meta.get("cross_sections")):
         produced.append("cross_sections")
-    return dedupe_keep_order(produced)
+    return [
+        item
+        for item in dedupe_keep_order(produced)
+        if lower_text(item) not in failed_set
+    ]
 
 
 def _estimated_parking_stalls_from_actions(actions: Sequence[Dict[str, Any]]) -> int:
