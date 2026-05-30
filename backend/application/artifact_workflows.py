@@ -726,6 +726,7 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
     stored_run_summary = dict(result_data.get("run_summary") or {})
     if not stored_run_summary:
         stored_run_summary = dict(dict(result_data.get("metadata") or {}).get("run_summary") or {})
+    run_success_explicit = "success" in stored_run_summary or "success" in result_data
     run_summary = stored_run_summary or build_run_summary(result_data, source="preview")
     convergence = dict(run_summary.get("convergence_summary") or {})
     final_meta = dict(final_plan.get("meta") or {})
@@ -799,6 +800,10 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         blocker_name = str(blocker).strip()
         if blocker_name and blocker_name not in blocked_reasons:
             blocked_reasons.append(blocker_name)
+    if run_success_explicit and run_summary.get("success") is False and "planner_run_failed" not in blocked_reasons:
+        blocked_reasons.append("planner_run_failed")
+    if int(run_summary.get("error_count") or 0) > 0 and "planner_errors_present" not in blocked_reasons:
+        blocked_reasons.append("planner_errors_present")
     rerun_stages = dict(rerun_summary.get("stage_counts") or {})
     dominant_rerun_stages = [
         str(name)

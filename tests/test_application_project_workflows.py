@@ -362,6 +362,35 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertFalse(summary["latest_release_ready"])
         self.assertEqual(summary["latest_release_blockers"], ["latest_run_release_not_ready"])
 
+    def test_merge_project_metadata_blocks_stale_ready_run_with_errors(self):
+        merged = merge_project_metadata(
+            {},
+            run_summary={
+                "run_id": "run_error_stale_ready",
+                "created_at": 123.0,
+                "source": "unit_test",
+                "success": True,
+                "error_count": 1,
+                "convergence_summary": {
+                    "converged": True,
+                    "blocked_exports": [],
+                    "blocked_reasons": [],
+                },
+                "reliability_summary": {
+                    "operational_state": "ready",
+                    "primary_attention": "",
+                    "blocked_export_count": 0,
+                    "unresolved_conflict_count": 0,
+                    "failed_deliverable_count": 0,
+                    "manual_failure_count": 0,
+                    "release_ready": True,
+                },
+            },
+        )
+        summary = merged["workflow"]["summary"]
+        self.assertFalse(summary["latest_release_ready"])
+        self.assertEqual(summary["latest_release_blockers"], ["planner_errors_present"])
+
     def test_merge_project_metadata_normalizes_manual_failure_blockers(self):
         merged = merge_project_metadata(
             {},

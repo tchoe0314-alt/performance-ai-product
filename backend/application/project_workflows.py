@@ -243,6 +243,10 @@ def _latest_release_blockers(
         blockers.append("missing_deliverables")
     if int(latest_reliability.get("manual_failure_count") or 0) > 0:
         blockers.append("manual_validation_failures")
+    if latest_run.get("success") is False:
+        blockers.append("planner_run_failed")
+    if int(latest_run.get("error_count") or 0) > 0:
+        blockers.append("planner_errors_present")
     if latest_reliability.get("release_ready") is False:
         blockers.append("latest_run_release_not_ready")
     if latest_run.get("final_plan_release_ready") is False:

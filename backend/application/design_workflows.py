@@ -563,6 +563,10 @@ def build_run_summary(
     converged = bool(convergence.get("converged"))
     warning_count = len(list(result_data.get("warnings") or []))
     error_count = len(list(result_data.get("errors") or []))
+    if not success and "planner_run_failed" not in blocked_reasons:
+        blocked_reasons.append("planner_run_failed")
+    if error_count > 0 and "planner_errors_present" not in blocked_reasons:
+        blocked_reasons.append("planner_errors_present")
     manual_failures = [
         {
             "code": item.get("code"),

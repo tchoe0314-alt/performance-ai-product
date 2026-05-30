@@ -361,6 +361,64 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertIn("missing_deliverable_report", summary["convergence_summary"]["blocked_reasons"])
         self.assertEqual(summary["reliability_summary"]["primary_attention"], "missing_deliverable_report")
 
+    def test_build_run_summary_blocks_planner_errors(self):
+        summary = build_run_summary(
+            {
+                "success": True,
+                "errors": ["Hydraulic solver failed after retries."],
+                "final_plan": {
+                    "actions": [{"layer": "PIPE"}],
+                    "meta": {
+                        "deliverables": {
+                            "requested": ["storm_pipe_plan"],
+                            "produced": ["storm_pipe_plan"],
+                            "failed": [],
+                        },
+                        "convergence_summary": {
+                            "converged": True,
+                            "blocked_exports": [],
+                            "blocked_reasons": [],
+                            "unresolved_conflict_count": 0,
+                        },
+                    },
+                },
+            },
+            source="unit_test",
+        )
+
+        self.assertFalse(summary["reliability_summary"]["release_ready"])
+        self.assertEqual(summary["error_count"], 1)
+        self.assertIn("planner_errors_present", summary["convergence_summary"]["blocked_reasons"])
+        self.assertEqual(summary["reliability_summary"]["primary_attention"], "planner_errors_present")
+
+    def test_build_run_summary_blocks_failed_planner_run(self):
+        summary = build_run_summary(
+            {
+                "success": False,
+                "final_plan": {
+                    "actions": [{"layer": "LOT"}],
+                    "meta": {
+                        "deliverables": {
+                            "requested": ["site_plan"],
+                            "produced": ["site_plan"],
+                            "failed": [],
+                        },
+                        "convergence_summary": {
+                            "converged": True,
+                            "blocked_exports": [],
+                            "blocked_reasons": [],
+                            "unresolved_conflict_count": 0,
+                        },
+                    },
+                },
+            },
+            source="unit_test",
+        )
+
+        self.assertFalse(summary["reliability_summary"]["release_ready"])
+        self.assertIn("planner_run_failed", summary["convergence_summary"]["blocked_reasons"])
+        self.assertEqual(summary["reliability_summary"]["primary_attention"], "planner_run_failed")
+
     def test_build_run_summary_blocks_manual_validation_failures(self):
         summary = build_run_summary(
             {
