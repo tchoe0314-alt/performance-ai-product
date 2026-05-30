@@ -73,6 +73,26 @@ class ReportBuilderTest(unittest.TestCase):
         self.assertFalse(report["release"]["release_ready"])
         self.assertEqual(report["summary"]["release_blocker_count"], 1)
 
+    def test_build_report_explains_explicit_release_review_not_ready(self):
+        report = report_builder.build_report(
+            final_plan={
+                "project_name": "Construction Report",
+                "actions": [{"task": "polyline", "layer": "LOT"}],
+                "meta": {
+                    "release_ready": True,
+                    "release_review": {
+                        "release_status": "ready",
+                        "release_ready": False,
+                    },
+                },
+            },
+        )
+
+        self.assertEqual(report["release"]["release_status"], "ready")
+        self.assertFalse(report["release"]["release_ready"])
+        self.assertIn("release_review_not_ready", report["release"]["release_blockers"])
+        self.assertEqual(report["summary"]["release_blocker_count"], 1)
+
     def test_build_report_blocks_stale_ready_with_construction_package_metadata(self):
         report = report_builder.build_report(
             final_plan={
