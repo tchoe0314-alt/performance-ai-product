@@ -135,6 +135,26 @@ class EngineReadinessTests(unittest.TestCase):
         self.assertEqual(reactive["status"], "concept_ready_needs_production_depth")
         self.assertIn("stale_outputs", {item["field"] for item in reactive["production_blockers"]})
 
+    def test_release_blocked_reactive_report_blocks_reactive_engine_readiness(self) -> None:
+        readiness = evaluate_engine_readiness(
+            {
+                "meta": {
+                    **_complete_meta(),
+                    "stage_results": {"grading": {"completed": True}},
+                    "reactive_update_report": {
+                        "export_blocked": False,
+                        "post_rerun_stale_outputs": [],
+                        "post_rerun_production_ready": False,
+                        "post_rerun_release_blockers": ["manual_validation_manual_storm_hydraulic_invalid"],
+                    },
+                }
+            }
+        )
+
+        reactive = readiness["engines"]["reactive_model"]
+        self.assertEqual(reactive["status"], "concept_ready_needs_production_depth")
+        self.assertIn("post_rerun_release_blockers", {item["field"] for item in reactive["production_blockers"]})
+
     def test_structure_engine_is_not_production_ready_without_evidence(self) -> None:
         readiness = evaluate_engine_readiness({"meta": _complete_meta()})
 

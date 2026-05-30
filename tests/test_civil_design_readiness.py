@@ -686,6 +686,22 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertFalse(readiness["ready"])
         self.assertIn(("reactive_model", "reactive_update_model_trace"), blockers)
 
+    def test_construction_readiness_blocks_post_rerun_release_blockers(self) -> None:
+        meta = _production_ready_meta()
+        meta["reactive_update_report"] = {
+            "export_blocked": False,
+            "post_rerun_stale_outputs": [],
+            "post_rerun_production_ready": False,
+            "post_rerun_release_blockers": ["manual_validation_manual_storm_hydraulic_invalid"],
+            "canonical_model_id": "MODEL-FINAL-1",
+        }
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("reactive_model", "post_rerun_release_blockers"), blockers)
+
     def test_construction_readiness_requires_accepted_coordination_conflict_signoff_and_trace(self) -> None:
         meta = _production_ready_meta()
         meta["coordination"]["accepted_conflicts"] = [{"id": "UC-1", "status": "accepted", "resolved": False}]

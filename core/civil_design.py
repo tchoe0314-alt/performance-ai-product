@@ -2058,6 +2058,15 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                 "Complete dependency-aware reruns and regenerate exports from the final canonical model.",
             )
         )
+    elif reactive.get("post_rerun_production_ready") is False or _safe_list(reactive.get("post_rerun_release_blockers")):
+        blockers.append(
+            _construction_gap(
+                "reactive_model",
+                "post_rerun_release_blockers",
+                "Construction release cannot proceed while post-rerun release blockers remain.",
+                "Resolve the reactive release blockers and rerun dependency-aware finalization.",
+            )
+        )
     elif expected_model_refs and _model_references(reactive).isdisjoint(expected_model_refs):
         blockers.append(
             _construction_gap(

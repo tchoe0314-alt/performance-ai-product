@@ -348,6 +348,15 @@ def _explicit_blockers_for_engine(engine_id: str, meta: Dict[str, Any]) -> List[
                     "severity": "blocker",
                 }
             )
+        if reactive and (reactive.get("post_rerun_production_ready") is False or _safe_list(reactive.get("post_rerun_release_blockers"))):
+            blockers.append(
+                {
+                    "area": "reactive_model",
+                    "field": "post_rerun_release_blockers",
+                    "message": "Reactive readiness is blocked because the post-rerun release review still has blockers.",
+                    "severity": "blocker",
+                }
+            )
     elif engine_id == "structure":
         structures = _safe_dict(meta.get("structures") or meta.get("structure_summary"))
         conflicts = _safe_list(meta.get("structure_conflicts")) or _safe_list(structures.get("structure_conflicts"))
