@@ -903,7 +903,7 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
                     "requested_deliverables": ["site_plan", "report"],
                     "produced_deliverables": ["site_plan"],
                     "failed_deliverables": [],
-                    "ready_deliverables": ["site_plan"],
+                    "ready_deliverables": ["site_plan", "report"],
                     "extra_deliverables": [],
                 },
                 "final_plan": {
@@ -974,6 +974,7 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         review = response["summary"]["review"]
         self.assertEqual(review["release_status"], "blocked")
         self.assertFalse(review["release_ready"])
+        self.assertEqual(review["ready_deliverables"], ["site_plan"])
         self.assertEqual(review["missing_deliverables"], ["report"])
         self.assertIn("missing_deliverable_report", review["blocked_reasons"])
 

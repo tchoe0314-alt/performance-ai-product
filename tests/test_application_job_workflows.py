@@ -1150,7 +1150,7 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
                 },
                 "requested_deliverables": ["site_plan", "report"],
                 "produced_deliverables": ["site_plan"],
-                "ready_deliverables": ["site_plan"],
+                "ready_deliverables": ["site_plan", "report"],
                 "extra_deliverables": [],
                 "failed_deliverables": ["report"],
             },
@@ -1180,13 +1180,16 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertIn("failed_deliverable_report", final_plan["blockers"])
         self.assertIn("failed_deliverable_report", final_meta["blockers"])
         self.assertIn("failed_deliverable_report", release_review["blocked_reasons"])
+        self.assertEqual(final_plan["deliverables"]["ready"], ["site_plan"])
         self.assertEqual(final_plan["deliverables"]["failed"], ["report"])
+        self.assertEqual(final_meta["deliverables"]["ready"], ["site_plan"])
         self.assertEqual(final_meta["deliverables"]["failed"], ["report"])
         self.assertEqual(release_review["reliability_summary"]["primary_attention"], "failed_deliverable_report")
         saved_plan = store.saved_payload["latest_result"]["final_plan"]
         self.assertFalse(saved_plan["release_ready"])
         self.assertFalse(saved_plan["export_ready"])
         self.assertIn("failed_deliverable_report", saved_plan["blockers"])
+        self.assertEqual(saved_plan["deliverables"]["ready"], ["site_plan"])
 
     def test_build_orchestrate_job_runner_blocks_export_ready_when_requested_deliverable_is_missing(self):
         store = FakeProjectStore(
@@ -1238,7 +1241,7 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
                 },
                 "requested_deliverables": ["site_plan", "report"],
                 "produced_deliverables": ["site_plan"],
-                "ready_deliverables": ["site_plan"],
+                "ready_deliverables": ["site_plan", "report"],
                 "extra_deliverables": [],
                 "failed_deliverables": [],
             },
@@ -1264,11 +1267,14 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertFalse(final_plan["export_ready"])
         self.assertIn("missing_deliverable_report", final_plan["blockers"])
         self.assertIn("missing_deliverable_report", release_review["blocked_reasons"])
+        self.assertEqual(final_plan["deliverables"]["ready"], ["site_plan"])
         self.assertEqual(final_plan["deliverables"]["missing"], ["report"])
+        self.assertEqual(final_meta["deliverables"]["ready"], ["site_plan"])
         self.assertEqual(final_meta["deliverables"]["missing"], ["report"])
         saved_plan = store.saved_payload["latest_result"]["final_plan"]
         self.assertFalse(saved_plan["release_ready"])
         self.assertIn("missing_deliverable_report", saved_plan["blockers"])
+        self.assertEqual(saved_plan["deliverables"]["ready"], ["site_plan"])
 
     def test_build_orchestrate_job_runner_preserves_failed_deliverables_from_final_meta(self):
         store = FakeProjectStore(

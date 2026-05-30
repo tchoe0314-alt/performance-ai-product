@@ -889,7 +889,16 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         blocker = f"manual_validation_{failure_key.lower().replace(' ', '_')}"
         if blocker not in blocked_reasons:
             blocked_reasons.append(blocker)
-    ready_deliverables = list(run_summary.get("ready_deliverables") or [])
+    requested_set = {str(item).strip() for item in requested_deliverables if str(item).strip()}
+    missing_set = {str(item).strip() for item in missing_deliverables if str(item).strip()}
+    ready_deliverables = [
+        str(item).strip()
+        for item in produced_deliverables
+        if str(item).strip()
+        and str(item).strip() not in failed_set
+        and str(item).strip() not in missing_set
+        and (not requested_set or str(item).strip() in requested_set)
+    ]
     extra_deliverables = list(run_summary.get("extra_deliverables") or [])
     release_ready = bool(reliability.get("release_ready")) or bool(final_meta.get("release_ready"))
     if blocked_exports or blocked_reasons or failed_deliverables or missing_deliverables or manual_failures:
