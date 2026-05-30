@@ -158,6 +158,48 @@ class Phase1Slice6DExportMetadataTest(unittest.TestCase):
         self.assertIn("final_plan_release_not_ready", audit["blocked_reasons"])
         self.assertEqual(audit["release_readiness"]["release_status"], "blocked")
 
+    def test_export_audit_blocks_failed_deliverables_from_final_meta(self) -> None:
+        plan = _export_plan()
+        plan["meta"]["release_status"] = "ready"
+        plan["meta"]["release_ready"] = True
+        plan["meta"]["deliverables"]["failed"] = ["report"]
+
+        metadata = finalize_export_metadata(plan)
+        audit = metadata["export_audit"]
+
+        self.assertFalse(audit["success"])
+        self.assertFalse(audit["production_export_ready"])
+        self.assertTrue(audit["export_blocked"])
+        self.assertIn("failed_deliverable_report", audit["blocked_reasons"])
+        self.assertIn("failed_deliverable_report", audit["release_readiness"]["release_blockers"])
+
+    def test_export_audit_blocks_manual_validation_failures_from_final_meta(self) -> None:
+        plan = _export_plan()
+        plan["meta"]["release_status"] = "ready"
+        plan["meta"]["release_ready"] = True
+        plan["meta"]["manual_validation"] = {
+            "failures": [
+                {
+                    "code": "MANUAL_STORM_HYDRAULIC_INVALID",
+                    "message": "Manual storm pipe hydraulic validation failed.",
+                    "system": "storm",
+                    "rule": "hydraulic_capacity",
+                }
+            ]
+        }
+
+        metadata = finalize_export_metadata(plan)
+        audit = metadata["export_audit"]
+
+        self.assertFalse(audit["success"])
+        self.assertFalse(audit["production_export_ready"])
+        self.assertTrue(audit["export_blocked"])
+        self.assertIn("manual_validation_manual_storm_hydraulic_invalid", audit["blocked_reasons"])
+        self.assertIn(
+            "manual_validation_manual_storm_hydraulic_invalid",
+            audit["release_readiness"]["release_blockers"],
+        )
+
     def test_export_audit_blocks_required_construction_release_without_readiness(self) -> None:
         plan = _export_plan()
         plan["meta"]["construction_release_required"] = True

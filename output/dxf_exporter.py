@@ -3736,6 +3736,23 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
         requires_construction_release=construction_required,
     ):
         release_blockers.append(construction_blocker)
+    deliverables = safe_dict(meta.get("deliverables"))
+    for failed_deliverable in safe_list(deliverables.get("failed")):
+        failed_blocker = f"failed_deliverable_{safe_text(failed_deliverable).lower().replace(' ', '_')}"
+        if failed_blocker.strip():
+            release_blockers.append(failed_blocker)
+    manual_validation = safe_dict(meta.get("manual_validation"))
+    for failure in [item for item in safe_list(manual_validation.get("failures")) if isinstance(item, dict)]:
+        failure_key = safe_text(
+            failure.get("code")
+            or failure.get("rule")
+            or failure.get("system")
+            or failure.get("message"),
+            "manual_validation_failure",
+        )
+        if not failure_key:
+            failure_key = "manual_validation_failure"
+        release_blockers.append(f"manual_validation_{failure_key.lower().replace(' ', '_')}")
     release_blockers = list(dict.fromkeys(item for item in release_blockers if item))
     release_output_blocking = bool(release_blockers)
     warnings: List[str] = []
