@@ -120,6 +120,35 @@ class GoldenRunnerTests(unittest.TestCase):
         self.assertIn("construction_release_allowed_with_incomplete_package", result["hard_failures"])
         self.assertIn("construction_release_allowed_with_unverified_package_model", result["hard_failures"])
 
+    def test_run_scenario_fails_when_direct_construction_export_is_claimed_without_release_evidence(self) -> None:
+        def false_direct_release(payload):
+            plan = _fake_plan(payload)
+            plan["construction_export_allowed"] = True
+            plan["meta"]["release_state"] = "released_for_construction"
+            return plan
+
+        result = run_golden_scenario("small_commercial_pad", build_plan_fn=false_direct_release)
+
+        self.assertFalse(result["success"])
+        self.assertTrue(result["readiness_summary"]["construction_release_allowed"])
+        self.assertIn("construction_release_allowed_without_readiness", result["hard_failures"])
+        self.assertIn("construction_release_allowed_without_civil_production_ready", result["hard_failures"])
+        self.assertIn("construction_release_allowed_with_incomplete_package", result["hard_failures"])
+        self.assertIn("construction_release_allowed_with_unverified_package_model", result["hard_failures"])
+
+    def test_run_scenario_reads_release_state_from_deliverable_package_alias(self) -> None:
+        def false_alias_release(payload):
+            plan = _fake_plan(payload)
+            plan["meta"]["construction_readiness"] = {"ready": False, "status": "not_construction_ready"}
+            plan["meta"]["construction_deliverable_package"] = {"release_allowed": True}
+            return plan
+
+        result = run_golden_scenario("small_commercial_pad", build_plan_fn=false_alias_release)
+
+        self.assertFalse(result["success"])
+        self.assertTrue(result["readiness_summary"]["construction_release_allowed"])
+        self.assertIn("construction_release_allowed_without_readiness", result["hard_failures"])
+
     def test_run_scenario_fails_when_construction_release_package_is_incomplete(self) -> None:
         def incomplete_release_package(payload):
             plan = _fake_plan(payload)

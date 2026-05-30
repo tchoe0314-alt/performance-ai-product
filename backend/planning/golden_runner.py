@@ -16,12 +16,50 @@ def _default_build_plan(payload: Dict[str, Any]) -> Dict[str, Any]:
     return planner.build_plan(payload)
 
 
+def _construction_package_record(meta: Dict[str, Any]) -> Dict[str, Any]:
+    package = safe_dict(
+        meta.get("construction_package_manifest")
+        or meta.get("construction_package")
+        or meta.get("construction_deliverable_package")
+        or meta.get("deliverable_package")
+    )
+    if not package:
+        packages = safe_list(meta.get("deliverable_packages"))
+        if packages:
+            package = safe_dict(packages[-1])
+    return package
+
+
+def _construction_release_claimed(plan: Dict[str, Any], meta: Dict[str, Any], package: Dict[str, Any]) -> bool:
+    release_state = safe_str(meta.get("release_state") or plan.get("release_state")).lower()
+    construction_release_state = safe_str(
+        meta.get("construction_release_state") or plan.get("construction_release_state")
+    ).lower()
+    package_claims = [
+        safe_dict(meta.get("construction_package_manifest")),
+        safe_dict(meta.get("construction_package")),
+        safe_dict(meta.get("construction_deliverable_package")),
+        safe_dict(meta.get("deliverable_package")),
+        package,
+    ]
+    package_claims.extend(safe_dict(item) for item in safe_list(meta.get("deliverable_packages")))
+    return bool(
+        any(item.get("release_allowed") is True or item.get("construction_export_allowed") is True for item in package_claims)
+        or meta.get("construction_export_allowed")
+        or plan.get("construction_export_allowed")
+        or meta.get("construction_release_allowed")
+        or plan.get("construction_release_allowed")
+        or release_state in {"released_for_construction", "issued_for_construction"}
+        or construction_release_state in {"released_for_construction", "issued_for_construction"}
+    )
+
+
 def _readiness_summary(plan: Dict[str, Any]) -> Dict[str, Any]:
     meta = safe_dict(plan.get("meta"))
     civil = safe_dict(meta.get("civil_design_readiness"))
     engine = safe_dict(meta.get("engine_readiness"))
     construction = safe_dict(meta.get("construction_readiness"))
-    construction_package = safe_dict(meta.get("construction_package_manifest"))
+    construction_package = _construction_package_record(meta)
     artifact_status = safe_dict(construction_package.get("construction_package_artifact_status"))
     professional_release = safe_dict(construction_package.get("professional_package_release_status"))
     return {
@@ -29,7 +67,7 @@ def _readiness_summary(plan: Dict[str, Any]) -> Dict[str, Any]:
         "civil_success": bool(civil.get("success")),
         "civil_production_ready": bool(civil.get("production_ready")),
         "construction_ready": bool(construction.get("ready")),
-        "construction_release_allowed": bool(construction_package.get("release_allowed")),
+        "construction_release_allowed": _construction_release_claimed(plan, meta, construction_package),
         "construction_package_complete_for_release": bool(artifact_status.get("complete_for_release")),
         "construction_package_model_matches_expected": bool(artifact_status.get("model_matches_expected")),
         "construction_package_release_ready_flag": artifact_status.get("release_ready_flag") is True,
