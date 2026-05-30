@@ -637,7 +637,7 @@ def build_construction_package_manifest(plan_or_meta: Dict[str, Any]) -> Dict[st
     ]
     blocked_sections = [section["section_id"] for section in sections if section["status"] == "blocked"]
     review_sections = [section["section_id"] for section in sections if section["status"] == "needs_review"]
-    ready = bool(readiness.get("ready")) and not blocked_sections
+    ready = bool(readiness.get("ready")) and not blocked_sections and not review_sections
     release_state = "released_for_construction" if ready else "blocked_from_construction_release"
     return {
         "success": True,
