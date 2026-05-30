@@ -813,6 +813,30 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertFalse(summary["release_ready"])
         self.assertIn("release_status_blocked", summary["release_blockers"])
 
+    def test_artifact_summary_blocks_failed_deliverables_from_final_meta(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "plan.json"
+            path.write_text("x")
+            summary = artifact_summary(
+                path=path,
+                artifact_kind="report",
+                project_id="p1",
+                result_data={
+                    "final_plan": {
+                        "project_name": "Failed Deliverable Artifact",
+                        "meta": {
+                            "release_ready": True,
+                            "release_status": "ready",
+                            "deliverables": {"failed": ["report"]},
+                        },
+                    },
+                },
+            )
+
+        self.assertEqual(summary["release_status"], "ready")
+        self.assertFalse(summary["release_ready"])
+        self.assertIn("failed_deliverable_report", summary["release_blockers"])
+
 
 if __name__ == "__main__":
     unittest.main()
