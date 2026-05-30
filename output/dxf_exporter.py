@@ -1106,6 +1106,10 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
         total_phases = safe_num(combined_view.get("total_phase_count"), 0.0)
         engineering_status = safe_text(meta.get("engineering_status"), "").lower()
         release_status = safe_text(meta.get("release_status"), "").lower()
+        construction_blockers = construction_release_blockers_from_meta(
+            meta,
+            requires_construction_release=final_plan_requires_construction_release(plan),
+        )
         runtime_checkpoint = safe_dict(meta.get("runtime_phase_checkpoint"))
         checkpoint_stage = safe_text(runtime_checkpoint.get("stage_name"), "").lower()
         grading_complete = bool(safe_dict(phase_checkpoints.get("grading")).get("ready"))
@@ -1113,10 +1117,13 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
         utilities_complete = bool(safe_dict(phase_checkpoints.get("utilities")).get("ready"))
         coordination_complete = bool(safe_dict(phase_checkpoints.get("coordination_validation")).get("ready"))
         if (
-            (total_phases > 0 and completed_phases >= total_phases)
-            or release_status == "ready"
-            or engineering_status in {"complete", "ready", "release_ready"}
-            or coordination_complete
+            not construction_blockers
+            and (
+                (total_phases > 0 and completed_phases >= total_phases)
+                or release_status == "ready"
+                or engineering_status in {"complete", "ready", "release_ready"}
+                or coordination_complete
+            )
         ):
             engineering_profile = "complete"
         elif utilities_complete or checkpoint_stage in {"sanitary", "utility_network"}:

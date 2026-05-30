@@ -11,6 +11,7 @@ from output.preview import (
     _text_style,
     _preview_figure_size,
     _preview_draw_priority,
+    _preview_engineering_profile,
     preview_label,
 )
 
@@ -50,6 +51,35 @@ class PreviewRenderTests(unittest.TestCase):
 
         self.assertLess(_preview_draw_priority(pavement), _preview_draw_priority(drain))
         self.assertLess(_preview_draw_priority(drain), _preview_draw_priority(label))
+
+    def test_preview_profile_does_not_complete_with_blocked_construction_release(self):
+        profile = _preview_engineering_profile(
+            {
+                "actions": [],
+                "meta": {
+                    "release_status": "ready",
+                    "engineering_status": "complete",
+                    "phase_checkpoints": {
+                        "grading": {"ready": True},
+                        "combined_view": {
+                            "completed_phase_count": 5,
+                            "total_phase_count": 5,
+                        },
+                    },
+                    "construction_readiness": {"ready": True, "status": "construction_ready"},
+                    "construction_package_manifest": {
+                        "release_allowed": True,
+                        "construction_package_artifact_status": {
+                            "complete_for_release": True,
+                            "model_matches_expected": True,
+                            "release_ready_flag": None,
+                        },
+                    },
+                },
+            }
+        )
+
+        self.assertEqual(profile, "grading")
 
     def test_preview_stage_diagnostics_do_not_treat_assumed_as_complete(self):
         annotations = build_preview_annotations(

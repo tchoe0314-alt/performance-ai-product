@@ -11,6 +11,10 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle, Circle, Arc
 
+from backend.planning.release_gates import (
+    construction_release_blockers_from_meta,
+    final_plan_requires_construction_release,
+)
 from core.utils import (
     clean_label,
     safe_center,
@@ -2776,6 +2780,10 @@ def _preview_engineering_profile(plan):
     total_phases = safe_num(combined_view.get("total_phase_count"))
     engineering_status = safe_text(meta.get("engineering_status"), "").lower()
     release_status = safe_text(meta.get("release_status"), "").lower()
+    construction_blockers = construction_release_blockers_from_meta(
+        meta,
+        requires_construction_release=final_plan_requires_construction_release(plan),
+    )
     runtime_checkpoint = meta.get("runtime_phase_checkpoint") or {}
     checkpoint_stage = safe_text(runtime_checkpoint.get("stage_name"), "").lower()
     grading_complete = bool((phase_checkpoints.get("grading") or {}).get("ready"))
@@ -2784,10 +2792,13 @@ def _preview_engineering_profile(plan):
     coordination_complete = bool((phase_checkpoints.get("coordination_validation") or {}).get("ready"))
     engineering_profile = "layout"
     if (
-        (total_phases > 0 and completed_phases >= total_phases)
-        or release_status == "ready"
-        or engineering_status in {"complete", "ready", "release_ready"}
-        or coordination_complete
+        not construction_blockers
+        and (
+            (total_phases > 0 and completed_phases >= total_phases)
+            or release_status == "ready"
+            or engineering_status in {"complete", "ready", "release_ready"}
+            or coordination_complete
+        )
     ):
         engineering_profile = "complete"
     elif utilities_complete or checkpoint_stage in {"sanitary", "utility_network"}:
