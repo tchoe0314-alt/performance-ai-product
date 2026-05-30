@@ -167,6 +167,25 @@ def _latest_release_blockers(
 ) -> list[str]:
     blockers: list[str] = []
 
+    def _manual_failure_blocker(value: Any) -> str:
+        if isinstance(value, dict):
+            text = str(
+                value.get("code")
+                or value.get("rule")
+                or value.get("system")
+                or value.get("reason")
+                or value.get("message")
+                or "manual_validation_failure"
+            ).strip()
+        else:
+            text = str(value).strip()
+        if not text:
+            text = "manual_validation_failure"
+        normalized = text.lower().replace(" ", "_")
+        if normalized.startswith("manual_validation_"):
+            return normalized
+        return f"manual_validation_{normalized}"
+
     def _extend(values: Any) -> None:
         for value in list(values or []):
             if isinstance(value, dict):
@@ -179,7 +198,10 @@ def _latest_release_blockers(
     _extend(latest_convergence.get("blocked_reasons"))
     _extend(latest_convergence.get("blocked_exports"))
     _extend(latest_run.get("failed_deliverables"))
-    _extend(latest_run.get("manual_failures"))
+    for manual_failure in list(latest_run.get("manual_failures") or []):
+        blocker = _manual_failure_blocker(manual_failure)
+        if blocker and blocker not in blockers:
+            blockers.append(blocker)
     artifact = dict(latest_artifact or {})
     _extend(artifact.get("release_blockers"))
 
@@ -308,6 +330,23 @@ def artifact_summary(
         if not failed_name:
             continue
         blocker = f"failed_deliverable_{failed_name.lower().replace(' ', '_')}"
+        if blocker not in release_blockers:
+            release_blockers.append(blocker)
+    manual_validation = dict(final_meta.get("manual_validation") or {})
+    for failure in list(manual_validation.get("failures") or []):
+        if not isinstance(failure, dict):
+            continue
+        failure_name = str(
+            failure.get("code")
+            or failure.get("rule")
+            or failure.get("system")
+            or failure.get("reason")
+            or failure.get("message")
+            or "manual_validation_failure"
+        ).strip()
+        if not failure_name:
+            failure_name = "manual_validation_failure"
+        blocker = f"manual_validation_{failure_name.lower().replace(' ', '_')}"
         if blocker not in release_blockers:
             release_blockers.append(blocker)
     if release_review.get("release_ready") is False and "release_review_not_ready" not in release_blockers:

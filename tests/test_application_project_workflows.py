@@ -271,6 +271,43 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertFalse(summary["latest_release_ready"])
         self.assertEqual(summary["latest_release_blockers"], ["latest_run_release_not_ready"])
 
+    def test_merge_project_metadata_normalizes_manual_failure_blockers(self):
+        merged = merge_project_metadata(
+            {},
+            run_summary={
+                "run_id": "run_manual_blocked",
+                "created_at": 123.0,
+                "source": "unit_test",
+                "convergence_summary": {
+                    "converged": True,
+                    "blocked_exports": [],
+                    "blocked_reasons": [],
+                },
+                "manual_failures": [
+                    {
+                        "code": "MANUAL_STORM_HYDRAULIC_INVALID",
+                        "message": "Storm hydraulic review failed.",
+                    }
+                ],
+                "reliability_summary": {
+                    "operational_state": "ready",
+                    "primary_attention": "",
+                    "blocked_export_count": 0,
+                    "unresolved_conflict_count": 0,
+                    "failed_deliverable_count": 0,
+                    "manual_failure_count": 1,
+                    "release_ready": True,
+                },
+            },
+        )
+        summary = merged["workflow"]["summary"]
+        self.assertFalse(summary["latest_release_ready"])
+        self.assertIn(
+            "manual_validation_manual_storm_hydraulic_invalid",
+            summary["latest_release_blockers"],
+        )
+        self.assertIn("manual_validation_failures", summary["latest_release_blockers"])
+
     def test_merge_project_metadata_blocks_release_when_latest_artifact_is_blocked(self):
         merged = merge_project_metadata(
             {},
@@ -836,6 +873,40 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertEqual(summary["release_status"], "ready")
         self.assertFalse(summary["release_ready"])
         self.assertIn("failed_deliverable_report", summary["release_blockers"])
+
+    def test_artifact_summary_blocks_manual_validation_failures_from_final_meta(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "plan.json"
+            path.write_text("x")
+            summary = artifact_summary(
+                path=path,
+                artifact_kind="report",
+                project_id="p1",
+                result_data={
+                    "final_plan": {
+                        "project_name": "Manual Failure Artifact",
+                        "meta": {
+                            "release_ready": True,
+                            "release_status": "ready",
+                            "manual_validation": {
+                                "failures": [
+                                    {
+                                        "code": "MANUAL_STORM_HYDRAULIC_INVALID",
+                                        "message": "Storm hydraulic review failed.",
+                                    }
+                                ]
+                            },
+                        },
+                    },
+                },
+            )
+
+        self.assertEqual(summary["release_status"], "ready")
+        self.assertFalse(summary["release_ready"])
+        self.assertIn(
+            "manual_validation_manual_storm_hydraulic_invalid",
+            summary["release_blockers"],
+        )
 
 
 if __name__ == "__main__":
