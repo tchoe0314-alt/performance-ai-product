@@ -138,6 +138,18 @@ def _failed_deliverable_blockers(failed_deliverables: list[str]) -> list[str]:
     )
 
 
+def _reactive_release_blockers(meta: Dict[str, Any]) -> list[str]:
+    reactive_report = dict(meta.get("reactive_update_report") or {})
+    blockers = [
+        str(item).strip()
+        for item in list(reactive_report.get("post_rerun_release_blockers") or [])
+        if str(item or "").strip()
+    ]
+    if reactive_report.get("post_rerun_production_ready") is False:
+        blockers.insert(0, "reactive_post_rerun_not_ready")
+    return list(dict.fromkeys(blockers))
+
+
 def _build_phase_checkpoints(
     *,
     final_plan: Dict[str, Any],
@@ -526,6 +538,9 @@ def build_run_summary(
     ):
         if construction_blocker not in blocked_reasons:
             blocked_reasons.append(construction_blocker)
+    for reactive_blocker in _reactive_release_blockers(plan_meta):
+        if reactive_blocker not in blocked_reasons:
+            blocked_reasons.append(reactive_blocker)
     unresolved_conflict_count = int(convergence.get("unresolved_conflict_count") or 0)
     failed_deliverables = list(deliverables.get("failed") or [])
     normalized_assumptions = _normalized_assumption_summary(dict(convergence.get("assumption_summary") or {}))
@@ -702,6 +717,16 @@ def final_plan_from_result(
                     detail=(
                         "Export is blocked because construction release evidence is incomplete: "
                         + ", ".join(construction_blockers)
+                    ),
+                )
+        if enforce_export_guards:
+            reactive_blockers = _reactive_release_blockers(meta)
+            if reactive_blockers:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "Export is blocked because reactive downstream validation is incomplete: "
+                        + ", ".join(reactive_blockers)
                     ),
                 )
         produced = {str(item).lower() for item in list(deliverables.get("produced") or [])}

@@ -372,6 +372,55 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
             "manual_validation_manual_storm_hydraulic_invalid",
         )
 
+    def test_build_run_summary_blocks_reactive_post_rerun_release_failures(self):
+        summary = build_run_summary(
+            {
+                "success": True,
+                "final_plan": {
+                    "actions": [{"layer": "PIPE"}],
+                    "meta": {
+                        "deliverables": {
+                            "requested": ["storm_pipe_plan"],
+                            "produced": ["storm_pipe_plan"],
+                            "failed": [],
+                        },
+                        "stage_completeness": {
+                            "statuses": {
+                                "layout": "complete",
+                                "drainage": "complete",
+                                "storm_pipes": "complete",
+                                "qa": "complete",
+                            },
+                            "stages": [
+                                {"stage_name": "layout", "completeness": "complete"},
+                                {"stage_name": "drainage", "completeness": "complete"},
+                                {"stage_name": "storm_pipes", "completeness": "complete"},
+                                {"stage_name": "qa", "completeness": "complete"},
+                            ],
+                        },
+                        "convergence_summary": {
+                            "converged": True,
+                            "blocked_exports": [],
+                            "blocked_reasons": [],
+                            "unresolved_conflict_count": 0,
+                        },
+                        "reactive_update_report": {
+                            "post_rerun_production_ready": False,
+                            "post_rerun_release_blockers": ["manual_validation_manual_storm_hydraulic_invalid"],
+                        },
+                    },
+                },
+            },
+            source="unit_test",
+        )
+
+        reasons = summary["convergence_summary"]["blocked_reasons"]
+        self.assertFalse(summary["reliability_summary"]["release_ready"])
+        self.assertEqual(summary["reliability_summary"]["operational_state"], "retryable")
+        self.assertIn("reactive_post_rerun_not_ready", reasons)
+        self.assertIn("manual_validation_manual_storm_hydraulic_invalid", reasons)
+        self.assertEqual(summary["phase_checkpoints"]["combined_view"]["status"], "blocked")
+
     def test_build_run_summary_does_not_count_assumed_stage_as_complete(self):
         summary = build_run_summary(
             {
@@ -649,6 +698,31 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
             )
         self.assertEqual(ctx.exception.status_code, 409)
         self.assertIn("grading_fallback_used", str(ctx.exception.detail))
+
+    def test_final_plan_from_result_blocks_reactive_post_rerun_release_failures(self):
+        with self.assertRaises(HTTPException) as ctx:
+            final_plan_from_result(
+                {
+                    "final_plan": {
+                        "actions": [{"task": "polyline", "layer": "PIPE"}],
+                        "meta": {
+                            "deliverables": {"requested": ["storm_pipe_plan"], "produced": ["storm_pipe_plan"]},
+                            "reactive_update_report": {
+                                "post_rerun_production_ready": False,
+                                "post_rerun_release_blockers": ["manual_validation_manual_storm_hydraulic_invalid"],
+                            },
+                            "storm_pipes": {
+                                "graph_validation": {"valid": True},
+                                "hydraulic_validation": {"valid": True},
+                                "missing_data_segments": [],
+                            },
+                        },
+                    }
+                }
+            )
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn("reactive downstream validation", str(ctx.exception.detail))
+        self.assertIn("manual_validation_manual_storm_hydraulic_invalid", str(ctx.exception.detail))
 
     def test_final_plan_from_result_accepts_grading_layers_when_reason_list_is_empty(self):
         plan = final_plan_from_result(
