@@ -947,6 +947,16 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
                 "release_status_blocked",
             ],
         )
+        detail_by_code = {
+            detail["code"]: detail
+            for detail in summary["release_blocker_details"]
+        }
+        self.assertEqual(set(detail_by_code), set(summary["release_blockers"]))
+        self.assertEqual(
+            detail_by_code["construction_package_blocked"]["missing_data"],
+            ["release_allowed construction package status"],
+        )
+        self.assertTrue(detail_by_code["dxf_export_blocked"]["why_it_matters"])
         self.assertEqual(summary["canonical_model_reference"]["canonical_model_id"], "model-1")
         self.assertEqual(summary["canonical_model_reference"]["canonical_model_hash"], "hash-1")
         self.assertEqual(summary["construction_package_id"], "pkg-1")

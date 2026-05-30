@@ -9,7 +9,7 @@ from backend.application.design_workflows import (
     new_workflow_id,
     now_ts,
 )
-from backend.planning.common import construction_package_record
+from backend.planning.common import blocker_explanations, construction_package_record
 from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
     final_plan_requires_construction_release,
@@ -149,12 +149,14 @@ def _build_workflow_summary(
         "latest_converged": bool(latest_convergence.get("converged")),
         "latest_release_ready": latest_release_ready,
         "latest_release_blockers": latest_blockers,
+        "latest_release_blocker_details": blocker_explanations(latest_blockers),
         "latest_artifact_id": str(latest_artifact.get("artifact_id") or ""),
         "latest_artifact_kind": str(latest_artifact.get("kind") or ""),
         "latest_artifact_created_at": latest_artifact.get("created_at"),
         "latest_artifact_release_status": latest_artifact_status,
         "latest_artifact_release_ready": latest_artifact_release_ready,
         "latest_artifact_release_blockers": latest_artifact_blockers,
+        "latest_artifact_release_blocker_details": blocker_explanations(latest_artifact_blockers),
         "latest_artifact_model_reference": dict(latest_artifact.get("canonical_model_reference") or {}),
     }
 
@@ -481,6 +483,7 @@ def artifact_summary(
         artifact["release_ready"] = bool(final_meta.get("release_ready")) and not release_blockers
     if release_blockers:
         artifact["release_blockers"] = release_blockers
+        artifact["release_blocker_details"] = blocker_explanations(release_blockers)
     if canonical_model_reference:
         artifact["canonical_model_reference"] = canonical_model_reference
     package_id = (

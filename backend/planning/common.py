@@ -55,6 +55,358 @@ def construction_package_record(meta: Dict[str, Any]) -> Dict[str, Any]:
     return {}
 
 
+def _humanize_blocker_code(value: Any) -> str:
+    text = safe_str(value, "unknown blocker")
+    return text.replace("_", " ").replace("-", " ").strip() or "unknown blocker"
+
+
+def _blocker_detail(
+    code: str,
+    *,
+    what_failed: str,
+    why_it_matters: str,
+    missing_data: Iterable[str] = (),
+    next_action: str,
+    engineer_review_required: bool = True,
+) -> Dict[str, Any]:
+    return {
+        "code": code,
+        "what_failed": what_failed,
+        "why_it_matters": why_it_matters,
+        "missing_data": [safe_str(item) for item in missing_data if safe_str(item)],
+        "next_action": next_action,
+        "engineer_review_required": bool(engineer_review_required),
+    }
+
+
+_STATIC_BLOCKER_EXPLANATIONS: Dict[str, Dict[str, Any]] = {
+    "release_status_blocked": {
+        "what_failed": "The release review explicitly marked this result as blocked.",
+        "why_it_matters": "A blocked release status must win over any optimistic ready flag so Civora cannot publish a false-ready design.",
+        "missing_data": ["release review approval or resolved blocking issue list"],
+        "next_action": "Resolve the listed release blockers, rerun validation, and only then mark the release ready.",
+        "engineer_review_required": True,
+    },
+    "release_review_not_ready": {
+        "what_failed": "The release review did not approve the engineering result.",
+        "why_it_matters": "The package may contain usable intermediate outputs, but it is not approved for export or construction-level reliance.",
+        "missing_data": ["approved release review"],
+        "next_action": "Run or complete the release review after all discipline blockers are resolved.",
+        "engineer_review_required": True,
+    },
+    "final_plan_release_blocked": {
+        "what_failed": "The final plan metadata says release readiness is false.",
+        "why_it_matters": "Final plan metadata is part of the canonical truth used by exports, reports, and project summaries.",
+        "missing_data": ["final plan release-ready flag with supporting evidence"],
+        "next_action": "Regenerate the final plan after resolving blockers so release metadata matches the validated state.",
+        "engineer_review_required": True,
+    },
+    "construction_readiness_missing": {
+        "what_failed": "Construction readiness evidence is missing.",
+        "why_it_matters": "Construction release cannot be trusted without a recorded readiness assessment across engineering systems.",
+        "missing_data": ["construction_readiness assessment"],
+        "next_action": "Run construction readiness validation and attach the result to the canonical model metadata.",
+        "engineer_review_required": True,
+    },
+    "construction_readiness_blocked": {
+        "what_failed": "Construction readiness validation found unresolved blockers.",
+        "why_it_matters": "The design may still be useful for planning, but it is not safe to treat as construction-ready.",
+        "missing_data": ["passing construction readiness blockers list"],
+        "next_action": "Resolve the readiness blockers, rerun the affected engines, and rerun construction validation.",
+        "engineer_review_required": True,
+    },
+    "construction_package_blocked": {
+        "what_failed": "The construction package is not allowed for release.",
+        "why_it_matters": "Reports, DXF, sheets, quantities, and review records must agree before Civora can claim a usable release package.",
+        "missing_data": ["release_allowed construction package status"],
+        "next_action": "Complete package assembly, artifact trace checks, and professional package review.",
+        "engineer_review_required": True,
+    },
+    "construction_package_manifest_missing": {
+        "what_failed": "The construction package manifest is missing.",
+        "why_it_matters": "Without a manifest, deliverables cannot be tied back to a single canonical model and release audit.",
+        "missing_data": ["construction package manifest"],
+        "next_action": "Build the construction package manifest from the validated final model.",
+        "engineer_review_required": True,
+    },
+    "construction_package_artifact_status_missing": {
+        "what_failed": "Construction package artifact status is missing.",
+        "why_it_matters": "Civora cannot prove which deliverables are present, stale, anonymous, or traceable.",
+        "missing_data": ["construction_package_artifact_status"],
+        "next_action": "Audit package artifacts and attach artifact status before release.",
+        "engineer_review_required": True,
+    },
+    "construction_package_missing_artifacts": {
+        "what_failed": "Required construction package artifacts are missing.",
+        "why_it_matters": "A partial package can hide missing sheets, reports, profiles, quantities, or CAD output.",
+        "missing_data": ["complete required construction artifacts"],
+        "next_action": "Generate missing artifacts and rerun the construction package audit.",
+        "engineer_review_required": True,
+    },
+    "construction_package_anonymous_artifacts": {
+        "what_failed": "One or more package artifacts lack identity metadata.",
+        "why_it_matters": "Anonymous deliverables cannot be safely traced, revised, or reviewed against the canonical model.",
+        "missing_data": ["artifact IDs and canonical source references"],
+        "next_action": "Rebuild artifacts with stable IDs and canonical model references.",
+        "engineer_review_required": True,
+    },
+    "construction_package_stale_artifacts": {
+        "what_failed": "One or more package artifacts are stale relative to the current model.",
+        "why_it_matters": "Stale exports can show older geometry, quantities, or QA than the current canonical state.",
+        "missing_data": ["fresh artifacts generated from the current model hash"],
+        "next_action": "Regenerate stale artifacts after all downstream systems rerun.",
+        "engineer_review_required": True,
+    },
+    "construction_package_model_reference_missing": {
+        "what_failed": "The construction package lacks a canonical model reference.",
+        "why_it_matters": "Deliverables must be tied to a known model ID/hash to prevent accidental release of mismatched outputs.",
+        "missing_data": ["canonical model ID and model hash"],
+        "next_action": "Attach canonical model references to the package and artifacts, then rerun package validation.",
+        "engineer_review_required": True,
+    },
+    "construction_package_model_mismatch": {
+        "what_failed": "The construction package model reference does not match the expected canonical model.",
+        "why_it_matters": "A model mismatch means the package may represent the wrong design revision.",
+        "missing_data": ["matching canonical model ID/hash across package and final model"],
+        "next_action": "Regenerate the package from the current canonical model.",
+        "engineer_review_required": True,
+    },
+    "construction_package_release_not_marked_ready": {
+        "what_failed": "The package artifact audit is not marked release-ready.",
+        "why_it_matters": "Every required artifact must pass package release gates before Civora can export a release package.",
+        "missing_data": ["release_ready_flag true"],
+        "next_action": "Resolve artifact status issues and rerun package audit until release_ready_flag is true.",
+        "engineer_review_required": True,
+    },
+    "construction_package_production_not_marked_ready": {
+        "what_failed": "The package artifact audit is not marked production-ready.",
+        "why_it_matters": "Production readiness is stricter than preview readiness and protects against concept-only deliverables.",
+        "missing_data": ["production_ready_flag true"],
+        "next_action": "Replace concept/default outputs with production-traceable artifacts, then rerun the package audit.",
+        "engineer_review_required": True,
+    },
+    "construction_package_incomplete_release": {
+        "what_failed": "The construction package is incomplete for release.",
+        "why_it_matters": "A release package must include all required deliverables and audits as one consistent package.",
+        "missing_data": ["complete_for_release true"],
+        "next_action": "Complete missing package sections and rerun construction package validation.",
+        "engineer_review_required": True,
+    },
+    "construction_package_untraced_artifacts": {
+        "what_failed": "One or more package artifacts are not traced to canonical IDs.",
+        "why_it_matters": "Untraced artifacts cannot be proven to come from the validated engineering model.",
+        "missing_data": ["canonical source IDs for every artifact"],
+        "next_action": "Re-export untraced artifacts with canonical source mapping.",
+        "engineer_review_required": True,
+    },
+    "construction_package_mismatched_artifacts": {
+        "what_failed": "One or more package artifacts do not match the expected model reference.",
+        "why_it_matters": "Mismatched artifacts can mix revisions and create incorrect drawings, quantities, or reports.",
+        "missing_data": ["artifact model hash matching package model hash"],
+        "next_action": "Regenerate mismatched artifacts from the current package model.",
+        "engineer_review_required": True,
+    },
+    "construction_package_cost_untraced": {
+        "what_failed": "Cost output is not fully traced to canonical quantities.",
+        "why_it_matters": "Cost estimates are not reliable unless priced items tie back to model quantities and source IDs.",
+        "missing_data": ["cost item source IDs"],
+        "next_action": "Regenerate cost estimates from traceable quantity takeoff rows.",
+        "engineer_review_required": True,
+    },
+    "construction_package_cost_mismatched": {
+        "what_failed": "Cost output does not match the package model reference.",
+        "why_it_matters": "A cost estimate from another revision can mislead pricing and construction decisions.",
+        "missing_data": ["cost model hash matching package model hash"],
+        "next_action": "Reprice the current package quantities and rerun cost trace validation.",
+        "engineer_review_required": True,
+    },
+    "construction_professional_release_missing": {
+        "what_failed": "Professional package release review is missing.",
+        "why_it_matters": "Construction release requires a review record, not only generated artifacts.",
+        "missing_data": ["professional package release status"],
+        "next_action": "Attach professional package review status after engineer review.",
+        "engineer_review_required": True,
+    },
+    "construction_professional_release_invalid": {
+        "what_failed": "Professional package release review is invalid.",
+        "why_it_matters": "The package cannot be treated as released if the professional review failed or is untrusted.",
+        "missing_data": ["valid professional release status"],
+        "next_action": "Resolve professional review failures and rerun package release validation.",
+        "engineer_review_required": True,
+    },
+    "construction_professional_release_untraced": {
+        "what_failed": "Professional package release review is not traced to the reviewed package/model.",
+        "why_it_matters": "A review record must prove it applies to the exact package and model being released.",
+        "missing_data": ["reviewed package ID and matching model/package trace"],
+        "next_action": "Attach reviewed_package_id and matching model references to the professional review.",
+        "engineer_review_required": True,
+    },
+    "reactive_post_rerun_not_ready": {
+        "what_failed": "Reactive downstream validation is not ready after rerun.",
+        "why_it_matters": "A change may have left grading, drainage, utilities, quantities, or exports stale.",
+        "missing_data": ["passing post-rerun production readiness"],
+        "next_action": "Rerun dirty downstream systems and block exports until post-rerun validation passes.",
+        "engineer_review_required": True,
+    },
+    "planner_run_failed": {
+        "what_failed": "The planner run failed.",
+        "why_it_matters": "Failed orchestration can leave incomplete model state or missing discipline outputs.",
+        "missing_data": ["successful planner execution"],
+        "next_action": "Fix planner/runtime errors, rerun the workflow, and verify canonical outputs were produced.",
+        "engineer_review_required": False,
+    },
+    "planner_errors_present": {
+        "what_failed": "Planner errors were recorded during the run.",
+        "why_it_matters": "Errors may mean some systems skipped, partially ran, or produced untrusted outputs.",
+        "missing_data": ["zero planner errors"],
+        "next_action": "Review planner errors, fix the failing stage, and rerun validation.",
+        "engineer_review_required": False,
+    },
+    "report_errors_present": {
+        "what_failed": "Report assembly recorded errors.",
+        "why_it_matters": "A report with assembly errors may omit key QA, quantity, or release evidence.",
+        "missing_data": ["error-free report build"],
+        "next_action": "Fix report generation errors and rebuild the report from the current model.",
+        "engineer_review_required": False,
+    },
+    "blocked_exports": {
+        "what_failed": "One or more exports are blocked.",
+        "why_it_matters": "Blocked exports indicate the deliverable would not truthfully represent the validated model.",
+        "missing_data": ["passing export audit"],
+        "next_action": "Resolve export blockers and rerun export validation before download or release.",
+        "engineer_review_required": True,
+    },
+    "unresolved_conflicts": {
+        "what_failed": "Unresolved engineering conflicts remain.",
+        "why_it_matters": "Unresolved conflicts can represent physical clashes, invalid slopes, missing cover, or coordination failures.",
+        "missing_data": ["resolved coordination conflicts"],
+        "next_action": "Run conflict resolution or manually revise the design, then rerun coordination QA.",
+        "engineer_review_required": True,
+    },
+    "failed_deliverables": {
+        "what_failed": "One or more deliverables failed.",
+        "why_it_matters": "The package cannot be considered complete if requested deliverables failed generation.",
+        "missing_data": ["successful requested deliverables"],
+        "next_action": "Regenerate failed deliverables and rerun package validation.",
+        "engineer_review_required": False,
+    },
+    "missing_deliverables": {
+        "what_failed": "One or more requested deliverables are missing.",
+        "why_it_matters": "Missing deliverables can hide incomplete profiles, reports, sheets, CAD, or quantities.",
+        "missing_data": ["all requested deliverables produced"],
+        "next_action": "Generate missing deliverables and rerun the release audit.",
+        "engineer_review_required": False,
+    },
+    "manual_validation_failures": {
+        "what_failed": "Manual validation gates failed.",
+        "why_it_matters": "Manual validation failures represent checks Civora cannot safely auto-clear.",
+        "missing_data": ["passing manual validation gates"],
+        "next_action": "Review the manual validation failures, revise the model, and rerun the validation gates.",
+        "engineer_review_required": True,
+    },
+}
+
+
+def blocker_explanation(code: Any) -> Dict[str, Any]:
+    """Return a stable, user-facing explanation for a release/readiness blocker."""
+
+    blocker_code = safe_str(code, "unknown_blocker").lower().replace(" ", "_")
+    static = _STATIC_BLOCKER_EXPLANATIONS.get(blocker_code)
+    if static:
+        return _blocker_detail(blocker_code, **static)
+
+    if blocker_code.startswith("failed_deliverable_"):
+        deliverable = _humanize_blocker_code(blocker_code.removeprefix("failed_deliverable_"))
+        return _blocker_detail(
+            blocker_code,
+            what_failed=f"The requested {deliverable} deliverable failed to generate.",
+            why_it_matters="Failed deliverables cannot be included in a truthful release package.",
+            missing_data=[f"successful {deliverable} deliverable"],
+            next_action=f"Fix the {deliverable} generation path and regenerate the deliverable.",
+            engineer_review_required=False,
+        )
+
+    if blocker_code.startswith("missing_deliverable_"):
+        deliverable = _humanize_blocker_code(blocker_code.removeprefix("missing_deliverable_"))
+        return _blocker_detail(
+            blocker_code,
+            what_failed=f"The requested {deliverable} deliverable is missing.",
+            why_it_matters="The release package is incomplete until every requested deliverable is produced or explicitly removed from scope.",
+            missing_data=[f"{deliverable} deliverable"],
+            next_action=f"Generate the {deliverable} deliverable or remove it from the requested release scope.",
+            engineer_review_required=False,
+        )
+
+    if blocker_code.startswith("manual_validation_"):
+        check = _humanize_blocker_code(blocker_code.removeprefix("manual_validation_"))
+        return _blocker_detail(
+            blocker_code,
+            what_failed=f"Manual validation failed for {check}.",
+            why_it_matters="Manual validation failures are explicit engineering review gates and cannot be auto-cleared by optimistic metadata.",
+            missing_data=[f"passing manual validation for {check}"],
+            next_action="Review the failed manual gate, correct the model or assumptions, and rerun validation.",
+            engineer_review_required=True,
+        )
+
+    if blocker_code.startswith("construction_package_"):
+        package_issue = _humanize_blocker_code(blocker_code.removeprefix("construction_package_"))
+        return _blocker_detail(
+            blocker_code,
+            what_failed=f"Construction package validation failed: {package_issue}.",
+            why_it_matters="Construction package gates prove that deliverables, model references, quantities, and release flags all match.",
+            missing_data=[f"resolved construction package {package_issue}"],
+            next_action="Fix the construction package audit issue and rebuild the package from the current canonical model.",
+            engineer_review_required=True,
+        )
+
+    if blocker_code.startswith("construction_professional_release_"):
+        release_issue = _humanize_blocker_code(blocker_code.removeprefix("construction_professional_release_"))
+        return _blocker_detail(
+            blocker_code,
+            what_failed=f"Professional release validation failed: {release_issue}.",
+            why_it_matters="Professional release records must be valid and tied to the exact package before construction claims are allowed.",
+            missing_data=[f"valid professional release {release_issue} evidence"],
+            next_action="Correct the professional release record and rerun release validation.",
+            engineer_review_required=True,
+        )
+
+    if blocker_code.startswith("latest_"):
+        issue = _humanize_blocker_code(blocker_code.removeprefix("latest_"))
+        return _blocker_detail(
+            blocker_code,
+            what_failed=f"The latest workflow state is blocked: {issue}.",
+            why_it_matters="Project summaries use the latest run/artifact state to decide whether the workspace is safe to rely on.",
+            missing_data=[f"resolved latest {issue} state"],
+            next_action="Resolve the latest run or artifact blocker and save a fresh validated result.",
+            engineer_review_required=True,
+        )
+
+    issue = _humanize_blocker_code(blocker_code)
+    return _blocker_detail(
+        blocker_code,
+        what_failed=f"Readiness is blocked by {issue}.",
+        why_it_matters="Unknown blockers are preserved rather than hidden so Civora does not silently claim readiness.",
+        missing_data=[f"resolved {issue} evidence"],
+        next_action="Inspect the source blocker, resolve the underlying issue, and rerun validation.",
+        engineer_review_required=True,
+    )
+
+
+def blocker_explanations(codes: Iterable[Any]) -> List[Dict[str, Any]]:
+    """Return de-duplicated explanations for blocker codes in first-seen order."""
+
+    details: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for code in codes:
+        detail = blocker_explanation(code)
+        detail_code = safe_str(detail.get("code"))
+        if not detail_code or detail_code in seen:
+            continue
+        seen.add(detail_code)
+        details.append(detail)
+    return details
+
+
 _CANONICAL_STAGE_KEYS: Dict[str, tuple[str, str]] = {
     "grading": ("grading_summary", "grading"),
     "drainage": ("drainage_canonical", "drainage"),

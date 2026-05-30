@@ -329,6 +329,14 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertFalse(summary["reliability_summary"]["release_ready"])
         self.assertEqual(summary["reliability_summary"]["operational_state"], "retryable")
         self.assertIn("release_status_blocked", summary["convergence_summary"]["blocked_reasons"])
+        self.assertEqual(
+            summary["convergence_summary"]["blocked_reason_details"][0]["code"],
+            "release_status_blocked",
+        )
+        self.assertEqual(
+            summary["reliability_summary"]["primary_attention_detail"]["code"],
+            "release_status_blocked",
+        )
         self.assertEqual(summary["phase_checkpoints"]["combined_view"]["status"], "blocked")
 
     def test_build_run_summary_blocks_explicit_release_review_not_ready(self):

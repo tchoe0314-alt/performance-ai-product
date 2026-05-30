@@ -47,6 +47,18 @@ class ReportBuilderTest(unittest.TestCase):
                 "release_status_blocked",
             ],
         )
+        detail_by_code = {
+            detail["code"]: detail
+            for detail in report["release"]["release_blocker_details"]
+        }
+        self.assertEqual(set(detail_by_code), set(report["release"]["release_blockers"]))
+        self.assertEqual(
+            detail_by_code["construction_package_blocked"]["what_failed"],
+            "The construction package is not allowed for release.",
+        )
+        self.assertTrue(detail_by_code["release_status_blocked"]["why_it_matters"])
+        self.assertTrue(detail_by_code["dxf_export_blocked"]["next_action"])
+        self.assertTrue(detail_by_code["construction_readiness_blocked"]["engineer_review_required"])
         self.assertTrue(report["release"]["construction_release_required"])
         self.assertEqual(report["release"]["construction_package_id"], "pkg-1")
         self.assertEqual(report["release"]["canonical_model_reference"]["canonical_model_hash"], "hash-1")

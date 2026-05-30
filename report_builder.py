@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Sequence
 
-from backend.planning.common import construction_package_record
+from backend.planning.common import blocker_explanations, construction_package_record
 from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
     final_plan_requires_construction_release,
@@ -403,6 +403,7 @@ def _release_review_block(
         "blocked_reasons": list(dict.fromkeys(_safe_str(item) for item in _safe_list(review.get("blocked_reasons")) if _safe_str(item))),
         "blocked_exports": list(dict.fromkeys(_safe_str(item) for item in _safe_list(review.get("blocked_exports")) if _safe_str(item))),
         "release_blockers": list(dict.fromkeys(blockers)),
+        "release_blocker_details": blocker_explanations(blockers),
         "construction_release_required": construction_release_required,
         "construction_readiness": deepcopy(_safe_dict(meta.get("construction_readiness"))),
         "construction_package_id": package_id,

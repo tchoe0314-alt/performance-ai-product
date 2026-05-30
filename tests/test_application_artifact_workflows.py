@@ -966,6 +966,16 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertFalse(review["release_ready"])
         self.assertIn("construction_package_blocked", review["blocked_reasons"])
         self.assertIn("release_status_blocked", review["blocked_reasons"])
+        detail_by_code = {
+            detail["code"]: detail
+            for detail in review["release_blocker_details"]
+        }
+        self.assertEqual(set(detail_by_code), set(review["blocked_reasons"]))
+        self.assertEqual(
+            detail_by_code["construction_package_blocked"]["next_action"],
+            "Complete package assembly, artifact trace checks, and professional package review.",
+        )
+        self.assertIn("missing_data", detail_by_code["release_status_blocked"])
 
     def test_build_preview_response_blocks_failed_deliverables_from_final_meta(self):
         service = FakeArtifactService()

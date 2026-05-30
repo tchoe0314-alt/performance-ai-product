@@ -6,7 +6,7 @@ from copy import deepcopy
 from typing import Any, Callable, Dict, Optional, Protocol
 
 from fastapi import HTTPException
-from backend.planning.common import safe_dict, safe_float, safe_int, safe_list, safe_str
+from backend.planning.common import blocker_explanations, safe_dict, safe_float, safe_int, safe_list, safe_str
 from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
     final_plan_requires_construction_release,
@@ -1093,6 +1093,9 @@ def build_orchestrate_job_runner(
             final_meta["release_review"] = {
                 "blocked_reasons": blocked_reasons,
                 "blocked_exports": blocked_exports,
+                "blocked_reason_details": blocker_explanations(blocked_reasons),
+                "blocked_export_details": blocker_explanations(blocked_exports),
+                "release_blocker_details": blocker_explanations(list(blocked_reasons) + list(blocked_exports)),
                 "review_categories": review_categories,
                 "assumption_summary": assumption_summary,
                 "reliability_summary": reliability,

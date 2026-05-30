@@ -12,6 +12,7 @@ from backend.application.design_workflows import (
 )
 from backend.application.protocols import ArtifactServiceProtocol
 from backend.application.project_workflows import artifact_summary, save_project_workflow_update
+from backend.planning.common import blocker_explanations
 from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
     final_plan_requires_construction_release,
@@ -981,6 +982,9 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         "review_categories": unresolved_issue_categories,
         "blocked_exports": blocked_exports,
         "blocked_reasons": blocked_reasons,
+        "blocked_export_details": blocker_explanations(blocked_exports),
+        "blocked_reason_details": blocker_explanations(blocked_reasons),
+        "release_blocker_details": blocker_explanations(list(blocked_reasons) + list(blocked_exports)),
         "requested_deliverables": requested_deliverables,
         "produced_deliverables": produced_deliverables,
         "failed_deliverables": failed_deliverables,

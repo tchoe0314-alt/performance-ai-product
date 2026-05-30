@@ -10,6 +10,7 @@ from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
     final_plan_requires_construction_release,
 )
+from backend.planning.common import blocker_explanations
 
 
 def now_ts() -> float:
@@ -624,6 +625,7 @@ def build_run_summary(
     primary_attention = (
         (blocked_reasons[:1] or blocked_exports[:1] or list(convergence.get("unresolved_issue_categories") or [])[:1] or failed_deliverables[:1] or [None])[0]
     )
+    release_blocker_details = blocker_explanations(list(blocked_reasons) + list(blocked_exports))
     persistence_scope = "ephemeral"
     if project_id and job_id:
         persistence_scope = "project_and_job"
@@ -690,6 +692,9 @@ def build_run_summary(
             "rerun_summary": dict(convergence.get("rerun_summary") or {}),
             "blocked_exports": blocked_exports,
             "blocked_reasons": blocked_reasons,
+            "blocked_export_details": blocker_explanations(blocked_exports),
+            "blocked_reason_details": blocker_explanations(blocked_reasons),
+            "release_blocker_details": release_blocker_details,
             "pass_history": list(convergence.get("pass_history") or []),
             "fix_summary": dict(convergence.get("fix_summary") or {}),
             "dominant_issue_categories": list(dict(convergence.get("fix_summary") or {}).get("dominant_issue_categories") or []),
@@ -711,6 +716,12 @@ def build_run_summary(
             "project_bound": bool(project_id),
             "job_bound": bool(job_id),
             "primary_attention": str(primary_attention or ""),
+            "primary_attention_detail": (
+                blocker_explanations([primary_attention])[0]
+                if primary_attention
+                else {}
+            ),
+            "release_blocker_details": release_blocker_details,
             "blocked_export_count": len(blocked_exports),
             "failed_deliverable_count": len(failed_deliverables),
             "missing_deliverable_count": len(missing_deliverables),
