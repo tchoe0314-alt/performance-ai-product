@@ -171,6 +171,54 @@ class Phase1Slice6DExportMetadataTest(unittest.TestCase):
         self.assertIn("construction_readiness_missing", audit["blocked_reasons"])
         self.assertTrue(audit["release_readiness"]["construction_release_required"])
 
+    def test_export_audit_blocks_false_allowed_package_without_release_proof(self) -> None:
+        plan = _export_plan()
+        plan["meta"]["construction_readiness"] = {"ready": True, "status": "construction_ready", "blockers": []}
+        plan["meta"]["construction_package_manifest"] = {
+            "release_allowed": True,
+            "construction_package_artifact_status": {
+                "complete_for_release": True,
+                "model_matches_expected": True,
+                "release_ready_flag": None,
+            },
+        }
+
+        metadata = finalize_export_metadata(plan)
+        audit = metadata["export_audit"]
+
+        self.assertFalse(audit["success"])
+        self.assertFalse(audit["production_export_ready"])
+        self.assertTrue(audit["export_blocked"])
+        self.assertIn("construction_package_release_not_marked_ready", audit["blocked_reasons"])
+        self.assertIn("construction_professional_release_missing", audit["blocked_reasons"])
+        self.assertTrue(audit["release_readiness"]["construction_release_required"])
+
+    def test_export_audit_blocks_false_allowed_package_with_invalid_professional_release(self) -> None:
+        plan = _export_plan()
+        plan["meta"]["construction_readiness"] = {"ready": True, "status": "construction_ready", "blockers": []}
+        plan["meta"]["construction_package_manifest"] = {
+            "release_allowed": True,
+            "construction_package_artifact_status": {
+                "complete_for_release": True,
+                "model_matches_expected": True,
+                "release_ready_flag": True,
+            },
+            "professional_package_release_status": {
+                "professional_release_valid": False,
+                "model_matches_package": True,
+                "package_matches_review": True,
+            },
+        }
+
+        metadata = finalize_export_metadata(plan)
+        audit = metadata["export_audit"]
+
+        self.assertFalse(audit["success"])
+        self.assertFalse(audit["production_export_ready"])
+        self.assertTrue(audit["export_blocked"])
+        self.assertIn("construction_professional_release_invalid", audit["blocked_reasons"])
+        self.assertNotIn("construction_professional_release_missing", audit["blocked_reasons"])
+
 
 if __name__ == "__main__":
     unittest.main()

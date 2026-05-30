@@ -9,6 +9,10 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 import ezdxf
 
 from backend.planning.production_depth import build_cad_interop_metadata
+from backend.planning.release_gates import (
+    construction_release_blockers_from_meta,
+    final_plan_requires_construction_release,
+)
 from core.utils import (
     clean_label,
     safe_center,
@@ -3697,7 +3701,7 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
         for item in safe_list(release_review.get("blocked_reasons")) + safe_list(release_review.get("blocked_exports"))
         if safe_text(item)
     ]
-    construction_required = bool(meta.get("construction_release_required"))
+    construction_required = final_plan_requires_construction_release(plan)
     construction_readiness = safe_dict(meta.get("construction_readiness"))
     construction_package = safe_dict(meta.get("construction_package_manifest") or meta.get("construction_package"))
     if release_status == "blocked":
@@ -3710,6 +3714,11 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
         release_blockers.append("construction_package_manifest_missing")
     if construction_required and construction_package and construction_package.get("release_allowed") is False:
         release_blockers.append("construction_package_blocked")
+    for construction_blocker in construction_release_blockers_from_meta(
+        meta,
+        requires_construction_release=construction_required,
+    ):
+        release_blockers.append(construction_blocker)
     release_blockers = list(dict.fromkeys(item for item in release_blockers if item))
     release_output_blocking = bool(release_blockers)
     warnings: List[str] = []
