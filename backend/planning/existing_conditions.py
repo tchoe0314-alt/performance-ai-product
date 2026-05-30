@@ -224,14 +224,21 @@ def summarize_existing_conditions(plan_or_meta: Dict[str, Any], parsed: Optional
         missing.append({"field": "coordinate_system", "reason": "No CRS/EPSG/projection is attached for real-world coordinates."})
     elif not coordinate_system["production_usable"]:
         missing.extend(deepcopy(safe_list(coordinate_system.get("blockers"))))
+    survey_control_verified = bool(survey["has_control"] or survey["approved_surface"])
+    if survey["ready"] and not survey_control_verified:
+        missing.append(
+            {
+                "field": "survey_control",
+                "reason": "Survey evidence exists but benchmark, datum, control, or production approval metadata is missing.",
+            }
+        )
+        warnings.append("Survey evidence exists but benchmark/control metadata is incomplete.")
     if dem_lidar["ready"] and not dem_lidar["approved_for_production"]:
         warnings.append("DEM/LiDAR or terrain source is present but not marked production-approved.")
-    if survey["ready"] and not survey["has_control"]:
-        warnings.append("Survey evidence exists but benchmark/control metadata is incomplete.")
 
     return {
         "version": "existing_conditions_v1",
-        "production_ready": not missing and (survey["ready"] or dem_lidar["approved_for_production"]),
+        "production_ready": not missing and ((survey["ready"] and survey_control_verified) or dem_lidar["approved_for_production"]),
         "survey": survey,
         "dem_lidar": dem_lidar,
         "gis": gis,

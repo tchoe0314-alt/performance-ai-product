@@ -79,6 +79,32 @@ class ExistingConditionsTests(unittest.TestCase):
         self.assertFalse(summary["production_ready"])
         self.assertIn("survey_surface", {item["field"] for item in summary["missing_requirements"]})
 
+    def test_survey_points_without_control_do_not_clear_production_readiness(self) -> None:
+        summary = summarize_existing_conditions(
+            {
+                "meta": {
+                    "grading": {"source_quality": "survey"},
+                    "survey": {"point_count": 8, "source": "uploaded_csv"},
+                    "gis_layers": {
+                        "parcels": [{"id": "P-1"}],
+                        "easements": [{"id": "E-1"}],
+                        "row": [{"id": "ROW-1"}],
+                        "floodplain": {"verified_absent": True, "source": "FEMA FIRM"},
+                        "wetlands": {"verified_absent": True, "source": "NWI"},
+                        "existing_utilities": {"verified_absent": True, "source": "utility atlas"},
+                    },
+                    "coordinate_system": {"epsg": "EPSG:2276", "units": "ft", "source": "survey"},
+                }
+            }
+        )
+
+        fields = {item["field"] for item in summary["missing_requirements"]}
+
+        self.assertTrue(summary["survey"]["ready"])
+        self.assertFalse(summary["survey"]["has_control"])
+        self.assertFalse(summary["production_ready"])
+        self.assertIn("survey_control", fields)
+
     def test_geographic_coordinate_system_is_not_production_ready(self) -> None:
         summary = summarize_existing_conditions(
             {
