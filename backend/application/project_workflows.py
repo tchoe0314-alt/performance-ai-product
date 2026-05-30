@@ -9,6 +9,7 @@ from backend.application.design_workflows import (
     new_workflow_id,
     now_ts,
 )
+from backend.planning.common import construction_package_record
 from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
     final_plan_requires_construction_release,
@@ -278,22 +279,6 @@ def _record_with_operational_summary(record: Dict[str, Any]) -> Dict[str, Any]:
     return enriched
 
 
-def _construction_package_record(meta: Dict[str, Any]) -> Dict[str, Any]:
-    package = dict(
-        meta.get("construction_package_manifest")
-        or meta.get("construction_package")
-        or meta.get("construction_deliverable_package")
-        or meta.get("deliverable_package")
-        or {}
-    )
-    if package:
-        return package
-    packages = list(meta.get("deliverable_packages") or [])
-    if packages and isinstance(packages[-1], dict):
-        return dict(packages[-1])
-    return {}
-
-
 def merge_project_metadata(
     existing_metadata: Optional[Dict[str, Any]],
     *,
@@ -469,7 +454,7 @@ def artifact_summary(
         }.items()
         if value not in (None, "")
     }
-    package = _construction_package_record(final_meta)
+    package = construction_package_record(final_meta)
     artifact = {
         "artifact_id": new_workflow_id("artifact"),
         "kind": artifact_kind,

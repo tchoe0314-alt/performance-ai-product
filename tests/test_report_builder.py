@@ -345,6 +345,36 @@ class ReportBuilderTest(unittest.TestCase):
         self.assertIn("construction_package_blocked", report["release"]["release_blockers"])
         self.assertIn("construction_package_release_not_marked_ready", report["release"]["release_blockers"])
 
+    def test_build_report_uses_latest_deliverable_package_trace(self):
+        report = report_builder.build_report(
+            final_plan={
+                "project_name": "Latest Package Report",
+                "actions": [{"task": "polyline", "layer": "LOT"}],
+                "meta": {
+                    "release_status": "ready",
+                    "release_ready": True,
+                    "construction_readiness": {"ready": True, "status": "construction_ready"},
+                    "deliverable_packages": [
+                        {"package_id": "pkg-old", "release_allowed": False},
+                        {
+                            "package_id": "pkg-latest",
+                            "release_allowed": False,
+                            "construction_package_artifact_status": {
+                                "package_present": True,
+                                "release_ready_flag": None,
+                                "production_ready_flag": True,
+                            },
+                        },
+                    ],
+                },
+            },
+        )
+
+        self.assertFalse(report["release"]["release_ready"])
+        self.assertEqual(report["release"]["construction_package_id"], "pkg-latest")
+        self.assertIn("construction_package_blocked", report["release"]["release_blockers"])
+        self.assertIn("construction_package_release_not_marked_ready", report["release"]["release_blockers"])
+
 
 if __name__ == "__main__":
     unittest.main()

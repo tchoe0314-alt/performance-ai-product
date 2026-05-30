@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Sequence
 
+from backend.planning.common import construction_package_record
 from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
     final_plan_requires_construction_release,
@@ -146,21 +147,6 @@ def _estimate_action_count(final_plan: Dict[str, Any]) -> int:
 
 def _extract_plan_meta(final_plan: Dict[str, Any]) -> Dict[str, Any]:
     return deepcopy(_safe_dict(final_plan.get("meta")))
-
-
-def _construction_package_record(meta: Dict[str, Any]) -> Dict[str, Any]:
-    package = _safe_dict(
-        meta.get("construction_package_manifest")
-        or meta.get("construction_package")
-        or meta.get("construction_deliverable_package")
-        or meta.get("deliverable_package")
-    )
-    if package:
-        return deepcopy(package)
-    packages = _safe_list(meta.get("deliverable_packages"))
-    if packages and isinstance(packages[-1], dict):
-        return deepcopy(packages[-1])
-    return {}
 
 
 def _planner_score(final_plan: Dict[str, Any]) -> float:
@@ -391,7 +377,7 @@ def _release_review_block(
         release_ready = bool(review.get("release_ready")) and not blockers
     elif "release_ready" in meta:
         release_ready = bool(meta.get("release_ready")) and not blockers
-    package = _construction_package_record(meta)
+    package = construction_package_record(meta)
     package_id = _safe_str(
         package.get("id")
         or package.get("package_id")

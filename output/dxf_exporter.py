@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import ezdxf
 
+from backend.planning.common import construction_package_record
 from backend.planning.production_depth import build_cad_interop_metadata
 from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
@@ -1206,21 +1207,6 @@ def _release_truth_blockers(plan: Dict[str, Any], meta: Dict[str, Any], release_
     if int(safe_num(run_summary.get("error_count"), 0.0)) > 0:
         release_blockers.append("planner_errors_present")
     return list(dict.fromkeys(item for item in release_blockers if item))
-
-
-def _construction_package_record(meta: Dict[str, Any]) -> Dict[str, Any]:
-    package = safe_dict(
-        meta.get("construction_package_manifest")
-        or meta.get("construction_package")
-        or meta.get("construction_deliverable_package")
-        or meta.get("deliverable_package")
-    )
-    if package:
-        return package
-    packages = safe_list(meta.get("deliverable_packages"))
-    if packages:
-        return safe_dict(packages[-1])
-    return {}
 
 
 def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -3807,7 +3793,7 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
     release_blockers = _release_truth_blockers(plan, meta, release_review)
     construction_required = final_plan_requires_construction_release(plan)
     construction_readiness = safe_dict(meta.get("construction_readiness"))
-    construction_package = _construction_package_record(meta)
+    construction_package = construction_package_record(meta)
     construction_package_id = safe_text(
         construction_package.get("id")
         or construction_package.get("package_id")
