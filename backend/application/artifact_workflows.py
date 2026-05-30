@@ -798,10 +798,40 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         failed_blocker = f"failed_deliverable_{str(failed_deliverable).strip().lower().replace(' ', '_')}"
         if failed_blocker.strip() and failed_blocker not in blocked_reasons:
             blocked_reasons.append(failed_blocker)
+    manual_validation = dict(final_meta.get("manual_validation") or {})
+    manual_failures: list[Dict[str, Any]] = []
+    seen_manual_failure_keys: set[str] = set()
+    for failure in list(run_summary.get("manual_failures") or []) + list(manual_validation.get("failures") or []):
+        if not isinstance(failure, dict):
+            continue
+        failure_record = {
+            "code": failure.get("code"),
+            "message": failure.get("message"),
+            "system": failure.get("system"),
+            "rule": failure.get("rule"),
+            "location": failure.get("location"),
+            "reason": failure.get("reason"),
+        }
+        failure_key = str(
+            failure_record.get("code")
+            or failure_record.get("rule")
+            or failure_record.get("system")
+            or failure_record.get("message")
+            or "manual_validation_failure"
+        ).strip()
+        if not failure_key:
+            failure_key = "manual_validation_failure"
+        if failure_key in seen_manual_failure_keys:
+            continue
+        seen_manual_failure_keys.add(failure_key)
+        manual_failures.append(failure_record)
+        blocker = f"manual_validation_{failure_key.lower().replace(' ', '_')}"
+        if blocker not in blocked_reasons:
+            blocked_reasons.append(blocker)
     ready_deliverables = list(run_summary.get("ready_deliverables") or [])
     extra_deliverables = list(run_summary.get("extra_deliverables") or [])
     release_ready = bool(reliability.get("release_ready")) or bool(final_meta.get("release_ready"))
-    if blocked_exports or blocked_reasons or failed_deliverables:
+    if blocked_exports or blocked_reasons or failed_deliverables or manual_failures:
         release_status = "blocked"
         release_note = "Blocked until outstanding export issues are resolved."
     elif release_ready:
@@ -816,7 +846,7 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
     else:
         release_status = "review"
         release_note = "Needs engineering review before release."
-    effective_release_ready = release_status == "ready" and not blocked_exports and not blocked_reasons and not failed_deliverables
+    effective_release_ready = release_status == "ready" and not blocked_exports and not blocked_reasons and not failed_deliverables and not manual_failures
     unresolved_issue_categories = _clean_review_categories(
         unresolved_issue_categories,
         release_ready=effective_release_ready,
@@ -858,6 +888,7 @@ def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, A
         "requested_deliverables": requested_deliverables,
         "produced_deliverables": produced_deliverables,
         "failed_deliverables": failed_deliverables,
+        "manual_failures": manual_failures,
         "ready_deliverables": ready_deliverables,
         "extra_deliverables": extra_deliverables,
         "rerun_total": int(rerun_summary.get("total_reruns") or 0),
