@@ -231,6 +231,16 @@ def _latest_release_blockers(
         blocker = _manual_failure_blocker(manual_failure)
         if blocker and blocker not in blockers:
             blockers.append(blocker)
+    latest_run_release_review = dict(latest_run.get("release_review") or {})
+    latest_run_release_status = str(
+        latest_run_release_review.get("release_status") or latest_run.get("release_status") or ""
+    ).lower()
+    if latest_run_release_status == "blocked":
+        blockers.append("latest_run_release_status_blocked")
+    if latest_run_release_review.get("release_ready") is False or latest_run.get("release_ready") is False:
+        blockers.append("latest_run_release_not_ready")
+    _extend(latest_run_release_review.get("blocked_reasons"))
+    _extend(latest_run_release_review.get("blocked_exports"))
     artifact = dict(latest_artifact or {})
     _extend(artifact.get("release_blockers"))
 
