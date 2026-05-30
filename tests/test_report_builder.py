@@ -105,6 +105,31 @@ class ReportBuilderTest(unittest.TestCase):
         self.assertIn("construction_package_blocked", report["release"]["release_blockers"])
         self.assertIn("construction_package_release_not_marked_ready", report["release"]["release_blockers"])
 
+    def test_build_report_marks_construction_release_required_from_package_metadata_without_explicit_flag(self):
+        report = report_builder.build_report(
+            final_plan={
+                "project_name": "Construction Report",
+                "actions": [{"task": "polyline", "layer": "LOT"}],
+                "meta": {
+                    "release_status": "ready",
+                    "release_ready": True,
+                    "construction_readiness": {"ready": True, "status": "construction_ready"},
+                    "construction_package": {
+                        "release_allowed": False,
+                        "construction_package_artifact_status": {
+                            "package_present": True,
+                            "release_ready_flag": True,
+                            "stale": ["C-400"],
+                        },
+                    },
+                },
+            },
+        )
+
+        self.assertTrue(report["release"]["construction_release_required"])
+        self.assertFalse(report["release"]["release_ready"])
+        self.assertIn("construction_package_stale_artifacts", report["release"]["release_blockers"])
+
 
 if __name__ == "__main__":
     unittest.main()

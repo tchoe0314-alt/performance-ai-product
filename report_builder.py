@@ -276,6 +276,7 @@ def _top_metric_rows(manager_metrics: Dict[str, Any]) -> List[Dict[str, Any]]:
 def _release_review_block(final_plan: Dict[str, Any], request_metadata: Dict[str, Any]) -> Dict[str, Any]:
     meta = _extract_plan_meta(final_plan)
     review = deepcopy(_safe_dict(request_metadata.get("release_review")) or _safe_dict(meta.get("release_review")))
+    construction_release_required = final_plan_requires_construction_release(final_plan)
     blockers = [
         _safe_str(item)
         for item in list(_safe_list(review.get("blocked_reasons")) + _safe_list(review.get("blocked_exports")))
@@ -283,7 +284,7 @@ def _release_review_block(final_plan: Dict[str, Any], request_metadata: Dict[str
     ]
     for blocker in construction_release_blockers_from_meta(
         meta,
-        requires_construction_release=final_plan_requires_construction_release(final_plan),
+        requires_construction_release=construction_release_required,
     ):
         if blocker not in blockers:
             blockers.append(blocker)
@@ -319,7 +320,7 @@ def _release_review_block(final_plan: Dict[str, Any], request_metadata: Dict[str
         "blocked_reasons": list(dict.fromkeys(_safe_str(item) for item in _safe_list(review.get("blocked_reasons")) if _safe_str(item))),
         "blocked_exports": list(dict.fromkeys(_safe_str(item) for item in _safe_list(review.get("blocked_exports")) if _safe_str(item))),
         "release_blockers": list(dict.fromkeys(blockers)),
-        "construction_release_required": bool(meta.get("construction_release_required")),
+        "construction_release_required": construction_release_required,
         "construction_readiness": deepcopy(_safe_dict(meta.get("construction_readiness"))),
         "construction_package_id": package_id,
         "construction_package_artifact_status": deepcopy(_safe_dict(package.get("construction_package_artifact_status"))),
