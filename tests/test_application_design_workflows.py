@@ -410,6 +410,79 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertIn("construction_package_blocked", reasons)
         self.assertIn("construction_package_cost_untraced", reasons)
 
+    def test_build_run_summary_blocks_false_allowed_package_without_release_proof(self):
+        summary = build_run_summary(
+            {
+                "success": True,
+                "final_plan": {
+                    "actions": [{"layer": "SITE"}],
+                    "meta": {
+                        "deliverables": {"requested": [], "produced": [], "failed": []},
+                        "convergence_summary": {
+                            "converged": True,
+                            "blocked_exports": [],
+                            "blocked_reasons": [],
+                            "unresolved_conflict_count": 0,
+                        },
+                        "construction_readiness": {"ready": True, "status": "construction_ready", "blockers": []},
+                        "construction_package_manifest": {
+                            "release_allowed": True,
+                            "construction_package_artifact_status": {
+                                "complete_for_release": True,
+                                "model_matches_expected": True,
+                                "release_ready_flag": None,
+                            },
+                        },
+                    },
+                },
+            },
+            source="unit_test",
+        )
+
+        reasons = summary["convergence_summary"]["blocked_reasons"]
+        self.assertFalse(summary["reliability_summary"]["release_ready"])
+        self.assertIn("construction_package_release_not_marked_ready", reasons)
+        self.assertIn("construction_professional_release_missing", reasons)
+
+    def test_build_run_summary_blocks_false_allowed_package_with_invalid_professional_proof(self):
+        summary = build_run_summary(
+            {
+                "success": True,
+                "final_plan": {
+                    "actions": [{"layer": "SITE"}],
+                    "meta": {
+                        "deliverables": {"requested": [], "produced": [], "failed": []},
+                        "convergence_summary": {
+                            "converged": True,
+                            "blocked_exports": [],
+                            "blocked_reasons": [],
+                            "unresolved_conflict_count": 0,
+                        },
+                        "construction_readiness": {"ready": True, "status": "construction_ready", "blockers": []},
+                        "construction_package_manifest": {
+                            "release_allowed": True,
+                            "construction_package_artifact_status": {
+                                "complete_for_release": True,
+                                "model_matches_expected": True,
+                                "release_ready_flag": True,
+                            },
+                            "professional_package_release_status": {
+                                "professional_release_valid": None,
+                                "model_matches_package": True,
+                                "package_matches_review": True,
+                            },
+                        },
+                    },
+                },
+            },
+            source="unit_test",
+        )
+
+        reasons = summary["convergence_summary"]["blocked_reasons"]
+        self.assertFalse(summary["reliability_summary"]["release_ready"])
+        self.assertIn("construction_professional_release_invalid", reasons)
+        self.assertNotIn("construction_professional_release_missing", reasons)
+
     def test_build_run_summary_marks_release_ready_skipped_phases_complete(self):
         summary = build_run_summary(
             {

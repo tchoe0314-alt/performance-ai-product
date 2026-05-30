@@ -485,9 +485,13 @@ def construction_release_blockers_from_meta(meta: Dict[str, Any], *, requires_co
     if package and package.get("release_allowed") is True:
         artifact_status = dict(package.get("construction_package_artifact_status") or {})
         professional_status = dict(package.get("professional_package_release_status") or {})
+        if artifact_status.get("release_ready_flag") is not True:
+            blockers.append("construction_package_release_not_marked_ready")
         if artifact_status and artifact_status.get("complete_for_release") is not True:
             blockers.append("construction_package_incomplete_release")
-        if professional_status and professional_status.get("professional_release_valid") is False:
+        if not professional_status:
+            blockers.append("construction_professional_release_missing")
+        elif professional_status.get("professional_release_valid") is not True:
             blockers.append("construction_professional_release_invalid")
         if professional_status and (
             professional_status.get("model_matches_package") is not True
