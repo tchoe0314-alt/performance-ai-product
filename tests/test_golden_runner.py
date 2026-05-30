@@ -156,6 +156,7 @@ class GoldenRunnerTests(unittest.TestCase):
                     "complete_for_release": True,
                     "model_matches_expected": True,
                     "release_ready_flag": None,
+                    "production_ready_flag": True,
                     "missing": [],
                 },
                 "professional_package_release_status": {
@@ -176,6 +177,38 @@ class GoldenRunnerTests(unittest.TestCase):
         )
         self.assertFalse(result["readiness_summary"]["construction_package_release_ready_flag"])
 
+    def test_run_scenario_fails_when_release_allowed_without_explicit_package_production_flag(self) -> None:
+        def missing_package_production_flag(payload):
+            plan = _fake_plan(payload)
+            plan["meta"]["civil_design_readiness"]["production_ready"] = True
+            plan["meta"]["construction_readiness"] = {"ready": True, "status": "construction_ready", "blockers": []}
+            plan["meta"]["construction_package_manifest"] = {
+                "release_allowed": True,
+                "construction_package_artifact_status": {
+                    "complete_for_release": True,
+                    "model_matches_expected": True,
+                    "release_ready_flag": True,
+                    "production_ready_flag": None,
+                    "missing": [],
+                },
+                "professional_package_release_status": {
+                    "professional_review_present": True,
+                    "professional_release_valid": True,
+                    "model_matches_package": True,
+                    "package_matches_review": True,
+                },
+            }
+            return plan
+
+        result = run_golden_scenario("small_commercial_pad", build_plan_fn=missing_package_production_flag)
+
+        self.assertFalse(result["success"])
+        self.assertIn(
+            "construction_release_allowed_without_explicit_package_production_flag",
+            result["hard_failures"],
+        )
+        self.assertFalse(result["readiness_summary"]["construction_package_production_ready_flag"])
+
     def test_run_scenario_fails_when_release_allowed_without_valid_professional_release(self) -> None:
         def invalid_professional_release(payload):
             plan = _fake_plan(payload)
@@ -187,6 +220,7 @@ class GoldenRunnerTests(unittest.TestCase):
                     "complete_for_release": True,
                     "model_matches_expected": True,
                     "release_ready_flag": True,
+                    "production_ready_flag": True,
                     "missing": [],
                 },
                 "professional_package_release_status": {

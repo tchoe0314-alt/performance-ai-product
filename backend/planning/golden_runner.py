@@ -33,6 +33,7 @@ def _readiness_summary(plan: Dict[str, Any]) -> Dict[str, Any]:
         "construction_package_complete_for_release": bool(artifact_status.get("complete_for_release")),
         "construction_package_model_matches_expected": bool(artifact_status.get("model_matches_expected")),
         "construction_package_release_ready_flag": artifact_status.get("release_ready_flag") is True,
+        "construction_package_production_ready_flag": artifact_status.get("production_ready_flag") is True,
         "construction_package_missing_artifacts": safe_list(artifact_status.get("missing")),
         "professional_review_present": bool(professional_release.get("professional_review_present")),
         "professional_release_valid": bool(professional_release.get("professional_release_valid")),
@@ -327,6 +328,8 @@ def run_golden_scenario(
         hard_failures.append("construction_release_allowed_with_unverified_package_model")
     if bool(summary.get("construction_release_allowed")) and not bool(summary.get("construction_package_release_ready_flag")):
         hard_failures.append("construction_release_allowed_without_explicit_package_release_flag")
+    if bool(summary.get("construction_release_allowed")) and not bool(summary.get("construction_package_production_ready_flag")):
+        hard_failures.append("construction_release_allowed_without_explicit_package_production_flag")
     if bool(summary.get("construction_release_allowed")) and not bool(summary.get("professional_review_present")):
         hard_failures.append("construction_release_allowed_without_professional_review")
     if bool(summary.get("construction_release_allowed")) and not bool(summary.get("professional_release_valid")):
