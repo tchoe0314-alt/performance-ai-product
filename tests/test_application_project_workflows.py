@@ -908,6 +908,37 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
             summary["release_blockers"],
         )
 
+    def test_artifact_summary_blocks_reactive_post_rerun_release_blockers(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "plan.json"
+            path.write_text("x")
+            summary = artifact_summary(
+                path=path,
+                artifact_kind="report",
+                project_id="p1",
+                result_data={
+                    "final_plan": {
+                        "project_name": "Reactive Blocked Artifact",
+                        "meta": {
+                            "release_ready": True,
+                            "release_status": "ready",
+                            "reactive_update_report": {
+                                "post_rerun_production_ready": False,
+                                "post_rerun_release_blockers": ["manual_validation_manual_storm_hydraulic_invalid"],
+                            },
+                        },
+                    },
+                },
+            )
+
+        self.assertEqual(summary["release_status"], "ready")
+        self.assertFalse(summary["release_ready"])
+        self.assertIn("reactive_post_rerun_not_ready", summary["release_blockers"])
+        self.assertIn(
+            "manual_validation_manual_storm_hydraulic_invalid",
+            summary["release_blockers"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

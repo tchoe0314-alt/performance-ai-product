@@ -353,6 +353,13 @@ def artifact_summary(
         release_blockers.append("release_review_not_ready")
     if final_meta.get("release_ready") is False and "final_plan_release_blocked" not in release_blockers:
         release_blockers.append("final_plan_release_blocked")
+    reactive_report = dict(final_meta.get("reactive_update_report") or {})
+    if reactive_report.get("post_rerun_production_ready") is False and "reactive_post_rerun_not_ready" not in release_blockers:
+        release_blockers.append("reactive_post_rerun_not_ready")
+    for blocker in list(reactive_report.get("post_rerun_release_blockers") or []):
+        blocker_name = str(blocker).strip()
+        if blocker_name and blocker_name not in release_blockers:
+            release_blockers.append(blocker_name)
     release_status = str(release_review.get("release_status") or final_meta.get("release_status") or "")
     if release_status.lower() == "blocked" and not release_blockers:
         release_blockers.append("release_status_blocked")
