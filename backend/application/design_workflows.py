@@ -551,6 +551,15 @@ def build_run_summary(
     ):
         if construction_blocker not in blocked_reasons:
             blocked_reasons.append(construction_blocker)
+    final_release_status = str(
+        final_release_review.get("release_status") or plan_meta.get("release_status") or final_plan.get("release_status") or ""
+    ).strip().lower()
+    if final_release_status == "blocked" and "release_status_blocked" not in blocked_reasons:
+        blocked_reasons.append("release_status_blocked")
+    if final_release_review.get("release_ready") is False and "release_review_not_ready" not in blocked_reasons:
+        blocked_reasons.append("release_review_not_ready")
+    if plan_meta.get("release_ready") is False and "final_plan_release_blocked" not in blocked_reasons:
+        blocked_reasons.append("final_plan_release_blocked")
     for reactive_blocker in _reactive_release_blockers(plan_meta):
         if reactive_blocker not in blocked_reasons:
             blocked_reasons.append(reactive_blocker)

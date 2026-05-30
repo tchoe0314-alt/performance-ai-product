@@ -303,6 +303,63 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertEqual(summary["convergence_summary"]["blocked_exports"], [])
         self.assertEqual(summary["convergence_summary"]["blocked_reasons"], [])
 
+    def test_build_run_summary_blocks_explicit_blocked_release_status_without_reasons(self):
+        summary = build_run_summary(
+            {
+                "success": True,
+                "final_plan": {
+                    "actions": [{"layer": "LOT"}],
+                    "meta": {
+                        "deliverables": {"requested": [], "produced": [], "failed": []},
+                        "convergence_summary": {
+                            "converged": True,
+                            "blocked_exports": [],
+                            "blocked_reasons": [],
+                            "unresolved_conflict_count": 0,
+                        },
+                        "release_review": {
+                            "release_status": "blocked",
+                        },
+                    },
+                },
+            },
+            source="unit_test",
+        )
+
+        self.assertFalse(summary["reliability_summary"]["release_ready"])
+        self.assertEqual(summary["reliability_summary"]["operational_state"], "retryable")
+        self.assertIn("release_status_blocked", summary["convergence_summary"]["blocked_reasons"])
+        self.assertEqual(summary["phase_checkpoints"]["combined_view"]["status"], "blocked")
+
+    def test_build_run_summary_blocks_explicit_release_review_not_ready(self):
+        summary = build_run_summary(
+            {
+                "success": True,
+                "final_plan": {
+                    "actions": [{"layer": "LOT"}],
+                    "meta": {
+                        "deliverables": {"requested": [], "produced": [], "failed": []},
+                        "convergence_summary": {
+                            "converged": True,
+                            "blocked_exports": [],
+                            "blocked_reasons": [],
+                            "unresolved_conflict_count": 0,
+                        },
+                        "release_review": {
+                            "release_status": "ready",
+                            "release_ready": False,
+                        },
+                    },
+                },
+            },
+            source="unit_test",
+        )
+
+        self.assertFalse(summary["reliability_summary"]["release_ready"])
+        self.assertEqual(summary["reliability_summary"]["operational_state"], "retryable")
+        self.assertIn("release_review_not_ready", summary["convergence_summary"]["blocked_reasons"])
+        self.assertEqual(summary["phase_checkpoints"]["combined_view"]["status"], "blocked")
+
     def test_build_run_summary_surfaces_failed_deliverables_as_blockers(self):
         summary = build_run_summary(
             {
