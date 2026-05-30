@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict, Iterable, List, Set
 
 from .common import safe_dict, safe_list, safe_str
 from .engine_contracts import downstream_closure
+from .release_gates import construction_release_blockers_from_meta, final_plan_requires_construction_release
 from .runtime import PLANNER_STAGE_DEPENDENCIES, PLANNER_STAGE_ORDER
 
 
@@ -196,7 +197,14 @@ def execute_reactive_rerun(
         if not uncleared_stale
         else "Some impacted downstream stages did not report completion after rerun; exports remain blocked for those outputs."
     )
-    final_report["post_rerun_production_ready"] = bool(safe_dict(final_meta.get("civil_design_readiness")).get("production_ready"))
+    construction_release_blockers = construction_release_blockers_from_meta(
+        final_meta,
+        requires_construction_release=final_plan_requires_construction_release(plan),
+    )
+    final_report["post_rerun_construction_release_blockers"] = construction_release_blockers
+    final_report["post_rerun_production_ready"] = bool(
+        safe_dict(final_meta.get("civil_design_readiness")).get("production_ready")
+    ) and not construction_release_blockers
     plan.setdefault("meta", {})["reactive_update_report"] = final_report
     return {
         "success": True,

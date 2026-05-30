@@ -141,6 +141,54 @@ class ReactiveModelContractTests(unittest.TestCase):
         self.assertIn("grading", report["post_rerun_stale_outputs"])
         self.assertIn("storm_pipes", report["post_rerun_stale_outputs"])
 
+    def test_execute_reactive_rerun_blocks_production_ready_when_construction_release_is_stale(self) -> None:
+        def fake_build(payload):
+            return {
+                "meta": {
+                    "construction_release_required": True,
+                    "civil_design_readiness": {"production_ready": True},
+                    "construction_readiness": {"ready": True},
+                    "construction_package_manifest": {
+                        "release_allowed": False,
+                        "construction_package_artifact_status": {
+                            "release_ready_flag": True,
+                            "stale": ["C-200"],
+                            "missing": [],
+                            "anonymous": [],
+                            "untraced": [],
+                            "mismatched": [],
+                            "cost_untraced": [],
+                            "cost_mismatched": [],
+                        },
+                    },
+                    "payload": payload,
+                    "stage_results": [
+                        {"stage_name": "layout", "success": True, "completeness": "complete"},
+                        {"stage_name": "grading", "success": True, "completeness": "complete"},
+                        {"stage_name": "drainage", "success": True, "completeness": "complete"},
+                        {"stage_name": "storm_pipes", "success": True, "completeness": "complete"},
+                        {"stage_name": "sanitary", "success": True, "completeness": "complete"},
+                        {"stage_name": "utility_network", "success": True, "completeness": "complete"},
+                        {"stage_name": "coordination_resolution", "success": True, "completeness": "complete"},
+                        {"stage_name": "earthwork", "success": True, "completeness": "complete"},
+                        {"stage_name": "qa", "success": True, "completeness": "complete"},
+                        {"stage_name": "sheets", "success": True, "completeness": "complete"},
+                    ],
+                }
+            }
+
+        result = execute_reactive_rerun(
+            {"project_name": "Reactive", "meta": {}},
+            changed_engine_ids=["roadway_corridor"],
+            build_plan_fn=fake_build,
+        )
+
+        report = result["reactive_update_report"]
+        self.assertFalse(report["post_rerun_export_blocked"])
+        self.assertFalse(report["post_rerun_production_ready"])
+        self.assertIn("construction_package_blocked", report["post_rerun_construction_release_blockers"])
+        self.assertIn("construction_package_stale_artifacts", report["post_rerun_construction_release_blockers"])
+
 
 if __name__ == "__main__":
     unittest.main()
