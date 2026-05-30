@@ -262,6 +262,37 @@ class ReactiveModelContractTests(unittest.TestCase):
         self.assertFalse(report["post_rerun_production_ready"])
         self.assertIn("failed_deliverable_report", report["post_rerun_release_blockers"])
 
+    def test_execute_reactive_rerun_blocks_production_ready_when_deliverables_are_missing(self) -> None:
+        def fake_build(payload):
+            return {
+                "meta": {
+                    "civil_design_readiness": {"production_ready": True},
+                    "deliverables": {"requested": ["site_plan", "report"], "produced": ["site_plan"]},
+                    "stage_results": [
+                        {"stage_name": "layout", "success": True, "completeness": "complete"},
+                        {"stage_name": "grading", "success": True, "completeness": "complete"},
+                        {"stage_name": "drainage", "success": True, "completeness": "complete"},
+                        {"stage_name": "storm_pipes", "success": True, "completeness": "complete"},
+                        {"stage_name": "sanitary", "success": True, "completeness": "complete"},
+                        {"stage_name": "utility_network", "success": True, "completeness": "complete"},
+                        {"stage_name": "coordination_resolution", "success": True, "completeness": "complete"},
+                        {"stage_name": "earthwork", "success": True, "completeness": "complete"},
+                        {"stage_name": "qa", "success": True, "completeness": "complete"},
+                        {"stage_name": "sheets", "success": True, "completeness": "complete"},
+                    ],
+                }
+            }
+
+        result = execute_reactive_rerun(
+            {"project_name": "Reactive", "meta": {}},
+            changed_engine_ids=["roadway_corridor"],
+            build_plan_fn=fake_build,
+        )
+
+        report = result["reactive_update_report"]
+        self.assertFalse(report["post_rerun_production_ready"])
+        self.assertIn("missing_deliverable_report", report["post_rerun_release_blockers"])
+
 
 if __name__ == "__main__":
     unittest.main()

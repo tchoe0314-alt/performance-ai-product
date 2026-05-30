@@ -996,6 +996,8 @@ def build_orchestrate_job_runner(
                 for item in requested_deliverables
                 if safe_str(item) and safe_str(item) not in produced_set and safe_str(item) not in failed_set
             ]
+            run_summary["missing_deliverables"] = missing_deliverables
+            reliability["missing_deliverable_count"] = len(missing_deliverables)
             for missing_deliverable in missing_deliverables:
                 missing_blocker = f"missing_deliverable_{missing_deliverable.lower().replace(' ', '_')}"
                 if missing_blocker not in blocked_reasons:

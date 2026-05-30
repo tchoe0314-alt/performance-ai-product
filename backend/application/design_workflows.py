@@ -583,6 +583,13 @@ def build_run_summary(
     for failed_blocker in _failed_deliverable_blockers(failed_deliverables):
         if failed_blocker not in blocked_reasons:
             blocked_reasons.append(failed_blocker)
+    missing_deliverables = [
+        str(item).strip()
+        for item in deliverable_summary["requested"]
+        if str(item).strip()
+        and str(item).strip() not in set(deliverable_summary["produced"])
+        and str(item).strip() not in set(failed_deliverables)
+    ]
     for missing_blocker in _missing_deliverable_blockers(
         deliverable_summary["requested"],
         deliverable_summary["produced"],
@@ -641,6 +648,7 @@ def build_run_summary(
         "requested_deliverables": deliverable_summary["requested"],
         "produced_deliverables": deliverable_summary["produced"],
         "failed_deliverables": deliverable_summary["failed"],
+        "missing_deliverables": missing_deliverables,
         "ready_deliverables": deliverable_summary["ready_requested"],
         "extra_deliverables": deliverable_summary["extra_produced"],
         "manual_failures": manual_failures,
@@ -691,6 +699,7 @@ def build_run_summary(
             "primary_attention": str(primary_attention or ""),
             "blocked_export_count": len(blocked_exports),
             "failed_deliverable_count": len(failed_deliverables),
+            "missing_deliverable_count": len(missing_deliverables),
             "manual_failure_count": len(manual_failures),
             "unresolved_conflict_count": unresolved_conflict_count,
             "trace": {

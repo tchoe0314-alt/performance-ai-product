@@ -304,6 +304,17 @@ def _release_review_block(final_plan: Dict[str, Any], request_metadata: Dict[str
         failed_blocker = f"failed_deliverable_{_safe_str(failed_deliverable).lower().replace(' ', '_')}"
         if failed_blocker.strip() and failed_blocker not in blockers:
             blockers.append(failed_blocker)
+    produced_deliverables = {_safe_str(item) for item in _safe_list(deliverables.get("produced")) if _safe_str(item)}
+    failed_deliverables = {_safe_str(item) for item in _safe_list(deliverables.get("failed")) if _safe_str(item)}
+    missing_deliverables = _safe_list(deliverables.get("missing")) + [
+        item
+        for item in _safe_list(deliverables.get("requested"))
+        if _safe_str(item) and _safe_str(item) not in produced_deliverables and _safe_str(item) not in failed_deliverables
+    ]
+    for missing_deliverable in missing_deliverables:
+        missing_blocker = f"missing_deliverable_{_safe_str(missing_deliverable).lower().replace(' ', '_')}"
+        if missing_blocker.strip() and missing_blocker not in blockers:
+            blockers.append(missing_blocker)
     manual_validation = _safe_dict(meta.get("manual_validation"))
     manual_failures = [
         failure

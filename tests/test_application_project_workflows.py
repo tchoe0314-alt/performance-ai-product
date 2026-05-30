@@ -244,6 +244,37 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertFalse(summary["latest_release_ready"])
         self.assertEqual(summary["latest_release_blockers"], ["construction_package_blocked"])
 
+    def test_merge_project_metadata_blocks_release_when_requested_deliverable_is_missing(self):
+        merged = merge_project_metadata(
+            {},
+            run_summary={
+                "run_id": "run_missing_deliverable",
+                "created_at": 123.0,
+                "source": "unit_test",
+                "convergence_summary": {
+                    "converged": True,
+                    "blocked_exports": [],
+                    "blocked_reasons": [],
+                },
+                "requested_deliverables": ["site_plan", "report"],
+                "produced_deliverables": ["site_plan"],
+                "missing_deliverables": ["report"],
+                "reliability_summary": {
+                    "operational_state": "ready",
+                    "primary_attention": "",
+                    "blocked_export_count": 0,
+                    "unresolved_conflict_count": 0,
+                    "failed_deliverable_count": 0,
+                    "missing_deliverable_count": 1,
+                    "release_ready": True,
+                },
+            },
+        )
+        summary = merged["workflow"]["summary"]
+        self.assertFalse(summary["latest_release_ready"])
+        self.assertIn("missing_deliverable_report", summary["latest_release_blockers"])
+        self.assertIn("missing_deliverables", summary["latest_release_blockers"])
+
     def test_merge_project_metadata_explains_false_latest_run_release_ready(self):
         merged = merge_project_metadata(
             {},
@@ -873,6 +904,30 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertEqual(summary["release_status"], "ready")
         self.assertFalse(summary["release_ready"])
         self.assertIn("failed_deliverable_report", summary["release_blockers"])
+
+    def test_artifact_summary_blocks_missing_deliverables_from_final_meta(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "plan.json"
+            path.write_text("x")
+            summary = artifact_summary(
+                path=path,
+                artifact_kind="report",
+                project_id="p1",
+                result_data={
+                    "final_plan": {
+                        "project_name": "Missing Deliverable Artifact",
+                        "meta": {
+                            "release_ready": True,
+                            "release_status": "ready",
+                            "deliverables": {"requested": ["site_plan", "report"], "produced": ["site_plan"]},
+                        },
+                    },
+                },
+            )
+
+        self.assertEqual(summary["release_status"], "ready")
+        self.assertFalse(summary["release_ready"])
+        self.assertIn("missing_deliverable_report", summary["release_blockers"])
 
     def test_artifact_summary_blocks_manual_validation_failures_from_final_meta(self):
         with tempfile.TemporaryDirectory() as tmpdir:

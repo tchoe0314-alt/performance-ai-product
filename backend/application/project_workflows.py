@@ -198,6 +198,13 @@ def _latest_release_blockers(
     _extend(latest_convergence.get("blocked_reasons"))
     _extend(latest_convergence.get("blocked_exports"))
     _extend(latest_run.get("failed_deliverables"))
+    for missing in list(latest_run.get("missing_deliverables") or []):
+        missing_name = str(missing).strip()
+        if not missing_name:
+            continue
+        blocker = f"missing_deliverable_{missing_name.lower().replace(' ', '_')}"
+        if blocker not in blockers:
+            blockers.append(blocker)
     for manual_failure in list(latest_run.get("manual_failures") or []):
         blocker = _manual_failure_blocker(manual_failure)
         if blocker and blocker not in blockers:
@@ -211,6 +218,8 @@ def _latest_release_blockers(
         blockers.append("unresolved_conflicts")
     if int(latest_reliability.get("failed_deliverable_count") or 0) > 0:
         blockers.append("failed_deliverables")
+    if int(latest_reliability.get("missing_deliverable_count") or 0) > 0:
+        blockers.append("missing_deliverables")
     if int(latest_reliability.get("manual_failure_count") or 0) > 0:
         blockers.append("manual_validation_failures")
     if latest_reliability.get("release_ready") is False:
@@ -330,6 +339,20 @@ def artifact_summary(
         if not failed_name:
             continue
         blocker = f"failed_deliverable_{failed_name.lower().replace(' ', '_')}"
+        if blocker not in release_blockers:
+            release_blockers.append(blocker)
+    missing_deliverables = list(dict(final_meta.get("deliverables") or {}).get("missing") or [])
+    deliverables = dict(final_meta.get("deliverables") or {})
+    produced_set = {str(item).strip() for item in list(deliverables.get("produced") or []) if str(item).strip()}
+    failed_set = {str(item).strip() for item in failed_deliverables if str(item).strip()}
+    missing_deliverables.extend(
+        str(item).strip()
+        for item in list(deliverables.get("requested") or [])
+        if str(item).strip() and str(item).strip() not in produced_set and str(item).strip() not in failed_set
+    )
+    missing_deliverables = list(dict.fromkeys([str(item).strip() for item in missing_deliverables if str(item).strip()]))
+    for missing in missing_deliverables:
+        blocker = f"missing_deliverable_{missing.lower().replace(' ', '_')}"
         if blocker not in release_blockers:
             release_blockers.append(blocker)
     manual_validation = dict(final_meta.get("manual_validation") or {})

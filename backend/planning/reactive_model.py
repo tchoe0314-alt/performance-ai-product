@@ -191,6 +191,19 @@ def _post_rerun_release_blockers(plan: Dict[str, Any], meta: Dict[str, Any]) -> 
         failed_name = safe_str(failed_deliverable).strip()
         if failed_name:
             _add(f"failed_deliverable_{failed_name.lower().replace(' ', '_')}")
+    produced_deliverables = {safe_str(item).strip() for item in safe_list(deliverables.get("produced")) if safe_str(item).strip()}
+    failed_deliverables = {safe_str(item).strip() for item in safe_list(deliverables.get("failed")) if safe_str(item).strip()}
+    missing_deliverables = safe_list(deliverables.get("missing")) + [
+        item
+        for item in safe_list(deliverables.get("requested"))
+        if safe_str(item).strip()
+        and safe_str(item).strip() not in produced_deliverables
+        and safe_str(item).strip() not in failed_deliverables
+    ]
+    for missing_deliverable in missing_deliverables:
+        missing_name = safe_str(missing_deliverable).strip()
+        if missing_name:
+            _add(f"missing_deliverable_{missing_name.lower().replace(' ', '_')}")
 
     manual_validation = safe_dict(meta.get("manual_validation"))
     for failure in [item for item in safe_list(manual_validation.get("failures")) if isinstance(item, dict)]:
