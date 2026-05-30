@@ -161,6 +161,64 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         self.assertTrue(manifest["professional_package_release_status"]["package_matches_review"])
         self.assertTrue(all(section["ready"] for section in manifest["sections"]))
 
+    def test_manifest_uses_existing_manifest_alias_as_package_evidence(self) -> None:
+        meta = {
+            "construction_readiness": {
+                "ready": True,
+                "status": "construction_ready",
+                "score": 100.0,
+                "evidence": {
+                    "civil_production_ready": True,
+                    "existing_conditions_production_ready": True,
+                    "standards_production_usable": True,
+                    "export_production_ready": True,
+                    "cost_production_usable": True,
+                    "professional_release": True,
+                },
+                "blockers": [],
+                "warnings": [],
+            },
+            "cost_estimate": {
+                "success": True,
+                "totals": {"production_usable": True, "total_cost": 1000.0, "cost_estimate_hash": "COST-HASH-1"},
+                "line_items": [{"metric": "pipe_length_ft", "quantity": 10.0, "amount": 1000.0}],
+                "explain": {
+                    "cost_estimate_reference": {
+                        "cost_estimate_hash": "COST-HASH-1",
+                        "quantity_model_hash": "QTY-HASH-1",
+                        "price_book_hash": "PRICE-HASH-1",
+                    }
+                },
+            },
+            "construction_package_manifest": {
+                "id": "PKG-MANIFEST-1",
+                "release_ready": True,
+                "production_ready": True,
+                "canonical_model_id": "MODEL-FINAL-1",
+                "artifacts": [
+                    {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "cad_export", "id": "CAD-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "qa_report", "id": "QA-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {
+                        "type": "cost_estimate",
+                        "id": "COST-1",
+                        "current": True,
+                        "canonical_model_id": "MODEL-FINAL-1",
+                        "cost_estimate_hash": "COST-HASH-1",
+                    },
+                    {"type": "construction_manifest", "id": "MANIFEST-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                ],
+            },
+            "professional_review": _valid_professional_review(package_id="PKG-MANIFEST-1"),
+        }
+
+        manifest = build_construction_package_manifest({"meta": meta})
+
+        self.assertEqual(manifest["release_state"], "released_for_construction")
+        self.assertEqual(manifest["construction_package_artifact_status"]["package_identity"], "PKG-MANIFEST-1")
+        self.assertFalse(manifest["construction_package_artifact_status"]["missing"])
+        self.assertTrue(manifest["professional_package_release_status"]["package_matches_review"])
+
     def test_manifest_blocks_construction_release_when_any_section_needs_review(self) -> None:
         meta = {
             "construction_readiness": {

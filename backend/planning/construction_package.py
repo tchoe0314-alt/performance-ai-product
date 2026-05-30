@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterable, List, Sequence
 from core.civil_design import construction_readiness
 from core.professional_release import validate_professional_release
 
-from .common import safe_dict, safe_list, safe_str
+from .common import construction_package_record, safe_dict, safe_list, safe_str
 
 
 CONSTRUCTION_PACKAGE_SECTIONS: Sequence[Dict[str, Any]] = (
@@ -201,18 +201,6 @@ def _expected_model_reference(plan_or_meta: Dict[str, Any], meta: Dict[str, Any]
     return f"plan-sha256:{digest[:16]}"
 
 
-def _construction_package_record(meta: Dict[str, Any]) -> Dict[str, Any]:
-    package = safe_dict(
-        meta.get("construction_deliverable_package")
-        or meta.get("construction_package")
-        or meta.get("deliverable_package")
-    )
-    packages = safe_list(meta.get("deliverable_packages"))
-    if not package and packages:
-        package = safe_dict(packages[-1])
-    return package
-
-
 def _construction_package_artifacts(package: Dict[str, Any]) -> List[Dict[str, Any]]:
     artifacts = [safe_dict(item) for item in safe_list(package.get("artifacts"))]
     if not artifacts:
@@ -221,7 +209,7 @@ def _construction_package_artifacts(package: Dict[str, Any]) -> List[Dict[str, A
 
 
 def _construction_package_artifact_status(plan_or_meta: Dict[str, Any], meta: Dict[str, Any]) -> Dict[str, Any]:
-    package = _construction_package_record(meta)
+    package = construction_package_record(meta)
     artifacts = _construction_package_artifacts(package)
     artifact_types = {_artifact_type(item) for item in artifacts if _artifact_type(item)}
     cost_aliases = _cost_artifact_aliases()
@@ -365,7 +353,7 @@ def _professional_package_release_status(meta: Dict[str, Any], package: Dict[str
 
 
 def _construction_package_blockers(plan_or_meta: Dict[str, Any], meta: Dict[str, Any]) -> List[Dict[str, Any]]:
-    package = _construction_package_record(meta)
+    package = construction_package_record(meta)
     if not package:
         return [
             {
@@ -627,7 +615,7 @@ def build_construction_package_manifest(plan_or_meta: Dict[str, Any]) -> Dict[st
     artifact_status = _construction_package_artifact_status(plan_or_meta, meta)
     professional_release_status = _professional_package_release_status(
         meta,
-        _construction_package_record(meta),
+        construction_package_record(meta),
         artifact_status,
     )
     package_blockers = _construction_package_blockers(plan_or_meta, meta) if readiness.get("ready") is True else []

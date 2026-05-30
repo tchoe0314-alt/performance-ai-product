@@ -105,6 +105,17 @@ class GoldenRunnerTests(unittest.TestCase):
         self.assertIn("construction_readiness_missing", result["hard_failures"])
         self.assertIn("construction_package_manifest_missing", result["hard_failures"])
 
+    def test_run_scenario_accepts_deliverable_package_alias_for_package_gate_presence(self) -> None:
+        def aliased_package(payload):
+            plan = _fake_plan(payload)
+            plan["meta"]["deliverable_package"] = plan["meta"].pop("construction_package_manifest")
+            return plan
+
+        result = run_golden_scenario("small_commercial_pad", build_plan_fn=aliased_package)
+
+        self.assertTrue(result["success"])
+        self.assertNotIn("construction_package_manifest_missing", result["hard_failures"])
+
     def test_run_scenario_fails_when_construction_release_is_allowed_without_civil_readiness(self) -> None:
         def false_release(payload):
             plan = _fake_plan(payload)

@@ -2,27 +2,13 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from backend.planning.common import construction_package_record
 from backend.planning.professional_release import RELEASE_STATUSES
 
 
 def _append_once(items: list[str], value: str) -> None:
     if value not in items:
         items.append(value)
-
-
-def _construction_package_record(meta: Dict[str, Any]) -> Dict[str, Any]:
-    package = dict(
-        meta.get("construction_package_manifest")
-        or meta.get("construction_package")
-        or meta.get("construction_deliverable_package")
-        or meta.get("deliverable_package")
-        or {}
-    )
-    if not package:
-        packages = list(meta.get("deliverable_packages") or [])
-        if packages and isinstance(packages[-1], dict):
-            package = dict(packages[-1])
-    return package
 
 
 def _professional_release_claimed(record: Any) -> bool:
@@ -116,7 +102,7 @@ def construction_release_blockers_from_meta(meta: Dict[str, Any], *, requires_co
         blockers.append("construction_readiness_missing")
     if construction and construction.get("ready") is not True:
         blockers.append("construction_readiness_blocked")
-    package = _construction_package_record(meta)
+    package = construction_package_record(meta)
     if construction.get("ready") is True and not package:
         blockers.append("construction_package_manifest_missing")
     if package and package.get("release_allowed") is True:

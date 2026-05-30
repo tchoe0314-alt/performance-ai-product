@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
-from .common import safe_dict, safe_float, safe_int, safe_list, safe_str
+from .common import construction_package_record, safe_dict, safe_float, safe_int, safe_list, safe_str
 from .golden_scenarios import GoldenScenario, get_golden_scenario, golden_scenarios
 from .professional_release import RELEASE_STATUSES
 
@@ -15,20 +15,6 @@ def _default_build_plan(payload: Dict[str, Any]) -> Dict[str, Any]:
     import planner
 
     return planner.build_plan(payload)
-
-
-def _construction_package_record(meta: Dict[str, Any]) -> Dict[str, Any]:
-    package = safe_dict(
-        meta.get("construction_package_manifest")
-        or meta.get("construction_package")
-        or meta.get("construction_deliverable_package")
-        or meta.get("deliverable_package")
-    )
-    if not package:
-        packages = safe_list(meta.get("deliverable_packages"))
-        if packages:
-            package = safe_dict(packages[-1])
-    return package
 
 
 def _construction_release_claimed(plan: Dict[str, Any], meta: Dict[str, Any], package: Dict[str, Any]) -> bool:
@@ -73,7 +59,7 @@ def _readiness_summary(plan: Dict[str, Any]) -> Dict[str, Any]:
     civil = safe_dict(meta.get("civil_design_readiness"))
     engine = safe_dict(meta.get("engine_readiness"))
     construction = safe_dict(meta.get("construction_readiness"))
-    construction_package = _construction_package_record(meta)
+    construction_package = construction_package_record(meta)
     artifact_status = safe_dict(construction_package.get("construction_package_artifact_status"))
     professional_release = safe_dict(construction_package.get("professional_package_release_status"))
     return {
@@ -368,7 +354,7 @@ def run_golden_scenario(
         hard_failures.append("civil_design_readiness_missing")
     if not safe_dict(plan.get("meta")).get("construction_readiness"):
         hard_failures.append("construction_readiness_missing")
-    if not safe_dict(plan.get("meta")).get("construction_package_manifest"):
+    if not construction_package_record(safe_dict(plan.get("meta"))):
         hard_failures.append("construction_package_manifest_missing")
     if bool(summary.get("construction_release_allowed")) and not bool(summary.get("construction_ready")):
         hard_failures.append("construction_release_allowed_without_readiness")

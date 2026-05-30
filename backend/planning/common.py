@@ -38,6 +38,23 @@ def safe_list(value: Any) -> List[Any]:
     return value if isinstance(value, list) else []
 
 
+def construction_package_record(meta: Dict[str, Any]) -> Dict[str, Any]:
+    """Return the active construction package record from supported metadata aliases."""
+
+    package = safe_dict(
+        meta.get("construction_package_manifest")
+        or meta.get("construction_package")
+        or meta.get("construction_deliverable_package")
+        or meta.get("deliverable_package")
+    )
+    if package:
+        return dict(package)
+    packages = safe_list(meta.get("deliverable_packages"))
+    if packages:
+        return dict(safe_dict(packages[-1]))
+    return {}
+
+
 _CANONICAL_STAGE_KEYS: Dict[str, tuple[str, str]] = {
     "grading": ("grading_summary", "grading"),
     "drainage": ("drainage_canonical", "drainage"),
