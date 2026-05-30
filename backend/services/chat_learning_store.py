@@ -10,9 +10,15 @@ from typing import Any, Dict
 _DEFAULT_LEARNING_PATH = Path(__file__).resolve().parents[2] / "data" / "chat_learning.jsonl"
 
 
-def _chat_learning_disabled() -> bool:
-    value = os.environ.get("CIVORA_DISABLE_CHAT_LEARNING", "")
+def _truthy_env(name: str) -> bool:
+    value = os.environ.get(name, "")
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _chat_learning_disabled() -> bool:
+    if _truthy_env("CIVORA_DISABLE_CHAT_LEARNING"):
+        return True
+    return not _truthy_env("CIVORA_ENABLE_CHAT_LEARNING")
 
 
 def _learning_path() -> Path:

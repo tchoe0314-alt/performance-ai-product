@@ -14,6 +14,7 @@ class ChatLearningStoreTest(unittest.TestCase):
             path = Path(tmpdir) / "learning.jsonl"
             env = {
                 "CIVORA_CHAT_LEARNING_PATH": str(path),
+                "CIVORA_ENABLE_CHAT_LEARNING": "1",
                 "CIVORA_DISABLE_CHAT_LEARNING": "",
             }
             with patch.dict(os.environ, env, clear=False):
@@ -25,6 +26,19 @@ class ChatLearningStoreTest(unittest.TestCase):
         self.assertEqual(rows[0]["event_type"], "interaction")
         self.assertEqual(rows[0]["message"], "hello")
         self.assertIn("ts", rows[0])
+
+    def test_append_is_disabled_by_default(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "learning.jsonl"
+            env = {
+                "CIVORA_CHAT_LEARNING_PATH": str(path),
+                "CIVORA_ENABLE_CHAT_LEARNING": "",
+                "CIVORA_DISABLE_CHAT_LEARNING": "",
+            }
+            with patch.dict(os.environ, env, clear=False):
+                append_chat_interaction_event({"message": "hello"})
+
+            self.assertFalse(path.exists())
 
     def test_append_can_be_disabled_for_test_and_privacy_contexts(self):
         with tempfile.TemporaryDirectory() as tmpdir:
