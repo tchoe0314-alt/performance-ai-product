@@ -14,6 +14,7 @@ def final_plan_requires_construction_release(final_plan: Dict[str, Any]) -> bool
         for key in (
             "construction_readiness",
             "construction_package_manifest",
+            "construction_package",
             "professional_package_release_status",
         )
     )
@@ -26,7 +27,7 @@ def construction_release_blockers_from_meta(meta: Dict[str, Any], *, requires_co
         blockers.append("construction_readiness_missing")
     if construction and construction.get("ready") is not True:
         blockers.append("construction_readiness_blocked")
-    package = dict(meta.get("construction_package_manifest") or {})
+    package = dict(meta.get("construction_package_manifest") or meta.get("construction_package") or {})
     if construction.get("ready") is True and not package:
         blockers.append("construction_package_manifest_missing")
     if package and package.get("release_allowed") is True:
