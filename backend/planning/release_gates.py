@@ -83,9 +83,9 @@ def final_plan_requires_construction_release(final_plan: Dict[str, Any]) -> bool
     construction_release_state = str(
         meta.get("construction_release_state") or final_plan.get("construction_release_state") or ""
     ).lower()
-    if release_state in {"released_for_construction", "issued_for_construction"}:
+    if release_state in RELEASE_STATUSES:
         return True
-    if construction_release_state in {"released_for_construction", "issued_for_construction"}:
+    if construction_release_state in RELEASE_STATUSES:
         return True
     if _professional_release_claimed(meta.get("professional_review")):
         return True

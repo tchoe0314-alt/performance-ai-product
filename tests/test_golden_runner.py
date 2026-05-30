@@ -149,6 +149,19 @@ class GoldenRunnerTests(unittest.TestCase):
         self.assertTrue(result["readiness_summary"]["construction_release_allowed"])
         self.assertIn("construction_release_allowed_without_readiness", result["hard_failures"])
 
+    def test_run_scenario_fails_when_sealed_release_state_is_claimed_without_evidence(self) -> None:
+        def false_direct_release(payload):
+            plan = _fake_plan(payload)
+            plan["meta"]["release_state"] = "sealed"
+            return plan
+
+        result = run_golden_scenario("small_commercial_pad", build_plan_fn=false_direct_release)
+
+        self.assertFalse(result["success"])
+        self.assertTrue(result["readiness_summary"]["construction_release_allowed"])
+        self.assertIn("construction_release_allowed_without_readiness", result["hard_failures"])
+        self.assertIn("construction_release_allowed_with_incomplete_package", result["hard_failures"])
+
     def test_run_scenario_fails_when_professional_review_claims_release_without_package_evidence(self) -> None:
         def false_professional_release(payload):
             plan = _fake_plan(payload)

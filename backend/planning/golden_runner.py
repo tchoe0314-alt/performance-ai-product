@@ -63,8 +63,8 @@ def _construction_release_claimed(plan: Dict[str, Any], meta: Dict[str, Any], pa
         or plan.get("construction_export_allowed")
         or meta.get("construction_release_allowed")
         or plan.get("construction_release_allowed")
-        or release_state in {"released_for_construction", "issued_for_construction"}
-        or construction_release_state in {"released_for_construction", "issued_for_construction"}
+        or release_state in RELEASE_STATUSES
+        or construction_release_state in RELEASE_STATUSES
     )
 
 
