@@ -546,10 +546,25 @@ def build_run_summary(
         }
         for item in list(manual_validation.get("failures") or [])
     ]
+    for failure in manual_failures:
+        failure_code = str(failure.get("code") or failure.get("rule") or failure.get("system") or "manual_validation_failure").strip()
+        if not failure_code:
+            failure_code = "manual_validation_failure"
+        blocker = f"manual_validation_{failure_code.lower().replace(' ', '_')}"
+        if blocker not in blocked_reasons:
+            blocked_reasons.append(blocker)
     for failed_blocker in _failed_deliverable_blockers(failed_deliverables):
         if failed_blocker not in blocked_reasons:
             blocked_reasons.append(failed_blocker)
-    release_ready = success and converged and unresolved_conflict_count == 0 and not blocked_exports and not blocked_reasons and not failed_deliverables
+    release_ready = (
+        success
+        and converged
+        and unresolved_conflict_count == 0
+        and not blocked_exports
+        and not blocked_reasons
+        and not failed_deliverables
+        and not manual_failures
+    )
     retryable = not release_ready and (not success or bool(blocked_exports or blocked_reasons or unresolved_conflict_count or error_count or manual_failures))
     primary_attention = (
         (blocked_reasons[:1] or blocked_exports[:1] or list(convergence.get("unresolved_issue_categories") or [])[:1] or failed_deliverables[:1] or [None])[0]

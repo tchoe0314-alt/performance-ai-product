@@ -331,6 +331,47 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertEqual(summary["convergence_summary"]["blocked_reasons"], ["failed_deliverable_report"])
         self.assertEqual(summary["reliability_summary"]["primary_attention"], "failed_deliverable_report")
 
+    def test_build_run_summary_blocks_manual_validation_failures(self):
+        summary = build_run_summary(
+            {
+                "success": True,
+                "final_plan": {
+                    "actions": [{"layer": "LOT"}],
+                    "meta": {
+                        "deliverables": {"requested": [], "produced": [], "failed": []},
+                        "manual_validation": {
+                            "failures": [
+                                {
+                                    "code": "MANUAL_STORM_HYDRAULIC_INVALID",
+                                    "message": "Manual storm pipe hydraulic validation failed.",
+                                    "system": "storm",
+                                    "rule": "hydraulic_capacity",
+                                }
+                            ]
+                        },
+                        "convergence_summary": {
+                            "converged": True,
+                            "blocked_exports": [],
+                            "blocked_reasons": [],
+                            "unresolved_conflict_count": 0,
+                        },
+                    },
+                },
+            },
+            source="unit_test",
+        )
+
+        self.assertFalse(summary["reliability_summary"]["release_ready"])
+        self.assertEqual(summary["reliability_summary"]["manual_failure_count"], 1)
+        self.assertIn(
+            "manual_validation_manual_storm_hydraulic_invalid",
+            summary["convergence_summary"]["blocked_reasons"],
+        )
+        self.assertEqual(
+            summary["reliability_summary"]["primary_attention"],
+            "manual_validation_manual_storm_hydraulic_invalid",
+        )
+
     def test_build_run_summary_does_not_count_assumed_stage_as_complete(self):
         summary = build_run_summary(
             {
