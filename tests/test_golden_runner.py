@@ -145,6 +145,67 @@ class GoldenRunnerTests(unittest.TestCase):
             ["cad_export", "qa_report"],
         )
 
+    def test_run_scenario_fails_when_release_allowed_without_explicit_package_release_flag(self) -> None:
+        def missing_package_release_flag(payload):
+            plan = _fake_plan(payload)
+            plan["meta"]["civil_design_readiness"]["production_ready"] = True
+            plan["meta"]["construction_readiness"] = {"ready": True, "status": "construction_ready", "blockers": []}
+            plan["meta"]["construction_package_manifest"] = {
+                "release_allowed": True,
+                "construction_package_artifact_status": {
+                    "complete_for_release": True,
+                    "model_matches_expected": True,
+                    "release_ready_flag": None,
+                    "missing": [],
+                },
+                "professional_package_release_status": {
+                    "professional_review_present": True,
+                    "professional_release_valid": True,
+                    "model_matches_package": True,
+                    "package_matches_review": True,
+                },
+            }
+            return plan
+
+        result = run_golden_scenario("small_commercial_pad", build_plan_fn=missing_package_release_flag)
+
+        self.assertFalse(result["success"])
+        self.assertIn(
+            "construction_release_allowed_without_explicit_package_release_flag",
+            result["hard_failures"],
+        )
+        self.assertFalse(result["readiness_summary"]["construction_package_release_ready_flag"])
+
+    def test_run_scenario_fails_when_release_allowed_without_valid_professional_release(self) -> None:
+        def invalid_professional_release(payload):
+            plan = _fake_plan(payload)
+            plan["meta"]["civil_design_readiness"]["production_ready"] = True
+            plan["meta"]["construction_readiness"] = {"ready": True, "status": "construction_ready", "blockers": []}
+            plan["meta"]["construction_package_manifest"] = {
+                "release_allowed": True,
+                "construction_package_artifact_status": {
+                    "complete_for_release": True,
+                    "model_matches_expected": True,
+                    "release_ready_flag": True,
+                    "missing": [],
+                },
+                "professional_package_release_status": {
+                    "professional_review_present": True,
+                    "professional_release_valid": False,
+                    "model_matches_package": False,
+                    "package_matches_review": False,
+                },
+            }
+            return plan
+
+        result = run_golden_scenario("small_commercial_pad", build_plan_fn=invalid_professional_release)
+
+        self.assertFalse(result["success"])
+        self.assertIn("construction_release_allowed_without_valid_professional_release", result["hard_failures"])
+        self.assertIn("construction_release_allowed_with_professional_model_mismatch", result["hard_failures"])
+        self.assertIn("construction_release_allowed_with_professional_package_mismatch", result["hard_failures"])
+        self.assertFalse(result["readiness_summary"]["professional_release_valid"])
+
     def test_run_scenario_fails_when_numeric_expectations_are_implausible(self) -> None:
         def implausible_plan(payload):
             plan = _fake_plan(payload)

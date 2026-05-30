@@ -23,6 +23,7 @@ def _readiness_summary(plan: Dict[str, Any]) -> Dict[str, Any]:
     construction = safe_dict(meta.get("construction_readiness"))
     construction_package = safe_dict(meta.get("construction_package_manifest"))
     artifact_status = safe_dict(construction_package.get("construction_package_artifact_status"))
+    professional_release = safe_dict(construction_package.get("professional_package_release_status"))
     return {
         "civil_status": safe_str(civil.get("status")),
         "civil_success": bool(civil.get("success")),
@@ -31,7 +32,12 @@ def _readiness_summary(plan: Dict[str, Any]) -> Dict[str, Any]:
         "construction_release_allowed": bool(construction_package.get("release_allowed")),
         "construction_package_complete_for_release": bool(artifact_status.get("complete_for_release")),
         "construction_package_model_matches_expected": bool(artifact_status.get("model_matches_expected")),
+        "construction_package_release_ready_flag": artifact_status.get("release_ready_flag") is True,
         "construction_package_missing_artifacts": safe_list(artifact_status.get("missing")),
+        "professional_review_present": bool(professional_release.get("professional_review_present")),
+        "professional_release_valid": bool(professional_release.get("professional_release_valid")),
+        "professional_release_model_matches_package": bool(professional_release.get("model_matches_package")),
+        "professional_release_package_matches_review": bool(professional_release.get("package_matches_review")),
         "critical_blocker_count": len(safe_list(civil.get("critical_blockers"))),
         "production_blocker_count": len(safe_list(civil.get("production_blockers"))),
         "construction_blocker_count": len(safe_list(construction.get("blockers"))),
@@ -319,6 +325,16 @@ def run_golden_scenario(
         hard_failures.append("construction_release_allowed_with_incomplete_package")
     if bool(summary.get("construction_release_allowed")) and not bool(summary.get("construction_package_model_matches_expected")):
         hard_failures.append("construction_release_allowed_with_unverified_package_model")
+    if bool(summary.get("construction_release_allowed")) and not bool(summary.get("construction_package_release_ready_flag")):
+        hard_failures.append("construction_release_allowed_without_explicit_package_release_flag")
+    if bool(summary.get("construction_release_allowed")) and not bool(summary.get("professional_review_present")):
+        hard_failures.append("construction_release_allowed_without_professional_review")
+    if bool(summary.get("construction_release_allowed")) and not bool(summary.get("professional_release_valid")):
+        hard_failures.append("construction_release_allowed_without_valid_professional_release")
+    if bool(summary.get("construction_release_allowed")) and not bool(summary.get("professional_release_model_matches_package")):
+        hard_failures.append("construction_release_allowed_with_professional_model_mismatch")
+    if bool(summary.get("construction_release_allowed")) and not bool(summary.get("professional_release_package_matches_review")):
+        hard_failures.append("construction_release_allowed_with_professional_package_mismatch")
     return {
         "success": not hard_failures,
         "scenario_id": scenario.scenario_id,
