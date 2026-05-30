@@ -63,12 +63,13 @@ def _coordinate_quality(coord: Dict[str, Any], fallback_units: str = "ft") -> Di
     code = _epsg_code(raw)
     epsg = f"EPSG:{code}" if code else safe_str(rec.get("epsg") or rec.get("epsg_code") or rec.get("srid"))
     name = safe_str(rec.get("name") or rec.get("crs") or rec.get("projection"))
-    units = _normalize_units(safe_str(rec.get("units") or fallback_units))
+    explicit_units = _normalize_units(safe_str(rec.get("units")))
+    units = explicit_units or _normalize_units(safe_str(fallback_units))
     is_geographic = code in GEOGRAPHIC_EPSG_CODES or units in {"degree", "degrees", "decimal_degrees"}
     blockers: List[Dict[str, str]] = []
     if not (epsg or name):
         blockers.append({"field": "coordinate_system", "reason": "No CRS/EPSG/projection is attached for real-world coordinates."})
-    if not units:
+    if not explicit_units:
         blockers.append({"field": "coordinate_system", "reason": "Coordinate-system units are missing."})
     elif units not in ENGINEERING_UNITS:
         blockers.append({"field": "coordinate_system", "reason": f"Coordinate-system units '{units}' are not engineering distance units."})
@@ -79,6 +80,7 @@ def _coordinate_quality(coord: Dict[str, Any], fallback_units: str = "ft") -> Di
         "epsg": epsg,
         "name": name,
         "units": units,
+        "units_provided": bool(explicit_units),
         "is_geographic": is_geographic,
         "is_projected": bool((epsg or name) and not is_geographic),
         "production_usable": not blockers,

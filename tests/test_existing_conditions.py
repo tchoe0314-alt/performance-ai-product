@@ -123,6 +123,34 @@ class ExistingConditionsTests(unittest.TestCase):
         self.assertFalse(summary["coordinate_system"]["production_usable"])
         self.assertIn("coordinate_system", fields)
 
+    def test_project_units_do_not_silently_clear_coordinate_system_units(self) -> None:
+        summary = summarize_existing_conditions(
+            {
+                "meta": {
+                    "units": "ft",
+                    "grading": {"source_quality": "survey"},
+                    "survey": {"point_count": 8, "source": "uploaded_csv", "benchmark": "BM-1"},
+                    "gis_layers": {
+                        "parcels": [{"id": "P-1"}],
+                        "easements": [{"id": "E-1"}],
+                        "row": [{"id": "ROW-1"}],
+                        "floodplain": {"verified_absent": True, "source": "FEMA FIRM"},
+                        "wetlands": {"verified_absent": True, "source": "NWI"},
+                        "existing_utilities": {"verified_absent": True, "source": "utility atlas"},
+                    },
+                    "coordinate_system": {"epsg": "EPSG:2276", "source": "survey"},
+                }
+            }
+        )
+
+        fields = {item["field"] for item in summary["missing_requirements"]}
+
+        self.assertTrue(summary["coordinate_system"]["ready"])
+        self.assertFalse(summary["coordinate_system"]["units_provided"])
+        self.assertFalse(summary["coordinate_system"]["production_usable"])
+        self.assertFalse(summary["production_ready"])
+        self.assertIn("coordinate_system", fields)
+
     def test_civil_readiness_blocks_missing_coordinate_system(self) -> None:
         readiness = civil_design_readiness({"meta": {"grading": {"source_quality": "survey"}, "survey": {"point_count": 4}, "gis_layers": {"parcels": [{}]}}})
         gaps = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
