@@ -812,10 +812,6 @@ def produced_deliverables(plan: Dict[str, Any]) -> List[str]:
     meta = safe_dict(plan.get("meta"))
     produced: List[str] = []
     layers = {safe_str(action.get("layer"), "").upper() for action in actions if isinstance(action, dict)}
-    text_blob = " ".join(
-        [lower_text(action.get("text")) for action in actions if isinstance(action, dict) and safe_str(action.get("text"))]
-        + [lower_text(action.get("label")) for action in actions if isinstance(action, dict) and safe_str(action.get("label"))]
-    )
     grading_export_ready = bool(safe_dict(safe_dict(meta.get("grading")).get("export_validation")).get("ready"))
     drainage_export_ready = bool(safe_dict(safe_dict(meta.get("drainage")).get("export_validation")).get("ready"))
     storm_export_ready = bool(safe_dict(safe_dict(meta.get("storm_pipes")).get("export_validation")).get("ready"))
@@ -849,9 +845,9 @@ def produced_deliverables(plan: Dict[str, Any]) -> List[str]:
     )
     if sanitary_ready and (safe_int(sanitary.get("route_count"), 0) > 0 or "sanitary" in utility_system or "SAN" in layers):
         produced.append("sanitary_plan")
-    if "profile" in text_blob or safe_list(meta.get("profiles")):
+    if safe_list(meta.get("profiles")):
         produced.extend(["profiles", "road_profile"])
-    if "section" in text_blob or safe_list(meta.get("cross_sections")):
+    if safe_list(meta.get("cross_sections")):
         produced.append("cross_sections")
     return dedupe_keep_order(produced)
 
