@@ -938,6 +938,13 @@ def build_orchestrate_job_runner(
                 blocked_reasons.append("release_review_not_ready")
             if final_meta.get("release_ready") is False and "final_plan_release_blocked" not in blocked_reasons:
                 blocked_reasons.append("final_plan_release_blocked")
+            reactive_report = safe_dict(final_meta.get("reactive_update_report"))
+            if reactive_report.get("post_rerun_production_ready") is False and "reactive_post_rerun_not_ready" not in blocked_reasons:
+                blocked_reasons.append("reactive_post_rerun_not_ready")
+            for reactive_blocker in safe_list(reactive_report.get("post_rerun_release_blockers")):
+                reactive_blocker_name = safe_str(reactive_blocker)
+                if reactive_blocker_name and reactive_blocker_name not in blocked_reasons:
+                    blocked_reasons.append(reactive_blocker_name)
             final_deliverables = dict(final_meta.get("deliverables") or final_plan.get("deliverables") or {})
 
             def _merged_deliverables(run_key: str, final_key: str) -> list[str]:
