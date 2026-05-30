@@ -120,6 +120,48 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertIn("construction_professional_release_untraced", blockers)
         self.assertNotIn("construction_professional_release_missing", blockers)
 
+    def test_release_allowed_package_requires_artifact_status_audit(self) -> None:
+        meta = {
+            "construction_readiness": {"ready": True},
+            "construction_package": {
+                "release_allowed": True,
+                "professional_package_release_status": {
+                    "professional_release_valid": True,
+                    "model_matches_package": True,
+                    "package_matches_review": True,
+                },
+            },
+        }
+
+        blockers = construction_release_blockers_from_meta(
+            meta,
+            requires_construction_release=True,
+        )
+
+        self.assertIn("construction_package_artifact_status_missing", blockers)
+        self.assertIn("construction_package_release_not_marked_ready", blockers)
+
+    def test_blocked_package_still_requires_artifact_status_audit(self) -> None:
+        meta = {
+            "construction_readiness": {"ready": True},
+            "construction_package": {
+                "release_allowed": False,
+                "professional_package_release_status": {
+                    "professional_release_valid": True,
+                    "model_matches_package": True,
+                    "package_matches_review": True,
+                },
+            },
+        }
+
+        blockers = construction_release_blockers_from_meta(
+            meta,
+            requires_construction_release=True,
+        )
+
+        self.assertIn("construction_package_blocked", blockers)
+        self.assertIn("construction_package_artifact_status_missing", blockers)
+
     def test_top_level_professional_release_status_blocks_invalid_release(self) -> None:
         meta = {
             "construction_readiness": {"ready": True},

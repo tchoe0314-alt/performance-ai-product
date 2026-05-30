@@ -71,6 +71,8 @@ def construction_release_blockers_from_meta(meta: Dict[str, Any], *, requires_co
             or meta.get("professional_package_release_status")
             or {}
         )
+        if not artifact_status:
+            _append_once(blockers, "construction_package_artifact_status_missing")
         if artifact_status.get("release_ready_flag") is not True:
             _append_once(blockers, "construction_package_release_not_marked_ready")
         if artifact_status and artifact_status.get("complete_for_release") is not True:
@@ -89,6 +91,8 @@ def construction_release_blockers_from_meta(meta: Dict[str, Any], *, requires_co
     if package and package.get("release_allowed") is not True:
         _append_once(blockers, "construction_package_blocked")
         artifact_status = dict(package.get("construction_package_artifact_status") or {})
+        if not artifact_status:
+            _append_once(blockers, "construction_package_artifact_status_missing")
         for artifact_blocker in _artifact_status_blockers(artifact_status):
             _append_once(blockers, artifact_blocker)
         professional_status = dict(

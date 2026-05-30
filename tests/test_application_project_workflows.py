@@ -877,6 +877,7 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
                 "construction_package_blocked",
                 "dxf_export_blocked",
                 "construction_readiness_missing",
+                "construction_package_artifact_status_missing",
                 "construction_package_release_not_marked_ready",
             ],
         )
