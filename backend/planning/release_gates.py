@@ -3,6 +3,38 @@ from __future__ import annotations
 from typing import Any, Dict
 
 
+def _append_once(items: list[str], value: str) -> None:
+    if value not in items:
+        items.append(value)
+
+
+def _artifact_status_blockers(artifact_status: Dict[str, Any]) -> list[str]:
+    blockers: list[str] = []
+    if artifact_status.get("package_present") is False:
+        _append_once(blockers, "construction_package_missing")
+    if list(artifact_status.get("missing") or []):
+        _append_once(blockers, "construction_package_missing_artifacts")
+    if list(artifact_status.get("anonymous") or []):
+        _append_once(blockers, "construction_package_anonymous_artifacts")
+    if list(artifact_status.get("stale") or []):
+        _append_once(blockers, "construction_package_stale_artifacts")
+    if artifact_status.get("model_reference_present") is False:
+        _append_once(blockers, "construction_package_model_reference_missing")
+    elif artifact_status.get("model_matches_expected") is False:
+        _append_once(blockers, "construction_package_model_mismatch")
+    if artifact_status.get("release_ready_flag") is not True:
+        _append_once(blockers, "construction_package_release_not_marked_ready")
+    if list(artifact_status.get("untraced") or []):
+        _append_once(blockers, "construction_package_untraced_artifacts")
+    if list(artifact_status.get("mismatched") or []):
+        _append_once(blockers, "construction_package_mismatched_artifacts")
+    if list(artifact_status.get("cost_untraced") or []):
+        _append_once(blockers, "construction_package_cost_untraced")
+    if list(artifact_status.get("cost_mismatched") or []):
+        _append_once(blockers, "construction_package_cost_mismatched")
+    return blockers
+
+
 def final_plan_requires_construction_release(final_plan: Dict[str, Any]) -> bool:
     meta = dict(final_plan.get("meta") or {})
     if meta.get("construction_release_required") is True:
@@ -38,50 +70,32 @@ def construction_release_blockers_from_meta(meta: Dict[str, Any], *, requires_co
             or {}
         )
         if artifact_status.get("release_ready_flag") is not True:
-            blockers.append("construction_package_release_not_marked_ready")
+            _append_once(blockers, "construction_package_release_not_marked_ready")
         if artifact_status and artifact_status.get("complete_for_release") is not True:
-            blockers.append("construction_package_incomplete_release")
+            _append_once(blockers, "construction_package_incomplete_release")
+        for artifact_blocker in _artifact_status_blockers(artifact_status):
+            _append_once(blockers, artifact_blocker)
         if not professional_status:
-            blockers.append("construction_professional_release_missing")
+            _append_once(blockers, "construction_professional_release_missing")
         elif professional_status.get("professional_release_valid") is not True:
-            blockers.append("construction_professional_release_invalid")
+            _append_once(blockers, "construction_professional_release_invalid")
         if professional_status and (
             professional_status.get("model_matches_package") is not True
             or professional_status.get("package_matches_review") is not True
         ):
-            blockers.append("construction_professional_release_untraced")
+            _append_once(blockers, "construction_professional_release_untraced")
     if package and package.get("release_allowed") is not True:
-        blockers.append("construction_package_blocked")
+        _append_once(blockers, "construction_package_blocked")
         artifact_status = dict(package.get("construction_package_artifact_status") or {})
-        if artifact_status.get("package_present") is False:
-            blockers.append("construction_package_missing")
-        if list(artifact_status.get("missing") or []):
-            blockers.append("construction_package_missing_artifacts")
-        if list(artifact_status.get("anonymous") or []):
-            blockers.append("construction_package_anonymous_artifacts")
-        if list(artifact_status.get("stale") or []):
-            blockers.append("construction_package_stale_artifacts")
-        if artifact_status.get("model_reference_present") is False:
-            blockers.append("construction_package_model_reference_missing")
-        elif artifact_status.get("model_matches_expected") is False:
-            blockers.append("construction_package_model_mismatch")
-        if artifact_status.get("release_ready_flag") is not True:
-            blockers.append("construction_package_release_not_marked_ready")
-        if list(artifact_status.get("untraced") or []):
-            blockers.append("construction_package_untraced_artifacts")
-        if list(artifact_status.get("mismatched") or []):
-            blockers.append("construction_package_mismatched_artifacts")
-        if list(artifact_status.get("cost_untraced") or []):
-            blockers.append("construction_package_cost_untraced")
-        if list(artifact_status.get("cost_mismatched") or []):
-            blockers.append("construction_package_cost_mismatched")
+        for artifact_blocker in _artifact_status_blockers(artifact_status):
+            _append_once(blockers, artifact_blocker)
         professional_status = dict(
             package.get("professional_package_release_status")
             or meta.get("professional_package_release_status")
             or {}
         )
         if professional_status.get("professional_release_valid") is False:
-            blockers.append("construction_professional_release_invalid")
+            _append_once(blockers, "construction_professional_release_invalid")
     return blockers
 
 
