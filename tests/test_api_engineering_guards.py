@@ -185,7 +185,7 @@ class ApiEngineeringGuardsTest(unittest.TestCase):
         current_user = {"user_id": "u1"}
         csv_response = unit_price_book_from_csv(
             UnitPriceBookCsvPayload(
-                csv_text="metric,item,category,unit,unit_cost\npipe_length_ft,RCP storm pipe,storm,ft,125\n",
+                csv_text="metric,item,category,unit,unit_cost,bid_item_id\npipe_length_ft,RCP storm pipe,storm,ft,125,ST-125\n",
                 source="company_2026_bid_book",
                 location="Austin, TX",
                 effective_date="2026-05-01",

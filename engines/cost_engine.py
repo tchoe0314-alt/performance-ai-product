@@ -182,6 +182,14 @@ def validate_unit_price_book_for_production(
                     "severity": "blocker",
                 }
             )
+        if not _safe_str(rec.get("source_item_id")):
+            blockers.append(
+                {
+                    "field": f"unit_prices.{metric}.source_item_id",
+                    "reason": "Each production unit price must trace to a bid item, schedule line, or estimator source item ID.",
+                    "severity": "blocker",
+                }
+            )
         if metric not in known_metrics:
             warnings.append(
                 {

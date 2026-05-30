@@ -10,7 +10,7 @@ from backend.application.cost_workflows import (
 class ApplicationCostWorkflowsTests(unittest.TestCase):
     def test_csv_unit_price_book_workflow_returns_production_usable_book(self) -> None:
         response = unit_price_book_from_csv_response(
-            csv_text="metric,item,category,unit,unit_cost\npipe_length_ft,RCP storm pipe,storm,ft,120\n",
+            csv_text="metric,item,category,unit,unit_cost,bid_item_id\npipe_length_ft,RCP storm pipe,storm,ft,120,ST-120\n",
             source="company_2026_bid_book",
             location="Austin, TX",
             effective_date="2026-05-01",

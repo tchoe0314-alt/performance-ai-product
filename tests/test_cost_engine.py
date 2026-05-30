@@ -46,7 +46,13 @@ class CostEngineTests(unittest.TestCase):
                     "approval_date": "2026-05-02",
                     "contingency_pct": 10,
                     "unit_prices": {
-                        "pipe_length_ft": {"item": "RCP storm pipe", "category": "storm", "unit": "ft", "unit_cost": 100.0}
+                        "pipe_length_ft": {
+                            "item": "RCP storm pipe",
+                            "category": "storm",
+                            "unit": "ft",
+                            "unit_cost": 100.0,
+                            "source_item_id": "ST-100",
+                        }
                     },
                 },
                 "quantities": {
@@ -82,7 +88,13 @@ class CostEngineTests(unittest.TestCase):
                         "source": "company_2026_bid_book",
                         "production_usable": True,
                         "unit_prices": {
-                            "pipe_length_ft": {"item": "RCP storm pipe", "category": "storm", "unit": "ft", "unit_cost": 100.0}
+                            "pipe_length_ft": {
+                                "item": "RCP storm pipe",
+                                "category": "storm",
+                                "unit": "ft",
+                                "unit_cost": 100.0,
+                                "source_item_id": "ST-100",
+                            }
                         },
                     },
                     "quantities": {
@@ -111,7 +123,13 @@ class CostEngineTests(unittest.TestCase):
                         "approved_by": "Estimator",
                         "approval_date": "2026-05-02",
                         "unit_prices": {
-                            "pipe_length_ft": {"item": "RCP storm pipe", "category": "storm", "unit": "ft", "unit_cost": 100.0}
+                            "pipe_length_ft": {
+                                "item": "RCP storm pipe",
+                                "category": "storm",
+                                "unit": "ft",
+                                "unit_cost": 100.0,
+                                "source_item_id": "ST-100",
+                            }
                         },
                     },
                     "quantities": {
@@ -162,6 +180,26 @@ class CostEngineTests(unittest.TestCase):
         self.assertIn("source", fields)
         self.assertIn("location", fields)
         self.assertIn("approved_by", fields)
+        self.assertIn("unit_prices.pipe_length_ft.source_item_id", fields)
+
+    def test_unit_price_book_validation_requires_line_item_traceability(self) -> None:
+        price_book = normalize_unit_price_book(
+            {
+                "source": "company_bid_book",
+                "location": "Austin, TX",
+                "effective_date": "2026-05-01",
+                "approved_by": "Estimator",
+                "approval_date": "2026-05-02",
+                "unit_prices": {
+                    "pipe_length_ft": {"item": "Pipe", "category": "storm", "unit": "ft", "unit_cost": 100.0}
+                },
+            }
+        )
+
+        fields = {item["field"] for item in price_book["production_validation"]["blockers"]}
+
+        self.assertFalse(price_book["production_usable"])
+        self.assertEqual(fields, {"unit_prices.pipe_length_ft.source_item_id"})
 
     def test_cost_engine_blocks_untraceable_priced_quantities(self) -> None:
         result = compute_cost_estimate(

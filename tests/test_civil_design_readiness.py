@@ -219,7 +219,13 @@ def _production_ready_meta() -> dict:
         "approved_by": "Estimator",
         "approval_date": "2026-05-02",
         "unit_prices": {
-            "pipe_length_ft": {"item": "RCP storm pipe", "category": "storm", "unit": "ft", "unit_cost": 125.0}
+            "pipe_length_ft": {
+                "item": "RCP storm pipe",
+                "category": "storm",
+                "unit": "ft",
+                "unit_cost": 125.0,
+                "source_item_id": "ST-125",
+            }
         },
     }
     cost = compute_cost_estimate({"meta": meta})
