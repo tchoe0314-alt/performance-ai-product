@@ -285,6 +285,22 @@ class Phase1Slice6DExportMetadataTest(unittest.TestCase):
         self.assertTrue(audit["release_readiness"]["construction_release_required"])
         self.assertIn("construction_readiness_missing", audit["blocked_reasons"])
 
+    def test_export_audit_blocks_professional_release_claim_without_package_evidence(self) -> None:
+        plan = _export_plan()
+        plan["meta"]["professional_review"] = {
+            "status": "released_for_construction",
+            "released_for_construction": True,
+        }
+
+        metadata = finalize_export_metadata(plan)
+        audit = metadata["export_audit"]
+
+        self.assertFalse(audit["success"])
+        self.assertFalse(audit["production_export_ready"])
+        self.assertTrue(audit["export_blocked"])
+        self.assertTrue(audit["release_readiness"]["construction_release_required"])
+        self.assertIn("construction_readiness_missing", audit["blocked_reasons"])
+
     def test_export_audit_blocks_false_allowed_package_without_release_proof(self) -> None:
         plan = _export_plan()
         plan["meta"]["construction_readiness"] = {"ready": True, "status": "construction_ready", "blockers": []}

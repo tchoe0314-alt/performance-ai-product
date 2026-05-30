@@ -224,6 +224,25 @@ class ReleaseGateTests(unittest.TestCase):
 
         self.assertIn("construction_readiness_missing", blockers)
 
+    def test_professional_review_release_claim_requires_release_gates(self) -> None:
+        final_plan = {
+            "meta": {
+                "professional_review": {
+                    "status": "released_for_construction",
+                    "released_for_construction": True,
+                },
+            },
+        }
+
+        self.assertTrue(final_plan_requires_construction_release(final_plan))
+
+        blockers = construction_release_blockers_from_meta(
+            final_plan["meta"],
+            requires_construction_release=final_plan_requires_construction_release(final_plan),
+        )
+
+        self.assertIn("construction_readiness_missing", blockers)
+
     def test_blocked_package_still_requires_artifact_status_audit(self) -> None:
         meta = {
             "construction_readiness": {"ready": True},

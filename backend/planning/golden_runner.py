@@ -43,8 +43,20 @@ def _construction_release_claimed(plan: Dict[str, Any], meta: Dict[str, Any], pa
         package,
     ]
     package_claims.extend(safe_dict(item) for item in safe_list(meta.get("deliverable_packages")))
+    professional_claims = [
+        safe_dict(meta.get("professional_review")),
+        safe_dict(meta.get("engineer_review")),
+        safe_dict(plan.get("professional_review")),
+        safe_dict(plan.get("engineer_review")),
+    ]
     return bool(
         any(item.get("release_allowed") is True or item.get("construction_export_allowed") is True for item in package_claims)
+        or any(
+            safe_str(item.get("status")).lower() in {"released_for_construction", "issued_for_construction"}
+            or item.get("released_for_construction") is True
+            or item.get("issued_for_construction") is True
+            for item in professional_claims
+        )
         or meta.get("construction_export_allowed")
         or plan.get("construction_export_allowed")
         or meta.get("construction_release_allowed")

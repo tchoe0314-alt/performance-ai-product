@@ -23,6 +23,15 @@ def _construction_package_record(meta: Dict[str, Any]) -> Dict[str, Any]:
     return package
 
 
+def _professional_release_claimed(record: Any) -> bool:
+    if not isinstance(record, dict):
+        return False
+    status = str(record.get("status") or "").strip().lower()
+    if status in {"released_for_construction", "issued_for_construction"}:
+        return True
+    return record.get("released_for_construction") is True or record.get("issued_for_construction") is True
+
+
 def _artifact_status_blockers(artifact_status: Dict[str, Any]) -> list[str]:
     blockers: list[str] = []
     if artifact_status.get("package_present") is False:
@@ -71,6 +80,14 @@ def final_plan_requires_construction_release(final_plan: Dict[str, Any]) -> bool
     if release_state in {"released_for_construction", "issued_for_construction"}:
         return True
     if construction_release_state in {"released_for_construction", "issued_for_construction"}:
+        return True
+    if _professional_release_claimed(meta.get("professional_review")):
+        return True
+    if _professional_release_claimed(meta.get("engineer_review")):
+        return True
+    if _professional_release_claimed(final_plan.get("professional_review")):
+        return True
+    if _professional_release_claimed(final_plan.get("engineer_review")):
         return True
     return any(
         bool(meta.get(key))
