@@ -6,10 +6,12 @@ from typing import Any, Callable, Dict, Optional, Protocol
 from fastapi import HTTPException
 
 from backend.application.design_workflows import (
-    construction_release_blockers_from_meta,
-    final_plan_requires_construction_release,
     new_workflow_id,
     now_ts,
+)
+from backend.planning.release_gates import (
+    construction_release_blockers_from_meta,
+    final_plan_requires_construction_release,
 )
 from backend.application.protocols import ArtifactServiceProtocol
 from backend.application.job_workflows import JobQueueProtocol

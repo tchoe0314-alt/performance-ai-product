@@ -8,12 +8,14 @@ from fastapi import HTTPException
 
 from backend.application.design_workflows import (
     build_run_summary,
-    construction_release_blockers_from_meta,
-    final_plan_requires_construction_release,
     final_plan_from_result,
 )
 from backend.application.protocols import ArtifactServiceProtocol
 from backend.application.project_workflows import artifact_summary, save_project_workflow_update
+from backend.planning.release_gates import (
+    construction_release_blockers_from_meta,
+    final_plan_requires_construction_release,
+)
 from geometry.layout_engine import _build_expanded_plan
 
 

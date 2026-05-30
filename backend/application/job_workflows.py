@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, Optional, Protocol
 
 from fastapi import HTTPException
 from backend.planning.common import safe_dict, safe_float, safe_int, safe_list, safe_str
-from backend.application.design_workflows import (
+from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
     final_plan_requires_construction_release,
 )

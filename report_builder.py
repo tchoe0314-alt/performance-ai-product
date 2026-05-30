@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Sequence
 
-from backend.application.design_workflows import (
+from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
     final_plan_requires_construction_release,
 )
