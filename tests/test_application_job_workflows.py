@@ -1372,11 +1372,18 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertIn("manual_validation_manual_storm_hydraulic_invalid", final_plan["blockers"])
         self.assertIn("manual_validation_manual_storm_hydraulic_invalid", final_meta["blockers"])
         self.assertIn("manual_validation_manual_storm_hydraulic_invalid", release_review["blocked_reasons"])
+        self.assertEqual(final_meta["phase_checkpoints"]["combined_view"]["status"], "blocked")
+        self.assertFalse(final_meta["phase_checkpoints"]["combined_view"]["ready"])
+        self.assertIn(
+            "manual_validation_manual_storm_hydraulic_invalid",
+            final_meta["phase_checkpoints"]["combined_view"]["blocked_reasons"],
+        )
         self.assertEqual(final_meta["run_summary"]["manual_failures"][0]["code"], "MANUAL_STORM_HYDRAULIC_INVALID")
         self.assertEqual(release_review["reliability_summary"]["manual_failure_count"], 1)
         saved_plan = store.saved_payload["latest_result"]["final_plan"]
         self.assertFalse(saved_plan["release_ready"])
         self.assertIn("manual_validation_manual_storm_hydraulic_invalid", saved_plan["blockers"])
+        self.assertFalse(saved_plan["meta"]["phase_checkpoints"]["combined_view"]["ready"])
 
     def test_build_orchestrate_job_runner_persists_phase_checkpoints_mid_run(self):
         store = FakeProjectStore(

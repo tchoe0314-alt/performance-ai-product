@@ -518,6 +518,7 @@ def build_orchestrate_job_runner(
         blocked_exports: list[str],
         blocked_reasons: list[str],
         failed_deliverables: list[str],
+        manual_failures: list[Dict[str, Any]],
     ) -> Dict[str, Any]:
         normalized = {
             str(name): dict(value)
@@ -526,7 +527,31 @@ def build_orchestrate_job_runner(
         }
         if not normalized:
             return {}
-        if release_status != "ready" or blocked_exports or blocked_reasons or failed_deliverables:
+        if release_status != "ready" or blocked_exports or blocked_reasons or failed_deliverables or manual_failures:
+            combined = dict(normalized.get("combined_view") or {})
+            blockers = list(
+                dict.fromkeys(
+                    list(blocked_reasons or [])
+                    + list(blocked_exports or [])
+                    + [
+                        f"failed_deliverable_{safe_str(item).lower().replace(' ', '_')}"
+                        for item in failed_deliverables
+                        if safe_str(item)
+                    ]
+                    + [
+                        f"manual_validation_{safe_str(item.get('code') or 'manual_validation_failure').lower().replace(' ', '_')}"
+                        for item in manual_failures
+                        if isinstance(item, dict)
+                    ]
+                )
+            )
+            combined["label"] = str(combined.get("label") or "Combined View")
+            combined["status"] = "blocked" if blockers or release_status == "blocked" else "review"
+            combined["ready"] = False
+            combined["blocked_reasons"] = blockers
+            combined["blocked_exports"] = list(blocked_exports or [])
+            combined["note"] = "Combined engineering view is blocked by release gates." if blockers else "Combined engineering view needs engineering review."
+            normalized["combined_view"] = combined
             return normalized
 
         for name, phase in normalized.items():
@@ -985,6 +1010,7 @@ def build_orchestrate_job_runner(
                 blocked_exports=blocked_exports,
                 blocked_reasons=blocked_reasons,
                 failed_deliverables=failed_deliverables,
+                manual_failures=manual_failures,
             )
             combined_checkpoint = dict(normalized_phase_checkpoints.get("combined_view") or {})
             total_phase_count = int(combined_checkpoint.get("total_phase_count") or 0)
@@ -1009,6 +1035,7 @@ def build_orchestrate_job_runner(
                     blocked_exports=blocked_exports,
                     blocked_reasons=blocked_reasons,
                     failed_deliverables=failed_deliverables,
+                    manual_failures=manual_failures,
                 )
             if normalized_phase_checkpoints:
                 run_summary["phase_checkpoints"] = normalized_phase_checkpoints
