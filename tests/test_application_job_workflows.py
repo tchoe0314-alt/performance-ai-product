@@ -1177,12 +1177,16 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertFalse(final_meta["release_ready"])
         self.assertFalse(final_meta["export_ready"])
         self.assertFalse(release_review["release_ready"])
+        self.assertIn("failed_deliverable_report", final_plan["blockers"])
+        self.assertIn("failed_deliverable_report", final_meta["blockers"])
+        self.assertIn("failed_deliverable_report", release_review["blocked_reasons"])
         self.assertEqual(final_plan["deliverables"]["failed"], ["report"])
         self.assertEqual(final_meta["deliverables"]["failed"], ["report"])
-        self.assertEqual(release_review["reliability_summary"]["primary_attention"], "report")
+        self.assertEqual(release_review["reliability_summary"]["primary_attention"], "failed_deliverable_report")
         saved_plan = store.saved_payload["latest_result"]["final_plan"]
         self.assertFalse(saved_plan["release_ready"])
         self.assertFalse(saved_plan["export_ready"])
+        self.assertIn("failed_deliverable_report", saved_plan["blockers"])
 
     def test_build_orchestrate_job_runner_persists_phase_checkpoints_mid_run(self):
         store = FakeProjectStore(

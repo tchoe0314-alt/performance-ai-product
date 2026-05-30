@@ -913,8 +913,16 @@ def build_orchestrate_job_runner(
                 blocked_reasons.append("release_review_not_ready")
             if final_meta.get("release_ready") is False and "final_plan_release_blocked" not in blocked_reasons:
                 blocked_reasons.append("final_plan_release_blocked")
-            convergence["blocked_reasons"] = list(blocked_reasons)
             failed_deliverables = [str(item) for item in list(run_summary.get("failed_deliverables") or []) if str(item)]
+            failed_deliverable_blockers = [
+                f"failed_deliverable_{safe_str(item).lower().replace(' ', '_')}"
+                for item in failed_deliverables
+                if safe_str(item)
+            ]
+            for failed_blocker in failed_deliverable_blockers:
+                if failed_blocker not in blocked_reasons:
+                    blocked_reasons.append(failed_blocker)
+            convergence["blocked_reasons"] = list(blocked_reasons)
             reliability["release_ready"] = not bool(blocked_reasons or blocked_exports or failed_deliverables)
             reliability["blocked_export_count"] = len(blocked_exports)
             if blocked_reasons or blocked_exports:
