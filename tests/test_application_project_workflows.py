@@ -989,6 +989,38 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertFalse(summary["release_ready"])
         self.assertIn("missing_deliverable_report", summary["release_blockers"])
 
+    def test_artifact_summary_blocks_missing_deliverables_from_release_review(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "plan.json"
+            path.write_text("x")
+            summary = artifact_summary(
+                path=path,
+                artifact_kind="report",
+                project_id="p1",
+                result_data={
+                    "request_metadata": {
+                        "release_review": {
+                            "release_status": "ready",
+                            "release_ready": True,
+                            "requested_deliverables": ["site_plan", "report"],
+                            "produced_deliverables": ["site_plan"],
+                            "failed_deliverables": [],
+                        }
+                    },
+                    "final_plan": {
+                        "project_name": "Review Missing Deliverable Artifact",
+                        "meta": {
+                            "release_ready": True,
+                            "release_status": "ready",
+                        },
+                    },
+                },
+            )
+
+        self.assertEqual(summary["release_status"], "ready")
+        self.assertFalse(summary["release_ready"])
+        self.assertIn("missing_deliverable_report", summary["release_blockers"])
+
     def test_artifact_summary_blocks_manual_validation_failures_from_final_meta(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "plan.json"

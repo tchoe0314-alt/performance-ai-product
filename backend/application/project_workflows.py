@@ -354,7 +354,24 @@ def artifact_summary(
     ):
         if blocker not in release_blockers:
             release_blockers.append(blocker)
-    failed_deliverables = list(dict(final_meta.get("deliverables") or {}).get("failed") or [])
+
+    final_deliverables = dict(final_meta.get("deliverables") or final_plan.get("deliverables") or {})
+    run_summary = dict(result_data.get("run_summary") or dict(result_data.get("metadata") or {}).get("run_summary") or {})
+
+    def _merged_deliverables(*values: Any) -> list[str]:
+        merged: list[str] = []
+        for value in values:
+            for item in list(value or []):
+                name = str(item).strip()
+                if name and name not in merged:
+                    merged.append(name)
+        return merged
+
+    failed_deliverables = _merged_deliverables(
+        final_deliverables.get("failed"),
+        release_review.get("failed_deliverables"),
+        run_summary.get("failed_deliverables"),
+    )
     for failed in failed_deliverables:
         failed_name = str(failed).strip()
         if not failed_name:
@@ -362,13 +379,26 @@ def artifact_summary(
         blocker = f"failed_deliverable_{failed_name.lower().replace(' ', '_')}"
         if blocker not in release_blockers:
             release_blockers.append(blocker)
-    missing_deliverables = list(dict(final_meta.get("deliverables") or {}).get("missing") or [])
-    deliverables = dict(final_meta.get("deliverables") or {})
-    produced_set = {str(item).strip() for item in list(deliverables.get("produced") or []) if str(item).strip()}
+    missing_deliverables = _merged_deliverables(
+        final_deliverables.get("missing"),
+        release_review.get("missing_deliverables"),
+        run_summary.get("missing_deliverables"),
+    )
+    requested_deliverables = _merged_deliverables(
+        final_deliverables.get("requested"),
+        release_review.get("requested_deliverables"),
+        run_summary.get("requested_deliverables"),
+    )
+    produced_deliverables = _merged_deliverables(
+        final_deliverables.get("produced"),
+        release_review.get("produced_deliverables"),
+        run_summary.get("produced_deliverables"),
+    )
+    produced_set = {str(item).strip() for item in produced_deliverables if str(item).strip()}
     failed_set = {str(item).strip() for item in failed_deliverables if str(item).strip()}
     missing_deliverables.extend(
         str(item).strip()
-        for item in list(deliverables.get("requested") or [])
+        for item in requested_deliverables
         if str(item).strip() and str(item).strip() not in produced_set and str(item).strip() not in failed_set
     )
     missing_deliverables = list(dict.fromkeys([str(item).strip() for item in missing_deliverables if str(item).strip()]))
