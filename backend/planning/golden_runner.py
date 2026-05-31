@@ -3,7 +3,16 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
-from .common import construction_package_record, safe_dict, safe_float, safe_int, safe_list, safe_str
+from .common import (
+    blocker_explanations,
+    construction_package_record,
+    readiness_issue_explanations,
+    safe_dict,
+    safe_float,
+    safe_int,
+    safe_list,
+    safe_str,
+)
 from .golden_scenarios import GoldenScenario, get_golden_scenario, golden_scenarios
 from .professional_release import RELEASE_STATUSES
 
@@ -62,6 +71,9 @@ def _readiness_summary(plan: Dict[str, Any]) -> Dict[str, Any]:
     construction_package = construction_package_record(meta)
     artifact_status = safe_dict(construction_package.get("construction_package_artifact_status"))
     professional_release = safe_dict(construction_package.get("professional_package_release_status"))
+    critical_blockers = safe_list(civil.get("critical_blockers"))
+    production_blockers = safe_list(civil.get("production_blockers"))
+    construction_blockers = safe_list(construction.get("blockers"))
     return {
         "civil_status": safe_str(civil.get("status")),
         "civil_success": bool(civil.get("success")),
@@ -77,9 +89,12 @@ def _readiness_summary(plan: Dict[str, Any]) -> Dict[str, Any]:
         "professional_release_valid": bool(professional_release.get("professional_release_valid")),
         "professional_release_model_matches_package": bool(professional_release.get("model_matches_package")),
         "professional_release_package_matches_review": bool(professional_release.get("package_matches_review")),
-        "critical_blocker_count": len(safe_list(civil.get("critical_blockers"))),
-        "production_blocker_count": len(safe_list(civil.get("production_blockers"))),
-        "construction_blocker_count": len(safe_list(construction.get("blockers"))),
+        "critical_blocker_count": len(critical_blockers),
+        "production_blocker_count": len(production_blockers),
+        "construction_blocker_count": len(construction_blockers),
+        "critical_blocker_details": readiness_issue_explanations(critical_blockers),
+        "production_blocker_details": readiness_issue_explanations(production_blockers),
+        "construction_blocker_details": readiness_issue_explanations(construction_blockers),
         "engine_production_ready": bool(engine.get("production_ready")),
         "blocked_engine_ids": safe_list(engine.get("blocked_engine_ids")),
         "production_blocked_engine_ids": safe_list(engine.get("production_blocked_engine_ids")),
@@ -390,6 +405,7 @@ def run_golden_scenario(
         "benchmark_expectation_results": expectation_results,
         "failed_benchmark_expectations": failed_expectations,
         "hard_failures": hard_failures,
+        "hard_failure_details": blocker_explanations(hard_failures),
         "benchmark_status": "failed" if hard_failures else "passed_with_expected_blockers",
         "truth_label": "Golden benchmark runner checks backend truth signals and blockers; it does not certify engineering design.",
     }

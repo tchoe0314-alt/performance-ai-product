@@ -61,6 +61,10 @@ class GoldenRunnerTests(unittest.TestCase):
         self.assertTrue(result["gate_results"])
         self.assertFalse(result["missing_canonical_signals"])
         self.assertFalse(result["failed_benchmark_expectations"])
+        detail = result["readiness_summary"]["production_blocker_details"][0]
+        self.assertEqual(detail["area"], "existing_conditions")
+        self.assertEqual(detail["field"], "survey_surface")
+        self.assertTrue(detail["next_action"])
         self.assertEqual(result["benchmark_status"], "passed_with_expected_blockers")
 
     def test_run_selected_golden_scenarios(self) -> None:
@@ -90,6 +94,8 @@ class GoldenRunnerTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertIn("required_canonical_signals_missing", result["hard_failures"])
         self.assertIn("benchmark_numeric_expectations_failed", result["hard_failures"])
+        self.assertIn("hard_failure_details", result)
+        self.assertTrue(result["hard_failure_details"][0]["what_failed"])
         self.assertIn("site_boundary", result["missing_canonical_signals"])
 
     def test_run_scenario_fails_when_construction_release_gates_are_missing(self) -> None:

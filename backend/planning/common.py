@@ -407,6 +407,86 @@ def blocker_explanations(codes: Iterable[Any]) -> List[Dict[str, Any]]:
     return details
 
 
+def _readiness_issue_code(record: Dict[str, Any]) -> str:
+    area = safe_str(record.get("area") or record.get("system") or record.get("engine"))
+    field = safe_str(record.get("field") or record.get("code") or record.get("blocker"))
+    if area and field:
+        return f"{area}_{field}".lower().replace(" ", "_")
+    if field:
+        return field.lower().replace(" ", "_")
+    message = safe_str(record.get("message") or record.get("reason") or record.get("why_needed"))
+    if message:
+        return message[:80].lower().replace(" ", "_")
+    return "readiness_issue"
+
+
+def readiness_issue_explanation(issue: Any) -> Dict[str, Any]:
+    """Explain a structured readiness blocker without losing area/field context."""
+
+    record = safe_dict(issue)
+    if not record:
+        return blocker_explanation(issue)
+    code = _readiness_issue_code(record)
+    area = safe_str(record.get("area") or record.get("system") or record.get("engine"))
+    field = safe_str(record.get("field") or record.get("code") or record.get("blocker"))
+    message = safe_str(record.get("message") or record.get("reason") or record.get("why_needed"))
+    human = _humanize_blocker_code(field or area or code)
+    what_failed = message or f"{human} is incomplete or blocked."
+    why_it_matters = safe_str(record.get("why_it_matters") or record.get("why_needed"))
+    if not why_it_matters:
+        scope = _humanize_blocker_code(area or "engineering")
+        why_it_matters = (
+            f"{scope} cannot be treated as production-ready until this evidence is resolved and tied to canonical state."
+        )
+    raw_missing = (
+        safe_list(record.get("missing_data"))
+        or safe_list(record.get("missing"))
+        or safe_list(record.get("required"))
+    )
+    missing_data = [safe_str(item) for item in raw_missing if safe_str(item)]
+    if not missing_data:
+        missing_data = [human]
+    next_action = safe_str(
+        record.get("next_action")
+        or record.get("suggested_next_action")
+        or record.get("action")
+        or record.get("fix")
+    )
+    if not next_action:
+        next_action = f"Provide or regenerate {human} evidence, then rerun the affected validation gates."
+    severity = safe_str(record.get("severity"), "blocker").lower()
+    detail = _blocker_detail(
+        code,
+        what_failed=what_failed,
+        why_it_matters=why_it_matters,
+        missing_data=missing_data,
+        next_action=next_action,
+        engineer_review_required=severity != "warning",
+    )
+    if area:
+        detail["area"] = area
+    if field:
+        detail["field"] = field
+    if severity:
+        detail["severity"] = severity
+    return detail
+
+
+def readiness_issue_explanations(issues: Iterable[Any]) -> List[Dict[str, Any]]:
+    """Return de-duplicated explanations for structured readiness blocker records."""
+
+    details: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for issue in issues:
+        detail = readiness_issue_explanation(issue)
+        code = safe_str(detail.get("code"))
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        details.append(detail)
+    return details
+
+
 _CANONICAL_STAGE_KEYS: Dict[str, tuple[str, str]] = {
     "grading": ("grading_summary", "grading"),
     "drainage": ("drainage_canonical", "drainage"),

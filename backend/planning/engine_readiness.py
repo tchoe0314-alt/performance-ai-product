@@ -5,6 +5,7 @@ from typing import Any, Dict, Iterable, List, Sequence, Set, Tuple
 
 from core.civil_design import civil_design_readiness
 
+from .common import readiness_issue_explanations
 from .engine_contracts import EngineContract, engine_contracts
 
 
@@ -441,8 +442,11 @@ def evaluate_engine_readiness(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
             "dirty_downstream": sorted(contract.dirty_downstream),
             "evidence": list(evidence),
             "missing_requirements": missing,
+            "missing_requirement_details": readiness_issue_explanations(missing),
             "warnings": warnings,
+            "warning_details": readiness_issue_explanations(warnings),
             "production_blockers": production_gaps,
+            "production_blocker_details": readiness_issue_explanations(production_gaps),
             "manual_mode_forbidden": list(contract.manual_mode_forbidden),
             "production_gate_status": _contract_gate_status(
                 contract,
@@ -479,6 +483,11 @@ def evaluate_engine_readiness(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
                     "engine_id": engine_id,
                     "status": engine_rows[engine_id]["status"],
                     "first_missing": (engine_rows[engine_id]["missing_requirements"] or engine_rows[engine_id]["production_blockers"] or [{}])[0],
+                    "first_gap_detail": (
+                        engine_rows[engine_id]["missing_requirement_details"]
+                        or engine_rows[engine_id]["production_blocker_details"]
+                        or [{}]
+                    )[0],
                 }
                 for engine_id in sorted(blocked_or_unproven)[:10]
             ],

@@ -75,6 +75,12 @@ class EngineReadinessTests(unittest.TestCase):
         storm = readiness["engines"]["storm_pipe"]
         self.assertEqual(storm["status"], "concept_ready_needs_production_depth")
         self.assertIn("storm_depth", {item["area"] for item in storm["production_blockers"]})
+        detail = next(item for item in storm["production_blocker_details"] if item.get("area") == "storm_depth")
+        self.assertEqual(detail["area"], "storm_depth")
+        self.assertEqual(detail["field"], "depth_validation")
+        self.assertTrue(detail["what_failed"])
+        self.assertTrue(detail["next_action"])
+        self.assertTrue(detail["engineer_review_required"])
 
     def test_failed_truth_gates_block_qa_engine_readiness(self) -> None:
         readiness = evaluate_engine_readiness(
@@ -92,6 +98,9 @@ class EngineReadinessTests(unittest.TestCase):
         self.assertEqual(qa["status"], "concept_ready_needs_production_depth")
         self.assertIn("truth_audit", fields)
         self.assertIn("manual_validation", fields)
+        detail_fields = {item["field"] for item in qa["production_blocker_details"]}
+        self.assertIn("truth_audit", detail_fields)
+        self.assertIn("manual_validation", detail_fields)
 
     def test_quantity_trace_gaps_block_quantity_engine_readiness(self) -> None:
         readiness = evaluate_engine_readiness(
