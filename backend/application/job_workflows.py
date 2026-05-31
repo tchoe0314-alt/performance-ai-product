@@ -549,7 +549,9 @@ def build_orchestrate_job_runner(
             combined["status"] = "blocked" if blockers or release_status == "blocked" else "review"
             combined["ready"] = False
             combined["blocked_reasons"] = blockers
+            combined["blocked_reason_details"] = blocker_explanations(blockers)
             combined["blocked_exports"] = list(blocked_exports or [])
+            combined["blocked_export_details"] = blocker_explanations(blocked_exports or [])
             combined["note"] = "Combined engineering view is blocked by release gates." if blockers else "Combined engineering view needs engineering review."
             normalized["combined_view"] = combined
             return normalized
@@ -582,6 +584,8 @@ def build_orchestrate_job_runner(
         combined["total_phase_count"] = total_phase_count
         combined["blocked_exports"] = []
         combined["blocked_reasons"] = []
+        combined["blocked_export_details"] = []
+        combined["blocked_reason_details"] = []
         combined["note"] = "Combined engineering view is release-ready."
         normalized["combined_view"] = combined
         return normalized
@@ -1112,6 +1116,7 @@ def build_orchestrate_job_runner(
                 "manual_failures": manual_failures,
             }
             final_meta["blockers"] = blocked_reasons or blocked_exports
+            final_meta["blocker_details"] = blocker_explanations(list(blocked_reasons) + list(blocked_exports))
             final_meta["export_ready"] = not bool(blocked_reasons or blocked_exports or failed_deliverables or manual_failures)
             final_meta["release_ready"] = bool(reliability.get("release_ready"))
             final_meta["release_status"] = release_status
@@ -1128,6 +1133,7 @@ def build_orchestrate_job_runner(
             final_plan["release_ready"] = bool(reliability.get("release_ready"))
             final_plan["release_status"] = release_status
             final_plan["blockers"] = blocked_reasons or blocked_exports
+            final_plan["blocker_details"] = blocker_explanations(list(blocked_reasons) + list(blocked_exports))
             final_plan["deliverables"] = {
                 "requested": requested_deliverables,
                 "produced": produced_deliverables,

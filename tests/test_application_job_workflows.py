@@ -1094,11 +1094,18 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertFalse(final_plan["release_ready"])
         self.assertEqual(final_plan["release_status"], "blocked")
         self.assertIn("final_plan_release_blocked", final_plan["blockers"])
+        self.assertIn("final_plan_release_blocked", {item["code"] for item in final_plan["blocker_details"]})
+        self.assertIn("final_plan_release_blocked", {item["code"] for item in final_plan["meta"]["blocker_details"]})
         self.assertFalse(release_review["release_ready"])
         self.assertIn("final_plan_release_blocked", release_review["blocked_reasons"])
+        self.assertIn(
+            "final_plan_release_blocked",
+            {item["code"] for item in release_review["phase_checkpoints"]["combined_view"]["blocked_reason_details"]},
+        )
         saved_plan = store.saved_payload["latest_result"]["final_plan"]
         self.assertFalse(saved_plan["release_ready"])
         self.assertIn("final_plan_release_blocked", saved_plan["blockers"])
+        self.assertIn("final_plan_release_blocked", {item["code"] for item in saved_plan["blocker_details"]})
 
     def test_build_orchestrate_job_runner_honors_blocked_release_status_without_reasons(self):
         store = FakeProjectStore(
