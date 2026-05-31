@@ -91,6 +91,8 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         self.assertEqual(sections["deliverables"]["status"], "blocked")
         self.assertEqual(sections["professional_release"]["status"], "blocked")
         self.assertEqual(sections["standards"]["status"], "ready")
+        self.assertTrue(manifest["blocker_details"])
+        self.assertEqual(sections["existing_conditions"]["blocker_details"][0]["field"], "survey")
 
     def test_manifest_allows_release_only_when_construction_gate_is_ready(self) -> None:
         meta = {

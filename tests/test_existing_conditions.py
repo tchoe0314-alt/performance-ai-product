@@ -150,6 +150,7 @@ class ExistingConditionsTests(unittest.TestCase):
         self.assertFalse(summary["coordinate_system"]["production_usable"])
         self.assertFalse(summary["production_ready"])
         self.assertIn("coordinate_system", fields)
+        self.assertTrue(summary["coordinate_system"]["blocker_details"])
 
     def test_civil_readiness_blocks_missing_coordinate_system(self) -> None:
         readiness = civil_design_readiness({"meta": {"grading": {"source_quality": "survey"}, "survey": {"point_count": 4}, "gis_layers": {"parcels": [{}]}}})

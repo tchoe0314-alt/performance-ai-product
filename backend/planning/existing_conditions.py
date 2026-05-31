@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Dict, Iterable, List, Optional
 
-from .common import safe_dict, safe_float, safe_int, safe_list, safe_str
+from .common import readiness_issue_explanations, safe_dict, safe_float, safe_int, safe_list, safe_str
 
 
 REQUIRED_GIS_LAYERS = ("parcels", "easements", "row", "floodplain", "wetlands", "existing_utilities")
@@ -85,6 +85,7 @@ def _coordinate_quality(coord: Dict[str, Any], fallback_units: str = "ft") -> Di
         "is_projected": bool((epsg or name) and not is_geographic),
         "production_usable": not blockers,
         "blockers": blockers,
+        "blocker_details": readiness_issue_explanations(blockers),
         "source": safe_str(rec.get("source"), "missing" if not (epsg or name) else "provided"),
     }
 

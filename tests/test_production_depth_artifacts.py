@@ -195,6 +195,10 @@ class ProductionDepthArtifactTests(unittest.TestCase):
         self.assertFalse(enriched["pressure_validation"]["valid"])
         self.assertIn("pressure_inputs_missing", enriched["water_depth_blockers"])
         self.assertIn("fire_flow_not_validated", enriched["water_depth_blockers"])
+        self.assertEqual(
+            {item["code"] for item in enriched["water_depth_blocker_details"]},
+            set(enriched["water_depth_blockers"]),
+        )
         self.assertEqual(enriched["water_depth_status"], "blocked_missing_inputs")
 
     def test_grading_detail_controls_are_derived_from_grade_elements(self) -> None:

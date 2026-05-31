@@ -9,7 +9,7 @@ from engines.storm.inlet_engine import estimate_inlet_capture
 from engines.storm.storm_types import HydraulicAnalysisRequest, StormNode, StormPipe, StormPoint
 from engines.water_sizing_engine import WaterSizingEngine, analyze_water_pressure_graph
 
-from .common import polyline_length, safe_dict, safe_float, safe_int, safe_list, safe_str
+from .common import blocker_explanations, polyline_length, safe_dict, safe_float, safe_int, safe_list, safe_str
 
 
 def _point_xy(point: Any) -> Optional[Tuple[float, float]]:
@@ -810,6 +810,7 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
         blockers.append("looping_not_validated")
     enriched["water_depth_status"] = "ready" if not blockers else "blocked_missing_inputs"
     enriched["water_depth_blockers"] = blockers
+    enriched["water_depth_blocker_details"] = blocker_explanations(blockers)
     return enriched
 
 

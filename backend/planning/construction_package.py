@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterable, List, Sequence
 from core.civil_design import construction_readiness
 from core.professional_release import validate_professional_release
 
-from .common import construction_package_record, safe_dict, safe_list, safe_str
+from .common import construction_package_record, readiness_issue_explanations, safe_dict, safe_list, safe_str
 
 
 CONSTRUCTION_PACKAGE_SECTIONS: Sequence[Dict[str, Any]] = (
@@ -590,7 +590,9 @@ def _section_status(
         "required": list(section.get("required") or ()),
         "evidence": {key: bool(evidence.get(key)) for key in evidence_keys},
         "blockers": section_blockers,
+        "blocker_details": readiness_issue_explanations(section_blockers),
         "warnings": section_warnings,
+        "warning_details": readiness_issue_explanations(section_warnings),
         "next_actions": [safe_str(item.get("suggested_next_action")) for item in section_blockers[:4] if safe_str(item.get("suggested_next_action"))],
     }
 
@@ -645,7 +647,9 @@ def build_construction_package_manifest(plan_or_meta: Dict[str, Any]) -> Dict[st
         "blocked_sections": blocked_sections,
         "review_sections": review_sections,
         "blockers": blockers,
+        "blocker_details": readiness_issue_explanations(blockers),
         "warnings": warnings,
+        "warning_details": readiness_issue_explanations(warnings),
         "package_artifact_requirements": [
             {
                 "artifact_id": safe_str(item.get("artifact_id")),
