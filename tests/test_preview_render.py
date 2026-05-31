@@ -128,6 +128,42 @@ class PreviewRenderTests(unittest.TestCase):
 
         self.assertEqual(profile, "utilities")
 
+    def test_preview_audit_explains_release_blockers(self):
+        annotations = build_preview_annotations(
+            {
+                "actions": [
+                    {
+                        "task": "rectangle",
+                        "layer": "BUILDING",
+                        "origin": [10.0, 10.0],
+                        "width": 40.0,
+                        "height": 30.0,
+                        "label": "Retail Pad",
+                        "meta": {"preview_role": "final"},
+                    }
+                ],
+                "meta": {
+                    "release_review": {
+                        "release_status": "blocked",
+                        "blocked_reasons": ["construction_package_blocked"],
+                    }
+                },
+            }
+        )
+
+        release = annotations["audit"]["release_readiness"]
+        self.assertIn("construction_package_blocked", release["release_blockers"])
+        self.assertIn("release_status_blocked", release["release_blockers"])
+        detail_by_code = {
+            detail["code"]: detail
+            for detail in release["release_blocker_details"]
+        }
+        self.assertEqual(
+            detail_by_code["construction_package_blocked"]["what_failed"],
+            "The construction package is not allowed for release.",
+        )
+        self.assertTrue(detail_by_code["release_status_blocked"]["next_action"])
+
     def test_preview_profile_does_not_complete_with_failed_deliverables(self):
         profile = _preview_engineering_profile(
             {

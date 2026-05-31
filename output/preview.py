@@ -11,6 +11,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle, Circle, Arc
 
+from backend.planning.common import blocker_explanations
 from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
     final_plan_requires_construction_release,
@@ -2968,6 +2969,15 @@ def _preview_scene(
         label_density=label_density,
         return_audit=True,
     )
+    meta = safe_dict(plan.get("meta"))
+    release_review = safe_dict(meta.get("release_review"))
+    release_blockers = _preview_release_truth_blockers(plan, meta, release_review)
+    audit["release_readiness"] = {
+        "release_status": safe_text(release_review.get("release_status") or meta.get("release_status"), "").lower(),
+        "release_ready": release_review.get("release_ready") if "release_ready" in release_review else meta.get("release_ready"),
+        "release_blockers": release_blockers,
+        "release_blocker_details": blocker_explanations(release_blockers),
+    }
     if not actions:
         return engineering_profile, actions, None, audit
 
