@@ -44,6 +44,37 @@ def _dedupe(values: Iterable[str]) -> List[str]:
     return out
 
 
+def _validation_details(issues: Iterable[Dict[str, Any]], *, area: str) -> List[Dict[str, Any]]:
+    details: List[Dict[str, Any]] = []
+    seen = set()
+    for issue in issues:
+        rec = _safe_dict(issue)
+        if not rec:
+            continue
+        field = _safe_str(rec.get("field"), "validation")
+        code = f"{area}_{field}".lower().replace(" ", "_").replace(".", "_")
+        if code in seen:
+            continue
+        seen.add(code)
+        severity = _safe_str(rec.get("severity"), "blocker").lower()
+        details.append(
+            {
+                "code": code,
+                "area": area,
+                "field": field,
+                "severity": severity,
+                "what_failed": _safe_str(rec.get("reason"), f"{field.replace('_', ' ')} is incomplete."),
+                "why_it_matters": (
+                    "Bid-ready cost output depends on traceable pricing evidence tied to the project region and reviewed source."
+                ),
+                "missing_data": [field],
+                "next_action": "Attach a traceable approved unit-price book and rerun cost validation.",
+                "engineer_review_required": severity != "warning",
+            }
+        )
+    return details
+
+
 @dataclass
 class CostResult:
     success: bool = True
@@ -202,7 +233,9 @@ def validate_unit_price_book_for_production(
         "success": not blockers,
         "production_usable": not blockers,
         "blockers": blockers,
+        "blocker_details": _validation_details(blockers, area="unit_price_book"),
         "warnings": warnings,
+        "warning_details": _validation_details(warnings, area="unit_price_book"),
         "required_fields": ["source", "location", "effective_date", "approved_by", "approval_date", "unit_prices"],
         "truth_label": "Civora blocks bid-ready cost output unless the unit-price book has traceable source and approval metadata.",
     }

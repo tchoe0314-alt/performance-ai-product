@@ -9,7 +9,7 @@ from urllib.parse import quote_plus
 
 import requests
 
-from .common import safe_dict, safe_list, safe_str
+from .common import readiness_issue_explanations, safe_dict, safe_list, safe_str
 
 
 @dataclass(frozen=True)
@@ -391,6 +391,7 @@ def validate_standards_acceptance_for_production(standards: Dict[str, Any]) -> D
         "success": not blockers,
         "production_usable": not blockers,
         "blockers": blockers,
+        "blocker_details": readiness_issue_explanations(blockers),
         "warnings": warnings,
         "accepted_rule_count": len(rules),
         "official_source_count": len(set(official_urls)),

@@ -14,6 +14,8 @@ class DepthValidatorTests(unittest.TestCase):
         self.assertFalse(result["production_ready"])
         self.assertIn("Storm depth needs HGL and EGL profiles from production hydraulic evidence.", result["blockers"])
         self.assertIn("Storm depth needs true tributary areas tied to pipes or catchments.", result["blockers"])
+        self.assertEqual(len(result["blocker_details"]), len(result["blockers"]))
+        self.assertTrue(result["blocker_details"][0]["next_action"])
 
     def test_stormwater_depth_passes_when_all_explicit_evidence_exists(self) -> None:
         result = validate_stormwater_depth(

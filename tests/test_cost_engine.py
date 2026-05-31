@@ -181,6 +181,14 @@ class CostEngineTests(unittest.TestCase):
         self.assertIn("location", fields)
         self.assertIn("approved_by", fields)
         self.assertIn("unit_prices.pipe_length_ft.source_item_id", fields)
+        detail_fields = {item["field"] for item in price_book["production_validation"]["blocker_details"]}
+        self.assertIn("unit_prices.pipe_length_ft.source_item_id", detail_fields)
+        detail = next(
+            item
+            for item in price_book["production_validation"]["blocker_details"]
+            if item["field"] == "source"
+        )
+        self.assertTrue(detail["next_action"])
 
     def test_unit_price_book_validation_requires_line_item_traceability(self) -> None:
         price_book = normalize_unit_price_book(

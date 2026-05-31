@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Tuple
 
-from .common import safe_dict, safe_float, safe_list, safe_str
+from .common import blocker_explanations, safe_dict, safe_float, safe_list, safe_str
 
 
 def _present(value: Any) -> bool:
@@ -127,6 +127,7 @@ def _finalize(system: str, checks: List[Dict[str, Any]]) -> Dict[str, Any]:
         "production_ready": not blockers,
         "checks": checks,
         "blockers": blockers,
+        "blocker_details": blocker_explanations(blockers),
         "evidence": evidence,
         "truth_label": "Depth validator checks explicit backend evidence only; missing evidence remains blocked for engineering review.",
     }

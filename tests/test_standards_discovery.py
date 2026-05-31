@@ -133,8 +133,12 @@ class StandardsDiscoveryTests(unittest.TestCase):
 
         self.assertFalse(validation["production_usable"])
         blockers = {item["field"]: item for item in validation["blockers"]}
+        detail_fields = {item["field"] for item in validation["blocker_details"]}
         self.assertIn("rule_metadata", blockers)
+        self.assertIn("rule_metadata", detail_fields)
         self.assertEqual(blockers["rule_metadata"]["rules"][0]["missing"], ["accepted_by"])
+        detail = next(item for item in validation["blocker_details"] if item["field"] == "rule_metadata")
+        self.assertTrue(detail["next_action"])
 
     def test_civil_readiness_blocks_standards_without_acceptance_signoff(self) -> None:
         packet = build_standards_review_packet(
