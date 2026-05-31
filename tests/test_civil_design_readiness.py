@@ -1443,6 +1443,12 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertTrue(plan["meta"].get("canonical_model_hash"))
         self.assertEqual(sheet_registry[0]["canonical_model_id"], plan["meta"]["canonical_model_id"])
         self.assertEqual(export_audit["canonical_model_id"], plan["meta"]["canonical_model_id"])
+        for key in ("truth_audit", "reactive_update_report", "quantities", "cost_estimate"):
+            self.assertEqual(plan["meta"][key]["canonical_model_id"], plan["meta"]["canonical_model_id"])
+            self.assertEqual(plan["meta"][key]["canonical_model_hash"], plan["meta"]["canonical_model_hash"])
+        for result in plan["meta"]["depth_validation"].values():
+            self.assertEqual(result["canonical_model_id"], plan["meta"]["canonical_model_id"])
+            self.assertEqual(result["canonical_model_hash"], plan["meta"]["canonical_model_hash"])
         self.assertIn("systems", readiness)
         self.assertIn("missing_requirements", readiness)
         self.assertIn(readiness.get("status"), {"ready", "needs_engineering_review", "blocked"})

@@ -10499,6 +10499,32 @@ _CANONICAL_MODEL_META_KEYS = (
     "alignments",
 )
 
+_VOLATILE_MODEL_IDENTITY_KEYS = {
+    "analysis_cache_hit_rate",
+    "duration_ms",
+    "elapsed_ms",
+    "generated_at",
+    "generated_on",
+    "performance",
+    "runtime_ms",
+    "surface_object_id",
+    "timestamp",
+    "timing_ms",
+    "timings_ms",
+}
+
+
+def _canonical_model_identity_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _canonical_model_identity_value(item)
+            for key, item in value.items()
+            if safe_str(key).lower() not in _VOLATILE_MODEL_IDENTITY_KEYS
+        }
+    if isinstance(value, list):
+        return [_canonical_model_identity_value(item) for item in value]
+    return value
+
 
 def _canonical_model_identity_payload(final: Dict[str, Any]) -> Dict[str, Any]:
     meta = safe_dict(final.get("meta"))
@@ -10530,7 +10556,7 @@ def _canonical_model_identity_payload(final: Dict[str, Any]) -> Dict[str, Any]:
         "units": safe_str(final.get("units")),
         "actions": actions,
         "meta": {
-            key: deepcopy(meta.get(key))
+            key: _canonical_model_identity_value(deepcopy(meta.get(key)))
             for key in _CANONICAL_MODEL_META_KEYS
             if key in meta
         },
@@ -10554,6 +10580,32 @@ def _attach_final_model_identity(final: Dict[str, Any]) -> None:
         "canonical_model_hash": model_hash,
         "hash_algorithm": "sha256",
     }
+
+
+def _final_model_trace_fields(final: Dict[str, Any]) -> Dict[str, str]:
+    meta = safe_dict(final.get("meta"))
+    trace: Dict[str, str] = {}
+    for key in ("canonical_model_id", "canonical_model_hash", "final_model_id", "final_model_hash"):
+        value = safe_str(meta.get(key))
+        if value:
+            trace[key] = value
+    return trace
+
+
+def _attach_final_model_trace(final: Dict[str, Any]) -> None:
+    meta = final.setdefault("meta", {})
+    trace = _final_model_trace_fields(final)
+    if not trace:
+        return
+    for key in ("truth_audit", "manual_validation", "reactive_update_report", "quantities", "cost_estimate"):
+        payload = meta.get(key)
+        if isinstance(payload, dict):
+            payload.update(trace)
+    depth = meta.get("depth_validation")
+    if isinstance(depth, dict):
+        for payload in depth.values():
+            if isinstance(payload, dict):
+                payload.update(trace)
 
 
 def finalize_plan(plan: Dict[str, Any], *, parsed: Dict[str, Any], route: RoutingDecision) -> Dict[str, Any]:
@@ -10613,6 +10665,7 @@ def finalize_plan(plan: Dict[str, Any], *, parsed: Dict[str, Any], route: Routin
         "water": _validate_water_system_depth(final),
         "roadway_corridor": _validate_roadway_corridor_depth(final),
     }
+    _attach_final_model_trace(final)
     final["meta"]["civil_design_readiness"] = civil_design_readiness(final)
     final["meta"]["construction_readiness"] = construction_readiness(final)
     final["meta"]["construction_package_manifest"] = _build_construction_package_manifest(final)
