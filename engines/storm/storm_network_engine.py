@@ -69,6 +69,7 @@ DEFAULT_MIN_COVER_FT = 3.0
 DEFAULT_MIN_DIAMETER_IN = 12.0
 DEFAULT_DEFAULT_MANNINGS_N = 0.013
 DEFAULT_NODE_RIM_TO_INVERT_DROP_FT = 3.0
+DEFAULT_VERTICAL_CROSSING_RESERVE_FT = 1.5
 DEFAULT_TRUNK_JOIN_DISTANCE_FT = 120.0
 DEFAULT_MAX_LATERAL_LENGTH_FT = 250.0
 DEFAULT_OUTFALL_DEPTH_BUFFER_FT = 1.0
@@ -960,10 +961,11 @@ class StormNetworkEngine:
         request: StormNetworkRequest,
         warnings: List[str],
     ) -> None:
+        minimum_node_cover_ft = max(request.min_cover_ft, DEFAULT_MIN_COVER_FT, DEFAULT_NODE_RIM_TO_INVERT_DROP_FT)
         # downstream control elevations first
         for node in node_lookup.values():
             if node.invert_elev_ft is None and node.rim_elev_ft is not None:
-                node.invert_elev_ft = node.rim_elev_ft - DEFAULT_NODE_RIM_TO_INVERT_DROP_FT
+                node.invert_elev_ft = node.rim_elev_ft - minimum_node_cover_ft
 
         # trunk/outfall-like pipes first, then laterals
         ordered = sorted(
@@ -980,32 +982,51 @@ class StormNetworkEngine:
             if dn is None or up is None:
                 continue
 
+            cover_ft = max(
+                float(pipe.cover_ft or 0.0),
+                request.min_cover_ft,
+                DEFAULT_MIN_COVER_FT,
+                DEFAULT_NODE_RIM_TO_INVERT_DROP_FT,
+            ) + DEFAULT_VERTICAL_CROSSING_RESERVE_FT
+            pipe.cover_ft = max(float(pipe.cover_ft or 0.0), cover_ft)
             if dn.invert_elev_ft is None:
                 if dn.rim_elev_ft is not None:
-                    dn.invert_elev_ft = dn.rim_elev_ft - DEFAULT_NODE_RIM_TO_INVERT_DROP_FT
+                    dn.invert_elev_ft = dn.rim_elev_ft - cover_ft
                 else:
                     dn.invert_elev_ft = 95.0
 
             required_drop = max(pipe.min_slope, request.min_pipe_slope) * max(pipe.length_ft, 0.0)
             pipe.downstream_invert_ft = dn.invert_elev_ft
+            if dn.rim_elev_ft is not None:
+                pipe.downstream_invert_ft = min(pipe.downstream_invert_ft, dn.rim_elev_ft - cover_ft)
             pipe.upstream_invert_ft = pipe.downstream_invert_ft + required_drop
+            if up.rim_elev_ft is not None:
+                max_upstream_invert = up.rim_elev_ft - cover_ft
+                if pipe.upstream_invert_ft > max_upstream_invert:
+                    lower_by = pipe.upstream_invert_ft - max_upstream_invert
+                    pipe.upstream_invert_ft -= lower_by
+                    pipe.downstream_invert_ft -= lower_by
 
             if up.invert_elev_ft is None:
                 up.invert_elev_ft = pipe.upstream_invert_ft
             else:
-                up.invert_elev_ft = max(up.invert_elev_ft, pipe.upstream_invert_ft)
+                up.invert_elev_ft = min(up.invert_elev_ft, pipe.upstream_invert_ft)
+            if dn.invert_elev_ft is None:
+                dn.invert_elev_ft = pipe.downstream_invert_ft
+            else:
+                dn.invert_elev_ft = min(dn.invert_elev_ft, pipe.downstream_invert_ft)
 
             if up.rim_elev_ft is None:
                 if up.point.z is not None:
                     up.rim_elev_ft = up.point.z
                 else:
-                    up.rim_elev_ft = up.invert_elev_ft + DEFAULT_NODE_RIM_TO_INVERT_DROP_FT
+                    up.rim_elev_ft = up.invert_elev_ft + cover_ft
 
             if dn.rim_elev_ft is None:
                 if dn.point.z is not None:
                     dn.rim_elev_ft = dn.point.z
                 else:
-                    dn.rim_elev_ft = dn.invert_elev_ft + DEFAULT_NODE_RIM_TO_INVERT_DROP_FT
+                    dn.rim_elev_ft = dn.invert_elev_ft + cover_ft
 
             if pipe.downstream_invert_ft >= pipe.upstream_invert_ft:
                 pipe.warnings.append("Downstream invert is not below upstream invert.")

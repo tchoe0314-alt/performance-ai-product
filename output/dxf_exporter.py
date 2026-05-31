@@ -3545,47 +3545,98 @@ def _ensure_canonical_sheet_metadata(
         meta["alignments"] = _canonical_alignments_from_profiles(profiles)
 
 
+def _sheet_model_reference_metadata(plan: Dict[str, Any]) -> Dict[str, str]:
+    meta = safe_dict(plan.get("meta"))
+    refs: Dict[str, str] = {}
+    for key in (
+        "canonical_model_id",
+        "canonical_model_hash",
+        "source_model_id",
+        "source_model_hash",
+        "final_model_id",
+        "final_model_hash",
+        "model_id",
+        "model_hash",
+    ):
+        value = safe_text(meta.get(key))
+        if value:
+            refs[key] = value
+    return refs
+
+
+def _sheet_registry_row(
+    *,
+    layout_name: str,
+    sheet_title: str,
+    sheet_code: str,
+    sheet_kind: str,
+    revision: str,
+    issue_date: str,
+    model_refs: Dict[str, str],
+    sheet_name: str = "",
+) -> Dict[str, Any]:
+    title = safe_text(sheet_title, layout_name)
+    code = safe_text(sheet_code)
+    row = {
+        "id": code,
+        "sheet_id": code,
+        "title": title,
+        "current": True,
+        "layout_name": safe_text(layout_name),
+        "sheet_name": safe_text(sheet_name, layout_name),
+        "sheet_title": title,
+        "sheet_code": code,
+        "discipline": "CIVIL",
+        "revision": revision,
+        "issue_date": issue_date,
+        "sheet_kind": safe_text(sheet_kind),
+    }
+    row.update(model_refs)
+    return row
+
+
 def _build_sheet_registry(plan: Dict[str, Any], profiles: List[Dict[str, Any]], section_groups: List[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
     revision = safe_text(safe_dict(plan.get("meta")).get("revision"), DEFAULT_REVISION)
     issue_date = safe_text(safe_dict(plan.get("meta")).get("issue_date"), datetime.now().strftime("%Y-%m-%d"))
+    model_refs = _sheet_model_reference_metadata(plan)
     registry: List[Dict[str, Any]] = [
-        {
-            "layout_name": "SITE PLAN",
-            "sheet_name": "SITE PLAN",
-            "sheet_title": "SITE PLAN",
-            "sheet_code": "C-100",
-            "discipline": "CIVIL",
-            "revision": revision,
-            "issue_date": issue_date,
-            "sheet_kind": "site_plan",
-        }
+        _sheet_registry_row(
+            layout_name="SITE PLAN",
+            sheet_name="SITE PLAN",
+            sheet_title="SITE PLAN",
+            sheet_code="C-100",
+            sheet_kind="site_plan",
+            revision=revision,
+            issue_date=issue_date,
+            model_refs=model_refs,
+        )
     ]
     for index, profile in enumerate(profiles, start=1):
         registry.append(
-            {
-                "layout_name": f"PROFILE {index}",
-                "sheet_name": safe_text(profile.get("sheet_name"), f"PROFILE {index}"),
-                "sheet_title": safe_text(profile.get("sheet_title"), "PROFILE"),
-                "sheet_code": f"C-{300 + index:03d}",
-                "discipline": "CIVIL",
-                "revision": revision,
-                "issue_date": issue_date,
-                "sheet_kind": "profile",
-            }
+            _sheet_registry_row(
+                layout_name=f"PROFILE {index}",
+                sheet_name=safe_text(profile.get("sheet_name"), f"PROFILE {index}"),
+                sheet_title=safe_text(profile.get("sheet_title"), "PROFILE"),
+                sheet_code=f"C-{300 + index:03d}",
+                sheet_kind="profile",
+                revision=revision,
+                issue_date=issue_date,
+                model_refs=model_refs,
+            )
         )
     for index, sections in enumerate(section_groups, start=1):
         first = safe_dict(sections[0]) if sections else {}
         registry.append(
-            {
-                "layout_name": f"CROSS SECTIONS {index}",
-                "sheet_name": safe_text(first.get("sheet_name"), f"XS-{index:03d}"),
-                "sheet_title": safe_text(first.get("sheet_title"), "CROSS SECTIONS"),
-                "sheet_code": f"C-{500 + index:03d}",
-                "discipline": "CIVIL",
-                "revision": revision,
-                "issue_date": issue_date,
-                "sheet_kind": "cross_sections",
-            }
+            _sheet_registry_row(
+                layout_name=f"CROSS SECTIONS {index}",
+                sheet_name=safe_text(first.get("sheet_name"), f"XS-{index:03d}"),
+                sheet_title=safe_text(first.get("sheet_title"), "CROSS SECTIONS"),
+                sheet_code=f"C-{500 + index:03d}",
+                sheet_kind="cross_sections",
+                revision=revision,
+                issue_date=issue_date,
+                model_refs=model_refs,
+            )
         )
     total = len(registry)
     for idx, row in enumerate(registry, start=1):
@@ -3617,6 +3668,7 @@ def _prune_default_layouts(doc) -> None:
 
 def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]], profiles: List[Dict[str, Any]], section_groups: List[List[Dict[str, Any]]], sheet_registry: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     meta = safe_dict(plan.get("meta"))
+    model_refs = _sheet_model_reference_metadata(plan)
     canonical_profiles = [safe_dict(item) for item in safe_list(meta.get("profiles")) if safe_dict(item)]
     canonical_sections = [safe_dict(item) for item in safe_list(meta.get("cross_sections")) if safe_dict(item)]
     canonical_alignments = [safe_dict(item) for item in safe_list(meta.get("alignments")) if safe_dict(item)]
@@ -3862,6 +3914,7 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
     release_blocker_details = blocker_explanations(release_blockers)
     production_export_ready = not warnings and canonical_id_traceability_ready and not export_blocked
     return {
+        **model_refs,
         "success": not warnings,
         "ready": not warnings,
         "production_export_ready": production_export_ready,

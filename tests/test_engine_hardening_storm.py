@@ -138,6 +138,22 @@ class EngineHardeningStormTests(unittest.TestCase):
         self.assertIn("controlling_segment", storm)
         self.assertIn("max_capacity_ratio", storm)
 
+    def test_storm_relative_inverts_respect_minimum_cover_before_hgl_review(self) -> None:
+        manager = ProjectManager()
+        project = manager.project
+        project.meta["drainage_summary"] = object()
+        project.meta["drainage_canonical"] = _drainage_with_targets()
+
+        _run_storm_stage(project, manager)
+        storm = project.meta["storm_pipe_summary"]
+        summary = storm["hydraulic_engine_summary"]
+
+        self.assertEqual(summary["surcharge_node_count"], 0)
+        for node in storm["nodes"]:
+            rim = float(node.get("rim_elev_ft", 0.0))
+            invert = float(node.get("invert_elev_ft", 0.0))
+            self.assertGreaterEqual(rim - invert, 3.0)
+
     def test_missing_drainage_outfall_returns_structured_failure(self) -> None:
         manager = ProjectManager()
         project = manager.project

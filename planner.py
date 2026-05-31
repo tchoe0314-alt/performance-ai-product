@@ -4014,6 +4014,14 @@ COORDINATION_CROSSING_RULES: Dict[Tuple[str, str], Dict[str, Any]] = {
     },
 }
 
+PRECOORDINATION_SANITARY_MAIN_COVER_FT = 7.0
+PRECOORDINATION_SANITARY_SERVICE_COVER_FT = 5.5
+PRECOORDINATION_STORM_MAIN_COVER_FT = (
+    PRECOORDINATION_SANITARY_MAIN_COVER_FT
+    + COORDINATION_CROSSING_RULES[tuple(sorted(("storm", "sanitary")))]["required_vertical_clearance_ft"]
+    + 1.0
+)
+
 SYSTEM_OWNERSHIP_PRIORITY: Dict[str, int] = {
     "roadway": 0,
     "storm_main": 1,
@@ -6359,8 +6367,8 @@ def _precoordinate_vertical_hierarchy(project: ProjectModel, manager: ProjectMan
                 }
             )
             storm_changed = True
-        target_start = _surface_at(path, 0) - 5.5
-        target_end = _surface_at(path, -1) - 5.5
+        target_start = _surface_at(path, 0) - PRECOORDINATION_STORM_MAIN_COVER_FT
+        target_end = _surface_at(path, -1) - PRECOORDINATION_STORM_MAIN_COVER_FT
         current_start = safe_float(row.get("start_invert_ft", row.get("start_invert")), target_start)
         current_end = safe_float(row.get("end_invert_ft", row.get("end_invert")), target_end)
         new_start = min(current_start, target_start)
@@ -6384,7 +6392,11 @@ def _precoordinate_vertical_hierarchy(project: ProjectModel, manager: ProjectMan
         if len(path) < 2:
             continue
         role = safe_str(row.get("segment_role"), "main")
-        target_cover = 5.5 if role == "service_connection" else 7.0
+        target_cover = (
+            PRECOORDINATION_SANITARY_SERVICE_COVER_FT
+            if role == "service_connection"
+            else PRECOORDINATION_SANITARY_MAIN_COVER_FT
+        )
         target_start = _surface_at(path, 0) - target_cover
         target_end = _surface_at(path, -1) - max(target_cover, 7.5)
         current_start = safe_float(row.get("start_invert_ft"), target_start)
@@ -10472,6 +10484,78 @@ def _planner_release_readiness_summary(final: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+_CANONICAL_MODEL_META_KEYS = (
+    "site_boundary",
+    "stats",
+    "grading",
+    "drainage",
+    "storm_pipes",
+    "sanitary",
+    "utilities",
+    "coordination",
+    "earthwork",
+    "profiles",
+    "cross_sections",
+    "alignments",
+)
+
+
+def _canonical_model_identity_payload(final: Dict[str, Any]) -> Dict[str, Any]:
+    meta = safe_dict(final.get("meta"))
+    actions = []
+    for action in safe_list(final.get("actions")):
+        rec = safe_dict(action)
+        actions.append(
+            {
+                key: deepcopy(rec.get(key))
+                for key in (
+                    "task",
+                    "layer",
+                    "origin",
+                    "points",
+                    "center",
+                    "radius",
+                    "width",
+                    "height",
+                    "label",
+                    "canonical_source_id",
+                    "canonical_source_type",
+                )
+                if key in rec
+            }
+        )
+    return {
+        "payload_version": "canonical_model_identity_v1",
+        "project_name": safe_str(final.get("project_name")),
+        "units": safe_str(final.get("units")),
+        "actions": actions,
+        "meta": {
+            key: deepcopy(meta.get(key))
+            for key in _CANONICAL_MODEL_META_KEYS
+            if key in meta
+        },
+    }
+
+
+def _attach_final_model_identity(final: Dict[str, Any]) -> None:
+    meta = final.setdefault("meta", {})
+    payload = _canonical_model_identity_payload(final)
+    stable = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
+    digest = hashlib.sha256(stable.encode("utf-8")).hexdigest()
+    model_id = safe_str(meta.get("canonical_model_id") or meta.get("final_model_id")) or f"MODEL-{digest[:16].upper()}"
+    model_hash = safe_str(meta.get("canonical_model_hash") or meta.get("final_model_hash")) or digest
+    meta["canonical_model_id"] = model_id
+    meta["canonical_model_hash"] = model_hash
+    meta.setdefault("final_model_id", model_id)
+    meta.setdefault("final_model_hash", model_hash)
+    meta["canonical_model_identity"] = {
+        "version": "canonical_model_identity_v1",
+        "canonical_model_id": model_id,
+        "canonical_model_hash": model_hash,
+        "hash_algorithm": "sha256",
+    }
+
+
 def finalize_plan(plan: Dict[str, Any], *, parsed: Dict[str, Any], route: RoutingDecision) -> Dict[str, Any]:
     final = sanitize_plan(plan)
     _ensure_subdivision_road_preview(final, parsed)
@@ -10488,6 +10572,7 @@ def finalize_plan(plan: Dict[str, Any], *, parsed: Dict[str, Any], route: Routin
     final["meta"].setdefault("parsed_mode", lower_text(parsed.get("mode")))
     final["meta"].setdefault("project_type", lower_text(parsed.get("project_type")))
     final["meta"].setdefault("stats", collect_plan_stats(final))
+    _attach_final_model_identity(final)
     if "quantities" not in final["meta"]:
         try:
             qty = compute_plan_quantities(final)

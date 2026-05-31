@@ -58,6 +58,10 @@ class Phase1Slice6DExportMetadataTest(unittest.TestCase):
         metadata = finalize_export_metadata(plan)
 
         self.assertTrue(plan["meta"]["sheet_registry"])
+        self.assertEqual(plan["meta"]["sheet_registry"][0]["id"], "C-100")
+        self.assertEqual(plan["meta"]["sheet_registry"][0]["sheet_id"], "C-100")
+        self.assertEqual(plan["meta"]["sheet_registry"][0]["title"], "SITE PLAN")
+        self.assertTrue(plan["meta"]["sheet_registry"][0]["current"])
         self.assertTrue(plan["meta"]["export_audit"])
         self.assertEqual(metadata["sheet_registry"], plan["meta"]["sheet_registry"])
         self.assertEqual(metadata["export_audit"], plan["meta"]["export_audit"])
@@ -79,6 +83,19 @@ class Phase1Slice6DExportMetadataTest(unittest.TestCase):
         self.assertEqual(plan["meta"]["export_audit"]["sheet_registry"], before_audit["sheet_registry"])
         self.assertEqual(plan["meta"]["export_audit"]["sheet_total"], before_audit["sheet_total"])
         self.assertTrue(plan["meta"]["export_audit"]["sheet_registry_meta_matches_plan"])
+
+    def test_sheet_registry_inherits_canonical_model_trace_when_available(self) -> None:
+        plan = _export_plan()
+        plan["meta"]["canonical_model_id"] = "MODEL-FINAL-1"
+        plan["meta"]["canonical_model_hash"] = "hash-final-1"
+
+        metadata = finalize_export_metadata(plan)
+        site_sheet = metadata["sheet_registry"][0]
+
+        self.assertEqual(site_sheet["canonical_model_id"], "MODEL-FINAL-1")
+        self.assertEqual(site_sheet["canonical_model_hash"], "hash-final-1")
+        self.assertEqual(metadata["export_audit"]["canonical_model_id"], "MODEL-FINAL-1")
+        self.assertEqual(metadata["export_audit"]["canonical_model_hash"], "hash-final-1")
 
     def test_stale_export_metadata_is_recomputed_from_current_plan(self) -> None:
         plan = _export_plan()

@@ -363,6 +363,9 @@ def storm_summary_from_network_result(
         upstream_node = node_lookup.get(
             safe_str(getattr(pipe, "upstream_node_name", ""), "")
         )
+        downstream_node = node_lookup.get(
+            safe_str(getattr(pipe, "downstream_node_name", ""), "")
+        )
         local_flow_cfs = max(
             0.0, safe_float(getattr(upstream_node, "contributing_runoff_cfs", 0.0), 0.0)
         )
@@ -376,6 +379,14 @@ def storm_summary_from_network_result(
                 design_flow / max(1.008 * PIPE_RUNOFF_C * PIPE_INTENSITY_IN_HR, 1e-9),
                 0.0001,
             )
+        start_invert_ft = safe_float(getattr(pipe, "upstream_invert_ft", 0.0), 0.0)
+        end_invert_ft = safe_float(getattr(pipe, "downstream_invert_ft", 0.0), 0.0)
+        cover_start_ft = safe_float(getattr(pipe, "cover_ft", 0.0), 0.0)
+        cover_end_ft = cover_start_ft
+        if upstream_node is not None and getattr(upstream_node, "rim_elev_ft", None) is not None:
+            cover_start_ft = max(0.0, safe_float(getattr(upstream_node, "rim_elev_ft", 0.0), 0.0) - start_invert_ft)
+        if downstream_node is not None and getattr(downstream_node, "rim_elev_ft", None) is not None:
+            cover_end_ft = max(0.0, safe_float(getattr(downstream_node, "rim_elev_ft", 0.0), 0.0) - end_invert_ft)
         segments.append(
             {
                 "pipe": safe_str(getattr(pipe, "name", ""), "PIPE"),
@@ -412,22 +423,22 @@ def storm_summary_from_network_result(
                     safe_float(getattr(pipe, "slope", 0.0), 0.0) * 100.0, 3
                 ),
                 "start_invert": round(
-                    safe_float(getattr(pipe, "upstream_invert_ft", 0.0), 0.0), 3
+                    start_invert_ft, 3
                 ),
                 "end_invert": round(
-                    safe_float(getattr(pipe, "downstream_invert_ft", 0.0), 0.0), 3
+                    end_invert_ft, 3
                 ),
                 "start_invert_ft": round(
-                    safe_float(getattr(pipe, "upstream_invert_ft", 0.0), 0.0), 3
+                    start_invert_ft, 3
                 ),
                 "end_invert_ft": round(
-                    safe_float(getattr(pipe, "downstream_invert_ft", 0.0), 0.0), 3
+                    end_invert_ft, 3
                 ),
                 "cover_start_ft": round(
-                    safe_float(getattr(pipe, "cover_ft", 0.0), 0.0), 3
+                    cover_start_ft, 3
                 ),
                 "cover_end_ft": round(
-                    safe_float(getattr(pipe, "cover_ft", 0.0), 0.0), 3
+                    cover_end_ft, 3
                 ),
                 "contributing_area_ac": round(contributing_area_ac, 4),
                 "tributary_area_ac": round(contributing_area_ac, 4),

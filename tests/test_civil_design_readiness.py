@@ -1435,8 +1435,14 @@ class CivilDesignReadinessTests(unittest.TestCase):
         readiness = plan["meta"].get("civil_design_readiness")
         construction = plan["meta"].get("construction_readiness")
         release_summary = plan["meta"].get("release_readiness_summary")
+        sheet_registry = plan["meta"].get("sheet_registry") or []
+        export_audit = plan["meta"].get("export_audit") or {}
 
         self.assertIsInstance(readiness, dict)
+        self.assertTrue(plan["meta"].get("canonical_model_id"))
+        self.assertTrue(plan["meta"].get("canonical_model_hash"))
+        self.assertEqual(sheet_registry[0]["canonical_model_id"], plan["meta"]["canonical_model_id"])
+        self.assertEqual(export_audit["canonical_model_id"], plan["meta"]["canonical_model_id"])
         self.assertIn("systems", readiness)
         self.assertIn("missing_requirements", readiness)
         self.assertIn(readiness.get("status"), {"ready", "needs_engineering_review", "blocked"})
