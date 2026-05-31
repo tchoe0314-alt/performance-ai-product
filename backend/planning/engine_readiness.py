@@ -28,6 +28,14 @@ def _has_any(mapping: Dict[str, Any], keys: Iterable[str]) -> bool:
     return any(mapping.get(key) not in (None, "", [], {}) for key in keys)
 
 
+def _truthy_items(value: Any) -> bool:
+    if isinstance(value, dict):
+        return any(item not in (None, "", [], {}) for item in value.values())
+    if isinstance(value, list):
+        return bool(value)
+    return value not in (None, "", [], {})
+
+
 ENGINE_SYSTEM_MAP: Dict[str, Tuple[str, ...]] = {
     "geometry": ("site",),
     "terrain_surface": ("existing_conditions",),
@@ -50,6 +58,34 @@ ENGINE_SYSTEM_MAP: Dict[str, Tuple[str, ...]] = {
     "ai_orchestration": (),
     "reactive_model": (),
 }
+
+
+def _engine_scope_applicability(engine_id: str, meta: Dict[str, Any]) -> Dict[str, Any]:
+    if engine_id != "structure":
+        return {
+            "applicability": "required",
+            "scope_required": True,
+            "scope_reason": "Engine is required for the current civil design readiness contract.",
+        }
+
+    structures = _safe_dict(meta.get("structures") or meta.get("structure_summary"))
+    scope_keys = ("structures", "structure_summary", "retaining_walls", "foundations", "bridge_interfaces", "structure_conflicts")
+    has_direct_scope = any(_truthy_items(meta.get(key)) for key in scope_keys)
+    has_nested_scope = any(
+        _truthy_items(structures.get(key))
+        for key in ("retaining_walls", "foundations", "bridge_interfaces", "structure_conflicts")
+    )
+    if has_direct_scope or has_nested_scope:
+        return {
+            "applicability": "required",
+            "scope_required": True,
+            "scope_reason": "Structure scope exists because retaining walls, foundations, bridge interfaces, or structure conflicts are present.",
+        }
+    return {
+        "applicability": "not_required",
+        "scope_required": False,
+        "scope_reason": "No retaining walls, foundations, bridge interfaces, or structure conflicts are present in canonical project scope.",
+    }
 
 
 def _engine_evidence(engine_id: str, meta: Dict[str, Any]) -> List[str]:
@@ -132,6 +168,8 @@ def _engine_evidence(engine_id: str, meta: Dict[str, Any]) -> List[str]:
     elif engine_id == "ai_orchestration":
         if _has_any(meta, ("routing", "planner_workflow", "assumption_summary")):
             evidence.append("workflow_metadata")
+        if _has_any(meta, ("optimization_summary", "explanations", "workflow_guidance")):
+            evidence.append("orchestration_outputs")
     elif engine_id == "reactive_model":
         if _has_any(meta, ("stage_completeness", "stage_results", "manager_export", "reactive_update_report")):
             evidence.append("stage_and_dirty_state")
@@ -378,8 +416,15 @@ def _explicit_blockers_for_engine(engine_id: str, meta: Dict[str, Any]) -> List[
     return blockers
 
 
-def _contract_gate_status(contract: EngineContract, *, production_ready: bool, evidence: Sequence[str], production_gaps: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    status = "passed" if production_ready else ("blocked" if production_gaps else "pending")
+def _contract_gate_status(
+    contract: EngineContract,
+    *,
+    production_ready: bool,
+    evidence: Sequence[str],
+    production_gaps: Sequence[Dict[str, Any]],
+    scope_required: bool = True,
+) -> List[Dict[str, Any]]:
+    status = "not_applicable" if not scope_required else ("passed" if production_ready else ("blocked" if production_gaps else "pending"))
     return [
         {
             "gate": gate,
@@ -399,10 +444,15 @@ def evaluate_engine_readiness(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     review: List[str] = []
     concept_ready: List[str] = []
     no_evidence: List[str] = []
+    not_applicable: List[str] = []
 
     for contract in engine_contracts():
         systems = ENGINE_SYSTEM_MAP.get(contract.engine_id, ())
+        scope = _engine_scope_applicability(contract.engine_id, meta)
+        scope_required = bool(scope.get("scope_required", True))
         evidence = _engine_evidence(contract.engine_id, meta)
+        if not scope_required:
+            evidence.append("scope_not_required")
         missing = _missing_for_systems(civil, systems)
         warnings = _warnings_for_systems(civil, systems)
         production_gaps = _production_gaps_for_systems(civil, systems)
@@ -419,6 +469,9 @@ def evaluate_engine_readiness(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
             status = "concept_ready_needs_production_depth"
             production_blocked.append(contract.engine_id)
             concept_ready.append(contract.engine_id)
+        elif not scope_required:
+            status = "not_applicable"
+            not_applicable.append(contract.engine_id)
         elif not evidence:
             status = "not_evidenced"
             no_evidence.append(contract.engine_id)
@@ -436,6 +489,9 @@ def evaluate_engine_readiness(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
             "name": contract.name,
             "maturity": contract.maturity,
             "status": status,
+            "applicability": _safe_str(scope.get("applicability"), "required"),
+            "scope_required": scope_required,
+            "scope_reason": _safe_str(scope.get("scope_reason")),
             "stage_name": contract.stage_name,
             "canonical_owns": sorted(contract.owns),
             "read_dependencies": sorted(contract.reads),
@@ -453,6 +509,7 @@ def evaluate_engine_readiness(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
                 production_ready=production_ready,
                 evidence=evidence,
                 production_gaps=production_gaps,
+                scope_required=scope_required,
             ),
             "final_capabilities": list(contract.final_capabilities),
             "golden_scenarios": list(contract.golden_scenarios),
@@ -463,21 +520,30 @@ def evaluate_engine_readiness(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
         for engine_id, row in engine_rows.items()
         if row.get("status") == "production_ready"
     ]
+    applicable_engine_ids = [
+        engine_id
+        for engine_id, row in engine_rows.items()
+        if row.get("scope_required") is not False
+    ]
     blocked_or_unproven: Set[str] = set(blocked) | set(production_blocked) | set(no_evidence)
     return {
         "contract_version": "engine_contracts_v1",
         "engine_count": len(engine_rows),
-        "production_ready": not blocked_or_unproven and len(production_ready_ids) == len(engine_rows),
+        "applicable_engine_count": len(applicable_engine_ids),
+        "not_applicable_count": len(set(not_applicable)),
+        "production_ready": not blocked_or_unproven and len(production_ready_ids) == len(applicable_engine_ids),
         "concept_ready_count": len(set(concept_ready)),
         "production_ready_count": len(production_ready_ids),
         "blocked_engine_ids": sorted(set(blocked)),
         "production_blocked_engine_ids": sorted(set(production_blocked)),
         "not_evidenced_engine_ids": sorted(set(no_evidence)),
+        "not_applicable_engine_ids": sorted(set(not_applicable)),
         "review_engine_ids": sorted(set(review)),
         "engines": engine_rows,
         "summary": {
             "civil_readiness_status": _safe_str(civil.get("status")),
             "civil_production_ready": bool(civil.get("production_ready")),
+            "not_applicable_engine_ids": sorted(set(not_applicable)),
             "most_important_backend_gaps": [
                 {
                     "engine_id": engine_id,

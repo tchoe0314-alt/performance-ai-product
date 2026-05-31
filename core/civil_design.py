@@ -1413,10 +1413,17 @@ def check_storm_truth(storm: Dict[str, Any], standards: CivilDesignStandards = D
     incomplete_segments: List[Dict[str, Any]] = []
     for segment in segments:
         rec = _safe_dict(segment)
+        hydraulic_field_aliases = {
+            "length_ft": ("length_ft",),
+            "slope": ("slope", "slope_ft_ft", "slope_pct"),
+            "capacity_cfs": ("capacity_cfs",),
+            "flow_cfs": ("flow_cfs",),
+            "capacity_ratio": ("capacity_ratio",),
+        }
         missing_fields = [
             field
-            for field in ("length_ft", "slope", "capacity_cfs", "flow_cfs", "capacity_ratio")
-            if not _has_number(rec.get(field))
+            for field, aliases in hydraulic_field_aliases.items()
+            if not any(_has_number(rec.get(alias)) for alias in aliases)
         ]
         if missing_fields:
             incomplete_segments.append({"segment": _safe_str(rec.get("pipe") or rec.get("name"), "unnamed"), "missing_fields": missing_fields})

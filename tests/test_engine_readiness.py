@@ -3,7 +3,7 @@ import unittest
 import planner
 from backend.planning.engine_contracts import engine_contracts
 from backend.planning.engine_readiness import evaluate_engine_readiness
-from tests.test_civil_design_readiness import _complete_meta
+from tests.test_civil_design_readiness import _complete_meta, _production_ready_meta
 
 
 class EngineReadinessTests(unittest.TestCase):
@@ -23,12 +23,22 @@ class EngineReadinessTests(unittest.TestCase):
         self.assertIn("storm_pipe", readiness["production_blocked_engine_ids"])
         self.assertIn("export_cad", readiness["production_blocked_engine_ids"])
         self.assertIn("gis_existing_conditions", readiness["production_blocked_engine_ids"])
-        self.assertIn("structure", readiness["not_evidenced_engine_ids"])
+        self.assertIn("structure", readiness["not_applicable_engine_ids"])
         self.assertIn("coordinate_system", {item["field"] for item in readiness["engines"]["gis_existing_conditions"]["production_blockers"]})
         storm = readiness["engines"]["storm_pipe"]
         self.assertEqual(storm["status"], "concept_ready_needs_production_depth")
         self.assertTrue(storm["production_blockers"])
         self.assertTrue(storm["production_gate_status"])
+
+    def test_production_depth_fixture_clears_engine_readiness_contracts(self) -> None:
+        readiness = evaluate_engine_readiness({"meta": _production_ready_meta()})
+
+        self.assertTrue(readiness["production_ready"])
+        self.assertEqual(readiness["not_evidenced_engine_ids"], [])
+        self.assertEqual(readiness["blocked_engine_ids"], [])
+        self.assertEqual(readiness["production_blocked_engine_ids"], [])
+        self.assertIn("structure", readiness["not_applicable_engine_ids"])
+        self.assertIn("orchestration_outputs", readiness["engines"]["ai_orchestration"]["evidence"])
 
     def test_missing_core_truth_blocks_impacted_engines(self) -> None:
         readiness = evaluate_engine_readiness({"meta": {"grading": {"source_quality": "fallback"}}})
@@ -164,13 +174,17 @@ class EngineReadinessTests(unittest.TestCase):
         self.assertEqual(reactive["status"], "concept_ready_needs_production_depth")
         self.assertIn("post_rerun_release_blockers", {item["field"] for item in reactive["production_blockers"]})
 
-    def test_structure_engine_is_not_production_ready_without_evidence(self) -> None:
+    def test_structure_engine_is_not_applicable_without_structure_scope(self) -> None:
         readiness = evaluate_engine_readiness({"meta": _complete_meta()})
 
         structure = readiness["engines"]["structure"]
 
-        self.assertEqual(structure["status"], "not_evidenced")
-        self.assertIn("structure", readiness["not_evidenced_engine_ids"])
+        self.assertEqual(structure["status"], "not_applicable")
+        self.assertFalse(structure["scope_required"])
+        self.assertIn("scope_not_required", structure["evidence"])
+        self.assertEqual({gate["status"] for gate in structure["production_gate_status"]}, {"not_applicable"})
+        self.assertIn("structure", readiness["not_applicable_engine_ids"])
+        self.assertNotIn("structure", readiness["not_evidenced_engine_ids"])
         self.assertFalse(readiness["production_ready"])
 
     def test_unresolved_structure_conflicts_block_structure_engine_readiness(self) -> None:
@@ -186,7 +200,25 @@ class EngineReadinessTests(unittest.TestCase):
         structure = readiness["engines"]["structure"]
 
         self.assertEqual(structure["status"], "concept_ready_needs_production_depth")
+        self.assertTrue(structure["scope_required"])
         self.assertIn("structure_conflicts", {item["field"] for item in structure["production_blockers"]})
+
+    def test_structure_engine_is_applicable_when_structure_scope_exists(self) -> None:
+        readiness = evaluate_engine_readiness(
+            {
+                "meta": {
+                    **_complete_meta(),
+                    "structure_summary": {"structure_conflicts": [{"id": "SC-1", "resolved": True}]},
+                }
+            }
+        )
+
+        structure = readiness["engines"]["structure"]
+
+        self.assertTrue(structure["scope_required"])
+        self.assertEqual(structure["applicability"], "required")
+        self.assertNotEqual(structure["status"], "not_applicable")
+        self.assertNotIn("structure", readiness["not_applicable_engine_ids"])
 
 
 if __name__ == "__main__":

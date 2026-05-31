@@ -37,6 +37,11 @@ def _complete_meta() -> dict:
             "basins": [{"name": "BASIN-1", "target_name": "OUTLET-1"}],
             "low_points": [{"x": 12.0, "y": 8.0}],
             "flow_paths": [{"from": "INLET-1", "to": "OUTLET-1", "points": [[15.0, 12.0], [40.0, 8.0]]}],
+            "stats": {
+                "total_contributing_area_sf": 12000.0,
+                "total_estimated_inlet_flow_cfs": 0.8,
+                "total_basin_runoff_cfs": 1.2,
+            },
             "surface_guidance": {"surface_source": "terrain", "surface_from_grading": True},
             "coordination": {"preferred_outfall": {"target_name": "OUTLET-1"}},
         },
@@ -52,6 +57,7 @@ def _complete_meta() -> dict:
                     "length_ft": 80.0,
                     "capacity_cfs": 4.0,
                     "flow_cfs": 1.2,
+                    "slope_ft_ft": 0.006,
                     "capacity_ratio": 0.3,
                     "tributary_area_sf": 12000.0,
                 }
