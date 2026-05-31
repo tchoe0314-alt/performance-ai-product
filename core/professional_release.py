@@ -37,6 +37,34 @@ def _parse_date(value: str) -> date | None:
         return None
 
 
+def _professional_blocker_details(blockers: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+    details: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for blocker in blockers:
+        field = _safe_str(blocker.get("field"), "professional_release")
+        reason = _safe_str(blocker.get("reason"), "Professional release evidence is incomplete.")
+        code = f"professional_release_{field}".lower().replace(" ", "_")
+        if code in seen:
+            continue
+        seen.add(code)
+        details.append(
+            {
+                "code": code,
+                "area": "professional_release",
+                "field": field,
+                "severity": "blocker",
+                "what_failed": reason,
+                "why_it_matters": (
+                    "Construction-ready claims require traceable licensed review metadata tied to the exact civil package."
+                ),
+                "missing_data": [field],
+                "next_action": "Correct the professional release record and rerun construction release validation.",
+                "engineer_review_required": True,
+            }
+        )
+    return details
+
+
 def validate_professional_release(record: Dict[str, Any]) -> Dict[str, Any]:
     rec = _safe_dict(record)
     blockers: List[Dict[str, str]] = []
@@ -135,6 +163,7 @@ def validate_professional_release(record: Dict[str, Any]) -> Dict[str, Any]:
         "success": not blockers,
         "released_for_construction": not blockers,
         "blockers": blockers,
+        "blocker_details": _professional_blocker_details(blockers),
         "status": status or "missing",
         "sealed": sealed,
         "review_date": review_date,

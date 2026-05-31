@@ -245,12 +245,17 @@ class ExistingConditionsImporterTests(unittest.TestCase):
 
         validation = validate_imported_existing_conditions_package(merged)
         fields = {item["field"] for item in validation["blockers"]}
+        detail_fields = {item["field"] for item in validation["blocker_details"]}
 
         self.assertFalse(validation["production_usable"])
         self.assertIn("coordinate_system_source", fields)
         self.assertIn("survey_benchmark", fields)
         self.assertIn("survey_datum", fields)
         self.assertIn("survey_control_verified", fields)
+        self.assertIn("coordinate_system_source", detail_fields)
+        detail = next(item for item in validation["blocker_details"] if item["field"] == "survey_benchmark")
+        self.assertIn("benchmark", detail["what_failed"].lower())
+        self.assertTrue(detail["next_action"])
 
     def test_import_package_validation_blocks_geographic_crs_for_engineering_truth(self) -> None:
         merged = {

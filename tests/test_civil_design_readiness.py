@@ -291,6 +291,10 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertIn(("drainage", "basin_or_outfall"), fields)
         self.assertIn(("storm_pipes", "selected_outfall"), fields)
         self.assertTrue(readiness["can_assist_if_enabled"])
+        detail_fields = {(item["area"], item["field"]) for item in readiness["missing_requirement_details"]}
+        self.assertIn(("site", "site_boundary"), detail_fields)
+        site_detail = next(item for item in readiness["critical_blocker_details"] if item["field"] == "site_boundary")
+        self.assertTrue(site_detail["next_action"])
 
     def test_coordination_unresolved_blocks_readiness(self) -> None:
         meta = _complete_meta()
@@ -459,6 +463,8 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertFalse(readiness["ready"])
         self.assertEqual(readiness["status"], "not_construction_ready")
         self.assertIn(("professional_review", "sealed_release"), blockers)
+        detail_fields = {(item["area"], item["field"]) for item in readiness["blocker_details"]}
+        self.assertIn(("professional_review", "sealed_release"), detail_fields)
         self.assertIn("Civora does not stamp drawings", readiness["truth_label"])
 
     def test_construction_readiness_blocks_unapproved_cost_book(self) -> None:

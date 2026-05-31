@@ -648,6 +648,52 @@ def _construction_gap(area: str, field: str, why: str, action: str, *, severity:
     }
 
 
+def _readiness_issue_code(record: Dict[str, Any]) -> str:
+    area = _safe_str(record.get("area") or record.get("system") or record.get("engine"), "engineering")
+    field = _safe_str(record.get("field") or record.get("code") or record.get("blocker"), "readiness_issue")
+    return f"{area}_{field}".lower().replace(" ", "_")
+
+
+def _readiness_issue_details(issues: Iterable[Any]) -> List[Dict[str, Any]]:
+    details: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for issue in issues:
+        record = _safe_dict(issue)
+        if not record:
+            continue
+        code = _readiness_issue_code(record)
+        if code in seen:
+            continue
+        seen.add(code)
+        area = _safe_str(record.get("area") or record.get("system") or record.get("engine"), "engineering")
+        field = _safe_str(record.get("field") or record.get("code") or record.get("blocker"), "readiness_issue")
+        what_failed = _safe_str(
+            record.get("reason") or record.get("message") or record.get("why_needed"),
+            f"{field.replace('_', ' ')} is incomplete or blocked.",
+        )
+        next_action = _safe_str(
+            record.get("suggested_next_action") or record.get("next_action") or record.get("action"),
+            f"Provide or regenerate {field.replace('_', ' ')} evidence, then rerun validation.",
+        )
+        severity = _safe_str(record.get("severity"), "blocker").lower()
+        details.append(
+            {
+                "code": code,
+                "area": area,
+                "field": field,
+                "severity": severity,
+                "what_failed": what_failed,
+                "why_it_matters": (
+                    f"{area.replace('_', ' ')} cannot be treated as production-ready until this evidence is tied to canonical state."
+                ),
+                "missing_data": [field],
+                "next_action": next_action,
+                "engineer_review_required": severity != "warning",
+            }
+        )
+    return details
+
+
 def _standards_official_url(url: str) -> bool:
     lowered = _safe_str(url).lower()
     return (
@@ -1681,13 +1727,19 @@ def civil_design_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
         ),
         "production_ready": production_ready,
         "production_blockers": production_blockers,
+        "production_blocker_details": _readiness_issue_details(production_blockers),
         "standards_version": active_standards.version,
         "standards": active_standards.to_dict(),
         "systems": systems,
         "ready_systems": ready_systems,
         "missing_requirements": missing_requirements,
+        "missing_requirement_details": _readiness_issue_details(missing_requirements),
         "critical_blockers": critical_blockers,
+        "critical_blocker_details": _readiness_issue_details(critical_blockers),
         "warnings": warnings,
+        "warning_details": _readiness_issue_details(
+            {**warning, "severity": "warning", "field": warning.get("field") or "warning"} for warning in warnings
+        ),
         "truth_sources": truth_sources,
         "can_assist_if_enabled": bool(missing_requirements),
         "message": (
@@ -2627,7 +2679,11 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
         "status": "construction_ready" if ready else "not_construction_ready",
         "score": 100.0 if ready and score < 95.0 else score,
         "blockers": blockers,
+        "blocker_details": _readiness_issue_details(blockers),
         "warnings": warnings,
+        "warning_details": _readiness_issue_details(
+            {**warning, "severity": "warning", "field": warning.get("field") or "warning"} for warning in warnings
+        ),
         "evidence": {
             "civil_production_ready": civil.get("production_ready") is True,
             "existing_conditions_production_ready": existing.get("production_ready") is True if existing else False,

@@ -11,7 +11,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from engines.surface_engine import GridSurface, SurfaceEngine, SurveyPoint
 
-from .common import dedupe_keep_order, safe_dict, safe_float, safe_int, safe_list, safe_str
+from .common import dedupe_keep_order, readiness_issue_explanations, safe_dict, safe_float, safe_int, safe_list, safe_str
 from .existing_conditions import REQUIRED_GIS_LAYERS
 from .landxml_io import import_landxml
 
@@ -153,6 +153,7 @@ def _coordinate_validation(value: Dict[str, Any]) -> Dict[str, Any]:
         "production_usable": not blockers,
         "coordinate_system": coord,
         "blockers": blockers,
+        "blocker_details": readiness_issue_explanations(blockers),
         "warnings": warnings,
         "truth_label": "Coordinate systems must be projected with engineering distance units before imports are production-usable.",
     }
@@ -980,6 +981,7 @@ def validate_imported_existing_conditions_package(
         "success": not blockers,
         "production_usable": not blockers,
         "blockers": blockers,
+        "blocker_details": readiness_issue_explanations(blockers),
         "warnings": dedupe_keep_order(warnings),
         "source_count": len(sources),
         "surface_count": surface_count,

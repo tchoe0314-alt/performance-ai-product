@@ -17,6 +17,11 @@ class ProfessionalReleaseTests(unittest.TestCase):
         self.assertIn("engineer_name", fields)
         self.assertIn("license_number", fields)
         self.assertIn("review_date", fields)
+        detail_fields = {item["field"] for item in validation["blocker_details"]}
+        self.assertIn("engineer_name", detail_fields)
+        detail = next(item for item in validation["blocker_details"] if item["field"] == "license_number")
+        self.assertTrue(detail["engineer_review_required"])
+        self.assertTrue(detail["next_action"])
 
     def test_professional_release_record_builds_valid_release_evidence(self) -> None:
         record = build_professional_review_record(

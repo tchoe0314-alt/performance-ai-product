@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Callable, Dict, Iterable, List, Set
 
-from .common import safe_dict, safe_list, safe_str
+from .common import blocker_explanations, safe_dict, safe_list, safe_str
 from .engine_contracts import downstream_closure
 from .release_gates import construction_release_blockers_from_meta, final_plan_requires_construction_release
 from .runtime import PLANNER_STAGE_DEPENDENCIES, PLANNER_STAGE_ORDER
@@ -310,7 +310,9 @@ def execute_reactive_rerun(
     )
     release_blockers = _post_rerun_release_blockers(plan, final_meta)
     final_report["post_rerun_construction_release_blockers"] = construction_release_blockers
+    final_report["post_rerun_construction_release_blocker_details"] = blocker_explanations(construction_release_blockers)
     final_report["post_rerun_release_blockers"] = release_blockers
+    final_report["post_rerun_release_blocker_details"] = blocker_explanations(release_blockers)
     final_report["post_rerun_production_ready"] = bool(
         safe_dict(final_meta.get("civil_design_readiness")).get("production_ready")
     ) and not final_report["post_rerun_export_blocked"] and not release_blockers

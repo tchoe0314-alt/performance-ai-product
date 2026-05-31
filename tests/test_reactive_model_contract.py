@@ -190,6 +190,18 @@ class ReactiveModelContractTests(unittest.TestCase):
         self.assertIn("construction_package_stale_artifacts", report["post_rerun_construction_release_blockers"])
         self.assertIn("construction_package_blocked", report["post_rerun_release_blockers"])
         self.assertIn("construction_package_stale_artifacts", report["post_rerun_release_blockers"])
+        release_detail = next(
+            item
+            for item in report["post_rerun_release_blocker_details"]
+            if item["code"] == "construction_package_blocked"
+        )
+        construction_detail = next(
+            item
+            for item in report["post_rerun_construction_release_blocker_details"]
+            if item["code"] == "construction_package_blocked"
+        )
+        self.assertEqual(release_detail["what_failed"], "The construction package is not allowed for release.")
+        self.assertTrue(construction_detail["next_action"])
 
     def test_execute_reactive_rerun_blocks_production_ready_when_manual_validation_fails(self) -> None:
         def fake_build(payload):
