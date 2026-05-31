@@ -129,12 +129,14 @@ from output.preview import preview_plan
 from backend.planning.common import (
     _call_with_compatible_kwargs,
     _install_rect_obstacle_compatibility,
+    blocker_explanations,
     clamp,
     canonical_stage_output,
     dedupe_keep_order,
     lower_text,
     polyline_length,
     rect_area,
+    readiness_issue_explanations,
     safe_dict,
     safe_float,
     safe_int,
@@ -10386,6 +10388,90 @@ def _ensure_subdivision_road_preview(plan: Dict[str, Any], parsed: Dict[str, Any
     plan["actions"] = actions
 
 
+def _dedupe_readiness_details(details: Iterable[Any]) -> List[Dict[str, Any]]:
+    clean: List[Dict[str, Any]] = []
+    seen = set()
+    for item in details:
+        detail = safe_dict(item)
+        if not detail:
+            continue
+        key = (
+            safe_str(detail.get("code"))
+            or f"{safe_str(detail.get('area'))}:{safe_str(detail.get('field'))}:{safe_str(detail.get('what_failed'))}"
+        )
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        clean.append(detail)
+    return clean
+
+
+def _planner_release_readiness_summary(final: Dict[str, Any]) -> Dict[str, Any]:
+    meta = safe_dict(final.get("meta"))
+    civil = safe_dict(meta.get("civil_design_readiness"))
+    construction = safe_dict(meta.get("construction_readiness"))
+    package = safe_dict(meta.get("construction_package_manifest"))
+    engine = safe_dict(meta.get("engine_readiness"))
+    export_audit = safe_dict(meta.get("export_audit"))
+    release_review = safe_dict(meta.get("release_review"))
+    engine_gap_details = [
+        safe_dict(item.get("first_gap_detail"))
+        for item in safe_list(safe_dict(engine.get("summary")).get("most_important_backend_gaps"))
+        if safe_dict(item.get("first_gap_detail"))
+    ]
+    structured_details = _dedupe_readiness_details(
+        safe_list(civil.get("critical_blocker_details"))
+        + safe_list(civil.get("production_blocker_details"))
+        + safe_list(construction.get("blocker_details"))
+        + safe_list(package.get("blocker_details"))
+        + safe_list(engine_gap_details)
+        + safe_list(export_audit.get("blocked_reason_details"))
+        + safe_list(release_review.get("release_blocker_details"))
+        + readiness_issue_explanations(safe_list(civil.get("critical_blockers")))
+        + readiness_issue_explanations(safe_list(civil.get("production_blockers")))
+        + readiness_issue_explanations(safe_list(construction.get("blockers")))
+        + blocker_explanations(safe_list(meta.get("blockers")))
+    )
+    release_allowed = bool(package.get("release_allowed") or package.get("construction_export_allowed"))
+    civil_ready = bool(civil.get("production_ready"))
+    construction_ready = bool(construction.get("ready"))
+    engine_ready = bool(engine.get("production_ready"))
+    export_ready = bool(export_audit.get("production_export_ready") or export_audit.get("ready")) and not bool(
+        export_audit.get("export_blocked")
+    )
+    ready = release_allowed and civil_ready and construction_ready and engine_ready and export_ready and not structured_details
+    if ready:
+        status = "release_ready"
+    elif construction_ready and civil_ready:
+        status = "release_blocked"
+    elif civil_ready:
+        status = "construction_blocked"
+    else:
+        status = "production_blocked"
+    primary_detail = structured_details[0] if structured_details else {}
+    return {
+        "version": "planner_release_readiness_v1",
+        "status": status,
+        "release_ready": ready,
+        "civil_production_ready": civil_ready,
+        "construction_ready": construction_ready,
+        "construction_release_allowed": release_allowed,
+        "engine_production_ready": engine_ready,
+        "export_production_ready": export_ready,
+        "primary_attention": safe_str(primary_detail.get("code") or primary_detail.get("field")),
+        "primary_attention_detail": primary_detail,
+        "blocker_count": len(structured_details),
+        "blocker_details": structured_details,
+        "next_actions": dedupe_keep_order(
+            [safe_str(detail.get("next_action")) for detail in structured_details if safe_str(detail.get("next_action"))]
+        )[:10],
+        "truth_label": (
+            "Planner release readiness summarizes backend evidence only; construction use still requires official inputs, "
+            "traceable deliverables, and licensed professional review."
+        ),
+    }
+
+
 def finalize_plan(plan: Dict[str, Any], *, parsed: Dict[str, Any], route: RoutingDecision) -> Dict[str, Any]:
     final = sanitize_plan(plan)
     _ensure_subdivision_road_preview(final, parsed)
@@ -10446,6 +10532,7 @@ def finalize_plan(plan: Dict[str, Any], *, parsed: Dict[str, Any], route: Routin
     final["meta"]["construction_readiness"] = construction_readiness(final)
     final["meta"]["construction_package_manifest"] = _build_construction_package_manifest(final)
     final["meta"]["engine_readiness"] = _evaluate_engine_readiness(final)
+    final["meta"]["release_readiness_summary"] = _planner_release_readiness_summary(final)
     return final
 
 

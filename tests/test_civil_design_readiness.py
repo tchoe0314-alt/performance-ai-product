@@ -1428,6 +1428,7 @@ class CivilDesignReadinessTests(unittest.TestCase):
         )
         readiness = plan["meta"].get("civil_design_readiness")
         construction = plan["meta"].get("construction_readiness")
+        release_summary = plan["meta"].get("release_readiness_summary")
 
         self.assertIsInstance(readiness, dict)
         self.assertIn("systems", readiness)
@@ -1435,6 +1436,11 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertIn(readiness.get("status"), {"ready", "needs_engineering_review", "blocked"})
         self.assertIsInstance(construction, dict)
         self.assertEqual(construction.get("status"), "not_construction_ready")
+        self.assertIsInstance(release_summary, dict)
+        self.assertEqual(release_summary["version"], "planner_release_readiness_v1")
+        self.assertFalse(release_summary["release_ready"])
+        self.assertTrue(release_summary["blocker_details"])
+        self.assertTrue(release_summary["primary_attention_detail"]["next_action"])
 
 
 if __name__ == "__main__":
