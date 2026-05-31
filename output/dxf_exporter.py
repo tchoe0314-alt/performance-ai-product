@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import ezdxf
 
-from backend.planning.common import construction_package_record
+from backend.planning.common import blocker_explanations, construction_package_record
 from backend.planning.production_depth import build_cad_interop_metadata
 from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
@@ -3858,6 +3858,8 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
             + (["concept_or_fallback_engineering_sources"] if concept_output_blocking else [])
         )
     )
+    blocked_reason_details = blocker_explanations(blocked_reasons)
+    release_blocker_details = blocker_explanations(release_blockers)
     production_export_ready = not warnings and canonical_id_traceability_ready and not export_blocked
     return {
         "success": not warnings,
@@ -3865,6 +3867,7 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
         "production_export_ready": production_export_ready,
         "export_blocked": export_blocked,
         "blocked_reasons": blocked_reasons,
+        "blocked_reason_details": blocked_reason_details,
         "layout_order": layout_names,
         "sheet_total": len(sheet_registry),
         "sheet_titles": [safe_text(item.get("sheet_title")) for item in sheet_registry],
@@ -3919,6 +3922,7 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
             "construction_package_present": bool(construction_package),
             "construction_package_id": construction_package_id,
             "release_blockers": release_blockers,
+            "release_blocker_details": release_blocker_details,
         },
         "warnings": warnings,
     }

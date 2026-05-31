@@ -137,6 +137,9 @@ class Phase1Slice6DExportMetadataTest(unittest.TestCase):
         self.assertFalse(audit["production_export_ready"])
         self.assertTrue(audit["export_blocked"])
         self.assertIn("concept_or_fallback_engineering_sources", audit["blocked_reasons"])
+        detail_by_code = {detail["code"]: detail for detail in audit["blocked_reason_details"]}
+        self.assertIn("concept_or_fallback_engineering_sources", detail_by_code)
+        self.assertTrue(detail_by_code["concept_or_fallback_engineering_sources"]["next_action"])
         self.assertEqual(traceability["concept_engineering_source_ids"], ["storm-1"])
 
     def test_export_audit_blocks_when_release_review_is_blocked(self) -> None:
@@ -157,6 +160,15 @@ class Phase1Slice6DExportMetadataTest(unittest.TestCase):
         self.assertIn("release_status_blocked", audit["blocked_reasons"])
         self.assertIn("final_plan_release_not_ready", audit["blocked_reasons"])
         self.assertEqual(audit["release_readiness"]["release_status"], "blocked")
+        release_detail_by_code = {
+            detail["code"]: detail
+            for detail in audit["release_readiness"]["release_blocker_details"]
+        }
+        self.assertEqual(
+            release_detail_by_code["construction_package_blocked"]["what_failed"],
+            "The construction package is not allowed for release.",
+        )
+        self.assertTrue(release_detail_by_code["release_status_blocked"]["engineer_review_required"])
 
     def test_export_audit_blocks_failed_deliverables_from_final_meta(self) -> None:
         plan = _export_plan()
