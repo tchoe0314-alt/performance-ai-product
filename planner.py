@@ -10709,6 +10709,74 @@ def build_plan(
     return finalize_plan(raw, parsed=parsed_checked, route=route)
 
 
+def build_reactive_partial_plan(
+    parsed: Dict[str, Any],
+    *,
+    changed_engine_ids: Iterable[str] = (),
+    changed_stages: Iterable[str] = (),
+    progress_callback: Optional[Callable[[str, str, int, str], None]] = None,
+) -> Dict[str, Any]:
+    from backend.planning.reactive_model import build_reactive_update_report
+
+    parsed_checked = triple_check_parsed_payload(parsed)
+    payload = deepcopy(parsed_checked)
+    meta = dict(safe_dict(payload.get("meta")))
+    orchestrator_meta = dict(safe_dict(meta.get("orchestrator_meta")))
+    runtime_resume = dict(safe_dict(orchestrator_meta.get("runtime_resume")))
+    checkpoint_plan = (
+        safe_dict(runtime_resume.get("final_plan"))
+        or safe_dict(meta.get("reactive_checkpoint_final_plan"))
+        or safe_dict(payload.get("final_plan"))
+    )
+    if not checkpoint_plan:
+        raise ValueError("Reactive partial rerun requires a checkpoint final_plan.")
+
+    report = build_reactive_update_report(
+        changed_engine_ids=changed_engine_ids or safe_list(meta.get("changed_engine_ids")),
+        changed_stages=changed_stages or safe_list(meta.get("changed_targets")),
+        stale_outputs=safe_list(meta.get("stale_outputs")),
+    )
+    dirty_state = dict(safe_dict(meta.get("system_dirty_state")))
+    for stage_name in safe_list(report.get("impacted_stages")):
+        stage_key = safe_str(stage_name)
+        if not stage_key:
+            continue
+        dirty_state[stage_key] = {
+            "state": "dirty",
+            "reasons": [f"Reactive partial rerun impacted {stage_key}."],
+            "source": "reactive_partial_rerun",
+        }
+
+    runtime_resume["final_plan"] = deepcopy(checkpoint_plan)
+    orchestrator_meta["runtime_resume"] = runtime_resume
+    meta["orchestrator_meta"] = orchestrator_meta
+    meta["changed_engine_ids"] = list(report.get("changed_engine_ids") or [])
+    meta["changed_targets"] = list(report.get("impacted_stages") or [])
+    meta["stale_outputs"] = list(report.get("impacted_stages") or [])
+    meta["system_dirty_state"] = dirty_state
+    meta["reactive_update_report"] = deepcopy(report)
+    meta["reactive_partial_rerun"] = {
+        "enabled": True,
+        "checkpoint_restored": True,
+        "impacted_stages": list(report.get("impacted_stages") or []),
+        "truth_label": "Planner restored checkpointed canonical state and reran only dirty downstream stages.",
+    }
+    payload["meta"] = meta
+    payload.pop("final_plan", None)
+
+    route = choose_routing_path(payload)
+    raw = build_plan_from_parsed(payload, route, progress_callback=progress_callback)
+    final = finalize_plan(raw, parsed=payload, route=route)
+    final.setdefault("meta", {})
+    final["meta"]["reactive_partial_rerun"] = {
+        **safe_dict(final["meta"].get("reactive_partial_rerun")),
+        "enabled": True,
+        "checkpoint_restored": True,
+        "impacted_stages": list(report.get("impacted_stages") or []),
+    }
+    return final
+
+
 def build_plan_options(parsed: Dict[str, Any], candidate_payloads: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     parsed_checked = triple_check_parsed_payload(parsed)
     results: List[Dict[str, Any]] = []

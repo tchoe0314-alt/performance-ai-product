@@ -83,6 +83,48 @@ class ReactiveModelContractTests(unittest.TestCase):
         self.assertFalse(report["post_rerun_export_blocked"])
         self.assertFalse(report["post_rerun_stale_outputs"])
 
+    def test_execute_reactive_rerun_uses_partial_executor_when_available(self) -> None:
+        partial_payloads = []
+
+        def full_build(_payload):
+            raise AssertionError("full build should not be called when partial executor is available")
+
+        def partial_build(payload):
+            partial_payloads.append(payload)
+            return {
+                "meta": {
+                    "civil_design_readiness": {"production_ready": True},
+                    "stage_results": [
+                        {"stage_name": "grading", "success": True, "completeness": "complete"},
+                        {"stage_name": "drainage", "success": True, "completeness": "complete"},
+                        {"stage_name": "storm_pipes", "success": True, "completeness": "complete"},
+                        {"stage_name": "sanitary", "success": True, "completeness": "complete"},
+                        {"stage_name": "utility_network", "success": True, "completeness": "complete"},
+                        {"stage_name": "coordination_resolution", "success": True, "completeness": "complete"},
+                        {"stage_name": "earthwork", "success": True, "completeness": "complete"},
+                        {"stage_name": "sheets", "success": True, "completeness": "complete"},
+                        {"stage_name": "qa", "success": True, "completeness": "complete"},
+                    ],
+                }
+            }
+
+        result = execute_reactive_rerun(
+            {"project_name": "Reactive", "meta": {}},
+            changed_stages=["grading"],
+            build_plan_fn=full_build,
+            partial_rerun_fn=partial_build,
+        )
+
+        report = result["reactive_update_report"]
+        self.assertTrue(report["partial_rerun_executed"])
+        self.assertEqual(report["execution_mode"], "isolated_downstream_partial_rerun")
+        self.assertFalse(report["post_rerun_export_blocked"])
+        self.assertIn("isolated downstream partial rerun", result["truth_label"])
+        self.assertEqual(len(partial_payloads), 1)
+        dirty_state = partial_payloads[0]["meta"]["system_dirty_state"]
+        self.assertEqual(dirty_state["grading"]["state"], "dirty")
+        self.assertIn("storm_pipes", dirty_state)
+
     def test_execute_reactive_rerun_keeps_exports_blocked_when_impacted_stage_does_not_complete(self) -> None:
         def fake_build(payload):
             return {

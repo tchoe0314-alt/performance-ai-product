@@ -6,6 +6,7 @@ from planner_orchestrator import (
     _merge_manual_fields,
     _parse_from_prompt,
     _should_use_multi_option,
+    _single_plan_flow,
 )
 
 
@@ -168,6 +169,79 @@ class PlannerOrchestratorRoutingTests(unittest.TestCase):
         self.assertEqual(float(merged["lot"]["w"]), 1200.0)
         self.assertEqual(float(merged["lot"]["h"]), 900.0)
         self.assertEqual(int(merged["site_plan"]["parking_count"]), 180)
+
+    def test_single_plan_flow_routes_checkpointed_reactive_updates_to_partial_rerun(self):
+        parsed_payload = {
+            "project_name": "Reactive edit",
+            "meta": {
+                "changed_targets": ["grading"],
+                "orchestrator_meta": {
+                    "runtime_resume": {
+                        "final_plan": {
+                            "meta": {
+                                "stage_completeness": {
+                                    "statuses": {
+                                        "layout": "complete",
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+            },
+        }
+        partial_final_plan = {
+            "meta": {
+                "reactive_partial_rerun": {
+                    "enabled": True,
+                    "checkpoint_restored": True,
+                    "impacted_stages": ["grading", "drainage", "storm_pipes"],
+                },
+                "routing": {"strategy": "model_first"},
+            }
+        }
+
+        with (
+            patch(
+                "planner_orchestrator.planner.build_plan",
+                side_effect=AssertionError("full build should not run for checkpointed reactive updates"),
+            ),
+            patch(
+                "planner_orchestrator.planner.build_reactive_partial_plan",
+                return_value=partial_final_plan,
+            ) as partial_build,
+        ):
+            result = _single_plan_flow(parsed_payload)
+
+        partial_build.assert_called_once()
+        self.assertTrue(result.success)
+        self.assertEqual(result.metadata["workflow"], "single_plan")
+        self.assertTrue(result.final_plan["meta"]["reactive_partial_rerun"]["enabled"])
+
+    def test_single_plan_flow_uses_full_build_without_reactive_checkpoint(self):
+        parsed_payload = {
+            "project_name": "Reactive edit without checkpoint",
+            "meta": {
+                "changed_targets": ["grading"],
+            },
+        }
+        full_final_plan = {
+            "meta": {
+                "routing": {"strategy": "model_first"},
+            }
+        }
+
+        with (
+            patch("planner_orchestrator.planner.build_plan", return_value=full_final_plan) as full_build,
+            patch(
+                "planner_orchestrator.planner.build_reactive_partial_plan",
+                side_effect=AssertionError("partial rerun needs checkpointed canonical state"),
+            ),
+        ):
+            result = _single_plan_flow(parsed_payload)
+
+        full_build.assert_called_once()
+        self.assertTrue(result.success)
 
 
 if __name__ == "__main__":

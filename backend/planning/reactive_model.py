@@ -382,6 +382,7 @@ def execute_reactive_rerun(
     changed_stages: Iterable[str] = (),
     edits: Dict[str, Any] = None,
     build_plan_fn: Callable[[Dict[str, Any]], Dict[str, Any]],
+    partial_rerun_fn: Callable[[Dict[str, Any]], Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     payload = deepcopy(base_payload)
     if edits:
@@ -392,16 +393,34 @@ def execute_reactive_rerun(
     meta["changed_targets"] = list(report.get("impacted_stages") or [])
     meta["reactive_update_report"] = deepcopy(report)
     meta["stale_outputs"] = list(report.get("impacted_stages") or [])
+    dirty_state = dict(safe_dict(meta.get("system_dirty_state")))
+    for stage_name in safe_list(report.get("impacted_stages")):
+        stage_key = safe_str(stage_name)
+        if not stage_key:
+            continue
+        dirty_state[stage_key] = {
+            "state": "dirty",
+            "reasons": [f"Reactive edit impacted {stage_key}; rerun required before export."],
+            "source": "reactive_update",
+        }
+    if dirty_state:
+        meta["system_dirty_state"] = dirty_state
     payload["meta"] = meta
-    plan = build_plan_fn(payload)
+    partial_attempted = callable(partial_rerun_fn)
+    plan = partial_rerun_fn(payload) if partial_attempted else build_plan_fn(payload)
     final_meta = safe_dict(plan.get("meta"))
     final_report = dict(report)
     completed_stages = _completed_stage_names(final_meta)
     impacted_stages = {safe_str(item) for item in safe_list(final_report.get("impacted_stages")) if safe_str(item)}
     uncleared_stale = sorted(impacted_stages - completed_stages, key=_stage_index)
-    final_report["execution_mode"] = "full_plan_rerun_with_downstream_dirty_metadata"
-    final_report["partial_rerun_executed"] = False
-    final_report["partial_rerun_blocker"] = "Planner entrypoint does not yet expose isolated stage execution for external reactive edits."
+    final_report["execution_mode"] = (
+        "isolated_downstream_partial_rerun"
+        if partial_attempted
+        else "full_plan_rerun_with_downstream_dirty_metadata"
+    )
+    final_report["partial_rerun_executed"] = partial_attempted
+    if not partial_attempted:
+        final_report["partial_rerun_blocker"] = "No partial rerun executor was provided for this reactive request."
     final_report["post_rerun_completed_stages"] = sorted(completed_stages, key=_stage_index)
     final_report["post_rerun_stale_outputs"] = uncleared_stale
     final_report["post_rerun_export_blocked"] = bool(uncleared_stale)
@@ -427,7 +446,11 @@ def execute_reactive_rerun(
         "success": True,
         "plan": plan,
         "reactive_update_report": final_report,
-        "truth_label": "Reactive execution performed a safe full rerun with downstream dirty metadata; true isolated partial reruns still need planner-stage entrypoints.",
+        "truth_label": (
+            "Reactive execution performed an isolated downstream partial rerun from checkpointed canonical state."
+            if partial_attempted
+            else "Reactive execution performed a safe full rerun with downstream dirty metadata because no partial executor was provided."
+        ),
     }
 
 

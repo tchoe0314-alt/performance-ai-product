@@ -267,3 +267,8 @@ Phase 4 exit gate:
 - Conflict review, deliverable manager, and assumption review state are available from the persisted workflow review dashboard.
 - Saved runs, artifacts, release blockers, and phase checkpoints are retained with bounded history.
 - Auth-scoped project storage, job queue workflows, artifact workflows, and project retrieval paths are covered by application regression tests.
+
+Post-Phase 4 follow-up:
+
+- 2026-06-04: Added true isolated downstream partial rerun execution from checkpointed canonical state. Reactive edits now mark impacted stages dirty, restore the last final-plan checkpoint, rerun only dirty downstream stages through the planner runtime-resume path, and route checkpointed orchestrator requests away from full `build_plan`.
+- Verification: focused reactive/orchestrator regression `31 passed`; full backend regression `861 passed`.

@@ -1140,7 +1140,23 @@ def _single_plan_flow(
     *,
     progress_callback: Optional[Callable[..., None]] = None,
 ) -> PlannerOrchestratorResult:
-    final_plan = planner.build_plan(parsed_payload, progress_callback=progress_callback)
+    parsed_meta = _safe_dict(parsed_payload.get("meta"))
+    orchestrator_meta = _safe_dict(parsed_meta.get("orchestrator_meta"))
+    runtime_resume = _safe_dict(orchestrator_meta.get("runtime_resume"))
+    reactive_checkpoint = (
+        bool(runtime_resume.get("final_plan"))
+        or bool(parsed_meta.get("reactive_checkpoint_final_plan"))
+        or bool(_safe_dict(parsed_payload.get("final_plan")))
+    )
+    reactive_changed = bool(
+        _safe_list(parsed_meta.get("changed_engine_ids"))
+        or _safe_list(parsed_meta.get("changed_targets"))
+        or _safe_list(parsed_meta.get("stale_outputs"))
+    )
+    if reactive_checkpoint and reactive_changed and hasattr(planner, "build_reactive_partial_plan"):
+        final_plan = planner.build_reactive_partial_plan(parsed_payload, progress_callback=progress_callback)
+    else:
+        final_plan = planner.build_plan(parsed_payload, progress_callback=progress_callback)
     warnings, errors = _collect_warnings_errors(final_plan)
     success = not _manual_plan_failed(final_plan)
     missing_requirements = _missing_requirements_from_plan(final_plan) if not success else {}
