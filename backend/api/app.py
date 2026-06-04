@@ -52,7 +52,7 @@ from backend.application.file_workflows import (
     upload_survey_file as application_upload_survey_file,
 )
 from backend.application.health_workflows import health_response as application_health_response
-from backend.application.memory_logging import current_rss_mb, log_memory, peak_rss_mb
+from backend.application.memory_logging import current_rss_mb, log_memory, peak_rss_mb, runtime_monitoring_snapshot
 from backend.application.job_workflows import (
     build_drainage_job_runner as application_build_drainage_job_runner,
     build_orchestrate_job_runner as application_build_orchestrate_job_runner,
@@ -92,11 +92,13 @@ from backend.services.job_queue import JobQueueService
 from backend.services.project_store import ProjectStore
 
 try:
-    from core.config import APP_NAME, APP_VERSION, PRODUCT_MODE
+    from core.config import ALPHA_REVIEW_ONLY, APP_NAME, APP_VERSION, CONSTRUCTION_RELEASES_ENABLED, PRODUCT_MODE
 except Exception:
     APP_NAME = "Civora AI"
     APP_VERSION = "0.1.0"
-    PRODUCT_MODE = "development"
+    PRODUCT_MODE = "private_alpha"
+    ALPHA_REVIEW_ONLY = True
+    CONSTRUCTION_RELEASES_ENABLED = False
 
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -558,12 +560,26 @@ def _log_mapbox_token_config() -> None:
 
 def _runtime_debug_payload() -> Dict[str, Any]:
     token_source, token = _mapbox_token()
+    job_queue = JOB_QUEUE.runtime_stats()
+    release_guard = {
+        "product_mode": PRODUCT_MODE,
+        "review_only": bool(ALPHA_REVIEW_ONLY),
+        "construction_release_enabled": bool(CONSTRUCTION_RELEASES_ENABLED) and not bool(ALPHA_REVIEW_ONLY),
+        "construction_release_blocked": bool(ALPHA_REVIEW_ONLY) or not bool(CONSTRUCTION_RELEASES_ENABLED),
+        "truth_label": "Private alpha is review-only; construction release remains blocked.",
+    }
+    monitoring = runtime_monitoring_snapshot(job_queue=job_queue)
     return {
         "status": "ok",
         "pid": os.getpid(),
         "uptime_seconds": round(time.time() - START_TIME, 3),
         "rss_mb": round(current_rss_mb(), 1),
         "peak_rss_mb": round(peak_rss_mb(), 1),
+        "product_mode": PRODUCT_MODE,
+        "launch_stage": "private_alpha" if ALPHA_REVIEW_ONLY else PRODUCT_MODE,
+        "review_only": bool(ALPHA_REVIEW_ONLY),
+        "construction_release_guard": release_guard,
+        "monitoring": monitoring,
         "storage_dir": str(STORAGE_DIR),
         "storage_dir_exists": STORAGE_DIR.exists(),
         "storage_kind": DB.storage_kind,
@@ -571,7 +587,7 @@ def _runtime_debug_payload() -> Dict[str, Any]:
         "mapbox_token_present": bool(token),
         "mapbox_token_prefix": _safe_token_prefix(token),
         "port": os.getenv("PORT"),
-        "job_queue": JOB_QUEUE.runtime_stats(),
+        "job_queue": job_queue,
     }
 
 
@@ -647,12 +663,15 @@ def health() -> Dict[str, Any]:
         user_count = int(connection.execute("SELECT COUNT(*) FROM users").fetchone()[0])
     finally:
         connection.close()
+    runtime_payload = _runtime_debug_payload()
     return application_health_response(
         app_name=APP_NAME,
         app_version=APP_VERSION,
         product_mode=PRODUCT_MODE,
         user_count=user_count,
         storage=DB.storage_kind,
+        runtime_monitoring=runtime_payload["monitoring"],
+        release_guard=runtime_payload["construction_release_guard"],
     )
 
 

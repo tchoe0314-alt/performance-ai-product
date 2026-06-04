@@ -23,6 +23,8 @@ Design rule:
 Do not remove core engineering defaults. Expand control and product readiness.
 """
 
+import os
+
 # =========================================================
 # APP / PRODUCT SETTINGS
 # =========================================================
@@ -32,7 +34,33 @@ APP_VERSION = "0.1.0"
 DEBUG = True
 
 # Runtime identity / product mode
-PRODUCT_MODE = "development"            # development | beta | production
+def _env_flag(name: str, default: bool) -> bool:
+    raw = str(os.getenv(name) or "").strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _normalized_product_mode(raw: str) -> str:
+    value = str(raw or "").strip().lower().replace("-", "_")
+    aliases = {
+        "alpha": "private_alpha",
+        "review": "private_alpha",
+        "review_only": "private_alpha",
+        "beta": "public_beta",
+    }
+    return aliases.get(value, value or "private_alpha")
+
+
+PRODUCT_MODE = _normalized_product_mode(
+    os.getenv("CIVORA_PRODUCT_MODE") or os.getenv("PERFORMANCE_AI_PRODUCT_MODE") or "private_alpha"
+)  # development | private_alpha | public_beta | production
+REVIEW_ONLY_PRODUCT_MODES = {"development", "private_alpha", "public_beta"}
+ALPHA_REVIEW_ONLY = PRODUCT_MODE in REVIEW_ONLY_PRODUCT_MODES
+CONSTRUCTION_RELEASES_ENABLED = PRODUCT_MODE == "production" and _env_flag(
+    "CIVORA_ENABLE_CONSTRUCTION_RELEASES",
+    True,
+)
 ENABLE_VERBOSE_TRACE = True
 ENABLE_AUDIT_LOGGING = True
 

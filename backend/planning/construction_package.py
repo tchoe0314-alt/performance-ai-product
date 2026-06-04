@@ -6,6 +6,7 @@ from copy import deepcopy
 from typing import Any, Dict, Iterable, List, Sequence
 
 from core.civil_design import construction_readiness
+from core.config import PRODUCT_MODE, REVIEW_ONLY_PRODUCT_MODES
 from core.professional_release import validate_professional_release
 
 from .common import construction_package_record, readiness_issue_explanations, safe_dict, safe_list, safe_str
@@ -71,6 +72,55 @@ REQUIRED_CONSTRUCTION_ARTIFACTS: Sequence[Dict[str, Any]] = (
     {"artifact_id": "cost_estimate", "aliases": {"cost_estimate", "takeoff", "quantity_cost"}},
     {"artifact_id": "construction_manifest", "aliases": {"construction_manifest", "release_manifest", "package_manifest"}},
 )
+
+
+def _normalize_product_mode(value: str) -> str:
+    normalized = safe_str(value or "private_alpha").lower().replace("-", "_")
+    aliases = {
+        "alpha": "private_alpha",
+        "review": "private_alpha",
+        "review_only": "private_alpha",
+        "beta": "public_beta",
+    }
+    return aliases.get(normalized, normalized or "private_alpha")
+
+
+def _construction_release_guard(meta: Dict[str, Any]) -> Dict[str, Any]:
+    product_mode = _normalize_product_mode(
+        safe_str(meta.get("product_mode") or meta.get("deployment_mode") or PRODUCT_MODE)
+    )
+    review_only = product_mode in REVIEW_ONLY_PRODUCT_MODES
+    construction_release_enabled = product_mode == "production"
+    blocked = review_only or not construction_release_enabled
+    return {
+        "product_mode": product_mode,
+        "review_only": review_only,
+        "construction_release_enabled": construction_release_enabled and not review_only,
+        "construction_release_blocked": blocked,
+        "guard_reason": (
+            "Private alpha/review-only mode blocks construction release."
+            if review_only
+            else "Construction release requires production mode plus package and professional review gates."
+            if blocked
+            else ""
+        ),
+        "truth_label": (
+            "Review packages may be generated in private alpha, but construction release remains blocked."
+            if blocked
+            else "Production mode still requires every construction package gate before release."
+        ),
+    }
+
+
+def _construction_release_guard_blocker(guard: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "area": "professional_review",
+        "field": "alpha_review_only_guard",
+        "why_needed": "Private alpha is review-only and must not issue construction-release packages.",
+        "suggested_next_action": "Keep review package output blocked until Civora is explicitly configured for production release and all construction gates pass.",
+        "severity": "blocker",
+        "message": safe_str(guard.get("guard_reason")),
+    }
 
 
 def _unique_blockers(blockers: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -622,13 +672,21 @@ def build_construction_package_manifest(plan_or_meta: Dict[str, Any]) -> Dict[st
     )
     package_blockers = _construction_package_blockers(plan_or_meta, meta) if readiness.get("ready") is True else []
     blockers = _unique_blockers([*blockers, *package_blockers])
+    release_guard = _construction_release_guard(meta)
+    if release_guard["construction_release_blocked"]:
+        blockers = _unique_blockers([*blockers, _construction_release_guard_blocker(release_guard)])
     sections = [
         _section_status(section=section, blockers=blockers, warnings=warnings, evidence=evidence)
         for section in CONSTRUCTION_PACKAGE_SECTIONS
     ]
     blocked_sections = [section["section_id"] for section in sections if section["status"] == "blocked"]
     review_sections = [section["section_id"] for section in sections if section["status"] == "needs_review"]
-    ready = bool(readiness.get("ready")) and not blocked_sections and not review_sections
+    ready = (
+        bool(readiness.get("ready"))
+        and not blocked_sections
+        and not review_sections
+        and not release_guard["construction_release_blocked"]
+    )
     release_state = "released_for_construction" if ready else "blocked_from_construction_release"
     return {
         "success": True,
@@ -643,6 +701,9 @@ def build_construction_package_manifest(plan_or_meta: Dict[str, Any]) -> Dict[st
         "expected_canonical_model_reference": expected_model_reference,
         "construction_package_artifact_status": artifact_status,
         "professional_package_release_status": professional_release_status,
+        "construction_release_guard": release_guard,
+        "product_mode": release_guard["product_mode"],
+        "review_only": release_guard["review_only"],
         "sections": sections,
         "blocked_sections": blocked_sections,
         "review_sections": review_sections,

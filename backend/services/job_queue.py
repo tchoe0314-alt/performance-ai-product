@@ -105,7 +105,19 @@ class JobQueueService:
         self._resume_pending_jobs = resume_setting not in {"0", "false", "no", "off"}
         self._workers: List[threading.Thread] = []
         self._heartbeat_interval_sec = max(0.5, float(heartbeat_interval_sec or 10.0))
+        self._job_timeout_seconds = self._env_float("CIVORA_JOB_TIMEOUT_SECONDS", 900.0)
+        self._failure_window_seconds = self._env_float("CIVORA_JOB_FAILURE_WINDOW_SECONDS", 3600.0)
         self._ensure_workers_alive()
+
+    @staticmethod
+    def _env_float(name: str, default: float) -> float:
+        raw = str(os.getenv(name) or "").strip()
+        if not raw:
+            return default
+        try:
+            return float(raw)
+        except Exception:
+            return default
 
     def _ensure_workers_alive(self) -> None:
         with self._lock:
@@ -128,12 +140,100 @@ class JobQueueService:
 
     def runtime_stats(self) -> Dict[str, Any]:
         self._ensure_workers_alive()
+        alive_workers = len([worker for worker in self._workers if worker.is_alive()])
+        monitoring = self._runtime_monitoring(alive_workers=alive_workers)
         return {
             "worker_count": self._worker_count,
-            "alive_workers": len([worker for worker in self._workers if worker.is_alive()]),
+            "alive_workers": alive_workers,
             "queued_in_memory": self._queue.qsize(),
             "resume_pending_jobs": self._resume_pending_jobs,
             "registered_handlers": sorted(self._handlers.keys()),
+            "monitoring": monitoring,
+        }
+
+    def _runtime_monitoring(self, *, alive_workers: int) -> Dict[str, Any]:
+        now = _now()
+        timeout_seconds = max(1.0, float(self._job_timeout_seconds or 900.0))
+        failure_window_seconds = max(1.0, float(self._failure_window_seconds or 3600.0))
+        connection = self.db.connect()
+        try:
+            status_rows = connection.execute(
+                """
+                SELECT status, COUNT(*) AS count, MIN(created_at) AS oldest_created, MIN(updated_at) AS oldest_updated
+                FROM jobs
+                GROUP BY status
+                """
+            ).fetchall()
+            stale_rows = connection.execute(
+                """
+                SELECT job_id, status, created_at, updated_at, stage, stage_detail
+                FROM jobs
+                WHERE status IN ('queued', 'running', 'cancelling')
+                  AND updated_at <= ?
+                ORDER BY updated_at ASC
+                LIMIT 10
+                """,
+                (now - timeout_seconds,),
+            ).fetchall()
+            recent_failed = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM jobs
+                    WHERE status = 'failed' AND updated_at >= ?
+                    """,
+                    (now - failure_window_seconds,),
+                ).fetchone()[0]
+            )
+        finally:
+            connection.close()
+
+        counts: Dict[str, int] = {}
+        oldest_active_age = 0.0
+        for row in status_rows:
+            status = str(row["status"])
+            counts[status] = int(row["count"] or 0)
+            if status in {"queued", "running", "cancelling"}:
+                created_at = float(row["oldest_created"] or now)
+                oldest_active_age = max(oldest_active_age, now - created_at)
+        stale_jobs = [
+            {
+                "job_id": str(row["job_id"]),
+                "status": str(row["status"]),
+                "age_since_update_sec": round(max(0.0, now - float(row["updated_at"] or now)), 3),
+                "stage": str(row["stage"] or ""),
+                "stage_detail": str(row["stage_detail"] or ""),
+            }
+            for row in stale_rows
+        ]
+        warnings: List[str] = []
+        status = "healthy"
+        if alive_workers < self._worker_count:
+            status = "critical"
+            warnings.append("worker_count_below_configured")
+        if stale_jobs:
+            status = "critical"
+            warnings.append("stale_or_timed_out_jobs_present")
+        elif counts.get("queued", 0) > 0 and alive_workers == 0:
+            status = "critical"
+            warnings.append("queued_jobs_without_workers")
+        elif recent_failed:
+            status = "warning"
+            warnings.append("recent_failed_jobs_present")
+
+        return {
+            "status": status,
+            "timeout_seconds": timeout_seconds,
+            "failure_window_seconds": failure_window_seconds,
+            "counts": counts,
+            "queued_count": counts.get("queued", 0),
+            "running_count": counts.get("running", 0),
+            "failed_recent_count": recent_failed,
+            "oldest_active_age_sec": round(oldest_active_age, 3),
+            "stale_job_count": len(stale_jobs),
+            "stale_jobs": stale_jobs,
+            "warnings": warnings,
+            "truth_label": "Queue monitoring flags operational risk; stale jobs must be reviewed or retried before trusting results.",
         }
 
     def submit_job(

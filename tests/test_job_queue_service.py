@@ -222,6 +222,47 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertTrue(self.queue._workers)
         self.assertTrue(all(worker.is_alive() for worker in self.queue._workers))
 
+    def test_runtime_stats_flags_stale_running_jobs(self):
+        old_time = time.time() - 2000.0
+        connection = self.db.connect()
+        try:
+            connection.execute(
+                """
+                INSERT INTO jobs (
+                    job_id, user_id, job_type, status, created_at, updated_at, project_id,
+                    stage, stage_detail, progress, payload_json, result_json, error_text
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "job_stale",
+                    self.user_id,
+                    "orchestrate",
+                    "running",
+                    old_time,
+                    old_time,
+                    None,
+                    "Engineering Run",
+                    "No heartbeat",
+                    48,
+                    "{}",
+                    "{}",
+                    None,
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        self.queue._job_timeout_seconds = 60.0
+        stats = self.queue.runtime_stats()
+        monitoring = stats["monitoring"]
+
+        self.assertEqual(monitoring["status"], "critical")
+        self.assertEqual(monitoring["stale_job_count"], 1)
+        self.assertEqual(monitoring["stale_jobs"][0]["job_id"], "job_stale")
+        self.assertIn("stale_or_timed_out_jobs_present", monitoring["warnings"])
+
     def test_job_result_serializes_dataclass_objects(self):
         self.queue.register_handler(
             "orchestrate",

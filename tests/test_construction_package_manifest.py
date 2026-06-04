@@ -96,6 +96,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
 
     def test_manifest_allows_release_only_when_construction_gate_is_ready(self) -> None:
         meta = {
+            "product_mode": "production",
             "construction_readiness": {
                 "ready": True,
                 "status": "construction_ready",
@@ -163,8 +164,72 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         self.assertTrue(manifest["professional_package_release_status"]["package_matches_review"])
         self.assertTrue(all(section["ready"] for section in manifest["sections"]))
 
+    def test_manifest_blocks_construction_release_in_private_alpha_even_when_gates_pass(self) -> None:
+        meta = {
+            "product_mode": "private_alpha",
+            "construction_readiness": {
+                "ready": True,
+                "status": "construction_ready",
+                "score": 100.0,
+                "evidence": {
+                    "civil_production_ready": True,
+                    "existing_conditions_production_ready": True,
+                    "standards_production_usable": True,
+                    "export_production_ready": True,
+                    "cost_production_usable": True,
+                    "professional_release": True,
+                },
+                "blockers": [],
+                "warnings": [],
+            },
+            "cost_estimate": {
+                "success": True,
+                "totals": {"production_usable": True, "total_cost": 1000.0, "cost_estimate_hash": "COST-HASH-1"},
+                "line_items": [{"metric": "pipe_length_ft", "quantity": 10.0, "amount": 1000.0}],
+                "explain": {
+                    "cost_estimate_reference": {
+                        "cost_estimate_hash": "COST-HASH-1",
+                        "quantity_model_hash": "QTY-HASH-1",
+                        "price_book_hash": "PRICE-HASH-1",
+                    },
+                    "quantity_model_reference": {"quantity_model_hash": "QTY-HASH-1"},
+                    "pricing": {"price_book_hash": "PRICE-HASH-1"},
+                },
+            },
+            "construction_deliverable_package": {
+                "id": "PKG-IFC-1",
+                "release_ready": True,
+                "production_ready": True,
+                "canonical_model_id": "MODEL-FINAL-1",
+                "artifacts": [
+                    {"type": "sheets", "id": "SHEETS-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "cad_export", "id": "CAD-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {"type": "qa_report", "id": "QA-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                    {
+                        "type": "cost_estimate",
+                        "id": "COST-1",
+                        "current": True,
+                        "canonical_model_id": "MODEL-FINAL-1",
+                        "cost_estimate_hash": "COST-HASH-1",
+                    },
+                    {"type": "construction_manifest", "id": "MANIFEST-1", "current": True, "canonical_model_id": "MODEL-FINAL-1"},
+                ],
+            },
+            "professional_review": _valid_professional_review(),
+        }
+
+        manifest = build_construction_package_manifest({"meta": meta})
+
+        self.assertEqual(manifest["release_state"], "blocked_from_construction_release")
+        self.assertFalse(manifest["release_allowed"])
+        self.assertTrue(manifest["review_package_allowed"])
+        self.assertTrue(manifest["construction_release_guard"]["review_only"])
+        self.assertIn("professional_release", manifest["blocked_sections"])
+        self.assertIn("alpha_review_only_guard", {item["field"] for item in manifest["blockers"]})
+
     def test_manifest_uses_existing_manifest_alias_as_package_evidence(self) -> None:
         meta = {
+            "product_mode": "production",
             "construction_readiness": {
                 "ready": True,
                 "status": "construction_ready",
@@ -749,6 +814,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
                 }
             ],
             "meta": {
+                "product_mode": "production",
                 "revision": "IFC-1",
                 "issue_date": "2026-05-29",
                 "construction_readiness": {
@@ -935,6 +1001,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
 
     def test_manifest_accepts_cost_artifact_matching_current_cost_estimate(self) -> None:
         meta = {
+            "product_mode": "production",
             "construction_readiness": {
                 "ready": True,
                 "status": "construction_ready",
