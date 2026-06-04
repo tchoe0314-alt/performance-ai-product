@@ -20,6 +20,7 @@ from backend.application.design_workflows import (
     build_run_summary as application_build_run_summary,
     count_unresolved_conflicts as application_count_unresolved_conflicts,
     final_plan_from_result as application_final_plan_from_result,
+    prepare_reactive_orchestration_payload as application_prepare_reactive_orchestration_payload,
     run_orchestration as application_run_orchestration,
 )
 from backend.application.artifact_workflows import (
@@ -430,7 +431,33 @@ def get_current_user(authorization: Optional[str] = Header(default=None)) -> Dic
     return user
 
 
-def _run_orchestration(payload_data: Dict[str, Any]) -> Dict[str, Any]:
+def _latest_project_final_plan_for_payload(
+    current_user: Optional[Dict[str, Any]],
+    payload_data: Dict[str, Any],
+) -> Dict[str, Any]:
+    if not current_user:
+        return {}
+    project_id = str(payload_data.get("project_id") or "").strip()
+    if not project_id:
+        return {}
+    latest_result = PROJECT_STORE.get_project_latest_result(
+        user_id=current_user["user_id"],
+        project_id=project_id,
+    )
+    if not isinstance(latest_result, dict):
+        return {}
+    return dict(latest_result.get("final_plan") or {})
+
+
+def _run_orchestration(
+    payload_data: Dict[str, Any],
+    *,
+    current_user: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    payload_data = application_prepare_reactive_orchestration_payload(
+        payload_data,
+        checkpoint_final_plan=_latest_project_final_plan_for_payload(current_user, payload_data),
+    )
     project_id = str(payload_data.get("project_id") or "")
     target = str(payload_data.get("meta", {}).get("generation_target") or payload_data.get("plan_type_hint") or "")
     log_memory("orchestration_start", project_id=project_id, target=target)
@@ -1261,8 +1288,7 @@ def orchestrate(
     payload: OrchestratePayload,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    _ = current_user
-    return _run_orchestration(_orchestration_request_payload(payload))
+    return _run_orchestration(_orchestration_request_payload(payload), current_user=current_user)
 
 
 @app.get("/api/projects")

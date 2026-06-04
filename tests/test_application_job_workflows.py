@@ -124,6 +124,59 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
             )
         self.assertEqual(ctx.exception.status_code, 404)
 
+    def test_queue_orchestrate_job_seeds_reactive_checkpoint_from_latest_result(self):
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Demo",
+                "description": "",
+                "session_id": None,
+                "tags": [],
+                "project_input": {},
+                "latest_result": {
+                    "final_plan": {
+                        "project_name": "Stored Plan",
+                        "meta": {
+                            "stage_completeness": {
+                                "statuses": {
+                                    "layout": "complete",
+                                }
+                            }
+                        },
+                    }
+                },
+                "session_state": {},
+                "metadata": {},
+            }
+        )
+        queue = FakeJobQueue()
+
+        response = queue_orchestrate_job(
+            project_store=store,
+            job_queue=queue,
+            user_id="u1",
+            project_id="p1",
+            request_payload={
+                "project_id": "p1",
+                "full_design_mode": False,
+                "meta": {"requested_system": "drainage"},
+                "manual_fields": {},
+            },
+        )
+
+        self.assertTrue(response["success"])
+        submitted_meta = queue.submitted["payload"]["meta"]
+        runtime_resume = submitted_meta["orchestrator_meta"]["runtime_resume"]
+        self.assertEqual(runtime_resume["final_plan"]["project_name"], "Stored Plan")
+        self.assertTrue(submitted_meta["reactive_partial_rerun_request"]["enabled"])
+        self.assertIn("drainage", submitted_meta["changed_targets"])
+        self.assertIn("storm_pipes", submitted_meta["stale_outputs"])
+        self.assertEqual(
+            store.saved_payload["project_input"]["request_payload"]["meta"]["orchestrator_meta"]["runtime_resume"]["final_plan"]["project_name"],
+            "Stored Plan",
+        )
+
     def test_queue_orchestrate_job_submits(self):
         store = FakeProjectStore(
             {

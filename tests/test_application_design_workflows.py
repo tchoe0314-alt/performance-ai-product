@@ -4,10 +4,59 @@ from typing import Optional
 
 from fastapi import HTTPException
 
-from backend.application.design_workflows import build_run_summary, final_plan_from_result, run_orchestration
+from backend.application.design_workflows import (
+    build_run_summary,
+    final_plan_from_result,
+    prepare_reactive_orchestration_payload,
+    run_orchestration,
+)
 
 
 class ApplicationDesignWorkflowsTest(unittest.TestCase):
+    def test_prepare_reactive_orchestration_payload_attaches_checkpoint_for_focused_system(self):
+        checkpoint = {
+            "project_name": "Checkpointed",
+            "meta": {
+                "stage_completeness": {
+                    "statuses": {
+                        "layout": "complete",
+                        "grading": "complete",
+                    }
+                }
+            },
+        }
+
+        payload = prepare_reactive_orchestration_payload(
+            {
+                "project_id": "p1",
+                "full_design_mode": False,
+                "meta": {"requested_system": "grading"},
+                "manual_fields": {},
+            },
+            checkpoint_final_plan=checkpoint,
+        )
+
+        meta = payload["meta"]
+        runtime_resume = meta["orchestrator_meta"]["runtime_resume"]
+        self.assertEqual(runtime_resume["final_plan"]["project_name"], "Checkpointed")
+        self.assertTrue(meta["reactive_partial_rerun_request"]["enabled"])
+        self.assertIn("grading", meta["changed_targets"])
+        self.assertIn("storm_pipes", meta["stale_outputs"])
+
+    def test_prepare_reactive_orchestration_payload_leaves_full_runs_without_checkpoint(self):
+        payload = prepare_reactive_orchestration_payload(
+            {
+                "project_id": "p1",
+                "full_design_mode": True,
+                "meta": {"requested_system": "full"},
+                "manual_fields": {},
+            },
+            checkpoint_final_plan={"project_name": "Checkpointed"},
+        )
+
+        self.assertNotIn("reactive_partial_rerun_request", payload["meta"])
+        self.assertNotIn("orchestrator_meta", payload["meta"])
+
     def test_run_orchestration_accepts_prompt_fallback_when_prompt_text_missing(self):
         @dataclass
         class FakeRequest:

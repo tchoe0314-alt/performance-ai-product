@@ -272,3 +272,5 @@ Post-Phase 4 follow-up:
 
 - 2026-06-04: Added true isolated downstream partial rerun execution from checkpointed canonical state. Reactive edits now mark impacted stages dirty, restore the last final-plan checkpoint, rerun only dirty downstream stages through the planner runtime-resume path, and route checkpointed orchestrator requests away from full `build_plan`.
 - Verification: focused reactive/orchestrator regression `31 passed`; full backend regression `861 passed`.
+- 2026-06-04: Wired product/API reactive rerun requests to send checkpointed final-plan state and changed downstream targets. Unsaved browser workspaces attach the current backend result; saved direct and queued requests recover the latest stored project result before orchestration.
+- Verification: focused application/reactive routing regression `126 passed`; full backend regression `864 passed`; web lint completed with existing warnings and no errors.

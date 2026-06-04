@@ -262,6 +262,17 @@ const REACTIVE_EDIT_POLICY_PREFERENCE = {
   stale_exports_block_download: true,
 } as const;
 
+const REACTIVE_SYSTEM_STAGE_MAP: Record<
+  "roads" | "parking" | "grading" | "drainage" | "utilities",
+  string[]
+> = {
+  roads: ["layout", "grading", "drainage", "storm_pipes", "utility_network", "coordination_resolution", "qa"],
+  parking: ["layout", "grading", "drainage", "storm_pipes", "coordination_resolution", "qa"],
+  grading: ["grading", "drainage", "storm_pipes", "sanitary", "utility_network", "coordination_resolution", "earthwork", "sheets", "qa"],
+  drainage: ["drainage", "storm_pipes", "coordination_resolution", "sheets", "qa"],
+  utilities: ["sanitary", "utility_network", "coordination_resolution", "sheets", "qa"],
+};
+
 const DEMO_PROJECT_ID = "demo-pinecrest-mixed-use";
 
 function isDemoWorkspaceQuery() {
@@ -3654,6 +3665,68 @@ function PerformanceAIDashboardView({
       allow_ai_fill_for_blanks: assistedEnabled,
     };
   };
+
+  const withReactiveRerunContext = useCallback(
+    (
+      requestPayload: PlanRequestPayload,
+      requestedSystem: "roads" | "parking" | "grading" | "drainage" | "utilities" | "full",
+    ): PlanRequestPayload => {
+      if (requestedSystem === "full") return requestPayload;
+      const checkpointFinalPlan = backendResult?.final_plan;
+      if (!checkpointFinalPlan || typeof checkpointFinalPlan !== "object") {
+        return requestPayload;
+      }
+      const changedSystems = Object.entries(systemStatuses)
+        .filter(([system, status]) => status === "stale" && system in REACTIVE_SYSTEM_STAGE_MAP)
+        .map(([system]) => system as keyof typeof REACTIVE_SYSTEM_STAGE_MAP);
+      if (!changedSystems.includes(requestedSystem)) {
+        changedSystems.push(requestedSystem);
+      }
+      const changedTargets = Array.from(
+        new Set(
+          changedSystems.flatMap((system) => REACTIVE_SYSTEM_STAGE_MAP[system] ?? []),
+        ),
+      );
+      if (!changedTargets.length) return requestPayload;
+
+      const existingMeta = (requestPayload.meta ?? {}) as Record<string, unknown>;
+      const existingOrchestratorMeta =
+        existingMeta.orchestrator_meta && typeof existingMeta.orchestrator_meta === "object"
+          ? (existingMeta.orchestrator_meta as Record<string, unknown>)
+          : {};
+      const existingRuntimeResume =
+        existingOrchestratorMeta.runtime_resume &&
+        typeof existingOrchestratorMeta.runtime_resume === "object"
+          ? (existingOrchestratorMeta.runtime_resume as Record<string, unknown>)
+          : {};
+
+      return {
+        ...requestPayload,
+        meta: {
+          ...existingMeta,
+          requested_system: requestedSystem,
+          changed_targets: changedTargets,
+          stale_outputs: changedTargets,
+          reactive_checkpoint_final_plan: checkpointFinalPlan,
+          reactive_partial_rerun_request: {
+            enabled: true,
+            requested_system: requestedSystem,
+            checkpoint_attached: true,
+            changed_targets: changedTargets,
+          },
+          orchestrator_meta: {
+            ...existingOrchestratorMeta,
+            runtime_resume: {
+              ...existingRuntimeResume,
+              final_plan: checkpointFinalPlan,
+              reactive_checkpoint_source: "web_current_backend_result",
+            },
+          },
+        },
+      };
+    },
+    [backendResult?.final_plan, systemStatuses],
+  );
 
   const isConnectivityFailureMessage = (message: string) =>
     message.includes("could not reach the backend") ||
@@ -7556,15 +7629,18 @@ function PerformanceAIDashboardView({
       nextManualFields.drainage = nextDrainage;
       nextManualFields.utility_network = omitField;
 
-      const drainagePayload: PlanRequestPayload = {
-        ...requestPayload,
-        manual_fields: nextManualFields,
-        meta: {
-          ...(requestPayload.meta ?? {}),
-          requested_system: "drainage",
+      const drainagePayload: PlanRequestPayload = withReactiveRerunContext(
+        {
+          ...requestPayload,
+          manual_fields: nextManualFields,
+          meta: {
+            ...(requestPayload.meta ?? {}),
+            requested_system: "drainage",
+          },
+          prompt_text: null,
         },
-        prompt_text: null,
-      };
+        "drainage",
+      );
       if (allowSlopeAdjust) {
         const existingDrainage = (requestPayload.drainage ?? {}) as Record<string, unknown>;
         (drainagePayload as Record<string, unknown>).drainage = {
@@ -7635,6 +7711,7 @@ function PerformanceAIDashboardView({
       appendChatMessage,
       setActiveJobId,
       setSystemStatuses,
+      withReactiveRerunContext,
     ],
   );
 
@@ -7730,9 +7807,8 @@ function PerformanceAIDashboardView({
 
       const systemLabel = target === "full" ? "full site systems" : target;
       const directRun = target === "grading";
-      await executePlanAction({
-        mode: "run",
-        requestPayload: {
+      const systemRequestPayload = withReactiveRerunContext(
+        {
           ...requestPayload,
           full_design_mode: directRun ? false : requestPayload.full_design_mode,
           manual_fields: nextManualFields,
@@ -7742,6 +7818,11 @@ function PerformanceAIDashboardView({
           },
           prompt_text: null,
         },
+        target,
+      );
+      await executePlanAction({
+        mode: "run",
+        requestPayload: systemRequestPayload,
         assistantPrefix: `Generating ${systemLabel} around your placed layout...`,
         timeoutMs: directRun ? 90_000 : undefined,
         allowQueueFallback: !directRun,
@@ -7777,6 +7858,7 @@ function PerformanceAIDashboardView({
       surveyFileName,
       surveySlopeEstimate?.slope_percent,
       useSurveyForGrading,
+      withReactiveRerunContext,
     ],
   );
 

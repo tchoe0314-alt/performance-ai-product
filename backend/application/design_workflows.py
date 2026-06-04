@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from copy import deepcopy
 from typing import Any, Callable, Dict, Optional
 
 from fastapi import HTTPException
@@ -162,6 +163,95 @@ def _reactive_release_blockers(meta: Dict[str, Any]) -> list[str]:
     if reactive_report.get("post_rerun_production_ready") is False:
         blockers.insert(0, "reactive_post_rerun_not_ready")
     return list(dict.fromkeys(blockers))
+
+
+REACTIVE_REQUESTED_SYSTEM_STAGE_MAP: Dict[str, list[str]] = {
+    "roads": ["layout", "grading", "drainage", "storm_pipes", "utility_network", "coordination_resolution", "qa"],
+    "parking": ["layout", "grading", "drainage", "storm_pipes", "coordination_resolution", "qa"],
+    "grading": ["grading", "drainage", "storm_pipes", "sanitary", "utility_network", "coordination_resolution", "earthwork", "sheets", "qa"],
+    "drainage": ["drainage", "storm_pipes", "coordination_resolution", "sheets", "qa"],
+    "utilities": ["sanitary", "utility_network", "coordination_resolution", "sheets", "qa"],
+}
+
+
+def _ordered_unique(values: list[Any]) -> list[str]:
+    out: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if text and text not in out:
+            out.append(text)
+    return out
+
+
+def _listish(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    if isinstance(value, set):
+        return list(value)
+    return [value]
+
+
+def prepare_reactive_orchestration_payload(
+    payload_data: Dict[str, Any],
+    *,
+    checkpoint_final_plan: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Attach canonical checkpoint state for focused reactive edit reruns."""
+    payload = deepcopy(dict(payload_data or {}))
+    meta = dict(payload.get("meta") or {})
+    requested_system = str(
+        meta.get("requested_system")
+        or meta.get("generation_target")
+        or payload.get("plan_type_hint")
+        or ""
+    ).strip().lower()
+    if requested_system == "full" or not requested_system:
+        return payload
+
+    explicit_changed = _ordered_unique(
+        _listish(meta.get("changed_targets"))
+        + _listish(meta.get("changed_engine_ids"))
+        + _listish(meta.get("stale_outputs"))
+    )
+    mapped_changed = REACTIVE_REQUESTED_SYSTEM_STAGE_MAP.get(requested_system, [])
+    changed_targets = _ordered_unique(explicit_changed or list(mapped_changed))
+    if not changed_targets:
+        return payload
+
+    existing_checkpoint = (
+        dict(dict(dict(meta.get("orchestrator_meta") or {}).get("runtime_resume") or {}).get("final_plan") or {})
+        or dict(meta.get("reactive_checkpoint_final_plan") or {})
+        or dict(payload.get("final_plan") or {})
+    )
+    checkpoint = existing_checkpoint or dict(checkpoint_final_plan or {})
+    if not checkpoint:
+        meta["changed_targets"] = changed_targets
+        meta["stale_outputs"] = _ordered_unique(list(meta.get("stale_outputs") or []) or changed_targets)
+        payload["meta"] = meta
+        return payload
+
+    orchestrator_meta = dict(meta.get("orchestrator_meta") or {})
+    runtime_resume = dict(orchestrator_meta.get("runtime_resume") or {})
+    runtime_resume.setdefault("final_plan", deepcopy(checkpoint))
+    runtime_resume.setdefault("reactive_checkpoint_source", "latest_project_result")
+    orchestrator_meta["runtime_resume"] = runtime_resume
+    meta["orchestrator_meta"] = orchestrator_meta
+    meta.setdefault("reactive_checkpoint_final_plan", deepcopy(checkpoint))
+    meta["changed_targets"] = changed_targets
+    meta["stale_outputs"] = _ordered_unique(list(meta.get("stale_outputs") or []) or changed_targets)
+    meta["reactive_partial_rerun_request"] = {
+        "enabled": True,
+        "requested_system": requested_system,
+        "checkpoint_attached": True,
+        "changed_targets": changed_targets,
+    }
+    payload["meta"] = meta
+    payload.pop("final_plan", None)
+    return payload
 
 
 def _build_phase_checkpoints(

@@ -6,6 +6,7 @@ from copy import deepcopy
 from typing import Any, Callable, Dict, Optional, Protocol
 
 from fastapi import HTTPException
+from backend.application.design_workflows import prepare_reactive_orchestration_payload
 from backend.planning.common import blocker_explanations, safe_dict, safe_float, safe_int, safe_list, safe_str
 from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
@@ -120,6 +121,16 @@ def queue_orchestrate_job(
             from fastapi import HTTPException
 
             raise HTTPException(status_code=404, detail="Project not found.")
+        latest_result = _load_project_latest_result(
+            project_store=project_store,
+            user_id=user_id,
+            project_id=project_id,
+            fallback_project=existing,
+        )
+        request_payload = prepare_reactive_orchestration_payload(
+            request_payload,
+            checkpoint_final_plan=dict(latest_result.get("final_plan") or {}),
+        )
         seeded_project_input = {
             **dict(existing.get("project_input") or {}),
             **dict(request_payload or {}),
@@ -133,7 +144,7 @@ def queue_orchestrate_job(
             session_id=existing.get("session_id"),
             tags=list(existing.get("tags") or []),
             project_input=seeded_project_input,
-            latest_result=dict(existing.get("latest_result") or {}),
+            latest_result=latest_result,
             session_state=dict(existing.get("session_state") or {}),
             metadata=dict(existing.get("metadata") or {}),
         )
