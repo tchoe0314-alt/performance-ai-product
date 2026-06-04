@@ -52,7 +52,15 @@ from backend.application.file_workflows import (
     upload_survey_file as application_upload_survey_file,
 )
 from backend.application.health_workflows import health_response as application_health_response
-from backend.application.memory_logging import current_rss_mb, log_memory, peak_rss_mb, runtime_monitoring_snapshot
+from backend.application.memory_logging import (
+    current_rss_mb,
+    log_memory,
+    peak_rss_mb,
+    record_process_shutdown,
+    record_process_start,
+    runtime_monitoring_snapshot,
+    runtime_process_monitoring_snapshot,
+)
 from backend.application.job_workflows import (
     build_drainage_job_runner as application_build_drainage_job_runner,
     build_orchestrate_job_runner as application_build_orchestrate_job_runner,
@@ -111,6 +119,7 @@ UPLOAD_DIR = STORAGE_DIR / "uploads"
 DATA_DIR = STORAGE_DIR
 DB_PATH = DATA_DIR / "performance_ai.db"
 START_TIME = time.time()
+RUNTIME_INSTANCE_ID = f"{os.getpid()}-{int(START_TIME * 1000)}"
 ARTIFACT_DIR = DATA_DIR / "artifacts"
 CHAT_LEARNING_PATH = DATA_DIR / "chat_learning.jsonl"
 CHAT_TRAINING_PATH = DATA_DIR / "chat_training.jsonl"
@@ -568,7 +577,12 @@ def _runtime_debug_payload() -> Dict[str, Any]:
         "construction_release_blocked": bool(ALPHA_REVIEW_ONLY) or not bool(CONSTRUCTION_RELEASES_ENABLED),
         "truth_label": "Private alpha is review-only; construction release remains blocked.",
     }
-    monitoring = runtime_monitoring_snapshot(job_queue=job_queue)
+    process_monitoring = runtime_process_monitoring_snapshot(
+        state_dir=STORAGE_DIR,
+        start_time=START_TIME,
+        instance_id=RUNTIME_INSTANCE_ID,
+    )
+    monitoring = runtime_monitoring_snapshot(job_queue=job_queue, process=process_monitoring)
     return {
         "status": "ok",
         "pid": os.getpid(),
@@ -622,6 +636,7 @@ def _install_signal_handlers() -> None:
 @app.on_event("startup")
 def _register_job_handlers() -> None:
     log_memory("startup_begin")
+    record_process_start(state_dir=STORAGE_DIR, start_time=START_TIME, instance_id=RUNTIME_INSTANCE_ID)
     _install_signal_handlers()
     _log_runtime_event("startup_runtime", storage_dir=str(STORAGE_DIR), port=os.getenv("PORT"))
     _log_mapbox_token_config()
@@ -648,6 +663,7 @@ def _register_job_handlers() -> None:
 
 @app.on_event("shutdown")
 def _log_shutdown() -> None:
+    record_process_shutdown(state_dir=STORAGE_DIR, instance_id=RUNTIME_INSTANCE_ID)
     _log_runtime_event("shutdown")
 
 

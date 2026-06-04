@@ -1,3 +1,5 @@
+import os
+import tempfile
 import unittest
 
 from fastapi import HTTPException
@@ -10,6 +12,11 @@ from backend.application.auth_workflows import (
     register_user,
 )
 from backend.application.health_workflows import health_response
+from backend.application.memory_logging import (
+    record_process_shutdown,
+    record_process_start,
+    runtime_monitoring_snapshot,
+)
 
 
 class FakeAuthStore:
@@ -60,6 +67,46 @@ class ApplicationAuthHealthWorkflowsTest(unittest.TestCase):
         self.assertTrue(data["alpha_review_guard"]["construction_release_blocked"])
         self.assertFalse(data["alpha_review_guard"]["construction_release_enabled"])
         self.assertEqual(data["monitoring"]["rss_mb"], 128.0)
+
+    def test_runtime_monitoring_reports_process_restart_risk(self):
+        previous = {
+            key: os.environ.get(key)
+            for key in (
+                "CIVORA_RESTART_WINDOW_SECONDS",
+                "CIVORA_RESTART_WARNING_COUNT",
+                "CIVORA_RESTART_CRITICAL_COUNT",
+            )
+        }
+        os.environ["CIVORA_RESTART_WINDOW_SECONDS"] = "60"
+        os.environ["CIVORA_RESTART_WARNING_COUNT"] = "2"
+        os.environ["CIVORA_RESTART_CRITICAL_COUNT"] = "3"
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                record_process_start(state_dir=tmpdir, start_time=1000.0, instance_id="one")
+                record_process_start(state_dir=tmpdir, start_time=1010.0, instance_id="two")
+                process = record_process_start(state_dir=tmpdir, start_time=1020.0, instance_id="three")
+                combined = runtime_monitoring_snapshot(
+                    job_queue={"monitoring": {"status": "healthy"}},
+                    process=process,
+                )
+
+                self.assertEqual(process["status"], "critical")
+                self.assertEqual(process["recent_start_count"], 3)
+                self.assertFalse(process["previous_shutdown_clean"])
+                self.assertIn("process_restart_critical_threshold_exceeded", process["warnings"])
+                self.assertEqual(combined["status"], "critical")
+                self.assertIn("process_monitoring_not_healthy", combined["warnings"])
+
+                record_process_shutdown(state_dir=tmpdir, instance_id="three", now=1030.0)
+                clean = record_process_start(state_dir=tmpdir, start_time=1040.0, instance_id="four")
+                self.assertTrue(clean["previous_shutdown_clean"])
+                self.assertNotIn("previous_process_did_not_shutdown_cleanly", clean["warnings"])
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
 
     def test_auth_status(self):
         data = auth_status(user_count=5)
