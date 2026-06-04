@@ -215,6 +215,46 @@ class Phase2Slice1CoordinationRealismTest(unittest.TestCase):
         self.assertEqual(gas_water[0]["preferred_lower_system"], "gas")
         self.assertEqual(gas_water[0]["interaction_type"], "crossing")
 
+    def test_crossing_rules_cover_telecom_dry_utility_pairings(self) -> None:
+        pair_expectations = [
+            ("telecom", "sanitary", "sanitary"),
+            ("telecom", "storm", "storm"),
+            ("telecom", "gas", "gas"),
+            ("telecom", "electric", "telecom"),
+        ]
+        for left_system, right_system, preferred_lower in pair_expectations:
+            with self.subTest(pair=(left_system, right_system)):
+                project, manager = _manager_with_summaries()
+                utilities = {
+                    "conflict_hooks": {
+                        "utility_segments": [
+                            {
+                                "name": f"{left_system.upper()}-1",
+                                "system_type": left_system,
+                                "route_points": [[0.0, 0.0], [40.0, 0.0]],
+                                "start_invert_ft": 97.0,
+                                "end_invert_ft": 97.0,
+                            },
+                            {
+                                "name": f"{right_system.upper()}-1",
+                                "system_type": right_system,
+                                "route_points": [[20.0, -8.0], [20.0, 8.0]],
+                                "start_invert_ft": 97.4,
+                                "end_invert_ft": 97.4,
+                            },
+                        ],
+                    }
+                }
+                manager.latest_outputs["utilities"] = deepcopy(utilities)
+                project.meta["utility_summary"] = deepcopy(utilities)
+
+                conflicts = _detect_coordination_conflicts(project, manager)
+                clearance_conflicts = [row for row in conflicts if row["conflict_type"].endswith("_clearance")]
+
+                self.assertTrue(clearance_conflicts)
+                self.assertEqual(clearance_conflicts[0]["preferred_lower_system"], preferred_lower)
+                self.assertEqual(clearance_conflicts[0]["interaction_type"], "crossing")
+
     def test_preferred_corridors_use_gis_easement_axis_when_available(self) -> None:
         project = ProjectModel()
         project.meta["gis_layers"] = {

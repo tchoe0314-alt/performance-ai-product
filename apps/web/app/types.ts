@@ -109,6 +109,44 @@ export type WorkflowArtifact = {
   download_path?: string;
 };
 
+export type WorkflowReviewDashboard = {
+  version?: string;
+  release_ready?: boolean;
+  operational_state?: string;
+  primary_attention?: string;
+  release_blockers?: string[];
+  release_blocker_details?: Array<Record<string, unknown>>;
+  run_count?: number;
+  artifact_count?: number;
+  latest_run?: Record<string, unknown>;
+  latest_artifact?: Record<string, unknown>;
+  recent_runs?: Array<Record<string, unknown>>;
+  recent_artifacts?: Array<Record<string, unknown>>;
+  phase_checkpoints?: Record<string, PhaseCheckpoint>;
+  combined_view?: PhaseCheckpoint;
+  deliverable_manager?: {
+    requested?: string[];
+    produced?: string[];
+    ready?: string[];
+    failed?: string[];
+    missing?: string[];
+    extra?: string[];
+    latest_artifact_release_ready?: boolean;
+    latest_artifact_release_status?: string;
+    latest_artifact_release_blockers?: string[];
+  };
+  assumption_review?: {
+    summary?: Record<string, unknown>;
+    requires_approval?: boolean;
+    examples?: string[];
+  };
+  conflict_review?: {
+    unresolved_conflict_count?: number;
+    blocked_exports?: number;
+    primary_attention?: string;
+  };
+};
+
 export type ManualFailure = {
   code?: string;
   message?: string;
@@ -184,6 +222,43 @@ export type PhaseCheckpoint = {
   job_progress?: number;
 };
 
+export type ReactiveRunPolicy = {
+  version?: string;
+  rerun_mode?: "none" | "auto_live" | "debounced_validation" | "manual_confirm_required" | string;
+  estimated_cost?: "none" | "quick" | "moderate" | "heavy" | string;
+  estimated_cost_score?: number;
+  live_visual_update?: boolean;
+  cheap_validation_auto_run?: boolean;
+  debounced_validation_ms?: number;
+  automatic_engineering_rerun?: boolean;
+  requires_user_confirmation?: boolean;
+  impact_preview_required?: boolean;
+  heavy_impacted_stages?: string[];
+  changed_stages?: string[];
+  impacted_stages?: string[];
+  stale_outputs?: string[];
+  export_policy?: string;
+  recommended_next_action?: string;
+  user_message?: string;
+};
+
+export type ReactiveUpdateReport = {
+  version?: string;
+  changed_engine_ids?: string[];
+  changed_stages?: string[];
+  impacted_engine_ids?: string[];
+  impacted_stages?: string[];
+  partial_rerun_supported?: boolean;
+  ran_stages?: string[];
+  stale_outputs?: string[];
+  export_blocked?: boolean;
+  run_policy?: ReactiveRunPolicy;
+  post_rerun_stale_outputs?: string[];
+  post_rerun_export_blocked?: boolean;
+  post_rerun_production_ready?: boolean;
+  post_rerun_release_blockers?: string[];
+};
+
 export type PlanMeta = {
   explanation?: PlanExplanation;
   convergence_summary?: ConvergenceSummary;
@@ -222,6 +297,7 @@ export type PlanMeta = {
     failures?: ManualFailure[];
   };
   coordination?: Record<string, unknown>;
+  reactive_update_report?: ReactiveUpdateReport;
   iterations?: IterationRecord[];
 };
 
@@ -334,6 +410,14 @@ export type ProjectInputMeta = Record<string, unknown> & {
   chat_thread?: ChatMessage[];
   auto_named?: boolean;
   auto_file_named?: boolean;
+  reactive_edit_policy_preference?: {
+    live_visual_update?: boolean;
+    cheap_validation_auto_run?: boolean;
+    auto_engineering_rerun_max_cost?: "quick" | "moderate" | "heavy";
+    debounced_validation_ms?: number;
+    require_confirmation_for_heavy_engineering?: boolean;
+    stale_exports_block_download?: boolean;
+  };
 };
 
 export type ManualFields = {
@@ -419,6 +503,8 @@ export type ProjectMetadata = Record<string, unknown> & {
   workflow?: {
     runs?: WorkflowRunSummary[];
     artifacts?: WorkflowArtifact[];
+    summary?: Record<string, unknown>;
+    review_dashboard?: WorkflowReviewDashboard;
   };
 };
 

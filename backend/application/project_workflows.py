@@ -285,6 +285,129 @@ def _project_operational_summary(record: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _compact_phase_status(phase_checkpoints: Dict[str, Any]) -> Dict[str, Any]:
+    compact: Dict[str, Any] = {}
+    for phase_name, phase in dict(phase_checkpoints or {}).items():
+        if not isinstance(phase, dict):
+            continue
+        compact[str(phase_name)] = {
+            "status": str(phase.get("status") or ""),
+            "ready": bool(phase.get("ready")),
+            "label": str(phase.get("label") or phase_name),
+            "blocked_reasons": list(phase.get("blocked_reasons") or phase.get("blockers") or []),
+            "blocked_exports": list(phase.get("blocked_exports") or []),
+            "deliverables_ready": list(phase.get("deliverables_ready") or []),
+            "completed_phase_count": phase.get("completed_phase_count"),
+            "total_phase_count": phase.get("total_phase_count"),
+        }
+    return compact
+
+
+def _compact_run_for_dashboard(run: Dict[str, Any]) -> Dict[str, Any]:
+    reliability = dict(run.get("reliability_summary") or {})
+    convergence = dict(run.get("convergence_summary") or {})
+    phase_checkpoints = dict(run.get("phase_checkpoints") or {})
+    deliverables = {
+        "requested": list(run.get("requested_deliverables") or []),
+        "produced": list(run.get("produced_deliverables") or []),
+        "ready": list(run.get("ready_deliverables") or []),
+        "failed": list(run.get("failed_deliverables") or []),
+        "missing": list(run.get("missing_deliverables") or []),
+        "extra": list(run.get("extra_deliverables") or []),
+    }
+    return {
+        "run_id": str(run.get("run_id") or ""),
+        "job_id": str(run.get("job_id") or ""),
+        "source": str(run.get("source") or ""),
+        "created_at": run.get("created_at"),
+        "success": bool(run.get("success")),
+        "message": str(run.get("message") or ""),
+        "operational_state": str(reliability.get("operational_state") or ""),
+        "release_ready": bool(reliability.get("release_ready")),
+        "retryable": bool(reliability.get("retryable")),
+        "primary_attention": str(reliability.get("primary_attention") or ""),
+        "release_blocker_details": list(reliability.get("release_blocker_details") or []),
+        "blocked_exports": list(convergence.get("blocked_exports") or []),
+        "blocked_reasons": list(convergence.get("blocked_reasons") or []),
+        "unresolved_conflict_count": int(
+            reliability.get("unresolved_conflict_count")
+            or convergence.get("unresolved_conflict_count")
+            or 0
+        ),
+        "manual_failure_count": int(reliability.get("manual_failure_count") or 0),
+        "failed_deliverable_count": int(reliability.get("failed_deliverable_count") or len(deliverables["failed"])),
+        "missing_deliverable_count": int(reliability.get("missing_deliverable_count") or len(deliverables["missing"])),
+        "assumption_summary": dict(convergence.get("assumption_summary") or {}),
+        "manual_failures": list(run.get("manual_failures") or []),
+        "deliverables": deliverables,
+        "phase_checkpoints": _compact_phase_status(phase_checkpoints),
+        "combined_view": dict(_compact_phase_status(phase_checkpoints).get("combined_view") or {}),
+    }
+
+
+def _compact_artifact_for_dashboard(artifact: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "artifact_id": str(artifact.get("artifact_id") or ""),
+        "kind": str(artifact.get("kind") or ""),
+        "filename": str(artifact.get("filename") or ""),
+        "created_at": artifact.get("created_at"),
+        "download_path": str(artifact.get("download_path") or ""),
+        "release_status": str(artifact.get("release_status") or ""),
+        "release_ready": bool(artifact.get("release_ready")),
+        "release_blockers": list(artifact.get("release_blockers") or []),
+        "release_blocker_details": list(artifact.get("release_blocker_details") or []),
+        "canonical_model_reference": dict(artifact.get("canonical_model_reference") or {}),
+        "construction_package_id": str(artifact.get("construction_package_id") or ""),
+    }
+
+
+def build_workflow_review_dashboard(*, runs: list[Dict[str, Any]], artifacts: list[Dict[str, Any]]) -> Dict[str, Any]:
+    summary = _build_workflow_summary(runs=runs, artifacts=artifacts)
+    latest_run = _compact_run_for_dashboard(dict(runs[0])) if runs else {}
+    latest_artifact = _compact_artifact_for_dashboard(dict(artifacts[0])) if artifacts else {}
+    latest_deliverables = dict(latest_run.get("deliverables") or {})
+    latest_assumptions = dict(latest_run.get("assumption_summary") or {})
+    latest_blockers = list(summary.get("latest_release_blockers") or [])
+    return {
+        "version": "workflow_review_dashboard_v1",
+        "summary": summary,
+        "release_ready": bool(summary.get("latest_release_ready")),
+        "operational_state": str(summary.get("latest_operational_state") or ""),
+        "primary_attention": str(summary.get("latest_primary_attention") or ""),
+        "release_blockers": latest_blockers,
+        "release_blocker_details": list(summary.get("latest_release_blocker_details") or []),
+        "run_count": len(runs),
+        "artifact_count": len(artifacts),
+        "latest_run": latest_run,
+        "latest_artifact": latest_artifact,
+        "recent_runs": [_compact_run_for_dashboard(dict(item)) for item in runs[:5]],
+        "recent_artifacts": [_compact_artifact_for_dashboard(dict(item)) for item in artifacts[:8]],
+        "phase_checkpoints": dict(latest_run.get("phase_checkpoints") or {}),
+        "combined_view": dict(latest_run.get("combined_view") or {}),
+        "deliverable_manager": {
+            "requested": list(latest_deliverables.get("requested") or []),
+            "produced": list(latest_deliverables.get("produced") or []),
+            "ready": list(latest_deliverables.get("ready") or []),
+            "failed": list(latest_deliverables.get("failed") or []),
+            "missing": list(latest_deliverables.get("missing") or []),
+            "extra": list(latest_deliverables.get("extra") or []),
+            "latest_artifact_release_ready": bool(summary.get("latest_artifact_release_ready")),
+            "latest_artifact_release_status": str(summary.get("latest_artifact_release_status") or ""),
+            "latest_artifact_release_blockers": list(summary.get("latest_artifact_release_blockers") or []),
+        },
+        "assumption_review": {
+            "summary": latest_assumptions,
+            "requires_approval": bool(latest_assumptions),
+            "examples": list(latest_assumptions.get("examples") or []),
+        },
+        "conflict_review": {
+            "unresolved_conflict_count": int(summary.get("latest_unresolved_conflict_count") or 0),
+            "blocked_exports": int(summary.get("latest_blocked_export_count") or 0),
+            "primary_attention": str(summary.get("latest_primary_attention") or ""),
+        },
+    }
+
+
 def _record_with_operational_summary(record: Dict[str, Any]) -> Dict[str, Any]:
     enriched = dict(record)
     enriched["operational_summary"] = _project_operational_summary(record)
@@ -317,6 +440,7 @@ def merge_project_metadata(
     workflow["runs"] = runs
     workflow["artifacts"] = artifacts
     workflow["summary"] = _build_workflow_summary(runs=runs, artifacts=artifacts)
+    workflow["review_dashboard"] = build_workflow_review_dashboard(runs=runs, artifacts=artifacts)
     metadata["workflow"] = workflow
     return metadata
 

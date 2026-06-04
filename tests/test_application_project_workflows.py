@@ -6,6 +6,7 @@ from fastapi import HTTPException
 
 from backend.application.project_workflows import (
     artifact_summary,
+    build_workflow_review_dashboard,
     delete_project_record,
     get_project_detail,
     get_project_result,
@@ -217,6 +218,81 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertEqual(merged["workflow"]["summary"]["latest_run_id"], "run_new")
         self.assertEqual(merged["workflow"]["summary"]["latest_operational_state"], "ready")
         self.assertEqual(merged["workflow"]["summary"]["latest_artifact_id"], "artifact_new")
+        self.assertEqual(merged["workflow"]["review_dashboard"]["version"], "workflow_review_dashboard_v1")
+        self.assertEqual(merged["workflow"]["review_dashboard"]["latest_run"]["run_id"], "run_new")
+        self.assertEqual(merged["workflow"]["review_dashboard"]["latest_artifact"]["artifact_id"], "artifact_new")
+
+    def test_build_workflow_review_dashboard_groups_phase_deliverable_assumption_and_conflict_review(self):
+        dashboard = build_workflow_review_dashboard(
+            runs=[
+                {
+                    "run_id": "run_dashboard",
+                    "job_id": "job_1",
+                    "created_at": 123.0,
+                    "source": "orchestrate_job",
+                    "success": True,
+                    "requested_deliverables": ["site_plan", "report"],
+                    "produced_deliverables": ["site_plan"],
+                    "ready_deliverables": ["site_plan"],
+                    "missing_deliverables": ["report"],
+                    "manual_failures": [{"code": "MANUAL_STORM_HYDRAULIC_INVALID"}],
+                    "phase_checkpoints": {
+                        "layout": {"label": "Layout", "status": "complete", "ready": True},
+                        "combined_view": {
+                            "status": "blocked",
+                            "ready": False,
+                            "completed_phase_count": 1,
+                            "total_phase_count": 5,
+                            "blocked_reasons": ["missing_deliverable_report"],
+                        },
+                    },
+                    "convergence_summary": {
+                        "converged": False,
+                        "blocked_reasons": ["missing_deliverable_report"],
+                        "blocked_exports": ["dxf"],
+                        "unresolved_conflict_count": 2,
+                        "assumption_summary": {
+                            "examples": ["Assumed mild southeast drainage fall."],
+                            "count": 1,
+                        },
+                    },
+                    "reliability_summary": {
+                        "operational_state": "retryable",
+                        "release_ready": False,
+                        "retryable": True,
+                        "primary_attention": "missing_deliverable_report",
+                        "blocked_export_count": 1,
+                        "unresolved_conflict_count": 2,
+                        "manual_failure_count": 1,
+                        "missing_deliverable_count": 1,
+                    },
+                }
+            ],
+            artifacts=[
+                {
+                    "artifact_id": "artifact_report",
+                    "kind": "report",
+                    "filename": "report.pdf",
+                    "release_status": "blocked",
+                    "release_ready": False,
+                    "release_blockers": ["missing_deliverable_report"],
+                    "canonical_model_reference": {"canonical_model_id": "MODEL-1"},
+                }
+            ],
+        )
+
+        self.assertEqual(dashboard["version"], "workflow_review_dashboard_v1")
+        self.assertFalse(dashboard["release_ready"])
+        self.assertEqual(dashboard["latest_run"]["run_id"], "run_dashboard")
+        self.assertEqual(dashboard["latest_artifact"]["artifact_id"], "artifact_report")
+        self.assertEqual(dashboard["combined_view"]["status"], "blocked")
+        self.assertEqual(dashboard["deliverable_manager"]["missing"], ["report"])
+        self.assertEqual(dashboard["deliverable_manager"]["latest_artifact_release_status"], "blocked")
+        self.assertTrue(dashboard["assumption_review"]["requires_approval"])
+        self.assertEqual(dashboard["assumption_review"]["examples"], ["Assumed mild southeast drainage fall."])
+        self.assertEqual(dashboard["conflict_review"]["unresolved_conflict_count"], 2)
+        self.assertEqual(dashboard["conflict_review"]["blocked_exports"], 1)
+        self.assertIn("missing_deliverable_report", dashboard["release_blockers"])
 
     def test_merge_project_metadata_blocks_release_when_construction_gate_blocks(self):
         merged = merge_project_metadata(

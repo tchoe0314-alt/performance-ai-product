@@ -2274,15 +2274,29 @@ def _legend_items(plan: Dict[str, Any], actions: List[Dict[str, Any]]) -> List[T
         _legacy_to_standard_layer(get_layer(safe_dict(action), "SITE"), safe_dict(action))
         for action in actions
     }
+    raw_layers = {
+        get_layer(safe_dict(action), "SITE")
+        for action in actions
+    }
+
+    def line_layer(standard_layer: str, *legacy_layers: str) -> str:
+        if standard_layer in used_layers:
+            return standard_layer
+        for layer in legacy_layers:
+            if layer in raw_layers:
+                return layer
+        return standard_layer
+
     items: List[Tuple[str, str, str]] = []
-    if "C-CONTOUR" in used_layers:
-        items.append(("line", "C-CONTOUR", "Contours"))
-    if "C-STRM-PIPE" in used_layers:
-        items.append(("line", "C-STRM-PIPE", "Storm pipe"))
-    if "C-SAN" in used_layers:
-        items.append(("line", "C-SAN", "Sanitary pipe"))
-    if "C-UTIL" in used_layers or "C-WATR" in used_layers:
-        items.append(("line", "C-WATR" if "C-WATR" in used_layers else "C-UTIL", "Water / utility"))
+    if "C-CONTOUR" in used_layers or raw_layers.intersection({"EG_CONTOUR", "FG_CONTOUR"}):
+        items.append(("line", line_layer("C-CONTOUR", "FG_CONTOUR", "EG_CONTOUR"), "Contours"))
+    if "C-STRM-PIPE" in used_layers or raw_layers.intersection({"PIPE", "STORM"}):
+        items.append(("line", line_layer("C-STRM-PIPE", "PIPE", "STORM"), "Storm pipe"))
+    if "C-SAN" in used_layers or "SAN" in raw_layers:
+        items.append(("line", line_layer("C-SAN", "SAN"), "Sanitary pipe"))
+    if "C-UTIL" in used_layers or "C-WATR" in used_layers or raw_layers.intersection({"UTILITY", "WATER"}):
+        utility_layer = "C-WATR" if "C-WATR" in used_layers else line_layer("C-UTIL", "WATER", "UTILITY")
+        items.append(("line", utility_layer, "Water / utility"))
     kinds = {safe_text(item.get("kind"), "") for item in _collect_structure_callouts(plan)}
     if any("inlet" in kind for kind in kinds):
         items.append(("block", "CIVIL_INLET", "Inlet structure"))

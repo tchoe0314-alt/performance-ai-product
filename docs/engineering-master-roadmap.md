@@ -220,15 +220,50 @@ Build product, workflow, and operational capability only after the backend engin
 - Project history/versioning tests
 - UI integration tests for run review and deliverable management
 
-## Active Phase
+## Phase Status
 
-Active phase: **Phase 1 only**
+Phase 1 status: **Complete / exit gate verified**
 
-Current implementation priority inside Phase 1:
+Verification run:
 
-1. Canonical truth consistency
-2. Dependency-aware reruns and rollback safety
-3. Cluster-aware conflict solving
-4. Storm / sanitary post-reroute truth
-5. Assisted-off failure truth
-6. QA / quantities / export consistency
+- Date: 2026-06-04
+- Focused Phase 1 regression: `76 passed`
+- Full backend regression: `839 passed`
+- Remaining Phase 1 note: warnings are third-party/deprecation warnings and do not block the Phase 1 exit gate.
+
+Phase 2 status: **Complete / exit gate verified**
+
+Phase 2 progress:
+
+- 2026-06-04: Expanded utility crossing-rule coverage so telecom conflicts with sanitary, storm, gas, and electric are explicitly detected and assigned hierarchy preferences.
+- Verification: focused Phase 2/coordination regression `38 passed`; full backend regression `840 passed`.
+- 2026-06-04: Added Phase 2 exit-gate regression coverage for utility-pair crossing tables, GIS/road corridor slots, hard protected-zone risk, constructability ownership scoring, structure insertion needs, trench grouping, and profile/cross-section canonical coordination context.
+- Verification: focused Phase 2 exit-gate regression `19 passed`.
+
+Phase 3 status: **Complete / exit gate verified**
+
+Phase 3 progress:
+
+- 2026-06-04: Added Phase 3 exit-gate regression coverage for profile pipe data bands, section feature runs, site/profile/section sheet ordering, title-block metadata, CAD styles/blocks, legend alignment, canonical sheet alignment, and export traceability.
+- 2026-06-04: Fixed the DXF legend builder so legacy-layer exports such as `PIPE`, `SAN`, `WATER`, `UTILITY`, `EG_CONTOUR`, and `FG_CONTOUR` produce matching legend entries, not only standard `C-*` layers.
+- Verification: focused Phase 3/export regression `52 passed`.
+
+Active phase: **Phase 4 complete**
+
+Phase 4 status: **Complete / exit gate verified**
+
+Phase 4 progress:
+
+- 2026-06-04: Added the reactive run policy contract so product surfaces can distinguish live visual updates, debounced cheap validation, quick auto-reruns, and heavy engineering changes that require explicit user confirmation.
+- 2026-06-04: Wired the web request metadata to declare the preferred edit behavior: live visual movement, debounced validation, quick-only automatic engineering reruns, confirmed heavy reruns, and stale-export blocking.
+- Verification: focused Phase 4/reactive policy regression `4 passed`; reactive contract regression `13 passed`; full backend regression `855 passed`; web lint completed with existing warnings and no errors.
+- 2026-06-04: Added persisted workflow review dashboard metadata that groups run history, latest artifact state, phase checkpoints, deliverable manager status, assumption review, conflict review, and release blockers into one UI-ready contract.
+- 2026-06-04: Wired the web dashboard panel to read the persisted workflow review dashboard so saved projects surface run/artifact counts, release state, deliverable readiness, assumption review state, and unresolved conflict counts.
+- Verification: focused Phase 4/application workflow regression `108 passed`; full backend regression `856 passed`; web lint completed with existing warnings and no errors.
+
+Phase 4 exit gate:
+
+- Dashboard and run history are backed by persisted workflow metadata and surfaced in the UI.
+- Conflict review, deliverable manager, and assumption review state are available from the persisted workflow review dashboard.
+- Saved runs, artifacts, release blockers, and phase checkpoints are retained with bounded history.
+- Auth-scoped project storage, job queue workflows, artifact workflows, and project retrieval paths are covered by application regression tests.

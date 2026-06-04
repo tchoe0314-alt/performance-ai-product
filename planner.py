@@ -4012,6 +4012,30 @@ COORDINATION_CROSSING_RULES: Dict[Tuple[str, str], Dict[str, Any]] = {
         "required_vertical_clearance_ft": 1.0,
         "preferred_crossing_angle_deg": 60.0,
     },
+    tuple(sorted(("telecom", "sanitary"))): {
+        "preferred_lower_system": "sanitary",
+        "required_horizontal_clearance_ft": 5.0,
+        "required_vertical_clearance_ft": 1.0,
+        "preferred_crossing_angle_deg": 75.0,
+    },
+    tuple(sorted(("telecom", "storm"))): {
+        "preferred_lower_system": "storm",
+        "required_horizontal_clearance_ft": 3.0,
+        "required_vertical_clearance_ft": 1.0,
+        "preferred_crossing_angle_deg": 70.0,
+    },
+    tuple(sorted(("telecom", "gas"))): {
+        "preferred_lower_system": "gas",
+        "required_horizontal_clearance_ft": 2.0,
+        "required_vertical_clearance_ft": 1.0,
+        "preferred_crossing_angle_deg": 60.0,
+    },
+    tuple(sorted(("electric", "telecom"))): {
+        "preferred_lower_system": "telecom",
+        "required_horizontal_clearance_ft": 2.0,
+        "required_vertical_clearance_ft": 1.0,
+        "preferred_crossing_angle_deg": 60.0,
+    },
 }
 
 PRECOORDINATION_SANITARY_MAIN_COVER_FT = 7.0

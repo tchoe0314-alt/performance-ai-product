@@ -33,6 +33,31 @@ ENGINE_TO_STAGE = {
 }
 
 
+REACTIVE_STAGE_COST = {
+    "layout": 8,
+    "grading": 7,
+    "drainage": 6,
+    "storm_pipes": 6,
+    "sanitary": 6,
+    "utility_network": 6,
+    "coordination_resolution": 6,
+    "earthwork": 5,
+    "sheets": 2,
+    "qa": 1,
+}
+
+REACTIVE_HEAVY_STAGES = {
+    "layout",
+    "grading",
+    "drainage",
+    "storm_pipes",
+    "sanitary",
+    "utility_network",
+    "coordination_resolution",
+    "earthwork",
+}
+
+
 def _stage_index(stage_name: str) -> int:
     try:
         return PLANNER_STAGE_ORDER.index(stage_name)
@@ -44,6 +69,80 @@ def _target_stage(target: str) -> str:
     if target in PLANNER_STAGE_ORDER:
         return target
     return ENGINE_TO_STAGE.get(target, "")
+
+
+def _reactive_stage_cost(stage_names: Iterable[str]) -> int:
+    return sum(REACTIVE_STAGE_COST.get(safe_str(stage_name), 3) for stage_name in set(stage_names))
+
+
+def build_reactive_run_policy(
+    *,
+    impacted_stages: Iterable[str] = (),
+    changed_engine_ids: Iterable[str] = (),
+    changed_stages: Iterable[str] = (),
+    stale_outputs: Iterable[str] = (),
+) -> Dict[str, Any]:
+    impacted = sorted({safe_str(item) for item in impacted_stages if safe_str(item)}, key=_stage_index)
+    changed = sorted(
+        {safe_str(item) for item in changed_stages if safe_str(item)}
+        | {_target_stage(safe_str(item)) for item in changed_engine_ids if _target_stage(safe_str(item))},
+        key=_stage_index,
+    )
+    stale = sorted({safe_str(item) for item in stale_outputs if safe_str(item)}, key=_stage_index)
+    cost_score = _reactive_stage_cost(impacted)
+    heavy_impacts = [stage for stage in impacted if stage in REACTIVE_HEAVY_STAGES]
+    if not impacted:
+        cost_label = "none"
+        rerun_mode = "none"
+    elif cost_score <= 3 and not heavy_impacts:
+        cost_label = "quick"
+        rerun_mode = "auto_live"
+    elif cost_score <= 8 and not (set(changed) & {"layout", "grading"}):
+        cost_label = "moderate"
+        rerun_mode = "debounced_validation"
+    else:
+        cost_label = "heavy"
+        rerun_mode = "manual_confirm_required"
+
+    requires_confirmation = rerun_mode == "manual_confirm_required"
+    automatic_engineering_rerun = rerun_mode == "auto_live"
+    debounced_validation_ms = 500 if impacted else 0
+    if rerun_mode == "none":
+        next_action = "No downstream engineering rerun is required."
+        message = "No impacted engineering systems were detected."
+    elif automatic_engineering_rerun:
+        next_action = "Apply the visual edit and rerun the quick affected outputs immediately."
+        message = "This edit only touches quick downstream outputs, so it can run live."
+    elif requires_confirmation:
+        next_action = "Show the impact preview and wait for the user to approve re-engineering affected systems."
+        message = "This edit affects heavy engineering systems; keep the visual move live and require confirmation before rerunning."
+    else:
+        next_action = "Apply the visual edit immediately, debounce cheap checks, and keep engineering regeneration explicit if the user keeps editing."
+        message = "This edit supports debounced validation, but the app should not run heavy engineering on every movement."
+
+    return {
+        "version": "reactive_run_policy_v1",
+        "rerun_mode": rerun_mode,
+        "estimated_cost": cost_label,
+        "estimated_cost_score": cost_score,
+        "live_visual_update": bool(impacted or changed),
+        "cheap_validation_auto_run": bool(impacted),
+        "debounced_validation_ms": debounced_validation_ms,
+        "automatic_engineering_rerun": automatic_engineering_rerun,
+        "requires_user_confirmation": requires_confirmation,
+        "impact_preview_required": bool(impacted) and not automatic_engineering_rerun,
+        "heavy_impacted_stages": heavy_impacts,
+        "changed_stages": changed,
+        "impacted_stages": impacted,
+        "stale_outputs": stale,
+        "export_policy": (
+            "block_exports_until_impacted_stages_complete"
+            if impacted or stale
+            else "exports_unchanged"
+        ),
+        "recommended_next_action": next_action,
+        "user_message": message,
+    }
 
 
 def _downstream_stage_closure(stage_name: str) -> Set[str]:
@@ -88,6 +187,12 @@ def build_reactive_update_report(
         for item in stage_results
     }
     stale = sorted({safe_str(item) for item in stale_outputs if safe_str(item)})
+    run_policy = build_reactive_run_policy(
+        impacted_stages=impacted_stages,
+        changed_engine_ids=changed_engine_set,
+        changed_stages=changed_stage_set,
+        stale_outputs=stale,
+    )
     return {
         "version": "reactive_model_v1",
         "changed_engine_ids": sorted(changed_engine_set),
@@ -98,6 +203,7 @@ def build_reactive_update_report(
         "ran_stages": sorted((stage for stage in ran_stages if stage), key=_stage_index),
         "stale_outputs": stale,
         "export_blocked": bool(stale),
+        "run_policy": run_policy,
         "dirty_reasons": [
             {
                 "source": engine_id,
@@ -325,4 +431,10 @@ def execute_reactive_rerun(
     }
 
 
-__all__ = ["ENGINE_TO_STAGE", "build_reactive_update_report", "execute_reactive_rerun", "reactive_report_from_plan"]
+__all__ = [
+    "ENGINE_TO_STAGE",
+    "build_reactive_run_policy",
+    "build_reactive_update_report",
+    "execute_reactive_rerun",
+    "reactive_report_from_plan",
+]
