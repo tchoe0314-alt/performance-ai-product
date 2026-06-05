@@ -11,6 +11,7 @@ from backend.planning.standards_discovery import (
     standards_pack_from_acceptance,
     standards_project_evidence_from_acceptance,
 )
+from backend.planning.standards_package import build_standards_package
 
 
 def discover_standards_response(
@@ -55,6 +56,7 @@ def accept_standards_response(
         company_standards=company_standards,
     )
     evidence["design_standards"] = standards_pack_from_acceptance(acceptance)
+    evidence["standards_package"] = build_standards_package(evidence)
     return evidence
 
 

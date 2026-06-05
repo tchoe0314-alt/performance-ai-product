@@ -165,6 +165,8 @@ def _existing_conditions_section(meta: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _standards_section(meta: Dict[str, Any]) -> Dict[str, Any]:
+    package = safe_dict(meta.get("standards_package"))
+    package_status = safe_str(package.get("status")).lower()
     acceptance = safe_dict(meta.get("standards_acceptance"))
     validation = safe_dict(acceptance.get("production_validation"))
     civil = safe_dict(meta.get("civil_design_readiness"))
@@ -176,9 +178,40 @@ def _standards_section(meta: Dict[str, Any]) -> Dict[str, Any]:
         or metrics.get("acceptance_state")
         or acceptance.get("status")
     ).lower()
-    ready = state in {"ready", "accepted", "production_ready", "usable"} or bool(validation.get("production_usable"))
+    ready = package_status == "ready" and bool(package.get("production_usable"))
     blockers: List[Dict[str, Any]] = []
-    if not ready:
+    warnings: List[Dict[str, Any]] = []
+    if not package:
+        blockers.append(
+            _blocker(
+                "standards",
+                "standards_package",
+                "Private alpha needs a standards package, not only inferred or scattered standards metadata.",
+                next_action="Build standards_package from selected jurisdiction, official source evidence, accepted rules, overrides, and company standards.",
+            )
+        )
+    elif package_status == "blocked":
+        blockers.extend(safe_list(package.get("blockers")))
+        if not blockers:
+            blockers.append(
+                _blocker(
+                    "standards",
+                    "standards_package",
+                    "Standards package is blocked.",
+                    next_action="Resolve standards package blockers before alpha readiness.",
+                )
+            )
+    elif package_status == "needs_review":
+        warnings.append(
+            _blocker(
+                "standards",
+                "standards_package_review",
+                "Standards package exists but still needs review.",
+                severity="warning",
+                next_action="Review standards source evidence and overrides before alpha readiness.",
+            )
+        )
+    if package and not ready:
         blockers.append(
             _blocker(
                 "standards",
@@ -188,10 +221,13 @@ def _standards_section(meta: Dict[str, Any]) -> Dict[str, Any]:
             )
         )
     return {
-        "status": _status_from_section(ready, blockers),
+        "status": _status_from_section(ready, blockers, warnings),
         "acceptance_state": state or "missing",
+        "package_status": package_status or "missing",
+        "package": deepcopy(package),
         "production_validation": deepcopy(validation),
         "blockers": blockers,
+        "warnings": warnings,
     }
 
 

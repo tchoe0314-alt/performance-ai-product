@@ -281,6 +281,9 @@ from backend.planning.existing_conditions_package import (
 from backend.planning.private_alpha_readiness import (
     build_private_alpha_readiness as _build_private_alpha_readiness,
 )
+from backend.planning.standards_package import (
+    build_standards_package as _build_standards_package,
+)
 from backend.planning.depth_validators import (
     validate_roadway_corridor_depth as _validate_roadway_corridor_depth,
     validate_stormwater_depth as _validate_stormwater_depth,
@@ -10698,6 +10701,7 @@ def finalize_plan(plan: Dict[str, Any], *, parsed: Dict[str, Any], route: Routin
     }
     _attach_final_model_trace(final)
     final["meta"]["civil_design_readiness"] = civil_design_readiness(final)
+    final["meta"]["standards_package"] = _build_standards_package(final)
     final["meta"]["construction_readiness"] = construction_readiness(final)
     final["meta"]["construction_package_manifest"] = _build_construction_package_manifest(final)
     final["meta"]["engine_readiness"] = _evaluate_engine_readiness(final)

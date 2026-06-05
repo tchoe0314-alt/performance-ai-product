@@ -45,6 +45,13 @@ def _ready_meta() -> dict:
                 "production_usable": True,
             }
         },
+        "standards_package": {
+            "status": "ready",
+            "production_usable": True,
+            "accepted_rule_count": 1,
+            "blockers": [],
+            "warnings": [],
+        },
         "export_audit": {
             "ready": True,
             "production_export_ready": True,
