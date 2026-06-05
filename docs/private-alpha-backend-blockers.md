@@ -10,7 +10,7 @@ This does not mean construction-ready. Construction release remains blocked unle
 
 ## Current Evidence
 
-- Full backend regression on 2026-06-05: `871 passed, 26 warnings`.
+- Full backend regression on 2026-06-05 after review-package and cost-package hardening: `913 passed, 26 warnings in 593.93s`.
 - Private-alpha hardening focused regression on 2026-06-05: `86 passed, 22 warnings in 262.03s`.
 - Workflow exposure regression on 2026-06-05: `76 passed, 22 warnings in 23.45s`.
 - Existing-conditions import/package focused regression on 2026-06-05: `43 passed, 22 warnings in 24.80s`.
@@ -34,6 +34,8 @@ This does not mean construction-ready. Construction release remains blocked unle
   - `backend/planning/alpha_monitoring.py`
   - `backend/planning/depth_validators.py`
   - `backend/planning/golden_runner.py`
+  - `backend/planning/construction_package.py`
+  - `engines/cost_engine.py`
   - `output/dxf_exporter.py`
   - `core/civil_design.py`
 
