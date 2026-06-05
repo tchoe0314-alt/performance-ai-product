@@ -275,6 +275,9 @@ from backend.planning.engine_readiness import (
 from backend.planning.construction_package import (
     build_construction_package_manifest as _build_construction_package_manifest,
 )
+from backend.planning.private_alpha_readiness import (
+    build_private_alpha_readiness as _build_private_alpha_readiness,
+)
 from backend.planning.depth_validators import (
     validate_roadway_corridor_depth as _validate_roadway_corridor_depth,
     validate_stormwater_depth as _validate_stormwater_depth,
@@ -10694,6 +10697,7 @@ def finalize_plan(plan: Dict[str, Any], *, parsed: Dict[str, Any], route: Routin
     final["meta"]["construction_readiness"] = construction_readiness(final)
     final["meta"]["construction_package_manifest"] = _build_construction_package_manifest(final)
     final["meta"]["engine_readiness"] = _evaluate_engine_readiness(final)
+    final["meta"]["private_alpha_readiness"] = _build_private_alpha_readiness(final)
     final["meta"]["release_readiness_summary"] = _planner_release_readiness_summary(final)
     return final
 

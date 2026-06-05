@@ -591,6 +591,7 @@ def artifact_summary(
         if value not in (None, "")
     }
     package = construction_package_record(final_meta)
+    private_alpha = dict(final_meta.get("private_alpha_readiness") or {})
     artifact = {
         "artifact_id": new_workflow_id("artifact"),
         "kind": artifact_kind,
@@ -610,6 +611,16 @@ def artifact_summary(
         artifact["release_blocker_details"] = blocker_explanations(release_blockers)
     if canonical_model_reference:
         artifact["canonical_model_reference"] = canonical_model_reference
+    if private_alpha:
+        artifact["private_alpha_readiness"] = {
+            "status": str(private_alpha.get("status") or ""),
+            "full_system_private_alpha_ready": bool(private_alpha.get("full_system_private_alpha_ready")),
+            "review_only": bool(private_alpha.get("review_only")),
+            "construction_release_blocked": bool(private_alpha.get("construction_release_blocked")),
+            "construction_release_allowed": bool(private_alpha.get("construction_release_allowed")),
+            "blocker_count": int(private_alpha.get("blocker_count") or 0),
+            "launch_recommendation": str(private_alpha.get("launch_recommendation") or ""),
+        }
     package_id = (
         package.get("id")
         or package.get("package_id")
