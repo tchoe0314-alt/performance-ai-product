@@ -101,6 +101,33 @@ def _readiness_summary(plan: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _scenario_input_evidence(payload: Dict[str, Any]) -> Dict[str, Any]:
+    meta = safe_dict(payload.get("meta"))
+    package = safe_dict(meta.get("existing_conditions_package"))
+    validation = safe_dict(
+        package.get("import_validation")
+        or meta.get("existing_conditions_import_validation")
+        or meta.get("import_validation")
+    )
+    sources = safe_list(
+        package.get("canonical_existing_conditions", {}).get("sources")
+        if isinstance(package.get("canonical_existing_conditions"), dict)
+        else []
+    )
+    if not sources:
+        sources = safe_list(meta.get("sources") or safe_dict(meta.get("existing_conditions_import")).get("sources"))
+    source_count = safe_int(package.get("source_count"), len(sources))
+    return {
+        "existing_conditions_package_status": safe_str(package.get("status"), "missing"),
+        "existing_conditions_package_present": bool(package),
+        "existing_conditions_package_accepted": bool(package.get("accepted")),
+        "existing_conditions_source_count": source_count,
+        "import_validation_present": bool(validation),
+        "real_file_import_evidence": bool(source_count > 0 and validation),
+        "truth_label": "Golden input evidence records whether this benchmark used imported files; it does not prove the design is permit-ready.",
+    }
+
+
 def _scenario_gate_results(scenario: GoldenScenario, plan: Dict[str, Any]) -> List[Dict[str, Any]]:
     meta = safe_dict(plan.get("meta"))
     readiness = safe_dict(meta.get("civil_design_readiness"))
@@ -350,6 +377,7 @@ def run_golden_scenario(
     runner = build_plan_fn or _default_build_plan
     plan = runner(payload)
     summary = _readiness_summary(plan)
+    input_evidence = _scenario_input_evidence(payload)
     gates = _scenario_gate_results(scenario, plan)
     signal_results = _canonical_signal_results(scenario, plan)
     expectation_results = _benchmark_expectation_results(scenario, plan)
@@ -399,6 +427,8 @@ def run_golden_scenario(
         "required_canonical_signals": list(scenario.required_canonical_signals),
         "production_gates": list(scenario.production_gates),
         "readiness_summary": summary,
+        "input_evidence": input_evidence,
+        "real_file_fixture": bool(input_evidence.get("real_file_import_evidence")),
         "gate_results": gates,
         "canonical_signal_results": signal_results,
         "missing_canonical_signals": missing_signals,
@@ -418,9 +448,15 @@ def run_golden_scenarios(
 ) -> Dict[str, Any]:
     ids = [safe_str(item) for item in scenario_ids or [scenario.scenario_id for scenario in golden_scenarios()]]
     results = [run_golden_scenario(item, build_plan_fn=build_plan_fn) for item in ids if item]
+    success = all(bool(item.get("success")) for item in results)
+    real_file_fixture_count = len([item for item in results if bool(item.get("real_file_fixture"))])
     return {
-        "success": all(bool(item.get("success")) for item in results),
+        "success": success,
+        "status": "passed" if success else "failed",
+        "passed": success,
         "scenario_count": len(results),
+        "real_file_fixture_count": real_file_fixture_count,
+        "synthetic_scenario_count": max(0, len(results) - real_file_fixture_count),
         "results": results,
         "truth_label": "Golden scenarios are executable regression cases with explicit blockers and production-readiness expectations.",
     }

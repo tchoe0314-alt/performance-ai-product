@@ -1,5 +1,16 @@
 import unittest
+import json
+import tempfile
+from pathlib import Path
 
+from backend.planning.existing_conditions import REQUIRED_GIS_LAYERS, summarize_existing_conditions
+from backend.planning.existing_conditions_importers import (
+    import_geojson,
+    import_survey_csv,
+    merge_imported_existing_conditions,
+    validate_imported_existing_conditions_package,
+)
+from backend.planning.existing_conditions_package import build_existing_conditions_package
 from backend.planning.golden_runner import run_golden_scenario, run_golden_scenarios
 
 
@@ -71,8 +82,63 @@ class GoldenRunnerTests(unittest.TestCase):
         result = run_golden_scenarios(["small_commercial_pad", "incomplete_bad_input_case"], build_plan_fn=_fake_plan)
 
         self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["real_file_fixture_count"], 0)
         self.assertEqual(result["scenario_count"], 2)
         self.assertIn("explicit blockers", result["truth_label"])
+
+    def test_run_golden_scenario_reports_real_file_import_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            survey_path = root / "survey.csv"
+            survey_path.write_text("x,y,z\n0,0,100\n10,0,101\n0,10,99\n10,10,100\n", encoding="utf-8")
+            gis_path = root / "constraints.geojson"
+            gis_path.write_text(
+                json.dumps(
+                    {
+                        "type": "FeatureCollection",
+                        "features": [
+                            {
+                                "type": "Feature",
+                                "properties": {
+                                    "layer": "utility water" if layer == "existing_utilities" else layer,
+                                    "source": f"{layer}_source",
+                                },
+                                "geometry": {"type": "Polygon", "coordinates": []},
+                            }
+                            for layer in REQUIRED_GIS_LAYERS
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            coordinate = {"epsg": "EPSG:2276", "units": "ft", "source": "survey_control"}
+            survey = import_survey_csv(survey_path, coordinate_system=coordinate)
+            gis = import_geojson(gis_path, coordinate_system=coordinate)
+            merged = merge_imported_existing_conditions(survey, gis)
+            merged["survey"].update({"benchmark": "BM-1", "datum": "NAVD88", "control_verified": True})
+            merged["import_validation"] = validate_imported_existing_conditions_package(merged)
+            package_meta = {
+                "survey": merged["survey"],
+                "gis_layers": merged["gis_layers"],
+                "coordinate_system": merged["coordinate_system"],
+                "sources": merged["sources"],
+                "existing_conditions_import_validation": merged["import_validation"],
+                "existing_conditions_package": {"acceptance": {"accepted": True, "accepted_by": "fixture"}},
+            }
+            package_meta["existing_conditions_summary"] = summarize_existing_conditions({"meta": package_meta})
+            package = build_existing_conditions_package({"meta": package_meta})
+
+        result = run_golden_scenario(
+            "small_commercial_pad",
+            build_plan_fn=_fake_plan,
+            payload_overrides={"meta": {**package_meta, "existing_conditions_package": package}},
+        )
+
+        self.assertTrue(result["success"])
+        self.assertTrue(result["real_file_fixture"])
+        self.assertTrue(result["input_evidence"]["real_file_import_evidence"])
+        self.assertEqual(result["input_evidence"]["existing_conditions_package_status"], "ready")
 
     def test_run_scenario_fails_when_required_canonical_signals_are_missing(self) -> None:
         def incomplete_plan(payload):
