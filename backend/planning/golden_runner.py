@@ -13,11 +13,22 @@ from .common import (
     safe_list,
     safe_str,
 )
+from .golden_real_file_fixtures import golden_real_file_payload_overrides
 from .golden_scenarios import GoldenScenario, get_golden_scenario, golden_scenarios
 from .professional_release import RELEASE_STATUSES
 
 
 BuildPlanFn = Callable[[Dict[str, Any]], Dict[str, Any]]
+
+
+def _deep_merge_dicts(base: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
+    merged = deepcopy(safe_dict(base))
+    for key, value in safe_dict(updates).items():
+        if isinstance(merged.get(key), dict) and isinstance(value, dict):
+            merged[key] = _deep_merge_dicts(safe_dict(merged.get(key)), safe_dict(value))
+        else:
+            merged[key] = deepcopy(value)
+    return merged
 
 
 def _default_build_plan(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -104,6 +115,7 @@ def _readiness_summary(plan: Dict[str, Any]) -> Dict[str, Any]:
 def _scenario_input_evidence(payload: Dict[str, Any]) -> Dict[str, Any]:
     meta = safe_dict(payload.get("meta"))
     package = safe_dict(meta.get("existing_conditions_package"))
+    fixture = safe_dict(meta.get("existing_conditions_fixture"))
     validation = safe_dict(
         package.get("import_validation")
         or meta.get("existing_conditions_import_validation")
@@ -124,6 +136,10 @@ def _scenario_input_evidence(payload: Dict[str, Any]) -> Dict[str, Any]:
         "existing_conditions_source_count": source_count,
         "import_validation_present": bool(validation),
         "real_file_import_evidence": bool(source_count > 0 and validation),
+        "real_file_fixture": bool(fixture.get("real_file_fixture")),
+        "real_file_fixture_type": safe_str(fixture.get("fixture_type")),
+        "real_file_fixture_files": safe_dict(fixture.get("fixture_files")),
+        "real_file_fixture_source_types": safe_list(fixture.get("source_types")),
         "truth_label": "Golden input evidence records whether this benchmark used imported files; it does not prove the design is permit-ready.",
     }
 
@@ -372,8 +388,9 @@ def run_golden_scenario(
 ) -> Dict[str, Any]:
     scenario = get_golden_scenario(scenario_id)
     payload = deepcopy(scenario.benchmark_payload)
+    payload = _deep_merge_dicts(payload, golden_real_file_payload_overrides(scenario_id))
     if payload_overrides:
-        payload.update(deepcopy(payload_overrides))
+        payload = _deep_merge_dicts(payload, payload_overrides)
     runner = build_plan_fn or _default_build_plan
     plan = runner(payload)
     summary = _readiness_summary(plan)
@@ -429,6 +446,7 @@ def run_golden_scenario(
         "readiness_summary": summary,
         "input_evidence": input_evidence,
         "real_file_fixture": bool(input_evidence.get("real_file_import_evidence")),
+        "real_file_fixture_type": safe_str(input_evidence.get("real_file_fixture_type")),
         "gate_results": gates,
         "canonical_signal_results": signal_results,
         "missing_canonical_signals": missing_signals,
@@ -456,6 +474,7 @@ def run_golden_scenarios(
         "passed": success,
         "scenario_count": len(results),
         "real_file_fixture_count": real_file_fixture_count,
+        "real_file_fixture_ids": [safe_str(item.get("scenario_id")) for item in results if bool(item.get("real_file_fixture"))],
         "synthetic_scenario_count": max(0, len(results) - real_file_fixture_count),
         "results": results,
         "truth_label": "Golden scenarios are executable regression cases with explicit blockers and production-readiness expectations.",

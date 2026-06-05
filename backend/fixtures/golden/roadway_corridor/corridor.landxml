@@ -1,0 +1,21 @@
+<LandXML>
+  <Surfaces>
+    <Surface name="Existing Ground Corridor">
+      <Definition surfType="TIN">
+        <P>0 0 101.0</P>
+        <P>900 0 100.4</P>
+        <P>0 220 99.8</P>
+        <P>900 220 99.0</P>
+        <F>1 2 3</F>
+        <F>2 4 3</F>
+      </Definition>
+    </Surface>
+  </Surfaces>
+  <Alignments>
+    <Alignment name="Primary Road Centerline" length="900">
+      <Start>0 110 100.5</Start>
+      <Pnt>450 110 100.0</Pnt>
+      <End>900 110 99.5</End>
+    </Alignment>
+  </Alignments>
+</LandXML>

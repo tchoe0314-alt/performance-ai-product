@@ -1,0 +1,8 @@
+{"type":"FeatureCollection","features":[
+{"type":"Feature","properties":{"layer":"parcel","source":"golden constrained parcel"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[420,0],[420,320],[0,320],[0,0]]]}},
+{"type":"Feature","properties":{"layer":"easement","source":"golden constrained conservation easement"},"geometry":{"type":"Polygon","coordinates":[[[250,0],[420,0],[420,320],[250,320],[250,0]]]}},
+{"type":"Feature","properties":{"layer":"row","source":"golden constrained south ROW"},"geometry":{"type":"Polygon","coordinates":[[[0,-40],[420,-40],[420,0],[0,0],[0,-40]]]}},
+{"type":"Feature","properties":{"layer":"floodplain","source":"golden constrained FEMA AE"},"geometry":{"type":"Polygon","coordinates":[[[250,0],[420,0],[420,145],[250,145],[250,0]]]}},
+{"type":"Feature","properties":{"layer":"wetland","source":"golden constrained NWI wetland"},"geometry":{"type":"Polygon","coordinates":[[[0,210],[130,210],[130,320],[0,320],[0,210]]]}},
+{"type":"Feature","properties":{"layer":"existing water utility","source":"golden constrained utility record"},"geometry":{"type":"LineString","coordinates":[[0,-18],[420,-18]]}}
+]}

@@ -1,0 +1,8 @@
+{"type":"FeatureCollection","features":[
+{"type":"Feature","properties":{"layer":"parcel","source":"golden mixed-use parcel"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[875,0],[875,700],[0,700],[0,0]]]}},
+{"type":"Feature","properties":{"layer":"easement","source":"golden mixed-use utility easement"},"geometry":{"type":"Polygon","coordinates":[[[40,0],[80,0],[80,700],[40,700],[40,0]]]}},
+{"type":"Feature","properties":{"layer":"row","source":"golden mixed-use south ROW"},"geometry":{"type":"Polygon","coordinates":[[[0,-50],[875,-50],[875,0],[0,0],[0,-50]]]}},
+{"type":"Feature","properties":{"layer":"floodplain","source":"golden mixed-use floodplain screen"},"geometry":{"type":"Polygon","coordinates":[[[780,560],[875,560],[875,700],[780,700],[780,560]]]}},
+{"type":"Feature","properties":{"layer":"wetland","source":"golden mixed-use wetland screen"},"geometry":{"type":"Polygon","coordinates":[[[0,610],[95,610],[95,700],[0,700],[0,610]]]}},
+{"type":"Feature","properties":{"layer":"existing water utility","source":"golden mixed-use utility record"},"geometry":{"type":"LineString","coordinates":[[0,-20],[875,-20]]}}
+]}

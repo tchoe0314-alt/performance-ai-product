@@ -1,0 +1,8 @@
+{"type":"FeatureCollection","features":[
+{"type":"Feature","properties":{"layer":"parcel","source":"golden sloped detention parcel"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[360,0],[360,260],[0,260],[0,0]]]}},
+{"type":"Feature","properties":{"layer":"easement","source":"golden sloped detention drainage easement"},"geometry":{"type":"Polygon","coordinates":[[[300,0],[360,0],[360,260],[300,260],[300,0]]]}},
+{"type":"Feature","properties":{"layer":"row","source":"golden sloped detention road ROW"},"geometry":{"type":"Polygon","coordinates":[[[0,-40],[360,-40],[360,0],[0,0],[0,-40]]]}},
+{"type":"Feature","properties":{"layer":"floodplain","source":"golden sloped detention FEMA screen"},"geometry":{"type":"Polygon","coordinates":[[[290,190],[360,190],[360,260],[290,260],[290,190]]]}},
+{"type":"Feature","properties":{"layer":"wetland","source":"golden sloped detention NWI screen"},"geometry":{"type":"Polygon","coordinates":[[[0,210],[75,210],[75,260],[0,260],[0,210]]]}},
+{"type":"Feature","properties":{"layer":"existing storm utility","source":"golden sloped detention utility locate"},"geometry":{"type":"LineString","coordinates":[[0,-15],[360,-15]]}}
+]}

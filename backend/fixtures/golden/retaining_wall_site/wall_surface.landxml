@@ -1,0 +1,14 @@
+<LandXML>
+  <Surfaces>
+    <Surface name="Existing Ground Wall Site">
+      <Definition surfType="TIN">
+        <P>0 0 118.0</P>
+        <P>280 0 114.5</P>
+        <P>0 220 103.0</P>
+        <P>280 220 100.0</P>
+        <F>1 2 3</F>
+        <F>2 4 3</F>
+      </Definition>
+    </Surface>
+  </Surfaces>
+</LandXML>

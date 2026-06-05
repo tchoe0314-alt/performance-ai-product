@@ -1,0 +1,8 @@
+{"type":"FeatureCollection","features":[
+{"type":"Feature","properties":{"layer":"parcel","source":"golden roadway parcel"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[900,0],[900,220],[0,220],[0,0]]]}},
+{"type":"Feature","properties":{"layer":"easement","source":"golden roadway utility easement"},"geometry":{"type":"Polygon","coordinates":[[[0,160],[900,160],[900,190],[0,190],[0,160]]]}},
+{"type":"Feature","properties":{"layer":"row","source":"golden roadway ROW"},"geometry":{"type":"Polygon","coordinates":[[[0,80],[900,80],[900,140],[0,140],[0,80]]]}},
+{"type":"Feature","properties":{"layer":"floodplain","source":"golden roadway floodplain screen"},"geometry":{"type":"Polygon","coordinates":[[[780,0],[900,0],[900,60],[780,60],[780,0]]]}},
+{"type":"Feature","properties":{"layer":"wetland","source":"golden roadway wetland screen"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[90,0],[90,55],[0,55],[0,0]]]}},
+{"type":"Feature","properties":{"layer":"existing water utility","source":"golden roadway utility record"},"geometry":{"type":"LineString","coordinates":[[0,75],[900,75]]}}
+]}

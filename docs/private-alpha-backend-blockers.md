@@ -15,6 +15,7 @@ This does not mean construction-ready. Construction release remains blocked unle
 - Workflow exposure regression on 2026-06-05: `76 passed, 22 warnings in 23.45s`.
 - Existing-conditions import/package focused regression on 2026-06-05: `43 passed, 22 warnings in 24.80s`.
 - Standards package focused regression on 2026-06-05: `27 passed, 22 warnings in 20.98s`.
+- Golden scenario real-file fixture regression on 2026-06-05: `22 passed, 22 warnings in 178.75s`.
 - Engine contract registry: 20 engines in `backend/planning/engine_contracts.py`.
 - Engine maturity from the current registry:
   - foundation: 2 engines
@@ -42,7 +43,7 @@ Current backend state: stronger private-alpha candidate, review-only.
 
 Not ready for public beta. Not construction-ready.
 
-The backend can run broad workflows and it now blocks many false-ready paths. It now has first-class alpha readiness, existing-conditions package, standards package, monitoring report, and real-file golden-evidence primitives. The full-system alpha still needs deployed soak evidence, broader real-file golden coverage, and deeper production math in several engines.
+The backend can run broad workflows and it now blocks many false-ready paths. It now has first-class alpha readiness, existing-conditions package, standards package, monitoring report, and real-file golden-evidence primitives. The full-system alpha still needs deployed soak evidence, load thresholds, and deeper production math in several engines.
 
 ## P0 Blockers Before Full-System Private Alpha
 
@@ -144,41 +145,34 @@ Status:
 - Closed for standards package infrastructure needed by private-alpha truth gates.
 - Still not a public/construction compliance system because live legal/rule discovery remains review-only.
 
-### 4. Golden Scenarios Are Mostly Synthetic, Not Real Imported Projects
+### 4. Golden Scenarios Need Runtime/Load Thresholds
 
 Current state:
 - `backend/planning/golden_scenarios.py` defines required engines, canonical signals, gates, and payloads.
 - `backend/planning/golden_runner.py` checks false production-ready and construction-release claims.
-- Golden runner now reports `status`, `passed`, real-file fixture count, synthetic scenario count, and per-scenario import evidence.
-- At least one backend test creates real CSV survey and GeoJSON GIS fixture files, builds an accepted existing-conditions package, and feeds that evidence into a golden scenario.
+- Golden runner now reports `status`, `passed`, real-file fixture count, real-file fixture IDs, synthetic scenario count, and per-scenario import evidence.
+- Committed fixture files now exercise CSV survey, GeoJSON GIS/constraints, and LandXML terrain/alignment import paths.
+- Eight project benchmarks now attach real imported existing-condition fixture packages: commercial pad, multifamily, 14-acre mixed use, sloped detention, roadway corridor, utility-heavy, floodplain/wetland constrained, and retaining wall.
+- Incomplete-input and manual-production-gate scenarios intentionally remain synthetic truth-gate cases.
 
 Issue:
-- Most golden scenarios still use synthetic payloads instead of realistic imported survey/GIS/terrain files.
-- They prove many truth gates, but they do not yet prove real-world import-to-engineering behavior or large-project endurance.
+- Real-file fixture coverage is now broad enough for private-alpha truth gates.
+- Golden scenarios still do not yet enforce runtime, memory, large-project endurance, or export-readiness thresholds.
 
 Why this blocks full-system alpha:
-- Alpha users will test messy real sites. Synthetic scenarios are not enough to prove backend behavior across the full system.
+- Alpha users will test messy real sites. Fixture-backed correctness is necessary, but runtime/load thresholds are still needed before calling the full system alpha-stable.
 
 Required fix:
-- Add real-file golden fixtures for:
-  - commercial pad
-  - multifamily
-  - 14-acre mixed use
-  - sloped detention
-  - roadway corridor
-  - utility-heavy site
-  - floodplain/wetland constrained site
-  - retaining wall site
 - Add benchmark pass criteria for runtime, memory, canonical fields, blocked states, and export readiness.
 
 Evidence needed:
-- Covered narrowly by `tests/test_golden_runner.py`.
+- Covered for real-file fixture attachment and suite reporting by `tests/test_golden_runner.py`.
 - Load/soak tests with thresholds stored in the scenario definitions.
-- Still needed: real-file fixtures for every listed golden scenario and runtime/memory thresholds attached to scenario definitions.
+- Still needed: runtime/memory/export-readiness thresholds attached to scenario definitions.
 
 Status:
-- Partially closed.
-- Still P0 because real-file coverage is not broad enough.
+- Closed for real-file fixture coverage.
+- Still P0 for runtime/load threshold evidence, which is tracked separately from fixture coverage.
 
 ### 5. Deployed Alpha Monitoring Proof Is Missing
 
@@ -345,20 +339,19 @@ Decision needed:
 | Quantity | active | usable review-only | Cost package and approved price source workflow |
 | Export / CAD | active | usable review-only | Review-package manifest, Civil3D/DWG confidence |
 | Profile / Section | active | usable review-only | More live linkage tests across real roadway/utility scenarios |
-| GIS / Existing Conditions | early | blocked without sources | Broader mixed-import real-file golden coverage |
+| GIS / Existing Conditions | early | blocked without sources | Runtime/load proof over mixed-import golden fixtures |
 | AI Orchestration | active | usable review-only | More deterministic rerun/workflow guidance under missing inputs |
 | Reactive Model | foundation | usable review-only | Deployed proof and large partial-rerun benchmarks |
 
 ## Exact Fix Order
 
 1. Run alpha smoke/soak against a real backend workflow and store the generated `alpha_smoke_soak_report_v1` artifact.
-2. Expand real-file golden fixtures beyond the first CSV/GeoJSON package: LandXML, sloped detention, roadway corridor, utility-heavy, floodplain/wetland, retaining wall.
+2. Add broader load/runtime thresholds to golden scenario definitions.
 3. Deepen storm/hydrology detention/outlet/drawdown calculations.
 4. Deepen water pressure/fire-flow/hydrant calculations.
 5. Deepen roadway/corridor profiles, crowns, curb returns, intersections, and ADA evidence.
 6. Add review-package manifest and Civil3D/LandXML/DWG explicit confidence states.
 7. Add cost package status and approved unit-price fixture coverage.
-8. Add broader load/runtime thresholds to golden scenario definitions.
 
 ## Non-Negotiable Truth Rules
 

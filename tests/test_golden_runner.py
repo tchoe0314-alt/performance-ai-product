@@ -11,6 +11,10 @@ from backend.planning.existing_conditions_importers import (
     validate_imported_existing_conditions_package,
 )
 from backend.planning.existing_conditions_package import build_existing_conditions_package
+from backend.planning.golden_real_file_fixtures import (
+    golden_real_file_payload_overrides,
+    real_file_fixture_scenario_ids,
+)
 from backend.planning.golden_runner import run_golden_scenario, run_golden_scenarios
 
 
@@ -83,7 +87,7 @@ class GoldenRunnerTests(unittest.TestCase):
 
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "passed")
-        self.assertEqual(result["real_file_fixture_count"], 0)
+        self.assertEqual(result["real_file_fixture_count"], 1)
         self.assertEqual(result["scenario_count"], 2)
         self.assertIn("explicit blockers", result["truth_label"])
 
@@ -139,6 +143,25 @@ class GoldenRunnerTests(unittest.TestCase):
         self.assertTrue(result["real_file_fixture"])
         self.assertTrue(result["input_evidence"]["real_file_import_evidence"])
         self.assertEqual(result["input_evidence"]["existing_conditions_package_status"], "ready")
+
+    def test_committed_real_file_fixture_builds_ready_review_package(self) -> None:
+        overrides = golden_real_file_payload_overrides("roadway_corridor")
+        meta = overrides["meta"]
+
+        self.assertEqual(meta["existing_conditions_package"]["status"], "ready")
+        self.assertTrue(meta["existing_conditions_fixture"]["real_file_fixture"])
+        self.assertEqual(meta["existing_conditions_fixture"]["fixture_type"], "roadway_corridor_landxml_package")
+        self.assertIn("landxml", meta["existing_conditions_fixture"]["source_types"])
+        self.assertTrue(meta["existing_conditions_import_validation"]["production_usable"])
+
+    def test_runner_attaches_real_file_fixture_to_target_scenario(self) -> None:
+        result = run_golden_scenario("roadway_corridor")
+
+        self.assertTrue(result["success"], result)
+        self.assertTrue(result["real_file_fixture"])
+        self.assertEqual(result["real_file_fixture_type"], "roadway_corridor_landxml_package")
+        self.assertEqual(result["input_evidence"]["existing_conditions_package_status"], "ready")
+        self.assertIn("landxml", result["input_evidence"]["real_file_fixture_source_types"])
 
     def test_run_scenario_fails_when_required_canonical_signals_are_missing(self) -> None:
         def incomplete_plan(payload):
@@ -433,6 +456,8 @@ class GoldenRunnerTests(unittest.TestCase):
 
         self.assertTrue(result["success"], result)
         self.assertEqual(result["scenario_count"], 10)
+        self.assertEqual(result["real_file_fixture_count"], 8)
+        self.assertEqual(set(result["real_file_fixture_ids"]), set(real_file_fixture_scenario_ids()))
         for scenario in result["results"]:
             self.assertEqual(scenario["benchmark_status"], "passed_with_expected_blockers", scenario)
             self.assertFalse(scenario["missing_canonical_signals"], scenario)

@@ -1,0 +1,8 @@
+{"type":"FeatureCollection","features":[
+{"type":"Feature","properties":{"layer":"parcel","source":"golden multifamily parcel"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[460,0],[460,360],[0,360],[0,0]]]}},
+{"type":"Feature","properties":{"layer":"easement","source":"golden multifamily utility easement"},"geometry":{"type":"Polygon","coordinates":[[[0,300],[460,300],[460,335],[0,335],[0,300]]]}},
+{"type":"Feature","properties":{"layer":"row","source":"golden multifamily ROW"},"geometry":{"type":"Polygon","coordinates":[[[0,-40],[460,-40],[460,0],[0,0],[0,-40]]]}},
+{"type":"Feature","properties":{"layer":"floodplain","source":"golden multifamily floodplain screen"},"geometry":{"type":"Polygon","coordinates":[[[380,260],[460,260],[460,360],[380,360],[380,260]]]}},
+{"type":"Feature","properties":{"layer":"wetland","source":"golden multifamily wetland screen"},"geometry":{"type":"Polygon","coordinates":[[[0,290],[80,290],[80,360],[0,360],[0,290]]]}},
+{"type":"Feature","properties":{"layer":"existing sanitary utility","source":"golden multifamily sanitary record"},"geometry":{"type":"LineString","coordinates":[[0,-18],[460,-18]]}}
+]}

@@ -1,0 +1,8 @@
+{"type":"FeatureCollection","features":[
+{"type":"Feature","properties":{"layer":"parcel","source":"golden wall parcel"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[280,0],[280,220],[0,220],[0,0]]]}},
+{"type":"Feature","properties":{"layer":"easement","source":"golden wall drainage easement"},"geometry":{"type":"Polygon","coordinates":[[[230,0],[280,0],[280,220],[230,220],[230,0]]]}},
+{"type":"Feature","properties":{"layer":"row","source":"golden wall road ROW"},"geometry":{"type":"Polygon","coordinates":[[[0,-35],[280,-35],[280,0],[0,0],[0,-35]]]}},
+{"type":"Feature","properties":{"layer":"floodplain","source":"golden wall floodplain screen"},"geometry":{"type":"Polygon","coordinates":[[[235,170],[280,170],[280,220],[235,220],[235,170]]]}},
+{"type":"Feature","properties":{"layer":"wetland","source":"golden wall wetland screen"},"geometry":{"type":"Polygon","coordinates":[[[0,180],[60,180],[60,220],[0,220],[0,180]]]}},
+{"type":"Feature","properties":{"layer":"existing storm utility","source":"golden wall utility locate"},"geometry":{"type":"LineString","coordinates":[[0,-12],[280,-12]]}}
+]}

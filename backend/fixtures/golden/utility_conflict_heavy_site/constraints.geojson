@@ -1,0 +1,10 @@
+{"type":"FeatureCollection","features":[
+{"type":"Feature","properties":{"layer":"parcel","source":"golden utility-heavy parcel"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[520,0],[520,420],[0,420],[0,0]]]}},
+{"type":"Feature","properties":{"layer":"easement","source":"golden utility-heavy shared trench easement"},"geometry":{"type":"Polygon","coordinates":[[[230,0],[270,0],[270,420],[230,420],[230,0]]]}},
+{"type":"Feature","properties":{"layer":"row","source":"golden utility-heavy ROW"},"geometry":{"type":"Polygon","coordinates":[[[0,-45],[520,-45],[520,0],[0,0],[0,-45]]]}},
+{"type":"Feature","properties":{"layer":"floodplain","source":"golden utility-heavy floodplain screen"},"geometry":{"type":"Polygon","coordinates":[[[430,330],[520,330],[520,420],[430,420],[430,330]]]}},
+{"type":"Feature","properties":{"layer":"wetland","source":"golden utility-heavy wetland screen"},"geometry":{"type":"Polygon","coordinates":[[[0,340],[90,340],[90,420],[0,420],[0,340]]]}},
+{"type":"Feature","properties":{"layer":"existing water utility","source":"golden utility-heavy water record"},"geometry":{"type":"LineString","coordinates":[[0,-20],[520,-20]]}},
+{"type":"Feature","properties":{"layer":"existing sanitary utility","source":"golden utility-heavy sanitary record"},"geometry":{"type":"LineString","coordinates":[[0,210],[520,210]]}},
+{"type":"Feature","properties":{"layer":"existing storm utility","source":"golden utility-heavy storm record"},"geometry":{"type":"LineString","coordinates":[[260,0],[260,420]]}}
+]}
