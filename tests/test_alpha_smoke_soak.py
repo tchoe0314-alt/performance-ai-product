@@ -24,8 +24,11 @@ def _healthy_sample() -> dict:
                 "status": "healthy",
                 "recent_start_count": 1,
                 "previous_shutdown_clean": True,
+                "state_file": "/Users/tommychoe/Documents/Playground/Civora AI/data/runtime_monitoring.json",
             },
         },
+        "storage_dir": "/Users/tommychoe/Documents/Playground/Civora AI/data",
+        "mapbox_token_prefix": "pk.secret-prefix",
     }
 
 
@@ -87,6 +90,11 @@ class AlphaSmokeSoakTests(unittest.TestCase):
         self.assertTrue(report["success"])
         self.assertTrue(written["success"])
         self.assertEqual(written["version"], "alpha_smoke_soak_report_v1")
+        report_text = json.dumps(written)
+        self.assertNotIn("/Users/", report_text)
+        self.assertNotIn("pk.secret-prefix", report_text)
+        self.assertIn("<local_runtime_path>", report_text)
+        self.assertIn("<redacted>", report_text)
 
 
 if __name__ == "__main__":

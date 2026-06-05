@@ -14,6 +14,9 @@ from backend.planning.common import readiness_issue_explanations, safe_dict, saf
 
 RuntimeSampleFn = Callable[[], Dict[str, Any]]
 
+_LOCAL_PATH_FIELDS = {"state_file", "storage_dir"}
+_SENSITIVE_PREFIX_FIELDS = {"mapbox_token_prefix"}
+
 
 def _status_rank(value: Any) -> int:
     text = safe_str(value, "healthy").lower()
@@ -92,10 +95,34 @@ def fetch_runtime_debug_sample(base_url: str, *, timeout_seconds: float = 10.0) 
     return payload if isinstance(payload, dict) else {}
 
 
+def sanitize_alpha_smoke_soak_report(report: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a commit-safe report copy with local paths and token prefixes redacted."""
+
+    def scrub(value: Any, key: str = "") -> Any:
+        if isinstance(value, dict):
+            clean: Dict[str, Any] = {}
+            for child_key, child_value in value.items():
+                text_key = safe_str(child_key)
+                if text_key in _LOCAL_PATH_FIELDS:
+                    clean[text_key] = "<local_runtime_path>" if safe_str(child_value) else child_value
+                elif text_key in _SENSITIVE_PREFIX_FIELDS:
+                    clean[text_key] = "<redacted>" if safe_str(child_value) else ""
+                else:
+                    clean[text_key] = scrub(child_value, text_key)
+            return clean
+        if isinstance(value, list):
+            return [scrub(item, key) for item in value]
+        if isinstance(value, str) and "/Users/" in value:
+            return "<local_runtime_path>"
+        return value
+
+    return scrub(deepcopy(safe_dict(report)))
+
+
 def write_alpha_smoke_soak_report(path: Path, report: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
-        json.dump(report, handle, indent=2, sort_keys=True)
+        json.dump(sanitize_alpha_smoke_soak_report(report), handle, indent=2, sort_keys=True)
 
 
 def run_alpha_smoke_soak(
@@ -170,5 +197,6 @@ def run_alpha_smoke_soak(
 __all__ = [
     "fetch_runtime_debug_sample",
     "run_alpha_smoke_soak",
+    "sanitize_alpha_smoke_soak_report",
     "write_alpha_smoke_soak_report",
 ]
