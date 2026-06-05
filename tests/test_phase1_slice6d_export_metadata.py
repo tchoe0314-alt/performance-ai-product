@@ -237,6 +237,61 @@ class Phase1Slice6DExportMetadataTest(unittest.TestCase):
         self.assertIn("planner_errors_present", audit["blocked_reasons"])
         self.assertIn("planner_errors_present", audit["release_readiness"]["release_blockers"])
 
+    def test_export_audit_blocks_direct_dirty_system_state_without_precomputed_integrity(self) -> None:
+        plan = _export_plan()
+        plan["meta"]["system_dirty_state"] = {
+            "grading": {
+                "state": "dirty",
+                "reasons": ["Building moved; grading must rerun."],
+                "source": "reactive_update",
+            }
+        }
+
+        metadata = finalize_export_metadata(plan)
+        audit = metadata["export_audit"]
+
+        self.assertFalse(audit["success"])
+        self.assertFalse(audit["production_export_ready"])
+        self.assertTrue(audit["export_blocked"])
+        self.assertIn("stale_output_grading", audit["blocked_reasons"])
+        self.assertEqual(audit["stale_output_status"]["dirty_stages"], ["grading"])
+        self.assertEqual(
+            audit["stale_output_status"]["dirty_state"]["grading"]["reasons"],
+            ["Building moved; grading must rerun."],
+        )
+
+    def test_export_audit_blocks_stale_outputs_without_precomputed_integrity(self) -> None:
+        plan = _export_plan()
+        plan["meta"]["stale_outputs"] = ["drainage", "storm_pipes"]
+
+        metadata = finalize_export_metadata(plan)
+        audit = metadata["export_audit"]
+
+        self.assertFalse(audit["success"])
+        self.assertFalse(audit["production_export_ready"])
+        self.assertTrue(audit["export_blocked"])
+        self.assertIn("stale_output_drainage", audit["blocked_reasons"])
+        self.assertIn("stale_output_storm_pipes", audit["blocked_reasons"])
+        self.assertEqual(audit["stale_output_status"]["dirty_stages"], ["drainage", "storm_pipes"])
+
+    def test_export_audit_blocks_cache_only_canonical_warning_without_precomputed_integrity(self) -> None:
+        plan = _export_plan()
+        plan["meta"]["canonical_state_warnings"] = {
+            "sanitary": {
+                "cache_only": True,
+                "message": "project.meta has no accepted sanitary summary.",
+            }
+        }
+
+        metadata = finalize_export_metadata(plan)
+        audit = metadata["export_audit"]
+
+        self.assertFalse(audit["success"])
+        self.assertFalse(audit["production_export_ready"])
+        self.assertTrue(audit["export_blocked"])
+        self.assertIn("stale_output_sanitary", audit["blocked_reasons"])
+        self.assertEqual(audit["stale_output_status"]["cache_only_stages"], ["sanitary"])
+
     def test_export_audit_blocks_manual_validation_failures_from_final_meta(self) -> None:
         plan = _export_plan()
         plan["meta"]["release_status"] = "ready"

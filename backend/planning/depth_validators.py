@@ -56,6 +56,33 @@ def _has_valid_velocity(row: Dict[str, Any]) -> bool:
     return safe_float(velocity, -1.0) > 0.0
 
 
+def _has_valid_detention_routing(row: Dict[str, Any]) -> bool:
+    rec = safe_dict(row)
+    if not _row_is_production_evidence(rec):
+        return False
+    stage_rows = [safe_dict(item) for item in safe_list(rec.get("stage_storage") or rec.get("stage_storage_rows"))]
+    has_stage_storage = (
+        len(stage_rows) >= 3
+        and any(safe_float(item.get("storage_cf"), 0.0) > 0.0 for item in stage_rows)
+        and any(_present(item.get("elevation_ft")) for item in stage_rows)
+    )
+    provided_storage = safe_float(rec.get("provided_storage_cf"), 0.0)
+    release = max(
+        safe_float(rec.get("release_cfs"), 0.0),
+        safe_float(rec.get("outlet_release_cfs"), 0.0),
+        safe_float(rec.get("outflow_cfs"), 0.0),
+    )
+    drawdown = max(
+        safe_float(rec.get("drawdown_hours"), 0.0),
+        safe_float(rec.get("estimated_drawdown_hours"), 0.0),
+        safe_float(rec.get("target_drawdown_hours"), 0.0),
+    )
+    status = safe_str(rec.get("status")).lower()
+    if status in {"deficient", "concept_only", "blocked", "invalid"}:
+        return False
+    return (has_stage_storage or provided_storage > 0.0) and release > 0.0 and drawdown > 0.0
+
+
 def _valid_flag(value: Any) -> bool:
     return safe_dict(value).get("valid") is True
 
@@ -161,7 +188,12 @@ def validate_stormwater_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
             evidence="inlet capacity/spread/bypass checks",
             blocker="Storm depth needs passing inlet capacity, spread, and bypass checks.",
         ),
-        _check("detention_routing", _has_production_rows(detention_rows), evidence="detention stage-storage/routing", blocker="Storm depth needs production detention stage-storage/outlet/drawdown routing."),
+        _check(
+            "detention_routing",
+            any(_has_valid_detention_routing(row) for row in detention_rows),
+            evidence="detention stage-storage/routing",
+            blocker="Storm depth needs production detention stage-storage/outlet/drawdown routing.",
+        ),
         _check(
             "overflow_routing",
             bool(safe_list(drainage.get("overflow_paths") or storm.get("overflow_paths"))) or overflow_analysis.get("valid") is True,

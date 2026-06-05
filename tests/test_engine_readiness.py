@@ -29,6 +29,11 @@ class EngineReadinessTests(unittest.TestCase):
         self.assertEqual(storm["status"], "concept_ready_needs_production_depth")
         self.assertEqual(storm["review_state"], "needs_review")
         self.assertEqual(readiness["review_state"], "needs_review")
+        alpha = readiness["summary"]["alpha_readiness"]
+        self.assertEqual(alpha["status"], "needs_review")
+        self.assertIn("storm_pipe", alpha["needs_review_engine_ids"])
+        self.assertTrue(alpha["top_issues"][0]["first_failing_layer"])
+        self.assertTrue(alpha["top_issues"][0]["next_action"])
         self.assertTrue(storm["production_blockers"])
         self.assertTrue(storm["production_gate_status"])
 
@@ -54,6 +59,12 @@ class EngineReadinessTests(unittest.TestCase):
         self.assertIn("sanitary", readiness["blocked_engine_ids"])
         self.assertIn("qa_validation", readiness["blocked_engine_ids"])
         self.assertFalse(readiness["production_ready"])
+        alpha = readiness["summary"]["alpha_readiness"]
+        self.assertEqual(alpha["status"], "blocked")
+        self.assertIn("grading", alpha["blocked_engine_ids"])
+        grading_issue = next(item for item in alpha["top_issues"] if item["engine_id"] == "grading")
+        self.assertTrue(grading_issue["what_failed"])
+        self.assertTrue(grading_issue["engineer_review_required"])
 
     def test_build_plan_attaches_engine_readiness(self) -> None:
         plan = planner.build_plan(

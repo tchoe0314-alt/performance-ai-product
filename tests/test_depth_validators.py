@@ -30,7 +30,21 @@ class DepthValidatorTests(unittest.TestCase):
                     },
                     "drainage": {
                         "catchments": [{"name": "A", "runoff_c": 0.8}],
-                        "detention_routing": [{"basin": "B-1", "routing_source": "hydrograph_engine"}],
+                        "detention_routing": [
+                            {
+                                "basin": "B-1",
+                                "routing_source": "hydrograph_engine",
+                                "routing_method": "stage_storage_hydrograph",
+                                "provided_storage_cf": 4200.0,
+                                "release_cfs": 1.2,
+                                "drawdown_hours": 18.0,
+                                "stage_storage": [
+                                    {"elevation_ft": 96.0, "storage_cf": 0.0},
+                                    {"elevation_ft": 98.0, "storage_cf": 2100.0},
+                                    {"elevation_ft": 100.0, "storage_cf": 4200.0},
+                                ],
+                            }
+                        ],
                         "overflow_paths": [{"name": "OF-1"}],
                     },
                 }
@@ -52,7 +66,21 @@ class DepthValidatorTests(unittest.TestCase):
                     },
                     "drainage": {
                         "catchments": [{"name": "A", "runoff_c": 0.8}],
-                        "detention_routing": [{"basin": "B-1", "routing_source": "hydrograph_engine"}],
+                        "detention_routing": [
+                            {
+                                "basin": "B-1",
+                                "routing_source": "hydrograph_engine",
+                                "routing_method": "stage_storage_hydrograph",
+                                "provided_storage_cf": 4200.0,
+                                "release_cfs": 1.2,
+                                "drawdown_hours": 18.0,
+                                "stage_storage": [
+                                    {"elevation_ft": 96.0, "storage_cf": 0.0},
+                                    {"elevation_ft": 98.0, "storage_cf": 2100.0},
+                                    {"elevation_ft": 100.0, "storage_cf": 4200.0},
+                                ],
+                            }
+                        ],
                         "overflow_analysis": {"valid": False, "missing_inputs": [{"basin": "B-1"}]},
                     },
                 }
@@ -106,7 +134,21 @@ class DepthValidatorTests(unittest.TestCase):
                     },
                     "drainage": {
                         "catchments": [{"name": "A", "runoff_c": 0.8}],
-                        "detention_routing": [{"basin": "B-1", "routing_source": "hydrograph_engine"}],
+                        "detention_routing": [
+                            {
+                                "basin": "B-1",
+                                "routing_source": "hydrograph_engine",
+                                "routing_method": "stage_storage_hydrograph",
+                                "provided_storage_cf": 4200.0,
+                                "release_cfs": 1.2,
+                                "drawdown_hours": 18.0,
+                                "stage_storage": [
+                                    {"elevation_ft": 96.0, "storage_cf": 0.0},
+                                    {"elevation_ft": 98.0, "storage_cf": 2100.0},
+                                    {"elevation_ft": 100.0, "storage_cf": 4200.0},
+                                ],
+                            }
+                        ],
                         "overflow_paths": [{"name": "OF-1"}],
                     },
                 }
@@ -116,6 +158,29 @@ class DepthValidatorTests(unittest.TestCase):
         self.assertFalse(result["production_ready"])
         self.assertIn("Storm depth needs HGL and EGL profiles from production hydraulic evidence.", result["blockers"])
         self.assertIn("Storm depth needs passing inlet capacity, spread, and bypass checks.", result["blockers"])
+
+    def test_stormwater_depth_blocks_detention_routing_without_outlet_drawdown_or_storage(self) -> None:
+        result = validate_stormwater_depth(
+            {
+                "meta": {
+                    "storm_pipes": {
+                        "segments": [{"name": "P-1", "tributary_area_sf": 10000.0}],
+                        "hgl_profile": [{"station_ft": 0.0, "hgl_ft": 99.0}],
+                        "egl_profile": [{"station_ft": 0.0, "egl_ft": 99.2}],
+                        "tailwater_elev_ft": 98.0,
+                        "inlet_capacity_checks": [{"inlet": "CB-1", "valid": True}],
+                    },
+                    "drainage": {
+                        "catchments": [{"name": "A", "runoff_c": 0.8}],
+                        "detention_routing": [{"basin": "B-1", "routing_source": "hydrograph_engine"}],
+                        "overflow_paths": [{"name": "OF-1"}],
+                    },
+                }
+            }
+        )
+
+        self.assertFalse(result["production_ready"])
+        self.assertIn("Storm depth needs production detention stage-storage/outlet/drawdown routing.", result["blockers"])
 
     def test_water_depth_requires_pressure_fire_flow_looping_and_velocity(self) -> None:
         result = validate_water_system_depth(

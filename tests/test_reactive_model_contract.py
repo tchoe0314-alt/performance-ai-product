@@ -11,7 +11,13 @@ class ReactiveModelContractTests(unittest.TestCase):
         self.assertIn("storm_pipes", report["impacted_stages"])
         self.assertIn("qa", report["impacted_stages"])
         self.assertFalse(report["export_blocked"])
+        self.assertTrue(report["export_blocked_before_rerun"])
+        self.assertTrue(report["export_requires_current_downstream"])
         self.assertTrue(report["partial_rerun_supported"])
+        impact_by_stage = {item["stage"]: item for item in report["impact_matrix"]}
+        self.assertIn("mapped_from_changed_engine:roadway_corridor", impact_by_stage["layout"]["reason_codes"])
+        self.assertIn("downstream_of_engine:roadway_corridor", impact_by_stage["storm_pipes"]["reason_codes"])
+        self.assertTrue(impact_by_stage["storm_pipes"]["export_blocking_until_complete"])
 
     def test_stale_outputs_block_export(self) -> None:
         report = build_reactive_update_report(changed_engine_ids=["grading"], stale_outputs=["storm_pipes", "sheets"])
@@ -120,6 +126,10 @@ class ReactiveModelContractTests(unittest.TestCase):
         self.assertEqual(report["execution_mode"], "isolated_downstream_partial_rerun")
         self.assertFalse(report["post_rerun_export_blocked"])
         self.assertIn("isolated downstream partial rerun", result["truth_label"])
+        status_by_stage = {item["stage"]: item for item in report["post_rerun_stage_status"]}
+        self.assertTrue(status_by_stage["grading"]["completed"])
+        self.assertFalse(status_by_stage["grading"]["stale_after_rerun"])
+        self.assertIn("layout", report["affected_system_report"]["unaffected_stages"])
         self.assertEqual(len(partial_payloads), 1)
         dirty_state = partial_payloads[0]["meta"]["system_dirty_state"]
         self.assertEqual(dirty_state["grading"]["state"], "dirty")
@@ -149,6 +159,9 @@ class ReactiveModelContractTests(unittest.TestCase):
         self.assertTrue(report["post_rerun_export_blocked"])
         self.assertIn("storm_pipes", report["post_rerun_stale_outputs"])
         self.assertIn("exports remain blocked", report["post_rerun_truth"])
+        status_by_stage = {item["stage"]: item for item in report["post_rerun_stage_status"]}
+        self.assertTrue(status_by_stage["storm_pipes"]["stale_after_rerun"])
+        self.assertTrue(status_by_stage["storm_pipes"]["export_blocking"])
 
     def test_execute_reactive_rerun_does_not_clear_stale_outputs_with_assumed_stages(self) -> None:
         def fake_build(payload):

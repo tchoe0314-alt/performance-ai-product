@@ -446,6 +446,69 @@ def _review_state_from_status(status: str) -> str:
     return "blocked"
 
 
+def _first_detail(row: Dict[str, Any]) -> Dict[str, Any]:
+    for key in ("missing_requirement_details", "production_blocker_details", "warning_details"):
+        details = _safe_list(row.get(key))
+        for detail in details:
+            rec = _safe_dict(detail)
+            if rec:
+                return deepcopy(rec)
+    return {}
+
+
+def _alpha_engine_summary(engine_rows: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    blocked_rows = [
+        row
+        for row in engine_rows.values()
+        if row.get("review_state") == "blocked"
+    ]
+    review_rows = [
+        row
+        for row in engine_rows.values()
+        if row.get("review_state") == "needs_review"
+    ]
+    ready_rows = [
+        row
+        for row in engine_rows.values()
+        if row.get("review_state") == "ready"
+    ]
+    applicable_rows = [
+        row
+        for row in engine_rows.values()
+        if row.get("scope_required") is not False
+    ]
+    top_issues: List[Dict[str, Any]] = []
+    for row in blocked_rows + review_rows:
+        detail = _first_detail(row)
+        top_issues.append(
+            {
+                "engine_id": _safe_str(row.get("engine_id")),
+                "engine_name": _safe_str(row.get("name")),
+                "review_state": _safe_str(row.get("review_state")),
+                "status": _safe_str(row.get("status")),
+                "first_failing_layer": _safe_str(detail.get("field") or detail.get("area") or "evidence"),
+                "what_failed": _safe_str(detail.get("what_failed") or detail.get("message")),
+                "next_action": _safe_str(detail.get("next_action")),
+                "engineer_review_required": detail.get("engineer_review_required") is not False,
+            }
+        )
+    return {
+        "status": "blocked" if blocked_rows else ("needs_review" if review_rows else "ready"),
+        "ready_engine_count": len(ready_rows),
+        "applicable_engine_count": len(applicable_rows),
+        "blocked_engine_ids": [_safe_str(row.get("engine_id")) for row in blocked_rows],
+        "needs_review_engine_ids": [_safe_str(row.get("engine_id")) for row in review_rows],
+        "top_issues": top_issues[:10],
+        "truth_label": (
+            "Backend alpha is blocked until required canonical evidence is provided."
+            if blocked_rows
+            else "Backend alpha can run in review-only mode, but listed engines still need engineering review."
+            if review_rows
+            else "Backend alpha readiness gates are clear for review-only use."
+        ),
+    }
+
+
 def evaluate_engine_readiness(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     meta = _safe_dict(plan_or_meta.get("meta")) if "meta" in plan_or_meta else _safe_dict(plan_or_meta)
     civil = _safe_dict(meta.get("civil_design_readiness")) or civil_design_readiness(plan_or_meta)
@@ -546,6 +609,7 @@ def evaluate_engine_readiness(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
         if blocked
         else "needs_review"
     )
+    alpha_summary = _alpha_engine_summary(engine_rows)
     return {
         "contract_version": "engine_contracts_v1",
         "engine_count": len(engine_rows),
@@ -565,6 +629,7 @@ def evaluate_engine_readiness(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
             "civil_readiness_status": _safe_str(civil.get("status")),
             "civil_production_ready": bool(civil.get("production_ready")),
             "review_state": overall_review_state,
+            "alpha_readiness": alpha_summary,
             "not_applicable_engine_ids": sorted(set(not_applicable)),
             "most_important_backend_gaps": [
                 {

@@ -3659,6 +3659,102 @@ def _build_sheet_registry(plan: Dict[str, Any], profiles: List[Dict[str, Any]], 
     return registry
 
 
+def _stale_output_code(stage: str) -> str:
+    cleaned = re.sub(r"[^a-z0-9]+", "_", safe_text(stage).lower()).strip("_")
+    return f"stale_output_{cleaned or 'unknown'}"
+
+
+def _direct_stale_output_status(meta: Dict[str, Any]) -> Dict[str, Any]:
+    """Block exports from direct stale/dirty metadata even before a full integrity audit exists."""
+
+    stale_states = {"dirty", "stale", "invalid", "not_generated", "failed"}
+    dirty_rows: Dict[str, Dict[str, Any]] = {}
+    for name, value in safe_dict(meta.get("system_dirty_state")).items():
+        stage = safe_text(name)
+        if not stage:
+            continue
+        row = safe_dict(value) if isinstance(value, dict) else {"state": value}
+        state = safe_text(row.get("state") or row.get("status") or row.get("value")).lower()
+        if state not in stale_states:
+            continue
+        dirty_rows[stage] = {
+            "state": state,
+            "reasons": [safe_text(item) for item in safe_list(row.get("reasons")) if safe_text(item)],
+            "source": safe_text(row.get("source")),
+        }
+
+    for item in safe_list(meta.get("stale_outputs")):
+        stage = safe_text(item)
+        if not stage:
+            continue
+        dirty_rows.setdefault(
+            stage,
+            {
+                "state": "stale",
+                "reasons": ["Output is listed in final metadata stale_outputs."],
+                "source": "stale_outputs",
+            },
+        )
+
+    warning_rows = safe_dict(meta.get("canonical_state_warnings"))
+    cache_only = sorted(
+        safe_text(stage)
+        for stage, row in warning_rows.items()
+        if safe_text(stage) and bool(safe_dict(row).get("cache_only"))
+    )
+    cache_differs = sorted(
+        safe_text(stage)
+        for stage, row in warning_rows.items()
+        if safe_text(stage) and bool(safe_dict(row).get("cache_differs"))
+    )
+    for stage in cache_only:
+        dirty_rows.setdefault(
+            stage,
+            {
+                "state": "cache_only",
+                "reasons": ["Accepted canonical project metadata is missing; cache-only output cannot be exported."],
+                "source": "canonical_state_warnings",
+            },
+        )
+
+    invalidated = sorted(
+        {
+            safe_text(item)
+            for item in safe_list(meta.get("invalidated_targets") or meta.get("dependency_invalidated_targets"))
+            if safe_text(item)
+        }
+    )
+    for stage in invalidated:
+        dirty_rows.setdefault(
+            stage,
+            {
+                "state": "invalid",
+                "reasons": ["Dependency graph marks this target invalidated."],
+                "source": "dependency_graph",
+            },
+        )
+
+    blocked_codes = [_stale_output_code(stage) for stage in sorted(dirty_rows)]
+    blocking_messages = []
+    for stage in sorted(dirty_rows):
+        row = dirty_rows[stage]
+        reasons = "; ".join(safe_list(row.get("reasons")))
+        blocking_messages.append(
+            f"{stage}: output is {safe_text(row.get('state'), 'stale')}{f' ({reasons})' if reasons else ''}."
+        )
+
+    return {
+        "blocked": bool(dirty_rows),
+        "dirty_stages": sorted(dirty_rows),
+        "dirty_state": dirty_rows,
+        "cache_only_stages": cache_only,
+        "cache_differs_stages": cache_differs,
+        "invalidated_targets": invalidated,
+        "blocked_reasons": blocked_codes,
+        "blocking_messages": blocking_messages,
+    }
+
+
 def _add_profile_layouts(doc, plan: Dict[str, Any], profiles: List[Dict[str, Any]], sheet_registry: Sequence[Dict[str, Any]]) -> None:
     profile_sheets = [safe_dict(item) for item in sheet_registry if safe_text(item.get("sheet_kind")) == "profile"]
     for index, profile in enumerate(profiles, start=1):
@@ -3851,8 +3947,16 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
         "missing_requested_deliverables": missing_requested,
     }
     canonical_integrity = safe_dict(meta.get("canonical_integrity") or safe_dict(meta.get("truth_audit")).get("canonical_integrity"))
-    stale_output_blocking = bool(canonical_integrity.get("blocked"))
-    stale_blocking_reasons = [safe_text(item) for item in safe_list(canonical_integrity.get("blocking_reasons")) if safe_text(item)]
+    direct_stale_status = _direct_stale_output_status(meta)
+    stale_output_blocking = bool(canonical_integrity.get("blocked")) or bool(direct_stale_status.get("blocked"))
+    stale_blocking_reasons = [
+        safe_text(item)
+        for item in (
+            safe_list(canonical_integrity.get("blocking_reasons"))
+            + safe_list(direct_stale_status.get("blocked_reasons"))
+        )
+        if safe_text(item)
+    ]
     release_review = safe_dict(meta.get("release_review"))
     release_status = safe_text(release_review.get("release_status") or meta.get("release_status"), "").lower()
     release_ready_value = release_review.get("release_ready") if "release_ready" in release_review else meta.get("release_ready")
@@ -3981,6 +4085,7 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
             "concept_engineering_source_ids": concept_engineering_sources,
         },
         "canonical_integrity": deepcopy(canonical_integrity),
+        "stale_output_status": deepcopy(direct_stale_status),
         "release_readiness": {
             "release_status": release_status,
             "release_ready": bool(release_ready_value) if release_ready_value is not None else None,
