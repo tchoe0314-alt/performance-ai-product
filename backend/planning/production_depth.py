@@ -4,6 +4,7 @@ import math
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from engines.detention_engine import compute_required_storage_cf, estimate_drawdown_hours
 from engines.storm.hydraulic_engine import analyze_storm_hydraulics
 from engines.storm.inlet_engine import estimate_inlet_capture
 from engines.storm.storm_types import HydraulicAnalysisRequest, StormNode, StormPipe, StormPoint
@@ -167,6 +168,167 @@ def _stage_storage_rows(basin: Dict[str, Any], design: Dict[str, Any]) -> List[D
     ]
 
 
+_DETENTION_CONCEPT_MARKERS = ("concept", "proxy", "fallback", "placeholder", "assumed", "default")
+
+
+def _explicit_source(*values: Any) -> str:
+    for value in values:
+        text = safe_str(value)
+        if not text:
+            continue
+        lowered = text.lower()
+        if any(marker in lowered for marker in _DETENTION_CONCEPT_MARKERS):
+            continue
+        return text
+    return ""
+
+
+def _first_finite(*values: Any) -> Optional[float]:
+    for value in values:
+        number = _finite_or_none(value)
+        if number is not None:
+            return number
+    return None
+
+
+def _max_finite(*values: Any) -> float:
+    numbers = [number for value in values if (number := _finite_or_none(value)) is not None]
+    return max(numbers) if numbers else 0.0
+
+
+def _provided_stage_storage_rows(basin: Dict[str, Any], design: Dict[str, Any]) -> List[Dict[str, Any]]:
+    raw_rows = (
+        safe_list(design.get("stage_storage"))
+        or safe_list(design.get("stage_storage_rows"))
+        or safe_list(design.get("stage_storage_curve"))
+        or safe_list(basin.get("stage_storage"))
+        or safe_list(basin.get("stage_storage_rows"))
+        or safe_list(basin.get("stage_storage_curve"))
+    )
+    rows: List[Dict[str, Any]] = []
+    for index, raw_row in enumerate(raw_rows, start=1):
+        row = safe_dict(raw_row)
+        elevation = _first_finite(
+            row.get("elevation_ft"),
+            row.get("elevation"),
+            row.get("stage_elev_ft"),
+            row.get("water_surface_elev_ft"),
+        )
+        storage = _first_finite(row.get("storage_cf"), row.get("storage"), row.get("volume_cf"))
+        if elevation is None or storage is None:
+            continue
+        normalized = {
+            "stage_name": safe_str(row.get("stage_name") or row.get("name"), f"stage_{index}"),
+            "elevation_ft": round(elevation, 3),
+            "storage_cf": round(max(0.0, storage), 3),
+        }
+        area = _first_finite(row.get("water_surface_area_sf"), row.get("surface_area_sf"), row.get("area_sf"))
+        if area is not None:
+            normalized["water_surface_area_sf"] = round(max(0.0, area), 3)
+        rows.append(normalized)
+    return rows
+
+
+def _detention_outlet_record(basin: Dict[str, Any], design: Dict[str, Any], release_cfs: float) -> Tuple[Dict[str, Any], float, str]:
+    outlet = safe_dict(design.get("outlet_structure")) or safe_dict(basin.get("outlet_structure"))
+    outlet_release = _max_finite(
+        release_cfs,
+        outlet.get("release_cfs"),
+        outlet.get("outlet_release_cfs"),
+        outlet.get("design_release_cfs"),
+        outlet.get("controlled_release_cfs"),
+    )
+    source = _explicit_source(
+        outlet.get("source"),
+        outlet.get("design_source"),
+        design.get("outlet_source"),
+        design.get("release_source"),
+        design.get("routing_source"),
+    )
+    record: Dict[str, Any] = {
+        "type": safe_str(outlet.get("type") or outlet.get("outlet_type"), "controlled_release"),
+        "release_cfs": round(max(0.0, outlet_release), 3),
+    }
+    invert = _first_finite(outlet.get("invert_elev_ft"), outlet.get("invert_ft"), design.get("outlet_invert_elev_ft"))
+    if invert is not None:
+        record["invert_elev_ft"] = round(invert, 3)
+    diameter = _first_finite(outlet.get("diameter_in"), outlet.get("orifice_diameter_in"))
+    if diameter is not None:
+        record["diameter_in"] = round(max(0.0, diameter), 3)
+    area = _first_finite(outlet.get("area_sf"), outlet.get("orifice_area_sf"), design.get("outlet_area_sf"))
+    if area is not None:
+        record["area_sf"] = round(max(0.0, area), 4)
+    coefficient = _first_finite(outlet.get("coefficient"), outlet.get("orifice_coefficient"), design.get("outlet_coefficient"))
+    if coefficient is not None:
+        record["coefficient"] = round(max(0.0, coefficient), 4)
+    if source:
+        record["source"] = source
+    return record, max(0.0, outlet_release), source
+
+
+def _detention_drawdown(design: Dict[str, Any], provided_storage_cf: float, release_cfs: float) -> Tuple[float, str]:
+    explicit = _first_finite(
+        design.get("drawdown_hours"),
+        design.get("estimated_drawdown_hours"),
+        design.get("actual_drawdown_hours"),
+    )
+    if explicit is not None and explicit > 0.0:
+        return explicit, "provided"
+    if provided_storage_cf > 0.0 and release_cfs > 0.0:
+        computed = estimate_drawdown_hours(provided_storage_cf, release_cfs)
+        if math.isfinite(computed) and computed > 0.0:
+            return computed, "computed_storage_release"
+    target = _first_finite(design.get("target_drawdown_hours"), design.get("max_drawdown_hours"))
+    if target is not None and target > 0.0:
+        return target, "target_only"
+    return 0.0, "missing"
+
+
+def _overflow_capacity(
+    basin: Dict[str, Any],
+    design: Dict[str, Any],
+    *,
+    inflow_cfs: float,
+    release_cfs: float,
+) -> Dict[str, Any]:
+    spillway = safe_dict(design.get("overflow_spillway")) or safe_dict(basin.get("overflow_spillway"))
+    capacity = _max_finite(
+        spillway.get("capacity_cfs"),
+        spillway.get("design_capacity_cfs"),
+        spillway.get("spillway_capacity_cfs"),
+        design.get("overflow_capacity_cfs"),
+        basin.get("overflow_capacity_cfs"),
+    )
+    required = _max_finite(
+        spillway.get("required_capacity_cfs"),
+        spillway.get("design_overflow_cfs"),
+        design.get("overflow_required_cfs"),
+        max(0.0, inflow_cfs - release_cfs),
+    )
+    source = _explicit_source(
+        spillway.get("source"),
+        spillway.get("design_source"),
+        design.get("overflow_source"),
+    )
+    crest = _first_finite(spillway.get("crest_elev_ft"), spillway.get("crest_ft"), design.get("overflow_elev_ft"))
+    valid = capacity > 0.0 and (required <= 0.0 or capacity >= required)
+    if capacity <= 0.0:
+        status = "geometry_only_review_needed"
+    elif valid:
+        status = "adequate"
+    else:
+        status = "needs_capacity_review"
+    return {
+        "capacity_cfs": round(capacity, 3) if capacity > 0.0 else None,
+        "required_capacity_cfs": round(required, 3) if required > 0.0 else None,
+        "capacity_margin_cfs": round(capacity - required, 3) if capacity > 0.0 and required > 0.0 else None,
+        "capacity_valid": valid if capacity > 0.0 else False,
+        "capacity_status": status,
+        "capacity_source": source or None,
+        "crest_elev_ft": round(crest, 3) if crest is not None else None,
+    }
+
+
 def enrich_drainage_production_depth(drainage: Dict[str, Any]) -> Dict[str, Any]:
     """Add deterministic detention/routing evidence from canonical drainage data.
 
@@ -184,28 +346,69 @@ def enrich_drainage_production_depth(drainage: Dict[str, Any]) -> Dict[str, Any]
         design = safe_dict(basin.get("detention_design")) or safe_dict(basin.get("engineering")) or basin
         basin_name = safe_str(basin.get("name")) or safe_str(basin.get("target_name")) or f"BASIN-{index}"
         provided = max(0.0, safe_float(design.get("provided_storage_cf"), safe_float(design.get("storage_cf"), 0.0)))
-        required = max(0.0, safe_float(design.get("required_storage_cf"), 0.0))
         inflow = max(
             0.0,
             safe_float(design.get("peak_inflow_cfs"), 0.0),
             safe_float(design.get("tributary_flow_cfs"), 0.0),
             safe_float(basin.get("tributary_flow_cfs"), 0.0),
         )
-        release = max(0.0, safe_float(design.get("release_cfs"), safe_float(design.get("outlet_release_cfs"), 0.0)))
-        rows = _stage_storage_rows(basin, design)
+        release = _max_finite(design.get("release_cfs"), design.get("outlet_release_cfs"))
+        outlet, outlet_release, outlet_source = _detention_outlet_record(basin, design, release)
+        release = max(release, outlet_release)
+        required = max(0.0, safe_float(design.get("required_storage_cf"), 0.0))
+        storage_hours = _first_finite(design.get("storage_hours"), design.get("design_storm_duration_hours"))
+        required_source = "provided"
+        if required <= 0.0 and inflow > release and storage_hours is not None and storage_hours > 0.0:
+            required = compute_required_storage_cf(inflow, release, storage_hours)
+            required_source = "computed_peak_storage"
+        supplied_rows = _provided_stage_storage_rows(basin, design)
+        rows = supplied_rows or _stage_storage_rows(basin, design)
         all_stage_storage.extend([{**row, "basin": basin_name} for row in rows])
         adequate = provided >= required if required > 0.0 and provided > 0.0 else None
+        drawdown_hours, drawdown_source = _detention_drawdown(design, provided, release)
+        storage_source = _explicit_source(
+            design.get("storage_source"),
+            design.get("stage_storage_source"),
+            design.get("routing_source"),
+            design.get("source"),
+            basin.get("source"),
+            outlet_source,
+        )
+        routing_source = safe_str(design.get("routing_source"))
+        production_routing = bool(
+            storage_source
+            and release > 0.0
+            and provided > 0.0
+            and drawdown_hours > 0.0
+            and drawdown_source != "target_only"
+            and len(rows) >= 3
+        )
+        if production_routing:
+            routing_source = _explicit_source(routing_source, storage_source, "detention_depth_calculation") or "detention_depth_calculation"
+            routing_method = safe_str(design.get("routing_method")) or "stage_storage_outlet_drawdown"
+            truth_label = "Detention routing calculated from explicit storage, outlet release, and drawdown evidence; engineer review required before construction."
+        else:
+            routing_source = safe_str(design.get("routing_source"), "concept_detention_design")
+            routing_method = safe_str(design.get("routing_method"), "stage_storage_concept")
+            truth_label = "concept-stage detention routing; verify against jurisdiction method before construction."
+        storage_margin = provided - required if provided > 0.0 and required > 0.0 else None
         routing.append(
             {
                 "basin": basin_name,
-                "routing_source": safe_str(design.get("routing_source"), "concept_detention_design"),
-                "routing_method": safe_str(design.get("routing_method"), "stage_storage_concept"),
+                "routing_source": routing_source,
+                "routing_method": routing_method,
                 "status": "adequate" if adequate is True else "needs_capacity_review" if adequate is False else "concept_only",
                 "required_storage_cf": round(required, 3),
+                "required_storage_source": required_source,
                 "provided_storage_cf": round(provided, 3),
+                "storage_margin_cf": round(storage_margin, 3) if storage_margin is not None else None,
+                "storage_margin_ratio": round(provided / required, 4) if provided > 0.0 and required > 0.0 else None,
                 "peak_inflow_cfs": round(inflow, 3),
                 "release_cfs": round(release, 3),
-                "drawdown_hours": round(max(0.0, safe_float(design.get("drawdown_hours"), 0.0)), 3),
+                "outlet_release_cfs": round(release, 3),
+                "outlet": outlet,
+                "drawdown_hours": round(max(0.0, drawdown_hours), 3),
+                "drawdown_source": drawdown_source,
                 "freeboard_ft": (
                     round(
                         safe_float(design.get("top_of_bank_elev_ft"), 0.0)
@@ -216,7 +419,8 @@ def enrich_drainage_production_depth(drainage: Dict[str, Any]) -> Dict[str, Any]
                     else None
                 ),
                 "stage_storage": rows,
-                "truth_label": "concept-stage detention routing; verify against jurisdiction method before construction.",
+                "stage_storage_source": "provided_stage_storage" if supplied_rows else "computed_from_storage_elevations",
+                "truth_label": truth_label,
             }
         )
         overflow_elev = _finite_or_none(design.get("overflow_elev_ft") or basin.get("overflow_elev_ft") or design.get("emergency_overflow_elev_ft"))
@@ -244,6 +448,7 @@ def enrich_drainage_production_depth(drainage: Dict[str, Any]) -> Dict[str, Any]
             overflow_missing.append({"basin": basin_name, "missing_fields": missing})
         else:
             path = [[round(basin_xy[0], 3), round(basin_xy[1], 3)], [round(target_xy[0], 3), round(target_xy[1], 3)]]
+            capacity = _overflow_capacity(basin, design, inflow_cfs=inflow, release_cfs=release)
             overflow_paths.append(
                 {
                     "name": f"{basin_name}-EMERGENCY-OVERFLOW",
@@ -252,18 +457,26 @@ def enrich_drainage_production_depth(drainage: Dict[str, Any]) -> Dict[str, Any]
                     "target": safe_str(overflow_target.get("name") or overflow_target.get("target_name"), "selected_overflow_target"),
                     "path": path,
                     "length_ft": round(polyline_length(path), 3),
-                    "truth_label": "Emergency overflow route from explicit basin overflow elevation and target point.",
+                    **capacity,
+                    "truth_label": (
+                        "Emergency overflow route with explicit spillway capacity and target point."
+                        if capacity.get("capacity_valid") is True
+                        else "Emergency overflow route geometry is explicit; spillway capacity remains review-only until provided."
+                    ),
                 }
             )
     if routing:
         enriched["detention_routing"] = routing
         enriched["stage_storage"] = all_stage_storage
     if overflow_paths or overflow_missing:
+        capacity_ready = bool(overflow_paths) and all(safe_dict(path).get("capacity_valid") is True for path in overflow_paths)
         enriched["overflow_paths"] = overflow_paths
         enriched["overflow_analysis"] = {
             "valid": bool(overflow_paths) and not overflow_missing,
+            "production_valid": bool(overflow_paths) and not overflow_missing and capacity_ready,
             "path_count": len(overflow_paths),
             "missing_inputs": overflow_missing,
+            "capacity_status": "adequate" if capacity_ready else "capacity_review_needed",
             "truth_label": "Overflow routing only validates when basin overflow elevation and target geometry are explicit.",
         }
     return enriched

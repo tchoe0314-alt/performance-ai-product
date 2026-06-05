@@ -45,6 +45,60 @@ class ProductionDepthArtifactTests(unittest.TestCase):
         self.assertTrue(enriched["overflow_analysis"]["valid"])
         self.assertEqual(enriched["overflow_paths"][0]["basin"], "BASIN-1")
 
+    def test_drainage_computes_production_detention_outlet_drawdown_and_overflow_capacity(self) -> None:
+        drainage = {
+            "success": True,
+            "coordination": {"preferred_outfall": {"name": "OUTFALL-1", "x": 120.0, "y": 20.0}},
+            "basins": [
+                {
+                    "name": "BASIN-1",
+                    "x": 20.0,
+                    "y": 10.0,
+                    "source": "imported_detention_design",
+                    "detention_design": {
+                        "routing_source": "hydrograph_engine",
+                        "required_storage_cf": 5400.0,
+                        "provided_storage_cf": 7200.0,
+                        "peak_inflow_cfs": 5.0,
+                        "release_cfs": 1.0,
+                        "bottom_elev_ft": 96.0,
+                        "normal_pool_elev_ft": 99.0,
+                        "top_of_bank_elev_ft": 101.0,
+                        "overflow_elev_ft": 100.5,
+                        "outlet_structure": {
+                            "type": "orifice",
+                            "invert_elev_ft": 96.2,
+                            "diameter_in": 8.0,
+                            "release_cfs": 1.0,
+                            "source": "approved_outlet_fixture",
+                        },
+                        "overflow_spillway": {
+                            "crest_elev_ft": 100.5,
+                            "capacity_cfs": 6.0,
+                            "required_capacity_cfs": 4.0,
+                            "source": "approved_spillway_fixture",
+                        },
+                    },
+                }
+            ],
+        }
+
+        enriched = enrich_drainage_production_depth(drainage)
+        route = enriched["detention_routing"][0]
+        overflow = enriched["overflow_paths"][0]
+
+        self.assertEqual(route["routing_source"], "hydrograph_engine")
+        self.assertEqual(route["routing_method"], "stage_storage_outlet_drawdown")
+        self.assertEqual(route["drawdown_source"], "computed_storage_release")
+        self.assertAlmostEqual(route["drawdown_hours"], 2.0)
+        self.assertEqual(route["outlet"]["type"], "orifice")
+        self.assertEqual(route["outlet"]["source"], "approved_outlet_fixture")
+        self.assertEqual(route["storage_margin_cf"], 1800.0)
+        self.assertTrue(enriched["overflow_analysis"]["production_valid"])
+        self.assertTrue(overflow["capacity_valid"])
+        self.assertEqual(overflow["capacity_status"], "adequate")
+        self.assertEqual(overflow["capacity_margin_cfs"], 2.0)
+
     def test_storm_adds_hgl_egl_tailwater_and_inlet_checks(self) -> None:
         storm = {
             "success": True,

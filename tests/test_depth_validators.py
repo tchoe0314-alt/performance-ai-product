@@ -1,5 +1,6 @@
 import unittest
 
+from backend.planning.production_depth import enrich_drainage_production_depth
 from backend.planning.depth_validators import (
     validate_roadway_corridor_depth,
     validate_stormwater_depth,
@@ -37,6 +38,8 @@ class DepthValidatorTests(unittest.TestCase):
                                 "routing_method": "stage_storage_hydrograph",
                                 "provided_storage_cf": 4200.0,
                                 "release_cfs": 1.2,
+                                "outlet_release_cfs": 1.2,
+                                "outlet": {"type": "orifice", "release_cfs": 1.2, "source": "approved_outlet_fixture"},
                                 "drawdown_hours": 18.0,
                                 "stage_storage": [
                                     {"elevation_ft": 96.0, "storage_cf": 0.0},
@@ -47,6 +50,60 @@ class DepthValidatorTests(unittest.TestCase):
                         ],
                         "overflow_paths": [{"name": "OF-1"}],
                     },
+                }
+            }
+        )
+
+        self.assertTrue(result["production_ready"])
+
+    def test_stormwater_depth_accepts_enriched_production_detention_outlet_drawdown(self) -> None:
+        drainage = enrich_drainage_production_depth(
+            {
+                "coordination": {"preferred_outfall": {"name": "OUTFALL-1", "x": 120.0, "y": 20.0}},
+                "catchments": [{"name": "A", "runoff_c": 0.8}],
+                "basins": [
+                    {
+                        "name": "B-1",
+                        "x": 20.0,
+                        "y": 10.0,
+                        "source": "survey_detention_design",
+                        "detention_design": {
+                            "routing_source": "hydrograph_engine",
+                            "required_storage_cf": 5400.0,
+                            "provided_storage_cf": 7200.0,
+                            "peak_inflow_cfs": 5.0,
+                            "release_cfs": 1.0,
+                            "bottom_elev_ft": 96.0,
+                            "normal_pool_elev_ft": 99.0,
+                            "top_of_bank_elev_ft": 101.0,
+                            "overflow_elev_ft": 100.5,
+                            "outlet_structure": {
+                                "type": "orifice",
+                                "invert_elev_ft": 96.2,
+                                "release_cfs": 1.0,
+                                "source": "approved_outlet_fixture",
+                            },
+                            "overflow_spillway": {
+                                "capacity_cfs": 6.0,
+                                "required_capacity_cfs": 4.0,
+                                "source": "approved_spillway_fixture",
+                            },
+                        },
+                    }
+                ],
+            }
+        )
+        result = validate_stormwater_depth(
+            {
+                "meta": {
+                    "storm_pipes": {
+                        "segments": [{"name": "P-1", "tributary_area_sf": 10000.0}],
+                        "hgl_profile": [{"station_ft": 0.0, "hgl_ft": 99.0}],
+                        "egl_profile": [{"station_ft": 0.0, "egl_ft": 99.2}],
+                        "tailwater_elev_ft": 98.0,
+                        "inlet_capacity_checks": [{"inlet": "CB-1", "valid": True}],
+                    },
+                    "drainage": drainage,
                 }
             }
         )
@@ -73,6 +130,8 @@ class DepthValidatorTests(unittest.TestCase):
                                 "routing_method": "stage_storage_hydrograph",
                                 "provided_storage_cf": 4200.0,
                                 "release_cfs": 1.2,
+                                "outlet_release_cfs": 1.2,
+                                "outlet": {"type": "orifice", "release_cfs": 1.2, "source": "approved_outlet_fixture"},
                                 "drawdown_hours": 18.0,
                                 "stage_storage": [
                                     {"elevation_ft": 96.0, "storage_cf": 0.0},
@@ -89,6 +148,50 @@ class DepthValidatorTests(unittest.TestCase):
 
         self.assertFalse(result["production_ready"])
         self.assertIn("Storm depth needs passing inlet capacity, spread, and bypass checks.", result["blockers"])
+        self.assertIn("Storm depth needs overflow routing evidence.", result["blockers"])
+
+    def test_stormwater_depth_blocks_overflow_geometry_without_capacity(self) -> None:
+        result = validate_stormwater_depth(
+            {
+                "meta": {
+                    "storm_pipes": {
+                        "segments": [{"name": "P-1", "tributary_area_sf": 10000.0}],
+                        "hgl_profile": [{"station_ft": 0.0, "hgl_ft": 99.0}],
+                        "egl_profile": [{"station_ft": 0.0, "egl_ft": 99.2}],
+                        "tailwater_elev_ft": 98.0,
+                        "inlet_capacity_checks": [{"inlet": "CB-1", "valid": True}],
+                    },
+                    "drainage": {
+                        "catchments": [{"name": "A", "runoff_c": 0.8}],
+                        "detention_routing": [
+                            {
+                                "basin": "B-1",
+                                "routing_source": "hydrograph_engine",
+                                "routing_method": "stage_storage_outlet_drawdown",
+                                "provided_storage_cf": 7200.0,
+                                "release_cfs": 1.0,
+                                "outlet_release_cfs": 1.0,
+                                "outlet": {"type": "orifice", "release_cfs": 1.0, "source": "approved_outlet_fixture"},
+                                "drawdown_hours": 2.0,
+                                "stage_storage": [
+                                    {"elevation_ft": 96.0, "storage_cf": 0.0},
+                                    {"elevation_ft": 99.0, "storage_cf": 5400.0},
+                                    {"elevation_ft": 101.0, "storage_cf": 7200.0},
+                                ],
+                            }
+                        ],
+                        "overflow_paths": [{"name": "OF-1"}],
+                        "overflow_analysis": {
+                            "valid": True,
+                            "production_valid": False,
+                            "capacity_status": "capacity_review_needed",
+                        },
+                    },
+                }
+            }
+        )
+
+        self.assertFalse(result["production_ready"])
         self.assertIn("Storm depth needs overflow routing evidence.", result["blockers"])
 
     def test_stormwater_depth_blocks_concept_hydraulic_and_detention_evidence(self) -> None:
@@ -141,6 +244,8 @@ class DepthValidatorTests(unittest.TestCase):
                                 "routing_method": "stage_storage_hydrograph",
                                 "provided_storage_cf": 4200.0,
                                 "release_cfs": 1.2,
+                                "outlet_release_cfs": 1.2,
+                                "outlet": {"type": "orifice", "release_cfs": 1.2, "source": "approved_outlet_fixture"},
                                 "drawdown_hours": 18.0,
                                 "stage_storage": [
                                     {"elevation_ft": 96.0, "storage_cf": 0.0},

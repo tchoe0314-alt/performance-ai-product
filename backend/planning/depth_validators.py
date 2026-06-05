@@ -75,16 +75,31 @@ def _has_valid_detention_routing(row: Dict[str, Any]) -> bool:
     drawdown = max(
         safe_float(rec.get("drawdown_hours"), 0.0),
         safe_float(rec.get("estimated_drawdown_hours"), 0.0),
-        safe_float(rec.get("target_drawdown_hours"), 0.0),
+        safe_float(rec.get("actual_drawdown_hours"), 0.0),
     )
+    outlet = safe_dict(rec.get("outlet") or rec.get("outlet_structure"))
+    has_outlet = bool(outlet) or _present(rec.get("outlet_release_cfs"))
     status = safe_str(rec.get("status")).lower()
     if status in {"deficient", "concept_only", "blocked", "invalid"}:
         return False
-    return (has_stage_storage or provided_storage > 0.0) and release > 0.0 and drawdown > 0.0
+    return (has_stage_storage or provided_storage > 0.0) and has_outlet and release > 0.0 and drawdown > 0.0
 
 
 def _valid_flag(value: Any) -> bool:
     return safe_dict(value).get("valid") is True
+
+
+def _has_valid_overflow_routing(drainage: Dict[str, Any], storm: Dict[str, Any]) -> bool:
+    paths = safe_list(drainage.get("overflow_paths") or storm.get("overflow_paths"))
+    overflow_analysis = safe_dict(drainage.get("overflow_analysis"))
+    if overflow_analysis:
+        if overflow_analysis.get("production_valid") is True:
+            return True
+        if overflow_analysis.get("valid") is False:
+            return False
+        if "production_valid" in overflow_analysis or safe_str(overflow_analysis.get("capacity_status")):
+            return False
+    return bool(paths)
 
 
 def _all_rows_valid(rows: Iterable[Dict[str, Any]]) -> bool:
@@ -196,8 +211,8 @@ def validate_stormwater_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
         ),
         _check(
             "overflow_routing",
-            bool(safe_list(drainage.get("overflow_paths") or storm.get("overflow_paths"))) or overflow_analysis.get("valid") is True,
-            evidence="overflow routing",
+            _has_valid_overflow_routing(drainage, storm),
+            evidence="overflow routing/capacity",
             blocker="Storm depth needs overflow routing evidence.",
         ),
     ]

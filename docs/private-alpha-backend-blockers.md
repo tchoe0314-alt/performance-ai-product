@@ -211,19 +211,21 @@ Status:
 Current state:
 - HGL/EGL, inlet capacity, tailwater, overflow, and detention routing validators exist in `backend/planning/depth_validators.py`.
 - Storm production depth enrichment exists in `backend/planning/production_depth.py`.
+- Detention enrichment now computes production-style outlet release, storage margin, drawdown from storage/release when explicit evidence is present, and overflow capacity status.
 
 Issue:
 - Validators can block missing evidence, but the generator still relies on simplified/default assumptions for many cases.
-- Detention routing requires stronger hydrograph/stage-storage/outlet calculations tied to storm events and standards.
+- Detention outlet/drawdown evidence is stronger, but storm-event hydrograph routing and standards-linked design events are still not deep enough for public beta.
 
 Required fix:
 - Implement storm event/hydrograph routing as canonical hydrology evidence.
-- Add outlet structure sizing, drawdown, tailwater/backwater, bypass/spread, and overflow path calculations.
+- Add stronger outlet structure sizing, tailwater/backwater, bypass/spread, and overflow flood-routing calculations.
 - Attach source labels and standards references.
 
 Evidence needed:
 - Deterministic tests with known Rational Method and hydrograph outputs.
 - Golden scenarios with detention and overflow pass/fail expectations.
+- Current evidence: `tests/test_production_depth_artifacts.py` and `tests/test_depth_validators.py` cover explicit detention outlet drawdown and capacity-review overflow blocking.
 
 ### 7. Water Pressure And Fire-Flow Depth Is Early
 
@@ -326,14 +328,14 @@ Decision needed:
 | Terrain / Surface | early | blocked without real sources | DEM/LiDAR and survey package evidence |
 | Grading | active | usable review-only | More production road/pad/ADA/wall tie-in evidence |
 | Drainage | active | usable review-only | More terrain-aware repairs, overflow, blockage evidence |
-| Storm Pipe | active | needs review | HGL/EGL, detention/outlet/drawdown, tailwater/backwater depth |
+| Storm Pipe | active | needs review | Storm-event hydrographs, outlet sizing, tailwater/backwater depth |
 | Sanitary | active | usable review-only | More service coverage/tie-in/reroute proofs on large scenarios |
 | Water | early | needs review | Pressure zones, residual pressure, fire-flow, hydrant standards |
 | Utility Coordination | active | usable review-only | More protected-zone/trench/ownership realism under real sites |
 | Roadway / Corridor | early | needs review | Profiles, crowns, curb returns, intersections, ADA standards |
 | Structure | early | scoped review-only | Retaining wall/foundation/bridge interaction depth |
 | Earthwork | active | usable review-only | Haul/phasing/wall tradeoff depth |
-| Hydrology | active | needs review | Hydrographs, detention routing, overflow/flood routing depth |
+| Hydrology | active | needs review | Hydrographs and overflow/flood routing depth |
 | Conflict Resolution | active | usable review-only | Larger cluster optimization/golden proof |
 | QA / Validation | active | usable review-only | Fresh monitoring/golden evidence and deeper standards/import edge cases |
 | Quantity | active | usable review-only | Cost package and approved price source workflow |
@@ -347,11 +349,10 @@ Decision needed:
 
 1. Run alpha smoke/soak against a real backend workflow and store the generated `alpha_smoke_soak_report_v1` artifact.
 2. Add broader load/runtime thresholds to golden scenario definitions.
-3. Deepen storm/hydrology detention/outlet/drawdown calculations.
-4. Deepen water pressure/fire-flow/hydrant calculations.
-5. Deepen roadway/corridor profiles, crowns, curb returns, intersections, and ADA evidence.
-6. Add review-package manifest and Civil3D/LandXML/DWG explicit confidence states.
-7. Add cost package status and approved unit-price fixture coverage.
+3. Deepen water pressure/fire-flow/hydrant calculations.
+4. Deepen roadway/corridor profiles, crowns, curb returns, intersections, and ADA evidence.
+5. Add review-package manifest and Civil3D/LandXML/DWG explicit confidence states.
+6. Add cost package status and approved unit-price fixture coverage.
 
 ## Non-Negotiable Truth Rules
 
