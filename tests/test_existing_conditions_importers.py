@@ -4,8 +4,10 @@ import unittest
 from pathlib import Path
 
 from backend.planning.existing_conditions import summarize_existing_conditions
+from backend.planning.existing_conditions_package import build_existing_conditions_package
 from backend.planning.existing_conditions_importers import (
     classify_existing_conditions_file,
+    dependency_blocked_existing_conditions_import,
     import_dxf_existing_conditions,
     import_geospatial_vector_file,
     import_geotiff_surface,
@@ -361,6 +363,98 @@ class ExistingConditionsImporterTests(unittest.TestCase):
             self.assertEqual(imported["surfaces"][0]["point_count"], 3)
             self.assertEqual(imported["surfaces"][0]["face_count"], 1)
             self.assertIn("engineer review", imported["truth_label"])
+
+    def test_landxml_surface_can_feed_existing_conditions_package_when_control_and_gis_are_complete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "surface.landxml"
+            path.write_text(
+                '<LandXML><Surfaces><Surface name="EG"><Definition surfType="TIN">'
+                "<P>0 0 100</P><P>10 0 101</P><P>0 10 99</P><F>1 2 3</F>"
+                "</Definition></Surface></Surfaces></LandXML>",
+                encoding="utf-8",
+            )
+
+            imported = import_landxml_metadata(
+                path,
+                coordinate_system={"epsg": "EPSG:2276", "units": "ft", "source": "survey_control"},
+            )
+            merged = merge_imported_existing_conditions(imported)
+            merged["survey"].update({"benchmark": "BM-1", "datum": "NAVD88", "control_verified": True})
+            merged["gis_layers"] = {
+                layer: [{"id": layer, "source": f"{layer}_source"}]
+                for layer in ("parcels", "easements", "row", "floodplain", "wetlands", "existing_utilities")
+            }
+            merged["existing_conditions"] = merged["gis_layers"]
+            merged["import_validation"] = validate_imported_existing_conditions_package(merged)
+            package_meta = {
+                "survey": merged["survey"],
+                "gis_layers": merged["gis_layers"],
+                "coordinate_system": merged["coordinate_system"],
+                "surfaces": merged["surfaces"],
+                "sources": merged["sources"],
+                "existing_conditions_import_validation": merged["import_validation"],
+                "existing_conditions_package": {"acceptance": {"accepted": True, "accepted_by": "fixture"}},
+            }
+            package_meta["existing_conditions_summary"] = summarize_existing_conditions({"meta": package_meta})
+
+            package = build_existing_conditions_package({"meta": package_meta})
+
+            self.assertTrue(merged["import_validation"]["production_usable"])
+            self.assertEqual(package["status"], "ready")
+            self.assertEqual(package["summary"]["survey"]["imported_surface_count"], 1)
+            self.assertEqual(package["canonical_existing_conditions"]["surfaces"][0]["source_type"], "landxml")
+
+    def test_landxml_surface_package_blocks_without_control_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "surface.landxml"
+            path.write_text(
+                '<LandXML><Surfaces><Surface name="EG"><Definition surfType="TIN">'
+                "<P>0 0 100</P><P>10 0 101</P><P>0 10 99</P><F>1 2 3</F>"
+                "</Definition></Surface></Surfaces></LandXML>",
+                encoding="utf-8",
+            )
+
+            imported = import_landxml_metadata(
+                path,
+                coordinate_system={"epsg": "EPSG:2276", "units": "ft", "source": "survey_control"},
+            )
+            merged = merge_imported_existing_conditions(imported)
+
+            fields = {item["field"] for item in merged["import_validation"]["blockers"]}
+
+            self.assertFalse(merged["import_validation"]["production_usable"])
+            self.assertIn("survey_benchmark", fields)
+            self.assertIn("survey_datum", fields)
+            self.assertIn("survey_control_verified", fields)
+            self.assertEqual(merged["import_validation"]["surface_count"], 1)
+
+    def test_dependency_blocked_heavy_format_remains_visible_in_package_validation(self) -> None:
+        blocked = dependency_blocked_existing_conditions_import(
+            Path("constraints.shp"),
+            {
+                "supported": False,
+                "format": "shp",
+                "mode": "geospatial_vector",
+                "required_dependency": "Shapefile import requires fiona/geopandas or GDAL.",
+            },
+        )
+
+        merged = merge_imported_existing_conditions(blocked)
+        package_meta = {
+            "survey": merged["survey"],
+            "gis_layers": merged["gis_layers"],
+            "coordinate_system": merged["coordinate_system"],
+            "sources": merged["sources"],
+            "existing_conditions_import_validation": merged["import_validation"],
+        }
+        package_meta["existing_conditions_summary"] = summarize_existing_conditions({"meta": package_meta})
+        package = build_existing_conditions_package({"meta": package_meta})
+        source = package["canonical_existing_conditions"]["sources"][0]
+
+        self.assertEqual(package["status"], "blocked")
+        self.assertTrue(source["dependency_blocked"])
+        self.assertEqual(source["required_dependency"], "Shapefile import requires fiona/geopandas or GDAL.")
+        self.assertIn("sources", {item["field"] for item in package["blockers"]})
 
     def test_geopackage_vector_import_classifies_layers(self) -> None:
         import geopandas as gpd

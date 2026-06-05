@@ -158,22 +158,36 @@ def _survey_summary(meta: Dict[str, Any], parsed: Dict[str, Any], grading: Dict[
         or safe_list(_nested_lookup(parsed, ("site_inputs.survey_points",)))
     )
     point_count = max(safe_int(survey.get("point_count"), 0), len(points))
+    imported_surfaces = safe_list(meta.get("surfaces") or parsed.get("surfaces"))
+    surface_count = len(imported_surfaces)
     surface_source = (
         safe_str(grading.get("source_quality"))
         or safe_str(grading.get("grading_source_quality"))
         or safe_str(existing_surface.get("source_quality"))
     )
-    source = safe_str(survey.get("source") or survey.get("file") or meta.get("survey_file") or parsed.get("survey_file"))
+    surface_evidence_source = ""
+    for surface in imported_surfaces:
+        surface_evidence_source = safe_str(safe_dict(surface).get("source"))
+        if surface_evidence_source:
+            break
+    source = safe_str(
+        survey.get("source")
+        or survey.get("file")
+        or meta.get("survey_file")
+        or parsed.get("survey_file")
+        or surface_evidence_source
+    )
     has_benchmark = bool(survey.get("benchmark") or survey.get("benchmark_id"))
     has_datum = bool(survey.get("datum") or survey.get("vertical_datum"))
     control_verified = bool(survey.get("control_verified"))
     approved_surface = bool(survey.get("approved_for_production") or survey.get("surface_approved") or control_verified)
-    ready = point_count >= 3 or surface_source == "survey" or (bool(source) and approved_surface)
+    ready = point_count >= 3 or surface_count > 0 or surface_source == "survey" or (bool(source) and approved_surface)
     return {
         "ready": ready,
         "point_count": point_count,
         "source": source or ("survey_surface" if surface_source == "survey" else "missing"),
         "surface_source": surface_source or "missing",
+        "imported_surface_count": surface_count,
         "has_control": bool(survey.get("control_points") or (has_benchmark and has_datum and control_verified)),
         "has_benchmark": has_benchmark,
         "has_datum": has_datum,

@@ -494,6 +494,31 @@ def classify_existing_conditions_file(path: Path) -> Dict[str, Any]:
     return {"supported": False, "format": suffix.lstrip(".") or "unknown", "mode": "unsupported"}
 
 
+def dependency_blocked_existing_conditions_import(
+    path: Path,
+    classification: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Return a failed import record that can flow through canonical validation."""
+
+    rec = safe_dict(classification) or classify_existing_conditions_file(path)
+    suffix = Path(path).suffix.lower()
+    required_dependency = safe_str(rec.get("required_dependency") or HEAVY_FORMAT_REQUIREMENTS.get(suffix))
+    if not required_dependency:
+        required_dependency = "Unsupported existing-conditions file format."
+    source_format = safe_str(rec.get("format"), suffix.lstrip(".") or "unknown")
+    return {
+        "success": False,
+        "source": str(path),
+        "source_type": f"{source_format}_dependency_blocked",
+        "format": source_format,
+        "mode": safe_str(rec.get("mode"), "unsupported"),
+        "dependency_blocked": True,
+        "required_dependency": required_dependency,
+        "warnings": [required_dependency],
+        "truth_label": "This existing-condition file was stored but not canonicalized because the importer is unsupported or missing a required dependency.",
+    }
+
+
 def _dxf_point_tuple(value: Any) -> Tuple[float, float, float]:
     return (
         safe_float(getattr(value, "x", 0.0), 0.0),
@@ -843,7 +868,15 @@ def merge_imported_existing_conditions(*imports: Dict[str, Any]) -> Dict[str, An
         rec = safe_dict(item)
         if not rec:
             continue
-        sources.append({"source": safe_str(rec.get("source")), "source_type": safe_str(rec.get("source_type")), "success": bool(rec.get("success"))})
+        source_record = {
+            "source": safe_str(rec.get("source")),
+            "source_type": safe_str(rec.get("source_type")),
+            "success": bool(rec.get("success")),
+        }
+        for key in ("format", "mode", "dependency_blocked", "required_dependency", "truth_label"):
+            if rec.get(key) not in (None, "", [], {}):
+                source_record[key] = rec.get(key)
+        sources.append(source_record)
         warnings.extend(safe_list(rec.get("warnings")))
         rec_coordinate = _coordinate_from_import(rec)
         if rec_coordinate:
@@ -852,10 +885,24 @@ def merge_imported_existing_conditions(*imports: Dict[str, Any]) -> Dict[str, An
             coordinate_system = rec_coordinate
         if rec.get("source_type") in {"survey_csv", "las_point_cloud", "dxf_existing_conditions"}:
             survey_points.extend(safe_list(rec.get("points")))
-        if rec.get("source_type") == "dxf_existing_conditions":
+        if rec.get("source_type") in {"dxf_existing_conditions", "landxml"}:
             breaklines.extend(safe_list(rec.get("breaklines")))
         if rec.get("source_type") in {"surface_xyz_csv", "geotiff_surface"} and rec.get("surface") is not None:
             surfaces.append({"source": rec.get("source"), "surface": rec.get("surface"), "ncols": rec.get("ncols"), "nrows": rec.get("nrows")})
+        if rec.get("source_type") == "landxml":
+            for surface in safe_list(rec.get("surfaces")):
+                surface_rec = safe_dict(surface)
+                if surface_rec:
+                    surfaces.append(
+                        {
+                            "source": surface_rec.get("source") or rec.get("source"),
+                            "source_type": "landxml",
+                            "name": safe_str(surface_rec.get("name")),
+                            "point_count": safe_int(surface_rec.get("point_count"), len(safe_list(surface_rec.get("points")))),
+                            "face_count": safe_int(surface_rec.get("face_count"), len(safe_list(surface_rec.get("faces")))),
+                            "breakline_count": safe_int(surface_rec.get("breakline_count"), len(safe_list(surface_rec.get("breaklines")))),
+                        }
+                    )
         if rec.get("source_type") in {"geojson", "geospatial_vector", "dxf_existing_conditions"}:
             for layer, features in safe_dict(rec.get("layers")).items():
                 if layer in gis_layers:
@@ -958,7 +1005,7 @@ def validate_imported_existing_conditions_package(
         )
     elif point_count >= 3 and breakline_count <= 0:
         warnings.append("Survey points are present, but no breaklines were imported.")
-    if point_count > 0:
+    if point_count > 0 or surface_count > 0:
         if not safe_str(survey.get("benchmark") or survey.get("benchmark_id")):
             blockers.append(
                 {
@@ -1024,6 +1071,7 @@ def validate_imported_existing_conditions_package(
 
 
 __all__ = [
+    "dependency_blocked_existing_conditions_import",
     "import_geojson",
     "classify_existing_conditions_file",
     "import_geospatial_vector_file",

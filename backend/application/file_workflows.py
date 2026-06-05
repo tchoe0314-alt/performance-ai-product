@@ -15,6 +15,7 @@ from backend.planning.existing_conditions import summarize_existing_conditions
 from backend.planning.existing_conditions_package import build_existing_conditions_package
 from backend.planning.existing_conditions_importers import (
     classify_existing_conditions_file,
+    dependency_blocked_existing_conditions_import,
     import_dxf_existing_conditions,
     import_geospatial_vector_file,
     import_geotiff_surface,
@@ -141,7 +142,9 @@ def upload_existing_conditions_file(
     imports = []
     warnings: list[str] = []
     classification = classify_existing_conditions_file(target)
-    if suffix == ".csv":
+    if not classification.get("supported"):
+        imports.append(dependency_blocked_existing_conditions_import(target, classification))
+    elif suffix == ".csv":
         survey = import_survey_csv(target)
         imports.append(survey)
         surface = import_surface_grid_csv(target)
@@ -164,10 +167,8 @@ def upload_existing_conditions_file(
         imports.append(import_las_point_cloud(target))
     elif suffix in {".xml", ".landxml"}:
         imports.append(import_landxml_metadata(target))
-    elif not classification.get("supported"):
-        warnings.append(classification.get("required_dependency") or "Unsupported existing-conditions file format.")
     else:
-        warnings.append("Existing-conditions importer currently supports CSV survey/surface files and GeoJSON.")
+        imports.append(dependency_blocked_existing_conditions_import(target, classification))
 
     merged = merge_imported_existing_conditions(*imports)
     warnings.extend(merged.get("warnings") or [])
@@ -175,9 +176,14 @@ def upload_existing_conditions_file(
         "survey": merged.get("survey"),
         "gis_layers": merged.get("gis_layers"),
         "coordinate_system": merged.get("coordinate_system"),
+        "surfaces": merged.get("surfaces"),
         "sources": merged.get("sources"),
         "existing_conditions_import_validation": merged.get("import_validation"),
-        "grading": {"source_quality": "survey"} if (merged.get("survey") or {}).get("point_count") else {},
+        "grading": (
+            {"source_quality": "survey"}
+            if (merged.get("survey") or {}).get("point_count")
+            else ({"source_quality": "terrain"} if merged.get("surfaces") else {})
+        ),
     }
     summary = summarize_existing_conditions({"meta": package_meta})
     package_meta["existing_conditions_summary"] = summary

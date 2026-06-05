@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from io import BytesIO
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi import UploadFile
 
@@ -80,6 +81,31 @@ class ApplicationFileWorkflowsTest(unittest.TestCase):
             self.assertIn("existing_conditions_package", result)
             self.assertEqual(result["existing_conditions_package"]["status"], "blocked")
             self.assertIn("import_validation", result["existing_conditions_package"])
+
+    def test_upload_existing_conditions_reports_dependency_blocked_file_as_failed_source(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            upload = UploadFile(filename="constraints.shp", file=BytesIO(b"not a shapefile"))
+            with patch(
+                "backend.application.file_workflows.classify_existing_conditions_file",
+                return_value={
+                    "supported": False,
+                    "format": "shp",
+                    "mode": "geospatial_vector",
+                    "required_dependency": "Shapefile import requires fiona/geopandas or GDAL.",
+                },
+            ):
+                result = upload_existing_conditions_file(
+                    upload_dir=Path(tmpdir),
+                    file=upload,
+                    current_user={"user_id": "u1"},
+                )
+
+            self.assertFalse(result["success"])
+            self.assertTrue(result["imports"][0]["dependency_blocked"])
+            self.assertEqual(result["imports"][0]["required_dependency"], "Shapefile import requires fiona/geopandas or GDAL.")
+            source = result["existing_conditions_package"]["canonical_existing_conditions"]["sources"][0]
+            self.assertTrue(source["dependency_blocked"])
+            self.assertIn("sources", {item["field"] for item in result["existing_conditions_package"]["blockers"]})
 
     def test_online_sources_returns_truth_labeled_registry(self):
         result = existing_conditions_online_sources(address="1 Main St", bbox={"west": -97, "south": 32, "east": -96, "north": 33})

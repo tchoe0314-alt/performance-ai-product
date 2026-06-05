@@ -148,6 +148,7 @@ def build_existing_conditions_package(plan_or_meta: Dict[str, Any], *, accepted_
             "survey": deepcopy(meta.get("survey")),
             "gis_layers": deepcopy(meta.get("gis_layers") or meta.get("existing_conditions")),
             "coordinate_system": deepcopy(meta.get("coordinate_system")),
+            "surfaces": deepcopy(meta.get("surfaces")),
             "sources": deepcopy(meta.get("sources") or safe_dict(meta.get("existing_conditions_import")).get("sources")),
         },
         "summary": deepcopy(summary),

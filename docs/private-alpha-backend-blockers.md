@@ -13,6 +13,7 @@ This does not mean construction-ready. Construction release remains blocked unle
 - Full backend regression on 2026-06-05: `871 passed, 26 warnings`.
 - Private-alpha hardening focused regression on 2026-06-05: `86 passed, 22 warnings in 262.03s`.
 - Workflow exposure regression on 2026-06-05: `76 passed, 22 warnings in 23.45s`.
+- Existing-conditions import/package focused regression on 2026-06-05: `43 passed, 22 warnings in 24.80s`.
 - Engine contract registry: 20 engines in `backend/planning/engine_contracts.py`.
 - Engine maturity from the current registry:
   - foundation: 2 engines
@@ -85,26 +86,30 @@ Current state:
 - Planner finalization attaches `existing_conditions_package`.
 
 Issue:
-- Full alpha still needs more real fixture coverage for LandXML, dependency-blocked heavy formats, and mixed import packages.
-- Heavy import formats may report blocked requirements when optional libraries are missing.
+- Full alpha still needs more mixed real-file package coverage across larger golden scenarios.
+- LandXML terrain surfaces now feed package validation as terrain evidence, while benchmark/datum/control and GIS/source evidence remain required before readiness.
+- Dependency-blocked heavy formats now remain visible as failed canonical sources inside import validation and package blockers.
+- Heavy import formats may still report blocked requirements when optional libraries are missing.
 - Coordinate-system/source/control metadata is correctly required and package acceptance now exists.
 
 Why this blocks full-system alpha:
 - Civora's core value depends on real-world site context. Alpha can be review-only, but it still needs truthful and usable import workflows for survey/GIS/terrain packages.
 
 Required fix:
-- Add real fixture tests for CSV survey, GeoJSON/GIS, LandXML, and dependency-blocked heavy formats.
+- Add more mixed import package tests that combine survey, GIS, LandXML/DEM, and optional heavy formats under golden scenarios.
 - Keep production-grade outputs blocked without survey control, datum, projected coordinate system, and source evidence.
 
 Evidence needed:
 - Covered for package builder by `tests/test_existing_conditions_package.py`.
 - Covered for upload exposure by `tests/test_application_file_workflows.py`.
 - Covered for parser/package validation by `tests/test_existing_conditions_importers.py`.
-- Still needed: fixture-backed LandXML package test and heavy-format dependency-blocked package tests.
+- LandXML package acceptance and missing-control blockers are covered by `tests/test_existing_conditions_importers.py`.
+- Heavy-format dependency-blocked package validation is covered by `tests/test_existing_conditions_importers.py` and upload exposure by `tests/test_application_file_workflows.py`.
+- Still needed: larger mixed-import golden fixtures and real imported files for sloped detention, roadway corridor, utility-heavy, floodplain/wetland, and retaining wall scenarios.
 
 Status:
-- Partially closed.
-- Still P0 because full-system alpha needs broader real-file import package coverage.
+- Mostly closed for the package gate itself.
+- Still P0 because full-system alpha needs broader mixed real-file golden coverage, not because LandXML/dependency-blocker package wiring is missing.
 
 ### 3. Standards Acceptance Is Truthful But Not Yet Operationally Complete
 
@@ -337,7 +342,7 @@ Decision needed:
 | Quantity | active | usable review-only | Cost package and approved price source workflow |
 | Export / CAD | active | usable review-only | Review-package manifest, Civil3D/DWG confidence |
 | Profile / Section | active | usable review-only | More live linkage tests across real roadway/utility scenarios |
-| GIS / Existing Conditions | early | blocked without sources | Broader LandXML/heavy-format package fixtures and real-file golden coverage |
+| GIS / Existing Conditions | early | blocked without sources | Broader mixed-import real-file golden coverage |
 | AI Orchestration | active | usable review-only | More deterministic rerun/workflow guidance under missing inputs |
 | Reactive Model | foundation | usable review-only | Deployed proof and large partial-rerun benchmarks |
 
@@ -346,13 +351,12 @@ Decision needed:
 1. Run alpha smoke/soak against a real backend workflow and store the generated `alpha_smoke_soak_report_v1` artifact.
 2. Expand real-file golden fixtures beyond the first CSV/GeoJSON package: LandXML, sloped detention, roadway corridor, utility-heavy, floodplain/wetland, retaining wall.
 3. Add stale standards and standards override-history tests to `standards_package`.
-4. Add LandXML package acceptance and heavy-format dependency-blocked package tests to `existing_conditions_package`.
-5. Deepen storm/hydrology detention/outlet/drawdown calculations.
-6. Deepen water pressure/fire-flow/hydrant calculations.
-7. Deepen roadway/corridor profiles, crowns, curb returns, intersections, and ADA evidence.
-8. Add review-package manifest and Civil3D/LandXML/DWG explicit confidence states.
-9. Add cost package status and approved unit-price fixture coverage.
-10. Add broader load/runtime thresholds to golden scenario definitions.
+4. Deepen storm/hydrology detention/outlet/drawdown calculations.
+5. Deepen water pressure/fire-flow/hydrant calculations.
+6. Deepen roadway/corridor profiles, crowns, curb returns, intersections, and ADA evidence.
+7. Add review-package manifest and Civil3D/LandXML/DWG explicit confidence states.
+8. Add cost package status and approved unit-price fixture coverage.
+9. Add broader load/runtime thresholds to golden scenario definitions.
 
 ## Non-Negotiable Truth Rules
 
