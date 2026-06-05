@@ -222,6 +222,14 @@ Build product, workflow, and operational capability only after the backend engin
 
 ## Phase Status
 
+Current truth standard, 2026-06-05:
+
+- The historical phase exit gates below describe regression milestones that were reached during backend hardening.
+- They do **not** mean Civora is public-beta ready or construction-ready.
+- The active backend target is now full-system private alpha in review-only mode.
+- The authoritative current blocker inventory is `docs/private-alpha-backend-blockers.md`.
+- Construction release must remain blocked in private alpha even when review package generation is allowed.
+
 Phase 1 status: **Complete / exit gate verified**
 
 Verification run:
