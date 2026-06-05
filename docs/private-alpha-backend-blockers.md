@@ -154,25 +154,28 @@ Current state:
 - Committed fixture files now exercise CSV survey, GeoJSON GIS/constraints, and LandXML terrain/alignment import paths.
 - Eight project benchmarks now attach real imported existing-condition fixture packages: commercial pad, multifamily, 14-acre mixed use, sloped detention, roadway corridor, utility-heavy, floodplain/wetland constrained, and retaining wall.
 - Incomplete-input and manual-production-gate scenarios intentionally remain synthetic truth-gate cases.
+- Golden scenarios now carry explicit load thresholds for elapsed runtime, current RSS, and peak RSS, and the runner reports per-scenario load threshold results.
 
 Issue:
 - Real-file fixture coverage is now broad enough for private-alpha truth gates.
-- Golden scenarios still do not yet enforce runtime, memory, large-project endurance, or export-readiness thresholds.
+- Runtime and memory threshold enforcement now exists.
+- Export-readiness thresholds still need deeper package/audit confidence states and are tracked in the export package item.
 
 Why this blocks full-system alpha:
 - Alpha users will test messy real sites. Fixture-backed correctness is necessary, but runtime/load thresholds are still needed before calling the full system alpha-stable.
 
 Required fix:
-- Add benchmark pass criteria for runtime, memory, canonical fields, blocked states, and export readiness.
+- Add benchmark pass criteria for export readiness once the export package manifest is deeper.
 
 Evidence needed:
 - Covered for real-file fixture attachment and suite reporting by `tests/test_golden_runner.py`.
-- Load/soak tests with thresholds stored in the scenario definitions.
-- Still needed: runtime/memory/export-readiness thresholds attached to scenario definitions.
+- Covered for runtime/memory thresholds by `tests/test_golden_runner.py`.
+- Still needed: export-readiness thresholds tied to explicit package confidence states.
 
 Status:
 - Closed for real-file fixture coverage.
-- Still P0 for runtime/load threshold evidence, which is tracked separately from fixture coverage.
+- Closed for private-alpha runtime/load threshold evidence.
+- Export readiness remains tracked under the export package blocker.
 
 ### 5. Deployed Alpha Monitoring Proof Is Missing
 
@@ -348,11 +351,10 @@ Decision needed:
 
 ## Exact Fix Order
 
-1. Add broader load/runtime thresholds to golden scenario definitions.
-2. Deepen water pressure/fire-flow/hydrant calculations.
-3. Deepen roadway/corridor profiles, crowns, curb returns, intersections, and ADA evidence.
-4. Add review-package manifest and Civil3D/LandXML/DWG explicit confidence states.
-5. Add cost package status and approved unit-price fixture coverage.
+1. Deepen water pressure/fire-flow/hydrant calculations.
+2. Deepen roadway/corridor profiles, crowns, curb returns, intersections, and ADA evidence.
+3. Add review-package manifest and Civil3D/LandXML/DWG explicit confidence states.
+4. Add cost package status and approved unit-price fixture coverage.
 
 ## Non-Negotiable Truth Rules
 

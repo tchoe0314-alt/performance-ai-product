@@ -16,6 +16,7 @@ from backend.planning.golden_real_file_fixtures import (
     real_file_fixture_scenario_ids,
 )
 from backend.planning.golden_runner import run_golden_scenario, run_golden_scenarios
+from backend.planning.golden_scenarios import validate_golden_scenarios
 
 
 def _fake_plan(payload):
@@ -76,6 +77,8 @@ class GoldenRunnerTests(unittest.TestCase):
         self.assertTrue(result["gate_results"])
         self.assertFalse(result["missing_canonical_signals"])
         self.assertFalse(result["failed_benchmark_expectations"])
+        self.assertTrue(result["load_threshold_results"])
+        self.assertFalse(result["failed_load_thresholds"])
         detail = result["readiness_summary"]["production_blocker_details"][0]
         self.assertEqual(detail["area"], "existing_conditions")
         self.assertEqual(detail["field"], "survey_surface")
@@ -90,6 +93,20 @@ class GoldenRunnerTests(unittest.TestCase):
         self.assertEqual(result["real_file_fixture_count"], 1)
         self.assertEqual(result["scenario_count"], 2)
         self.assertIn("explicit blockers", result["truth_label"])
+
+    def test_golden_scenario_registry_requires_load_thresholds(self) -> None:
+        self.assertEqual(validate_golden_scenarios(), [])
+
+    def test_run_scenario_fails_when_load_threshold_is_exceeded(self) -> None:
+        result = run_golden_scenario(
+            "small_commercial_pad",
+            build_plan_fn=_fake_plan,
+            load_threshold_overrides={"max_rss_mb": 0.001},
+        )
+
+        self.assertFalse(result["success"])
+        self.assertIn("golden_load_thresholds_failed", result["hard_failures"])
+        self.assertIn("rss_mb", result["failed_load_thresholds"])
 
     def test_run_golden_scenario_reports_real_file_import_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -462,6 +479,7 @@ class GoldenRunnerTests(unittest.TestCase):
             self.assertEqual(scenario["benchmark_status"], "passed_with_expected_blockers", scenario)
             self.assertFalse(scenario["missing_canonical_signals"], scenario)
             self.assertFalse(scenario["failed_benchmark_expectations"], scenario)
+            self.assertFalse(scenario["failed_load_thresholds"], scenario)
             self.assertFalse(scenario["readiness_summary"]["civil_production_ready"], scenario)
 
 

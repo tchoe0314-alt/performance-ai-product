@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import time
 from copy import deepcopy
 from typing import Any, Callable, Dict, Iterable, List, Optional
+
+from backend.application.memory_logging import current_rss_mb, peak_rss_mb
 
 from .common import (
     blocker_explanations,
@@ -380,11 +383,44 @@ def _benchmark_expectation_results(scenario: GoldenScenario, plan: Dict[str, Any
     return results
 
 
+def _threshold_passes(value: float, threshold: Any) -> bool:
+    limit = safe_float(threshold, 0.0)
+    return limit <= 0.0 or value <= limit
+
+
+def _load_threshold_results(
+    scenario: GoldenScenario,
+    *,
+    elapsed_ms: float,
+    rss_mb: float,
+    peak_mb: float,
+    overrides: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    thresholds = _deep_merge_dicts(scenario.load_thresholds, safe_dict(overrides))
+    checks = [
+        ("elapsed_ms", elapsed_ms, thresholds.get("max_elapsed_ms")),
+        ("rss_mb", rss_mb, thresholds.get("max_rss_mb")),
+        ("peak_rss_mb", peak_mb, thresholds.get("max_peak_rss_mb")),
+    ]
+    return [
+        {
+            "metric": metric,
+            "value": round(max(0.0, safe_float(value, 0.0)), 3),
+            "max": threshold,
+            "passed": _threshold_passes(safe_float(value, 0.0), threshold),
+            "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
+        }
+        for metric, value, threshold in checks
+        if threshold is not None
+    ]
+
+
 def run_golden_scenario(
     scenario_id: str,
     *,
     build_plan_fn: Optional[BuildPlanFn] = None,
     payload_overrides: Optional[Dict[str, Any]] = None,
+    load_threshold_overrides: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     scenario = get_golden_scenario(scenario_id)
     payload = deepcopy(scenario.benchmark_payload)
@@ -392,12 +428,23 @@ def run_golden_scenario(
     if payload_overrides:
         payload = _deep_merge_dicts(payload, payload_overrides)
     runner = build_plan_fn or _default_build_plan
+    start = time.perf_counter()
     plan = runner(payload)
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+    rss_mb = current_rss_mb()
+    peak_mb = peak_rss_mb()
     summary = _readiness_summary(plan)
     input_evidence = _scenario_input_evidence(payload)
     gates = _scenario_gate_results(scenario, plan)
     signal_results = _canonical_signal_results(scenario, plan)
     expectation_results = _benchmark_expectation_results(scenario, plan)
+    load_results = _load_threshold_results(
+        scenario,
+        elapsed_ms=elapsed_ms,
+        rss_mb=rss_mb,
+        peak_mb=peak_mb,
+        overrides=load_threshold_overrides,
+    )
     false_production_ready = bool(summary.get("civil_production_ready")) and bool(gates)
     hard_failures = []
     if false_production_ready:
@@ -408,6 +455,9 @@ def run_golden_scenario(
     failed_expectations = [item["metric"] for item in expectation_results if not bool(item.get("passed"))]
     if failed_expectations:
         hard_failures.append("benchmark_numeric_expectations_failed")
+    failed_load_thresholds = [item["metric"] for item in load_results if not bool(item.get("passed"))]
+    if failed_load_thresholds:
+        hard_failures.append("golden_load_thresholds_failed")
     if not safe_dict(plan.get("meta")).get("engine_readiness"):
         hard_failures.append("engine_readiness_missing")
     if not safe_dict(plan.get("meta")).get("civil_design_readiness"):
@@ -452,6 +502,9 @@ def run_golden_scenario(
         "missing_canonical_signals": missing_signals,
         "benchmark_expectation_results": expectation_results,
         "failed_benchmark_expectations": failed_expectations,
+        "load_thresholds": _deep_merge_dicts(scenario.load_thresholds, safe_dict(load_threshold_overrides)),
+        "load_threshold_results": load_results,
+        "failed_load_thresholds": failed_load_thresholds,
         "hard_failures": hard_failures,
         "hard_failure_details": blocker_explanations(hard_failures),
         "benchmark_status": "failed" if hard_failures else "passed_with_expected_blockers",
@@ -468,6 +521,7 @@ def run_golden_scenarios(
     results = [run_golden_scenario(item, build_plan_fn=build_plan_fn) for item in ids if item]
     success = all(bool(item.get("success")) for item in results)
     real_file_fixture_count = len([item for item in results if bool(item.get("real_file_fixture"))])
+    failed_load_threshold_count = sum(len(safe_list(item.get("failed_load_thresholds"))) for item in results)
     return {
         "success": success,
         "status": "passed" if success else "failed",
@@ -476,6 +530,7 @@ def run_golden_scenarios(
         "real_file_fixture_count": real_file_fixture_count,
         "real_file_fixture_ids": [safe_str(item.get("scenario_id")) for item in results if bool(item.get("real_file_fixture"))],
         "synthetic_scenario_count": max(0, len(results) - real_file_fixture_count),
+        "failed_load_threshold_count": failed_load_threshold_count,
         "results": results,
         "truth_label": "Golden scenarios are executable regression cases with explicit blockers and production-readiness expectations.",
     }

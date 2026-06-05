@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, FrozenSet, Iterable, List, Tuple
 
 from .engine_contracts import GOLDEN_SCENARIOS, engine_contracts
@@ -17,6 +17,7 @@ class GoldenScenario:
     blocked_without: Tuple[str, ...]
     benchmark_expectations: Tuple[Dict[str, Any], ...]
     benchmark_payload: Dict[str, Any]
+    load_thresholds: Dict[str, Any] = field(default_factory=dict)
 
 
 def _fs(*items: str) -> FrozenSet[str]:
@@ -34,6 +35,15 @@ def _payload(name: str, *, project_type: str, lot_w: float, lot_h: float, **extr
     }
     payload.update(extra)
     return payload
+
+
+def _load(max_elapsed_ms: float, *, max_rss_mb: float = 1024.0, max_peak_rss_mb: float = 1536.0) -> Dict[str, Any]:
+    return {
+        "max_elapsed_ms": float(max_elapsed_ms),
+        "max_rss_mb": float(max_rss_mb),
+        "max_peak_rss_mb": float(max_peak_rss_mb),
+        "truth_label": "Golden load thresholds catch backend regressions; they do not prove public-scale capacity.",
+    }
 
 
 GOLDEN_SCENARIO_REGISTRY: Tuple[GoldenScenario, ...] = (
@@ -54,6 +64,7 @@ GOLDEN_SCENARIO_REGISTRY: Tuple[GoldenScenario, ...] = (
             {"metric": "civil_production_ready", "equals": False},
         ),
         benchmark_payload=_payload("Golden Commercial Pad", project_type="commercial_pad", lot_w=220.0, lot_h=160.0),
+        load_thresholds=_load(60000.0),
     ),
     GoldenScenario(
         scenario_id="multifamily_site",
@@ -78,6 +89,7 @@ GOLDEN_SCENARIO_REGISTRY: Tuple[GoldenScenario, ...] = (
             lot_h=360.0,
             site_plan={"building_width": 110.0, "building_depth": 58.0, "parking_count": 96, "building_count": 3},
         ),
+        load_thresholds=_load(90000.0),
     ),
     GoldenScenario(
         scenario_id="mixed_use_14_acre_site",
@@ -104,6 +116,7 @@ GOLDEN_SCENARIO_REGISTRY: Tuple[GoldenScenario, ...] = (
             site_plan={"building_width": 110.0, "building_depth": 58.0, "parking_count": 180, "building_count": 4},
             drainage={"runoff_c": 0.82, "intensity_in_hr": 4.0},
         ),
+        load_thresholds=_load(180000.0, max_rss_mb=1280.0, max_peak_rss_mb=1792.0),
     ),
     GoldenScenario(
         scenario_id="sloped_detention_site",
@@ -120,6 +133,7 @@ GOLDEN_SCENARIO_REGISTRY: Tuple[GoldenScenario, ...] = (
             {"metric": "civil_production_ready", "equals": False},
         ),
         benchmark_payload=_payload("Golden Sloped Detention", project_type="commercial_pad", lot_w=360.0, lot_h=260.0, terrain={"slope_direction": "southeast", "fall_ft": 8.0}),
+        load_thresholds=_load(90000.0),
     ),
     GoldenScenario(
         scenario_id="roadway_corridor",
@@ -137,6 +151,7 @@ GOLDEN_SCENARIO_REGISTRY: Tuple[GoldenScenario, ...] = (
             {"metric": "civil_production_ready", "equals": False},
         ),
         benchmark_payload=_payload("Golden Roadway Corridor", project_type="roadway_corridor", lot_w=900.0, lot_h=220.0, deliverables=["road_profile", "cross_sections"]),
+        load_thresholds=_load(120000.0, max_rss_mb=1280.0, max_peak_rss_mb=1792.0),
     ),
     GoldenScenario(
         scenario_id="utility_conflict_heavy_site",
@@ -155,6 +170,7 @@ GOLDEN_SCENARIO_REGISTRY: Tuple[GoldenScenario, ...] = (
             {"metric": "civil_production_ready", "equals": False},
         ),
         benchmark_payload=_payload("Golden Utility Heavy", project_type="mixed_use", lot_w=520.0, lot_h=420.0, deliverables=["storm_pipe_plan", "sanitary_plan", "utility_plan"]),
+        load_thresholds=_load(120000.0, max_rss_mb=1280.0, max_peak_rss_mb=1792.0),
     ),
     GoldenScenario(
         scenario_id="floodplain_wetland_constrained_site",
@@ -185,6 +201,7 @@ GOLDEN_SCENARIO_REGISTRY: Tuple[GoldenScenario, ...] = (
             },
             coordinate_system={"epsg": "EPSG:2276", "units": "ft", "source": "golden_fixture"},
         ),
+        load_thresholds=_load(90000.0),
     ),
     GoldenScenario(
         scenario_id="retaining_wall_site",
@@ -201,6 +218,7 @@ GOLDEN_SCENARIO_REGISTRY: Tuple[GoldenScenario, ...] = (
             {"metric": "civil_production_ready", "equals": False},
         ),
         benchmark_payload=_payload("Golden Retaining Wall", project_type="retaining_wall_site", lot_w=280.0, lot_h=220.0, terrain={"fall_ft": 18.0}),
+        load_thresholds=_load(90000.0),
     ),
     GoldenScenario(
         scenario_id="incomplete_bad_input_case",
@@ -215,6 +233,7 @@ GOLDEN_SCENARIO_REGISTRY: Tuple[GoldenScenario, ...] = (
             {"metric": "production_blocker_count", "min": 1},
         ),
         benchmark_payload={"project_name": "Golden Incomplete Input", "units": "ft", "mode": "site_plan"},
+        load_thresholds=_load(30000.0, max_rss_mb=768.0, max_peak_rss_mb=1024.0),
     ),
     GoldenScenario(
         scenario_id="manual_production_gate_case",
@@ -230,6 +249,7 @@ GOLDEN_SCENARIO_REGISTRY: Tuple[GoldenScenario, ...] = (
             {"metric": "production_blocker_count", "min": 1},
         ),
         benchmark_payload=_payload("Golden Manual Gate", project_type="commercial_pad", lot_w=180.0, lot_h=140.0, meta={"input_mode": "manual", "source_input_mode": "manual", "manual_mode": True}),
+        load_thresholds=_load(45000.0, max_rss_mb=768.0, max_peak_rss_mb=1024.0),
     ),
 )
 
@@ -275,6 +295,12 @@ def validate_golden_scenarios() -> List[str]:
             issues.append(f"{scenario.scenario_id}: blocked_without missing")
         if not scenario.benchmark_expectations:
             issues.append(f"{scenario.scenario_id}: benchmark expectations missing")
+        if not scenario.load_thresholds:
+            issues.append(f"{scenario.scenario_id}: load thresholds missing")
+        else:
+            elapsed_limit = float(scenario.load_thresholds.get("max_elapsed_ms", 0.0))
+            if elapsed_limit <= 0.0:
+                issues.append(f"{scenario.scenario_id}: max_elapsed_ms missing")
         if not scenario.benchmark_payload.get("project_name"):
             issues.append(f"{scenario.scenario_id}: benchmark payload missing project_name")
     return issues
