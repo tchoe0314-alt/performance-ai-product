@@ -11,6 +11,7 @@ This does not mean construction-ready. Construction release remains blocked unle
 ## Current Evidence
 
 - Full backend regression on 2026-06-05 after review-package and cost-package hardening: `913 passed, 26 warnings in 593.93s`.
+- Private-alpha backend readiness audit focused regression on 2026-06-05: `31 passed, 22 warnings in 125.94s`.
 - Private-alpha hardening focused regression on 2026-06-05: `86 passed, 22 warnings in 262.03s`.
 - Workflow exposure regression on 2026-06-05: `76 passed, 22 warnings in 23.45s`.
 - Existing-conditions import/package focused regression on 2026-06-05: `43 passed, 22 warnings in 24.80s`.
@@ -36,6 +37,8 @@ This does not mean construction-ready. Construction release remains blocked unle
   - `backend/planning/golden_runner.py`
   - `backend/planning/construction_package.py`
   - `engines/cost_engine.py`
+  - `backend/application/private_alpha_readiness_audit.py`
+  - `backend/scripts/run_private_alpha_readiness.py`
   - `output/dxf_exporter.py`
   - `core/civil_design.py`
 
@@ -57,9 +60,10 @@ Current state:
 - `private_alpha_readiness` now exists in `backend/planning/private_alpha_readiness.py`.
 - Planner finalization attaches it to final plan metadata.
 - Artifact summaries, run summaries, workflow summaries, dashboards, and project operational summaries now expose compact private-alpha readiness status.
+- `backend/scripts/run_private_alpha_readiness.py` now generates a combined backend-only private-alpha evidence report from smoke/soak monitoring plus golden scenario regression proof.
 
 Issue:
-- Remaining gap is evidence freshness, not artifact existence: ordinary generated plans remain blocked until current alpha monitoring and golden scenario reports are attached.
+- Remaining gap is deployment evidence freshness, not artifact/command existence: ordinary generated plans remain blocked until current alpha monitoring and golden scenario reports are attached, and hosted alpha still needs a fresh run.
 
 Why this blocks full-system alpha:
 - Alpha testers need one authoritative backend answer: ready, needs review, or blocked. Today that answer is assembled from several metadata sections.
@@ -68,15 +72,17 @@ Required fix:
 - Keep the artifact as the single alpha readiness authority.
 - Attach current `alpha_monitoring_report` and `golden_scenario_report` during actual alpha backend readiness checks.
 - Continue exposing compact status through project/run/artifact summaries.
+- Run `backend/scripts/run_private_alpha_readiness.py` for each alpha backend/runtime evidence refresh.
 
 Evidence needed:
 - Covered by `tests/test_private_alpha_readiness.py`.
 - Covered by `tests/test_application_project_workflows.py`.
 - Covered by `tests/test_application_design_workflows.py`.
+- Covered by `tests/test_private_alpha_readiness_audit.py`.
 
 Status:
-- Mostly closed for infrastructure.
-- Still P0 until the alpha readiness check command can generate and persist fresh monitoring and golden reports for a deployment/run.
+- Closed for infrastructure.
+- Still needs a hosted alpha evidence run before treating a deployment as proven.
 
 ### 2. Real Existing-Conditions Package Gate Is Not Yet End-To-End Enough
 
@@ -187,6 +193,7 @@ Current state:
 - `alpha_monitoring_report` now applies explicit thresholds to runtime, memory, queue, stale jobs, failed jobs, and process restart evidence.
 - Health and debug runtime responses expose `alpha_monitoring_report`.
 - `backend/scripts/run_alpha_smoke_soak.py` can generate `alpha_smoke_soak_report_v1` by sampling `/api/debug/runtime` or local process monitoring.
+- `backend/scripts/run_private_alpha_readiness.py` can generate `private_alpha_backend_readiness_report_v1` by combining smoke/soak monitoring with golden scenario regression evidence.
 
 Issue:
 - Local tests prove threshold logic, and a sanitized local backend smoke/soak report is now committed.
@@ -196,13 +203,14 @@ Why this blocks full-system alpha:
 - Private alpha does not need public scale, but it does need evidence that the backend survives real user workflows without silent crashes or stuck jobs.
 
 Required fix:
-- Run the backend smoke/soak command against an actual alpha backend/runtime.
-- Store a generated alpha readiness monitoring report artifact.
+- Run the backend readiness command against an actual alpha backend/runtime.
+- Store a generated private-alpha backend readiness report artifact.
 
 Evidence needed:
 - Covered for report logic by `tests/test_alpha_monitoring.py`.
 - Covered for health exposure by `tests/test_application_auth_health_workflows.py`.
 - Covered for command/report behavior by `tests/test_alpha_smoke_soak.py`.
+- Covered for combined readiness command behavior by `tests/test_private_alpha_readiness_audit.py`.
 - Covered for local backend evidence by `reports/alpha/alpha_smoke_soak_report_2026-06-05.json`.
 - Still needed before public beta: deployed alpha soak evidence from the hosted runtime.
 
