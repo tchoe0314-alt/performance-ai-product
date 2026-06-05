@@ -49,6 +49,7 @@ class ApplicationAuthHealthWorkflowsTest(unittest.TestCase):
         self.assertTrue(data["operational_summary"]["ready_for_ui"])
         self.assertTrue(data["operational_summary"]["review_only"])
         self.assertFalse(data["operational_summary"]["construction_release_enabled"])
+        self.assertEqual(data["alpha_monitoring_report"]["readiness"], "blocked")
 
     def test_health_response_reports_private_alpha_review_only_guard(self):
         data = health_response(
@@ -57,7 +58,13 @@ class ApplicationAuthHealthWorkflowsTest(unittest.TestCase):
             product_mode="private_alpha",
             user_count=3,
             storage="postgres",
-            runtime_monitoring={"status": "healthy", "rss_mb": 128.0},
+            runtime_monitoring={
+                "status": "healthy",
+                "rss_mb": 128.0,
+                "peak_rss_mb": 180.0,
+                "job_queue": {"status": "healthy", "failed_recent_count": 0, "stale_job_count": 0, "oldest_active_age_sec": 0.0},
+                "process": {"status": "healthy", "recent_start_count": 1},
+            },
             release_guard={"construction_release_enabled": False, "construction_release_blocked": True},
         )
 
@@ -67,6 +74,8 @@ class ApplicationAuthHealthWorkflowsTest(unittest.TestCase):
         self.assertTrue(data["alpha_review_guard"]["construction_release_blocked"])
         self.assertFalse(data["alpha_review_guard"]["construction_release_enabled"])
         self.assertEqual(data["monitoring"]["rss_mb"], 128.0)
+        self.assertEqual(data["alpha_monitoring_report"]["readiness"], "ready")
+        self.assertEqual(data["operational_summary"]["alpha_monitoring_status"], "ready")
 
     def test_runtime_monitoring_reports_process_restart_risk(self):
         previous = {

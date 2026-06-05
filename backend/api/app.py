@@ -62,6 +62,7 @@ from backend.application.memory_logging import (
     runtime_monitoring_snapshot,
     runtime_process_monitoring_snapshot,
 )
+from backend.planning.alpha_monitoring import build_alpha_monitoring_report
 from backend.application.job_workflows import (
     build_drainage_job_runner as application_build_drainage_job_runner,
     build_orchestrate_job_runner as application_build_orchestrate_job_runner,
@@ -610,6 +611,7 @@ def _runtime_debug_payload() -> Dict[str, Any]:
         instance_id=RUNTIME_INSTANCE_ID,
     )
     monitoring = runtime_monitoring_snapshot(job_queue=job_queue, process=process_monitoring)
+    alpha_monitoring_report = build_alpha_monitoring_report(monitoring)
     return {
         "status": "ok",
         "pid": os.getpid(),
@@ -621,6 +623,7 @@ def _runtime_debug_payload() -> Dict[str, Any]:
         "review_only": bool(ALPHA_REVIEW_ONLY),
         "construction_release_guard": release_guard,
         "monitoring": monitoring,
+        "alpha_monitoring_report": alpha_monitoring_report,
         "storage_dir": str(STORAGE_DIR),
         "storage_dir_exists": STORAGE_DIR.exists(),
         "storage_kind": DB.storage_kind,

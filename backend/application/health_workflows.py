@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from backend.planning.alpha_monitoring import build_alpha_monitoring_report
+
 
 REVIEW_ONLY_PRODUCT_MODES = {"development", "private_alpha", "public_beta", "alpha", "review", "review_only"}
 
@@ -31,6 +33,7 @@ def health_response(
     normalized_storage = str(storage or "sqlite").strip().lower() or "sqlite"
     review_only = normalized_mode in REVIEW_ONLY_PRODUCT_MODES
     monitoring = runtime_monitoring or {}
+    alpha_monitoring_report = build_alpha_monitoring_report(monitoring)
     release = release_guard or {}
     monitoring_status = str(monitoring.get("status") or "healthy").strip().lower() or "healthy"
     operational_status = "healthy" if monitoring_status in {"healthy", "ok"} else "degraded"
@@ -56,6 +59,7 @@ def health_response(
             ),
         },
         "monitoring": monitoring,
+        "alpha_monitoring_report": alpha_monitoring_report,
         "operational_summary": {
             "status": operational_status,
             "mode": normalized_mode,
@@ -65,6 +69,7 @@ def health_response(
             "storage": normalized_storage,
             "user_count": int(user_count),
             "monitoring_status": monitoring_status,
+            "alpha_monitoring_status": str(alpha_monitoring_report.get("readiness") or ""),
             "construction_release_enabled": bool(release.get("construction_release_enabled")) and not review_only,
             "construction_release_blocked": review_only or bool(release.get("construction_release_blocked")),
             "ready_for_ui": True,
