@@ -10,7 +10,7 @@ This does not mean construction-ready. Construction release remains blocked unle
 
 ## Current Evidence
 
-- Full backend regression on 2026-06-05 after review-package and cost-package hardening: `913 passed, 26 warnings in 593.93s`.
+- Full backend regression on 2026-06-05 after private-alpha readiness audit command: `916 passed, 26 warnings in 1013.59s`.
 - Private-alpha backend readiness audit focused regression on 2026-06-05: `31 passed, 22 warnings in 125.94s`.
 - Private-alpha hardening focused regression on 2026-06-05: `86 passed, 22 warnings in 262.03s`.
 - Workflow exposure regression on 2026-06-05: `76 passed, 22 warnings in 23.45s`.
