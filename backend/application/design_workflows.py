@@ -22,6 +22,23 @@ def new_workflow_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
+def _compact_private_alpha_readiness(value: Any) -> Dict[str, Any]:
+    rec = dict(value or {}) if isinstance(value, dict) else {}
+    if not rec:
+        return {}
+    return {
+        "status": str(rec.get("status") or ""),
+        "full_system_private_alpha_ready": bool(rec.get("full_system_private_alpha_ready")),
+        "review_only": bool(rec.get("review_only")),
+        "construction_release_blocked": bool(rec.get("construction_release_blocked")),
+        "construction_release_allowed": bool(rec.get("construction_release_allowed")),
+        "blocker_count": int(rec.get("blocker_count") or 0),
+        "warning_count": int(rec.get("warning_count") or 0),
+        "launch_recommendation": str(rec.get("launch_recommendation") or ""),
+        "primary_next_action": str((list(rec.get("next_actions") or [])[:1] or [""])[0]),
+    }
+
+
 def _review_category_from_value(value: Any) -> str:
     lowered = str(value or "").strip().lower()
     if not lowered:
@@ -606,6 +623,7 @@ def build_run_summary(
     convergence = dict(plan_meta.get("convergence_summary") or {})
     final_release_review = dict(plan_meta.get("release_review") or {})
     optimization = dict(plan_meta.get("optimization_summary") or {})
+    private_alpha_readiness = _compact_private_alpha_readiness(plan_meta.get("private_alpha_readiness"))
     run_id = metadata.get("_workflow_run_id") or new_workflow_id("run")
     created_at = now_ts()
     parsed_payload = dict(result_data.get("parsed_payload") or {})
@@ -749,6 +767,7 @@ def build_run_summary(
             "status": str(engineering.get("status") or ""),
             "trust_score": float(engineering.get("engineering_trust_score") or truth.get("engineering_trust_score") or 0.0),
         },
+        "private_alpha_readiness": private_alpha_readiness,
         "truth_success": bool(truth.get("success")),
         "all_required_complete": bool(stage_completeness.get("all_required_complete")),
         "requested_deliverables": deliverable_summary["requested"],
@@ -812,6 +831,9 @@ def build_run_summary(
                 else {}
             ),
             "release_blocker_details": release_blocker_details,
+            "private_alpha_status": str(private_alpha_readiness.get("status") or ""),
+            "private_alpha_ready": bool(private_alpha_readiness.get("full_system_private_alpha_ready")),
+            "private_alpha_blocker_count": int(private_alpha_readiness.get("blocker_count") or 0),
             "blocked_export_count": len(blocked_exports),
             "failed_deliverable_count": len(failed_deliverables),
             "missing_deliverable_count": len(missing_deliverables),

@@ -174,6 +174,17 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
                             "status": "complete",
                             "engineering_trust_score": 88.0,
                         },
+                        "private_alpha_readiness": {
+                            "status": "blocked",
+                            "full_system_private_alpha_ready": False,
+                            "review_only": True,
+                            "construction_release_blocked": True,
+                            "construction_release_allowed": False,
+                            "blocker_count": 3,
+                            "warning_count": 1,
+                            "launch_recommendation": "blocked_before_private_alpha",
+                            "next_actions": ["Attach golden scenario report."],
+                        },
                         "truth_audit": {"success": True},
                         "deliverables": {
                             "requested": ["site_plan"],
@@ -293,6 +304,9 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         )
         self.assertEqual(summary["run_id"], "run_123")
         self.assertEqual(summary["engineering_status"]["status"], "complete")
+        self.assertEqual(summary["private_alpha_readiness"]["status"], "blocked")
+        self.assertEqual(summary["private_alpha_readiness"]["blocker_count"], 3)
+        self.assertEqual(summary["private_alpha_readiness"]["primary_next_action"], "Attach golden scenario report.")
         self.assertEqual(summary["coordination_summary"]["selected_strategy"], "balanced_group")
         self.assertEqual(summary["optimization_summary"]["active_goal"], "balanced")
         self.assertEqual(summary["optimization_summary"]["component_scores"]["parking_fit"], 100.0)
@@ -317,6 +331,9 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertEqual(summary["reliability_summary"]["persistence_scope"], "ephemeral")
         self.assertEqual(summary["reliability_summary"]["primary_attention"], "storm_hydraulics_invalid")
         self.assertEqual(summary["reliability_summary"]["blocked_export_count"], 1)
+        self.assertEqual(summary["reliability_summary"]["private_alpha_status"], "blocked")
+        self.assertFalse(summary["reliability_summary"]["private_alpha_ready"])
+        self.assertEqual(summary["reliability_summary"]["private_alpha_blocker_count"], 3)
         self.assertEqual(summary["reliability_summary"]["trace"]["run_id"], "run_123")
         self.assertEqual(summary["phase_checkpoints"]["layout"]["status"], "complete")
         self.assertTrue(summary["phase_checkpoints"]["layout"]["has_data"])

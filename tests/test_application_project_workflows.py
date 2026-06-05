@@ -135,6 +135,11 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
                             "artifact_count": 1,
                             "latest_run_id": "run_1",
                             "latest_artifact_id": "artifact_1",
+                            "latest_private_alpha_readiness": {
+                                "status": "ready",
+                                "full_system_private_alpha_ready": True,
+                                "blocker_count": 0,
+                            },
                         }
                     }
                 },
@@ -144,6 +149,8 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertTrue(response["success"])
         self.assertEqual(response["projects"][0]["project_id"], "p1")
         self.assertEqual(response["projects"][0]["operational_summary"]["operational_state"], "ready")
+        self.assertEqual(response["projects"][0]["operational_summary"]["private_alpha_status"], "ready")
+        self.assertTrue(response["projects"][0]["operational_summary"]["private_alpha_ready"])
 
     def test_get_project_detail_wraps_store_output(self):
         store = FakeProjectStore(
@@ -161,6 +168,11 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
                             "artifact_count": 1,
                             "latest_run_id": "run_2",
                             "latest_artifact_id": "artifact_1",
+                            "latest_private_alpha_readiness": {
+                                "status": "blocked",
+                                "full_system_private_alpha_ready": False,
+                                "blocker_count": 4,
+                            },
                         }
                     }
                 },
@@ -170,6 +182,8 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertTrue(response["success"])
         self.assertEqual(response["project"]["name"], "Demo")
         self.assertEqual(response["project"]["operational_summary"]["primary_attention"], "storm_hydraulics_invalid")
+        self.assertEqual(response["project"]["operational_summary"]["private_alpha_status"], "blocked")
+        self.assertEqual(response["project"]["operational_summary"]["private_alpha_blocker_count"], 4)
         self.assertEqual(response["project"]["latest_result"], {})
 
     def test_get_project_result_returns_saved_result_only(self):
@@ -200,6 +214,14 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
                 "created_at": 123.0,
                 "source": "unit_test",
                 "convergence_summary": {"converged": True},
+                "private_alpha_readiness": {
+                    "status": "blocked",
+                    "full_system_private_alpha_ready": False,
+                    "review_only": True,
+                    "construction_release_blocked": True,
+                    "blocker_count": 2,
+                    "launch_recommendation": "blocked_before_private_alpha",
+                },
                 "reliability_summary": {
                     "operational_state": "ready",
                     "primary_attention": "",
@@ -218,8 +240,12 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         self.assertEqual(merged["workflow"]["summary"]["latest_run_id"], "run_new")
         self.assertEqual(merged["workflow"]["summary"]["latest_operational_state"], "ready")
         self.assertEqual(merged["workflow"]["summary"]["latest_artifact_id"], "artifact_new")
+        self.assertEqual(merged["workflow"]["summary"]["latest_private_alpha_status"], "blocked")
+        self.assertEqual(merged["workflow"]["summary"]["latest_private_alpha_blocker_count"], 2)
         self.assertEqual(merged["workflow"]["review_dashboard"]["version"], "workflow_review_dashboard_v1")
         self.assertEqual(merged["workflow"]["review_dashboard"]["latest_run"]["run_id"], "run_new")
+        self.assertEqual(merged["workflow"]["review_dashboard"]["latest_run"]["private_alpha_readiness"]["status"], "blocked")
+        self.assertEqual(merged["workflow"]["review_dashboard"]["private_alpha_readiness"]["blocker_count"], 2)
         self.assertEqual(merged["workflow"]["review_dashboard"]["latest_artifact"]["artifact_id"], "artifact_new")
 
     def test_build_workflow_review_dashboard_groups_phase_deliverable_assumption_and_conflict_review(self):

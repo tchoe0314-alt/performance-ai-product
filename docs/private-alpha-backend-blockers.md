@@ -11,6 +11,8 @@ This does not mean construction-ready. Construction release remains blocked unle
 ## Current Evidence
 
 - Full backend regression on 2026-06-05: `871 passed, 26 warnings`.
+- Private-alpha hardening focused regression on 2026-06-05: `86 passed, 22 warnings in 262.03s`.
+- Workflow exposure regression on 2026-06-05: `76 passed, 22 warnings in 23.45s`.
 - Engine contract registry: 20 engines in `backend/planning/engine_contracts.py`.
 - Engine maturity from the current registry:
   - foundation: 2 engines
@@ -23,6 +25,10 @@ This does not mean construction-ready. Construction release remains blocked unle
   - `tests/test_application_auth_health_workflows.py`
 - Current full-system truth evidence:
   - `backend/planning/engine_readiness.py`
+  - `backend/planning/private_alpha_readiness.py`
+  - `backend/planning/existing_conditions_package.py`
+  - `backend/planning/standards_package.py`
+  - `backend/planning/alpha_monitoring.py`
   - `backend/planning/depth_validators.py`
   - `backend/planning/golden_runner.py`
   - `output/dxf_exporter.py`
@@ -30,11 +36,11 @@ This does not mean construction-ready. Construction release remains blocked unle
 
 ## Launch Recommendation
 
-Current backend state: private-alpha candidate, review-only.
+Current backend state: stronger private-alpha candidate, review-only.
 
 Not ready for public beta. Not construction-ready.
 
-The backend can run broad workflows and it now blocks many false-ready paths, but the full-system alpha still needs stronger evidence packages, deployed monitoring proof, real-file golden scenarios, and deeper production math in several engines.
+The backend can run broad workflows and it now blocks many false-ready paths. It now has first-class alpha readiness, existing-conditions package, standards package, monitoring report, and real-file golden-evidence primitives. The full-system alpha still needs deployed soak evidence, broader real-file golden coverage, and deeper production math in several engines.
 
 ## P0 Blockers Before Full-System Private Alpha
 
@@ -43,21 +49,29 @@ The backend can run broad workflows and it now blocks many false-ready paths, bu
 Current state:
 - `engine_readiness.summary.alpha_readiness` exists in `backend/planning/engine_readiness.py`.
 - Tests verify blocked and needs-review rollups in `tests/test_engine_readiness.py`.
+- `private_alpha_readiness` now exists in `backend/planning/private_alpha_readiness.py`.
+- Planner finalization attaches it to final plan metadata.
+- Artifact summaries, run summaries, workflow summaries, dashboards, and project operational summaries now expose compact private-alpha readiness status.
 
 Issue:
-- The backend still lacks a single persisted alpha readiness artifact that combines engine readiness, existing-conditions package state, standards acceptance, runtime monitoring, golden scenario results, and export/construction guards.
+- Remaining gap is evidence freshness, not artifact existence: ordinary generated plans remain blocked until current alpha monitoring and golden scenario reports are attached.
 
 Why this blocks full-system alpha:
 - Alpha testers need one authoritative backend answer: ready, needs review, or blocked. Today that answer is assembled from several metadata sections.
 
 Required fix:
-- Add a `private_alpha_readiness` final metadata artifact.
-- Include mode, review-only status, construction-release blocked status, engine rollup, import/source package state, standards state, export state, golden scenario status, monitoring status, and next actions.
-- Persist it on project finalization and expose it through project/artifact APIs.
+- Keep the artifact as the single alpha readiness authority.
+- Attach current `alpha_monitoring_report` and `golden_scenario_report` during actual alpha backend readiness checks.
+- Continue exposing compact status through project/run/artifact summaries.
 
 Evidence needed:
-- Unit tests proving the artifact is present on normal plans, blocked plans, and saved project summaries.
-- Application tests proving API responses surface the same artifact without recomputing stale state.
+- Covered by `tests/test_private_alpha_readiness.py`.
+- Covered by `tests/test_application_project_workflows.py`.
+- Covered by `tests/test_application_design_workflows.py`.
+
+Status:
+- Mostly closed for infrastructure.
+- Still P0 until the alpha readiness check command can generate and persist fresh monitoring and golden reports for a deployment/run.
 
 ### 2. Real Existing-Conditions Package Gate Is Not Yet End-To-End Enough
 
@@ -66,25 +80,31 @@ Current state:
 - Import validation exists in `backend/planning/existing_conditions_importers.py`.
 - CSV and LandXML paths have real parsing support.
 - Heavy formats are explicitly dependency-gated: DXF survey, Shapefile/GeoPackage, GeoTIFF, LAS/LAZ.
+- `existing_conditions_package` now normalizes summary, import validation, source/control metadata, acceptance, and ready/needs_review/blocked status.
+- Upload and online existing-condition workflows return `existing_conditions_package`.
+- Planner finalization attaches `existing_conditions_package`.
 
 Issue:
-- Full alpha still needs the complete upload-to-canonical workflow proven with realistic files, not just parser-level or metadata-level tests.
+- Full alpha still needs more real fixture coverage for LandXML, dependency-blocked heavy formats, and mixed import packages.
 - Heavy import formats may report blocked requirements when optional libraries are missing.
-- Coordinate-system/source/control metadata is correctly required, but users need a package-level acceptance path.
+- Coordinate-system/source/control metadata is correctly required and package acceptance now exists.
 
 Why this blocks full-system alpha:
 - Civora's core value depends on real-world site context. Alpha can be review-only, but it still needs truthful and usable import workflows for survey/GIS/terrain packages.
 
 Required fix:
-- Add an existing-conditions package builder that normalizes all import results into one accepted/rejected package.
-- Add clear package states: `ready`, `needs_review`, `blocked`.
 - Add real fixture tests for CSV survey, GeoJSON/GIS, LandXML, and dependency-blocked heavy formats.
 - Keep production-grade outputs blocked without survey control, datum, projected coordinate system, and source evidence.
 
 Evidence needed:
-- Tests showing accepted imports become canonical.
-- Tests showing metadata-only imports cannot clear production gates.
-- Tests showing missing optional dependencies produce explicit blockers, not crashes.
+- Covered for package builder by `tests/test_existing_conditions_package.py`.
+- Covered for upload exposure by `tests/test_application_file_workflows.py`.
+- Covered for parser/package validation by `tests/test_existing_conditions_importers.py`.
+- Still needed: fixture-backed LandXML package test and heavy-format dependency-blocked package tests.
+
+Status:
+- Partially closed.
+- Still P0 because full-system alpha needs broader real-file import package coverage.
 
 ### 3. Standards Acceptance Is Truthful But Not Yet Operationally Complete
 
@@ -92,30 +112,40 @@ Current state:
 - Standards discovery and acceptance checks exist.
 - `civil_design_readiness` blocks fake/trace-less standards.
 - Tests cover accepted rule counts and blocked inferred standards.
+- `standards_package` now records selected jurisdiction, accepted rules, official sources, company standards, overrides, reviewer notes, status, and production validation.
+- Standards acceptance workflow returns `standards_package`.
+- Planner finalization attaches `standards_package`.
 
 Issue:
-- There is not yet an operational standards workflow for selected jurisdiction, accepted source, user approval, version/date, and override history as a single backend package.
-- Live legal/rule discovery is not implemented as a dependable production source.
+- Live legal/rule discovery is still not implemented as a dependable production source.
+- Stale source/version handling and override history need deeper operational coverage.
 
 Why this blocks full-system alpha:
 - Alpha can use review-only standards, but must never imply code compliance without explicit accepted standards.
 
 Required fix:
-- Add `standards_package` metadata with selected jurisdiction, source URL/file, rule version/date, accepted rules, user acceptance, overrides, and reviewer notes.
-- Expose `standards_package.status`.
 - Keep QA in `needs_review` or `blocked` when standards are inferred, missing, stale, or unaccepted.
+- Add stale standards and override-history tests.
 
 Evidence needed:
-- Tests for accepted official standards, inferred standards, stale standards, user override, and missing jurisdiction.
+- Covered for accepted official, inferred/baseline, missing jurisdiction, and missing company standards by `tests/test_standards_package.py`.
+- Covered for workflow exposure by `tests/test_application_standards_workflows.py`.
+- Still needed: stale standards and user override history tests.
+
+Status:
+- Mostly closed for package infrastructure.
+- Still P0 until stale/override workflows are covered.
 
 ### 4. Golden Scenarios Are Mostly Synthetic, Not Real Imported Projects
 
 Current state:
 - `backend/planning/golden_scenarios.py` defines required engines, canonical signals, gates, and payloads.
 - `backend/planning/golden_runner.py` checks false production-ready and construction-release claims.
+- Golden runner now reports `status`, `passed`, real-file fixture count, synthetic scenario count, and per-scenario import evidence.
+- At least one backend test creates real CSV survey and GeoJSON GIS fixture files, builds an accepted existing-conditions package, and feeds that evidence into a golden scenario.
 
 Issue:
-- Golden scenarios use synthetic payloads instead of realistic imported survey/GIS/terrain files.
+- Most golden scenarios still use synthetic payloads instead of realistic imported survey/GIS/terrain files.
 - They prove many truth gates, but they do not yet prove real-world import-to-engineering behavior or large-project endurance.
 
 Why this blocks full-system alpha:
@@ -134,29 +164,41 @@ Required fix:
 - Add benchmark pass criteria for runtime, memory, canonical fields, blocked states, and export readiness.
 
 Evidence needed:
-- Golden runner tests using real fixture import packages.
+- Covered narrowly by `tests/test_golden_runner.py`.
 - Load/soak tests with thresholds stored in the scenario definitions.
+- Still needed: real-file fixtures for every listed golden scenario and runtime/memory thresholds attached to scenario definitions.
+
+Status:
+- Partially closed.
+- Still P0 because real-file coverage is not broad enough.
 
 ### 5. Deployed Alpha Monitoring Proof Is Missing
 
 Current state:
 - Runtime, queue, memory, and lifecycle monitoring are implemented.
 - Health workflows expose monitoring and alpha/review-only mode data.
+- `alpha_monitoring_report` now applies explicit thresholds to runtime, memory, queue, stale jobs, failed jobs, and process restart evidence.
+- Health and debug runtime responses expose `alpha_monitoring_report`.
 
 Issue:
-- Local tests prove monitoring logic, but there is no deployed alpha soak evidence in the repo.
-- No threshold file defines acceptable alpha memory/runtime/queue/error rates.
+- Local tests prove threshold logic, but there is no deployed alpha soak evidence in the repo.
+- Thresholds exist in code/env defaults, but there is no committed alpha threshold config file or smoke/soak command artifact yet.
 
 Why this blocks full-system alpha:
 - Private alpha does not need public scale, but it does need evidence that the backend survives real user workflows without silent crashes or stuck jobs.
 
 Required fix:
-- Add an alpha monitoring threshold contract.
 - Add a backend smoke/soak command that records health, queue, memory, crash-loop risk, and long-running job status.
 - Store a generated alpha readiness monitoring report artifact.
 
 Evidence needed:
-- Test or script output proving health endpoints and queue monitors stay within thresholds under repeated workflows.
+- Covered for report logic by `tests/test_alpha_monitoring.py`.
+- Covered for health exposure by `tests/test_application_auth_health_workflows.py`.
+- Still needed: smoke/soak command and generated alpha monitoring report artifact from a repeated backend workflow.
+
+Status:
+- Partially closed.
+- Still P0 until deployed/local soak evidence can be generated repeatably.
 
 ## P1 Blockers Before Public Beta
 
@@ -289,26 +331,26 @@ Decision needed:
 | Earthwork | active | usable review-only | Haul/phasing/wall tradeoff depth |
 | Hydrology | active | needs review | Hydrographs, detention routing, overflow/flood routing depth |
 | Conflict Resolution | active | usable review-only | Larger cluster optimization/golden proof |
-| QA / Validation | active | usable review-only | Unified private-alpha readiness artifact |
+| QA / Validation | active | usable review-only | Fresh monitoring/golden evidence and deeper standards/import edge cases |
 | Quantity | active | usable review-only | Cost package and approved price source workflow |
 | Export / CAD | active | usable review-only | Review-package manifest, Civil3D/DWG confidence |
 | Profile / Section | active | usable review-only | More live linkage tests across real roadway/utility scenarios |
-| GIS / Existing Conditions | early | blocked without sources | Real import package acceptance and real-file fixtures |
+| GIS / Existing Conditions | early | blocked without sources | Broader LandXML/heavy-format package fixtures and real-file golden coverage |
 | AI Orchestration | active | usable review-only | More deterministic rerun/workflow guidance under missing inputs |
 | Reactive Model | foundation | usable review-only | Deployed proof and large partial-rerun benchmarks |
 
 ## Exact Fix Order
 
-1. Build and persist `private_alpha_readiness`.
-2. Add existing-conditions package builder and package-status tests.
-3. Add standards package acceptance workflow.
-4. Add real-file golden fixture package and import-to-engineering runner tests.
-5. Add alpha monitoring thresholds and soak report script.
-6. Deepen storm/hydrology detention/outlet/drawdown calculations.
-7. Deepen water pressure/fire-flow/hydrant calculations.
-8. Deepen roadway/corridor profiles, crowns, curb returns, intersections, and ADA evidence.
-9. Add review-package manifest and Civil3D/LandXML/DWG explicit confidence states.
-10. Add cost package status and approved unit-price fixture coverage.
+1. Add alpha smoke/soak command that generates and stores `alpha_monitoring_report` from repeated backend workflows.
+2. Expand real-file golden fixtures beyond the first CSV/GeoJSON package: LandXML, sloped detention, roadway corridor, utility-heavy, floodplain/wetland, retaining wall.
+3. Add stale standards and standards override-history tests to `standards_package`.
+4. Add LandXML package acceptance and heavy-format dependency-blocked package tests to `existing_conditions_package`.
+5. Deepen storm/hydrology detention/outlet/drawdown calculations.
+6. Deepen water pressure/fire-flow/hydrant calculations.
+7. Deepen roadway/corridor profiles, crowns, curb returns, intersections, and ADA evidence.
+8. Add review-package manifest and Civil3D/LandXML/DWG explicit confidence states.
+9. Add cost package status and approved unit-price fixture coverage.
+10. Add broader load/runtime thresholds to golden scenario definitions.
 
 ## Non-Negotiable Truth Rules
 

@@ -135,6 +135,11 @@ def _build_workflow_summary(
     if latest_artifact_status.lower() == "blocked":
         latest_artifact_release_ready = False
     latest_release_ready = bool(latest_reliability.get("release_ready")) and not latest_blockers
+    latest_private_alpha = _compact_private_alpha_readiness(
+        latest_run.get("private_alpha_readiness")
+        or latest_reliability.get("private_alpha_readiness")
+        or latest_artifact.get("private_alpha_readiness")
+    )
     return {
         "run_count": len(runs),
         "artifact_count": len(artifacts),
@@ -158,6 +163,27 @@ def _build_workflow_summary(
         "latest_artifact_release_blockers": latest_artifact_blockers,
         "latest_artifact_release_blocker_details": blocker_explanations(latest_artifact_blockers),
         "latest_artifact_model_reference": dict(latest_artifact.get("canonical_model_reference") or {}),
+        "latest_private_alpha_readiness": latest_private_alpha,
+        "latest_private_alpha_status": str(latest_private_alpha.get("status") or ""),
+        "latest_private_alpha_ready": bool(latest_private_alpha.get("full_system_private_alpha_ready")),
+        "latest_private_alpha_blocker_count": int(latest_private_alpha.get("blocker_count") or 0),
+    }
+
+
+def _compact_private_alpha_readiness(value: Any) -> Dict[str, Any]:
+    rec = dict(value or {}) if isinstance(value, dict) else {}
+    if not rec:
+        return {}
+    return {
+        "status": str(rec.get("status") or ""),
+        "full_system_private_alpha_ready": bool(rec.get("full_system_private_alpha_ready")),
+        "review_only": bool(rec.get("review_only")),
+        "construction_release_blocked": bool(rec.get("construction_release_blocked")),
+        "construction_release_allowed": bool(rec.get("construction_release_allowed")),
+        "blocker_count": int(rec.get("blocker_count") or 0),
+        "warning_count": int(rec.get("warning_count") or 0),
+        "launch_recommendation": str(rec.get("launch_recommendation") or ""),
+        "primary_next_action": str((list(rec.get("next_actions") or [])[:1] or [""])[0]),
     }
 
 
@@ -271,6 +297,7 @@ def _latest_release_blockers(
 
 def _project_operational_summary(record: Dict[str, Any]) -> Dict[str, Any]:
     workflow_summary = dict(dict(record.get("metadata") or {}).get("workflow", {}).get("summary") or {})
+    private_alpha = dict(workflow_summary.get("latest_private_alpha_readiness") or {})
     return {
         "operational_state": str(workflow_summary.get("latest_operational_state") or ""),
         "primary_attention": str(workflow_summary.get("latest_primary_attention") or ""),
@@ -282,6 +309,10 @@ def _project_operational_summary(record: Dict[str, Any]) -> Dict[str, Any]:
         "latest_artifact_id": str(workflow_summary.get("latest_artifact_id") or ""),
         "latest_artifact_release_status": str(workflow_summary.get("latest_artifact_release_status") or ""),
         "latest_artifact_release_ready": bool(workflow_summary.get("latest_artifact_release_ready")),
+        "private_alpha_readiness": private_alpha,
+        "private_alpha_status": str(private_alpha.get("status") or ""),
+        "private_alpha_ready": bool(private_alpha.get("full_system_private_alpha_ready")),
+        "private_alpha_blocker_count": int(private_alpha.get("blocker_count") or 0),
     }
 
 
@@ -327,6 +358,9 @@ def _compact_run_for_dashboard(run: Dict[str, Any]) -> Dict[str, Any]:
         "retryable": bool(reliability.get("retryable")),
         "primary_attention": str(reliability.get("primary_attention") or ""),
         "release_blocker_details": list(reliability.get("release_blocker_details") or []),
+        "private_alpha_readiness": _compact_private_alpha_readiness(
+            run.get("private_alpha_readiness") or reliability.get("private_alpha_readiness")
+        ),
         "blocked_exports": list(convergence.get("blocked_exports") or []),
         "blocked_reasons": list(convergence.get("blocked_reasons") or []),
         "unresolved_conflict_count": int(
@@ -358,6 +392,7 @@ def _compact_artifact_for_dashboard(artifact: Dict[str, Any]) -> Dict[str, Any]:
         "release_blocker_details": list(artifact.get("release_blocker_details") or []),
         "canonical_model_reference": dict(artifact.get("canonical_model_reference") or {}),
         "construction_package_id": str(artifact.get("construction_package_id") or ""),
+        "private_alpha_readiness": _compact_private_alpha_readiness(artifact.get("private_alpha_readiness")),
     }
 
 
@@ -376,6 +411,7 @@ def build_workflow_review_dashboard(*, runs: list[Dict[str, Any]], artifacts: li
         "primary_attention": str(summary.get("latest_primary_attention") or ""),
         "release_blockers": latest_blockers,
         "release_blocker_details": list(summary.get("latest_release_blocker_details") or []),
+        "private_alpha_readiness": dict(summary.get("latest_private_alpha_readiness") or {}),
         "run_count": len(runs),
         "artifact_count": len(artifacts),
         "latest_run": latest_run,
