@@ -78,6 +78,50 @@ class StandardsPackageTests(unittest.TestCase):
         fields = {item["field"] for item in package["blockers"]}
         self.assertIn("jurisdiction", fields)
 
+    def test_stale_official_standards_need_review_without_fake_compliance(self) -> None:
+        evidence = _official_evidence()
+        evidence["standards_acceptance"]["retrieved_date"] = "2000-01-01"
+        evidence["design_standards"]["retrieved_date"] = "2000-01-01"
+        for rule in evidence["standards_acceptance"]["accepted_rules"]:
+            rule["retrieved_date"] = "2000-01-01"
+        for rule in evidence["design_standards"]["rules"]:
+            rule["retrieved_date"] = "2000-01-01"
+
+        package = build_standards_package(evidence)
+
+        self.assertEqual(package["status"], "needs_review")
+        self.assertFalse(package["production_usable"])
+        self.assertTrue(package["staleness"]["stale"])
+        self.assertIn("standards_stale", {item["field"] for item in package["warnings"]})
+
+    def test_complete_override_history_is_preserved_without_blocking_package(self) -> None:
+        evidence = _official_evidence()
+        evidence["standards_overrides"] = [
+            {
+                "rule_id": "city_cover",
+                "reason": "User selected a stricter company minimum cover for private-alpha review.",
+                "accepted_by": "u1",
+                "accepted_date": "2026-06-05",
+            }
+        ]
+
+        package = build_standards_package(evidence)
+
+        self.assertEqual(package["status"], "ready")
+        self.assertEqual(package["override_count"], 1)
+        self.assertTrue(package["override_history_complete"])
+        self.assertEqual(package["overrides"][0]["rule_id"], "city_cover")
+
+    def test_incomplete_override_history_blocks_package(self) -> None:
+        evidence = _official_evidence()
+        evidence["standards_overrides"] = [{"rule_id": "city_cover", "reason": "Use stricter company value."}]
+
+        package = build_standards_package(evidence)
+
+        self.assertEqual(package["status"], "blocked")
+        self.assertFalse(package["override_history_complete"])
+        self.assertIn("override_history", {item["field"] for item in package["blockers"]})
+
 
 if __name__ == "__main__":
     unittest.main()

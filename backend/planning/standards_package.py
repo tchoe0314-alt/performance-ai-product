@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any, Dict, Iterable, List
+from datetime import date
+from typing import Any, Dict, Iterable, List, Optional
 
 from .common import readiness_issue_explanations, safe_dict, safe_list, safe_str
 from .standards_discovery import validate_standards_acceptance_for_production
+
+STANDARDS_STALE_DAYS = 365
 
 
 def _blocker(field: str, reason: str, *, next_action: str = "", severity: str = "blocker") -> Dict[str, Any]:
@@ -60,6 +63,64 @@ def _accepted_rules(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
     ]
 
 
+def _parse_date(value: Any) -> Optional[date]:
+    text = safe_str(value)
+    if not text or text == "static":
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except Exception:
+        return None
+
+
+def _retrieved_date(meta: Dict[str, Any], accepted_rules: List[Dict[str, Any]]) -> str:
+    acceptance = safe_dict(meta.get("standards_acceptance"))
+    design = safe_dict(meta.get("design_standards"))
+    package = safe_dict(meta.get("standards_package"))
+    for value in (
+        acceptance.get("retrieved_date"),
+        design.get("retrieved_date"),
+        package.get("retrieved_date"),
+        safe_dict(meta.get("standards_review_packet")).get("retrieved_date"),
+    ):
+        text = safe_str(value)
+        if text:
+            return text
+    for rule in accepted_rules:
+        text = safe_str(rule.get("retrieved_date"))
+        if text:
+            return text
+    return ""
+
+
+def _staleness(retrieved_date: str, *, today: Optional[date] = None) -> Dict[str, Any]:
+    parsed = _parse_date(retrieved_date)
+    if parsed is None:
+        return {
+            "retrieved_date": safe_str(retrieved_date),
+            "age_days": None,
+            "stale": False,
+            "evaluated": False,
+        }
+    current = today or date.today()
+    age_days = max(0, (current - parsed).days)
+    return {
+        "retrieved_date": retrieved_date,
+        "age_days": age_days,
+        "stale": age_days > STANDARDS_STALE_DAYS,
+        "stale_after_days": STANDARDS_STALE_DAYS,
+        "evaluated": True,
+    }
+
+
+def _overrides(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return [
+        safe_dict(item)
+        for item in safe_list(meta.get("standards_overrides") or safe_dict(meta.get("standards_acceptance")).get("overrides"))
+        if safe_dict(item)
+    ]
+
+
 def _validation(meta: Dict[str, Any], accepted_rules: List[Dict[str, Any]]) -> Dict[str, Any]:
     acceptance = safe_dict(meta.get("standards_acceptance"))
     design = safe_dict(meta.get("design_standards"))
@@ -91,6 +152,9 @@ def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     jurisdiction = _jurisdiction(meta)
     accepted_rules = _accepted_rules(meta)
     validation = _validation(meta, accepted_rules)
+    retrieved_date = _retrieved_date(meta, accepted_rules)
+    staleness = _staleness(retrieved_date)
+    overrides = _overrides(meta)
     source_urls = _source_urls(
         acceptance.get("source_urls"),
         design.get("source_urls"),
@@ -158,6 +222,32 @@ def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
                 severity="warning",
             )
         )
+    if staleness.get("stale"):
+        warnings.append(
+            _blocker(
+                "standards_stale",
+                "Accepted standards source evidence is stale and needs confirmation before permit-style QA.",
+                next_action="Re-check the official source, refresh retrieved_date, or keep standards in review-only mode.",
+                severity="warning",
+            )
+        )
+    incomplete_overrides: List[Dict[str, Any]] = []
+    for override in overrides:
+        missing = [
+            key
+            for key in ("rule_id", "reason", "accepted_by", "accepted_date")
+            if not safe_str(override.get(key))
+        ]
+        if missing:
+            incomplete_overrides.append({"rule_id": safe_str(override.get("rule_id")), "missing": missing})
+    if incomplete_overrides:
+        blockers.append(
+            _blocker(
+                "override_history",
+                "Standards overrides need traceable rule, reason, user, and date history.",
+                next_action="Record override rule_id, reason, accepted_by, and accepted_date before relying on modified standards.",
+            )
+        )
 
     status = "blocked" if blockers else "needs_review" if warnings else "ready"
     return {
@@ -170,9 +260,12 @@ def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
         "official_source_count": validation.get("official_source_count", 0),
         "accepted_rule_count": len(accepted_rules),
         "accepted_rules": deepcopy(accepted_rules),
-        "overrides": deepcopy(safe_list(meta.get("standards_overrides") or safe_dict(meta.get("standards_acceptance")).get("overrides"))),
+        "override_count": len(overrides),
+        "overrides": deepcopy(overrides),
+        "override_history_complete": bool(overrides) and not incomplete_overrides if overrides else True,
         "reviewer_notes": safe_str(meta.get("standards_reviewer_notes") or safe_dict(meta.get("standards_acceptance")).get("reviewer_notes")),
-        "retrieved_date": safe_str(acceptance.get("retrieved_date") or design.get("retrieved_date")),
+        "retrieved_date": safe_str(retrieved_date),
+        "staleness": staleness,
         "production_validation": deepcopy(validation),
         "company_standards": deepcopy(company),
         "blockers": blockers,

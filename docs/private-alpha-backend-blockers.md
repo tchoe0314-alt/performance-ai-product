@@ -14,6 +14,7 @@ This does not mean construction-ready. Construction release remains blocked unle
 - Private-alpha hardening focused regression on 2026-06-05: `86 passed, 22 warnings in 262.03s`.
 - Workflow exposure regression on 2026-06-05: `76 passed, 22 warnings in 23.45s`.
 - Existing-conditions import/package focused regression on 2026-06-05: `43 passed, 22 warnings in 24.80s`.
+- Standards package focused regression on 2026-06-05: `27 passed, 22 warnings in 20.98s`.
 - Engine contract registry: 20 engines in `backend/planning/engine_contracts.py`.
 - Engine maturity from the current registry:
   - foundation: 2 engines
@@ -123,23 +124,25 @@ Current state:
 
 Issue:
 - Live legal/rule discovery is still not implemented as a dependable production source.
-- Stale source/version handling and override history need deeper operational coverage.
+- Stale source/version handling now moves the package to `needs_review` instead of allowing fake production usability.
+- Override history is preserved as package evidence; incomplete override history blocks the package.
 
 Why this blocks full-system alpha:
 - Alpha can use review-only standards, but must never imply code compliance without explicit accepted standards.
 
 Required fix:
 - Keep QA in `needs_review` or `blocked` when standards are inferred, missing, stale, or unaccepted.
-- Add stale standards and override-history tests.
+- Keep live law/rule discovery review-only until dependable official-source ingestion and user acceptance are implemented.
 
 Evidence needed:
 - Covered for accepted official, inferred/baseline, missing jurisdiction, and missing company standards by `tests/test_standards_package.py`.
 - Covered for workflow exposure by `tests/test_application_standards_workflows.py`.
-- Still needed: stale standards and user override history tests.
+- Covered for stale source handling and user override history by `tests/test_standards_package.py`.
+- Still needed: dependable live legal/rule discovery against official sources; this remains review-only and should not be presented as live code compliance.
 
 Status:
-- Mostly closed for package infrastructure.
-- Still P0 until stale/override workflows are covered.
+- Closed for standards package infrastructure needed by private-alpha truth gates.
+- Still not a public/construction compliance system because live legal/rule discovery remains review-only.
 
 ### 4. Golden Scenarios Are Mostly Synthetic, Not Real Imported Projects
 
@@ -350,13 +353,12 @@ Decision needed:
 
 1. Run alpha smoke/soak against a real backend workflow and store the generated `alpha_smoke_soak_report_v1` artifact.
 2. Expand real-file golden fixtures beyond the first CSV/GeoJSON package: LandXML, sloped detention, roadway corridor, utility-heavy, floodplain/wetland, retaining wall.
-3. Add stale standards and standards override-history tests to `standards_package`.
-4. Deepen storm/hydrology detention/outlet/drawdown calculations.
-5. Deepen water pressure/fire-flow/hydrant calculations.
-6. Deepen roadway/corridor profiles, crowns, curb returns, intersections, and ADA evidence.
-7. Add review-package manifest and Civil3D/LandXML/DWG explicit confidence states.
-8. Add cost package status and approved unit-price fixture coverage.
-9. Add broader load/runtime thresholds to golden scenario definitions.
+3. Deepen storm/hydrology detention/outlet/drawdown calculations.
+4. Deepen water pressure/fire-flow/hydrant calculations.
+5. Deepen roadway/corridor profiles, crowns, curb returns, intersections, and ADA evidence.
+6. Add review-package manifest and Civil3D/LandXML/DWG explicit confidence states.
+7. Add cost package status and approved unit-price fixture coverage.
+8. Add broader load/runtime thresholds to golden scenario definitions.
 
 ## Non-Negotiable Truth Rules
 
