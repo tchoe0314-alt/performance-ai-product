@@ -275,6 +275,9 @@ from backend.planning.engine_readiness import (
 from backend.planning.construction_package import (
     build_construction_package_manifest as _build_construction_package_manifest,
 )
+from backend.planning.existing_conditions_package import (
+    build_existing_conditions_package as _build_existing_conditions_package,
+)
 from backend.planning.private_alpha_readiness import (
     build_private_alpha_readiness as _build_private_alpha_readiness,
 )
@@ -10686,6 +10689,7 @@ def finalize_plan(plan: Dict[str, Any], *, parsed: Dict[str, Any], route: Routin
     except Exception as exc:
         final["meta"].setdefault("export_audit", {"ready": False, "error": safe_str(exc)})
     final["meta"]["existing_conditions_summary"] = _summarize_existing_conditions(final, parsed)
+    final["meta"]["existing_conditions_package"] = _build_existing_conditions_package(final)
     final["meta"].setdefault("reactive_update_report", _reactive_report_from_plan(final))
     final["meta"]["depth_validation"] = {
         "stormwater": _validate_stormwater_depth(final),

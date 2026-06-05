@@ -109,22 +109,58 @@ def _engine_section(meta: Dict[str, Any]) -> Dict[str, Any]:
 
 def _existing_conditions_section(meta: Dict[str, Any]) -> Dict[str, Any]:
     existing = safe_dict(meta.get("existing_conditions_summary"))
-    ready = bool(existing.get("production_ready"))
+    package = safe_dict(meta.get("existing_conditions_package"))
+    package_status = safe_str(package.get("status")).lower()
+    ready = bool(existing.get("production_ready")) and package_status == "ready" and bool(package.get("accepted"))
     blockers: List[Dict[str, Any]] = []
-    if not ready:
+    warnings: List[Dict[str, Any]] = []
+    if not package:
         blockers.append(
             _blocker(
                 "existing_conditions",
                 "existing_conditions_package",
+                "Private alpha needs an existing-conditions package, not only loose survey/GIS metadata.",
+                next_action="Build the existing-conditions package from imported survey, terrain, GIS, CRS, and acceptance evidence.",
+            )
+        )
+    elif package_status == "blocked":
+        blockers.extend(safe_list(package.get("blockers")))
+        if not blockers:
+            blockers.append(
+                _blocker(
+                    "existing_conditions",
+                    "existing_conditions_package",
+                    "Existing-conditions package is blocked.",
+                    next_action="Resolve existing-conditions package blockers before full-system alpha readiness.",
+                )
+            )
+    elif package_status == "needs_review":
+        warnings.append(
+            _blocker(
+                "existing_conditions",
+                "existing_conditions_package_acceptance",
+                "Existing-conditions package exists but still needs acceptance/review.",
+                severity="warning",
+                next_action="Accept the package for private-alpha review use or keep downstream systems in needs-review.",
+            )
+        )
+    if package and not bool(existing.get("production_ready")):
+        blockers.append(
+            _blocker(
+                "existing_conditions",
+                "existing_conditions_summary",
                 "Private alpha needs a real existing-conditions package state: survey/control, terrain, GIS constraints, and coordinate system must be validated or explicitly missing.",
                 next_action="Import or validate survey/control, terrain source, GIS constraints, and coordinate system before full-system alpha readiness.",
             )
         )
     return {
-        "status": _status_from_section(ready, blockers),
+        "status": _status_from_section(ready, blockers, warnings),
         "production_ready": ready,
+        "package_status": package_status or "missing",
+        "package": deepcopy(package),
         "summary": deepcopy(existing),
         "blockers": blockers,
+        "warnings": warnings,
     }
 
 

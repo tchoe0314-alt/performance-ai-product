@@ -77,6 +77,9 @@ class ApplicationFileWorkflowsTest(unittest.TestCase):
             self.assertTrue(result["success"])
             self.assertEqual(result["canonical_existing_conditions"]["survey"]["point_count"], 3)
             self.assertTrue(result["existing_conditions_summary"]["survey"]["ready"])
+            self.assertIn("existing_conditions_package", result)
+            self.assertEqual(result["existing_conditions_package"]["status"], "blocked")
+            self.assertIn("import_validation", result["existing_conditions_package"])
 
     def test_online_sources_returns_truth_labeled_registry(self):
         result = existing_conditions_online_sources(address="1 Main St", bbox={"west": -97, "south": 32, "east": -96, "north": 33})
@@ -91,6 +94,8 @@ class ApplicationFileWorkflowsTest(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "blocked")
         self.assertIn("existing_conditions_summary", result)
+        self.assertIn("existing_conditions_package", result)
+        self.assertEqual(result["existing_conditions_package"]["status"], "blocked")
 
 
 if __name__ == "__main__":

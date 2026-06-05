@@ -32,6 +32,13 @@ def _ready_meta() -> dict:
             }
         },
         "existing_conditions_summary": {"production_ready": True},
+        "existing_conditions_package": {
+            "status": "ready",
+            "production_ready": True,
+            "accepted": True,
+            "blockers": [],
+            "warnings": [],
+        },
         "standards_acceptance": {
             "production_validation": {
                 "status": "ready",

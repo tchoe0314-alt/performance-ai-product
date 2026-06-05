@@ -12,6 +12,7 @@ from fastapi import HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from backend.planning.existing_conditions import summarize_existing_conditions
+from backend.planning.existing_conditions_package import build_existing_conditions_package
 from backend.planning.existing_conditions_importers import (
     classify_existing_conditions_file,
     import_dxf_existing_conditions,
@@ -170,16 +171,17 @@ def upload_existing_conditions_file(
 
     merged = merge_imported_existing_conditions(*imports)
     warnings.extend(merged.get("warnings") or [])
-    summary = summarize_existing_conditions(
-        {
-            "meta": {
-                "survey": merged.get("survey"),
-                "gis_layers": merged.get("gis_layers"),
-                "coordinate_system": merged.get("coordinate_system"),
-                "grading": {"source_quality": "survey"} if (merged.get("survey") or {}).get("point_count") else {},
-            }
-        }
-    )
+    package_meta = {
+        "survey": merged.get("survey"),
+        "gis_layers": merged.get("gis_layers"),
+        "coordinate_system": merged.get("coordinate_system"),
+        "sources": merged.get("sources"),
+        "existing_conditions_import_validation": merged.get("import_validation"),
+        "grading": {"source_quality": "survey"} if (merged.get("survey") or {}).get("point_count") else {},
+    }
+    summary = summarize_existing_conditions({"meta": package_meta})
+    package_meta["existing_conditions_summary"] = summary
+    package = build_existing_conditions_package({"meta": package_meta})
 
     return {
         "success": bool(merged.get("success")),
@@ -197,6 +199,7 @@ def upload_existing_conditions_file(
             "sources": merged.get("sources"),
         },
         "existing_conditions_summary": summary,
+        "existing_conditions_package": package,
         "warnings": warnings,
     }
 
@@ -239,18 +242,17 @@ def fetch_existing_conditions_online(
         include_elevation=include_elevation,
     )
     canonical = result.get("canonical_existing_conditions") or {}
-    summary = summarize_existing_conditions(
-        {
-            "meta": {
-                "survey": canonical.get("survey"),
-                "gis_layers": canonical.get("gis_layers"),
-                "existing_conditions": canonical.get("existing_conditions"),
-                "coordinate_system": canonical.get("coordinate_system"),
-                "dem_lidar": canonical.get("dem_lidar"),
-            }
-        }
-    )
+    package_meta = {
+        "survey": canonical.get("survey"),
+        "gis_layers": canonical.get("gis_layers"),
+        "existing_conditions": canonical.get("existing_conditions"),
+        "coordinate_system": canonical.get("coordinate_system"),
+        "dem_lidar": canonical.get("dem_lidar"),
+    }
+    summary = summarize_existing_conditions({"meta": package_meta})
+    package_meta["existing_conditions_summary"] = summary
     result["existing_conditions_summary"] = summary
+    result["existing_conditions_package"] = build_existing_conditions_package({"meta": package_meta})
     return result
 
 
