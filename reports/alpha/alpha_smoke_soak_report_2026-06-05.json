@@ -1,0 +1,841 @@
+{
+  "aggregate_runtime_monitoring": {
+    "job_queue": {
+      "failed_recent_count": 0,
+      "oldest_active_age_sec": 0.0,
+      "sample_count": 5,
+      "stale_job_count": 0,
+      "status": "healthy"
+    },
+    "peak_rss_mb": 110.1,
+    "process": {
+      "previous_shutdown_clean": true,
+      "recent_start_count": 2,
+      "sample_count": 5,
+      "status": "healthy"
+    },
+    "rss_mb": 110.1,
+    "status": "healthy",
+    "truth_label": "Aggregated alpha smoke/soak runtime sample. Missing queue or process evidence keeps alpha monitoring blocked.",
+    "warnings": []
+  },
+  "alpha_monitoring_report": {
+    "blocker_details": [],
+    "blockers": [],
+    "readiness": "ready",
+    "runtime_monitoring": {
+      "job_queue": {
+        "failed_recent_count": 0,
+        "oldest_active_age_sec": 0.0,
+        "sample_count": 5,
+        "stale_job_count": 0,
+        "status": "healthy"
+      },
+      "peak_rss_mb": 110.1,
+      "process": {
+        "previous_shutdown_clean": true,
+        "recent_start_count": 2,
+        "sample_count": 5,
+        "status": "healthy"
+      },
+      "rss_mb": 110.1,
+      "status": "healthy",
+      "truth_label": "Aggregated alpha smoke/soak runtime sample. Missing queue or process evidence keeps alpha monitoring blocked.",
+      "warnings": []
+    },
+    "status": "healthy",
+    "success": true,
+    "thresholds": {
+      "max_failed_recent_count": 0.0,
+      "max_oldest_active_age_sec": 30.0,
+      "max_peak_rss_mb": 1024.0,
+      "max_recent_start_count": 3.0,
+      "max_rss_mb": 768.0,
+      "max_stale_job_count": 0.0
+    },
+    "truth_label": "Alpha monitoring proves operational threshold status only; it does not prove engineering or construction readiness.",
+    "version": "alpha_monitoring_report_v1",
+    "warnings": []
+  },
+  "duration_seconds": 0.925,
+  "requested_iterations": 5,
+  "sample_count": 5,
+  "sample_failure_count": 0,
+  "sample_failures": [],
+  "samples": [
+    {
+      "alpha_monitoring_report": {
+        "blocker_details": [],
+        "blockers": [],
+        "readiness": "ready",
+        "runtime_monitoring": {
+          "job_queue": {
+            "counts": {
+              "awaiting_approval": 22,
+              "completed": 510,
+              "failed": 6
+            },
+            "failed_recent_count": 0,
+            "failure_window_seconds": 3600.0,
+            "oldest_active_age_sec": 0.0,
+            "queued_count": 0,
+            "running_count": 0,
+            "stale_job_count": 0,
+            "stale_jobs": [],
+            "status": "healthy",
+            "timeout_seconds": 900.0,
+            "truth_label": "Queue monitoring flags operational risk; stale jobs must be reviewed or retried before trusting results.",
+            "warnings": []
+          },
+          "memory_critical_mb": 1024.0,
+          "memory_warn_mb": 512.0,
+          "peak_rss_mb": 110.1,
+          "process": {
+            "instance_id": "63985-1780696841940",
+            "last_shutdown_at": 1780696819.833629,
+            "last_start_at": 1780696841.940728,
+            "previous_shutdown_clean": true,
+            "recent_start_count": 2,
+            "restart_critical_count": 5,
+            "restart_warning_count": 3,
+            "restart_window_seconds": 900.0,
+            "state_file": "<local_runtime_path>",
+            "status": "healthy",
+            "truth_label": "Process monitoring flags crash/restart risk; it must be paired with deploy logs for root cause.",
+            "uptime_seconds": 191.361,
+            "warnings": []
+          },
+          "rss_mb": 110.1,
+          "status": "healthy",
+          "truth_label": "Runtime monitoring reports operational risk only; it does not prove construction readiness.",
+          "warnings": []
+        },
+        "status": "healthy",
+        "success": true,
+        "thresholds": {
+          "max_failed_recent_count": 0.0,
+          "max_oldest_active_age_sec": 900.0,
+          "max_peak_rss_mb": 768.0,
+          "max_recent_start_count": 2.0,
+          "max_rss_mb": 512.0,
+          "max_stale_job_count": 0.0
+        },
+        "truth_label": "Alpha monitoring proves operational threshold status only; it does not prove engineering or construction readiness.",
+        "version": "alpha_monitoring_report_v1",
+        "warnings": []
+      },
+      "construction_release_guard": {
+        "construction_release_blocked": true,
+        "construction_release_enabled": false,
+        "product_mode": "private_alpha",
+        "review_only": true,
+        "truth_label": "Private alpha is review-only; construction release remains blocked."
+      },
+      "job_queue": {
+        "alive_workers": 1,
+        "monitoring": {
+          "counts": {
+            "awaiting_approval": 22,
+            "completed": 510,
+            "failed": 6
+          },
+          "failed_recent_count": 0,
+          "failure_window_seconds": 3600.0,
+          "oldest_active_age_sec": 0.0,
+          "queued_count": 0,
+          "running_count": 0,
+          "stale_job_count": 0,
+          "stale_jobs": [],
+          "status": "healthy",
+          "timeout_seconds": 900.0,
+          "truth_label": "Queue monitoring flags operational risk; stale jobs must be reviewed or retried before trusting results.",
+          "warnings": []
+        },
+        "queued_in_memory": 0,
+        "registered_handlers": [
+          "drainage_only",
+          "orchestrate"
+        ],
+        "resume_pending_jobs": true,
+        "worker_count": 1
+      },
+      "launch_stage": "private_alpha",
+      "mapbox_token_prefix": "",
+      "mapbox_token_present": false,
+      "mapbox_token_source": null,
+      "monitoring": {
+        "job_queue": {
+          "counts": {
+            "awaiting_approval": 22,
+            "completed": 510,
+            "failed": 6
+          },
+          "failed_recent_count": 0,
+          "failure_window_seconds": 3600.0,
+          "oldest_active_age_sec": 0.0,
+          "queued_count": 0,
+          "running_count": 0,
+          "stale_job_count": 0,
+          "stale_jobs": [],
+          "status": "healthy",
+          "timeout_seconds": 900.0,
+          "truth_label": "Queue monitoring flags operational risk; stale jobs must be reviewed or retried before trusting results.",
+          "warnings": []
+        },
+        "memory_critical_mb": 1024.0,
+        "memory_warn_mb": 512.0,
+        "peak_rss_mb": 110.1,
+        "process": {
+          "instance_id": "63985-1780696841940",
+          "last_shutdown_at": 1780696819.833629,
+          "last_start_at": 1780696841.940728,
+          "previous_shutdown_clean": true,
+          "recent_start_count": 2,
+          "restart_critical_count": 5,
+          "restart_warning_count": 3,
+          "restart_window_seconds": 900.0,
+          "state_file": "<local_runtime_path>",
+          "status": "healthy",
+          "truth_label": "Process monitoring flags crash/restart risk; it must be paired with deploy logs for root cause.",
+          "uptime_seconds": 191.361,
+          "warnings": []
+        },
+        "rss_mb": 110.1,
+        "status": "healthy",
+        "truth_label": "Runtime monitoring reports operational risk only; it does not prove construction readiness.",
+        "warnings": []
+      },
+      "peak_rss_mb": 110.1,
+      "pid": 63985,
+      "port": null,
+      "product_mode": "private_alpha",
+      "review_only": true,
+      "rss_mb": 110.1,
+      "status": "ok",
+      "storage_dir": "<local_runtime_path>",
+      "storage_dir_exists": true,
+      "storage_kind": "sqlite",
+      "uptime_seconds": 191.362
+    },
+    {
+      "alpha_monitoring_report": {
+        "blocker_details": [],
+        "blockers": [],
+        "readiness": "ready",
+        "runtime_monitoring": {
+          "job_queue": {
+            "counts": {
+              "awaiting_approval": 22,
+              "completed": 510,
+              "failed": 6
+            },
+            "failed_recent_count": 0,
+            "failure_window_seconds": 3600.0,
+            "oldest_active_age_sec": 0.0,
+            "queued_count": 0,
+            "running_count": 0,
+            "stale_job_count": 0,
+            "stale_jobs": [],
+            "status": "healthy",
+            "timeout_seconds": 900.0,
+            "truth_label": "Queue monitoring flags operational risk; stale jobs must be reviewed or retried before trusting results.",
+            "warnings": []
+          },
+          "memory_critical_mb": 1024.0,
+          "memory_warn_mb": 512.0,
+          "peak_rss_mb": 110.1,
+          "process": {
+            "instance_id": "63985-1780696841940",
+            "last_shutdown_at": 1780696819.833629,
+            "last_start_at": 1780696841.940728,
+            "previous_shutdown_clean": true,
+            "recent_start_count": 2,
+            "restart_critical_count": 5,
+            "restart_warning_count": 3,
+            "restart_window_seconds": 900.0,
+            "state_file": "<local_runtime_path>",
+            "status": "healthy",
+            "truth_label": "Process monitoring flags crash/restart risk; it must be paired with deploy logs for root cause.",
+            "uptime_seconds": 191.58,
+            "warnings": []
+          },
+          "rss_mb": 110.1,
+          "status": "healthy",
+          "truth_label": "Runtime monitoring reports operational risk only; it does not prove construction readiness.",
+          "warnings": []
+        },
+        "status": "healthy",
+        "success": true,
+        "thresholds": {
+          "max_failed_recent_count": 0.0,
+          "max_oldest_active_age_sec": 900.0,
+          "max_peak_rss_mb": 768.0,
+          "max_recent_start_count": 2.0,
+          "max_rss_mb": 512.0,
+          "max_stale_job_count": 0.0
+        },
+        "truth_label": "Alpha monitoring proves operational threshold status only; it does not prove engineering or construction readiness.",
+        "version": "alpha_monitoring_report_v1",
+        "warnings": []
+      },
+      "construction_release_guard": {
+        "construction_release_blocked": true,
+        "construction_release_enabled": false,
+        "product_mode": "private_alpha",
+        "review_only": true,
+        "truth_label": "Private alpha is review-only; construction release remains blocked."
+      },
+      "job_queue": {
+        "alive_workers": 1,
+        "monitoring": {
+          "counts": {
+            "awaiting_approval": 22,
+            "completed": 510,
+            "failed": 6
+          },
+          "failed_recent_count": 0,
+          "failure_window_seconds": 3600.0,
+          "oldest_active_age_sec": 0.0,
+          "queued_count": 0,
+          "running_count": 0,
+          "stale_job_count": 0,
+          "stale_jobs": [],
+          "status": "healthy",
+          "timeout_seconds": 900.0,
+          "truth_label": "Queue monitoring flags operational risk; stale jobs must be reviewed or retried before trusting results.",
+          "warnings": []
+        },
+        "queued_in_memory": 0,
+        "registered_handlers": [
+          "drainage_only",
+          "orchestrate"
+        ],
+        "resume_pending_jobs": true,
+        "worker_count": 1
+      },
+      "launch_stage": "private_alpha",
+      "mapbox_token_prefix": "",
+      "mapbox_token_present": false,
+      "mapbox_token_source": null,
+      "monitoring": {
+        "job_queue": {
+          "counts": {
+            "awaiting_approval": 22,
+            "completed": 510,
+            "failed": 6
+          },
+          "failed_recent_count": 0,
+          "failure_window_seconds": 3600.0,
+          "oldest_active_age_sec": 0.0,
+          "queued_count": 0,
+          "running_count": 0,
+          "stale_job_count": 0,
+          "stale_jobs": [],
+          "status": "healthy",
+          "timeout_seconds": 900.0,
+          "truth_label": "Queue monitoring flags operational risk; stale jobs must be reviewed or retried before trusting results.",
+          "warnings": []
+        },
+        "memory_critical_mb": 1024.0,
+        "memory_warn_mb": 512.0,
+        "peak_rss_mb": 110.1,
+        "process": {
+          "instance_id": "63985-1780696841940",
+          "last_shutdown_at": 1780696819.833629,
+          "last_start_at": 1780696841.940728,
+          "previous_shutdown_clean": true,
+          "recent_start_count": 2,
+          "restart_critical_count": 5,
+          "restart_warning_count": 3,
+          "restart_window_seconds": 900.0,
+          "state_file": "<local_runtime_path>",
+          "status": "healthy",
+          "truth_label": "Process monitoring flags crash/restart risk; it must be paired with deploy logs for root cause.",
+          "uptime_seconds": 191.58,
+          "warnings": []
+        },
+        "rss_mb": 110.1,
+        "status": "healthy",
+        "truth_label": "Runtime monitoring reports operational risk only; it does not prove construction readiness.",
+        "warnings": []
+      },
+      "peak_rss_mb": 110.1,
+      "pid": 63985,
+      "port": null,
+      "product_mode": "private_alpha",
+      "review_only": true,
+      "rss_mb": 110.1,
+      "status": "ok",
+      "storage_dir": "<local_runtime_path>",
+      "storage_dir_exists": true,
+      "storage_kind": "sqlite",
+      "uptime_seconds": 191.58
+    },
+    {
+      "alpha_monitoring_report": {
+        "blocker_details": [],
+        "blockers": [],
+        "readiness": "ready",
+        "runtime_monitoring": {
+          "job_queue": {
+            "counts": {
+              "awaiting_approval": 22,
+              "completed": 510,
+              "failed": 6
+            },
+            "failed_recent_count": 0,
+            "failure_window_seconds": 3600.0,
+            "oldest_active_age_sec": 0.0,
+            "queued_count": 0,
+            "running_count": 0,
+            "stale_job_count": 0,
+            "stale_jobs": [],
+            "status": "healthy",
+            "timeout_seconds": 900.0,
+            "truth_label": "Queue monitoring flags operational risk; stale jobs must be reviewed or retried before trusting results.",
+            "warnings": []
+          },
+          "memory_critical_mb": 1024.0,
+          "memory_warn_mb": 512.0,
+          "peak_rss_mb": 110.1,
+          "process": {
+            "instance_id": "63985-1780696841940",
+            "last_shutdown_at": 1780696819.833629,
+            "last_start_at": 1780696841.940728,
+            "previous_shutdown_clean": true,
+            "recent_start_count": 2,
+            "restart_critical_count": 5,
+            "restart_warning_count": 3,
+            "restart_window_seconds": 900.0,
+            "state_file": "<local_runtime_path>",
+            "status": "healthy",
+            "truth_label": "Process monitoring flags crash/restart risk; it must be paired with deploy logs for root cause.",
+            "uptime_seconds": 191.792,
+            "warnings": []
+          },
+          "rss_mb": 110.1,
+          "status": "healthy",
+          "truth_label": "Runtime monitoring reports operational risk only; it does not prove construction readiness.",
+          "warnings": []
+        },
+        "status": "healthy",
+        "success": true,
+        "thresholds": {
+          "max_failed_recent_count": 0.0,
+          "max_oldest_active_age_sec": 900.0,
+          "max_peak_rss_mb": 768.0,
+          "max_recent_start_count": 2.0,
+          "max_rss_mb": 512.0,
+          "max_stale_job_count": 0.0
+        },
+        "truth_label": "Alpha monitoring proves operational threshold status only; it does not prove engineering or construction readiness.",
+        "version": "alpha_monitoring_report_v1",
+        "warnings": []
+      },
+      "construction_release_guard": {
+        "construction_release_blocked": true,
+        "construction_release_enabled": false,
+        "product_mode": "private_alpha",
+        "review_only": true,
+        "truth_label": "Private alpha is review-only; construction release remains blocked."
+      },
+      "job_queue": {
+        "alive_workers": 1,
+        "monitoring": {
+          "counts": {
+            "awaiting_approval": 22,
+            "completed": 510,
+            "failed": 6
+          },
+          "failed_recent_count": 0,
+          "failure_window_seconds": 3600.0,
+          "oldest_active_age_sec": 0.0,
+          "queued_count": 0,
+          "running_count": 0,
+          "stale_job_count": 0,
+          "stale_jobs": [],
+          "status": "healthy",
+          "timeout_seconds": 900.0,
+          "truth_label": "Queue monitoring flags operational risk; stale jobs must be reviewed or retried before trusting results.",
+          "warnings": []
+        },
+        "queued_in_memory": 0,
+        "registered_handlers": [
+          "drainage_only",
+          "orchestrate"
+        ],
+        "resume_pending_jobs": true,
+        "worker_count": 1
+      },
+      "launch_stage": "private_alpha",
+      "mapbox_token_prefix": "",
+      "mapbox_token_present": false,
+      "mapbox_token_source": null,
+      "monitoring": {
+        "job_queue": {
+          "counts": {
+            "awaiting_approval": 22,
+            "completed": 510,
+            "failed": 6
+          },
+          "failed_recent_count": 0,
+          "failure_window_seconds": 3600.0,
+          "oldest_active_age_sec": 0.0,
+          "queued_count": 0,
+          "running_count": 0,
+          "stale_job_count": 0,
+          "stale_jobs": [],
+          "status": "healthy",
+          "timeout_seconds": 900.0,
+          "truth_label": "Queue monitoring flags operational risk; stale jobs must be reviewed or retried before trusting results.",
+          "warnings": []
+        },
+        "memory_critical_mb": 1024.0,
+        "memory_warn_mb": 512.0,
+        "peak_rss_mb": 110.1,
+        "process": {
+          "instance_id": "63985-1780696841940",
+          "last_shutdown_at": 1780696819.833629,
+          "last_start_at": 1780696841.940728,
+          "previous_shutdown_clean": true,
+          "recent_start_count": 2,
+          "restart_critical_count": 5,
+          "restart_warning_count": 3,
+          "restart_window_seconds": 900.0,
+          "state_file": "<local_runtime_path>",
+          "status": "healthy",
+          "truth_label": "Process monitoring flags crash/restart risk; it must be paired with deploy logs for root cause.",
+          "uptime_seconds": 191.792,
+          "warnings": []
+        },
+        "rss_mb": 110.1,
+        "status": "healthy",
+        "truth_label": "Runtime monitoring reports operational risk only; it does not prove construction readiness.",
+        "warnings": []
+      },
+      "peak_rss_mb": 110.1,
+      "pid": 63985,
+      "port": null,
+      "product_mode": "private_alpha",
+      "review_only": true,
+      "rss_mb": 110.1,
+      "status": "ok",
+      "storage_dir": "<local_runtime_path>",
+      "storage_dir_exists": true,
+      "storage_kind": "sqlite",
+      "uptime_seconds": 191.792
+    },
+    {
+      "alpha_monitoring_report": {
+        "blocker_details": [],
+        "blockers": [],
+        "readiness": "ready",
+        "runtime_monitoring": {
+          "job_queue": {
+            "counts": {
+              "awaiting_approval": 22,
+              "completed": 510,
+              "failed": 6
+            },
+            "failed_recent_count": 0,
+            "failure_window_seconds": 3600.0,
+            "oldest_active_age_sec": 0.0,
+            "queued_count": 0,
+            "running_count": 0,
+            "stale_job_count": 0,
+            "stale_jobs": [],
+            "status": "healthy",
+            "timeout_seconds": 900.0,
+            "truth_label": "Queue monitoring flags operational risk; stale jobs must be reviewed or retried before trusting results.",
+            "warnings": []
+          },
+          "memory_critical_mb": 1024.0,
+          "memory_warn_mb": 512.0,
+          "peak_rss_mb": 110.1,
+          "process": {
+            "instance_id": "63985-1780696841940",
+            "last_shutdown_at": 1780696819.833629,
+            "last_start_at": 1780696841.940728,
+            "previous_shutdown_clean": true,
+            "recent_start_count": 2,
+            "restart_critical_count": 5,
+            "restart_warning_count": 3,
+            "restart_window_seconds": 900.0,
+            "state_file": "<local_runtime_path>",
+            "status": "healthy",
+            "truth_label": "Process monitoring flags crash/restart risk; it must be paired with deploy logs for root cause.",
+            "uptime_seconds": 192.003,
+            "warnings": []
+          },
+          "rss_mb": 110.1,
+          "status": "healthy",
+          "truth_label": "Runtime monitoring reports operational risk only; it does not prove construction readiness.",
+          "warnings": []
+        },
+        "status": "healthy",
+        "success": true,
+        "thresholds": {
+          "max_failed_recent_count": 0.0,
+          "max_oldest_active_age_sec": 900.0,
+          "max_peak_rss_mb": 768.0,
+          "max_recent_start_count": 2.0,
+          "max_rss_mb": 512.0,
+          "max_stale_job_count": 0.0
+        },
+        "truth_label": "Alpha monitoring proves operational threshold status only; it does not prove engineering or construction readiness.",
+        "version": "alpha_monitoring_report_v1",
+        "warnings": []
+      },
+      "construction_release_guard": {
+        "construction_release_blocked": true,
+        "construction_release_enabled": false,
+        "product_mode": "private_alpha",
+        "review_only": true,
+        "truth_label": "Private alpha is review-only; construction release remains blocked."
+      },
+      "job_queue": {
+        "alive_workers": 1,
+        "monitoring": {
+          "counts": {
+            "awaiting_approval": 22,
+            "completed": 510,
+            "failed": 6
+          },
+          "failed_recent_count": 0,
+          "failure_window_seconds": 3600.0,
+          "oldest_active_age_sec": 0.0,
+          "queued_count": 0,
+          "running_count": 0,
+          "stale_job_count": 0,
+          "stale_jobs": [],
+          "status": "healthy",
+          "timeout_seconds": 900.0,
+          "truth_label": "Queue monitoring flags operational risk; stale jobs must be reviewed or retried before trusting results.",
+          "warnings": []
+        },
+        "queued_in_memory": 0,
+        "registered_handlers": [
+          "drainage_only",
+          "orchestrate"
+        ],
+        "resume_pending_jobs": true,
+        "worker_count": 1
+      },
+      "launch_stage": "private_alpha",
+      "mapbox_token_prefix": "",
+      "mapbox_token_present": false,
+      "mapbox_token_source": null,
+      "monitoring": {
+        "job_queue": {
+          "counts": {
+            "awaiting_approval": 22,
+            "completed": 510,
+            "failed": 6
+          },
+          "failed_recent_count": 0,
+          "failure_window_seconds": 3600.0,
+          "oldest_active_age_sec": 0.0,
+          "queued_count": 0,
+          "running_count": 0,
+          "stale_job_count": 0,
+          "stale_jobs": [],
+          "status": "healthy",
+          "timeout_seconds": 900.0,
+          "truth_label": "Queue monitoring flags operational risk; stale jobs must be reviewed or retried before trusting results.",
+          "warnings": []
+        },
+        "memory_critical_mb": 1024.0,
+        "memory_warn_mb": 512.0,
+        "peak_rss_mb": 110.1,
+        "process": {
+          "instance_id": "63985-1780696841940",
+          "last_shutdown_at": 1780696819.833629,
+          "last_start_at": 1780696841.940728,
+          "previous_shutdown_clean": true,
+          "recent_start_count": 2,
+          "restart_critical_count": 5,
+          "restart_warning_count": 3,
+          "restart_window_seconds": 900.0,
+          "state_file": "<local_runtime_path>",
+          "status": "healthy",
+          "truth_label": "Process monitoring flags crash/restart risk; it must be paired with deploy logs for root cause.",
+          "uptime_seconds": 192.003,
+          "warnings": []
+        },
+        "rss_mb": 110.1,
+        "status": "healthy",
+        "truth_label": "Runtime monitoring reports operational risk only; it does not prove construction readiness.",
+        "warnings": []
+      },
+      "peak_rss_mb": 110.1,
+      "pid": 63985,
+      "port": null,
+      "product_mode": "private_alpha",
+      "review_only": true,
+      "rss_mb": 110.1,
+      "status": "ok",
+      "storage_dir": "<local_runtime_path>",
+      "storage_dir_exists": true,
+      "storage_kind": "sqlite",
+      "uptime_seconds": 192.004
+    },
+    {
+      "alpha_monitoring_report": {
+        "blocker_details": [],
+        "blockers": [],
+        "readiness": "ready",
+        "runtime_monitoring": {
+          "job_queue": {
+            "counts": {
+              "awaiting_approval": 22,
+              "completed": 510,
+              "failed": 6
+            },
+            "failed_recent_count": 0,
+            "failure_window_seconds": 3600.0,
+            "oldest_active_age_sec": 0.0,
+            "queued_count": 0,
+            "running_count": 0,
+            "stale_job_count": 0,
+            "stale_jobs": [],
+            "status": "healthy",
+            "timeout_seconds": 900.0,
+            "truth_label": "Queue monitoring flags operational risk; stale jobs must be reviewed or retried before trusting results.",
+            "warnings": []
+          },
+          "memory_critical_mb": 1024.0,
+          "memory_warn_mb": 512.0,
+          "peak_rss_mb": 110.1,
+          "process": {
+            "instance_id": "63985-1780696841940",
+            "last_shutdown_at": 1780696819.833629,
+            "last_start_at": 1780696841.940728,
+            "previous_shutdown_clean": true,
+            "recent_start_count": 2,
+            "restart_critical_count": 5,
+            "restart_warning_count": 3,
+            "restart_window_seconds": 900.0,
+            "state_file": "<local_runtime_path>",
+            "status": "healthy",
+            "truth_label": "Process monitoring flags crash/restart risk; it must be paired with deploy logs for root cause.",
+            "uptime_seconds": 192.217,
+            "warnings": []
+          },
+          "rss_mb": 110.1,
+          "status": "healthy",
+          "truth_label": "Runtime monitoring reports operational risk only; it does not prove construction readiness.",
+          "warnings": []
+        },
+        "status": "healthy",
+        "success": true,
+        "thresholds": {
+          "max_failed_recent_count": 0.0,
+          "max_oldest_active_age_sec": 900.0,
+          "max_peak_rss_mb": 768.0,
+          "max_recent_start_count": 2.0,
+          "max_rss_mb": 512.0,
+          "max_stale_job_count": 0.0
+        },
+        "truth_label": "Alpha monitoring proves operational threshold status only; it does not prove engineering or construction readiness.",
+        "version": "alpha_monitoring_report_v1",
+        "warnings": []
+      },
+      "construction_release_guard": {
+        "construction_release_blocked": true,
+        "construction_release_enabled": false,
+        "product_mode": "private_alpha",
+        "review_only": true,
+        "truth_label": "Private alpha is review-only; construction release remains blocked."
+      },
+      "job_queue": {
+        "alive_workers": 1,
+        "monitoring": {
+          "counts": {
+            "awaiting_approval": 22,
+            "completed": 510,
+            "failed": 6
+          },
+          "failed_recent_count": 0,
+          "failure_window_seconds": 3600.0,
+          "oldest_active_age_sec": 0.0,
+          "queued_count": 0,
+          "running_count": 0,
+          "stale_job_count": 0,
+          "stale_jobs": [],
+          "status": "healthy",
+          "timeout_seconds": 900.0,
+          "truth_label": "Queue monitoring flags operational risk; stale jobs must be reviewed or retried before trusting results.",
+          "warnings": []
+        },
+        "queued_in_memory": 0,
+        "registered_handlers": [
+          "drainage_only",
+          "orchestrate"
+        ],
+        "resume_pending_jobs": true,
+        "worker_count": 1
+      },
+      "launch_stage": "private_alpha",
+      "mapbox_token_prefix": "",
+      "mapbox_token_present": false,
+      "mapbox_token_source": null,
+      "monitoring": {
+        "job_queue": {
+          "counts": {
+            "awaiting_approval": 22,
+            "completed": 510,
+            "failed": 6
+          },
+          "failed_recent_count": 0,
+          "failure_window_seconds": 3600.0,
+          "oldest_active_age_sec": 0.0,
+          "queued_count": 0,
+          "running_count": 0,
+          "stale_job_count": 0,
+          "stale_jobs": [],
+          "status": "healthy",
+          "timeout_seconds": 900.0,
+          "truth_label": "Queue monitoring flags operational risk; stale jobs must be reviewed or retried before trusting results.",
+          "warnings": []
+        },
+        "memory_critical_mb": 1024.0,
+        "memory_warn_mb": 512.0,
+        "peak_rss_mb": 110.1,
+        "process": {
+          "instance_id": "63985-1780696841940",
+          "last_shutdown_at": 1780696819.833629,
+          "last_start_at": 1780696841.940728,
+          "previous_shutdown_clean": true,
+          "recent_start_count": 2,
+          "restart_critical_count": 5,
+          "restart_warning_count": 3,
+          "restart_window_seconds": 900.0,
+          "state_file": "<local_runtime_path>",
+          "status": "healthy",
+          "truth_label": "Process monitoring flags crash/restart risk; it must be paired with deploy logs for root cause.",
+          "uptime_seconds": 192.217,
+          "warnings": []
+        },
+        "rss_mb": 110.1,
+        "status": "healthy",
+        "truth_label": "Runtime monitoring reports operational risk only; it does not prove construction readiness.",
+        "warnings": []
+      },
+      "peak_rss_mb": 110.1,
+      "pid": 63985,
+      "port": null,
+      "product_mode": "private_alpha",
+      "review_only": true,
+      "rss_mb": 110.1,
+      "status": "ok",
+      "storage_dir": "<local_runtime_path>",
+      "storage_dir_exists": true,
+      "storage_kind": "sqlite",
+      "uptime_seconds": 192.217
+    }
+  ],
+  "status": "ready",
+  "success": true,
+  "truth_label": "Alpha smoke/soak reports operational readiness only. It does not make Civora construction-ready.",
+  "version": "alpha_smoke_soak_report_v1"
+}

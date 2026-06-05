@@ -184,8 +184,8 @@ Current state:
 - `backend/scripts/run_alpha_smoke_soak.py` can generate `alpha_smoke_soak_report_v1` by sampling `/api/debug/runtime` or local process monitoring.
 
 Issue:
-- Local tests prove threshold logic, but there is no deployed alpha soak evidence in the repo.
-- Thresholds exist in code/env defaults and the smoke/soak command exists, but there is no committed generated report from repeated real backend workflows yet.
+- Local tests prove threshold logic, and a sanitized local backend smoke/soak report is now committed.
+- Deployed alpha soak evidence is still not present; public/runtime environment proof remains a later release risk.
 
 Why this blocks full-system alpha:
 - Private alpha does not need public scale, but it does need evidence that the backend survives real user workflows without silent crashes or stuck jobs.
@@ -198,11 +198,12 @@ Evidence needed:
 - Covered for report logic by `tests/test_alpha_monitoring.py`.
 - Covered for health exposure by `tests/test_application_auth_health_workflows.py`.
 - Covered for command/report behavior by `tests/test_alpha_smoke_soak.py`.
-- Still needed: generated alpha monitoring report artifact from a repeated backend workflow.
+- Covered for local backend evidence by `reports/alpha/alpha_smoke_soak_report_2026-06-05.json`.
+- Still needed before public beta: deployed alpha soak evidence from the hosted runtime.
 
 Status:
-- Partially closed.
-- Still P0 until deployed/local soak evidence is generated and attached from a real backend workflow.
+- Closed for local private-alpha backend proof.
+- Still a public-beta/deployment hardening item for hosted soak evidence.
 
 ## P1 Blockers Before Public Beta
 
@@ -347,12 +348,11 @@ Decision needed:
 
 ## Exact Fix Order
 
-1. Run alpha smoke/soak against a real backend workflow and store the generated `alpha_smoke_soak_report_v1` artifact.
-2. Add broader load/runtime thresholds to golden scenario definitions.
-3. Deepen water pressure/fire-flow/hydrant calculations.
-4. Deepen roadway/corridor profiles, crowns, curb returns, intersections, and ADA evidence.
-5. Add review-package manifest and Civil3D/LandXML/DWG explicit confidence states.
-6. Add cost package status and approved unit-price fixture coverage.
+1. Add broader load/runtime thresholds to golden scenario definitions.
+2. Deepen water pressure/fire-flow/hydrant calculations.
+3. Deepen roadway/corridor profiles, crowns, curb returns, intersections, and ADA evidence.
+4. Add review-package manifest and Civil3D/LandXML/DWG explicit confidence states.
+5. Add cost package status and approved unit-price fixture coverage.
 
 ## Non-Negotiable Truth Rules
 
