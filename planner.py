@@ -10736,8 +10736,18 @@ def build_reactive_partial_plan(
         changed_stages=changed_stages or safe_list(meta.get("changed_targets")),
         stale_outputs=safe_list(meta.get("stale_outputs")),
     )
+    impacted_stage_list = [safe_str(item) for item in safe_list(report.get("impacted_stages")) if safe_str(item)]
+    checkpoint_meta = safe_dict(checkpoint_plan.get("meta"))
+    checkpoint_statuses = safe_dict(safe_dict(checkpoint_meta.get("stage_completeness")).get("statuses"))
+    skipped_stages = [
+        safe_str(stage_name)
+        for stage_name, status in checkpoint_statuses.items()
+        if safe_str(stage_name)
+        and safe_str(status).lower() == "complete"
+        and safe_str(stage_name) not in impacted_stage_list
+    ]
     dirty_state = dict(safe_dict(meta.get("system_dirty_state")))
-    for stage_name in safe_list(report.get("impacted_stages")):
+    for stage_name in impacted_stage_list:
         stage_key = safe_str(stage_name)
         if not stage_key:
             continue
@@ -10758,22 +10768,42 @@ def build_reactive_partial_plan(
     meta["reactive_partial_rerun"] = {
         "enabled": True,
         "checkpoint_restored": True,
-        "impacted_stages": list(report.get("impacted_stages") or []),
+        "impacted_stages": impacted_stage_list,
+        "rerun_stages": impacted_stage_list,
+        "skipped_stages": skipped_stages,
         "truth_label": "Planner restored checkpointed canonical state and reran only dirty downstream stages.",
     }
     payload["meta"] = meta
     payload.pop("final_plan", None)
 
     route = choose_routing_path(payload)
+    start_time = perf_counter()
     raw = build_plan_from_parsed(payload, route, progress_callback=progress_callback)
     final = finalize_plan(raw, parsed=payload, route=route)
+    elapsed_ms = round((perf_counter() - start_time) * 1000.0, 2)
+    quick_threshold_ms = 5000
+    telemetry = {
+        "elapsed_ms": elapsed_ms,
+        "rerun_stages": impacted_stage_list,
+        "skipped_stages": skipped_stages,
+        "quick_threshold_ms": quick_threshold_ms,
+        "within_quick_threshold": elapsed_ms <= quick_threshold_ms,
+    }
     final.setdefault("meta", {})
     final["meta"]["reactive_partial_rerun"] = {
         **safe_dict(final["meta"].get("reactive_partial_rerun")),
         "enabled": True,
         "checkpoint_restored": True,
-        "impacted_stages": list(report.get("impacted_stages") or []),
+        "impacted_stages": impacted_stage_list,
+        "rerun_stages": impacted_stage_list,
+        "skipped_stages": skipped_stages,
+        "telemetry": telemetry,
     }
+    final_report = dict(safe_dict(final["meta"].get("reactive_update_report")) or report)
+    final_report["partial_rerun_telemetry"] = telemetry
+    final_report["execution_mode"] = "isolated_downstream_partial_rerun"
+    final_report["partial_rerun_executed"] = True
+    final["meta"]["reactive_update_report"] = final_report
     return final
 
 

@@ -76,6 +76,17 @@ class ReactivePartialRerunEntrypointTests(unittest.TestCase):
         self.assertEqual(payload_meta["reactive_partial_rerun"]["checkpoint_restored"], True)
         self.assertEqual(final["meta"]["route_path"], "model_first")
         self.assertTrue(final["meta"]["reactive_partial_rerun"]["enabled"])
+        self.assertIn("layout", final["meta"]["reactive_partial_rerun"]["skipped_stages"])
+        self.assertIn("grading", final["meta"]["reactive_partial_rerun"]["rerun_stages"])
+        telemetry = final["meta"]["reactive_partial_rerun"]["telemetry"]
+        self.assertGreaterEqual(telemetry["elapsed_ms"], 0)
+        self.assertIn("grading", telemetry["rerun_stages"])
+        self.assertIn("layout", telemetry["skipped_stages"])
+        self.assertTrue(final["meta"]["reactive_update_report"]["partial_rerun_executed"])
+        self.assertEqual(
+            final["meta"]["reactive_update_report"]["execution_mode"],
+            "isolated_downstream_partial_rerun",
+        )
 
 
 if __name__ == "__main__":

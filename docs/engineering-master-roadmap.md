@@ -274,3 +274,5 @@ Post-Phase 4 follow-up:
 - Verification: focused reactive/orchestrator regression `31 passed`; full backend regression `861 passed`.
 - 2026-06-04: Wired product/API reactive rerun requests to send checkpointed final-plan state and changed downstream targets. Unsaved browser workspaces attach the current backend result; saved direct and queued requests recover the latest stored project result before orchestration.
 - Verification: focused application/reactive routing regression `126 passed`; full backend regression `864 passed`; web lint completed with existing warnings and no errors.
+- 2026-06-04: Completed the remaining reactive product loop: object-aware edit-to-stage dirty mapping, debounced cheap validation without automatic engineering reruns, confirmation for broad downstream reruns, UI stage/telemetry display, partial rerun timing/skipped-stage telemetry, and a browser proof that focused generate requests carry checkpoint metadata.
+- Verification: focused reactive/application regression `82 passed`; full backend regression `864 passed`; web lint completed with existing warnings and no errors; Playwright reactive rerun proof `1 passed`.

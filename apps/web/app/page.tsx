@@ -73,6 +73,14 @@ import type {
 import type { CivoraWorkflowStep } from "./design-system";
 
 type SystemGenerationTarget = "roads" | "parking" | "grading" | "drainage" | "utilities" | "full";
+type EngineeringSystemKey = Exclude<SystemGenerationTarget, "full">;
+type ReactiveValidationState = {
+  status: "idle" | "pending" | "ready";
+  changedSystems: EngineeringSystemKey[];
+  changedTargets: string[];
+  requiresConfirmation: boolean;
+  message: string;
+};
 type SidePanelKey =
   | "projects"
   | "dashboard"
@@ -263,7 +271,7 @@ const REACTIVE_EDIT_POLICY_PREFERENCE = {
 } as const;
 
 const REACTIVE_SYSTEM_STAGE_MAP: Record<
-  "roads" | "parking" | "grading" | "drainage" | "utilities",
+  EngineeringSystemKey,
   string[]
 > = {
   roads: ["layout", "grading", "drainage", "storm_pipes", "utility_network", "coordination_resolution", "qa"],
@@ -271,6 +279,14 @@ const REACTIVE_SYSTEM_STAGE_MAP: Record<
   grading: ["grading", "drainage", "storm_pipes", "sanitary", "utility_network", "coordination_resolution", "earthwork", "sheets", "qa"],
   drainage: ["drainage", "storm_pipes", "coordination_resolution", "sheets", "qa"],
   utilities: ["sanitary", "utility_network", "coordination_resolution", "sheets", "qa"],
+};
+
+const EMPTY_REACTIVE_VALIDATION: ReactiveValidationState = {
+  status: "idle",
+  changedSystems: [],
+  changedTargets: [],
+  requiresConfirmation: false,
+  message: "",
 };
 
 const DEMO_PROJECT_ID = "demo-pinecrest-mixed-use";
@@ -800,6 +816,7 @@ function PerformanceAIDashboardView({
   const [advancedAddOpen, setAdvancedAddOpen] = useState(false);
   const [objectPrompt, setObjectPrompt] = useState("");
   const [systemStatuses, setSystemStatuses] = useState(DEFAULT_SYSTEM_STATUS);
+  const [reactiveValidation, setReactiveValidation] = useState<ReactiveValidationState>(EMPTY_REACTIVE_VALIDATION);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
 
   const [assumptions, setAssumptions] =
@@ -1564,6 +1581,66 @@ function PerformanceAIDashboardView({
     }
   }, [visibleActiveJob?.status]);
   const currentPlanMeta = useMemo<PlanMeta>(() => backendResult?.final_plan?.meta ?? {}, [backendResult]);
+  const reactiveChangedSystems = useMemo<EngineeringSystemKey[]>(
+    () =>
+      (Object.entries(systemStatuses) as Array<[EngineeringSystemKey, SystemStatus]>)
+        .filter(([, status]) => status === "stale")
+        .map(([system]) => system),
+    [systemStatuses],
+  );
+  const reactiveChangedTargets = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          reactiveChangedSystems.flatMap((system) => REACTIVE_SYSTEM_STAGE_MAP[system] ?? []),
+        ),
+      ),
+    [reactiveChangedSystems],
+  );
+  const reactiveRerunSummary = useMemo(() => {
+    const partial = currentPlanMeta.reactive_partial_rerun ?? {};
+    const report = currentPlanMeta.reactive_update_report ?? {};
+    const telemetry = partial.telemetry ?? report.partial_rerun_telemetry ?? {};
+    const rerunStages = partial.rerun_stages ?? telemetry.rerun_stages ?? report.impacted_stages ?? [];
+    const skippedStages = partial.skipped_stages ?? telemetry.skipped_stages ?? [];
+    return {
+      enabled: Boolean(partial.enabled || report.partial_rerun_executed),
+      checkpointRestored: Boolean(partial.checkpoint_restored),
+      executionMode: report.execution_mode ?? "",
+      rerunStages,
+      skippedStages,
+      elapsedMs: telemetry.elapsed_ms,
+      withinQuickThreshold: telemetry.within_quick_threshold,
+    };
+  }, [currentPlanMeta]);
+
+  useEffect(() => {
+    if (!reactiveChangedSystems.length || !backendResult?.final_plan) {
+      setReactiveValidation(EMPTY_REACTIVE_VALIDATION);
+      return;
+    }
+    setReactiveValidation((prev) => ({
+      ...prev,
+      status: "pending",
+      changedSystems: reactiveChangedSystems,
+      changedTargets: reactiveChangedTargets,
+      requiresConfirmation: reactiveChangedTargets.length > 4,
+      message: "Checking impacted engineering systems...",
+    }));
+    const timeout = window.setTimeout(() => {
+      const requiresConfirmation = reactiveChangedTargets.length > 4;
+      setReactiveValidation({
+        status: "ready",
+        changedSystems: reactiveChangedSystems,
+        changedTargets: reactiveChangedTargets,
+        requiresConfirmation,
+        message: requiresConfirmation
+          ? `This edit affects ${reactiveChangedSystems.join(", ")} and needs confirmation before engineering reruns.`
+          : `Ready for quick partial rerun: ${reactiveChangedSystems.join(", ")}.`,
+      });
+    }, REACTIVE_EDIT_POLICY_PREFERENCE.debounced_validation_ms);
+    return () => window.clearTimeout(timeout);
+  }, [backendResult?.final_plan, reactiveChangedSystems, reactiveChangedTargets]);
   const managerMetrics = useMemo<ManagerMetrics>(
     () => currentPlanMeta?.manager_export?.metrics ?? {},
     [currentPlanMeta],
@@ -2473,13 +2550,35 @@ function PerformanceAIDashboardView({
     [buildingPlacements, lotHeight, lotWidth],
   );
 
-  const markSystemsStale = useCallback(() => {
+  const systemsImpactedByPlacement = useCallback((target?: Partial<BuildingPlacement> | null): EngineeringSystemKey[] => {
+    const explicit = Array.isArray(target?.systemDependencies)
+      ? target.systemDependencies.filter((item): item is EngineeringSystemKey => item in REACTIVE_SYSTEM_STAGE_MAP)
+      : [];
+    if (explicit.length) return Array.from(new Set(explicit));
+    const type = target?.type ?? "building";
+    if (type === "site") return ["roads", "parking", "grading", "drainage", "utilities"];
+    if (["building", "pad", "amenity", "pool", "open_space", "lot_block"].includes(type)) {
+      return ["roads", "parking", "grading", "drainage", "utilities"];
+    }
+    if (["basin", "outfall"].includes(type)) return ["grading", "drainage"];
+    if (["inlet", "manhole"].includes(type)) return ["drainage", "utilities"];
+    if (["hydrant", "utility_corridor"].includes(type)) return ["utilities"];
+    if (["road", "driveway", "entrance", "parking", "sidewalk", "bridge"].includes(type)) {
+      return ["roads", "parking", "grading", "drainage", "utilities"];
+    }
+    return ["roads", "parking", "grading", "drainage", "utilities"];
+  }, []);
+
+  const markSystemsStale = useCallback((systems?: EngineeringSystemKey[]) => {
+    const targets = systems?.length
+      ? Array.from(new Set(systems))
+      : (["roads", "parking", "grading", "drainage", "utilities"] as EngineeringSystemKey[]);
     setSystemStatuses((prev) => ({
-      roads: prev.roads === "not_generated" ? "not_generated" : "stale",
-      parking: prev.parking === "not_generated" ? "not_generated" : "stale",
-      grading: prev.grading === "not_generated" ? "not_generated" : "stale",
-      drainage: prev.drainage === "not_generated" ? "not_generated" : "stale",
-      utilities: prev.utilities === "not_generated" ? "not_generated" : "stale",
+      roads: targets.includes("roads") && prev.roads !== "not_generated" ? "stale" : prev.roads,
+      parking: targets.includes("parking") && prev.parking !== "not_generated" ? "stale" : prev.parking,
+      grading: targets.includes("grading") && prev.grading !== "not_generated" ? "stale" : prev.grading,
+      drainage: targets.includes("drainage") && prev.drainage !== "not_generated" ? "stale" : prev.drainage,
+      utilities: targets.includes("utilities") && prev.utilities !== "not_generated" ? "stale" : prev.utilities,
     }));
   }, []);
 
@@ -2983,7 +3082,7 @@ function PerformanceAIDashboardView({
     setBuildingPlacements((prev) =>
       prev.map((item) => (item.id === id ? { ...item, ...nextUpdates } : item)),
     );
-    markSystemsStale();
+    markSystemsStale(systemsImpactedByPlacement(target));
     setStatusMessage("Object updated. Regenerate systems to reflect the new layout.");
     void ensureProjectDraftRef.current()
       .then(() => saveProjectRef.current({ silent: true }))
@@ -2996,6 +3095,7 @@ function PerformanceAIDashboardView({
     markSystemsStale,
     payloadPreview,
     resolveParkingParams,
+    systemsImpactedByPlacement,
   ]);
 
   const persistDetectedPlacements = useCallback(
@@ -3025,17 +3125,18 @@ function PerformanceAIDashboardView({
 
   const handleRemoveBuilding = useCallback((id: string) => {
     clearGeneratedPreview();
+    const target = buildingPlacements.find((item) => item.id === id);
     debugLog("remove-object", { id });
     setBuildingPlacements((prev) => prev.filter((item) => item.id !== id));
     setActivePlacementId((prev) => (prev === id ? null : prev));
     setPlacementModeEnabled((prev) => (activePlacementId === id ? false : prev));
     setFocusObjectId((prev) => (prev === id ? null : prev));
-    markSystemsStale();
+    markSystemsStale(systemsImpactedByPlacement(target));
     setStatusMessage("Object removed. Regenerate systems to reflect the new layout.");
     void ensureProjectDraftRef.current()
       .then(() => saveProjectRef.current({ silent: true }))
       .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object removal...", track: true });
-  }, [activePlacementId, clearGeneratedPreview, markSystemsStale]);
+  }, [activePlacementId, buildingPlacements, clearGeneratedPreview, markSystemsStale, systemsImpactedByPlacement]);
 
   const handleRestoreBuilding = useCallback((snapshot: BuildingPlacement) => {
     clearGeneratedPreview();
@@ -3043,7 +3144,7 @@ function PerformanceAIDashboardView({
       if (prev.some((item) => item.id === snapshot.id)) return prev;
       return [...prev, { ...snapshot }];
     });
-    markSystemsStale();
+    markSystemsStale(systemsImpactedByPlacement(snapshot));
     setStatusMessage("Undo: object restored.");
     void ensureProjectDraftRef.current()
       .then(() => saveProjectRef.current({ silent: true }))
@@ -3053,7 +3154,7 @@ function PerformanceAIDashboardView({
           track: true,
         };
       });
-  }, [clearGeneratedPreview, markSystemsStale]);
+  }, [clearGeneratedPreview, markSystemsStale, systemsImpactedByPlacement]);
 
   const handleAcceptDetected = useCallback((id: string) => {
     clearGeneratedPreview();
@@ -3125,6 +3226,7 @@ function PerformanceAIDashboardView({
         boundedY,
       });
       if (activePlacementId) {
+        const activePlacement = buildingPlacements.find((item) => item.id === activePlacementId);
         setBuildingPlacements((prev) =>
           prev.map((item) =>
             item.id === activePlacementId
@@ -3142,7 +3244,7 @@ function PerformanceAIDashboardView({
           ),
         );
         setActivePlacementId(null);
-        markSystemsStale();
+        markSystemsStale(systemsImpactedByPlacement(activePlacement));
         debugLog("place-building-commit", { id: activePlacementId ?? null });
         setStatusMessage("Object placed. Regenerate systems to reflect the new layout.");
         void ensureProjectDraftRef.current()
@@ -3175,7 +3277,7 @@ function PerformanceAIDashboardView({
         x: nextPlacement.x,
         y: nextPlacement.y,
       });
-      markSystemsStale();
+      markSystemsStale(systemsImpactedByPlacement(nextPlacement));
       setStatusMessage("Object placed. Regenerate systems to reflect the new layout.");
       void ensureProjectDraftRef.current()
         .then(() => saveProjectRef.current({ silent: true }))
@@ -3184,10 +3286,12 @@ function PerformanceAIDashboardView({
     [
       activePlacementId,
       buildingPlacements.length,
+      buildingPlacements,
       clearGeneratedPreview,
       markSystemsStale,
       resolveDefaultBuildingDims,
       resolveLotBounds,
+      systemsImpactedByPlacement,
     ],
   );
 
@@ -3214,6 +3318,7 @@ function PerformanceAIDashboardView({
         clampedY,
       });
       debugLog("place-object", { id, clampedX, clampedY });
+      const target = buildingPlacements.find((item) => item.id === id);
       setBuildingPlacements((prev) =>
         prev.map((item) => {
           if (item.id !== id) return item;
@@ -3246,14 +3351,14 @@ function PerformanceAIDashboardView({
       );
       setActivePlacementId((prev) => (prev === id ? null : prev));
       setPlacementModeEnabled(false);
-      markSystemsStale();
+      markSystemsStale(systemsImpactedByPlacement(target));
       debugLog("place-object-complete", { id });
       setStatusMessage("Object placed. Regenerate systems to reflect the new layout.");
       void ensureProjectDraftRef.current()
         .then(() => saveProjectRef.current({ silent: true }))
         .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object placement...", track: true });
     },
-    [buildDefaultPolyline, clearGeneratedPreview, ensureSiteBoundary, markSystemsStale, resolveLotBounds],
+    [buildDefaultPolyline, buildingPlacements, clearGeneratedPreview, ensureSiteBoundary, markSystemsStale, resolveLotBounds, systemsImpactedByPlacement],
   );
 
   const handleTogglePlacementMode = useCallback(() => {
@@ -7807,6 +7912,19 @@ function PerformanceAIDashboardView({
 
       const systemLabel = target === "full" ? "full site systems" : target;
       const directRun = target === "grading";
+      if (
+        target !== "full" &&
+        reactiveValidation.requiresConfirmation &&
+        REACTIVE_EDIT_POLICY_PREFERENCE.require_confirmation_for_heavy_engineering
+      ) {
+        const confirmed = window.confirm(
+          `This rerun will update ${reactiveValidation.changedSystems.join(", ")} from the saved checkpoint and may touch ${reactiveValidation.changedTargets.length} downstream stages. Run it now?`,
+        );
+        if (!confirmed) {
+          setStatusMessage("Reactive engineering rerun cancelled. Visual edits remain live; engineering outputs are still stale.");
+          return;
+        }
+      }
       const systemRequestPayload = withReactiveRerunContext(
         {
           ...requestPayload,
@@ -7859,6 +7977,7 @@ function PerformanceAIDashboardView({
       surveySlopeEstimate?.slope_percent,
       useSurveyForGrading,
       withReactiveRerunContext,
+      reactiveValidation,
     ],
   );
 
@@ -9796,7 +9915,7 @@ function PerformanceAIDashboardView({
                     <div className="grid grid-cols-2 gap-2">
                       <button type="button" onClick={() => handleOpenSidePanel("objects")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Objects</button>
                       <button type="button" onClick={() => handleOpenSidePanel("analysis")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Review</button>
-                      <button type="button" onClick={() => handleOpenSidePanel("generate")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Generate</button>
+                      <button type="button" data-testid="open-generate-panel" onClick={() => handleOpenSidePanel("generate")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Generate</button>
                       <button type="button" onClick={() => handleOpenSidePanel("deliverables")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Deliver</button>
                     </div>
                   </div>
@@ -10598,6 +10717,7 @@ function PerformanceAIDashboardView({
                             <button
                               key={system}
                               type="button"
+                              data-testid={`generate-${system}`}
                               onClick={() => handleGenerateSystem(system)}
                               className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-slate-950 hover:bg-slate-50"
                             >
@@ -10623,6 +10743,61 @@ function PerformanceAIDashboardView({
                           </span>
                         </button>
                       </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="reactive-rerun-status">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Reactive engineering</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">
+                            {reactiveValidation.status === "idle"
+                              ? "No stale engineering systems"
+                              : reactiveValidation.status === "pending"
+                                ? "Checking impacted systems"
+                                : reactiveValidation.requiresConfirmation
+                                  ? "Confirmation required"
+                                  : "Quick partial rerun ready"}
+                          </p>
+                        </div>
+                        <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                          reactiveValidation.requiresConfirmation
+                            ? "bg-amber-100 text-amber-700"
+                            : reactiveValidation.status === "idle"
+                              ? "bg-slate-100 text-slate-500"
+                              : "bg-emerald-100 text-emerald-700"
+                        }`}>
+                          {reactiveValidation.requiresConfirmation ? "Confirm" : reactiveValidation.status}
+                        </span>
+                      </div>
+                      {reactiveValidation.message ? (
+                        <p className="mt-3 text-xs leading-5 text-slate-600">{reactiveValidation.message}</p>
+                      ) : null}
+                      {reactiveValidation.changedTargets.length ? (
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          {reactiveValidation.changedTargets.slice(0, 8).map((stage) => (
+                            <span key={stage} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-600">
+                              {stage.replace(/_/g, " ")}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                      {reactiveRerunSummary.enabled ? (
+                        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                          <p className="font-semibold uppercase tracking-[0.14em] text-slate-500">Last partial rerun</p>
+                          <p className="mt-2">
+                            {reactiveRerunSummary.checkpointRestored ? "Checkpoint restored. " : ""}
+                            Reran {reactiveRerunSummary.rerunStages.length ? reactiveRerunSummary.rerunStages.join(", ") : "changed stages"}.
+                          </p>
+                          <p className="mt-1">
+                            Skipped {reactiveRerunSummary.skippedStages.length ? reactiveRerunSummary.skippedStages.join(", ") : "clean upstream stages"}.
+                          </p>
+                          {typeof reactiveRerunSummary.elapsedMs === "number" ? (
+                            <p className="mt-1">
+                              {Math.round(reactiveRerunSummary.elapsedMs)} ms
+                              {reactiveRerunSummary.withinQuickThreshold === false ? " over quick threshold" : " within quick threshold"}.
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <label className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-800">

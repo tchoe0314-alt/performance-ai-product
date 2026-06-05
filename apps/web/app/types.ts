@@ -248,6 +248,8 @@ export type ReactiveUpdateReport = {
   changed_stages?: string[];
   impacted_engine_ids?: string[];
   impacted_stages?: string[];
+  execution_mode?: string;
+  partial_rerun_executed?: boolean;
   partial_rerun_supported?: boolean;
   ran_stages?: string[];
   stale_outputs?: string[];
@@ -257,6 +259,26 @@ export type ReactiveUpdateReport = {
   post_rerun_export_blocked?: boolean;
   post_rerun_production_ready?: boolean;
   post_rerun_release_blockers?: string[];
+  partial_rerun_telemetry?: {
+    elapsed_ms?: number;
+    rerun_stages?: string[];
+    skipped_stages?: string[];
+    quick_threshold_ms?: number;
+    within_quick_threshold?: boolean;
+  };
+};
+
+export type ReactivePartialRerun = {
+  enabled?: boolean;
+  checkpoint_restored?: boolean;
+  impacted_stages?: string[];
+  rerun_stages?: string[];
+  skipped_stages?: string[];
+  telemetry?: {
+    elapsed_ms?: number;
+    quick_threshold_ms?: number;
+    within_quick_threshold?: boolean;
+  };
 };
 
 export type PlanMeta = {
@@ -298,6 +320,7 @@ export type PlanMeta = {
   };
   coordination?: Record<string, unknown>;
   reactive_update_report?: ReactiveUpdateReport;
+  reactive_partial_rerun?: ReactivePartialRerun;
   iterations?: IterationRecord[];
 };
 
