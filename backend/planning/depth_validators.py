@@ -53,7 +53,55 @@ def _has_valid_velocity(row: Dict[str, Any]) -> bool:
     velocity = row.get("velocity_fps")
     if velocity is None:
         return False
-    return safe_float(velocity, -1.0) > 0.0
+    max_velocity = safe_float(row.get("max_velocity_fps"), 0.0)
+    velocity_value = safe_float(velocity, -1.0)
+    return velocity_value > 0.0 and (max_velocity <= 0.0 or velocity_value <= max_velocity)
+
+
+def _has_valid_hydrant_spacing(row: Dict[str, Any]) -> bool:
+    rec = safe_dict(row)
+    if rec.get("valid") is not True:
+        return False
+    hydrant_count = safe_float(rec.get("hydrant_count"), 0.0)
+    max_spacing = safe_float(rec.get("max_spacing_ft"), -1.0)
+    limit = safe_float(rec.get("limit_ft"), 0.0)
+    return hydrant_count >= 2 and max_spacing >= 0.0 and limit > 0.0 and max_spacing <= limit
+
+
+def _has_valid_pressure_validation(row: Dict[str, Any]) -> bool:
+    rec = safe_dict(row)
+    if rec.get("valid") is not True or not _row_is_production_evidence(rec):
+        return False
+    source_pressure = safe_float(rec.get("source_pressure_psi"), 0.0)
+    min_pressure = safe_float(rec.get("min_pressure_psi"), -1.0)
+    required = safe_float(rec.get("min_required_pressure_psi"), 0.0)
+    graph = safe_dict(rec.get("pressure_graph"))
+    if graph:
+        if graph.get("success") is not True or not safe_dict(graph.get("node_pressures_psi")):
+            return False
+    return source_pressure > 0.0 and required > 0.0 and min_pressure >= required
+
+
+def _has_valid_fire_flow_validation(row: Dict[str, Any], pressure: Dict[str, Any]) -> bool:
+    rec = safe_dict(row)
+    if rec.get("valid") is not True or not _row_is_production_evidence(rec):
+        return False
+    required = safe_float(rec.get("required_fire_flow_gpm"), 0.0)
+    available = safe_float(rec.get("available_fire_flow_gpm"), 0.0)
+    residual = safe_float(rec.get("residual_pressure_psi"), safe_float(pressure.get("min_pressure_psi"), -1.0))
+    min_required = safe_float(
+        rec.get("min_required_residual_pressure_psi"),
+        safe_float(pressure.get("min_required_pressure_psi"), 0.0),
+    )
+    return required > 0.0 and available >= required and residual >= min_required > 0.0
+
+
+def _has_valid_sizing_optimization(value: Any) -> bool:
+    rec = safe_dict(value)
+    if not rec:
+        return False
+    status = safe_str(rec.get("status") or rec.get("selected")).lower()
+    return status in {"checked", "optimized", "accepted", "selected"} or bool(safe_list(rec.get("alternatives")))
 
 
 def _has_valid_detention_routing(row: Dict[str, Any]) -> bool:
@@ -228,16 +276,16 @@ def validate_water_system_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     segments = [safe_dict(item) for item in safe_list(source.get("segments") or hooks.get("utility_segments"))]
     hydrants = safe_list(source.get("hydrants") or source.get("fire_hydrants"))
     pressure = safe_dict(source.get("pressure_validation"))
-    velocity_checks = safe_list(source.get("velocity_checks")) or [seg for seg in segments if _present(seg.get("velocity_fps"))]
+    velocity_checks = safe_list(source.get("velocity_checks"))
     looped = bool(source.get("looped") or source.get("is_looped")) or _has_cycle(segments)
     checks = [
         _check("pressure_zones", bool(safe_list(source.get("pressure_zones")) or safe_dict(source.get("pressure_zone"))), evidence="pressure zones", blocker="Water depth needs pressure zones."),
-        _check("hydrant_spacing", bool(hydrants and safe_dict(source.get("hydrant_spacing_validation")).get("valid") is True), evidence="hydrant spacing evidence", blocker="Water depth needs passing hydrant spacing coverage."),
-        _check("fire_flow", _valid_flag(source.get("fire_flow_validation")), evidence="fire flow validation", blocker="Water depth needs passing fire-flow validation."),
+        _check("hydrant_spacing", bool(hydrants and _has_valid_hydrant_spacing(source.get("hydrant_spacing_validation"))), evidence="hydrant spacing evidence", blocker="Water depth needs passing hydrant spacing coverage."),
+        _check("fire_flow", _has_valid_fire_flow_validation(source.get("fire_flow_validation"), pressure), evidence="fire flow validation", blocker="Water depth needs passing fire-flow validation."),
         _check("looping", looped, evidence="looped network graph", blocker="Water depth needs looping/redundancy evidence."),
-        _check("pressure_validation", bool(pressure and pressure.get("valid") is True), evidence="pressure validation", blocker="Water depth needs passing pressure validation."),
+        _check("pressure_validation", _has_valid_pressure_validation(pressure), evidence="pressure validation", blocker="Water depth needs passing pressure validation."),
         _check("velocity_checks", bool(velocity_checks) and all(_has_valid_velocity(safe_dict(item)) for item in velocity_checks), evidence="velocity checks", blocker="Water depth needs passing velocity checks."),
-        _check("sizing_optimization", bool(safe_dict(source.get("sizing_optimization")) or safe_list(source.get("sizing_alternatives"))), evidence="sizing optimization", blocker="Water depth needs sizing optimization evidence."),
+        _check("sizing_optimization", _has_valid_sizing_optimization(source.get("sizing_optimization")) or bool(safe_list(source.get("sizing_alternatives"))), evidence="sizing optimization", blocker="Water depth needs sizing optimization evidence."),
     ]
     return _finalize("water_system_depth", checks)
 

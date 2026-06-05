@@ -228,6 +228,10 @@ class ProductionDepthArtifactTests(unittest.TestCase):
         self.assertTrue(enriched["looped"])
         self.assertEqual(enriched["water_depth_status"], "ready")
         self.assertEqual(enriched["velocity_checks"][0]["segment"], "W-1")
+        self.assertEqual(enriched["pressure_validation"]["source"], "water_pressure_graph")
+        self.assertGreater(enriched["pressure_validation"]["residual_pressure_margin_psi"], 0.0)
+        self.assertEqual(enriched["fire_flow_validation"]["source"], "water_fire_flow_check")
+        self.assertEqual(enriched["fire_flow_validation"]["fire_flow_margin_gpm"], 350.0)
 
     def test_water_depth_blocks_missing_pressure_and_fire_flow_inputs(self) -> None:
         utilities = {

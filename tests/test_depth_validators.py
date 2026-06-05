@@ -1,6 +1,6 @@
 import unittest
 
-from backend.planning.production_depth import enrich_drainage_production_depth
+from backend.planning.production_depth import enrich_drainage_production_depth, enrich_water_production_depth
 from backend.planning.depth_validators import (
     validate_roadway_corridor_depth,
     validate_stormwater_depth,
@@ -288,6 +288,52 @@ class DepthValidatorTests(unittest.TestCase):
         self.assertIn("Storm depth needs production detention stage-storage/outlet/drawdown routing.", result["blockers"])
 
     def test_water_depth_requires_pressure_fire_flow_looping_and_velocity(self) -> None:
+        water = enrich_water_production_depth(
+            {
+                "source_pressure_psi": 72.0,
+                "source_node": "SRC",
+                "available_fire_flow_gpm": 1600.0,
+                "fire_flow_demand_gpm": 1250.0,
+                "hydrants": [
+                    {"name": "H-1", "x": 0.0, "y": 0.0},
+                    {"name": "H-2", "x": 280.0, "y": 0.0},
+                ],
+                "conflict_hooks": {
+                    "utility_system_type": "water",
+                    "utility_segments": [
+                        {
+                            "name": "W-1",
+                            "system_type": "water",
+                            "start_node": "SRC",
+                            "end_node": "A",
+                            "route_points": [[0.0, 0.0], [220.0, 0.0]],
+                            "diameter_in": 8.0,
+                            "flow_gpm": 450.0,
+                        },
+                        {
+                            "name": "W-2",
+                            "system_type": "water",
+                            "start_node": "A",
+                            "end_node": "SRC",
+                            "route_points": [[220.0, 0.0], [0.0, 0.0]],
+                            "diameter_in": 8.0,
+                            "flow_gpm": 300.0,
+                        },
+                    ],
+                },
+            }
+        )
+        result = validate_water_system_depth(
+            {
+                "meta": {
+                    "water": water
+                }
+            }
+        )
+
+        self.assertTrue(result["production_ready"])
+
+    def test_water_depth_blocks_thin_boolean_validation_records(self) -> None:
         result = validate_water_system_depth(
             {
                 "meta": {
@@ -302,13 +348,17 @@ class DepthValidatorTests(unittest.TestCase):
                         "hydrant_spacing_validation": {"valid": True},
                         "fire_flow_validation": {"valid": True},
                         "pressure_validation": {"valid": True},
-                        "sizing_optimization": {"selected": "8-inch loop"},
+                        "velocity_checks": [{"segment": "W-1", "velocity_fps": 3.0, "valid": True}],
+                        "sizing_optimization": {"status": "checked"},
                     }
                 }
             }
         )
 
-        self.assertTrue(result["production_ready"])
+        self.assertFalse(result["production_ready"])
+        self.assertIn("Water depth needs passing hydrant spacing coverage.", result["blockers"])
+        self.assertIn("Water depth needs passing fire-flow validation.", result["blockers"])
+        self.assertIn("Water depth needs passing pressure validation.", result["blockers"])
 
     def test_water_depth_blocks_failed_pressure_spacing_and_velocity_checks(self) -> None:
         result = validate_water_system_depth(

@@ -231,21 +231,23 @@ Evidence needed:
 - Golden scenarios with detention and overflow pass/fail expectations.
 - Current evidence: `tests/test_production_depth_artifacts.py` and `tests/test_depth_validators.py` cover explicit detention outlet drawdown and capacity-review overflow blocking.
 
-### 7. Water Pressure And Fire-Flow Depth Is Early
+### 7. Water Pressure And Fire-Flow Depth Is Guarded But Review-Only
 
 Current state:
 - Water depth validators require pressure zones, hydrant spacing, fire flow, looping, pressure, velocity, and sizing optimization.
-- Some pressure graph and sizing logic exists.
+- Water production depth enrichment computes Hazen-Williams graph pressure, residual pressure margin, hydrant spacing, fire-flow margin, velocity checks, looping, and sizing status when explicit water inputs are present.
+- Thin `valid: true` pressure/fire-flow/hydrant records no longer count as production evidence.
 
 Issue:
-- Real pressure modeling still needs stronger network hydraulics, source pressure curves, hydrant coverage by standards, and fire-flow residual pressure checks.
+- Private-alpha water truth gates are stronger, but public-beta water realism still needs calibrated source curves, jurisdiction hydrant/fire-flow standards, and richer fire-flow scenarios.
 
 Required fix:
-- Add real pressure-zone model, residual pressure checks, hydrant spacing standards, velocity limits, and fire-flow demand scenarios.
+- Add calibrated pressure-zone/source curve model, hydrant spacing standards, velocity limits by standard, and fire-flow demand scenarios.
 - Keep review-only when source pressure or jurisdiction fire-flow criteria are missing.
 
 Evidence needed:
-- Known network tests for pressure, velocity, looping, and hydrant spacing.
+- Covered for private-alpha gate behavior by `tests/test_production_depth_artifacts.py` and `tests/test_depth_validators.py`.
+- Still needed before public beta: standards-calibrated water/fire-flow benchmark cases.
 
 ### 8. Roadway/Corridor Depth Is Early
 
@@ -351,10 +353,9 @@ Decision needed:
 
 ## Exact Fix Order
 
-1. Deepen water pressure/fire-flow/hydrant calculations.
-2. Deepen roadway/corridor profiles, crowns, curb returns, intersections, and ADA evidence.
-3. Add review-package manifest and Civil3D/LandXML/DWG explicit confidence states.
-4. Add cost package status and approved unit-price fixture coverage.
+1. Deepen roadway/corridor profiles, crowns, curb returns, intersections, and ADA evidence.
+2. Add review-package manifest and Civil3D/LandXML/DWG explicit confidence states.
+3. Add cost package status and approved unit-price fixture coverage.
 
 ## Non-Negotiable Truth Rules
 

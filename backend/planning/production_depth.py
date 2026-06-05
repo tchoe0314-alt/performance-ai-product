@@ -844,6 +844,8 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
                     "velocity_fps": velocity,
                     "max_velocity_fps": round(max_velocity, 3),
                     "valid": velocity <= max_velocity,
+                    "source": "water_velocity_calculation",
+                    "truth_label": "Velocity computed from supplied water flow and diameter.",
                 }
             )
         segment_missing: List[str] = []
@@ -928,10 +930,12 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
     pressure_valid = bool(pressure_result.get("success")) and min_pressure >= min_required_pressure and not missing_inputs
     enriched["pressure_validation"] = {
         "valid": pressure_valid,
+        "source": "water_pressure_graph",
         "source_node": source_node,
         "source_pressure_psi": round(source_pressure, 3) if source_pressure is not None else None,
         "min_pressure_psi": round(min_pressure, 3) if pressure_result else None,
         "min_required_pressure_psi": round(min_required_pressure, 3),
+        "residual_pressure_margin_psi": round(min_pressure - min_required_pressure, 3) if pressure_result else None,
         "pressure_graph": pressure_result,
         "missing_inputs": pressure_missing,
         "segment_missing_inputs": missing_inputs,
@@ -982,11 +986,15 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
         fire_missing.append("available_fire_flow_gpm")
     enriched["fire_flow_validation"] = {
         "valid": bool(fire_demand > 0.0 and available_fire >= fire_demand and (not pressure_result or min_pressure >= min_required_pressure)),
+        "source": "water_fire_flow_check",
         "required_fire_flow_gpm": round(fire_demand, 3),
         "available_fire_flow_gpm": round(available_fire, 3),
+        "fire_flow_margin_gpm": round(available_fire - fire_demand, 3) if fire_demand > 0.0 and available_fire > 0.0 else None,
         "residual_pressure_psi": round(min_pressure, 3) if pressure_result else None,
+        "min_required_residual_pressure_psi": round(min_required_pressure, 3),
+        "residual_pressure_margin_psi": round(min_pressure - min_required_pressure, 3) if pressure_result else None,
         "missing_inputs": fire_missing,
-        "truth_label": "Fire-flow check uses supplied required/available flow and pressure evidence; verify with local fire authority.",
+        "truth_label": "Fire-flow check uses supplied required/available flow and residual pressure evidence; local fire-authority review remains required.",
     }
     if available_fire > 0.0:
         enriched["available_fire_flow_gpm"] = round(available_fire, 3)
