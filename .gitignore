@@ -19,6 +19,7 @@ uploads/
 data/performance_ai.db
 data/performance_ai.db-shm
 data/performance_ai.db-wal
+data/runtime_monitoring.json
 data/artifacts/
 *.dxf
 stdout.txt
