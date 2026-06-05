@@ -145,12 +145,12 @@ def _production_ready_meta() -> dict:
         "control_verified": True,
     }
     meta["gis_layers"] = {
-        "parcels": [{}],
-        "easements": [{}],
-        "row": [{}],
-        "floodplain": [{}],
-        "wetlands": [{}],
-        "existing_utilities": [{}],
+        "parcels": [{"id": "P-1", "source": "county_parcels"}],
+        "easements": [{"id": "E-1", "source": "title_commitment"}],
+        "row": [{"id": "ROW-1", "source": "county_row"}],
+        "floodplain": [{"id": "FP-1", "source": "FEMA_FIRM"}],
+        "wetlands": [{"id": "WET-1", "source": "NWI"}],
+        "existing_utilities": [{"id": "EX-W-1", "source": "utility_atlas"}],
     }
     meta["coordinate_system"] = {"epsg": "EPSG:2276", "units": "ft", "source": "survey_control", "production_usable": True}
     meta["existing_conditions_summary"] = {
@@ -450,6 +450,17 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertFalse(readiness["production_ready"])
         self.assertIn(("standards", "official_sources"), fields)
         self.assertIn(("standards", "rule_metadata"), fields)
+
+    def test_civil_readiness_requires_traceable_jurisdiction_standards(self) -> None:
+        meta = _production_ready_meta()
+        meta["jurisdiction_standards"] = {"production_usable": True}
+
+        readiness = civil_design_readiness({"meta": meta})
+        fields = {(item["area"], item["field"]) for item in readiness["production_blockers"]}
+
+        self.assertFalse(readiness["production_ready"])
+        self.assertIn(("standards", "jurisdiction_standards_traceability"), fields)
+        self.assertEqual(readiness["systems"]["standards"]["metrics"]["acceptance_state"], "needs_review")
 
     def test_production_depth_gates_clear_when_real_design_evidence_exists(self) -> None:
         meta = _production_ready_meta()

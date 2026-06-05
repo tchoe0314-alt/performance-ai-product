@@ -47,6 +47,7 @@ def _safe_list(value: Any) -> List[Any]:
 
 
 _CONCEPT_MARKERS = ("concept", "proxy", "fallback", "placeholder", "verify")
+_SOURCE_KEYS = ("source", "provider", "source_url", "file", "file_name", "dataset", "authority", "agency")
 
 
 def _contains_concept_marker(value: Any) -> bool:
@@ -149,6 +150,25 @@ def _truthy_mapping(value: Any) -> bool:
     return bool(_safe_dict(value))
 
 
+def _evidence_source(value: Any) -> str:
+    rec = _safe_dict(value)
+    for key in _SOURCE_KEYS:
+        source = _safe_str(rec.get(key))
+        if source:
+            return source
+    for key in ("features", "items", "records"):
+        for item in _safe_list(rec.get(key)):
+            source = _evidence_source(item)
+            if source:
+                return source
+    if isinstance(value, list):
+        for item in value:
+            source = _evidence_source(item)
+            if source:
+                return source
+    return ""
+
+
 def _gis_layer_has_evidence(value: Any) -> bool:
     rec = _safe_dict(value)
     verified_absent = bool(
@@ -157,19 +177,29 @@ def _gis_layer_has_evidence(value: Any) -> bool:
         or rec.get("not_present")
         or _safe_str(rec.get("status")).lower() in {"verified_absent", "absent", "none_present", "not_present"}
     )
+    has_source = bool(_evidence_source(value))
     if verified_absent:
-        return True
+        return has_source
     if isinstance(value, list):
-        return bool(value)
+        return bool(value) and has_source
     if isinstance(value, dict):
         if "features" in value:
-            return bool(_safe_list(value.get("features")))
+            return bool(_safe_list(value.get("features"))) and has_source
         if "items" in value:
-            return bool(_safe_list(value.get("items")))
+            return bool(_safe_list(value.get("items"))) and has_source
         if "records" in value:
-            return bool(_safe_list(value.get("records")))
-        return bool(value)
-    return value not in (None, "", [], {})
+            return bool(_safe_list(value.get("records"))) and has_source
+        return bool(value) and has_source
+    return value not in (None, "", [], {}) and has_source
+
+
+def _summary_gis_layer_has_evidence(value: Any) -> bool:
+    rec = _safe_dict(value)
+    if rec.get("has_evidence") is not True:
+        return False
+    if rec.get("has_source_evidence") is True:
+        return True
+    return bool(_safe_str(rec.get("source")))
 
 
 def _first_number(*values: Any, default: float = 0.0) -> float:
@@ -829,6 +859,47 @@ def check_standards_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
             )
     if not jurisdiction:
         warnings.append("No jurisdiction standards profile is attached.")
+        gaps.append(
+            _production_gap(
+                "standards",
+                "jurisdiction_standards",
+                "Production QA must identify the governing city/county/DOT/utility standards.",
+                "Attach the accepted jurisdiction standards profile before production QA.",
+            )
+        )
+    else:
+        jurisdiction_sources = _safe_list(jurisdiction.get("source_urls"))
+        has_jurisdiction_source = bool(
+            _safe_str(jurisdiction.get("source_url"))
+            or _safe_str(jurisdiction.get("source"))
+            or _safe_str(jurisdiction.get("official_source_url"))
+            or jurisdiction_sources
+        )
+        has_jurisdiction_identity = bool(
+            _safe_str(jurisdiction.get("agency"))
+            or _safe_str(jurisdiction.get("city"))
+            or _safe_str(jurisdiction.get("county"))
+            or _safe_str(jurisdiction.get("state"))
+            or _safe_str(jurisdiction.get("utility_provider"))
+        )
+        if jurisdiction.get("production_usable") is not True:
+            gaps.append(
+                _production_gap(
+                    "standards",
+                    "jurisdiction_standards_production_usable",
+                    "Production QA cannot rely on jurisdiction standards unless they are explicitly production-usable.",
+                    "Accept official jurisdiction rules and set jurisdiction_standards.production_usable true.",
+                )
+            )
+        if not (has_jurisdiction_source and has_jurisdiction_identity):
+            gaps.append(
+                _production_gap(
+                    "standards",
+                    "jurisdiction_standards_traceability",
+                    "Production QA needs traceable jurisdiction identity and source evidence.",
+                    "Attach governing agency/city/county/state plus official source URL or standards-discovery evidence.",
+                )
+            )
     if not company:
         warnings.append("No company CAD/design standards profile is attached.")
         gaps.append(
@@ -848,6 +919,7 @@ def check_standards_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
                 "Attach approved company CAD/layer/sheet/detail standards or mark the current profile production-usable with review evidence.",
             )
         )
+    acceptance_state = "ready" if not gaps else "blocked" if not standards or not accepted_rules else "needs_review"
     if _safe_dict(meta.get("standards_review_packet")) and not accepted_rules:
         warnings.append("Standards candidates exist, but no rules have been accepted for production QA.")
     if standards and bool(standards.get("needs_source_review")):
@@ -863,6 +935,7 @@ def check_standards_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
             "has_jurisdiction_standards": bool(jurisdiction),
             "has_company_standards": bool(company),
             "production_gaps": gaps,
+            "acceptance_state": acceptance_state,
         },
     )
 
@@ -885,6 +958,18 @@ def check_existing_conditions_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
     survey = _safe_dict(meta.get("survey") or meta.get("survey_file") or _safe_dict(grading.get("existing_surface")).get("survey"))
     gis = _safe_dict(meta.get("gis_layers") or meta.get("existing_conditions"))
     survey_point_count = max(_safe_int(summary_survey.get("point_count"), 0), _safe_int(survey.get("point_count"), 0))
+    survey_has_benchmark = bool(
+        summary_survey.get("has_benchmark")
+        or _safe_str(survey.get("benchmark") or survey.get("benchmark_id"))
+    )
+    survey_has_datum = bool(
+        summary_survey.get("has_datum")
+        or _safe_str(survey.get("datum") or survey.get("vertical_datum"))
+    )
+    survey_control_verified = bool(
+        summary_survey.get("control_verified")
+        or survey.get("control_verified") is True
+    )
     survey_ready = (
         bool(summary_survey.get("ready"))
         or survey_point_count >= 3
@@ -896,7 +981,7 @@ def check_existing_conditions_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
     missing_gis_layers = [
         layer
         for layer in required_gis_layers
-        if not bool(_safe_dict(summary_layers.get(layer)).get("has_evidence"))
+        if not _summary_gis_layer_has_evidence(summary_layers.get(layer))
         and not _gis_layer_has_evidence(gis.get(layer))
     ]
     gis_ready = bool(summary_gis.get("ready")) or not missing_gis_layers
@@ -912,6 +997,34 @@ def check_existing_conditions_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
                 "Import survey points, breaklines, contours, or a stamped existing surface.",
             )
         )
+    if survey_ready:
+        if not survey_has_benchmark:
+            gaps.append(
+                _production_gap(
+                    "existing_conditions",
+                    "survey_benchmark",
+                    "Production grading needs benchmark evidence for vertical control.",
+                    "Attach benchmark ID/elevation metadata from the survey/control package.",
+                )
+            )
+        if not survey_has_datum:
+            gaps.append(
+                _production_gap(
+                    "existing_conditions",
+                    "survey_datum",
+                    "Production grading needs the survey vertical datum.",
+                    "Attach vertical datum metadata such as NAVD88 or the project datum used by the survey.",
+                )
+            )
+        if not survey_control_verified:
+            gaps.append(
+                _production_gap(
+                    "existing_conditions",
+                    "survey_control_verified",
+                    "Production grading needs survey/control evidence explicitly marked verified.",
+                    "Verify survey control and attach control_verified=true metadata.",
+                )
+            )
     if not gis_ready:
         gaps.append(
             _production_gap(
@@ -1861,7 +1974,7 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
     required_gis_layers = ("parcels", "easements", "row", "floodplain", "wetlands", "existing_utilities")
     for layer in required_gis_layers:
         summary_layer = _safe_dict(summary_gis_layers.get(layer))
-        has_summary_evidence = bool(summary_layer.get("has_evidence"))
+        has_summary_evidence = _summary_gis_layer_has_evidence(summary_layer)
         if has_summary_evidence or _gis_layer_has_evidence(gis_layers.get(layer)):
             continue
         blockers.append(

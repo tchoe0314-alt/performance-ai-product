@@ -33,6 +33,7 @@ HEAVY_FORMAT_REQUIREMENTS = {
 GEOGRAPHIC_EPSG_CODES = {"4326", "4269", "4258"}
 ENGINEERING_UNITS = {"ft", "foot", "feet", "us-ft", "us_survey_ft", "survey_ft", "m", "meter", "meters", "metre", "metres"}
 COORDINATE_SOURCE_KEYS = ("source", "authority", "control_source", "source_url", "official_source_url", "survey_control")
+GIS_SOURCE_KEYS = ("source", "provider", "source_url", "file", "file_name", "dataset", "authority", "agency")
 
 
 def _normalized_field_map(fieldnames: Iterable[str]) -> Dict[str, str]:
@@ -48,6 +49,25 @@ def _first_column(fields: Dict[str, str], candidates: Iterable[str]) -> str:
 
 def _module_available(name: str) -> bool:
     return importlib.util.find_spec(name) is not None
+
+
+def _source_evidence(value: Any) -> str:
+    rec = safe_dict(value)
+    for key in GIS_SOURCE_KEYS:
+        source = safe_str(rec.get(key))
+        if source:
+            return source
+    for key in ("features", "items", "records"):
+        for item in safe_list(rec.get(key)):
+            source = _source_evidence(item)
+            if source:
+                return source
+    if isinstance(value, list):
+        for item in value:
+            source = _source_evidence(item)
+            if source:
+                return source
+    return ""
 
 
 def _bounds(points: List[Dict[str, Any]]) -> Optional[Dict[str, float]]:
@@ -964,6 +984,7 @@ def validate_imported_existing_conditions_package(
     gis_layers = safe_dict(rec.get("gis_layers") or rec.get("existing_conditions"))
     layer_counts = {layer: len(safe_list(gis_layers.get(layer))) for layer in REQUIRED_GIS_LAYERS}
     present_layers = [layer for layer, count in layer_counts.items() if count > 0]
+    source_missing_layers = [layer for layer in present_layers if not _source_evidence(gis_layers.get(layer))]
     if not present_layers:
         blockers.append({"field": "gis_layers", "reason": "No GIS/site constraint layers were imported."})
     elif require_all_gis_layers:
@@ -976,6 +997,14 @@ def validate_imported_existing_conditions_package(
                     "missing_layers": missing_layers,
                 }
             )
+    if source_missing_layers:
+        blockers.append(
+            {
+                "field": "gis_layer_sources",
+                "reason": "One or more imported GIS layers are missing source/provider metadata.",
+                "missing_source_layers": source_missing_layers,
+            }
+        )
 
     return {
         "success": not blockers,

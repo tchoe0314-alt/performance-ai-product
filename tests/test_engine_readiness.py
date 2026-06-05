@@ -27,6 +27,8 @@ class EngineReadinessTests(unittest.TestCase):
         self.assertIn("coordinate_system", {item["field"] for item in readiness["engines"]["gis_existing_conditions"]["production_blockers"]})
         storm = readiness["engines"]["storm_pipe"]
         self.assertEqual(storm["status"], "concept_ready_needs_production_depth")
+        self.assertEqual(storm["review_state"], "needs_review")
+        self.assertEqual(readiness["review_state"], "needs_review")
         self.assertTrue(storm["production_blockers"])
         self.assertTrue(storm["production_gate_status"])
 
@@ -34,6 +36,7 @@ class EngineReadinessTests(unittest.TestCase):
         readiness = evaluate_engine_readiness({"meta": _production_ready_meta()})
 
         self.assertTrue(readiness["production_ready"])
+        self.assertEqual(readiness["review_state"], "ready")
         self.assertEqual(readiness["not_evidenced_engine_ids"], [])
         self.assertEqual(readiness["blocked_engine_ids"], [])
         self.assertEqual(readiness["production_blocked_engine_ids"], [])
@@ -44,6 +47,8 @@ class EngineReadinessTests(unittest.TestCase):
         readiness = evaluate_engine_readiness({"meta": {"grading": {"source_quality": "fallback"}}})
 
         self.assertIn("grading", readiness["blocked_engine_ids"])
+        self.assertEqual(readiness["review_state"], "blocked")
+        self.assertEqual(readiness["engines"]["grading"]["review_state"], "blocked")
         self.assertIn("drainage", readiness["blocked_engine_ids"])
         self.assertIn("storm_pipe", readiness["blocked_engine_ids"])
         self.assertIn("sanitary", readiness["blocked_engine_ids"])

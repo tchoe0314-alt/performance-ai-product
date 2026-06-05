@@ -21,14 +21,20 @@ class ExistingConditionsTests(unittest.TestCase):
             {
                 "meta": {
                     "grading": {"source_quality": "survey"},
-                    "survey": {"point_count": 8, "source": "uploaded_csv", "benchmark": "BM-1"},
+                    "survey": {
+                        "point_count": 8,
+                        "source": "uploaded_csv",
+                        "benchmark": "BM-1",
+                        "datum": "NAVD88",
+                        "control_verified": True,
+                    },
                     "gis_layers": {
-                        "parcels": [{"id": "P-1"}],
-                        "easements": [{"id": "E-1"}],
-                        "row": [{"id": "ROW-1"}],
+                        "parcels": [{"id": "P-1", "source": "county_parcels"}],
+                        "easements": [{"id": "E-1", "source": "title_commitment"}],
+                        "row": [{"id": "ROW-1", "source": "county_row"}],
                         "floodplain": {"verified_absent": True, "source": "FEMA FIRM panel"},
                         "wetlands": {"verified_absent": True, "source": "NWI review"},
-                        "existing_utilities": [{"id": "EX-W"}],
+                        "existing_utilities": [{"id": "EX-W", "source": "utility_atlas"}],
                     },
                     "coordinate_system": {"epsg": "EPSG:2276", "units": "ft", "source": "survey"},
                 }
@@ -45,8 +51,14 @@ class ExistingConditionsTests(unittest.TestCase):
             {
                 "meta": {
                     "grading": {"source_quality": "survey"},
-                    "survey": {"point_count": 8, "source": "uploaded_csv", "benchmark": "BM-1"},
-                    "gis_layers": {"parcels": [{"id": "P-1"}]},
+                    "survey": {
+                        "point_count": 8,
+                        "source": "uploaded_csv",
+                        "benchmark": "BM-1",
+                        "datum": "NAVD88",
+                        "control_verified": True,
+                    },
+                    "gis_layers": {"parcels": [{"id": "P-1", "source": "county_parcels"}]},
                     "coordinate_system": {"epsg": "EPSG:2276", "units": "ft", "source": "survey"},
                 }
             }
@@ -56,6 +68,38 @@ class ExistingConditionsTests(unittest.TestCase):
         self.assertFalse(summary["gis"]["ready"])
         self.assertIn("wetlands", summary["gis"]["missing_layers"])
         self.assertIn("existing_utilities", summary["gis"]["missing_layers"])
+
+    def test_source_less_gis_layers_do_not_clear_production_existing_conditions(self) -> None:
+        summary = summarize_existing_conditions(
+            {
+                "meta": {
+                    "grading": {"source_quality": "survey"},
+                    "survey": {
+                        "point_count": 8,
+                        "source": "uploaded_csv",
+                        "benchmark": "BM-1",
+                        "datum": "NAVD88",
+                        "control_verified": True,
+                    },
+                    "gis_layers": {
+                        "parcels": [{"id": "P-1"}],
+                        "easements": [{"id": "E-1"}],
+                        "row": [{"id": "ROW-1"}],
+                        "floodplain": {"verified_absent": True},
+                        "wetlands": {"verified_absent": True},
+                        "existing_utilities": [{"id": "EX-W"}],
+                    },
+                    "coordinate_system": {"epsg": "EPSG:2276", "units": "ft", "source": "survey"},
+                }
+            }
+        )
+
+        fields = {item["field"] for item in summary["missing_requirements"]}
+
+        self.assertFalse(summary["production_ready"])
+        self.assertFalse(summary["gis"]["ready"])
+        self.assertIn("gis_parcels_source", fields)
+        self.assertIn("gis_existing_utilities_source", fields)
 
     def test_survey_source_name_alone_does_not_clear_survey_readiness(self) -> None:
         summary = summarize_existing_conditions(
@@ -86,9 +130,9 @@ class ExistingConditionsTests(unittest.TestCase):
                     "grading": {"source_quality": "survey"},
                     "survey": {"point_count": 8, "source": "uploaded_csv"},
                     "gis_layers": {
-                        "parcels": [{"id": "P-1"}],
-                        "easements": [{"id": "E-1"}],
-                        "row": [{"id": "ROW-1"}],
+                        "parcels": [{"id": "P-1", "source": "county_parcels"}],
+                        "easements": [{"id": "E-1", "source": "title_commitment"}],
+                        "row": [{"id": "ROW-1", "source": "county_row"}],
                         "floodplain": {"verified_absent": True, "source": "FEMA FIRM"},
                         "wetlands": {"verified_absent": True, "source": "NWI"},
                         "existing_utilities": {"verified_absent": True, "source": "utility atlas"},
@@ -103,7 +147,9 @@ class ExistingConditionsTests(unittest.TestCase):
         self.assertTrue(summary["survey"]["ready"])
         self.assertFalse(summary["survey"]["has_control"])
         self.assertFalse(summary["production_ready"])
-        self.assertIn("survey_control", fields)
+        self.assertIn("survey_benchmark", fields)
+        self.assertIn("survey_datum", fields)
+        self.assertIn("survey_control_verified", fields)
 
     def test_geographic_coordinate_system_is_not_production_ready(self) -> None:
         summary = summarize_existing_conditions(
@@ -129,11 +175,17 @@ class ExistingConditionsTests(unittest.TestCase):
                 "meta": {
                     "units": "ft",
                     "grading": {"source_quality": "survey"},
-                    "survey": {"point_count": 8, "source": "uploaded_csv", "benchmark": "BM-1"},
+                    "survey": {
+                        "point_count": 8,
+                        "source": "uploaded_csv",
+                        "benchmark": "BM-1",
+                        "datum": "NAVD88",
+                        "control_verified": True,
+                    },
                     "gis_layers": {
-                        "parcels": [{"id": "P-1"}],
-                        "easements": [{"id": "E-1"}],
-                        "row": [{"id": "ROW-1"}],
+                        "parcels": [{"id": "P-1", "source": "county_parcels"}],
+                        "easements": [{"id": "E-1", "source": "title_commitment"}],
+                        "row": [{"id": "ROW-1", "source": "county_row"}],
                         "floodplain": {"verified_absent": True, "source": "FEMA FIRM"},
                         "wetlands": {"verified_absent": True, "source": "NWI"},
                         "existing_utilities": {"verified_absent": True, "source": "utility atlas"},

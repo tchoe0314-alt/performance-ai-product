@@ -9,6 +9,7 @@ from .common import readiness_issue_explanations, safe_dict, safe_float, safe_in
 REQUIRED_GIS_LAYERS = ("parcels", "easements", "row", "floodplain", "wetlands", "existing_utilities")
 GEOGRAPHIC_EPSG_CODES = {"4326", "4269", "4258"}
 ENGINEERING_UNITS = {"ft", "foot", "feet", "us-ft", "us_survey_ft", "survey_ft", "m", "meter", "meters", "metre", "metres"}
+SOURCE_KEYS = ("source", "provider", "source_url", "file", "file_name", "dataset", "authority", "agency")
 
 
 def _first_dict(*values: Any) -> Dict[str, Any]:
@@ -98,6 +99,25 @@ def _layer_count(value: Any) -> int:
     return 1 if value not in (None, "", [], {}) else 0
 
 
+def _source_evidence(value: Any) -> str:
+    rec = safe_dict(value)
+    for key in SOURCE_KEYS:
+        source = safe_str(rec.get(key))
+        if source:
+            return source
+    for key in ("features", "items", "records"):
+        for item in safe_list(rec.get(key)):
+            source = _source_evidence(item)
+            if source:
+                return source
+    if isinstance(value, list):
+        for item in value:
+            source = _source_evidence(item)
+            if source:
+                return source
+    return ""
+
+
 def _layer_evidence(value: Any) -> Dict[str, Any]:
     rec = safe_dict(value)
     count = _layer_count(value)
@@ -107,14 +127,16 @@ def _layer_evidence(value: Any) -> Dict[str, Any]:
         or rec.get("not_present")
         or safe_str(rec.get("status")).lower() in {"verified_absent", "absent", "none_present", "not_present"}
     )
-    source = safe_str(rec.get("source") or rec.get("provider") or rec.get("source_url") or rec.get("file"))
+    source = _source_evidence(value)
     present = value not in (None, "", [], {}) and count > 0 and not verified_absent
+    has_source = bool(source)
     return {
         "present": present,
         "count": count if present else 0,
         "verified_absent": verified_absent,
         "source": source,
-        "has_evidence": present or verified_absent,
+        "has_source_evidence": has_source,
+        "has_evidence": (present or verified_absent) and has_source,
     }
 
 
@@ -142,14 +164,20 @@ def _survey_summary(meta: Dict[str, Any], parsed: Dict[str, Any], grading: Dict[
         or safe_str(existing_surface.get("source_quality"))
     )
     source = safe_str(survey.get("source") or survey.get("file") or meta.get("survey_file") or parsed.get("survey_file"))
-    approved_surface = bool(survey.get("approved_for_production") or survey.get("surface_approved") or survey.get("control_verified"))
+    has_benchmark = bool(survey.get("benchmark") or survey.get("benchmark_id"))
+    has_datum = bool(survey.get("datum") or survey.get("vertical_datum"))
+    control_verified = bool(survey.get("control_verified"))
+    approved_surface = bool(survey.get("approved_for_production") or survey.get("surface_approved") or control_verified)
     ready = point_count >= 3 or surface_source == "survey" or (bool(source) and approved_surface)
     return {
         "ready": ready,
         "point_count": point_count,
         "source": source or ("survey_surface" if surface_source == "survey" else "missing"),
         "surface_source": surface_source or "missing",
-        "has_control": bool(survey.get("control_points") or survey.get("benchmark") or survey.get("datum")),
+        "has_control": bool(survey.get("control_points") or (has_benchmark and has_datum and control_verified)),
+        "has_benchmark": has_benchmark,
+        "has_datum": has_datum,
+        "control_verified": control_verified,
         "approved_surface": approved_surface,
     }
 
@@ -222,20 +250,29 @@ def summarize_existing_conditions(plan_or_meta: Dict[str, Any], parsed: Optional
     if not survey["ready"]:
         missing.append({"field": "survey_surface", "reason": "No survey/control surface or survey point source is attached."})
     if not gis["ready"]:
-        missing.append({"field": "gis_layers", "reason": "No parcel, easement, ROW, floodplain, wetland, or existing utility layers are attached."})
+        missing.append({"field": "gis_layers", "reason": "No source-traceable parcel, easement, ROW, floodplain, wetland, or existing utility layers are attached."})
     if not coordinate_system["ready"]:
         missing.append({"field": "coordinate_system", "reason": "No CRS/EPSG/projection is attached for real-world coordinates."})
     elif not coordinate_system["production_usable"]:
         missing.extend(deepcopy(safe_list(coordinate_system.get("blockers"))))
-    survey_control_verified = bool(survey["has_control"] or survey["approved_surface"])
-    if survey["ready"] and not survey_control_verified:
-        missing.append(
-            {
-                "field": "survey_control",
-                "reason": "Survey evidence exists but benchmark, datum, control, or production approval metadata is missing.",
-            }
-        )
-        warnings.append("Survey evidence exists but benchmark/control metadata is incomplete.")
+    survey_control_verified = bool(survey["has_control"] and survey["has_benchmark"] and survey["has_datum"] and survey["control_verified"])
+    if survey["ready"]:
+        if not survey["has_benchmark"]:
+            missing.append({"field": "survey_benchmark", "reason": "Survey evidence exists but benchmark metadata is missing."})
+        if not survey["has_datum"]:
+            missing.append({"field": "survey_datum", "reason": "Survey evidence exists but vertical datum metadata is missing."})
+        if not survey["control_verified"]:
+            missing.append({"field": "survey_control_verified", "reason": "Survey/control evidence is not explicitly verified."})
+        if not survey_control_verified:
+            warnings.append("Survey evidence exists but benchmark/datum/control metadata is incomplete.")
+    for layer, item in gis["layers"].items():
+        if (item["present"] or item["verified_absent"]) and not item["has_source_evidence"]:
+            missing.append(
+                {
+                    "field": f"gis_{layer}_source",
+                    "reason": f"{layer.replace('_', ' ')} evidence exists but source/provider metadata is missing.",
+                }
+            )
     if dem_lidar["ready"] and not dem_lidar["approved_for_production"]:
         warnings.append("DEM/LiDAR or terrain source is present but not marked production-approved.")
 

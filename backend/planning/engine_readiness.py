@@ -435,6 +435,17 @@ def _contract_gate_status(
     ]
 
 
+def _review_state_from_status(status: str) -> str:
+    normalized = _safe_str(status)
+    if normalized in {"production_ready", "ready"}:
+        return "ready"
+    if normalized in {"needs_engineering_review", "concept_ready_needs_production_depth", "not_evidenced"}:
+        return "needs_review"
+    if normalized == "not_applicable":
+        return "not_applicable"
+    return "blocked"
+
+
 def evaluate_engine_readiness(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     meta = _safe_dict(plan_or_meta.get("meta")) if "meta" in plan_or_meta else _safe_dict(plan_or_meta)
     civil = _safe_dict(meta.get("civil_design_readiness")) or civil_design_readiness(plan_or_meta)
@@ -484,11 +495,13 @@ def evaluate_engine_readiness(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
             concept_ready.append(contract.engine_id)
 
         production_ready = status == "production_ready"
+        review_state = _review_state_from_status(status)
         engine_rows[contract.engine_id] = {
             "engine_id": contract.engine_id,
             "name": contract.name,
             "maturity": contract.maturity,
             "status": status,
+            "review_state": review_state,
             "applicability": _safe_str(scope.get("applicability"), "required"),
             "scope_required": scope_required,
             "scope_reason": _safe_str(scope.get("scope_reason")),
@@ -526,12 +539,20 @@ def evaluate_engine_readiness(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
         if row.get("scope_required") is not False
     ]
     blocked_or_unproven: Set[str] = set(blocked) | set(production_blocked) | set(no_evidence)
+    overall_review_state = (
+        "ready"
+        if not blocked_or_unproven and len(production_ready_ids) == len(applicable_engine_ids)
+        else "blocked"
+        if blocked
+        else "needs_review"
+    )
     return {
         "contract_version": "engine_contracts_v1",
         "engine_count": len(engine_rows),
         "applicable_engine_count": len(applicable_engine_ids),
         "not_applicable_count": len(set(not_applicable)),
         "production_ready": not blocked_or_unproven and len(production_ready_ids) == len(applicable_engine_ids),
+        "review_state": overall_review_state,
         "concept_ready_count": len(set(concept_ready)),
         "production_ready_count": len(production_ready_ids),
         "blocked_engine_ids": sorted(set(blocked)),
@@ -543,6 +564,7 @@ def evaluate_engine_readiness(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
         "summary": {
             "civil_readiness_status": _safe_str(civil.get("status")),
             "civil_production_ready": bool(civil.get("production_ready")),
+            "review_state": overall_review_state,
             "not_applicable_engine_ids": sorted(set(not_applicable)),
             "most_important_backend_gaps": [
                 {
