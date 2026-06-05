@@ -104,6 +104,51 @@ def _has_valid_sizing_optimization(value: Any) -> bool:
     return status in {"checked", "optimized", "accepted", "selected"} or bool(safe_list(rec.get("alternatives")))
 
 
+def _has_valid_alignment(row: Dict[str, Any]) -> bool:
+    rec = safe_dict(row)
+    return bool(safe_str(rec.get("name") or rec.get("id")) and len(safe_list(rec.get("points") or rec.get("geometry"))) >= 2)
+
+
+def _has_valid_profile(row: Dict[str, Any]) -> bool:
+    rec = safe_dict(row)
+    points = safe_list(rec.get("profile_points") or rec.get("points") or rec.get("samples"))
+    has_samples = len(points) >= 2 or (_present(rec.get("station_start_ft")) and _present(rec.get("station_end_ft")))
+    return bool(has_samples and _present(rec.get("alignment_owner") or rec.get("alignment_id") or rec.get("alignment")))
+
+
+def _has_valid_intersection(row: Dict[str, Any]) -> bool:
+    rec = safe_dict(row)
+    connected = safe_list(rec.get("connected_alignments") or rec.get("legs"))
+    return bool(_present(rec.get("point") or rec.get("geometry") or rec.get("x")) and len(connected) >= 2)
+
+
+def _has_valid_curb_return(row: Dict[str, Any]) -> bool:
+    rec = safe_dict(row)
+    radius = safe_float(rec.get("radius_ft") or rec.get("design_radius_ft"), 0.0)
+    return bool(radius > 0.0 and _present(rec.get("intersection_id") or rec.get("intersection") or rec.get("geometry")))
+
+
+def _has_valid_sidewalk(row: Dict[str, Any]) -> bool:
+    rec = safe_dict(row)
+    path = safe_list(rec.get("path") or rec.get("points") or rec.get("geometry"))
+    width = safe_float(rec.get("width_ft") or rec.get("sidewalk_width_ft"), 0.0)
+    return bool(len(path) >= 2 and width > 0.0)
+
+
+def _has_valid_ada_check(row: Dict[str, Any]) -> bool:
+    rec = safe_dict(row)
+    if rec.get("valid") is not True:
+        return False
+    has_slope_evidence = _present(rec.get("max_running_slope")) or _present(rec.get("running_slope")) or _present(rec.get("max_cross_slope"))
+    return bool(has_slope_evidence and _present(rec.get("standard") or rec.get("standard_id") or rec.get("source")))
+
+
+def _has_valid_section(row: Dict[str, Any]) -> bool:
+    rec = safe_dict(row)
+    points = safe_list(rec.get("section_points") or rec.get("points") or rec.get("samples"))
+    return bool(_present(rec.get("station_ft")) and len(points) >= 3 and _present(rec.get("alignment_owner") or rec.get("alignment_id") or rec.get("alignment")))
+
+
 def _has_valid_detention_routing(row: Dict[str, Any]) -> bool:
     rec = safe_dict(row)
     if not _row_is_production_evidence(rec):
@@ -296,16 +341,22 @@ def validate_roadway_corridor_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, A
     crown_rows = [safe_dict(row) for row in safe_list(grading_detail.get("road_crown_controls") or meta.get("road_crowns"))]
     ada_rows = [safe_dict(row) for row in safe_list(grading_detail.get("ada_path_checks"))]
     ada_summary = safe_dict(meta.get("ada_compliance"))
-    ada_ready = _all_rows_valid(ada_rows) or _valid_flag(ada_summary)
+    ada_ready = any(_has_valid_ada_check(row) for row in ada_rows) or _valid_flag(ada_summary)
+    alignments = [safe_dict(row) for row in safe_list(meta.get("alignments") or meta.get("road_alignments"))]
+    profiles = [safe_dict(row) for row in safe_list(meta.get("profiles") or meta.get("road_profiles"))]
+    intersections = [safe_dict(row) for row in safe_list(meta.get("intersections"))]
+    curb_returns = [safe_dict(row) for row in safe_list(meta.get("curb_returns"))]
+    sidewalks = [safe_dict(row) for row in safe_list(meta.get("sidewalks") or meta.get("pedestrian_paths"))]
+    sections = [safe_dict(row) for row in safe_list(meta.get("cross_sections") or meta.get("corridor_sections"))]
     checks = [
-        _check("alignments", bool(safe_list(meta.get("alignments") or meta.get("road_alignments"))), evidence="road alignments", blocker="Roadway depth needs alignments."),
-        _check("profiles", bool(safe_list(meta.get("profiles") or meta.get("road_profiles"))), evidence="road profiles", blocker="Roadway depth needs profiles."),
-        _check("intersections", bool(safe_list(meta.get("intersections"))), evidence="intersections", blocker="Roadway depth needs intersection geometry."),
-        _check("curb_returns", bool(safe_list(meta.get("curb_returns"))), evidence="curb returns", blocker="Roadway depth needs curb-return geometry."),
+        _check("alignments", any(_has_valid_alignment(row) for row in alignments), evidence="road alignments", blocker="Roadway depth needs alignments."),
+        _check("profiles", any(_has_valid_profile(row) for row in profiles), evidence="road profiles", blocker="Roadway depth needs profiles."),
+        _check("intersections", any(_has_valid_intersection(row) for row in intersections), evidence="intersections", blocker="Roadway depth needs intersection geometry."),
+        _check("curb_returns", any(_has_valid_curb_return(row) for row in curb_returns), evidence="curb returns", blocker="Roadway depth needs curb-return geometry."),
         _check("crowns", any(_has_verified_crown(row) for row in crown_rows), evidence="road crown controls", blocker="Roadway depth needs verified road crown controls tied to a profile or standard."),
-        _check("sidewalks", bool(safe_list(meta.get("sidewalks") or meta.get("pedestrian_paths"))), evidence="sidewalk/pedestrian paths", blocker="Roadway depth needs sidewalk/path geometry."),
+        _check("sidewalks", any(_has_valid_sidewalk(row) for row in sidewalks), evidence="sidewalk/pedestrian paths", blocker="Roadway depth needs sidewalk/path geometry."),
         _check("ada", ada_ready, evidence="ADA compliance checks", blocker="Roadway depth needs passing ADA checks."),
-        _check("sections", bool(safe_list(meta.get("cross_sections") or meta.get("corridor_sections"))), evidence="corridor sections", blocker="Roadway depth needs corridor sections."),
+        _check("sections", any(_has_valid_section(row) for row in sections), evidence="corridor sections", blocker="Roadway depth needs corridor sections."),
     ]
     return _finalize("roadway_corridor_depth", checks)
 

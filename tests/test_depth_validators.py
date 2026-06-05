@@ -421,6 +421,45 @@ class DepthValidatorTests(unittest.TestCase):
         result = validate_roadway_corridor_depth(
             {
                 "meta": {
+                    "alignments": [{"name": "Road A", "points": [[0.0, 0.0], [100.0, 0.0]]}],
+                    "profiles": [
+                        {
+                            "name": "Road A Profile",
+                            "alignment_owner": "Road A",
+                            "profile_points": [
+                                {"station_ft": 0.0, "elevation_ft": 100.0},
+                                {"station_ft": 100.0, "elevation_ft": 101.0},
+                            ],
+                        }
+                    ],
+                    "intersections": [{"id": "INT-1", "point": {"x": 0.0, "y": 0.0}, "connected_alignments": ["Road A", "Drive B"]}],
+                    "curb_returns": [{"id": "CR-1", "intersection_id": "INT-1", "radius_ft": 25.0}],
+                    "grading_detail": {
+                        "road_crown_controls": [{"road": "Road A", "profile_id": "PROF-A", "standard": "City local street"}],
+                        "ada_path_checks": [{"path": "SW-1", "valid": True, "max_running_slope": 0.04, "max_cross_slope": 0.015, "standard": "ADA"}],
+                    },
+                    "sidewalks": [{"id": "SW-1", "path": [[0.0, 0.0], [100.0, 0.0]], "width_ft": 5.0}],
+                    "cross_sections": [
+                        {
+                            "station_ft": 0.0,
+                            "alignment_owner": "Road A",
+                            "section_points": [
+                                {"offset_ft": -12.0, "elevation_ft": 99.8},
+                                {"offset_ft": 0.0, "elevation_ft": 100.0},
+                                {"offset_ft": 12.0, "elevation_ft": 99.8},
+                            ],
+                        }
+                    ],
+                }
+            }
+        )
+
+        self.assertTrue(result["production_ready"])
+
+    def test_roadway_depth_blocks_thin_corridor_presence(self) -> None:
+        result = validate_roadway_corridor_depth(
+            {
+                "meta": {
                     "alignments": [{"name": "Road A"}],
                     "profiles": [{"name": "Road A Profile"}],
                     "intersections": [{"id": "INT-1"}],
@@ -435,16 +474,22 @@ class DepthValidatorTests(unittest.TestCase):
             }
         )
 
-        self.assertTrue(result["production_ready"])
+        self.assertFalse(result["production_ready"])
+        self.assertIn("Roadway depth needs alignments.", result["blockers"])
+        self.assertIn("Roadway depth needs profiles.", result["blockers"])
+        self.assertIn("Roadway depth needs intersection geometry.", result["blockers"])
+        self.assertIn("Roadway depth needs curb-return geometry.", result["blockers"])
+        self.assertIn("Roadway depth needs sidewalk/path geometry.", result["blockers"])
+        self.assertIn("Roadway depth needs corridor sections.", result["blockers"])
 
     def test_roadway_depth_blocks_concept_crown_controls(self) -> None:
         result = validate_roadway_corridor_depth(
             {
                 "meta": {
-                    "alignments": [{"name": "Road A"}],
-                    "profiles": [{"name": "Road A Profile"}],
-                    "intersections": [{"id": "INT-1"}],
-                    "curb_returns": [{"id": "CR-1"}],
+                    "alignments": [{"name": "Road A", "points": [[0.0, 0.0], [100.0, 0.0]]}],
+                    "profiles": [{"name": "Road A Profile", "alignment_owner": "Road A", "profile_points": [{"station_ft": 0.0, "elevation_ft": 100.0}, {"station_ft": 100.0, "elevation_ft": 101.0}]}],
+                    "intersections": [{"id": "INT-1", "point": {"x": 0.0, "y": 0.0}, "connected_alignments": ["Road A", "Drive B"]}],
+                    "curb_returns": [{"id": "CR-1", "intersection_id": "INT-1", "radius_ft": 25.0}],
                     "grading_detail": {
                         "road_crown_controls": [
                             {
@@ -453,10 +498,10 @@ class DepthValidatorTests(unittest.TestCase):
                                 "truth_label": "concept road crown control; verify profile and cross-slope against road standard.",
                             }
                         ],
-                        "ada_path_checks": [{"path": "SW-1", "valid": True}],
+                        "ada_path_checks": [{"path": "SW-1", "valid": True, "max_running_slope": 0.04, "max_cross_slope": 0.015, "standard": "ADA"}],
                     },
-                    "sidewalks": [{"id": "SW-1"}],
-                    "cross_sections": [{"station_ft": 0.0}],
+                    "sidewalks": [{"id": "SW-1", "path": [[0.0, 0.0], [100.0, 0.0]], "width_ft": 5.0}],
+                    "cross_sections": [{"station_ft": 0.0, "alignment_owner": "Road A", "section_points": [{"offset_ft": -12.0}, {"offset_ft": 0.0}, {"offset_ft": 12.0}]}],
                 }
             }
         )
@@ -468,16 +513,16 @@ class DepthValidatorTests(unittest.TestCase):
         result = validate_roadway_corridor_depth(
             {
                 "meta": {
-                    "alignments": [{"name": "Road A"}],
-                    "profiles": [{"name": "Road A Profile"}],
-                    "intersections": [{"id": "INT-1"}],
-                    "curb_returns": [{"id": "CR-1"}],
+                    "alignments": [{"name": "Road A", "points": [[0.0, 0.0], [100.0, 0.0]]}],
+                    "profiles": [{"name": "Road A Profile", "alignment_owner": "Road A", "profile_points": [{"station_ft": 0.0, "elevation_ft": 100.0}, {"station_ft": 100.0, "elevation_ft": 101.0}]}],
+                    "intersections": [{"id": "INT-1", "point": {"x": 0.0, "y": 0.0}, "connected_alignments": ["Road A", "Drive B"]}],
+                    "curb_returns": [{"id": "CR-1", "intersection_id": "INT-1", "radius_ft": 25.0}],
                     "grading_detail": {
                         "road_crown_controls": [{"road": "Road A", "profile_id": "PROF-A", "standard": "City local street"}],
                         "ada_path_checks": [{"path": "SW-1", "valid": False}],
                     },
-                    "sidewalks": [{"id": "SW-1"}],
-                    "cross_sections": [{"station_ft": 0.0}],
+                    "sidewalks": [{"id": "SW-1", "path": [[0.0, 0.0], [100.0, 0.0]], "width_ft": 5.0}],
+                    "cross_sections": [{"station_ft": 0.0, "alignment_owner": "Road A", "section_points": [{"offset_ft": -12.0}, {"offset_ft": 0.0}, {"offset_ft": 12.0}]}],
                 }
             }
         )

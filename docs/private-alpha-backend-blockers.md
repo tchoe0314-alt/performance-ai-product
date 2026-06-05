@@ -249,14 +249,15 @@ Evidence needed:
 - Covered for private-alpha gate behavior by `tests/test_production_depth_artifacts.py` and `tests/test_depth_validators.py`.
 - Still needed before public beta: standards-calibrated water/fire-flow benchmark cases.
 
-### 8. Roadway/Corridor Depth Is Early
+### 8. Roadway/Corridor Depth Is Guarded But Still Needs Generation Depth
 
 Current state:
-- Profiles, sections, crowns, sidewalks, and ADA checks have validators.
+- Profiles, sections, crowns, sidewalks, intersections, curb returns, and ADA checks have validators.
+- Roadway depth validation now requires alignment points, profile samples, intersection legs/geometry, curb-return radius, sidewalk path/width, ADA slope evidence, and cross-section samples.
 - Corridor output can feed profiles/sections.
 
 Issue:
-- Roadway realism still needs stronger alignments, intersections, curb returns, crowns, sidewalk/ADA tie-ins, and corridor grading tied to standards.
+- Thin presence-only roadway rows are blocked, but roadway generation still needs stronger intersections, curb returns, crowns, sidewalk/ADA tie-ins, and corridor grading tied to accepted standards.
 
 Required fix:
 - Expand roadway geometry and profile model.
@@ -264,7 +265,8 @@ Required fix:
 - Tie crown/cross-slope/sidewalk controls to accepted roadway standards.
 
 Evidence needed:
-- Deterministic roadway corridor scenario with profile, sections, ADA, curb returns, and export traceability.
+- Covered for private-alpha validation by `tests/test_depth_validators.py`.
+- Still needed before public beta: deterministic roadway corridor scenario with generated profile, sections, ADA, curb returns, and export traceability.
 
 ### 9. Export Package Is Strong For DXF Audit, Weak For Civil3D/DWG Confidence
 
@@ -353,9 +355,8 @@ Decision needed:
 
 ## Exact Fix Order
 
-1. Deepen roadway/corridor profiles, crowns, curb returns, intersections, and ADA evidence.
-2. Add review-package manifest and Civil3D/LandXML/DWG explicit confidence states.
-3. Add cost package status and approved unit-price fixture coverage.
+1. Add review-package manifest and Civil3D/LandXML/DWG explicit confidence states.
+2. Add cost package status and approved unit-price fixture coverage.
 
 ## Non-Negotiable Truth Rules
 
