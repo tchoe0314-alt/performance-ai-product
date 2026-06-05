@@ -179,26 +179,28 @@ Current state:
 - Health workflows expose monitoring and alpha/review-only mode data.
 - `alpha_monitoring_report` now applies explicit thresholds to runtime, memory, queue, stale jobs, failed jobs, and process restart evidence.
 - Health and debug runtime responses expose `alpha_monitoring_report`.
+- `backend/scripts/run_alpha_smoke_soak.py` can generate `alpha_smoke_soak_report_v1` by sampling `/api/debug/runtime` or local process monitoring.
 
 Issue:
 - Local tests prove threshold logic, but there is no deployed alpha soak evidence in the repo.
-- Thresholds exist in code/env defaults, but there is no committed alpha threshold config file or smoke/soak command artifact yet.
+- Thresholds exist in code/env defaults and the smoke/soak command exists, but there is no committed generated report from repeated real backend workflows yet.
 
 Why this blocks full-system alpha:
 - Private alpha does not need public scale, but it does need evidence that the backend survives real user workflows without silent crashes or stuck jobs.
 
 Required fix:
-- Add a backend smoke/soak command that records health, queue, memory, crash-loop risk, and long-running job status.
+- Run the backend smoke/soak command against an actual alpha backend/runtime.
 - Store a generated alpha readiness monitoring report artifact.
 
 Evidence needed:
 - Covered for report logic by `tests/test_alpha_monitoring.py`.
 - Covered for health exposure by `tests/test_application_auth_health_workflows.py`.
-- Still needed: smoke/soak command and generated alpha monitoring report artifact from a repeated backend workflow.
+- Covered for command/report behavior by `tests/test_alpha_smoke_soak.py`.
+- Still needed: generated alpha monitoring report artifact from a repeated backend workflow.
 
 Status:
 - Partially closed.
-- Still P0 until deployed/local soak evidence can be generated repeatably.
+- Still P0 until deployed/local soak evidence is generated and attached from a real backend workflow.
 
 ## P1 Blockers Before Public Beta
 
@@ -341,7 +343,7 @@ Decision needed:
 
 ## Exact Fix Order
 
-1. Add alpha smoke/soak command that generates and stores `alpha_monitoring_report` from repeated backend workflows.
+1. Run alpha smoke/soak against a real backend workflow and store the generated `alpha_smoke_soak_report_v1` artifact.
 2. Expand real-file golden fixtures beyond the first CSV/GeoJSON package: LandXML, sloped detention, roadway corridor, utility-heavy, floodplain/wetland, retaining wall.
 3. Add stale standards and standards override-history tests to `standards_package`.
 4. Add LandXML package acceptance and heavy-format dependency-blocked package tests to `existing_conditions_package`.

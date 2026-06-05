@@ -1,0 +1,174 @@
+from __future__ import annotations
+
+import json
+import time
+from copy import deepcopy
+from pathlib import Path
+from typing import Any, Callable, Dict, Iterable, List, Optional
+from urllib.request import Request, urlopen
+
+from backend.application.memory_logging import runtime_monitoring_snapshot, runtime_process_monitoring_snapshot
+from backend.planning.alpha_monitoring import build_alpha_monitoring_report
+from backend.planning.common import readiness_issue_explanations, safe_dict, safe_float, safe_int, safe_list, safe_str
+
+
+RuntimeSampleFn = Callable[[], Dict[str, Any]]
+
+
+def _status_rank(value: Any) -> int:
+    text = safe_str(value, "healthy").lower()
+    return {"healthy": 0, "ok": 0, "warning": 1, "degraded": 2, "blocked": 3, "critical": 4}.get(text, 3)
+
+
+def _worst_status(values: Iterable[Any]) -> str:
+    statuses = [safe_str(item, "healthy").lower() for item in values]
+    if not statuses:
+        return "missing"
+    return max(statuses, key=_status_rank)
+
+
+def _max_from_samples(samples: List[Dict[str, Any]], key: str) -> float:
+    return max([safe_float(safe_dict(item.get("monitoring")).get(key), 0.0) for item in samples] or [0.0])
+
+
+def _aggregate_runtime(samples: List[Dict[str, Any]]) -> Dict[str, Any]:
+    monitorings = [safe_dict(item.get("monitoring")) for item in samples]
+    queues = [safe_dict(item.get("job_queue") or safe_dict(item.get("monitoring")).get("job_queue")) for item in samples]
+    processes = [safe_dict(safe_dict(item.get("monitoring")).get("process")) for item in samples]
+    queue_monitoring = {
+        "status": _worst_status(queue.get("status") for queue in queues if queue),
+        "failed_recent_count": max([safe_int(queue.get("failed_recent_count"), 0) for queue in queues if queue] or [0]),
+        "stale_job_count": max([safe_int(queue.get("stale_job_count"), 0) for queue in queues if queue] or [0]),
+        "oldest_active_age_sec": max([safe_float(queue.get("oldest_active_age_sec"), 0.0) for queue in queues if queue] or [0.0]),
+        "sample_count": len([queue for queue in queues if queue]),
+    }
+    process_monitoring = {
+        "status": _worst_status(process.get("status") for process in processes if process),
+        "recent_start_count": max([safe_int(process.get("recent_start_count"), 0) for process in processes if process] or [0]),
+        "previous_shutdown_clean": all(bool(process.get("previous_shutdown_clean", True)) for process in processes if process),
+        "sample_count": len([process for process in processes if process]),
+    }
+    if queue_monitoring["sample_count"] <= 0:
+        queue_monitoring = {}
+    if process_monitoring["sample_count"] <= 0:
+        process_monitoring = {}
+    return {
+        "status": _worst_status(monitoring.get("status") for monitoring in monitorings if monitoring),
+        "rss_mb": _max_from_samples(samples, "rss_mb"),
+        "peak_rss_mb": _max_from_samples(samples, "peak_rss_mb"),
+        "warnings": sorted(
+            {
+                safe_str(warning)
+                for monitoring in monitorings
+                for warning in safe_list(monitoring.get("warnings"))
+                if safe_str(warning)
+            }
+        ),
+        "job_queue": queue_monitoring,
+        "process": process_monitoring,
+        "truth_label": "Aggregated alpha smoke/soak runtime sample. Missing queue or process evidence keeps alpha monitoring blocked.",
+    }
+
+
+def _local_runtime_sample(*, state_dir: Path | None = None, start_time: float | None = None) -> Dict[str, Any]:
+    process = runtime_process_monitoring_snapshot(state_dir=state_dir, start_time=start_time or time.time())
+    monitoring = runtime_monitoring_snapshot(process=process)
+    return {
+        "source": "local_runtime_monitoring",
+        "status": "ok",
+        "monitoring": monitoring,
+        "alpha_monitoring_report": build_alpha_monitoring_report(monitoring),
+        "truth_label": "Local smoke sample does not include live job queue evidence unless a runtime endpoint is used.",
+    }
+
+
+def fetch_runtime_debug_sample(base_url: str, *, timeout_seconds: float = 10.0) -> Dict[str, Any]:
+    normalized = safe_str(base_url).rstrip("/")
+    if not normalized:
+        raise ValueError("base_url is required for runtime debug sampling.")
+    request = Request(f"{normalized}/api/debug/runtime", headers={"Accept": "application/json"})
+    with urlopen(request, timeout=max(1.0, timeout_seconds)) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    return payload if isinstance(payload, dict) else {}
+
+
+def write_alpha_smoke_soak_report(path: Path, report: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(report, handle, indent=2, sort_keys=True)
+
+
+def run_alpha_smoke_soak(
+    *,
+    iterations: int = 3,
+    interval_seconds: float = 0.0,
+    sample_runtime: Optional[RuntimeSampleFn] = None,
+    base_url: str = "",
+    output_path: Optional[Path] = None,
+    state_dir: Optional[Path] = None,
+    thresholds: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    count = max(1, int(iterations))
+    start = time.time()
+    sampler = sample_runtime
+    if sampler is None and safe_str(base_url):
+        sampler = lambda: fetch_runtime_debug_sample(base_url)
+    if sampler is None:
+        sampler = lambda: _local_runtime_sample(state_dir=state_dir, start_time=start)
+
+    samples: List[Dict[str, Any]] = []
+    sample_failures: List[Dict[str, Any]] = []
+    for index in range(count):
+        try:
+            sample = sampler()
+            samples.append(deepcopy(safe_dict(sample)))
+        except Exception as exc:
+            sample_failures.append({"sample_index": index, "error": safe_str(exc)})
+        if index < count - 1 and interval_seconds > 0:
+            time.sleep(interval_seconds)
+
+    aggregate_runtime = _aggregate_runtime(samples)
+    alpha_report = build_alpha_monitoring_report(aggregate_runtime, thresholds=thresholds)
+    if sample_failures:
+        alpha_report = deepcopy(alpha_report)
+        alpha_report.setdefault("blockers", []).append(
+            {
+                "area": "monitoring",
+                "field": "sample_failures",
+                "reason": "One or more alpha smoke/soak samples failed.",
+                "message": "One or more alpha smoke/soak samples failed.",
+                "why_needed": "Alpha monitoring evidence needs repeatable runtime samples.",
+                "suggested_next_action": "Fix sampling failures, rerun the smoke/soak command, and attach a clean report.",
+                "severity": "blocker",
+                "failures": sample_failures,
+            }
+        )
+        alpha_report["success"] = False
+        alpha_report["status"] = "blocked"
+        alpha_report["readiness"] = "blocked"
+        alpha_report["blocker_details"] = readiness_issue_explanations(safe_list(alpha_report.get("blockers")))
+
+    report = {
+        "version": "alpha_smoke_soak_report_v1",
+        "status": "ready" if bool(alpha_report.get("success")) else "blocked",
+        "success": bool(alpha_report.get("success")),
+        "sample_count": len(samples),
+        "requested_iterations": count,
+        "sample_failure_count": len(sample_failures),
+        "sample_failures": sample_failures,
+        "duration_seconds": round(max(0.0, time.time() - start), 3),
+        "aggregate_runtime_monitoring": aggregate_runtime,
+        "alpha_monitoring_report": alpha_report,
+        "samples": samples,
+        "truth_label": "Alpha smoke/soak reports operational readiness only. It does not make Civora construction-ready.",
+    }
+    if output_path is not None:
+        write_alpha_smoke_soak_report(Path(output_path), report)
+    return report
+
+
+__all__ = [
+    "fetch_runtime_debug_sample",
+    "run_alpha_smoke_soak",
+    "write_alpha_smoke_soak_report",
+]
