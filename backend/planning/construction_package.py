@@ -372,7 +372,254 @@ def _construction_package_artifact_status(plan_or_meta: Dict[str, Any], meta: Di
         "production_ready_flag": production_flag,
         "complete_for_release": complete_for_release,
         "review_package_state": "assembled_traceable" if complete_for_release else "review_only_incomplete",
-}
+    }
+
+
+def _review_package_record(meta: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a user-assembled deliverable package, excluding generated manifests."""
+
+    for key in ("construction_package", "construction_deliverable_package", "deliverable_package"):
+        package = safe_dict(meta.get(key))
+        if package:
+            return dict(package)
+    packages = safe_list(meta.get("deliverable_packages"))
+    if packages:
+        return dict(safe_dict(packages[-1]))
+    package_manifest = safe_dict(meta.get("construction_package_manifest"))
+    if package_manifest and safe_str(package_manifest.get("source")) != "construction_package_manifest_v1":
+        return dict(package_manifest)
+    return {}
+
+
+def _sheet_registry_ready(meta: Dict[str, Any]) -> bool:
+    registry = meta.get("sheet_registry")
+    if isinstance(registry, list):
+        return bool(registry)
+    record = safe_dict(registry)
+    if not record:
+        return False
+    return bool(safe_list(record.get("sheets")) or safe_list(record.get("registry")) or record.get("sheet_total") or record.get("count"))
+
+
+def _export_audit_ready(meta: Dict[str, Any]) -> bool:
+    audit = safe_dict(meta.get("export_audit"))
+    if not audit:
+        return False
+    ready_flag = audit.get("production_export_ready")
+    if ready_flag is None:
+        ready_flag = audit.get("ready")
+    if ready_flag is None:
+        ready_flag = audit.get("success")
+    return bool(ready_flag) and audit.get("export_blocked") is not True
+
+
+def _format_export_confidence(format_id: str, *, available: bool, review_ready: bool, status: str, blocker: str = "") -> Dict[str, Any]:
+    blockers = [blocker] if blocker else []
+    return {
+        "format": format_id,
+        "available": bool(available),
+        "review_ready": bool(review_ready),
+        "construction_ready": False,
+        "status": status,
+        "confidence": "audited_review" if review_ready else "blocked_or_unverified",
+        "blockers": blockers,
+    }
+
+
+def _review_package_export_confidence(meta: Dict[str, Any]) -> Dict[str, Any]:
+    cad = safe_dict(meta.get("cad_interop"))
+    audit = safe_dict(meta.get("export_audit"))
+    audit_ready = _export_audit_ready(meta)
+    export_blocked = bool(audit.get("export_blocked"))
+    dxf_available = cad.get("dxf") is True
+    dxf_ready = bool(dxf_available and audit_ready)
+    pipe_contract = bool(cad.get("landxml_pipe_network_contract") or cad.get("landxml") is True)
+    dwg_available = cad.get("dwg") is True
+    civil3d_available = cad.get("civil3d") is True
+
+    if dxf_ready:
+        dxf_status = "audited_review_ready"
+        dxf_blocker = ""
+    elif not dxf_available:
+        dxf_status = "not_available"
+        dxf_blocker = "DXF exporter metadata is missing."
+    elif not audit:
+        dxf_status = "blocked_missing_export_audit"
+        dxf_blocker = "DXF review requires a current export audit."
+    elif export_blocked:
+        dxf_status = "blocked_by_export_audit"
+        dxf_blocker = "DXF review is blocked by the export audit."
+    else:
+        dxf_status = "blocked_export_audit_not_ready"
+        dxf_blocker = "DXF review requires export_audit ready/production_export_ready true."
+
+    landxml_status = (
+        "pipe_network_contract_review_ready_not_civil3d_verified"
+        if pipe_contract and audit_ready
+        else "pipe_network_contract_available_not_audited"
+        if pipe_contract
+        else "not_available"
+    )
+    landxml_blocker = (
+        ""
+        if pipe_contract and audit_ready
+        else "LandXML pipe-network contract requires a current export audit."
+        if pipe_contract
+        else "LandXML writer/contract is not available for this package."
+    )
+
+    civil3d_status = "available_not_verified" if civil3d_available else "not_implemented_not_verified"
+    dwg_status = "available_not_audited" if dwg_available else "unsupported_no_writer"
+
+    formats = {
+        "dxf": _format_export_confidence(
+            "dxf",
+            available=dxf_available,
+            review_ready=dxf_ready,
+            status=dxf_status,
+            blocker=dxf_blocker,
+        ),
+        "landxml": _format_export_confidence(
+            "landxml",
+            available=pipe_contract,
+            review_ready=bool(pipe_contract and audit_ready),
+            status=landxml_status,
+            blocker=landxml_blocker,
+        ),
+        "civil3d": _format_export_confidence(
+            "civil3d",
+            available=civil3d_available,
+            review_ready=False,
+            status=civil3d_status,
+            blocker=(
+                "Civil 3D compatibility is not verified by an implemented writer/checker."
+                if civil3d_available
+                else "Civil 3D export is not implemented and must remain blocked."
+            ),
+        ),
+        "dwg": _format_export_confidence(
+            "dwg",
+            available=dwg_available,
+            review_ready=False,
+            status=dwg_status,
+            blocker=(
+                "DWG export requires a current audit before it can be reviewed."
+                if dwg_available
+                else "DWG export is unsupported until a real DWG writer is implemented."
+            ),
+        ),
+    }
+    return {
+        "source": "review_package_export_confidence_v1",
+        "export_audit_present": bool(audit),
+        "export_audit_ready": audit_ready,
+        "export_audit_blocked": export_blocked,
+        "formats": formats,
+        "primary_review_format": "dxf" if dxf_ready else "",
+        "review_ready": dxf_ready,
+        "construction_confidence_blockers": [
+            "Civil 3D export is not implemented/verified.",
+            "DWG export is unsupported until a real DWG writer exists.",
+            "LandXML is review-only unless externally verified against the target Civil 3D workflow.",
+        ],
+        "truth_label": (
+            "DXF is the only audited review export path when export_audit passes. LandXML is contract-level; "
+            "Civil 3D and DWG are not production export paths."
+        ),
+    }
+
+
+def build_review_package_manifest(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
+    """Build the private-alpha review package manifest.
+
+    This manifest is deliberately separate from construction release. It says
+    what an engineer/reviewer can inspect in alpha, and what remains blocked
+    before any construction-grade deliverable claim.
+    """
+
+    meta = safe_dict(plan_or_meta.get("meta")) if "meta" in plan_or_meta else safe_dict(plan_or_meta)
+    package = _review_package_record(meta)
+    expected_model_reference = _expected_model_reference(plan_or_meta, meta)
+    package_identity = _package_identity(package)
+    package_model_reference = _model_reference(package)
+    model_matches_expected = bool(
+        package_model_reference and (not expected_model_reference or package_model_reference == expected_model_reference)
+    )
+    sheet_ready = _sheet_registry_ready(meta)
+    export_confidence = _review_package_export_confidence(meta)
+    release_guard = _construction_release_guard(meta)
+    review_blockers: List[Dict[str, Any]] = []
+
+    if not sheet_ready:
+        review_blockers.append(
+            {
+                "area": "deliverables",
+                "field": "sheet_registry",
+                "why_needed": "Alpha review package needs a sheet registry so reviewers can inspect the same drawing index.",
+                "suggested_next_action": "Generate or attach the current sheet registry before assembling the review package.",
+            }
+        )
+    if not bool(export_confidence.get("review_ready")):
+        review_blockers.append(
+            {
+                "area": "deliverables",
+                "field": "dxf_review_export",
+                "why_needed": "Alpha review package needs an audited DXF export path; Civil3D/DWG cannot substitute for it yet.",
+                "suggested_next_action": "Regenerate export metadata and resolve export_audit blockers.",
+            }
+        )
+    if package and not package_identity:
+        review_blockers.append(
+            {
+                "area": "deliverables",
+                "field": "review_package_identity",
+                "why_needed": "Reviewer handoff packages need a stable ID/name/path for traceability.",
+                "suggested_next_action": "Attach a package ID or filename to the review package record.",
+            }
+        )
+    if package and package_model_reference and not model_matches_expected:
+        review_blockers.append(
+            {
+                "area": "deliverables",
+                "field": "review_package_model_mismatch",
+                "why_needed": "Review package model reference does not match the final canonical model fingerprint.",
+                "suggested_next_action": "Regenerate the review package from the current final model.",
+            }
+        )
+
+    generated_package_id = (
+        package_identity
+        or (f"review-{expected_model_reference}" if expected_model_reference else "review-package-pending-model-reference")
+    )
+    review_ready = bool(sheet_ready and export_confidence.get("review_ready") and not review_blockers)
+    return {
+        "success": True,
+        "source": "review_package_manifest_v1",
+        "package_type": "private_alpha_review",
+        "review_package_id": generated_package_id,
+        "review_ready": review_ready,
+        "review_package_allowed": review_ready,
+        "construction_ready": False,
+        "construction_release_allowed": False,
+        "construction_release_blocked": True,
+        "product_mode": release_guard["product_mode"],
+        "review_only": True,
+        "expected_canonical_model_reference": expected_model_reference,
+        "package_present": bool(package),
+        "package_identity": package_identity,
+        "package_model_reference": package_model_reference,
+        "package_model_matches_expected": model_matches_expected,
+        "sheet_registry_ready": sheet_ready,
+        "export_confidence": export_confidence,
+        "review_blockers": _unique_blockers(review_blockers),
+        "review_blocker_details": readiness_issue_explanations(review_blockers),
+        "construction_confidence_blockers": safe_list(export_confidence.get("construction_confidence_blockers")),
+        "construction_release_guard": release_guard,
+        "truth_label": (
+            "This is an alpha/review-only package manifest. It can describe reviewable DXF output, but it never "
+            "authorizes construction release, stamping, DWG, or Civil 3D production confidence."
+        ),
+    }
 
 
 def _professional_package_release_status(meta: Dict[str, Any], package: Dict[str, Any], artifact_status: Dict[str, Any]) -> Dict[str, Any]:
@@ -726,4 +973,9 @@ def build_construction_package_manifest(plan_or_meta: Dict[str, Any]) -> Dict[st
     }
 
 
-__all__ = ["CONSTRUCTION_PACKAGE_SECTIONS", "REQUIRED_CONSTRUCTION_ARTIFACTS", "build_construction_package_manifest"]
+__all__ = [
+    "CONSTRUCTION_PACKAGE_SECTIONS",
+    "REQUIRED_CONSTRUCTION_ARTIFACTS",
+    "build_construction_package_manifest",
+    "build_review_package_manifest",
+]

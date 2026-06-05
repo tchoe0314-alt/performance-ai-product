@@ -1130,6 +1130,44 @@ def build_grading_detail_controls(
 def build_cad_interop_metadata(plan: Dict[str, Any]) -> Dict[str, Any]:
     meta = safe_dict(plan.get("meta"))
     has_pipe_network = bool(safe_dict(meta.get("storm_pipes") or meta.get("storm_pipe_summary")) or safe_dict(meta.get("sanitary") or meta.get("sanitary_summary")))
+    export_audit_ready = bool(safe_dict(meta.get("export_audit")))
+    landxml_status = "schema_ready_not_civil3d_verified" if has_pipe_network else "no_pipe_network_available"
+    compatibility_checks = [
+        {
+            "format": "dxf",
+            "available": True,
+            "review_ready": export_audit_ready,
+            "construction_ready": False,
+            "status": "audited_review_ready" if export_audit_ready else "available_requires_export_audit",
+        },
+        {
+            "format": "landxml",
+            "available": has_pipe_network,
+            "review_ready": bool(has_pipe_network and export_audit_ready),
+            "construction_ready": False,
+            "status": (
+                "pipe_network_contract_review_ready_not_civil3d_verified"
+                if has_pipe_network and export_audit_ready
+                else "schema_ready_not_civil3d_verified"
+                if has_pipe_network
+                else "no_pipe_network_available"
+            ),
+        },
+        {
+            "format": "civil3d",
+            "available": False,
+            "review_ready": False,
+            "construction_ready": False,
+            "status": "not_implemented_not_verified",
+        },
+        {
+            "format": "dwg",
+            "available": False,
+            "review_ready": False,
+            "construction_ready": False,
+            "status": "unsupported_no_writer",
+        },
+    ]
     return {
         "source": "dxf_exporter_metadata",
         "dxf": True,
@@ -1139,9 +1177,12 @@ def build_cad_interop_metadata(plan: Dict[str, Any]) -> Dict[str, Any]:
         "surface_export": bool(safe_dict(meta.get("grading") or meta.get("grading_summary"))),
         "pipe_network_export": bool(safe_dict(meta.get("storm_pipes") or meta.get("storm_pipe_summary"))),
         "landxml_pipe_network_contract": has_pipe_network,
-        "landxml_pipe_network_contract_status": "schema_ready_not_civil3d_verified" if has_pipe_network else "no_pipe_network_available",
+        "landxml_pipe_network_contract_status": landxml_status,
         "sheet_registry_ready": bool(safe_list(meta.get("sheet_registry")) or safe_dict(meta.get("sheet_registry"))),
-        "export_audit_ready": bool(safe_dict(meta.get("export_audit"))),
+        "export_audit_ready": export_audit_ready,
+        "compatibility_checks": compatibility_checks,
+        "review_ready_formats": [item["format"] for item in compatibility_checks if item["review_ready"]],
+        "unsupported_formats": ["civil3d", "dwg"],
         "contract_status": "dxf_ready; landxml_pipe_network_contract_ready; civil3d_landxml_contract_not_implemented",
         "truth_label": "DXF export metadata and a LandXML pipe-network exchange contract are available; Civil 3D-verified writers still require implementation.",
     }

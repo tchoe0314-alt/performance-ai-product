@@ -268,23 +268,32 @@ Evidence needed:
 - Covered for private-alpha validation by `tests/test_depth_validators.py`.
 - Still needed before public beta: deterministic roadway corridor scenario with generated profile, sections, ADA, curb returns, and export traceability.
 
-### 9. Export Package Is Strong For DXF Audit, Weak For Civil3D/DWG Confidence
+### 9. Export Package Has Review Manifest, Civil3D/DWG Remain Non-Production
 
 Current state:
 - DXF export audit catches stale outputs, canonical ID traceability gaps, concept/fallback sources, and release blockers.
 - LandXML IO has tests.
+- `review_package_manifest` is now distinct from `construction_package_manifest`.
+- Review packages can be marked alpha-review-ready only when sheet registry and audited DXF review export evidence are present.
+- CAD interop metadata now exposes explicit confidence states for DXF, LandXML, Civil3D, and DWG.
 
 Issue:
 - Civil3D/DWG confidence is not production-grade.
-- Export package audit needs a unified package manifest for alpha review packages, separate from construction release.
+- LandXML remains contract-level/review-only unless verified against the target Civil3D workflow.
 
 Required fix:
-- Add review-package manifest distinct from construction package.
-- Add Civil3D/LandXML compatibility checks where implemented and explicit blockers where not.
+- Keep Civil3D/DWG blocked until real implemented writers/checkers exist.
+- Add public-beta compatibility fixtures against target Civil3D/LandXML workflows.
 - Keep DWG export labeled unsupported unless a real DWG path exists.
 
 Evidence needed:
-- Tests proving review package artifacts are current, traceable, non-stale, and clearly labeled review-only.
+- Covered for review package truth states by `tests/test_construction_package_manifest.py`.
+- Covered for CAD interop labels by `tests/test_production_depth_artifacts.py`.
+- Still needed before public beta: external Civil3D/LandXML compatibility proof and any real DWG implementation.
+
+Status:
+- Closed for private-alpha review-package truth.
+- Still not a public/construction CAD package because Civil3D/DWG production writers are not implemented/verified.
 
 ### 10. Production Cost Book Workflow Needs More End-To-End Coverage
 
@@ -347,7 +356,7 @@ Decision needed:
 | Conflict Resolution | active | usable review-only | Larger cluster optimization/golden proof |
 | QA / Validation | active | usable review-only | Fresh monitoring/golden evidence and deeper standards/import edge cases |
 | Quantity | active | usable review-only | Cost package and approved price source workflow |
-| Export / CAD | active | usable review-only | Review-package manifest, Civil3D/DWG confidence |
+| Export / CAD | active | usable review-only | Civil3D/DWG production writers and external compatibility proof |
 | Profile / Section | active | usable review-only | More live linkage tests across real roadway/utility scenarios |
 | GIS / Existing Conditions | early | blocked without sources | Runtime/load proof over mixed-import golden fixtures |
 | AI Orchestration | active | usable review-only | More deterministic rerun/workflow guidance under missing inputs |
@@ -355,8 +364,7 @@ Decision needed:
 
 ## Exact Fix Order
 
-1. Add review-package manifest and Civil3D/LandXML/DWG explicit confidence states.
-2. Add cost package status and approved unit-price fixture coverage.
+1. Add cost package status and approved unit-price fixture coverage.
 
 ## Non-Negotiable Truth Rules
 

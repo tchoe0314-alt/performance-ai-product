@@ -1,7 +1,7 @@
 import unittest
 
 import planner
-from backend.planning.construction_package import build_construction_package_manifest
+from backend.planning.construction_package import build_construction_package_manifest, build_review_package_manifest
 
 
 def _valid_professional_review(model_id: str = "MODEL-FINAL-1", package_id: str = "PKG-IFC-1") -> dict:
@@ -45,6 +45,55 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         self.assertEqual(set(artifact_status["missing"]), {"sheets", "cad_export", "qa_report", "cost_estimate", "construction_manifest"})
         self.assertFalse(artifact_status["complete_for_release"])
         self.assertTrue(manifest["next_actions"])
+        review_manifest = plan["meta"]["review_package_manifest"]
+        self.assertEqual(review_manifest["source"], "review_package_manifest_v1")
+        self.assertFalse(review_manifest["construction_release_allowed"])
+        self.assertTrue(review_manifest["construction_release_blocked"])
+        self.assertIn("civil3d", review_manifest["export_confidence"]["formats"])
+        self.assertEqual(review_manifest["export_confidence"]["formats"]["dwg"]["status"], "unsupported_no_writer")
+
+    def test_review_package_manifest_allows_alpha_review_without_construction_release(self) -> None:
+        meta = {
+            "product_mode": "private_alpha",
+            "sheet_registry": [{"sheet_id": "C-100", "title": "Civil Site Plan"}],
+            "export_audit": {"ready": True, "production_export_ready": True},
+            "cad_interop": {
+                "dxf": True,
+                "dwg": False,
+                "civil3d": False,
+                "landxml_pipe_network_contract": True,
+            },
+        }
+
+        manifest = build_review_package_manifest({"meta": meta})
+
+        self.assertTrue(manifest["review_ready"])
+        self.assertTrue(manifest["review_package_allowed"])
+        self.assertFalse(manifest["construction_ready"])
+        self.assertFalse(manifest["construction_release_allowed"])
+        self.assertTrue(manifest["construction_release_blocked"])
+        self.assertFalse(manifest["review_blockers"])
+        formats = manifest["export_confidence"]["formats"]
+        self.assertEqual(formats["dxf"]["status"], "audited_review_ready")
+        self.assertTrue(formats["dxf"]["review_ready"])
+        self.assertEqual(formats["landxml"]["status"], "pipe_network_contract_review_ready_not_civil3d_verified")
+        self.assertEqual(formats["civil3d"]["status"], "not_implemented_not_verified")
+        self.assertEqual(formats["dwg"]["status"], "unsupported_no_writer")
+
+    def test_review_package_manifest_blocks_missing_export_audit(self) -> None:
+        meta = {
+            "product_mode": "private_alpha",
+            "sheet_registry": [{"sheet_id": "C-100", "title": "Civil Site Plan"}],
+            "cad_interop": {"dxf": True, "dwg": False, "civil3d": False},
+        }
+
+        manifest = build_review_package_manifest({"meta": meta})
+
+        self.assertFalse(manifest["review_ready"])
+        self.assertFalse(manifest["review_package_allowed"])
+        fields = {item["field"] for item in manifest["review_blockers"]}
+        self.assertIn("dxf_review_export", fields)
+        self.assertEqual(manifest["export_confidence"]["formats"]["dxf"]["status"], "blocked_missing_export_audit")
 
     def test_manifest_groups_blockers_into_actionable_release_sections(self) -> None:
         meta = {

@@ -274,6 +274,7 @@ from backend.planning.engine_readiness import (
 )
 from backend.planning.construction_package import (
     build_construction_package_manifest as _build_construction_package_manifest,
+    build_review_package_manifest as _build_review_package_manifest,
 )
 from backend.planning.existing_conditions_package import (
     build_existing_conditions_package as _build_existing_conditions_package,
@@ -290,6 +291,7 @@ from backend.planning.depth_validators import (
     validate_water_system_depth as _validate_water_system_depth,
 )
 from backend.planning.production_depth import (
+    build_cad_interop_metadata as _build_cad_interop_metadata,
     enrich_storm_production_depth as _enrich_storm_production_depth,
     enrich_water_production_depth as _enrich_water_production_depth,
 )
@@ -10693,6 +10695,7 @@ def finalize_plan(plan: Dict[str, Any], *, parsed: Dict[str, Any], route: Routin
         final["meta"].setdefault("export_audit", {"ready": False, "error": safe_str(exc)})
     final["meta"]["existing_conditions_summary"] = _summarize_existing_conditions(final, parsed)
     final["meta"]["existing_conditions_package"] = _build_existing_conditions_package(final)
+    final["meta"]["cad_interop"] = _build_cad_interop_metadata(final)
     final["meta"].setdefault("reactive_update_report", _reactive_report_from_plan(final))
     final["meta"]["depth_validation"] = {
         "stormwater": _validate_stormwater_depth(final),
@@ -10703,6 +10706,7 @@ def finalize_plan(plan: Dict[str, Any], *, parsed: Dict[str, Any], route: Routin
     final["meta"]["civil_design_readiness"] = civil_design_readiness(final)
     final["meta"]["standards_package"] = _build_standards_package(final)
     final["meta"]["construction_readiness"] = construction_readiness(final)
+    final["meta"]["review_package_manifest"] = _build_review_package_manifest(final)
     final["meta"]["construction_package_manifest"] = _build_construction_package_manifest(final)
     final["meta"]["engine_readiness"] = _evaluate_engine_readiness(final)
     final["meta"]["private_alpha_readiness"] = _build_private_alpha_readiness(final)
