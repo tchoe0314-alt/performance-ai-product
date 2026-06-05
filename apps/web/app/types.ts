@@ -276,6 +276,8 @@ export type ReactivePartialRerun = {
   skipped_stages?: string[];
   telemetry?: {
     elapsed_ms?: number;
+    rerun_stages?: string[];
+    skipped_stages?: string[];
     quick_threshold_ms?: number;
     within_quick_threshold?: boolean;
   };
