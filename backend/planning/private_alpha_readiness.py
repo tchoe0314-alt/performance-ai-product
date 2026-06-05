@@ -262,6 +262,61 @@ def _export_section(meta: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _cost_section(meta: Dict[str, Any]) -> Dict[str, Any]:
+    package = safe_dict(meta.get("cost_package_status"))
+    status = safe_str(package.get("status")).lower()
+    ready = status == "ready" and bool(package.get("production_usable"))
+    blockers: List[Dict[str, Any]] = []
+    warnings: List[Dict[str, Any]] = []
+    if not package:
+        blockers.append(
+            _blocker(
+                "cost",
+                "cost_package_status",
+                "Private alpha needs a cost package status tying quantities, unit prices, and cost output together.",
+                next_action="Build cost_package_status from the current quantity model and cost estimate.",
+            )
+        )
+    elif status == "blocked":
+        blockers.extend(safe_list(package.get("blockers")))
+        if not blockers:
+            blockers.append(
+                _blocker(
+                    "cost",
+                    "cost_package_status",
+                    "Cost package is blocked.",
+                    next_action="Resolve cost package blockers and rerun cost validation.",
+                )
+            )
+    elif status == "needs_review":
+        warnings.append(
+            _blocker(
+                "cost",
+                "cost_package_review",
+                "Cost package exists but remains review-only because pricing, coverage, or traceability is incomplete.",
+                severity="warning",
+                next_action="Attach an approved complete unit-price book or keep costs labeled review-only.",
+            )
+        )
+    if package and not ready:
+        blockers.append(
+            _blocker(
+                "cost",
+                "cost_package_production_usable",
+                "Private alpha cost claims need approved pricing coverage and matching cost/quantity/price hashes.",
+                next_action="Resolve cost package blockers before showing cost output as alpha-ready.",
+            )
+        )
+    return {
+        "status": _status_from_section(ready, blockers, warnings),
+        "package_status": status or "missing",
+        "production_usable": ready,
+        "package": deepcopy(package),
+        "blockers": blockers,
+        "warnings": warnings,
+    }
+
+
 def _golden_section(meta: Dict[str, Any]) -> Dict[str, Any]:
     report = safe_dict(meta.get("golden_scenario_report") or meta.get("golden_scenarios_report") or meta.get("golden_scenarios"))
     status = safe_str(report.get("status") or report.get("readiness") or ("passed" if report.get("success") is True else ""))
@@ -372,6 +427,7 @@ def build_private_alpha_readiness(plan_or_meta: Dict[str, Any]) -> Dict[str, Any
         "engines": _engine_section(meta),
         "existing_conditions": _existing_conditions_section(meta),
         "standards": _standards_section(meta),
+        "cost": _cost_section(meta),
         "exports": _export_section(meta),
         "golden_scenarios": _golden_section(meta),
         "monitoring": _monitoring_section(meta),

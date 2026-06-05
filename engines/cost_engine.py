@@ -364,6 +364,194 @@ def _cost_estimate_reference(
     }
 
 
+def _cost_package_blocker(area: str, field: str, why_needed: str, next_action: str) -> Dict[str, Any]:
+    return {
+        "area": area,
+        "field": field,
+        "why_needed": why_needed,
+        "suggested_next_action": next_action,
+        "severity": "blocker",
+    }
+
+
+def build_cost_package_status(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
+    """Build a traceable cost package status for alpha review and release gates."""
+
+    meta = _safe_dict(plan_or_meta.get("meta")) if "meta" in plan_or_meta else _safe_dict(plan_or_meta)
+    quantities = _safe_dict(meta.get("quantities"))
+    cost = _safe_dict(meta.get("cost_estimate"))
+    totals = _safe_dict(cost.get("totals"))
+    explain = _safe_dict(cost.get("explain"))
+    pricing = _safe_dict(explain.get("pricing"))
+    pricing_validation = _safe_dict(pricing.get("production_validation"))
+    quantity_reference = _safe_dict(explain.get("quantity_model_reference"))
+    cost_reference = _safe_dict(explain.get("cost_estimate_reference"))
+    coverage_gaps = _safe_dict(explain.get("pricing_coverage_gaps"))
+    trace_gaps = _safe_dict(explain.get("trace_gaps"))
+    priced_metrics = _safe_list(quantity_reference.get("priced_quantity_metrics"))
+    production_metric_keys = _safe_list(pricing.get("production_metric_keys"))
+    line_items = _safe_list(cost.get("line_items"))
+    blockers: List[Dict[str, Any]] = []
+
+    if not quantities:
+        blockers.append(
+            _cost_package_blocker(
+                "cost",
+                "quantities",
+                "Cost package status requires a current quantity model.",
+                "Run quantities before building the cost package.",
+            )
+        )
+    if not cost:
+        blockers.append(
+            _cost_package_blocker(
+                "cost",
+                "cost_estimate",
+                "Cost package status requires a current cost estimate.",
+                "Run cost estimation after quantities are available.",
+            )
+        )
+    elif cost.get("success") is not True:
+        blockers.append(
+            _cost_package_blocker(
+                "cost",
+                "cost_success",
+                "Production cost package cannot use a failed or review-only cost estimate.",
+                "Resolve cost estimate warnings/blockers and regenerate the estimate.",
+            )
+        )
+    if not bool(pricing.get("production_usable")):
+        blockers.append(
+            _cost_package_blocker(
+                "cost",
+                "approved_unit_price_book",
+                "Cost package needs an approved unit-price source before bid-ready output.",
+                "Attach a regional/company unit-price book with source, date, approval, and source item IDs.",
+            )
+        )
+    for gap in _safe_list(pricing_validation.get("blockers")):
+        rec = _safe_dict(gap)
+        field = _safe_str(rec.get("field"), "unit_price_book")
+        blockers.append(
+            _cost_package_blocker(
+                "cost",
+                field,
+                _safe_str(rec.get("reason"), "Unit-price book validation failed."),
+                "Fix the unit-price book metadata or line item and rerun cost validation.",
+            )
+        )
+    if trace_gaps:
+        blockers.append(
+            _cost_package_blocker(
+                "cost",
+                "quantity_trace_gaps",
+                "Cost package has priced quantities that do not trace to canonical source object IDs.",
+                "Regenerate quantities with canonical source IDs before relying on the cost package.",
+            )
+        )
+    if coverage_gaps:
+        blockers.append(
+            _cost_package_blocker(
+                "cost",
+                "price_book_coverage_gaps",
+                "Approved unit-price book does not cover every positive priced quantity metric.",
+                "Add missing unit-price rows or mark the estimate review-only.",
+            )
+        )
+    quantity_hash = _safe_str(quantity_reference.get("quantity_model_hash"))
+    cost_hash = _safe_str(cost_reference.get("cost_estimate_hash") or totals.get("cost_estimate_hash"))
+    price_hash = _safe_str(cost_reference.get("price_book_hash") or pricing.get("price_book_hash"))
+    if cost and not quantity_hash:
+        blockers.append(
+            _cost_package_blocker(
+                "cost",
+                "quantity_model_hash",
+                "Cost package must identify the exact quantity model hash it priced.",
+                "Regenerate cost from the current canonical quantity model.",
+            )
+        )
+    if cost and not cost_hash:
+        blockers.append(
+            _cost_package_blocker(
+                "cost",
+                "cost_estimate_hash",
+                "Cost package must identify the exact cost estimate hash.",
+                "Regenerate the cost estimate and preserve its cost_estimate_hash.",
+            )
+        )
+    if cost and not price_hash:
+        blockers.append(
+            _cost_package_blocker(
+                "cost",
+                "price_book_hash",
+                "Cost package must identify the approved unit-price book hash.",
+                "Attach an approved unit-price book and rerun cost estimation.",
+            )
+        )
+    if (
+        _safe_str(cost_reference.get("quantity_model_hash"))
+        and quantity_hash
+        and _safe_str(cost_reference.get("quantity_model_hash")) != quantity_hash
+    ):
+        blockers.append(
+            _cost_package_blocker(
+                "cost",
+                "quantity_model_mismatch",
+                "Cost estimate reference does not match the quantity model reference.",
+                "Regenerate quantities and cost estimate from the same final model.",
+            )
+        )
+
+    source_complete = all(
+        _safe_str(pricing.get(field))
+        for field in ("source", "location", "effective_date", "approved_by", "approval_date")
+    )
+    production_usable = bool(cost.get("success") is True and totals.get("production_usable") is True and not blockers)
+    if production_usable:
+        status = "ready"
+    elif cost and line_items:
+        status = "needs_review"
+    else:
+        status = "blocked"
+    return {
+        "success": True,
+        "source": "cost_package_status_v1",
+        "status": status,
+        "production_usable": production_usable,
+        "review_ready": bool(cost and line_items),
+        "cost_estimate_hash": cost_hash,
+        "quantity_model_hash": quantity_hash,
+        "price_book_hash": price_hash,
+        "price_source": {
+            "source": _safe_str(pricing.get("source")),
+            "location": _safe_str(pricing.get("location")),
+            "effective_date": _safe_str(pricing.get("effective_date")),
+            "approved_by": _safe_str(pricing.get("approved_by")),
+            "approval_date": _safe_str(pricing.get("approval_date")),
+            "currency": _safe_str(pricing.get("currency"), "USD"),
+            "contingency_pct": _safe_float(pricing.get("contingency_pct"), 0.0),
+            "approved_source_complete": source_complete,
+            "production_usable": bool(pricing.get("production_usable")),
+        },
+        "coverage": {
+            "positive_quantity_metrics": sorted(_safe_str(item) for item in priced_metrics if _safe_str(item)),
+            "production_price_metrics": sorted(_safe_str(item) for item in production_metric_keys if _safe_str(item)),
+            "missing_price_metrics": sorted(coverage_gaps.keys()),
+            "trace_gap_metrics": sorted(trace_gaps.keys()),
+            "pricing_coverage_complete": not bool(coverage_gaps),
+            "quantity_traceability_complete": not bool(trace_gaps),
+        },
+        "line_item_count": len(line_items),
+        "blockers": blockers,
+        "blocker_details": _validation_details(blockers, area="cost_package"),
+        "warnings": list(cost.get("warnings") or []),
+        "truth_label": (
+            "Cost packages are production-usable only when quantities are traceable, every positive metric is covered "
+            "by an approved unit-price book, and cost/quantity/price hashes match."
+        ),
+    }
+
+
 def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
     meta = _safe_dict(plan_or_meta.get("meta")) if "meta" in plan_or_meta else _safe_dict(plan_or_meta)
     quantities = _safe_dict(meta.get("quantities"))
@@ -490,6 +678,7 @@ def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
 __all__ = [
     "CostResult",
     "DEFAULT_UNIT_PRICES",
+    "build_cost_package_status",
     "compute_cost_estimate",
     "normalize_unit_price_book",
     "unit_price_book_from_csv",

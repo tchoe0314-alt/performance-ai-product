@@ -295,21 +295,30 @@ Status:
 - Closed for private-alpha review-package truth.
 - Still not a public/construction CAD package because Civil3D/DWG production writers are not implemented/verified.
 
-### 10. Production Cost Book Workflow Needs More End-To-End Coverage
+### 10. Cost Package Status Exists, Regional Cost Libraries Remain Future Work
 
 Current state:
 - Unit price book normalization, CSV import, validation, traceability, and cost blockers exist.
+- `cost_package_status` now ties cost estimate, quantity model hash, price book hash, approved source metadata, trace gaps, and price coverage gaps into one first-class backend artifact.
+- Planner finalization attaches `cost_package_status`.
+- Private-alpha readiness now has a dedicated cost section.
+- Approved and intentionally incomplete CSV fixtures cover pass/fail pricing coverage.
 
 Issue:
-- No approved regional cost source library.
-- Cost package is not yet fully tied into alpha readiness as a first-class package.
+- No curated regional/company cost source library is bundled yet.
+- Public/construction bid confidence still requires user-provided approved cost sources or a maintained cost library.
 
 Required fix:
-- Add cost package status with price source, effective date, approval, coverage gaps, and quantity model hash.
-- Add sample approved CSV fixture and missing-price fixture.
+- Keep default/concept pricing review-only.
+- Add curated regional/company cost libraries later if Civora will ship cost defaults beyond alpha fixtures.
 
 Evidence needed:
-- Tests showing traceable costs pass only with approved source and matching quantity hash.
+- Covered for package status and fixture pass/fail paths by `tests/test_cost_engine.py`.
+- Covered for private-alpha cost readiness section by `tests/test_private_alpha_readiness.py`.
+
+Status:
+- Closed for private-alpha cost package truth.
+- Still not a public/construction bid database because curated regional cost sources are not bundled.
 
 ## P2 Improvements After Full-System Private Alpha
 
@@ -355,7 +364,7 @@ Decision needed:
 | Hydrology | active | needs review | Hydrographs and overflow/flood routing depth |
 | Conflict Resolution | active | usable review-only | Larger cluster optimization/golden proof |
 | QA / Validation | active | usable review-only | Fresh monitoring/golden evidence and deeper standards/import edge cases |
-| Quantity | active | usable review-only | Cost package and approved price source workflow |
+| Quantity | active | usable review-only | Curated regional cost source library for public/bid workflows |
 | Export / CAD | active | usable review-only | Civil3D/DWG production writers and external compatibility proof |
 | Profile / Section | active | usable review-only | More live linkage tests across real roadway/utility scenarios |
 | GIS / Existing Conditions | early | blocked without sources | Runtime/load proof over mixed-import golden fixtures |
@@ -364,7 +373,7 @@ Decision needed:
 
 ## Exact Fix Order
 
-1. Add cost package status and approved unit-price fixture coverage.
+1. Run a broader Phase 1 regression and readiness audit after the new review-package and cost-package artifacts.
 
 ## Non-Negotiable Truth Rules
 

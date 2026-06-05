@@ -1,0 +1,4 @@
+metric,item,category,unit,unit_cost,bid_item_id,notes
+pipe_length_ft,RCP storm pipe,storm,ft,125,ST-01,Approved alpha fixture
+parking_area_sf,Asphalt parking pavement,pavement,sf,8.25,PV-01,Approved alpha fixture
+inlet_count,Storm inlet,storm,ea,4750,ST-02,Approved alpha fixture

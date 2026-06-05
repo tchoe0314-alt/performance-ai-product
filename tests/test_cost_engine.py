@@ -1,8 +1,17 @@
 import unittest
+from pathlib import Path
 
 import planner
 from backend.planning.engine_readiness import evaluate_engine_readiness
-from engines.cost_engine import compute_cost_estimate, normalize_unit_price_book, unit_price_book_from_csv
+from engines.cost_engine import (
+    build_cost_package_status,
+    compute_cost_estimate,
+    normalize_unit_price_book,
+    unit_price_book_from_csv,
+)
+
+
+FIXTURE_DIR = Path(__file__).resolve().parents[1] / "backend" / "fixtures" / "cost"
 
 
 class CostEngineTests(unittest.TestCase):
@@ -79,6 +88,96 @@ class CostEngineTests(unittest.TestCase):
         cost_reference = result.explain["cost_estimate_reference"]
         self.assertEqual(cost_reference["cost_estimate_hash"], result.totals["cost_estimate_hash"])
         self.assertEqual(cost_reference["quantity_model_hash"], reference["quantity_model_hash"])
+
+    def test_cost_package_status_ready_with_approved_fixture(self) -> None:
+        price_book = unit_price_book_from_csv(
+            (FIXTURE_DIR / "approved_unit_price_book.csv").read_text(),
+            source="approved_alpha_cost_fixture",
+            location="Austin, TX",
+            effective_date="2026-06-01",
+            approved_by="Alpha Estimator",
+            approval_date="2026-06-02",
+            contingency_pct=8.0,
+        )
+        meta = {
+            "cost_pricing": price_book,
+            "quantities": {
+                "success": True,
+                "totals": {"pipe_length_ft": 50.0, "parking_area_sf": 1000.0, "inlet_count": 2},
+                "explain": {
+                    "quantity_audit": {
+                        "pipe_length_ft": {"source_object_ids": ["P-1"]},
+                        "parking_area_sf": {"source_object_ids": ["PK-1"]},
+                        "inlet_count": {"source_object_ids": ["I-1", "I-2"]},
+                    }
+                },
+            },
+        }
+        result = compute_cost_estimate({"meta": meta})
+        meta["cost_estimate"] = {
+            "success": result.success,
+            "message": result.message,
+            "totals": result.totals,
+            "line_items": result.line_items,
+            "category_subtotals": result.category_subtotals,
+            "warnings": result.warnings,
+            "assumptions": result.assumptions,
+            "explain": result.explain,
+        }
+
+        package = build_cost_package_status({"meta": meta})
+
+        self.assertEqual(package["status"], "ready")
+        self.assertTrue(package["production_usable"])
+        self.assertTrue(package["price_source"]["approved_source_complete"])
+        self.assertEqual(package["price_source"]["source"], "approved_alpha_cost_fixture")
+        self.assertTrue(package["cost_estimate_hash"])
+        self.assertTrue(package["quantity_model_hash"])
+        self.assertTrue(package["price_book_hash"])
+        self.assertFalse(package["coverage"]["missing_price_metrics"])
+        self.assertFalse(package["coverage"]["trace_gap_metrics"])
+        self.assertFalse(package["blockers"])
+
+    def test_cost_package_status_blocks_missing_fixture_metric(self) -> None:
+        price_book = unit_price_book_from_csv(
+            (FIXTURE_DIR / "missing_parking_unit_price_book.csv").read_text(),
+            source="approved_alpha_cost_fixture",
+            location="Austin, TX",
+            effective_date="2026-06-01",
+            approved_by="Alpha Estimator",
+            approval_date="2026-06-02",
+        )
+        meta = {
+            "cost_pricing": price_book,
+            "quantities": {
+                "success": True,
+                "totals": {"pipe_length_ft": 50.0, "parking_area_sf": 1000.0},
+                "explain": {
+                    "quantity_audit": {
+                        "pipe_length_ft": {"source_object_ids": ["P-1"]},
+                        "parking_area_sf": {"source_object_ids": ["PK-1"]},
+                    }
+                },
+            },
+        }
+        result = compute_cost_estimate({"meta": meta})
+        meta["cost_estimate"] = {
+            "success": result.success,
+            "message": result.message,
+            "totals": result.totals,
+            "line_items": result.line_items,
+            "category_subtotals": result.category_subtotals,
+            "warnings": result.warnings,
+            "assumptions": result.assumptions,
+            "explain": result.explain,
+        }
+
+        package = build_cost_package_status({"meta": meta})
+
+        self.assertEqual(package["status"], "needs_review")
+        self.assertFalse(package["production_usable"])
+        self.assertEqual(package["coverage"]["missing_price_metrics"], ["parking_area_sf"])
+        self.assertIn("price_book_coverage_gaps", {item["field"] for item in package["blockers"]})
 
     def test_cost_engine_does_not_trust_claimed_production_book_without_approval_metadata(self) -> None:
         result = compute_cost_estimate(
@@ -258,6 +357,10 @@ class CostEngineTests(unittest.TestCase):
         self.assertIn("totals", cost)
         self.assertIn("line_items", cost)
         self.assertIn("explain", cost)
+        package = plan["meta"]["cost_package_status"]
+        self.assertEqual(package["source"], "cost_package_status_v1")
+        self.assertFalse(package["production_usable"])
+        self.assertIn("approved_unit_price_book", {item["field"] for item in package["blockers"]})
 
     def test_quantity_engine_readiness_reports_cost_pricing_blocker(self) -> None:
         readiness = evaluate_engine_readiness(

@@ -52,6 +52,32 @@ def _ready_meta() -> dict:
             "blockers": [],
             "warnings": [],
         },
+        "cost_package_status": {
+            "source": "cost_package_status_v1",
+            "status": "ready",
+            "production_usable": True,
+            "review_ready": True,
+            "cost_estimate_hash": "COST-HASH-1",
+            "quantity_model_hash": "QTY-HASH-1",
+            "price_book_hash": "PRICE-HASH-1",
+            "price_source": {
+                "source": "approved_alpha_cost_fixture",
+                "location": "Austin, TX",
+                "effective_date": "2026-06-01",
+                "approved_by": "Alpha Estimator",
+                "approval_date": "2026-06-02",
+                "approved_source_complete": True,
+                "production_usable": True,
+            },
+            "coverage": {
+                "missing_price_metrics": [],
+                "trace_gap_metrics": [],
+                "pricing_coverage_complete": True,
+                "quantity_traceability_complete": True,
+            },
+            "blockers": [],
+            "warnings": [],
+        },
         "export_audit": {
             "ready": True,
             "production_export_ready": True,
@@ -75,6 +101,7 @@ class PrivateAlphaReadinessTests(unittest.TestCase):
         self.assertIn(("engines", "engine_readiness"), fields)
         self.assertIn(("existing_conditions", "existing_conditions_package"), fields)
         self.assertIn(("standards", "standards_package"), fields)
+        self.assertIn(("cost", "cost_package_status"), fields)
         self.assertIn(("deliverables", "export_audit"), fields)
         self.assertIn(("golden_scenarios", "golden_scenario_report"), fields)
         self.assertIn(("monitoring", "alpha_monitoring_report"), fields)
@@ -126,6 +153,7 @@ class PrivateAlphaReadinessTests(unittest.TestCase):
         self.assertFalse(readiness["construction_release_allowed"])
         self.assertTrue(readiness["construction_release_blocked"])
         self.assertIn("existing_conditions", readiness["sections"])
+        self.assertIn("cost", readiness["sections"])
 
     def test_artifact_summary_carries_private_alpha_status(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

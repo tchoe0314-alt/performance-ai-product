@@ -114,7 +114,7 @@ from engines.storm.storm_types import (
 )
 from engines.surface_engine import SurfaceEngine, GridSurface
 from engines.utility_engine import UtilityEngine, UtilityNodeSpec, UtilityRequest
-from engines.cost_engine import compute_cost_estimate
+from engines.cost_engine import build_cost_package_status, compute_cost_estimate
 
 from geometry.layout_engine import expand_plan
 from output.dxf_exporter import (
@@ -10689,6 +10689,7 @@ def finalize_plan(plan: Dict[str, Any], *, parsed: Dict[str, Any], route: Routin
             }
         except Exception as exc:
             final["meta"]["cost_estimate"] = {"success": False, "message": f"Cost computation failed: {exc}", "totals": {}}
+    final["meta"]["cost_package_status"] = build_cost_package_status(final)
     try:
         finalize_export_metadata(final)
     except Exception as exc:
