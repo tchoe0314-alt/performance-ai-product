@@ -9,12 +9,11 @@ import {
   ClipboardCheck,
   CheckCircle2,
   Circle,
-  Database,
+  FileText,
   Gauge,
   Layers,
   MapPinned,
   Settings,
-  SquareStack,
 } from "lucide-react";
 
 import { deleteJson, getJson, postBinary, postForm, postJson } from "../lib/api";
@@ -109,14 +108,12 @@ type WorkspaceMode =
   | "setup"
   | "canvas"
   | "layers"
-  | "sections"
-  | "three_d"
-  | "reports"
-  | "quantities"
-  | "sheets"
+  | "review"
+  | "deliver"
   | "data"
   | "settings";
 type SidebarStatus = "ok" | "review" | "block" | "idle";
+type BottomPanelTab = "model_review" | "systems" | "objects" | "properties" | "history";
 type SidebarNavItem = {
   label: string;
   caption: string;
@@ -1311,6 +1308,8 @@ function PerformanceAIDashboardView({
   const [approvalPendingJobId, setApprovalPendingJobId] = useState<string | null>(null);
   const [showMeasurements, setShowMeasurements] = useState(false);
   const [showCalculations, setShowCalculations] = useState(false);
+  const [bottomPanelCollapsed, setBottomPanelCollapsed] = useState(false);
+  const [activeBottomPanelTab, setActiveBottomPanelTab] = useState<BottomPanelTab>("model_review");
   const [previewLayers, setPreviewLayers] = useState({
     buildings: true,
     roads: true,
@@ -10080,9 +10079,9 @@ function PerformanceAIDashboardView({
     details: { title: "Sections", desc: "Review profiles, cross sections, selected objects, locks, and engineering metadata." },
     layers: { title: "Layers", desc: "Choose visible model layers and labels." },
     analysis: { title: "Review & QA", desc: "Review model issues, access checks, blockers, and QA signals." },
-    reports: { title: "Reports", desc: "Review engineering health, QA, assumptions, conflicts, standards, and system readiness." },
-    quantities: { title: "Quantities", desc: "Review takeoff totals and cost inputs." },
-    deliverables: { title: "Sheets", desc: "Review plan sheets, profiles, sections, export audit, and package readiness." },
+    reports: { title: "Review", desc: "Review engineering health, QA, assumptions, conflicts, standards, and system readiness." },
+    quantities: { title: "Quantities", desc: "Review takeoff totals, stale labels, source confidence, and cost inputs." },
+    deliverables: { title: "Deliver", desc: "Review sheets, reports, quantities, profiles, sections, exports, and package gates." },
     files: { title: "Files", desc: "Manage imported inputs and generated outputs." },
     standards: { title: "Standards", desc: "Review rule packs, assumptions, and project criteria." },
     libraries: { title: "Libraries", desc: "Use reusable objects, templates, and project presets." },
@@ -10124,36 +10123,33 @@ function PerformanceAIDashboardView({
     utilities: "canvas",
     roadway: "canvas",
     landscape: "canvas",
-    details: "sections",
+    details: "review",
     layers: "layers",
-    analysis: "reports",
-    reports: "reports",
-    quantities: "quantities",
-    deliverables: "sheets",
+    analysis: "review",
+    reports: "review",
+    quantities: "deliver",
+    deliverables: "deliver",
     files: "data",
     standards: "data",
     libraries: "data",
     data: "data",
     settings: "settings",
     chat: "canvas",
-    system_grading: "reports",
-    system_storm: "reports",
-    system_sanitary: "reports",
-    system_water: "reports",
-    system_roadway: "reports",
-    system_utilities: "reports",
-    system_landscape: "reports",
+    system_grading: "review",
+    system_storm: "review",
+    system_sanitary: "review",
+    system_water: "review",
+    system_roadway: "review",
+    system_utilities: "review",
+    system_landscape: "review",
   };
   const workspacePanelByMode: Record<WorkspaceMode, SidePanelKey> = {
     dashboard: "dashboard",
     setup: "site_existing",
     canvas: "model",
     layers: "layers",
-    sections: "details",
-    three_d: "model",
-    reports: "reports",
-    quantities: "quantities",
-    sheets: "deliverables",
+    review: "reports",
+    deliver: "deliverables",
     data: "data",
     settings: "settings",
   };
@@ -10198,9 +10194,6 @@ function PerformanceAIDashboardView({
     if (nextStep) setActiveWorkflowStep(nextStep);
   }, []);
   const handleOpenWorkspaceMode = useCallback((mode: WorkspaceMode) => {
-    if (mode === "three_d") {
-      setPreviewMode("3d");
-    }
     handleOpenSidePanel(workspacePanelByMode[mode]);
     setActiveWorkspaceMode(mode);
   }, [handleOpenSidePanel]);
@@ -10257,12 +10250,10 @@ function PerformanceAIDashboardView({
   const sidebarModeStatus = (mode: WorkspaceMode): SidebarStatus => {
     if (mode === "dashboard") return panelStatus("dashboard");
     if (mode === "setup") return siteScaleLocked ? "ok" : "review";
-    if (mode === "canvas" || mode === "three_d") return panelStatus("model");
+    if (mode === "canvas") return panelStatus("model");
     if (mode === "layers") return panelStatus("layers");
-    if (mode === "sections") return placedObjectCount > 0 || roads || utilities ? "review" : "idle";
-    if (mode === "reports") return hasHardSystemBlock ? "block" : issues.length || analysisIssues.length ? "review" : panelStatus("reports");
-    if (mode === "quantities") return panelStatus("quantities");
-    if (mode === "sheets") return String(previewReview?.release_status || "review").toLowerCase() === "blocked" ? "block" : panelStatus("deliverables");
+    if (mode === "review") return hasHardSystemBlock ? "block" : issues.length || analysisIssues.length ? "review" : panelStatus("reports");
+    if (mode === "deliver") return String(previewReview?.release_status || "review").toLowerCase() === "blocked" ? "block" : panelStatus("deliverables");
     if (mode === "data") return panelStatus("data");
     if (mode === "settings") return panelStatus("settings");
     return "idle";
@@ -10272,9 +10263,8 @@ function PerformanceAIDashboardView({
     { label: "Setup", caption: "Site and boundary", target: "setup", icon: MapPinned, status: sidebarModeStatus("setup") },
     { label: "Canvas", caption: "Design workspace", target: "canvas", icon: Box, status: sidebarModeStatus("canvas") },
     { label: "Layers", caption: "Visibility presets", target: "layers", icon: Layers, status: sidebarModeStatus("layers") },
-    { label: "Reports", caption: "Health and QA", target: "reports", icon: ClipboardCheck, status: sidebarModeStatus("reports") },
-    { label: "Quantities", caption: "Live takeoffs", target: "quantities", icon: Database, status: sidebarModeStatus("quantities") },
-    { label: "Sheets", caption: "Plans and exports", target: "sheets", icon: SquareStack, status: sidebarModeStatus("sheets") },
+    { label: "Review", caption: "Gates and health", target: "review", icon: ClipboardCheck, status: sidebarModeStatus("review") },
+    { label: "Deliver", caption: "Sheets and exports", target: "deliver", icon: FileText, status: sidebarModeStatus("deliver") },
     { label: "Data", caption: "Survey and sources", target: "data", icon: MapPinned, status: sidebarModeStatus("data") },
     { label: "Settings", caption: "Workspace defaults", target: "settings", icon: Settings, status: sidebarModeStatus("settings") },
   ];
@@ -10292,7 +10282,7 @@ function PerformanceAIDashboardView({
   const sidebarAssumptions = Array.isArray(previewReview?.assumption_categories)
     ? previewReview.assumption_categories.filter(Boolean)
     : [];
-  const sidebarTruthItems = [
+  const sidebarTruthItems: Array<{ label: string; value: string; status: SidebarStatus }> = [
     {
       label: "Missing inputs",
       value: sidebarMissingInputs.length ? sidebarMissingInputs.slice(0, 2).join(", ") : "none flagged",
@@ -10304,14 +10294,14 @@ function PerformanceAIDashboardView({
       status: sidebarReleaseStatus === "blocked" ? "block" : "review",
     },
     {
-      label: "Construction",
+      label: "Construction blocks",
       value: "blocked",
       status: "block",
     },
     {
-      label: "Stale outputs",
-      value: sidebarStaleSystems.length ? sidebarStaleSystems.slice(0, 2).join(", ") : "none",
-      status: sidebarStaleSystems.length ? "review" : "idle",
+      label: "Low confidence",
+      value: typeof previewReview?.trust_score === "number" && previewReview.trust_score >= 80 ? "none flagged" : sidebarTrustScore,
+      status: typeof previewReview?.trust_score === "number" && previewReview.trust_score >= 80 ? "idle" : "review",
     },
     {
       label: "Assumptions",
@@ -10319,14 +10309,14 @@ function PerformanceAIDashboardView({
       status: "review",
     },
     {
+      label: "Stale outputs",
+      value: sidebarStaleSystems.length ? sidebarStaleSystems.slice(0, 2).join(", ") : "none",
+      status: sidebarStaleSystems.length ? "review" : "idle",
+    },
+    {
       label: "Blocked systems",
       value: hasHardSystemBlock || previewBlockedReasons.length ? "review blockers" : "none recorded",
       status: hasHardSystemBlock || previewBlockedReasons.length ? "block" : "idle",
-    },
-    {
-      label: "Engine confidence",
-      value: sidebarTrustScore,
-      status: typeof previewReview?.trust_score === "number" && previewReview.trust_score >= 80 ? "ok" : "review",
     },
   ] as const;
   const reviewGateItems = [
@@ -10397,14 +10387,29 @@ function PerformanceAIDashboardView({
           : placedObjectCount <= 1
             ? "Add or draw buildings, roads, parking, and utilities."
             : "Run systems, then review blockers and gates.";
+  const selectedCanvasObject = activePlacementId
+    ? buildingPlacements.find((item) => item.id === activePlacementId) ?? null
+    : null;
+  const bottomBlockerItems = [
+    ...previewBlockedReasons,
+    ...issues.map((issue) => issue.message),
+    ...analysisIssues.map((issue) => issue.message),
+  ].filter(Boolean);
+  const bottomPanelTabs: Array<{ key: BottomPanelTab; label: string; panel: SidePanelKey }> = [
+    { key: "model_review", label: "Model Review", panel: "reports" },
+    { key: "systems", label: "Systems", panel: "generate" },
+    { key: "objects", label: "Objects", panel: "objects" },
+    { key: "properties", label: "Properties", panel: selectedCanvasObject ? "details" : "site_existing" },
+    { key: "history", label: "History", panel: "dashboard" },
+  ];
   const activePanelTitle =
-    activeWorkspaceMode === "three_d" && activeSidePanel === "model"
+    previewMode === "3d" && activeSidePanel === "model"
       ? "3D"
       : activeSidePanel
         ? sidePanelCopy[activeSidePanel].title
         : "";
   const activePanelDescription =
-    activeWorkspaceMode === "three_d" && activeSidePanel === "model"
+    previewMode === "3d" && activeSidePanel === "model"
       ? "Cinematic engineering visualization and review with the same truthful readiness gates."
       : activeSidePanel
         ? sidePanelCopy[activeSidePanel].desc
@@ -10461,15 +10466,32 @@ function PerformanceAIDashboardView({
               <p className="mt-1 truncate text-sm font-semibold text-slate-950">
                 {siteName || "Untitled Project"}
               </p>
-              <p className="mt-1 text-xs text-slate-500">
-                {lotBounds.w && lotBounds.h
-                  ? `${lotBounds.w.toFixed(0)} ft x ${lotBounds.h.toFixed(0)} ft`
-                  : "Site not locked"}
-              </p>
+              <div className="mt-2 grid gap-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                <span className="flex items-center justify-between gap-2">
+                  <span>Site</span>
+                  <span className={siteScaleLocked ? "text-slate-900" : "text-amber-700"}>
+                    {siteScaleLocked ? "Locked" : "Unlocked"}
+                  </span>
+                </span>
+                <span className="flex items-center justify-between gap-2">
+                  <span>Size</span>
+                  <span className="normal-case tracking-normal text-slate-600">
+                    {lotBounds.w && lotBounds.h
+                      ? `${lotBounds.w.toFixed(0)} x ${lotBounds.h.toFixed(0)} ft`
+                      : "Not set"}
+                  </span>
+                </span>
+                <span className="flex items-center justify-between gap-2">
+                  <span>Sync</span>
+                  <span className={currentProject?.project_id ? "text-slate-900" : "text-amber-700"}>
+                    {currentProject?.project_id ? "Saved" : "Draft"}
+                  </span>
+                </span>
+              </div>
             </button>
             <div className="mb-4 rounded-lg border border-slate-200 bg-white px-3 py-3">
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                Truth
+                Truth Status
               </p>
               <div className="mt-2 grid grid-cols-2 gap-2">
                 {sidebarTruthItems.map((item) => (
@@ -10478,7 +10500,7 @@ function PerformanceAIDashboardView({
                       <span
                         className={`h-1.5 w-1.5 rounded-full ${
                           item.status === "ok"
-                            ? "bg-emerald-500"
+                            ? "bg-slate-700"
                             : item.status === "block"
                               ? "bg-red-500"
                               : item.status === "review"
@@ -11728,7 +11750,7 @@ function PerformanceAIDashboardView({
                         </div>
                       </div>
                     ) : null}
-                    {activeWorkspaceMode === "three_d" ? (
+                    {previewMode === "3d" ? (
                       <div className="rounded-2xl border border-slate-200 bg-white p-4">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">3D engineering review</p>
                         <p className="mt-2 text-sm text-slate-600">
@@ -13506,12 +13528,9 @@ function PerformanceAIDashboardView({
                 <span className="hidden h-6 w-px bg-slate-200 md:inline-block" />
                 {[
                   {
-                    label: "Select",
-                    active: !placementModeEnabled,
-                    action: () => {
-                      setPlacementModeEnabled(false);
-                      setActivePlacementId(null);
-                    },
+                    label: "Design",
+                    active: activeSidePanel === "model",
+                    action: () => handleOpenSidePanel("model"),
                   },
                   {
                     label: "Draw",
@@ -13529,14 +13548,19 @@ function PerformanceAIDashboardView({
                     action: () => setShowMeasurements((value) => !value),
                   },
                   {
-                    label: "Prompt Create",
-                    active: activeSidePanel === "objects",
-                    action: () => handleOpenSidePanel("objects"),
-                  },
-                  {
                     label: "Snaps",
                     active: snapAssistEnabled,
                     action: () => setSnapAssistEnabled((value) => !value),
+                  },
+                  {
+                    label: "Analyze",
+                    active: activeSidePanel === "reports" || activeSidePanel === "analysis",
+                    action: () => handleOpenSidePanel("reports"),
+                  },
+                  {
+                    label: "Export",
+                    active: activeSidePanel === "deliverables",
+                    action: () => handleOpenSidePanel("deliverables"),
                   },
                 ].map((item) => (
                   <button
@@ -13560,13 +13584,6 @@ function PerformanceAIDashboardView({
                     className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
                   >
                     Generate Systems
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleOpenSidePanel("deliverables")}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                  >
-                    Export Review
                   </button>
                 </div>
               </div>
@@ -14798,6 +14815,143 @@ function PerformanceAIDashboardView({
               </div>
             </div>
           </main>
+          <div
+            data-testid="bottom-review-panel"
+            className="fixed bottom-20 left-1/2 z-30 w-[calc(100vw-2rem)] max-w-5xl -translate-x-1/2 rounded-xl border border-slate-200 bg-white/95 shadow-[0_24px_70px_-36px_rgba(15,23,42,0.5)] backdrop-blur-xl"
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-3 py-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <p className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Review Status
+                </p>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                  hasHardSystemBlock || bottomBlockerItems.length
+                    ? "bg-red-50 text-red-600"
+                    : "bg-slate-100 text-slate-600"
+                }`}>
+                  {hasHardSystemBlock || bottomBlockerItems.length ? "Blockers visible" : "Engineer review required"}
+                </span>
+                <span className="hidden truncate text-xs font-semibold text-slate-500 md:inline">
+                  {nextSetupAction}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBottomPanelCollapsed((value) => !value)}
+                className="shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+              >
+                {bottomPanelCollapsed ? "Open" : "Collapse"}
+              </button>
+            </div>
+            {!bottomPanelCollapsed ? (
+              <div className="grid max-h-[28vh] gap-3 overflow-y-auto px-3 py-3 lg:grid-cols-[auto,1fr]">
+                <div className="flex min-w-0 gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
+                  {bottomPanelTabs.map((tab) => (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => {
+                        setActiveBottomPanelTab(tab.key);
+                        handleOpenSidePanel(tab.panel);
+                      }}
+                      className={`whitespace-nowrap rounded-lg border px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
+                        activeBottomPanelTab === tab.key
+                          ? "border-slate-950 bg-slate-950 text-white"
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="min-w-0">
+                  {activeBottomPanelTab === "model_review" ? (
+                    <div className="grid gap-2 md:grid-cols-3">
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Top blockers</p>
+                        <p className="mt-1 line-clamp-2 text-xs font-semibold text-slate-800">
+                          {bottomBlockerItems[0] || "No blocker text recorded. Engineer review still required."}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">System status</p>
+                        <p className="mt-1 text-xs font-semibold text-slate-800">
+                          {Object.entries(systemStatuses).map(([key, value]) => `${key}: ${value.replace("_", " ")}`).join(" · ")}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">Next step</p>
+                        <p className="mt-1 line-clamp-2 text-xs font-semibold text-amber-900">{nextSetupAction}</p>
+                      </div>
+                    </div>
+                  ) : null}
+                  {activeBottomPanelTab === "systems" ? (
+                    <div className="flex flex-wrap gap-2">
+                      {(Object.entries(systemStatuses) as Array<[EngineeringSystemKey, SystemStatus]>).map(([system, state]) => (
+                        <button
+                          key={system}
+                          type="button"
+                          onClick={() => handleOpenSidePanel(system === "drainage" ? "system_storm" : system === "roads" ? "system_roadway" : system === "parking" ? "generate" : (`system_${system}` as SidePanelKey))}
+                          className={`rounded-lg border px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.12em] ${
+                            state === "stale"
+                              ? "border-amber-200 bg-amber-50 text-amber-700"
+                              : state === "fresh"
+                                ? "border-slate-200 bg-slate-50 text-slate-700"
+                                : "border-slate-200 bg-white text-slate-500"
+                          }`}
+                        >
+                          {system} · {state.replace("_", " ")}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  {activeBottomPanelTab === "objects" ? (
+                    <div className="grid gap-2 md:grid-cols-3">
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Placed objects</p>
+                        <p className="mt-1 text-lg font-semibold text-slate-900">{placedObjectCount}</p>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Selected</p>
+                        <p className="mt-1 truncate text-xs font-semibold text-slate-800">{selectedCanvasObject?.label || "None"}</p>
+                      </div>
+                      <button type="button" onClick={() => handleOpenSidePanel("objects")} className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white">
+                        Add / draw objects
+                      </button>
+                    </div>
+                  ) : null}
+                  {activeBottomPanelTab === "properties" ? (
+                    <div className="grid gap-2 md:grid-cols-3">
+                      {[
+                        ["Object type", selectedCanvasObject?.type || "No selection"],
+                        ["Source", selectedCanvasObject?.source || "Not selected"],
+                        ["Confidence", String(selectedCanvasObject?.meta?.confidence || "engineer_review_required")],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                          <p className="mt-1 truncate text-xs font-semibold text-slate-800">{value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {activeBottomPanelTab === "history" ? (
+                    <div className="grid gap-2 md:grid-cols-3">
+                      {[
+                        ["Project sync", currentProject?.project_id ? "Saved" : "Draft"],
+                        ["Last action", statusMessage || "No recent action"],
+                        ["Package state", sidebarReleaseStatus === "ready" ? "ready_for_engineer_review" : sidebarReleaseStatus],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                          <p className="mt-1 line-clamp-2 text-xs font-semibold text-slate-800">{value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+          </div>
           <div
             data-testid="floating-command-bar"
             className="fixed bottom-4 left-1/2 z-30 flex w-[calc(100vw-2rem)] max-w-xl -translate-x-1/2 items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white/95 px-3 py-2 shadow-[0_24px_70px_-32px_rgba(15,23,42,0.55)] backdrop-blur-xl"
