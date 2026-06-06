@@ -30,6 +30,27 @@ class NormalScenarioEvidenceWiringTests(unittest.TestCase):
         self.assertEqual(report["engine_results"]["grading"]["actual_depth_classification"], CLASS_PRODUCTION_DEPTH)
         self.assertEqual(report["engine_results"]["roadway_corridor"]["actual_depth_classification"], CLASS_PRODUCTION_DEPTH)
 
+    def test_surface_ids_alone_do_not_clear_accepted_surface_evidence(self) -> None:
+        evidence = build_production_evidence(
+            {
+                "meta": {
+                    "grading": {
+                        "accepted_existing_surface_id": "EG-NOT-ENOUGH",
+                        "accepted_proposed_surface_id": "FG-NOT-ENOUGH",
+                        "existing_surface": {"id": "EG-NOT-ENOUGH"},
+                        "proposed_surface": {"id": "FG-NOT-ENOUGH"},
+                    }
+                }
+            }
+        )
+
+        surfaces = evidence["accepted_surfaces"]
+        self.assertFalse(surfaces["ready"])
+        self.assertFalse(surfaces["accepted_surfaces"])
+        self.assertIn("accepted_surfaces", surfaces["missing_inputs"])
+        self.assertIn("accepted_surfaces", {item["field"] for item in surfaces["blockers"]})
+        self.assertFalse(evidence["production_evidence_ready"])
+
     def test_normal_storm_scenario_complete_network_inputs_feed_hgl_egl_evidence(self) -> None:
         plan = _hgl_egl_depth_plan({"project_name": "normal storm hgl egl"})
         evidence = build_production_evidence(plan)

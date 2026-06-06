@@ -74,8 +74,6 @@ def _accepted_surface_evidence(meta: Dict[str, Any]) -> Dict[str, Any]:
         surface_trace.get("valid") is True
         or surface_trace.get("accepted_surfaces") is True
         or grading.get("accepted_surfaces") is True
-        or bool(grading.get("accepted_existing_surface_id") and grading.get("accepted_proposed_surface_id"))
-        or bool(meta.get("accepted_existing_surface_id") and meta.get("accepted_proposed_surface_id"))
     )
     missing = [] if not scope_exists else [
         name
