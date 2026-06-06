@@ -415,6 +415,17 @@ def _load_threshold_results(
     ]
 
 
+def _engine_depth_audit_reference(scenario: GoldenScenario) -> Dict[str, Any]:
+    return {
+        "report_version": "engine_depth_audit_report_v1",
+        "scenario_id": scenario.scenario_id,
+        "required_engine_ids": sorted(scenario.required_engine_ids),
+        "helper": "backend.planning.engine_depth_audit.run_engine_depth_audit_for_scenario",
+        "reference_only": True,
+        "truth_label": "Golden outputs reference the engine depth audit report contract; callers can run the helper for the full per-engine report.",
+    }
+
+
 def run_golden_scenario(
     scenario_id: str,
     *,
@@ -505,6 +516,7 @@ def run_golden_scenario(
         "load_thresholds": _deep_merge_dicts(scenario.load_thresholds, safe_dict(load_threshold_overrides)),
         "load_threshold_results": load_results,
         "failed_load_thresholds": failed_load_thresholds,
+        "engine_depth_audit": _engine_depth_audit_reference(scenario),
         "hard_failures": hard_failures,
         "hard_failure_details": blocker_explanations(hard_failures),
         "benchmark_status": "failed" if hard_failures else "passed_with_expected_blockers",
@@ -531,6 +543,13 @@ def run_golden_scenarios(
         "real_file_fixture_ids": [safe_str(item.get("scenario_id")) for item in results if bool(item.get("real_file_fixture"))],
         "synthetic_scenario_count": max(0, len(results) - real_file_fixture_count),
         "failed_load_threshold_count": failed_load_threshold_count,
+        "engine_depth_audit": {
+            "report_version": "engine_depth_audit_report_v1",
+            "helper": "backend.planning.engine_depth_audit.run_engine_depth_audit",
+            "scenario_ids": ids,
+            "reference_only": True,
+            "truth_label": "Golden scenario suites reference the engine depth audit report contract for CI and chat handoff.",
+        },
         "results": results,
         "truth_label": "Golden scenarios are executable regression cases with explicit blockers and production-readiness expectations.",
     }
