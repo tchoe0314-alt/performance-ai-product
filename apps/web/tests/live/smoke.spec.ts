@@ -48,9 +48,17 @@ async function ensureAppUrl(page: Page) {
 }
 
 async function ensureChatPanel(page: Page) {
-  const chatButton = page.getByRole("button", { name: "Chat" });
-  if (await chatButton.isVisible().catch(() => false)) {
-    await chatButton.click();
+  const chatControls = [
+    page.getByRole("banner").getByRole("button", { name: "Chat" }),
+    page.getByRole("button", { name: "Open chat from sidebar command" }),
+    page.getByRole("button", { name: /^Chat$/ }),
+  ];
+
+  for (const chatButton of chatControls) {
+    if (await chatButton.first().isVisible().catch(() => false)) {
+      await chatButton.first().click();
+      return;
+    }
   }
 }
 
