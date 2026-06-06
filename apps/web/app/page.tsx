@@ -57,6 +57,7 @@ import type {
   PlanRequestPayload,
   PreviewRequestPayload,
   SiteInputs,
+  CanonicalGeometryHandoffV1,
 } from "./types";
 import type { CivoraWorkflowStep } from "./design-system";
 
@@ -333,8 +334,12 @@ const buildCustomGeometryMeta = (
     ? (previousMeta.vertices as Array<{ id?: unknown }>)
     : [];
   const metrics = getCustomGeometryMetrics({ geometry, geometryType, w: 0, d: 0 });
+  const timestamp = new Date().toISOString();
+  const previousCreatedAt =
+    typeof previousMeta?.created_at === "string" ? previousMeta.created_at : timestamp;
   return {
     ...(previousMeta ?? {}),
+    schema_version: "custom_geometry_metadata_v1",
     category: "advanced",
     custom_geometry: true,
     object_id: id,
@@ -348,6 +353,11 @@ const buildCustomGeometryMeta = (
     units,
     coordinate_system: `site_local_${units || "ft"}`,
     coordinates_are: "site_local",
+    source_ui_mode: "canvas_draw",
+    handoff_schema: "canonical_geometry_handoff_v1",
+    handoff_status: "draft_review_required",
+    created_at: previousCreatedAt,
+    updated_at: timestamp,
     vertices: geometry.map(([x, y], idx) => ({
       id:
         typeof previousVertices[idx]?.id === "string"
@@ -364,7 +374,155 @@ const buildCustomGeometryMeta = (
       depth_ft: Number(metrics.depthFt.toFixed(2)),
     },
     canonical_note:
-      "Stored as user-authored project geometry for engineer review. Engineering generation only uses it where existing systems support the object type.",
+      "Stored as user-authored project geometry for engineer review. Backend engineering generation does not automatically consume arbitrary drawn geometry.",
+  };
+};
+
+const isFinitePoint = (point: unknown): point is [number, number] =>
+  Array.isArray(point) &&
+  typeof point[0] === "number" &&
+  typeof point[1] === "number" &&
+  Number.isFinite(point[0]) &&
+  Number.isFinite(point[1]);
+
+const pointsMatch = (a?: [number, number], b?: [number, number]) =>
+  Boolean(a && b && Math.abs(a[0] - b[0]) < 0.0001 && Math.abs(a[1] - b[1]) < 0.0001);
+
+const closeAreaGeometry = (geometry: Array<[number, number]>) => {
+  if (!geometry.length || pointsMatch(geometry[0], geometry[geometry.length - 1])) return geometry;
+  return [...geometry, geometry[0]];
+};
+
+const getMinimumCanonicalVertices = (geometryType: CustomGeometryMode) => {
+  if (geometryType === "point") return 1;
+  if (geometryType === "polyline") return 2;
+  if (geometryType === "polygon") return 4;
+  return 5;
+};
+
+const validateCanonicalGeometryHandoffV1 = (
+  handoff: Omit<CanonicalGeometryHandoffV1, "valid" | "blockers">,
+) => {
+  const blockers: string[] = [];
+  if (!handoff.object_id.trim()) blockers.push("object_id is required");
+  if (!handoff.geometry_id.trim()) blockers.push("geometry_id is required");
+  if (!isCustomGeometryMode(handoff.geometry_type)) {
+    blockers.push("geometry_type must be point, polyline, polygon, or rect");
+  }
+  if (!handoff.units.trim()) blockers.push("units are required");
+  if (!handoff.coordinate_system.trim()) blockers.push("coordinate_system is required");
+  if (handoff.source !== "manual_drawn") blockers.push("source must be manual_drawn");
+  if (handoff.confidence !== "user_drawn_review_required") {
+    blockers.push("confidence must be user_drawn_review_required");
+  }
+  if (handoff.engineering_status !== "draft_review_required") {
+    blockers.push("engineering_status must remain draft_review_required");
+  }
+  const minimumVertices = isCustomGeometryMode(handoff.geometry_type)
+    ? getMinimumCanonicalVertices(handoff.geometry_type)
+    : 0;
+  if (handoff.vertices.length < minimumVertices) {
+    blockers.push(
+      `vertices must include at least ${minimumVertices} point${minimumVertices === 1 ? "" : "s"} for ${handoff.geometry_type}`,
+    );
+  }
+  if (handoff.vertices.some((vertex) => !vertex.id.trim())) {
+    blockers.push("all vertices require stable ids");
+  }
+  if (
+    handoff.vertices.some(
+      (vertex) => !Number.isFinite(vertex.x) || !Number.isFinite(vertex.y),
+    )
+  ) {
+    blockers.push("all vertex coordinates must be finite numbers");
+  }
+  if (handoff.vertices.some((vertex) => !vertex.units.trim())) {
+    blockers.push("all vertices require units");
+  }
+  if (handoff.geometry_type === "polygon" || handoff.geometry_type === "rect") {
+    const first = handoff.vertices[0];
+    const last = handoff.vertices[handoff.vertices.length - 1];
+    if (!first || !last || Math.abs(first.x - last.x) >= 0.0001 || Math.abs(first.y - last.y) >= 0.0001) {
+      blockers.push(`${handoff.geometry_type} geometry must be closed`);
+    }
+  }
+  return blockers;
+};
+
+const buildCanonicalGeometryHandoffV1 = (
+  item: BuildingPlacement,
+  fallbackUnits: string,
+): CanonicalGeometryHandoffV1 | null => {
+  if (item.type !== "custom" || !isCustomGeometryMode(item.geometryType)) return null;
+  const metadata = item.meta ?? {};
+  const objectId =
+    typeof metadata.object_id === "string" && metadata.object_id.trim()
+      ? metadata.object_id
+      : item.id;
+  const geometryId =
+    typeof metadata.geometry_id === "string" && metadata.geometry_id.trim()
+      ? metadata.geometry_id
+      : objectId;
+  const units =
+    typeof metadata.units === "string" && metadata.units.trim()
+      ? metadata.units
+      : fallbackUnits;
+  const coordinateSystem =
+    typeof metadata.coordinate_system === "string" && metadata.coordinate_system.trim()
+      ? metadata.coordinate_system
+      : `site_local_${units || "ft"}`;
+  const rawGeometry = Array.isArray(item.geometry) ? item.geometry : [];
+  const geometry =
+    item.geometryType === "polygon" || item.geometryType === "rect"
+      ? closeAreaGeometry(rawGeometry.filter(isFinitePoint))
+      : rawGeometry.filter(isFinitePoint);
+  const storedVertices = Array.isArray(metadata.vertices)
+    ? (metadata.vertices as Array<{ id?: unknown }>)
+    : [];
+  const metrics = getCustomGeometryMetrics({
+    geometry: rawGeometry.filter(isFinitePoint),
+    geometryType: item.geometryType,
+    w: item.w,
+    d: item.d,
+  });
+  const handoffCore: Omit<CanonicalGeometryHandoffV1, "valid" | "blockers"> = {
+    schema_version: "canonical_geometry_handoff_v1",
+    object_id: objectId,
+    geometry_id: geometryId,
+    object_name: item.label,
+    object_type: item.type,
+    geometry_type: item.geometryType,
+    vertices: geometry.map(([x, y], idx) => ({
+      id:
+        idx < rawGeometry.length && typeof storedVertices[idx]?.id === "string"
+          ? (storedVertices[idx].id as string)
+          : idx >= rawGeometry.length
+            ? `${geometryId}-v-close`
+            : `${geometryId}-v-${idx + 1}`,
+      x,
+      y,
+      units,
+    })),
+    units,
+    coordinate_system: coordinateSystem,
+    source: "manual_drawn",
+    confidence: "user_drawn_review_required",
+    engineering_status: "draft_review_required",
+    metrics: {
+      length_ft: Number(metrics.lengthFt.toFixed(2)),
+      area_sf: Number(metrics.areaSf.toFixed(2)),
+      width_ft: Number(metrics.widthFt.toFixed(2)),
+      depth_ft: Number(metrics.depthFt.toFixed(2)),
+    },
+    created_at: typeof metadata.created_at === "string" ? metadata.created_at : undefined,
+    updated_at: typeof metadata.updated_at === "string" ? metadata.updated_at : undefined,
+    source_ui_mode: "canvas_draw",
+  };
+  const blockers = validateCanonicalGeometryHandoffV1(handoffCore);
+  return {
+    ...handoffCore,
+    valid: blockers.length === 0,
+    blockers,
   };
 };
 
@@ -379,6 +537,42 @@ const formatCustomGeometryMetrics = (item: BuildingPlacement) => {
   }
   return parts.join(" · ");
 };
+
+function CustomGeometryHandoffDetails({
+  item,
+  units,
+  compact = false,
+}: {
+  item: BuildingPlacement;
+  units: string;
+  compact?: boolean;
+}) {
+  const handoff = buildCanonicalGeometryHandoffV1(item, units || "ft");
+  if (!handoff) return null;
+  const blockerText = handoff.blockers.length ? handoff.blockers.join("; ") : "none";
+  return (
+    <div
+      className={`mt-1 space-y-1 uppercase tracking-[0.12em] text-slate-500 ${compact ? "text-[10px]" : "text-[11px]"}`}
+      data-canonical-geometry-handoff="canonical_geometry_handoff_v1"
+      data-object-id={handoff.object_id}
+      data-geometry-id={handoff.geometry_id}
+      data-handoff-valid={handoff.valid ? "true" : "false"}
+    >
+      <p>Canonical geometry · Draft review required</p>
+      <p>Handoff: canonical_geometry_handoff_v1 · {handoff.valid ? "valid draft" : "blocked"}</p>
+      <p>Object ID: {handoff.object_id}</p>
+      <p>Geometry ID: {handoff.geometry_id}</p>
+      <p>Type: {handoff.geometry_type} · Name: {handoff.object_name}</p>
+      <p>{formatCustomGeometryMetrics(item)}</p>
+      <p>Source: manual_drawn · UI: canvas_draw</p>
+      <p>Confidence: user_drawn_review_required</p>
+      <p>Engineering status: draft_review_required</p>
+      {!handoff.valid ? (
+        <p className="text-amber-600">Handoff blockers: {blockerText}</p>
+      ) : null}
+    </div>
+  );
+}
 
 type SystemStatus = "fresh" | "stale" | "not_generated";
 
@@ -1379,6 +1573,36 @@ function PerformanceAIDashboardView({
         meta: placement.meta,
         systemDependencies: placement.systemDependencies,
       }));
+    const canonicalGeometryHandoffs = placementOverrides
+      .map((placement) =>
+        placement.type === "custom"
+          ? buildCanonicalGeometryHandoffV1(
+              {
+                id: placement.id,
+                label: placement.label,
+                type: "custom",
+                x: placement.x,
+                y: placement.y,
+                w: placement.w,
+                d: placement.d,
+                h: placement.height_ft,
+                rotation: placement.rotation,
+                locked: placement.locked,
+                placed: true,
+                source: "manual_drawn",
+                generated: false,
+                geometryType: isCustomGeometryMode(placement.geometry_type)
+                  ? placement.geometry_type
+                  : undefined,
+                geometry: placement.geometry,
+                meta: placement.meta,
+                systemDependencies: placement.systemDependencies,
+              },
+              nextUnits || "ft",
+            )
+          : null,
+      )
+      .filter((handoff): handoff is CanonicalGeometryHandoffV1 => Boolean(handoff));
     const basinOverrides = placementOverrides.filter((placement) => placement.type === "basin");
     const entranceOverrides = placementOverrides.filter((placement) => placement.type === "entrance");
     const parkingOverrides = placementOverrides.filter((placement) => placement.type === "parking");
@@ -1476,8 +1700,16 @@ function PerformanceAIDashboardView({
         geometry_type: placement.geometry_type,
         geometry: placement.geometry,
         meta: placement.meta,
+        canonical_geometry_handoff_v1:
+          placement.type === "custom"
+            ? canonicalGeometryHandoffs.find((handoff) => handoff.object_id === placement.id)
+            : undefined,
         systemDependencies: placement.systemDependencies,
       }));
+    }
+
+    if (canonicalGeometryHandoffs.length) {
+      manualFields.canonical_geometry_handoff_v1 = canonicalGeometryHandoffs;
     }
 
     if (minSlopeValue !== null) {
@@ -12012,7 +12244,7 @@ function PerformanceAIDashboardView({
                               {item.label}
                               <span className="mt-1 block text-[10px] uppercase tracking-[0.12em] opacity-70">
                                 {item.type === "custom"
-                                  ? "Canonical geometry · Engineering review draft"
+                                  ? "Canonical geometry · Draft review required"
                                   : `${item.placed ? "Placed" : "Not placed"} · ${item.locked ? "Locked" : "Editable"}`}
                               </span>
                             </button>
@@ -12392,14 +12624,7 @@ function PerformanceAIDashboardView({
                                     {item.placed ? "Placed" : "Unplaced"}
                                   </p>
                                   {item.type === "custom" ? (
-                                    <div className="mt-1 space-y-1 uppercase tracking-[0.12em] text-slate-500">
-                                      <p>Canonical geometry · Engineering review draft</p>
-                                      <p>Type: {item.geometryType ?? "custom"} · Name: {item.label}</p>
-                                      <p>{formatCustomGeometryMetrics(item)}</p>
-                                      <p>Source: manual_drawn</p>
-                                      <p>Confidence: user_drawn_review_required</p>
-                                      <p>Engineering status: draft/review_required</p>
-                                    </div>
+                                    <CustomGeometryHandoffDetails item={item} units={units} />
                                   ) : null}
                                 </div>
                                 {item.type !== "site" ? (
@@ -13346,14 +13571,7 @@ function PerformanceAIDashboardView({
                                 <span>{item.w} ft x {item.d} ft</span>
                               </div>
                               {item.type === "custom" ? (
-                                <div className="mt-1 space-y-1 text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                                  <p>Canonical geometry · Engineering review draft</p>
-                                  <p>Type: {item.geometryType ?? "custom"} · Name: {item.label}</p>
-                                  <p>{formatCustomGeometryMetrics(item)}</p>
-                                  <p>Source: manual_drawn</p>
-                                  <p>Confidence: user_drawn_review_required</p>
-                                  <p>Engineering status: draft/review_required</p>
-                                </div>
+                                <CustomGeometryHandoffDetails item={item} units={units} />
                               ) : null}
                               {item.type !== "site" ? (
                                 <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-600">
@@ -13777,14 +13995,7 @@ function PerformanceAIDashboardView({
                                 <span>{item.w} ft x {item.d} ft</span>
                               </div>
                               {item.type === "custom" ? (
-                                <div className="mt-1 space-y-1 text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                                  <p>Canonical geometry · Engineering review draft</p>
-                                  <p>Type: {item.geometryType ?? "custom"} · Name: {item.label}</p>
-                                  <p>{formatCustomGeometryMetrics(item)}</p>
-                                  <p>Source: manual_drawn</p>
-                                  <p>Confidence: user_drawn_review_required</p>
-                                  <p>Engineering status: draft/review_required</p>
-                                </div>
+                                <CustomGeometryHandoffDetails item={item} units={units} />
                               ) : null}
                               {typeof item.x === "number" && typeof item.y === "number" ? (
                                 <div className="mt-1 text-[11px] text-slate-500">

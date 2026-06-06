@@ -445,6 +445,43 @@ export type ProjectInputMeta = Record<string, unknown> & {
   };
 };
 
+export type CanonicalGeometryType = "polyline" | "polygon" | "rect" | "point";
+
+export type CanonicalGeometryHandoffVertexV1 = {
+  id: string;
+  x: number;
+  y: number;
+  units: string;
+};
+
+export type CanonicalGeometryHandoffMetricsV1 = {
+  length_ft?: number;
+  area_sf?: number;
+  width_ft?: number;
+  depth_ft?: number;
+};
+
+export type CanonicalGeometryHandoffV1 = {
+  schema_version: "canonical_geometry_handoff_v1";
+  object_id: string;
+  geometry_id: string;
+  object_name: string;
+  object_type: string;
+  geometry_type: CanonicalGeometryType;
+  vertices: CanonicalGeometryHandoffVertexV1[];
+  units: string;
+  coordinate_system: string;
+  source: "manual_drawn";
+  confidence: "user_drawn_review_required";
+  engineering_status: "draft_review_required";
+  metrics: CanonicalGeometryHandoffMetricsV1;
+  created_at?: string;
+  updated_at?: string;
+  source_ui_mode: "canvas_draw";
+  valid: boolean;
+  blockers: string[];
+};
+
 export type ManualFields = {
   project_name?: string;
   file_name?: string;
@@ -491,8 +528,10 @@ export type ManualFields = {
     geometry_type?: "polygon" | "polyline" | "rect" | "point";
     geometry?: Array<[number, number]>;
     meta?: Record<string, unknown>;
+    canonical_geometry_handoff_v1?: CanonicalGeometryHandoffV1;
     systemDependencies?: string[];
   }>;
+  canonical_geometry_handoff_v1?: CanonicalGeometryHandoffV1[];
   site_plan?: { parking_count?: number };
   grading?: {
     min_slope_pct?: number;
