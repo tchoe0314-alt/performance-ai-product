@@ -1098,7 +1098,7 @@ function PerformanceAIDashboardView({
   const effectiveDemoWorkspaceEnabled = forceDemoWorkspace || routeDemoWorkspaceEnabled || demoWorkspaceEnabled;
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [chatCollapsed, setChatCollapsed] = useState(false);
-  const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>("site_existing");
+  const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>(null);
   const [activeWorkspaceMode, setActiveWorkspaceMode] = useState<WorkspaceMode>("setup");
   const [imageName, setImageName] = useState("");
   const [siteName, setSiteName] = useState("");
