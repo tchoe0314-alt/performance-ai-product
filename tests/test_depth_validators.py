@@ -66,6 +66,16 @@ class DepthValidatorTests(unittest.TestCase):
         )
 
         self.assertTrue(result["production_ready"])
+        self.assertEqual(result["hgl_egl_trace"]["expected"], "production_hgl_and_egl_profile_rows")
+        self.assertEqual(result["hgl_egl_trace"]["actual_hgl_count"], 1)
+        self.assertEqual(result["hgl_egl_trace"]["actual_egl_count"], 1)
+        self.assertEqual(result["tailwater_backwater_trace"]["actual_tailwater_elev_ft"], 98.0)
+        self.assertTrue(result["inlet_capacity_trace"][0]["actual_valid"])
+        self.assertEqual(result["detention_routing_trace"][0]["expected_storage_cf"], 0.0)
+        self.assertEqual(result["detention_routing_trace"][0]["actual_storage_cf"], 4200.0)
+        self.assertEqual(result["overflow_capacity_trace"][0]["expected_capacity_cfs"], 4.0)
+        self.assertEqual(result["overflow_capacity_trace"][0]["actual_capacity_cfs"], 5.0)
+        self.assertTrue(result["expected_actual_checks"])
 
     def test_stormwater_depth_accepts_enriched_production_detention_outlet_drawdown(self) -> None:
         drainage = enrich_drainage_production_depth(
@@ -338,6 +348,7 @@ class DepthValidatorTests(unittest.TestCase):
 
         self.assertFalse(result["production_ready"])
         self.assertIn("Storm depth needs production detention stage-storage/outlet/drawdown routing.", result["blockers"])
+        self.assertFalse(result["detention_routing_trace"][0]["valid"])
 
     def test_stormwater_depth_blocks_under_sized_detention_storage(self) -> None:
         result = validate_stormwater_depth(

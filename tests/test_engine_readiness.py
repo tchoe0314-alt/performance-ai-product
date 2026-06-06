@@ -28,6 +28,7 @@ class EngineReadinessTests(unittest.TestCase):
         storm = readiness["engines"]["storm_pipe"]
         self.assertEqual(storm["status"], "concept_ready_needs_production_depth")
         self.assertEqual(storm["review_state"], "needs_review")
+        self.assertIn("storm_depth", {item["area"] for item in storm["production_blockers"]})
         self.assertEqual(readiness["review_state"], "needs_review")
         alpha = readiness["summary"]["alpha_readiness"]
         self.assertEqual(alpha["status"], "needs_review")
@@ -107,6 +108,16 @@ class EngineReadinessTests(unittest.TestCase):
         self.assertTrue(detail["what_failed"])
         self.assertTrue(detail["next_action"])
         self.assertTrue(detail["engineer_review_required"])
+
+    def test_hydrology_uses_storm_depth_blockers_for_hydraulic_evidence(self) -> None:
+        readiness = evaluate_engine_readiness({"meta": _complete_meta()})
+
+        hydrology = readiness["engines"]["hydrology"]
+        self.assertEqual(hydrology["status"], "concept_ready_needs_production_depth")
+        self.assertIn("hydrology_depth", {item["area"] for item in hydrology["production_blockers"]})
+        messages = {item["message"] for item in hydrology["production_blockers"] if item.get("area") == "hydrology_depth"}
+        self.assertIn("Storm depth needs HGL and EGL profiles from production hydraulic evidence.", messages)
+        self.assertIn("Storm depth needs tailwater/backwater evidence.", messages)
 
     def test_profile_section_depth_blockers_feed_engine_readiness(self) -> None:
         readiness = evaluate_engine_readiness(

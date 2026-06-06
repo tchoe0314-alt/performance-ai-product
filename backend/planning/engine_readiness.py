@@ -6,7 +6,7 @@ from typing import Any, Dict, Iterable, List, Sequence, Set, Tuple
 from core.civil_design import civil_design_readiness
 
 from .common import readiness_issue_explanations
-from .depth_validators import validate_profile_section_depth
+from .depth_validators import validate_profile_section_depth, validate_stormwater_depth
 from .engine_contracts import EngineContract, engine_contracts
 from .reactive_model import validate_reactive_model_depth
 
@@ -225,12 +225,18 @@ def _warnings_for_systems(civil_readiness: Dict[str, Any], system_names: Sequenc
 
 def _depth_validation_for_engine(engine_id: str, meta: Dict[str, Any]) -> Dict[str, Any]:
     validations = _safe_dict(meta.get("depth_validation"))
+    has_storm_or_drainage = bool(
+        _safe_dict(meta.get("storm_pipes") or meta.get("storm_pipe_summary"))
+        or _safe_dict(meta.get("drainage") or meta.get("drainage_canonical"))
+    )
     if engine_id == "storm_pipe":
-        return _safe_dict(validations.get("stormwater"))
+        return _safe_dict(validations.get("stormwater")) or (validate_stormwater_depth(meta) if has_storm_or_drainage else {})
     if engine_id == "water":
         return _safe_dict(validations.get("water"))
     if engine_id == "roadway_corridor":
         return _safe_dict(validations.get("roadway_corridor"))
+    if engine_id == "hydrology":
+        return _safe_dict(validations.get("hydrology")) or _safe_dict(validations.get("stormwater")) or (validate_stormwater_depth(meta) if has_storm_or_drainage else {})
     if engine_id == "profile_section":
         return _safe_dict(validations.get("profile_section")) or validate_profile_section_depth(meta)
     if engine_id == "reactive_model":
@@ -246,6 +252,7 @@ def _depth_blockers_for_engine(engine_id: str, meta: Dict[str, Any]) -> List[Dic
         "storm_pipe": "storm_depth",
         "water": "water_depth",
         "roadway_corridor": "roadway_depth",
+        "hydrology": "hydrology_depth",
         "profile_section": "profile_section_depth",
         "reactive_model": "reactive_model_depth",
     }.get(engine_id, "engine_depth")

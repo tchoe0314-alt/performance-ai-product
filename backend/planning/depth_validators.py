@@ -519,6 +519,84 @@ def _has_valid_drainage_target(storm: Dict[str, Any], drainage: Dict[str, Any]) 
     return bool(target or basins)
 
 
+def _storm_hgl_egl_expected_actual(storm: Dict[str, Any], hgl_rows: List[Dict[str, Any]], egl_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    valid = bool(hgl_rows and egl_rows and ((_has_production_rows(hgl_rows) and _has_production_rows(egl_rows)) or storm.get("hydraulic_source") == "engine"))
+    return {
+        "expected": "production_hgl_and_egl_profile_rows",
+        "actual_hgl_count": len(hgl_rows),
+        "actual_egl_count": len(egl_rows),
+        "hydraulic_source": safe_str(storm.get("hydraulic_source")),
+        "valid": valid,
+    }
+
+
+def _storm_tailwater_expected_actual(storm: Dict[str, Any]) -> Dict[str, Any]:
+    tailwater = storm.get("tailwater_elev_ft")
+    backwater = safe_dict(storm.get("backwater_validation"))
+    return {
+        "expected": "tailwater_elev_ft_present_with_backwater_context",
+        "actual_tailwater_elev_ft": tailwater,
+        "backwater_valid": backwater.get("valid"),
+        "tailwater_controls_hgl": backwater.get("tailwater_controls_hgl"),
+        "valid": _present(tailwater),
+    }
+
+
+def _storm_inlet_expected_actual(inlet_checks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for index, inlet in enumerate(inlet_checks):
+        rows.append(
+            {
+                "inlet": safe_str(inlet.get("inlet") or inlet.get("name") or inlet.get("id"), f"inlet-{index + 1}"),
+                "expected_valid": True,
+                "actual_valid": inlet.get("valid"),
+                "expected_bypass_cfs": 0.0,
+                "actual_bypass_cfs": safe_float(inlet.get("bypass_cfs"), 0.0),
+                "expected_spread_lte_ft": safe_float(inlet.get("spread_limit_ft"), safe_float(inlet.get("gutter_spread_limit_ft"), 0.0)),
+                "actual_spread_ft": safe_float(inlet.get("spread_ft"), 0.0),
+                "valid": inlet.get("valid") is True,
+            }
+        )
+    return rows
+
+
+def _storm_detention_expected_actual(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    checks: List[Dict[str, Any]] = []
+    for index, row in enumerate(rows):
+        rec = safe_dict(row)
+        checks.append(
+            {
+                "basin": safe_str(rec.get("basin") or rec.get("name"), f"basin-{index + 1}"),
+                "expected_storage_cf": safe_float(rec.get("required_storage_cf"), 0.0),
+                "actual_storage_cf": safe_float(rec.get("provided_storage_cf") or rec.get("storage_cf"), 0.0),
+                "expected_release_cfs_gt": 0.0,
+                "actual_release_cfs": max(safe_float(rec.get("release_cfs"), 0.0), safe_float(rec.get("outlet_release_cfs"), 0.0), safe_float(rec.get("outflow_cfs"), 0.0)),
+                "expected_drawdown_hours_gt": 0.0,
+                "actual_drawdown_hours": max(safe_float(rec.get("drawdown_hours"), 0.0), safe_float(rec.get("estimated_drawdown_hours"), 0.0), safe_float(rec.get("actual_drawdown_hours"), 0.0)),
+                "valid": _has_valid_detention_routing(rec),
+            }
+        )
+    return checks
+
+
+def _storm_overflow_expected_actual(drainage: Dict[str, Any], storm: Dict[str, Any]) -> List[Dict[str, Any]]:
+    paths = [safe_dict(path) for path in safe_list(drainage.get("overflow_paths") or storm.get("overflow_paths")) if safe_dict(path)]
+    rows: List[Dict[str, Any]] = []
+    for index, path in enumerate(paths):
+        rows.append(
+            {
+                "path": safe_str(path.get("name") or path.get("id"), f"overflow-{index + 1}"),
+                "expected_capacity_cfs": safe_float(path.get("required_capacity_cfs"), 0.0),
+                "actual_capacity_cfs": safe_float(path.get("capacity_cfs") or path.get("spillway_capacity_cfs"), 0.0),
+                "expected_capacity_valid": True,
+                "actual_capacity_valid": path.get("capacity_valid"),
+                "valid": path.get("capacity_valid") is True
+                and safe_float(path.get("capacity_cfs") or path.get("spillway_capacity_cfs"), 0.0) >= safe_float(path.get("required_capacity_cfs"), 0.0),
+            }
+        )
+    return rows
+
+
 def _all_rows_valid(rows: Iterable[Dict[str, Any]]) -> bool:
     clean_rows = [safe_dict(row) for row in rows]
     return bool(clean_rows) and all(row.get("valid") is True for row in clean_rows)
@@ -620,12 +698,17 @@ def validate_stormwater_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
             safe_dict(row)
             for row in safe_list(safe_dict(basin).get("detention_routing") or safe_dict(basin).get("stage_storage"))
         )
+    hgl_egl_trace = _storm_hgl_egl_expected_actual(storm, hgl_rows, egl_rows)
+    tailwater_trace = _storm_tailwater_expected_actual(storm)
+    inlet_trace = _storm_inlet_expected_actual(inlet_checks)
+    detention_trace = _storm_detention_expected_actual(detention_rows)
+    overflow_trace = _storm_overflow_expected_actual(drainage, storm)
     checks = [
         _check("basin_outfall_target", _has_valid_drainage_target(storm, drainage), evidence="drainage basin/outfall target", blocker="Storm depth needs drainage-selected basin/outfall target evidence."),
         _check("tributary_areas", any(safe_float(seg.get("tributary_area_sf") or seg.get("upstream_cumulative_area_sf"), 0.0) > 0.0 for seg in segments) or bool(catchments), evidence="tributary areas/catchments", blocker="Storm depth needs true tributary areas tied to pipes or catchments."),
         _check("runoff_coefficients", any(_present(safe_dict(item).get("runoff_c") or safe_dict(item).get("runoff_coefficient")) for item in catchments) or _present(drainage.get("runoff_coefficient")), evidence="runoff coefficients", blocker="Storm depth needs runoff coefficients by catchment/surface."),
-        _check("hgl_egl_profiles", bool(hgl_rows and egl_rows and ((_has_production_rows(hgl_rows) and _has_production_rows(egl_rows)) or storm.get("hydraulic_source") == "engine")), evidence="HGL/EGL profile rows", blocker="Storm depth needs HGL and EGL profiles from production hydraulic evidence."),
-        _check("tailwater", _present(storm.get("tailwater_elev_ft")), evidence="tailwater elevation", blocker="Storm depth needs tailwater/backwater evidence."),
+        _check("hgl_egl_profiles", hgl_egl_trace["valid"], evidence="HGL/EGL profile rows", blocker="Storm depth needs HGL and EGL profiles from production hydraulic evidence."),
+        _check("tailwater", tailwater_trace["valid"], evidence="tailwater elevation", blocker="Storm depth needs tailwater/backwater evidence."),
         _check(
             "inlet_capacity",
             _all_rows_valid(inlet_checks),
@@ -645,7 +728,18 @@ def validate_stormwater_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
             blocker="Storm depth needs overflow routing evidence.",
         ),
     ]
-    return _finalize("stormwater_depth", checks)
+    result = _finalize("stormwater_depth", checks)
+    result.update(
+        {
+            "hgl_egl_trace": hgl_egl_trace,
+            "tailwater_backwater_trace": tailwater_trace,
+            "inlet_capacity_trace": inlet_trace,
+            "detention_routing_trace": detention_trace,
+            "overflow_capacity_trace": overflow_trace,
+            "expected_actual_checks": [hgl_egl_trace, tailwater_trace, *inlet_trace, *detention_trace, *overflow_trace],
+        }
+    )
+    return result
 
 
 def validate_water_system_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
