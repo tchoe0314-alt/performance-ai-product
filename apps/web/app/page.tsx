@@ -7747,7 +7747,7 @@ function PerformanceAIDashboardView({
                   provider: "mapbox",
                 };
               })
-              .filter(Boolean) as { lat: number; lng: number; display_name: string; provider: string }[];
+              .filter(Boolean) as AddressSuggestion[];
             setAddressSuggestions(suggestions);
           })
           .catch(() => {
@@ -7758,7 +7758,7 @@ function PerformanceAIDashboardView({
         fallbackToMapbox();
         return;
       }
-      void postJson<{ lat: number; lng: number; display_name: string; provider: string }>(
+      void postJson<AddressSuggestion>(
         "/api/geocode",
         { address: trimmed },
         { token },
