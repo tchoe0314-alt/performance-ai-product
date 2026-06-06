@@ -168,6 +168,15 @@ class EngineDepthAuditTests(unittest.TestCase):
         )
         self.assertTrue(report["blocker_details"][0]["next_action"])
 
+    def test_profile_section_missing_evidence_is_review_depth_not_concept(self) -> None:
+        report = run_engine_depth_audit_for_scenario("roadway_corridor", build_plan_fn=_review_depth_plan)
+
+        row = report["engine_results"]["profile_section"]
+        self.assertEqual(row["actual_depth_classification"], CLASS_REVIEW)
+        self.assertEqual(row["score"], 70.0)
+        self.assertEqual(row["first_failing_layer"], "depth_validation")
+        self.assertIn("profile_section_depth", {item["area"] for item in row["blockers"]})
+
     def test_audit_writes_report_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "engine_depth_audit.json"

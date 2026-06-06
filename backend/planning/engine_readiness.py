@@ -6,6 +6,7 @@ from typing import Any, Dict, Iterable, List, Sequence, Set, Tuple
 from core.civil_design import civil_design_readiness
 
 from .common import readiness_issue_explanations
+from .depth_validators import validate_profile_section_depth
 from .engine_contracts import EngineContract, engine_contracts
 
 
@@ -229,6 +230,8 @@ def _depth_validation_for_engine(engine_id: str, meta: Dict[str, Any]) -> Dict[s
         return _safe_dict(validations.get("water"))
     if engine_id == "roadway_corridor":
         return _safe_dict(validations.get("roadway_corridor"))
+    if engine_id == "profile_section":
+        return _safe_dict(validations.get("profile_section")) or validate_profile_section_depth(meta)
     return {}
 
 
@@ -240,6 +243,7 @@ def _depth_blockers_for_engine(engine_id: str, meta: Dict[str, Any]) -> List[Dic
         "storm_pipe": "storm_depth",
         "water": "water_depth",
         "roadway_corridor": "roadway_depth",
+        "profile_section": "profile_section_depth",
     }.get(engine_id, "engine_depth")
     return [
         {

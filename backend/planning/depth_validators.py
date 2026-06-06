@@ -181,6 +181,269 @@ def _has_valid_section(row: Dict[str, Any]) -> bool:
     return bool(_present(rec.get("station_ft")) and len(points) >= 3 and _present(rec.get("alignment_owner") or rec.get("alignment_id") or rec.get("alignment")))
 
 
+def _canonical_alignment_id(row: Dict[str, Any]) -> str:
+    rec = safe_dict(row)
+    for key in ("canonical_alignment_id", "alignment_id", "canonical_id", "id", "name"):
+        value = safe_str(rec.get(key))
+        if value:
+            return value
+    return ""
+
+
+def _profile_alignment_id(row: Dict[str, Any]) -> str:
+    rec = safe_dict(row)
+    for key in ("canonical_alignment_id", "alignment_id", "alignment_owner_id", "alignment_ref", "alignment_name", "alignment_owner"):
+        value = safe_str(rec.get(key))
+        if value:
+            return value
+    return ""
+
+
+def _surface_traceability(meta: Dict[str, Any]) -> Dict[str, Any]:
+    grading = safe_dict(meta.get("grading") or meta.get("grading_summary"))
+    trace = safe_dict(
+        meta.get("surface_traceability")
+        or grading.get("surface_traceability")
+        or safe_dict(meta.get("earthwork") or meta.get("earthwork_summary")).get("surface_traceability")
+    )
+    existing_id = safe_str(
+        trace.get("existing_surface_id")
+        or grading.get("existing_surface_id")
+        or meta.get("existing_surface_id")
+        or safe_dict(grading.get("existing_surface")).get("id")
+    )
+    proposed_id = safe_str(
+        trace.get("proposed_surface_id")
+        or grading.get("proposed_surface_id")
+        or meta.get("proposed_surface_id")
+        or safe_dict(grading.get("proposed_surface")).get("id")
+    )
+    accepted = bool(
+        trace.get("valid") is True
+        or trace.get("accepted_surfaces") is True
+        or grading.get("accepted_surfaces") is True
+        or meta.get("accepted_surfaces") is True
+    )
+    missing = [
+        name
+        for name, ok in (
+            ("accepted_surfaces", accepted),
+            ("existing_surface_id", bool(existing_id)),
+            ("proposed_surface_id", bool(proposed_id)),
+        )
+        if not ok
+    ]
+    return {
+        "valid": not missing,
+        "accepted_surfaces": accepted,
+        "existing_surface_id": existing_id,
+        "proposed_surface_id": proposed_id,
+        "missing_inputs": missing,
+        "truth_label": "Profile/section surface traceability requires accepted existing and proposed surface IDs.",
+    }
+
+
+def _section_surface_id(row: Dict[str, Any], key: str, trace: Dict[str, Any]) -> str:
+    rec = safe_dict(row)
+    if key == "existing":
+        return safe_str(rec.get("existing_surface_id") or rec.get("eg_surface_id") or trace.get("existing_surface_id"))
+    return safe_str(rec.get("proposed_surface_id") or rec.get("fg_surface_id") or trace.get("proposed_surface_id"))
+
+
+def _profile_band_rows(profiles: Iterable[Dict[str, Any]], explicit_bands: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for band in explicit_bands:
+        rec = safe_dict(band)
+        if rec:
+            rows.append(rec)
+    for profile in profiles:
+        profile_rec = safe_dict(profile)
+        profile_system = safe_str(profile_rec.get("source_system") or profile_rec.get("alignment_type"))
+        for band in safe_list(profile_rec.get("profile_bands") or profile_rec.get("pipe_band_records") or profile_rec.get("bands")):
+            rec = safe_dict(band)
+            if not rec:
+                continue
+            if profile_system and not safe_str(rec.get("system") or rec.get("source_system") or rec.get("utility_type")):
+                rec = {**rec, "source_system": profile_system}
+            rows.append(rec)
+    return rows
+
+
+def _required_profile_band_systems(meta: Dict[str, Any]) -> List[str]:
+    systems: List[str] = []
+    storm = safe_dict(meta.get("storm_pipes") or meta.get("storm_pipe_summary"))
+    sanitary = safe_dict(meta.get("sanitary") or meta.get("sanitary_summary"))
+    utilities = safe_dict(meta.get("utilities") or meta.get("utility_summary") or meta.get("water") or meta.get("water_summary"))
+    if safe_list(storm.get("segments")):
+        systems.append("storm")
+    if safe_list(sanitary.get("segments")):
+        systems.append("sanitary")
+    hooks = safe_dict(utilities.get("conflict_hooks"))
+    if safe_list(utilities.get("segments") or hooks.get("utility_segments")):
+        systems.append("water")
+    return systems
+
+
+def _band_system(row: Dict[str, Any]) -> str:
+    system = safe_str(row.get("system") or row.get("source_system") or row.get("utility_type") or row.get("alignment_type")).lower()
+    if system in {"storm_pipe", "stormwater"}:
+        return "storm"
+    if system in {"sanitary_pipe", "sewer"}:
+        return "sanitary"
+    if system in {"water", "fire_water", "utility", "utilities"}:
+        return "water"
+    return system
+
+
+def _has_retaining_wall_scope(meta: Dict[str, Any]) -> bool:
+    structures = safe_dict(meta.get("structures") or meta.get("structure_summary"))
+    grading = safe_dict(meta.get("grading") or meta.get("grading_summary"))
+    return bool(
+        safe_list(meta.get("retaining_walls"))
+        or safe_list(structures.get("retaining_walls"))
+        or safe_list(grading.get("retaining_walls"))
+    )
+
+
+def _is_wall_section(row: Dict[str, Any]) -> bool:
+    rec = safe_dict(row)
+    source = safe_str(rec.get("source_system") or rec.get("alignment_type") or rec.get("section_type") or rec.get("ownership_class")).lower()
+    return bool(
+        safe_str(rec.get("retaining_wall_id") or rec.get("wall_id"))
+        or "retaining" in source
+        or "wall" in source
+    )
+
+
+def validate_profile_section_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
+    meta = safe_dict(plan_or_meta.get("meta")) if "meta" in plan_or_meta else safe_dict(plan_or_meta)
+    alignments = [safe_dict(row) for row in safe_list(meta.get("alignments") or meta.get("road_alignments")) if safe_dict(row)]
+    profiles = [safe_dict(row) for row in safe_list(meta.get("profiles") or meta.get("road_profiles")) if safe_dict(row)]
+    sections = [safe_dict(row) for row in safe_list(meta.get("cross_sections") or meta.get("corridor_sections")) if safe_dict(row)]
+    surface_trace = _surface_traceability(meta)
+    canonical_alignment_ids = sorted({value for value in (_canonical_alignment_id(row) for row in alignments) if value})
+
+    profile_trace_checks: List[Dict[str, Any]] = []
+    for profile in profiles:
+        profile_id = safe_str(profile.get("name") or profile.get("id"), "profile")
+        alignment_id = _profile_alignment_id(profile)
+        samples = safe_list(profile.get("profile_points") or profile.get("stations") or profile.get("points") or profile.get("samples"))
+        valid = bool(alignment_id and alignment_id in canonical_alignment_ids and len(samples) >= 2)
+        profile_trace_checks.append(
+            {
+                "profile": profile_id,
+                "expected_alignment_ids": canonical_alignment_ids,
+                "actual_alignment_id": alignment_id,
+                "sample_count": len(samples),
+                "valid": valid,
+            }
+        )
+
+    section_trace_checks: List[Dict[str, Any]] = []
+    for section in sections:
+        section_id = safe_str(section.get("name") or section.get("id"), "section")
+        alignment_id = _profile_alignment_id(section)
+        samples = safe_list(section.get("section_points") or section.get("samples") or section.get("points"))
+        existing_id = _section_surface_id(section, "existing", surface_trace)
+        proposed_id = _section_surface_id(section, "proposed", surface_trace)
+        valid = bool(
+            alignment_id
+            and alignment_id in canonical_alignment_ids
+            and len(samples) >= 3
+            and surface_trace.get("valid") is True
+            and existing_id == surface_trace.get("existing_surface_id")
+            and proposed_id == surface_trace.get("proposed_surface_id")
+        )
+        section_trace_checks.append(
+            {
+                "section": section_id,
+                "expected_alignment_ids": canonical_alignment_ids,
+                "actual_alignment_id": alignment_id,
+                "expected_existing_surface_id": surface_trace.get("existing_surface_id"),
+                "actual_existing_surface_id": existing_id,
+                "expected_proposed_surface_id": surface_trace.get("proposed_surface_id"),
+                "actual_proposed_surface_id": proposed_id,
+                "sample_count": len(samples),
+                "valid": valid,
+            }
+        )
+
+    required_band_systems = _required_profile_band_systems(meta)
+    band_rows = _profile_band_rows(profiles, safe_list(meta.get("profile_bands")))
+    band_checks = []
+    for system in required_band_systems:
+        matching = [row for row in band_rows if _band_system(row) == system]
+        band_checks.append(
+            {
+                "system": system,
+                "expected": "profile_band_row_present",
+                "actual_count": len(matching),
+                "valid": bool(matching),
+            }
+        )
+
+    wall_scope = _has_retaining_wall_scope(meta)
+    wall_sections = [row for row in sections if _is_wall_section(row)]
+    wall_tie_in_checks = [
+        safe_dict(row)
+        for row in safe_list(meta.get("wall_tie_in_checks") or safe_dict(meta.get("structures") or meta.get("structure_summary")).get("wall_tie_in_checks"))
+        if safe_dict(row)
+    ]
+    wall_valid = not wall_scope or bool(wall_sections and any(row.get("valid") is not False for row in wall_tie_in_checks + wall_sections))
+    wall_check = {
+        "scope_required": wall_scope,
+        "wall_section_count": len(wall_sections),
+        "tie_in_check_count": len(wall_tie_in_checks),
+        "valid": wall_valid,
+    }
+
+    export_audit = safe_dict(meta.get("export_audit"))
+    requested = safe_dict(export_audit.get("requested_vs_produced"))
+    requested_profiles_missing = bool(requested.get("missing_requested_profiles"))
+    requested_sections_missing = bool(requested.get("missing_requested_sections"))
+    export_linkage_required = bool(export_audit) or bool(requested)
+    export_linkage = {
+        "required": export_linkage_required,
+        "expected_profile_count": len(profiles),
+        "actual_export_profile_count": safe_float(export_audit.get("canonical_profile_count"), len(profiles)) if export_audit else len(profiles),
+        "expected_section_count": len(sections),
+        "actual_export_section_count": safe_float(export_audit.get("canonical_cross_section_count"), len(sections)) if export_audit else len(sections),
+        "missing_requested_profiles": requested_profiles_missing,
+        "missing_requested_sections": requested_sections_missing,
+    }
+    export_linkage["valid"] = bool(
+        not requested_profiles_missing
+        and not requested_sections_missing
+        and (not export_audit or safe_float(export_linkage["actual_export_profile_count"], 0.0) >= len(profiles))
+        and (not export_audit or safe_float(export_linkage["actual_export_section_count"], 0.0) >= len(sections))
+    )
+
+    checks = [
+        _check("canonical_alignments", bool(canonical_alignment_ids), evidence="canonical alignment IDs", blocker="Profile/section depth needs canonical alignment IDs."),
+        _check("profiles", bool(profiles), evidence="profile rows", blocker="Profile/section depth needs profile rows."),
+        _check("profiles_trace_alignments", bool(profile_trace_checks) and all(row["valid"] for row in profile_trace_checks), evidence="profiles trace canonical alignments", blocker="Profile/section depth needs every profile to trace a canonical alignment ID."),
+        _check("accepted_surfaces", surface_trace.get("valid") is True, evidence="accepted surface IDs", blocker="Profile/section depth needs accepted existing/proposed surface IDs."),
+        _check("sections", bool(sections), evidence="cross-section rows", blocker="Profile/section depth needs cross-section rows."),
+        _check("sections_trace_surfaces", bool(section_trace_checks) and all(row["valid"] for row in section_trace_checks), evidence="sections trace accepted surfaces", blocker="Profile/section depth needs sections tied to accepted surface IDs."),
+        _check("profile_bands", all(row["valid"] for row in band_checks), evidence="utility/storm/sanitary profile bands", blocker="Profile/section depth needs profile band rows for existing storm, sanitary, and water systems."),
+        _check("retaining_wall_sections", wall_check["valid"], evidence="retaining wall section/tie-in evidence", blocker="Profile/section depth needs retaining wall section and tie-in evidence when wall scope exists."),
+        _check("export_linkage", export_linkage["valid"], evidence="export profile/section linkage", blocker="Profile/section depth needs export/profile-section linkage when profile or section deliverables are requested."),
+    ]
+    result = _finalize("profile_section_depth", checks)
+    result.update(
+        {
+            "profile_trace_checks": profile_trace_checks,
+            "section_trace_checks": section_trace_checks,
+            "surface_traceability": surface_trace,
+            "profile_band_checks": band_checks,
+            "retaining_wall_section_check": wall_check,
+            "export_linkage": export_linkage,
+            "expected_actual_checks": profile_trace_checks + section_trace_checks + band_checks + [wall_check, export_linkage],
+        }
+    )
+    return result
+
+
 def _has_valid_detention_routing(row: Dict[str, Any]) -> bool:
     rec = safe_dict(row)
     if not _row_is_production_evidence(rec):
@@ -439,6 +702,7 @@ def validate_roadway_corridor_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, A
 
 
 __all__ = [
+    "validate_profile_section_depth",
     "validate_roadway_corridor_depth",
     "validate_stormwater_depth",
     "validate_water_system_depth",

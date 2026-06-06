@@ -175,6 +175,12 @@ def _production_ready_meta() -> dict:
     meta["grading"]["pad_tie_ins"] = [{"building": "B-1", "valid": True}]
     meta["grading"]["contours"] = [{"elev": 100.0, "points": [[0.0, 0.0], [10.0, 0.0]]}]
     meta["grading"]["contour_interval_ft"] = 2.0
+    meta["grading"]["surface_traceability"] = {
+        "valid": True,
+        "accepted_surfaces": True,
+        "existing_surface_id": "EG-FINAL-1",
+        "proposed_surface_id": "FG-FINAL-1",
+    }
     meta["drainage"]["detention_routing"] = [{"basin": "BASIN-1", "valid": True}]
     meta["storm_pipes"]["hgl_profile"] = [{"station": 0.0, "hgl_ft": 98.0}]
     meta["storm_pipes"]["egl_profile"] = [{"station": 0.0, "egl_ft": 98.2}]
@@ -186,6 +192,29 @@ def _production_ready_meta() -> dict:
         "water": {"production_ready": True, "blockers": [], "canonical_model_id": "MODEL-FINAL-1"},
         "roadway_corridor": {"production_ready": True, "blockers": [], "canonical_model_id": "MODEL-FINAL-1"},
     }
+    meta["alignments"] = [{"id": "ALG-ROAD-1", "name": "Road A", "points": [[0.0, 0.0], [100.0, 0.0]]}]
+    meta["profiles"] = [
+        {
+            "name": "Road A Profile",
+            "alignment_id": "ALG-ROAD-1",
+            "stations": [{"station_ft": 0.0}, {"station_ft": 100.0}],
+            "profile_bands": [
+                {"system": "storm", "segment_id": "P-1"},
+                {"system": "sanitary", "segment_id": "SAN-1"},
+                {"system": "water", "segment_id": "W-1"},
+            ],
+        }
+    ]
+    meta["cross_sections"] = [
+        {
+            "name": "Road A Section 1",
+            "alignment_id": "ALG-ROAD-1",
+            "station_ft": 50.0,
+            "existing_surface_id": "EG-FINAL-1",
+            "proposed_surface_id": "FG-FINAL-1",
+            "samples": [{"offset_ft": -12.0}, {"offset_ft": 0.0}, {"offset_ft": 12.0}],
+        }
+    ]
     meta["canonical_model_id"] = "MODEL-FINAL-1"
     meta["truth_audit"] = {"success": True, "canonical_model_id": "MODEL-FINAL-1"}
     meta["manual_validation"] = {
@@ -204,6 +233,12 @@ def _production_ready_meta() -> dict:
         "production_export_ready": True,
         "export_blocked": False,
         "canonical_id_traceability": {"ready": True},
+        "canonical_profile_count": 1,
+        "canonical_cross_section_count": 1,
+        "requested_vs_produced": {
+            "missing_requested_profiles": False,
+            "missing_requested_sections": False,
+        },
         "canonical_model_id": "MODEL-FINAL-1",
     }
     meta["sheet_registry"] = {

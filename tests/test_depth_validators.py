@@ -2,6 +2,7 @@ import unittest
 
 from backend.planning.production_depth import enrich_drainage_production_depth, enrich_water_production_depth
 from backend.planning.depth_validators import (
+    validate_profile_section_depth,
     validate_roadway_corridor_depth,
     validate_stormwater_depth,
     validate_water_system_depth,
@@ -686,6 +687,114 @@ class DepthValidatorTests(unittest.TestCase):
         self.assertFalse(result["production_ready"])
         self.assertIn("Roadway depth needs sidewalk/path geometry.", result["blockers"])
         self.assertIn("Roadway depth needs passing ADA checks.", result["blockers"])
+
+    def test_profile_section_depth_passes_traceable_profiles_sections_and_bands(self) -> None:
+        result = validate_profile_section_depth(
+            {
+                "meta": {
+                    "alignments": [{"id": "ALG-ROAD-1", "name": "Road A", "points": [[0.0, 0.0], [100.0, 0.0]]}],
+                    "grading": {
+                        "surface_traceability": {
+                            "valid": True,
+                            "accepted_surfaces": True,
+                            "existing_surface_id": "EG-1",
+                            "proposed_surface_id": "FG-1",
+                        }
+                    },
+                    "profiles": [
+                        {
+                            "name": "Road A Profile",
+                            "alignment_id": "ALG-ROAD-1",
+                            "stations": [{"station_ft": 0.0}, {"station_ft": 100.0}],
+                            "profile_bands": [
+                                {"system": "storm", "segment_id": "STM-1"},
+                                {"system": "sanitary", "segment_id": "SAN-1"},
+                                {"system": "water", "segment_id": "W-1"},
+                            ],
+                        }
+                    ],
+                    "cross_sections": [
+                        {
+                            "name": "Road A Section 1",
+                            "alignment_id": "ALG-ROAD-1",
+                            "station_ft": 50.0,
+                            "existing_surface_id": "EG-1",
+                            "proposed_surface_id": "FG-1",
+                            "samples": [{"offset_ft": -12.0}, {"offset_ft": 0.0}, {"offset_ft": 12.0}],
+                        }
+                    ],
+                    "storm_pipes": {"segments": [{"id": "STM-1"}]},
+                    "sanitary": {"segments": [{"id": "SAN-1"}]},
+                    "utilities": {"segments": [{"id": "W-1", "system": "water"}]},
+                    "export_audit": {
+                        "canonical_profile_count": 1,
+                        "canonical_cross_section_count": 1,
+                        "requested_vs_produced": {
+                            "missing_requested_profiles": False,
+                            "missing_requested_sections": False,
+                        },
+                    },
+                }
+            }
+        )
+
+        self.assertTrue(result["production_ready"])
+        self.assertEqual(result["profile_trace_checks"][0]["expected_alignment_ids"], ["ALG-ROAD-1"])
+        self.assertEqual(result["profile_trace_checks"][0]["actual_alignment_id"], "ALG-ROAD-1")
+        self.assertEqual(result["section_trace_checks"][0]["expected_existing_surface_id"], "EG-1")
+        self.assertEqual(result["section_trace_checks"][0]["actual_existing_surface_id"], "EG-1")
+        self.assertEqual({row["system"]: row["actual_count"] for row in result["profile_band_checks"]}, {"storm": 1, "sanitary": 1, "water": 1})
+        self.assertTrue(result["export_linkage"]["valid"])
+
+    def test_profile_section_depth_blocks_missing_alignment_surface_bands_and_wall_evidence(self) -> None:
+        result = validate_profile_section_depth(
+            {
+                "meta": {
+                    "alignments": [{"id": "ALG-ROAD-1", "name": "Road A", "points": [[0.0, 0.0], [100.0, 0.0]]}],
+                    "grading": {
+                        "surface_traceability": {
+                            "valid": False,
+                            "accepted_surfaces": False,
+                            "existing_surface_id": "EG-1",
+                        }
+                    },
+                    "profiles": [{"name": "Road A Profile", "alignment_id": "ALG-MISSING", "stations": [{"station_ft": 0.0}, {"station_ft": 100.0}]}],
+                    "cross_sections": [
+                        {
+                            "name": "Road A Section 1",
+                            "alignment_id": "ALG-ROAD-1",
+                            "station_ft": 50.0,
+                            "existing_surface_id": "EG-1",
+                            "samples": [{"offset_ft": -12.0}, {"offset_ft": 0.0}, {"offset_ft": 12.0}],
+                        }
+                    ],
+                    "storm_pipes": {"segments": [{"id": "STM-1"}]},
+                    "retaining_walls": [{"id": "RW-1"}],
+                    "export_audit": {
+                        "canonical_profile_count": 0,
+                        "canonical_cross_section_count": 0,
+                        "requested_vs_produced": {
+                            "missing_requested_profiles": True,
+                            "missing_requested_sections": True,
+                        },
+                    },
+                }
+            }
+        )
+
+        self.assertFalse(result["production_ready"])
+        self.assertEqual(result["profile_trace_checks"][0]["expected_alignment_ids"], ["ALG-ROAD-1"])
+        self.assertEqual(result["profile_trace_checks"][0]["actual_alignment_id"], "ALG-MISSING")
+        self.assertEqual(result["surface_traceability"]["missing_inputs"], ["accepted_surfaces", "proposed_surface_id"])
+        self.assertEqual(result["profile_band_checks"][0]["system"], "storm")
+        self.assertEqual(result["profile_band_checks"][0]["actual_count"], 0)
+        self.assertFalse(result["retaining_wall_section_check"]["valid"])
+        self.assertFalse(result["export_linkage"]["valid"])
+        self.assertIn("Profile/section depth needs every profile to trace a canonical alignment ID.", result["blockers"])
+        self.assertIn("Profile/section depth needs accepted existing/proposed surface IDs.", result["blockers"])
+        self.assertIn("Profile/section depth needs profile band rows for existing storm, sanitary, and water systems.", result["blockers"])
+        self.assertIn("Profile/section depth needs retaining wall section and tie-in evidence when wall scope exists.", result["blockers"])
+        self.assertIn("Profile/section depth needs export/profile-section linkage when profile or section deliverables are requested.", result["blockers"])
 
 
 if __name__ == "__main__":

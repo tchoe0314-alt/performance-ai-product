@@ -108,6 +108,33 @@ class EngineReadinessTests(unittest.TestCase):
         self.assertTrue(detail["next_action"])
         self.assertTrue(detail["engineer_review_required"])
 
+    def test_profile_section_depth_blockers_feed_engine_readiness(self) -> None:
+        readiness = evaluate_engine_readiness(
+            {
+                "meta": {
+                    **_complete_meta(),
+                    "alignments": [{"id": "ALG-1", "name": "Road A", "points": [[0.0, 0.0], [100.0, 0.0]]}],
+                    "profiles": [{"name": "Road Profile", "alignment_id": "ALG-MISSING", "stations": [{"station_ft": 0.0}, {"station_ft": 100.0}]}],
+                    "cross_sections": [{"name": "Road Section", "alignment_id": "ALG-1", "station_ft": 50.0, "samples": [{"offset_ft": -10.0}, {"offset_ft": 0.0}, {"offset_ft": 10.0}]}],
+                }
+            }
+        )
+
+        profile_section = readiness["engines"]["profile_section"]
+        self.assertEqual(profile_section["status"], "concept_ready_needs_production_depth")
+        self.assertIn("profile_section_depth", {item["area"] for item in profile_section["production_blockers"]})
+        messages = {item["message"] for item in profile_section["production_blockers"]}
+        self.assertIn("Profile/section depth needs every profile to trace a canonical alignment ID.", messages)
+        self.assertIn("Profile/section depth needs accepted existing/proposed surface IDs.", messages)
+
+    def test_profile_section_depth_evidence_can_clear_profile_section_engine(self) -> None:
+        readiness = evaluate_engine_readiness({"meta": _production_ready_meta()})
+
+        profile_section = readiness["engines"]["profile_section"]
+        self.assertEqual(profile_section["status"], "production_ready")
+        self.assertIn("depth_validation", profile_section["evidence"])
+        self.assertFalse(profile_section["production_blockers"])
+
     def test_failed_truth_gates_block_qa_engine_readiness(self) -> None:
         readiness = evaluate_engine_readiness(
             {
