@@ -762,6 +762,27 @@ def normalize_parsed_payload(parsed: Dict[str, Any]) -> Dict[str, Any]:
     norm["site_type"] = lower_text(resolve_field(norm.get("site_type"), resolve_field(norm.get("project_type"), "generic_site")))
     norm["street_edge"] = lower_text(resolve_field(norm.get("street_edge"), "bottom"))
     lot = safe_dict(unwrap_fields_for_execution(norm.get("lot")))
+    lot_input_issues: List[Dict[str, Any]] = []
+    for field_name, raw_value in (("lot.w", lot.get("w")), ("lot.h", lot.get("h"))):
+        try:
+            parsed_value = float(raw_value)
+        except Exception:
+            lot_input_issues.append(
+                {
+                    "field": field_name,
+                    "reason": f"{field_name} must be numeric and greater than zero.",
+                    "raw_value": raw_value,
+                }
+            )
+            continue
+        if parsed_value <= 0.0:
+            lot_input_issues.append(
+                {
+                    "field": field_name,
+                    "reason": f"{field_name} must be greater than zero.",
+                    "raw_value": raw_value,
+                }
+            )
     norm["lot"] = {
         "x": safe_float(lot.get("x"), DEFAULT_LOT_X),
         "y": safe_float(lot.get("y"), DEFAULT_LOT_Y),
@@ -771,6 +792,14 @@ def normalize_parsed_payload(parsed: Dict[str, Any]) -> Dict[str, Any]:
     setback_resolved = resolve_field(norm.get("setback"), DEFAULT_SETBACK)
     norm["setback"] = None if field_path_is_omitted(norm, "setback") else max(0.0, safe_float(setback_resolved, DEFAULT_SETBACK))
     norm.setdefault("meta", {})
+    if lot_input_issues:
+        validation = safe_dict(norm["meta"].get("input_validation"))
+        validation["lot_geometry"] = {
+            "valid": False,
+            "issues": lot_input_issues,
+            "truth_label": "Invalid user lot geometry is preserved even when execution uses safe fallback dimensions.",
+        }
+        norm["meta"]["input_validation"] = validation
     if isinstance(parsed.get("meta"), dict) and isinstance(parsed.get("meta", {}).get("site_inputs"), dict):
         norm["meta"]["site_inputs"] = deepcopy(parsed["meta"]["site_inputs"])
     return norm

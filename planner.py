@@ -272,6 +272,9 @@ from backend.planning.coordination_state import (
 from backend.planning.engine_readiness import (
     evaluate_engine_readiness as _evaluate_engine_readiness,
 )
+from backend.planning.engineering_workflow_guards import (
+    apply_engineering_generation_review as _apply_engineering_generation_review,
+)
 from backend.planning.engineer_review_package import (
     build_engineer_review_package as _build_engineer_review_package,
 )
@@ -10824,6 +10827,7 @@ def finalize_plan(plan: Dict[str, Any], *, parsed: Dict[str, Any], route: Routin
             }
         except Exception as exc:
             final["meta"]["cost_estimate"] = {"success": False, "message": f"Cost computation failed: {exc}", "totals": {}}
+    _apply_engineering_generation_review(final, parsed)
     final["meta"]["cost_package_status"] = build_cost_package_status(final)
     try:
         finalize_export_metadata(final)
