@@ -1299,7 +1299,6 @@ function PerformanceAIDashboardView({
   const [previewLabelDensity, setPreviewLabelDensity] = useState<"low" | "standard" | "high">("standard");
   const [previewLabelDensityTouched, setPreviewLabelDensityTouched] = useState(false);
   const [previewHeightPx, setPreviewHeightPx] = useState(900);
-  const [snapAssistEnabled, setSnapAssistEnabled] = useState(true);
   const [objectOutlineColor, setObjectOutlineColor] = useState("#1f2937");
   const [previewRefreshing, setPreviewRefreshing] = useState(false);
   const [previewRefreshNote, setPreviewRefreshNote] = useState<string | null>(null);
@@ -10370,7 +10369,6 @@ function PerformanceAIDashboardView({
   const sidebarTruthCounts = {
     ready: sidebarHasTruthEvidence ? sidebarTruthItems.filter((item) => item.status === "ok").length : 0,
     review: sidebarHasTruthEvidence ? sidebarTruthItems.filter((item) => item.status === "review").length : 0,
-    issues: sidebarHasTruthEvidence ? sidebarMissingInputs.length + analysisIssues.length + issues.length : 0,
     blocked: sidebarHasTruthEvidence ? sidebarTruthItems.filter((item) => item.status === "block").length : 0,
     notRun: backendResult ? 0 : 1,
   };
@@ -10378,7 +10376,6 @@ function PerformanceAIDashboardView({
     1,
     sidebarTruthCounts.ready +
       sidebarTruthCounts.review +
-      sidebarTruthCounts.issues +
       sidebarTruthCounts.blocked +
       sidebarTruthCounts.notRun,
   );
@@ -10397,8 +10394,7 @@ function PerformanceAIDashboardView({
     : null;
   const truthReadyDeg = (sidebarTruthCounts.ready / sidebarTruthTotal) * 360;
   const truthReviewDeg = truthReadyDeg + (sidebarTruthCounts.review / sidebarTruthTotal) * 360;
-  const truthIssuesDeg = truthReviewDeg + (sidebarTruthCounts.issues / sidebarTruthTotal) * 360;
-  const truthBlockedDeg = truthIssuesDeg + (sidebarTruthCounts.blocked / sidebarTruthTotal) * 360;
+  const truthBlockedDeg = truthReviewDeg + (sidebarTruthCounts.blocked / sidebarTruthTotal) * 360;
   const reviewGateItems = [
     {
       label: "Standards",
@@ -10571,7 +10567,7 @@ function PerformanceAIDashboardView({
                 <div
                   className="grid h-24 w-24 shrink-0 place-items-center rounded-full"
                   style={{
-                    background: `conic-gradient(#64748b 0deg ${truthReadyDeg}deg, #f59e0b ${truthReadyDeg}deg ${truthReviewDeg}deg, #ef4444 ${truthReviewDeg}deg ${truthIssuesDeg}deg, #8b5cf6 ${truthIssuesDeg}deg ${truthBlockedDeg}deg, #cbd5e1 ${truthBlockedDeg}deg 360deg)`,
+                    background: `conic-gradient(#64748b 0deg ${truthReadyDeg}deg, #f59e0b ${truthReadyDeg}deg ${truthReviewDeg}deg, #8b5cf6 ${truthReviewDeg}deg ${truthBlockedDeg}deg, #cbd5e1 ${truthBlockedDeg}deg 360deg)`,
                   }}
                   aria-label={sidebarTruthScore === null ? "Truth status not evaluated" : `Truth score ${sidebarTruthScore}`}
                 >
@@ -10586,7 +10582,6 @@ function PerformanceAIDashboardView({
                   {[
                     ["Ready", sidebarTruthCounts.ready, "bg-slate-500"],
                     ["Review", sidebarTruthCounts.review, "bg-amber-500"],
-                    ["Issues", sidebarTruthCounts.issues, "bg-red-500"],
                     ["Blocked", sidebarTruthCounts.blocked, "bg-violet-500"],
                     ["Not Run", sidebarTruthCounts.notRun, "bg-slate-300"],
                   ].map(([label, value, dotClass]) => (
@@ -10600,13 +10595,6 @@ function PerformanceAIDashboardView({
                   ))}
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => handleOpenSidePanel("reports")}
-                className="mt-3 text-xs font-semibold text-slate-700 hover:text-slate-950"
-              >
-                View all issues
-              </button>
               <div className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
                 {sidebarTruthItems.map((item) => (
                   <button
@@ -13534,61 +13522,6 @@ function PerformanceAIDashboardView({
           ) : null}
           <main className="order-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
             <div className="flex w-full flex-1 flex-col gap-4 px-4 py-4 md:px-5">
-              <div
-                data-testid="canvas-workflow-toolbar"
-                className="mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 shadow-sm"
-              >
-                {[
-                  {
-                    label: "Design",
-                    active: activeSidePanel === "model",
-                    action: () => handleOpenSidePanel("model"),
-                  },
-                  {
-                    label: "Draw",
-                    active: activeSidePanel === "objects" || placementModeEnabled,
-                    action: () => handleOpenSidePanel("objects"),
-                  },
-                  {
-                    label: "Modify",
-                    active: activeSidePanel === "details",
-                    action: () => handleOpenSidePanel(activePlacementId ? "details" : "objects"),
-                  },
-                  {
-                    label: "Measure",
-                    active: showMeasurements,
-                    action: () => setShowMeasurements((value) => !value),
-                  },
-                  {
-                    label: "Snaps",
-                    active: snapAssistEnabled,
-                    action: () => setSnapAssistEnabled((value) => !value),
-                  },
-                  {
-                    label: "Analyze",
-                    active: activeSidePanel === "reports" || activeSidePanel === "analysis",
-                    action: () => handleOpenSidePanel("reports"),
-                  },
-                  {
-                    label: "Export",
-                    active: activeSidePanel === "deliverables",
-                    action: () => handleOpenSidePanel("deliverables"),
-                  },
-                ].map((item) => (
-                  <button
-                    key={item.label}
-                    type="button"
-                    onClick={item.action}
-                    className={`rounded-lg border px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition ${
-                      item.active
-                        ? "border-slate-950 bg-slate-950 text-white"
-                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
               <div className="flex w-full flex-col">
                 <div
                   data-testid="workspace-canvas-shell"
