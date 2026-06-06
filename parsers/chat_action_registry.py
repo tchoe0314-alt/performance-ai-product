@@ -66,7 +66,7 @@ ACTION_REGISTRY: List[Dict[str, Any]] = [
         "blocked_if": ["planner result is missing", "export gates are blocked"],
         "engineer_review_required": True,
         "intent": "ui_navigation",
-        "patterns": ["export review package", "deliver package", "export report", "download dxf"],
+        "patterns": ["export review package", "make review package", "create review package", "deliver package", "export report", "download dxf"],
         "confidence": 0.9,
     },
     {
@@ -348,7 +348,7 @@ def _candidate_actions(text: str) -> List[Dict[str, Any]]:
         candidates.append(_candidate("request_site_lock_state", 0.9, ["site boundary lock/draw wording"]))
     if re.search(r"\b(detect|find|derive)\b.*\b(grading|slope|contour|terrain)\b", text):
         candidates.append(_candidate("request_detect_grading", 0.89, ["grading detection wording"]))
-    if re.search(r"\b(export|deliver|download|prepare)\b.*\b(review package|package|report|dxf|deliverable|deliverables)\b", text):
+    if re.search(r"\b(export|deliver|download|prepare|make|create|build)\b.*\b(review package|package|report|dxf|deliverable|deliverables)\b", text):
         candidates.append(_candidate("request_review_export_package", 0.9, ["review/export package wording"]))
     if re.search(r"\b(undo|redo|search)\b", text):
         candidates.append(_candidate("unsupported_ui_action", 0.82, ["unsupported UI action wording"]))

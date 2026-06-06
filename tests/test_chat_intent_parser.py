@@ -1027,6 +1027,18 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertEqual(metadata["requested_ui_mode"], "deliver")
         self.assertIn("engineer-review package", result["assistant_message"])
 
+    def test_make_review_package_routes_to_deliver_without_ambiguity(self):
+        result = _decide("make review package", {"has_plan": True})
+        metadata = result["response_metadata"]
+        self.assertEqual(result["intent"], "conversation")
+        self.assertEqual(result["run_mode"], "none")
+        self.assertEqual(result["action_taken"], "routed_ui_action")
+        self.assertEqual(metadata["selected_action"], "request_review_export_package")
+        self.assertEqual(metadata["ui_navigation_target"], "deliverables")
+        self.assertEqual(metadata["understood_goal"], "make review package")
+        self.assertEqual(metadata["exact_missing_inputs"], [])
+        self.assertFalse(metadata["can_execute_now"])
+
     def test_unsupported_ui_action_blocks_clearly(self):
         result = _decide("undo the last canvas action")
         self.assertEqual(result["action_taken"], "blocked_ui_action")
