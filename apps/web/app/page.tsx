@@ -108,7 +108,6 @@ type WorkspaceMode =
   | "setup"
   | "canvas"
   | "layers"
-  | "issues"
   | "review"
   | "deliver"
   | "data"
@@ -10126,7 +10125,7 @@ function PerformanceAIDashboardView({
     landscape: "canvas",
     details: "review",
     layers: "layers",
-    analysis: "issues",
+    analysis: "review",
     reports: "review",
     quantities: "deliver",
     deliverables: "deliver",
@@ -10149,7 +10148,6 @@ function PerformanceAIDashboardView({
     setup: "site_existing",
     canvas: "model",
     layers: "layers",
-    issues: "analysis",
     review: "reports",
     deliver: "deliverables",
     data: "data",
@@ -10254,8 +10252,7 @@ function PerformanceAIDashboardView({
     if (mode === "setup") return siteScaleLocked ? "ok" : "review";
     if (mode === "canvas") return panelStatus("model");
     if (mode === "layers") return panelStatus("layers");
-    if (mode === "issues") return hasHardSystemBlock ? "block" : issues.length || analysisIssues.length ? "review" : "idle";
-    if (mode === "review") return hasHardSystemBlock ? "block" : panelStatus("reports");
+    if (mode === "review") return hasHardSystemBlock ? "block" : issues.length || analysisIssues.length ? "review" : panelStatus("reports");
     if (mode === "deliver") return String(previewReview?.release_status || "review").toLowerCase() === "blocked" ? "block" : panelStatus("deliverables");
     if (mode === "data") return panelStatus("data");
     if (mode === "settings") return panelStatus("settings");
@@ -10266,7 +10263,6 @@ function PerformanceAIDashboardView({
     { label: "Setup", caption: "Site and boundary", target: "setup", icon: MapPinned, status: sidebarModeStatus("setup") },
     { label: "Canvas", caption: "Design workspace", target: "canvas", icon: Box, status: sidebarModeStatus("canvas") },
     { label: "Layers", caption: "Visibility presets", target: "layers", icon: Layers, status: sidebarModeStatus("layers") },
-    { label: "Issues", caption: "Problems to fix", target: "issues", icon: AlertCircle, status: sidebarModeStatus("issues") },
     { label: "Review", caption: "Gates and health", target: "review", icon: ClipboardCheck, status: sidebarModeStatus("review") },
     { label: "Deliver", caption: "Sheets and exports", target: "deliver", icon: FileText, status: sidebarModeStatus("deliver") },
     { label: "Data", caption: "Survey and sources", target: "data", icon: MapPinned, status: sidebarModeStatus("data") },
