@@ -391,6 +391,8 @@ export default function PreviewPanel({
       ) ?? null,
     [buildingPlacements, suggestedPlacements, selectedBuildingId],
   );
+  const selectedDeletableObject =
+    selectedObject && !selectedObject.locked ? selectedObject : null;
   const accessPointsForParking = useMemo(
     () =>
       buildingPlacements
@@ -950,7 +952,7 @@ export default function PreviewPanel({
   }, []);
 
   const finishDraftGeometry = useCallback(() => {
-    if (drawMode !== "site" && drawMode !== "polyline" && drawMode !== "polygon") return;
+    if (drawMode !== "site" && drawMode !== "polyline" && drawMode !== "polygon" && drawMode !== "rect") return;
     const effectivePoints =
       draftPreviewPoint &&
       !draftPoints.some(
@@ -1065,7 +1067,7 @@ export default function PreviewPanel({
     },
     {
       mode: "rect",
-      label: "Box Select",
+      label: "Add Box",
       icon: Square,
       disabled: !canDrawObjects,
       disabledLabel: "Lock site before drawing objects",
@@ -1115,7 +1117,7 @@ export default function PreviewPanel({
         return;
       }
       if (event.key === "Enter") {
-        if (drawMode === "polyline" || drawMode === "polygon") {
+        if (drawMode === "site" || drawMode === "polyline" || drawMode === "polygon" || drawMode === "rect") {
           event.preventDefault();
           finishDraftGeometry();
         }
@@ -2977,10 +2979,26 @@ export default function PreviewPanel({
                 </button>
                 <button
                   type="button"
-                  disabled={!selectedBuildingId}
+                  disabled={!selectedDeletableObject}
+                  title={
+                    selectedObject?.locked
+                      ? "Unlock the selected object before deleting"
+                      : selectedObject
+                        ? "Delete selected object"
+                        : "Select an unlocked object to delete"
+                  }
                   onClick={() => {
-                    if (!selectedBuildingId) return;
-                    onRemoveBuilding(selectedBuildingId);
+                    if (!selectedDeletableObject) return;
+                    const targetObject = buildingPlacements.find((item) => item.id === selectedDeletableObject.id);
+                    if (targetObject) {
+                      setLastRectEdit({
+                        id: targetObject.id,
+                        snapshot: { ...targetObject },
+                        action: "delete",
+                        ts: Date.now(),
+                      });
+                    }
+                    onRemoveBuilding(selectedDeletableObject.id);
                   }}
                   className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-300"
                 >
@@ -2998,20 +3016,22 @@ export default function PreviewPanel({
                 <span className="min-w-12 text-right">{Math.round(canvasView.scale * 100)}%</span>
                 {draftPoints.length ? (
                   <>
-                    <button
-                      type="button"
-                      onClick={finishDraftGeometry}
-                      disabled={
-                        drawMode === "polygon"
-                          ? draftPoints.length + (draftPreviewPoint ? 1 : 0) < 3
-                          : drawMode === "site"
-                          ? draftPoints.length + (draftPreviewPoint ? 1 : 0) < 3
-                          : draftPoints.length + (draftPreviewPoint ? 1 : 0) < 2
-                      }
-                      className="inline-flex h-8 items-center rounded-md border border-slate-900 bg-slate-950 px-2 text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                    >
-                      Finish
-                    </button>
+                    {drawMode !== "rect" ? (
+                      <button
+                        type="button"
+                        onClick={finishDraftGeometry}
+                        disabled={
+                          drawMode === "polygon"
+                            ? draftPoints.length + (draftPreviewPoint ? 1 : 0) < 3
+                            : drawMode === "site"
+                            ? draftPoints.length + (draftPreviewPoint ? 1 : 0) < 3
+                            : draftPoints.length + (draftPreviewPoint ? 1 : 0) < 2
+                        }
+                        className="inline-flex h-8 items-center rounded-md border border-slate-900 bg-slate-950 px-2 text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                      >
+                        Finish
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={clearDraftGeometry}
@@ -3182,7 +3202,7 @@ export default function PreviewPanel({
                 );
               }}
               onDoubleClick={(event) => {
-                if (drawMode !== "polyline" && drawMode !== "polygon") return;
+                if (drawMode !== "site" && drawMode !== "polyline" && drawMode !== "polygon" && drawMode !== "rect") return;
                 event.preventDefault();
                 event.stopPropagation();
                 finishDraftGeometry();
