@@ -137,7 +137,15 @@ class GoldenRunnerTests(unittest.TestCase):
             survey = import_survey_csv(survey_path, coordinate_system=coordinate)
             gis = import_geojson(gis_path, coordinate_system=coordinate)
             merged = merge_imported_existing_conditions(survey, gis)
-            merged["survey"].update({"benchmark": "BM-1", "datum": "NAVD88", "control_verified": True})
+            merged["survey"].update(
+                {
+                    "benchmark": "BM-1",
+                    "benchmark_elevation": 100.0,
+                    "horizontal_datum": "NAD83",
+                    "datum": "NAVD88",
+                    "control_verified": True,
+                }
+            )
             merged["import_validation"] = validate_imported_existing_conditions_package(merged)
             package_meta = {
                 "survey": merged["survey"],
