@@ -113,6 +113,7 @@ type WorkspaceMode =
   | "data"
   | "settings";
 type SidebarStatus = "ok" | "review" | "block" | "idle";
+type BottomPanelTab = "model_review" | "systems" | "objects" | "properties" | "history";
 type SidebarNavItem = {
   label: string;
   caption: string;
@@ -1297,6 +1298,7 @@ function PerformanceAIDashboardView({
   const [previewLabelDensity, setPreviewLabelDensity] = useState<"low" | "standard" | "high">("standard");
   const [previewLabelDensityTouched, setPreviewLabelDensityTouched] = useState(false);
   const [previewHeightPx, setPreviewHeightPx] = useState(900);
+  const [snapAssistEnabled, setSnapAssistEnabled] = useState(true);
   const [objectOutlineColor, setObjectOutlineColor] = useState("#1f2937");
   const [previewRefreshing, setPreviewRefreshing] = useState(false);
   const [previewRefreshNote, setPreviewRefreshNote] = useState<string | null>(null);
@@ -1306,6 +1308,8 @@ function PerformanceAIDashboardView({
   const [approvalPendingJobId, setApprovalPendingJobId] = useState<string | null>(null);
   const [showMeasurements, setShowMeasurements] = useState(false);
   const [showCalculations, setShowCalculations] = useState(false);
+  const [bottomPanelCollapsed, setBottomPanelCollapsed] = useState(false);
+  const [activeBottomPanelTab, setActiveBottomPanelTab] = useState<BottomPanelTab>("model_review");
   const [previewLayers, setPreviewLayers] = useState({
     buildings: true,
     roads: true,
@@ -10459,6 +10463,23 @@ function PerformanceAIDashboardView({
           : placedObjectCount <= 1
             ? "Add or draw buildings, roads, parking, and utilities."
             : "Run systems, then review blockers and gates.";
+  const selectedCanvasObject = activePlacementId
+    ? buildingPlacements.find((item) => item.id === activePlacementId) ??
+      filteredDetectedPlacements.find((item) => item.id === activePlacementId) ??
+      null
+    : null;
+  const bottomBlockerItems = [
+    ...previewBlockedReasons,
+    ...issues.map((issue) => issue.message),
+    ...analysisIssues.map((issue) => issue.message),
+  ].filter(Boolean);
+  const bottomPanelTabs: Array<{ key: BottomPanelTab; label: string; panel: SidePanelKey }> = [
+    { key: "model_review", label: "Model Review", panel: "reports" },
+    { key: "systems", label: "Systems", panel: "generate" },
+    { key: "objects", label: "Objects", panel: "objects" },
+    { key: "properties", label: "Properties", panel: selectedCanvasObject ? "details" : "site_existing" },
+    { key: "history", label: "History", panel: "dashboard" },
+  ];
   const activePanelTitle =
     previewMode === "3d" && activeSidePanel === "model"
       ? "3D"
@@ -10514,6 +10535,30 @@ function PerformanceAIDashboardView({
             data-testid="left-sidebar"
             className="fixed inset-x-3 top-20 z-40 flex max-h-[calc(100vh-6rem)] shrink-0 flex-col rounded-xl border border-slate-200 bg-white/98 px-4 py-5 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.65)] backdrop-blur-xl lg:static lg:inset-auto lg:z-auto lg:h-full lg:max-h-none lg:w-[276px] lg:rounded-none lg:border-y-0 lg:border-l-0 lg:shadow-[18px_0_40px_-36px_rgba(15,23,42,0.5)]"
           >
+            <button
+              type="button"
+              onClick={() => handleOpenWorkspaceMode("dashboard")}
+              className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-left transition hover:bg-white"
+            >
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Project</p>
+              <p className="mt-1 truncate text-sm font-semibold text-slate-950">
+                {siteName || currentProject?.name || "Untitled Project"}
+              </p>
+              <div className="mt-2 grid gap-1 text-[11px] font-semibold text-slate-500">
+                <span className="flex items-center justify-between gap-2">
+                  <span>Site</span>
+                  <span className={siteScaleLocked ? "text-slate-900" : "text-amber-700"}>
+                    {siteScaleLocked ? "Locked" : "Not locked"}
+                  </span>
+                </span>
+                <span className="flex items-center justify-between gap-2">
+                  <span>Sync</span>
+                  <span className={currentProject?.project_id ? "text-slate-900" : "text-amber-700"}>
+                    {currentProject?.project_id ? "Saved" : "Draft"}
+                  </span>
+                </span>
+              </div>
+            </button>
             <div className="mb-4 rounded-lg border border-slate-200 bg-white px-3 py-3">
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                 Truth Status
@@ -10558,6 +10603,32 @@ function PerformanceAIDashboardView({
               >
                 View all issues
               </button>
+              <div className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
+                {sidebarTruthItems.map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => handleOpenSidePanel("reports")}
+                    className="flex w-full items-center justify-between gap-2 rounded-md px-1.5 py-1 text-left text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50"
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span
+                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                          item.status === "ok"
+                            ? "bg-slate-600"
+                            : item.status === "block"
+                              ? "bg-red-500"
+                              : item.status === "review"
+                                ? "bg-amber-500"
+                                : "bg-slate-300"
+                        }`}
+                      />
+                      <span className="truncate">{item.label}</span>
+                    </span>
+                    <span className="max-w-[7.75rem] truncate text-right text-slate-400">{item.value}</span>
+                  </button>
+                ))}
+              </div>
               <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                 {sidebarHasTruthEvidence
                   ? "Engineer review required | Construction blocked until external approval"
@@ -13459,6 +13530,61 @@ function PerformanceAIDashboardView({
           ) : null}
           <main className="order-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
             <div className="flex w-full flex-1 flex-col gap-4 px-4 py-4 md:px-5">
+              <div
+                data-testid="canvas-workflow-toolbar"
+                className="mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 shadow-sm"
+              >
+                {[
+                  {
+                    label: "Design",
+                    active: activeSidePanel === "model",
+                    action: () => handleOpenSidePanel("model"),
+                  },
+                  {
+                    label: "Draw",
+                    active: activeSidePanel === "objects" || placementModeEnabled,
+                    action: () => handleOpenSidePanel("objects"),
+                  },
+                  {
+                    label: "Modify",
+                    active: activeSidePanel === "details",
+                    action: () => handleOpenSidePanel(activePlacementId ? "details" : "objects"),
+                  },
+                  {
+                    label: "Measure",
+                    active: showMeasurements,
+                    action: () => setShowMeasurements((value) => !value),
+                  },
+                  {
+                    label: "Snaps",
+                    active: snapAssistEnabled,
+                    action: () => setSnapAssistEnabled((value) => !value),
+                  },
+                  {
+                    label: "Analyze",
+                    active: activeSidePanel === "reports" || activeSidePanel === "analysis",
+                    action: () => handleOpenSidePanel("reports"),
+                  },
+                  {
+                    label: "Export",
+                    active: activeSidePanel === "deliverables",
+                    action: () => handleOpenSidePanel("deliverables"),
+                  },
+                ].map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={item.action}
+                    className={`rounded-lg border px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition ${
+                      item.active
+                        ? "border-slate-950 bg-slate-950 text-white"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
               <div className="flex w-full flex-col">
                 <div
                   data-testid="workspace-canvas-shell"
@@ -13598,6 +13724,150 @@ function PerformanceAIDashboardView({
               />
                   </div>
                 </div>
+              </div>
+              <div
+                data-testid="bottom-review-panel"
+                className="mx-auto w-full max-w-[1600px] rounded-xl border border-slate-200 bg-white/95 shadow-sm"
+              >
+                <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      Review Status
+                    </p>
+                    <p className="truncate text-xs font-semibold text-slate-500">
+                      {sidebarHasTruthEvidence
+                        ? "Engineer review required. Construction remains blocked until external approval."
+                        : "No project evidence yet. Start setup to create traceable state."}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setBottomPanelCollapsed((value) => !value)}
+                    className="shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                  >
+                    {bottomPanelCollapsed ? "Open" : "Collapse"}
+                  </button>
+                </div>
+                {!bottomPanelCollapsed ? (
+                  <div className="grid gap-3 px-3 py-3 lg:grid-cols-[auto,1fr]">
+                    <div className="flex min-w-0 gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
+                      {bottomPanelTabs.map((tab) => (
+                        <button
+                          key={tab.key}
+                          type="button"
+                          onClick={() => {
+                            setActiveBottomPanelTab(tab.key);
+                            handleOpenSidePanel(tab.panel);
+                          }}
+                          className={`whitespace-nowrap rounded-lg border px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
+                            activeBottomPanelTab === tab.key
+                              ? "border-slate-950 bg-slate-950 text-white"
+                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="min-w-0">
+                      {activeBottomPanelTab === "model_review" ? (
+                        <div className="grid gap-2 md:grid-cols-3">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSidePanel("reports")}
+                            className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left"
+                          >
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Top blocker</p>
+                            <p className="mt-1 line-clamp-2 text-xs font-semibold text-slate-800">
+                              {bottomBlockerItems[0] || (sidebarHasTruthEvidence ? "No blocker text recorded. Engineer review still required." : "No evidence yet. Start setup.")}
+                            </p>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSidePanel("generate")}
+                            className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left"
+                          >
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">System status</p>
+                            <p className="mt-1 line-clamp-2 text-xs font-semibold text-slate-800">
+                              {Object.entries(systemStatuses).map(([key, value]) => `${key}: ${value.replace("_", " ")}`).join(" / ")}
+                            </p>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSidePanel(siteScaleLocked ? "objects" : "site_existing")}
+                            className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-left"
+                          >
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">Next step</p>
+                            <p className="mt-1 line-clamp-2 text-xs font-semibold text-amber-900">{nextSetupAction}</p>
+                          </button>
+                        </div>
+                      ) : null}
+                      {activeBottomPanelTab === "systems" ? (
+                        <div className="flex flex-wrap gap-2">
+                          {(Object.entries(systemStatuses) as Array<[EngineeringSystemKey, SystemStatus]>).map(([system, state]) => (
+                            <button
+                              key={system}
+                              type="button"
+                              onClick={() => handleOpenSidePanel(system === "drainage" ? "system_storm" : system === "roads" ? "system_roadway" : system === "parking" ? "generate" : (`system_${system}` as SidePanelKey))}
+                              className={`rounded-lg border px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.12em] ${
+                                state === "stale"
+                                  ? "border-amber-200 bg-amber-50 text-amber-700"
+                                  : state === "fresh"
+                                    ? "border-slate-200 bg-slate-50 text-slate-700"
+                                    : "border-slate-200 bg-white text-slate-500"
+                              }`}
+                            >
+                              {system} / {state.replace("_", " ")}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                      {activeBottomPanelTab === "objects" ? (
+                        <div className="grid gap-2 md:grid-cols-3">
+                          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Placed objects</p>
+                            <p className="mt-1 text-lg font-semibold text-slate-900">{placedObjectCount}</p>
+                          </div>
+                          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Selected</p>
+                            <p className="mt-1 truncate text-xs font-semibold text-slate-800">{selectedCanvasObject?.label || "None"}</p>
+                          </div>
+                          <button type="button" onClick={() => handleOpenSidePanel("objects")} className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white">
+                            Add / draw objects
+                          </button>
+                        </div>
+                      ) : null}
+                      {activeBottomPanelTab === "properties" ? (
+                        <div className="grid gap-2 md:grid-cols-3">
+                          {[
+                            ["Object type", selectedCanvasObject?.type || "No selection"],
+                            ["Source", selectedCanvasObject?.source || "Not selected"],
+                            ["Confidence", String(selectedCanvasObject?.meta?.confidence || "engineer_review_required")],
+                          ].map(([label, value]) => (
+                            <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                              <p className="mt-1 truncate text-xs font-semibold text-slate-800">{value}</p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      {activeBottomPanelTab === "history" ? (
+                        <div className="grid gap-2 md:grid-cols-3">
+                          {[
+                            ["Project sync", currentProject?.project_id ? "Saved" : "Draft"],
+                            ["Last action", statusMessage || "No recent action"],
+                            ["Package state", sidebarReleaseStatus === "ready" ? "ready_for_engineer_review" : sidebarReleaseStatus],
+                          ].map(([label, value]) => (
+                            <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                              <p className="mt-1 line-clamp-2 text-xs font-semibold text-slate-800">{value}</p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
               </div>
               <div className="hidden">
                   <div className="rounded-2xl border border-slate-200 bg-white p-4">
