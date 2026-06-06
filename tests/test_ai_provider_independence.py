@@ -7,6 +7,7 @@ from backend.ai.provider import (
     DisabledAIProvider,
     LegacyResponsesClient,
     OllamaProvider,
+    OpenAIProvider,
     get_ai_provider,
     reset_ai_provider_cache,
 )
@@ -56,6 +57,13 @@ class AIProviderIndependenceTests(unittest.TestCase):
         self.assertEqual(payload["model"], "llama3.1")
         self.assertEqual(payload["format"], "json")
         self.assertFalse(payload["stream"])
+
+    def test_openai_provider_uses_bounded_timeout(self) -> None:
+        with patch.dict("os.environ", {"CIVORA_OPENAI_TIMEOUT_SECONDS": "3.5"}, clear=False):
+            with patch("openai.OpenAI", return_value=Mock()) as openai_client:
+                OpenAIProvider(api_key="test-key")._load_client()
+
+        openai_client.assert_called_once_with(api_key="test-key", timeout=3.5)
 
     def test_command_mode_falls_back_to_deterministic_parser_when_ai_disabled(self) -> None:
         with patch.dict("os.environ", {"CIVORA_AI_PROVIDER": "none", "OPENAI_API_KEY": ""}, clear=False):

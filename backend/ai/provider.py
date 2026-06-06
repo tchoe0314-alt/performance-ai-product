@@ -54,11 +54,23 @@ class DisabledAIProvider:
         raise AIProviderUnavailable("Civora language provider is disabled.")
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = str(os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except Exception:
+        return default
+
+
 class OpenAIProvider:
     name = "openai"
 
-    def __init__(self, *, api_key: str = "") -> None:
+    def __init__(self, *, api_key: str = "", timeout_seconds: Optional[float] = None) -> None:
         self.api_key = api_key or str(os.getenv("OPENAI_API_KEY") or "")
+        configured_timeout = _env_float("CIVORA_OPENAI_TIMEOUT_SECONDS", 20.0)
+        self.timeout_seconds = max(1.0, float(timeout_seconds if timeout_seconds is not None else configured_timeout))
         self._client: Any = None
 
     def _load_client(self) -> Any:
@@ -68,7 +80,7 @@ class OpenAIProvider:
             raise AIProviderUnavailable("OPENAI_API_KEY is missing.")
         from openai import OpenAI
 
-        self._client = OpenAI(api_key=self.api_key)
+        self._client = OpenAI(api_key=self.api_key, timeout=self.timeout_seconds)
         return self._client
 
     def generate_text(self, *, model: str, messages: List[Dict[str, str]]) -> AIResponse:
