@@ -9,10 +9,12 @@ from fastapi.testclient import TestClient
 from backend.api.app import (
     ChatLearningCronPayload,
     ProfessionalReleasePayload,
+    RegisterPayload,
     _cors_allow_origins,
     _runtime_debug_payload,
     app,
     chat_learning_cron,
+    register,
 )
 
 api_app_module = importlib.import_module("backend.api.app")
@@ -55,6 +57,29 @@ class ApiReleaseSafetyTest(unittest.TestCase):
 
         self.assertEqual(payload.status, "")
         self.assertFalse(payload.sealed)
+
+    def test_private_alpha_registration_blocks_public_signup_after_bootstrap(self) -> None:
+        class FakeConnection:
+            def execute(self, _sql: str) -> "FakeConnection":
+                return self
+
+            def fetchone(self) -> tuple[int]:
+                return (1,)
+
+            def close(self) -> None:
+                pass
+
+        class FakeDatabase:
+            def connect(self) -> FakeConnection:
+                return FakeConnection()
+
+        with patch.object(api_app_module, "DB", FakeDatabase()):
+            with patch.dict(os.environ, {"CIVORA_ALLOW_PUBLIC_REGISTRATION": ""}, clear=False):
+                with self.assertRaises(HTTPException) as ctx:
+                    register(RegisterPayload(email="new@example.com", password="long-enough", name="New User"))
+
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertIn("Public registration is disabled", str(ctx.exception.detail))
 
 
 if __name__ == "__main__":

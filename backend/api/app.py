@@ -148,6 +148,20 @@ def _cors_allow_origins() -> list[str]:
             cleaned.append(value)
     return cleaned
 
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = str(os.getenv(name) or "").strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _public_registration_allowed() -> bool:
+    if PRODUCT_MODE in {"development", "local"}:
+        return True
+    return _env_flag("CIVORA_ALLOW_PUBLIC_REGISTRATION", False)
+
+
 DB = Database(DB_PATH)
 AUTH_STORE = AuthStore(DB)
 PROJECT_STORE = ProjectStore(DB)
@@ -768,6 +782,13 @@ def auth_status() -> Dict[str, Any]:
 
 @app.post("/api/auth/register")
 def register(payload: RegisterPayload) -> Dict[str, Any]:
+    connection = DB.connect()
+    try:
+        user_count = int(connection.execute("SELECT COUNT(*) FROM users").fetchone()[0])
+    finally:
+        connection.close()
+    if user_count > 0 and not _public_registration_allowed():
+        raise HTTPException(status_code=403, detail="Public registration is disabled for private alpha.")
     return application_register_user(
         auth_store=AUTH_STORE,
         email=payload.email,
