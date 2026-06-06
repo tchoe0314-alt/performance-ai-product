@@ -2930,6 +2930,7 @@ export default function PreviewPanel({
               <button
                 type="button"
                 data-testid="preview-interaction-edit"
+                aria-label="Set preview interaction to edit"
                 onClick={() => {
                   if (previewInteraction === "edit") return;
                   onQueuePreviewRefresh("Entering edit mode...");
@@ -3070,6 +3071,7 @@ export default function PreviewPanel({
                 </button>
                 <button
                   type="button"
+                  aria-label="Use canvas edit tool"
                   onClick={() => onSetPreviewInteraction("edit")}
                   className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2 ${
                     allowEdits

@@ -10002,6 +10002,14 @@ function PerformanceAIDashboardView({
     system_utilities: { title: "Utilities Health", desc: "Review what utility coordination needs before it can be trusted." },
     system_landscape: { title: "Landscape Health", desc: "Review what landscape needs before it can be trusted." },
   };
+  const disciplinePanelLinks: Array<{ panel: SidePanelKey; label: string }> = [
+    { panel: "grading", label: "Grading" },
+    { panel: "drainage", label: "Drainage" },
+    { panel: "utilities", label: "Utilities" },
+    { panel: "roadway", label: "Roadway" },
+    { panel: "landscape", label: "Landscape" },
+  ];
+  const isDisciplinePanel = disciplinePanelLinks.some((item) => item.panel === activeSidePanel);
   const workspaceModeByPanel: Record<SidePanelKey, WorkspaceMode> = {
     projects: "dashboard",
     dashboard: "dashboard",
@@ -10562,7 +10570,7 @@ function PerformanceAIDashboardView({
             <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-3 text-left text-slate-900">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Command</p>
               <div className="mt-2 grid grid-cols-2 gap-2">
-                <button type="button" onClick={() => handleOpenSidePanel("chat")} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-white">
+                <button type="button" aria-label="Open chat from sidebar command" onClick={() => handleOpenSidePanel("chat")} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-white">
                   Chat
                 </button>
                 <button type="button" onClick={() => handleOpenSidePanel("generate")} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-white">
@@ -10593,6 +10601,30 @@ function PerformanceAIDashboardView({
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto p-4">
+                {isDisciplinePanel ? (
+                  <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-2">
+                    <p className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      Discipline controls
+                    </p>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {disciplinePanelLinks.map((item) => (
+                        <button
+                          key={item.panel}
+                          type="button"
+                          onClick={() => handleOpenSidePanel(item.panel)}
+                          aria-current={activeSidePanel === item.panel ? "page" : undefined}
+                          className={`rounded-lg border px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
+                            activeSidePanel === item.panel
+                              ? "border-slate-950 bg-slate-950 text-white"
+                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
                 {activeSidePanel === "projects" ? (
                   <div className="space-y-3">
                     <button
@@ -14804,6 +14836,7 @@ function PerformanceAIDashboardView({
           >
             <button
               type="button"
+              aria-label="Open chat from floating command bar"
               onClick={() => handleOpenSidePanel("chat")}
               className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition hover:bg-white"
             >
