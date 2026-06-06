@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterable, List, Sequence
 from .common import blocker_explanations, safe_dict, safe_list, safe_str
 from .production_evidence import build_production_evidence
 from .production_depth import build_cad_interop_metadata
+from .export_external_verification import normalize_external_verification_record
 from .release_gates import construction_release_blockers_from_meta, final_plan_requires_construction_release
 
 
@@ -308,27 +309,46 @@ def _quantity_line_items(meta: Dict[str, Any], export_type: str) -> List[Dict[st
     return rows
 
 
-def _external_verification_hooks() -> Dict[str, Dict[str, Any]]:
-    return {
-        "landxml": {
-            "status": "not_verified",
-            "verified": False,
-            "requires_external_verification": True,
-            "verification_record_id": "",
-        },
-        "civil3d": {
-            "status": "not_verified",
-            "verified": False,
-            "requires_external_verification": True,
-            "verification_record_id": "",
-        },
-        "dwg": {
-            "status": "unsupported_no_writer",
-            "verified": False,
-            "requires_external_verification": True,
-            "verification_record_id": "",
-        },
-    }
+def _external_verification_record(meta: Dict[str, Any], *keys: str) -> Dict[str, Any]:
+    external = safe_dict(meta.get("external_verification") or meta.get("external_verification_records"))
+    for key in keys:
+        direct = safe_dict(meta.get(key))
+        if direct:
+            return direct
+        nested = safe_dict(external.get(key))
+        if nested:
+            return nested
+    records = safe_list(external.get("records") or meta.get("external_verification_records"))
+    wanted = {key.lower() for key in keys}
+    for item in records:
+        rec = safe_dict(item)
+        format_id = safe_str(rec.get("format") or rec.get("export_format")).lower()
+        tool = safe_str(rec.get("tool") or rec.get("target_tool")).lower()
+        if format_id in wanted or tool in wanted:
+            return rec
+    return {}
+
+
+def _external_verification_hooks(meta: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    landxml = normalize_external_verification_record(
+        _external_verification_record(meta, "landxml", "landxml_external_verification"),
+        format_id="landxml",
+        target_tool="LandXML",
+    )
+    civil3d = normalize_external_verification_record(
+        _external_verification_record(meta, "civil3d", "civil3d_external_verification"),
+        format_id="civil3d",
+        target_tool="Civil3D",
+    )
+    dwg = normalize_external_verification_record(
+        _external_verification_record(meta, "dwg", "dwg_external_verification"),
+        format_id="dwg",
+        target_tool="DWG",
+    )
+    dwg["status"] = "unsupported_no_writer"
+    dwg["verified"] = False
+    dwg["requires_external_verification"] = True
+    return {"landxml": landxml, "civil3d": civil3d, "dwg": dwg}
 
 
 def _layer_contract_status(meta: Dict[str, Any], cad_interop: Dict[str, Any]) -> str:
@@ -360,7 +380,7 @@ def _format_matrix(cad_interop: Dict[str, Any], export_audit_ready: bool) -> Dic
         }
     formats["civil3d"]["available"] = False
     formats["civil3d"]["review_ready"] = False
-    formats["civil3d"]["status"] = "not_implemented_not_verified"
+    formats["civil3d"]["status"] = "not_verified"
     formats["dwg"]["available"] = False
     formats["dwg"]["review_ready"] = False
     formats["dwg"]["status"] = "unsupported_no_writer"
@@ -369,6 +389,28 @@ def _format_matrix(cad_interop: Dict[str, Any], export_audit_ready: bool) -> Dic
         if formats["dxf"]["status"] in {"", "ready", "review_ready", "available"}:
             formats["dxf"]["status"] = "blocked_by_export_audit"
     return formats
+
+
+def _civil3d_compatibility_status(external_verification: Dict[str, Dict[str, Any]]) -> str:
+    status = safe_str(safe_dict(external_verification.get("civil3d")).get("status"), "not_verified")
+    if status == "externally_verified_review_only":
+        return "externally_verified_for_import_workflow_only"
+    if status == "blocked_needs_review":
+        return "blocked_needs_review"
+    return "not_verified"
+
+
+def _apply_external_verification_to_formats(
+    formats: Dict[str, Dict[str, Any]],
+    external_verification: Dict[str, Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
+    updated = deepcopy(formats)
+    for format_id in ("landxml", "civil3d"):
+        status = safe_str(safe_dict(external_verification.get(format_id)).get("status"), "not_verified")
+        if status in {"blocked_needs_review", "externally_verified_review_only", "not_verified"}:
+            updated.setdefault(format_id, {})["status"] = status
+        updated.setdefault(format_id, {})["construction_ready"] = False
+    return updated
 
 
 def build_export_package_report_v1(
@@ -413,6 +455,9 @@ def build_export_package_report_v1(
     gate_blocked = any(status != "ready" for status in (standards_status, existing_status, depth_status))
     construction_release_blocked = True
     formats = _format_matrix(cad_interop, bool(export_audit and not audit_blocked))
+    external_verification = _external_verification_hooks(meta)
+    formats = _apply_external_verification_to_formats(formats, external_verification)
+    civil3d_compatibility = _civil3d_compatibility_status(external_verification)
     review_blocked = bool(audit_blocked or gate_blocked or stale)
     deliverable_confidence = (
         "construction_blocked"
@@ -452,9 +497,9 @@ def build_export_package_report_v1(
         "quantity_line_items": _quantity_line_items(meta, safe_str(export_type)),
         "profile_packages": _deliverable_records(meta, "profiles", safe_str(export_type)),
         "section_packages": _deliverable_records(meta, "cross_sections", safe_str(export_type)),
-        "external_verification": _external_verification_hooks(),
+        "external_verification": external_verification,
         "supported_deliverables": deepcopy(formats),
-        "civil3d_compatibility": "unsupported_limited_not_verified",
+        "civil3d_compatibility": civil3d_compatibility,
         "dwg_compatibility": "unsupported_no_writer",
         "landxml_compatibility": formats["landxml"]["status"],
         "truth_label": "Export package report is traceable review metadata only. Civora never signs, seals, certifies, or approves construction; construction release requires external licensed engineer/user action outside Civora.",

@@ -1442,7 +1442,7 @@ def build_cad_interop_metadata(plan: Dict[str, Any]) -> Dict[str, Any]:
             "available": False,
             "review_ready": False,
             "construction_ready": False,
-            "status": "not_implemented_not_verified",
+            "status": "not_verified",
         },
         {
             "format": "dwg",

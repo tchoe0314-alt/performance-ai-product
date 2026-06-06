@@ -580,7 +580,7 @@ class ProductionDepthArtifactTests(unittest.TestCase):
         checks = {item["format"]: item for item in cad["compatibility_checks"]}
         self.assertEqual(checks["dxf"]["status"], "audited_review_ready")
         self.assertEqual(checks["landxml"]["status"], "pipe_network_contract_review_ready_not_civil3d_verified")
-        self.assertEqual(checks["civil3d"]["status"], "not_implemented_not_verified")
+        self.assertEqual(checks["civil3d"]["status"], "not_verified")
         self.assertEqual(checks["dwg"]["status"], "unsupported_no_writer")
         self.assertEqual(cad["unsupported_formats"], ["civil3d", "dwg"])
 

@@ -185,12 +185,84 @@ class ExportPackageReportTests(unittest.TestCase):
         finalize_export_metadata(plan)
         report = plan["meta"]["export_package_report_v1"]
 
-        self.assertEqual(report["civil3d_compatibility"], "unsupported_limited_not_verified")
+        self.assertEqual(report["civil3d_compatibility"], "not_verified")
         self.assertEqual(report["dwg_compatibility"], "unsupported_no_writer")
-        self.assertEqual(report["supported_deliverables"]["civil3d"]["status"], "not_implemented_not_verified")
+        self.assertEqual(report["supported_deliverables"]["civil3d"]["status"], "not_verified")
         self.assertEqual(report["supported_deliverables"]["dwg"]["status"], "unsupported_no_writer")
         self.assertFalse(report["supported_deliverables"]["civil3d"]["construction_ready"])
         self.assertFalse(report["supported_deliverables"]["dwg"]["construction_ready"])
+
+    def test_failed_external_civil3d_verification_is_blocked_needs_review(self) -> None:
+        plan = _plan()
+        plan["meta"]["external_verification"] = {
+            "civil3d": {
+                "verifier_identity": "External Engineer",
+                "verification_date": "2026-06-06",
+                "tool": "Autodesk Civil 3D",
+                "tool_version": "2026",
+                "result": "failed",
+                "notes": "Import workflow failed.",
+            }
+        }
+
+        report = build_export_package_report_v1(plan, export_type="landxml", generated_at="2026-06-06T00:00:00Z")
+
+        self.assertEqual(report["external_verification"]["civil3d"]["status"], "blocked_needs_review")
+        self.assertEqual(report["civil3d_compatibility"], "blocked_needs_review")
+        self.assertEqual(report["supported_deliverables"]["civil3d"]["status"], "blocked_needs_review")
+        self.assertFalse(report["external_verification"]["civil3d"]["construction_release_allowed"])
+        self.assertFalse(report["supported_deliverables"]["civil3d"]["construction_ready"])
+
+    def test_passed_external_civil3d_verification_is_import_workflow_only(self) -> None:
+        plan = _plan()
+        plan["meta"]["external_verification"] = {
+            "civil3d": {
+                "verification_record_id": "civil3d-landxml-2026-06-06",
+                "verifier_identity": "External Engineer",
+                "verification_date": "2026-06-06",
+                "tool": "Autodesk Civil 3D",
+                "tool_version": "2026.1",
+                "result": "passed",
+                "notes": "LandXML import and workflow check completed.",
+            }
+        }
+
+        report = build_export_package_report_v1(plan, export_type="landxml", generated_at="2026-06-06T00:00:00Z")
+
+        self.assertEqual(report["external_verification"]["civil3d"]["status"], "externally_verified_review_only")
+        self.assertEqual(report["civil3d_compatibility"], "externally_verified_for_import_workflow_only")
+        self.assertEqual(report["supported_deliverables"]["civil3d"]["status"], "externally_verified_review_only")
+        self.assertEqual(report["external_verification"]["civil3d"]["verifier_identity"], "External Engineer")
+        self.assertEqual(report["external_verification"]["civil3d"]["verification_date"], "2026-06-06")
+        self.assertEqual(report["external_verification"]["civil3d"]["tool"], "Autodesk Civil 3D")
+        self.assertEqual(report["external_verification"]["civil3d"]["tool_version"], "2026.1")
+        self.assertFalse(report["construction_release_allowed"])
+        self.assertFalse(report["supported_deliverables"]["civil3d"]["construction_ready"])
+
+    def test_external_verification_labels_avoid_release_claim_words(self) -> None:
+        plan = _plan()
+        plan["meta"]["external_verification"] = {
+            "civil3d": {
+                "verifier_identity": "External Engineer",
+                "verification_date": "2026-06-06",
+                "tool": "Autodesk Civil 3D",
+                "tool_version": "2026.1",
+                "result": "passed",
+            }
+        }
+
+        report = build_export_package_report_v1(plan, export_type="landxml", generated_at="2026-06-06T00:00:00Z")
+        labels = " ".join(
+            [
+                report["civil3d_compatibility"],
+                report["external_verification"]["civil3d"]["status"],
+                report["supported_deliverables"]["civil3d"]["status"],
+            ]
+        ).lower()
+
+        self.assertNotIn("construction-ready", labels)
+        self.assertNotIn("stamp", labels)
+        self.assertNotIn("seal", labels)
 
     def test_civora_never_approves_signs_or_seals_construction_deliverables(self) -> None:
         plan = _plan()

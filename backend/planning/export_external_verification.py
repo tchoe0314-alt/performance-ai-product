@@ -64,6 +64,13 @@ DXF_ALLOWED_LAYERS = {
     "HATCH",
 }
 
+EXTERNAL_VERIFICATION_STATUS_NOT_VERIFIED = "not_verified"
+EXTERNAL_VERIFICATION_STATUS_BLOCKED = "blocked_needs_review"
+EXTERNAL_VERIFICATION_STATUS_PASSED = "externally_verified_review_only"
+
+_PASSED_RESULTS = {"pass", "passed", "success", "successful", "accepted", "verified"}
+_FAILED_RESULTS = {"fail", "failed", "blocked", "rejected", "error", "needs_review", "needs review"}
+
 
 def _unique(values: Iterable[Any]) -> List[str]:
     out: List[str] = []
@@ -75,6 +82,73 @@ def _unique(values: Iterable[Any]) -> List[str]:
         seen.add(text)
         out.append(text)
     return out
+
+
+def normalize_external_verification_record(
+    record: Optional[Dict[str, Any]],
+    *,
+    format_id: str,
+    target_tool: str = "Civil3D",
+) -> Dict[str, Any]:
+    """Normalize external user/engineer import evidence without granting release authority."""
+
+    raw = safe_dict(record)
+    verification_result = safe_str(raw.get("result") or raw.get("status")).lower()
+    verifier = safe_str(
+        raw.get("verifier_identity")
+        or raw.get("verifier")
+        or raw.get("engineer")
+        or raw.get("tested_by")
+        or raw.get("user")
+    )
+    verification_date = safe_str(raw.get("verification_date") or raw.get("date") or raw.get("tested_at"))
+    tool_name = safe_str(raw.get("tool") or raw.get("tool_name") or raw.get("target_tool"), target_tool)
+    tool_version = safe_str(raw.get("tool_version") or raw.get("version"))
+    notes = safe_str(raw.get("notes") or raw.get("summary"))
+    record_id = safe_str(raw.get("verification_record_id") or raw.get("record_id") or raw.get("id"))
+    evidence_uri = safe_str(raw.get("evidence_uri") or raw.get("result_uri") or raw.get("upload_uri") or raw.get("source"))
+    required_present = bool(verifier and verification_date and tool_name and tool_version and verification_result)
+
+    if not raw:
+        status = EXTERNAL_VERIFICATION_STATUS_NOT_VERIFIED
+        failure_reason = "external_verification_missing"
+    elif not required_present:
+        status = EXTERNAL_VERIFICATION_STATUS_BLOCKED
+        failure_reason = "external_verification_record_incomplete"
+    elif verification_result in _PASSED_RESULTS:
+        status = EXTERNAL_VERIFICATION_STATUS_PASSED
+        failure_reason = ""
+    elif verification_result in _FAILED_RESULTS:
+        status = EXTERNAL_VERIFICATION_STATUS_BLOCKED
+        failure_reason = "external_verification_failed"
+    else:
+        status = EXTERNAL_VERIFICATION_STATUS_BLOCKED
+        failure_reason = "external_verification_result_unknown"
+
+    return {
+        "source": "external_verification_record_v1",
+        "format": safe_str(format_id),
+        "target_tool": tool_name,
+        "status": status,
+        "verified": status == EXTERNAL_VERIFICATION_STATUS_PASSED,
+        "requires_external_verification": status != EXTERNAL_VERIFICATION_STATUS_PASSED,
+        "verification_record_id": record_id,
+        "verifier_identity": verifier,
+        "verification_date": verification_date,
+        "tool": tool_name,
+        "tool_version": tool_version,
+        "result": safe_str(raw.get("result") or raw.get("status")),
+        "notes": notes,
+        "evidence_uri": evidence_uri,
+        "failure_reason": failure_reason,
+        "scope": "import_workflow_only",
+        "construction_release_allowed": False,
+        "civora_signoff_allowed": False,
+        "truth_label": (
+            "External verification records only confirm the named import/workflow check; "
+            "they do not authorize construction use or professional responsibility."
+        ),
+    }
 
 
 def _default_sidecar_path(artifact_path: Path) -> Path:
@@ -318,9 +392,14 @@ def verify_landxml_export(xml_text: str, *, plan: Optional[Dict[str, Any]] = Non
         failures.append("landxml_review_only_flags_missing")
     if not construction_release_flags_ok:
         failures.append("landxml_construction_release_flags_invalid")
-    if civil3d_status != "not_verified":
+    allowed_external_statuses = {
+        EXTERNAL_VERIFICATION_STATUS_NOT_VERIFIED,
+        EXTERNAL_VERIFICATION_STATUS_BLOCKED,
+        EXTERNAL_VERIFICATION_STATUS_PASSED,
+    }
+    if civil3d_status not in allowed_external_statuses:
         failures.append("civil3d_verification_overclaimed")
-    if landxml_status != "not_verified":
+    if landxml_status not in allowed_external_statuses:
         failures.append("landxml_external_verification_overclaimed")
 
     return {
@@ -344,9 +423,12 @@ def verify_landxml_export(xml_text: str, *, plan: Optional[Dict[str, Any]] = Non
         "construction_release_allowed": False,
         "construction_release_blocked": True,
         "local_contract_verified": not failures,
-        "externally_verified": False,
+        "externally_verified": bool(
+            landxml_status == EXTERNAL_VERIFICATION_STATUS_PASSED
+            or civil3d_status == EXTERNAL_VERIFICATION_STATUS_PASSED
+        ),
         "failures": failures,
-        "truth_label": "LandXML was XML-parsed and roundtrip-parsed against Civora's pipe-network contract only; Civil3D workflow compatibility remains not_verified.",
+        "truth_label": "LandXML was XML-parsed and roundtrip-parsed against Civora's pipe-network contract; external Civil3D evidence is limited to import/workflow review.",
     }
 
 
@@ -378,6 +460,7 @@ def build_supported_limited_unsupported_matrix(report: Dict[str, Any]) -> Dict[s
 __all__ = [
     "DXF_ALLOWED_LAYERS",
     "build_supported_limited_unsupported_matrix",
+    "normalize_external_verification_record",
     "verify_dxf_export",
     "verify_landxml_export",
 ]

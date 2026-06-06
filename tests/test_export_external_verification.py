@@ -7,6 +7,7 @@ from pathlib import Path
 
 from backend.planning.export_external_verification import (
     build_supported_limited_unsupported_matrix,
+    normalize_external_verification_record,
     verify_dxf_export,
     verify_landxml_export,
 )
@@ -16,6 +17,53 @@ from tests.test_export_package_report import _plan
 
 
 class ExportExternalVerificationTests(unittest.TestCase):
+    def test_missing_external_verification_record_defaults_to_not_verified(self) -> None:
+        record = normalize_external_verification_record(None, format_id="civil3d", target_tool="Civil3D")
+
+        self.assertEqual(record["status"], "not_verified")
+        self.assertFalse(record["verified"])
+        self.assertFalse(record["construction_release_allowed"])
+        self.assertEqual(record["scope"], "import_workflow_only")
+
+    def test_failed_external_civil3d_verification_blocks_for_review(self) -> None:
+        record = normalize_external_verification_record(
+            {
+                "verifier_identity": "External PE",
+                "verification_date": "2026-06-06",
+                "tool": "Autodesk Civil 3D",
+                "tool_version": "2026",
+                "result": "failed",
+                "notes": "Pipe network import produced errors.",
+            },
+            format_id="civil3d",
+            target_tool="Civil3D",
+        )
+
+        self.assertEqual(record["status"], "blocked_needs_review")
+        self.assertFalse(record["verified"])
+        self.assertEqual(record["failure_reason"], "external_verification_failed")
+        self.assertFalse(record["construction_release_allowed"])
+
+    def test_passed_external_civil3d_verification_is_review_only(self) -> None:
+        record = normalize_external_verification_record(
+            {
+                "verification_record_id": "civil3d-check-1",
+                "verifier_identity": "External Engineer",
+                "verification_date": "2026-06-06",
+                "tool": "Autodesk Civil 3D",
+                "tool_version": "2026.1",
+                "result": "passed",
+                "notes": "Imported LandXML and completed target workflow check.",
+            },
+            format_id="civil3d",
+            target_tool="Civil3D",
+        )
+
+        self.assertEqual(record["status"], "externally_verified_review_only")
+        self.assertTrue(record["verified"])
+        self.assertEqual(record["scope"], "import_workflow_only")
+        self.assertFalse(record["construction_release_allowed"])
+
     def test_dxf_export_is_parseable_layer_checked_and_traceable_but_not_civil3d_verified(self) -> None:
         plan = _plan()
 
@@ -132,7 +180,7 @@ class ExportExternalVerificationTests(unittest.TestCase):
         self.assertIn("landxml", matrix["limited"])
         self.assertIn("civil3d", matrix["unsupported"])
         self.assertIn("dwg", matrix["unsupported"])
-        self.assertEqual(report["supported_deliverables"]["civil3d"]["status"], "not_implemented_not_verified")
+        self.assertEqual(report["supported_deliverables"]["civil3d"]["status"], "not_verified")
         self.assertEqual(report["supported_deliverables"]["dwg"]["status"], "unsupported_no_writer")
         self.assertFalse(report["supported_deliverables"]["civil3d"]["construction_ready"])
         self.assertFalse(report["supported_deliverables"]["dwg"]["construction_ready"])

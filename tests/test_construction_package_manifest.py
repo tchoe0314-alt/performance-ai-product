@@ -81,7 +81,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         self.assertEqual(formats["dxf"]["status"], "audited_review_ready")
         self.assertTrue(formats["dxf"]["review_ready"])
         self.assertEqual(formats["landxml"]["status"], "pipe_network_contract_review_ready_not_civil3d_verified")
-        self.assertEqual(formats["civil3d"]["status"], "not_implemented_not_verified")
+        self.assertEqual(formats["civil3d"]["status"], "not_verified")
         self.assertEqual(formats["dwg"]["status"], "unsupported_no_writer")
 
     def test_review_package_manifest_blocks_missing_export_audit(self) -> None:

@@ -579,7 +579,7 @@ def _review_package_export_confidence(meta: Dict[str, Any]) -> Dict[str, Any]:
         else "LandXML writer/contract is not available for this package."
     )
 
-    civil3d_status = "available_not_verified" if civil3d_available else "not_implemented_not_verified"
+    civil3d_status = "available_not_verified" if civil3d_available else "not_verified"
     dwg_status = "available_not_audited" if dwg_available else "unsupported_no_writer"
 
     formats = {
