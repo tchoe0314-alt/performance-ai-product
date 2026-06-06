@@ -6,6 +6,7 @@ from backend.planning.standards_discovery import (
     build_live_source_fetch_record,
     build_standards_source_registry,
     build_standards_review_packet,
+    controlled_single_source_lookup,
     discover_standards_sources,
     extract_rule_candidates_from_text,
     fetch_and_extract_rule_candidates,
@@ -21,6 +22,20 @@ from core.civil_design import civil_design_readiness
 
 
 class StandardsDiscoveryTests(unittest.TestCase):
+    def _trusted_city_allowlist(self):
+        return [
+            {
+                "jurisdiction": {"city": "Example City", "state": "Texas"},
+                "agency": "Example City Public Works",
+                "allowed_domains": ["city.example.gov"],
+                "allowed_source_types": ["official_city"],
+                "disciplines": ["utilities"],
+                "configured_by": "standards-admin",
+                "configured_at": "2026-06-05",
+                "confidence_cap": "trusted_candidate",
+            }
+        ]
+
     def test_discovery_returns_candidate_sources_not_accepted_rules(self) -> None:
         result = discover_standards_sources(city="Austin", county="Travis", state="Texas")
 
@@ -337,6 +352,162 @@ class StandardsDiscoveryTests(unittest.TestCase):
         blocker_fields = {item["field"] for item in validation["blockers"]}
         self.assertIn("rule_acceptance_status", blocker_fields)
         self.assertIn("rule_metadata", blocker_fields)
+
+    def test_single_source_lookup_blocks_without_operator_authorization(self) -> None:
+        result = controlled_single_source_lookup(
+            source_url="https://city.example.gov/manual",
+            source_id="city_manual",
+            jurisdiction={"city": "Example City", "state": "Texas"},
+            agency="Example City Public Works",
+            source_type="official_city",
+            discipline="utilities",
+            operator_authorized=False,
+            allowlist_entries=self._trusted_city_allowlist(),
+        )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["fetch_record"]["fetch_status"], "blocked_by_operator_authorization")
+        self.assertEqual(result["warnings"], ["operator_authorized must be true for controlled single-source lookup."])
+        self.assertEqual(result["candidate_count"], 0)
+        self.assertFalse(result["production_usable"])
+        self.assertFalse(result["construction_release_allowed"])
+
+    def test_single_source_lookup_requires_allowlist_match(self) -> None:
+        result = controlled_single_source_lookup(
+            source_url="https://city.example.gov/manual",
+            source_id="city_manual",
+            jurisdiction={"city": "Example City", "state": "Texas"},
+            agency="Example City Public Works",
+            source_type="official_city",
+            discipline="utilities",
+            operator_authorized=True,
+            allowlist_entries=[
+                {
+                    "jurisdiction": {"city": "Other City", "state": "Texas"},
+                    "agency": "Other City Public Works",
+                    "allowed_domains": ["other.example.gov"],
+                    "allowed_source_types": ["official_city"],
+                    "disciplines": ["utilities"],
+                }
+            ],
+        )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["fetch_record"]["fetch_status"], "blocked_by_allowlist")
+        self.assertEqual(result["fetch_record"]["confidence"], "low")
+        self.assertTrue(result["fetch_record"]["review_only"])
+        self.assertFalse(result["source_classification"]["allowlist_matched"])
+
+    def test_single_source_lookup_extracts_candidate_rules_from_fixture(self) -> None:
+        class Response:
+            url = "https://city.example.gov/manual"
+            text = "<html><body>Minimum cover shall be 4 feet.</body></html>"
+            headers = {"content-type": "text/html"}
+
+            def raise_for_status(self):
+                return None
+
+        class Session:
+            def get(self, url, timeout=None):
+                return Response()
+
+        result = controlled_single_source_lookup(
+            source_url="https://city.example.gov/manual",
+            source_id="city_manual",
+            jurisdiction={"city": "Example City", "state": "Texas"},
+            agency="Example City Public Works",
+            source_type="official_city",
+            discipline="utilities",
+            operator_authorized=True,
+            document_title="Engineering Criteria Manual",
+            version="2026-01",
+            session=Session(),
+            allowlist_entries=self._trusted_city_allowlist(),
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["workflow_version"], "controlled_single_source_lookup_v1")
+        self.assertEqual(result["fetch_record"]["fetch_status"], "fetched")
+        self.assertEqual(result["fetch_record"]["confidence"], "trusted_candidate")
+        self.assertTrue(result["fetch_record"]["candidate_only"])
+        self.assertEqual(result["fetch_record"]["acceptance_status"], "unaccepted")
+        self.assertEqual(result["source_registry"]["accepted_source_count"], 0)
+        self.assertEqual(result["candidate_count"], 1)
+        self.assertEqual(result["candidate_rules"][0]["acceptance_status"], "candidate")
+        self.assertTrue(result["candidate_rules"][0]["requires_user_acceptance"])
+        self.assertFalse(result["candidate_rule_report"]["production_usable"])
+        self.assertFalse(result["production_usable"])
+        self.assertFalse(result["construction_release_allowed"])
+
+    def test_single_source_lookup_handles_network_failure_safely(self) -> None:
+        class Session:
+            def get(self, url, timeout=None):
+                raise TimeoutError("fixture timeout")
+
+        result = controlled_single_source_lookup(
+            source_url="https://city.example.gov/manual",
+            source_id="city_manual",
+            jurisdiction={"city": "Example City", "state": "Texas"},
+            agency="Example City Public Works",
+            source_type="official_city",
+            discipline="utilities",
+            operator_authorized=True,
+            session=Session(),
+            allowlist_entries=self._trusted_city_allowlist(),
+        )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["fetch_record"]["fetch_status"], "fetch_failed")
+        self.assertEqual(result["warnings"], ["fixture timeout"])
+        self.assertEqual(result["candidate_count"], 0)
+        self.assertFalse(result["production_usable"])
+
+    def test_single_source_lookup_rejects_unsupported_content_type(self) -> None:
+        class Response:
+            url = "https://city.example.gov/manual"
+            text = '{"minimum_cover": "4 feet"}'
+            headers = {"content-type": "application/json"}
+
+            def raise_for_status(self):
+                return None
+
+        class Session:
+            def get(self, url, timeout=None):
+                return Response()
+
+        result = controlled_single_source_lookup(
+            source_url="https://city.example.gov/manual",
+            source_id="city_manual",
+            jurisdiction={"city": "Example City", "state": "Texas"},
+            agency="Example City Public Works",
+            source_type="official_city",
+            discipline="utilities",
+            operator_authorized=True,
+            session=Session(),
+            allowlist_entries=self._trusted_city_allowlist(),
+        )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["fetch_record"]["fetch_status"], "unsupported_content_type")
+        self.assertEqual(result["warnings"], ["Controlled single-source lookup supports HTML, text, or PDF sources only."])
+        self.assertEqual(result["candidate_count"], 0)
+
+    def test_single_source_lookup_rejects_invalid_url_safely(self) -> None:
+        result = controlled_single_source_lookup(
+            source_url="not-a-url",
+            source_id="city_manual",
+            jurisdiction={"city": "Example City", "state": "Texas"},
+            agency="Example City Public Works",
+            source_type="official_city",
+            discipline="utilities",
+            operator_authorized=True,
+            allowlist_entries=self._trusted_city_allowlist(),
+        )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["fetch_record"]["fetch_status"], "blocked_by_policy")
+        self.assertIn("HTTPS", result["warnings"][0])
+        self.assertEqual(result["candidate_count"], 0)
 
     def test_unofficial_live_source_is_blocked_or_low_confidence(self) -> None:
         result = fetch_live_standards_source_candidate(

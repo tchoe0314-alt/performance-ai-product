@@ -534,6 +534,251 @@ def fetch_live_standards_source_candidate(
     }
 
 
+def _controlled_lookup_blocked_response(
+    *,
+    source_url: str,
+    source_id: str,
+    source_type: str,
+    jurisdiction: Optional[Dict[str, Any]],
+    agency: str,
+    discipline: str,
+    fetch_status: str,
+    reason: str,
+    classification: Optional[Dict[str, Any]] = None,
+    allowlist: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    fetch_record = build_live_source_fetch_record(
+        source_url=source_url,
+        jurisdiction=jurisdiction,
+        agency=agency,
+        source_type=source_type,
+        document_title=source_id,
+        fetch_status=fetch_status,
+        confidence=safe_str(safe_dict(classification).get("confidence")),
+    )
+    if classification:
+        fetch_record["policy_decision"] = safe_dict(classification)
+    return {
+        "success": False,
+        "workflow_version": "controlled_single_source_lookup_v1",
+        "source_id": safe_str(source_id),
+        "discipline": safe_str(discipline),
+        "source_classification": safe_dict(classification),
+        "trusted_allowlist": safe_dict(allowlist),
+        "fetch_record": fetch_record,
+        "source_registry": build_standards_source_registry(jurisdiction=jurisdiction, sources=[], candidate_rules=[]),
+        "candidate_rule_report": build_candidate_rule_report([]),
+        "candidate_rules": [],
+        "candidate_count": 0,
+        "warnings": [safe_str(reason)],
+        "blockers": [{"field": fetch_status, "reason": safe_str(reason)}],
+        "production_usable": False,
+        "construction_release_allowed": False,
+        "truth_label": "Single-source lookup is disabled unless explicitly operator-authorized and remains candidate evidence only.",
+    }
+
+
+def controlled_single_source_lookup(
+    *,
+    source_url: str,
+    source_id: str = "single_source_lookup",
+    jurisdiction: Optional[Dict[str, Any]] = None,
+    agency: str = "",
+    source_type: str = "",
+    discipline: str = "",
+    operator_authorized: bool = False,
+    document_title: str = "",
+    effective_date: str = "",
+    version: str = "",
+    session: Any = requests,
+    source_owner: str = "",
+    uploaded_by: str = "",
+    allowlist_entries: Optional[Iterable[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    url = safe_str(source_url)
+    source_id_text = safe_str(source_id, "single_source_lookup")
+    jurisdiction_rec = safe_dict(jurisdiction)
+    agency_text = safe_str(agency)
+    source_type_text = safe_str(source_type)
+    discipline_text = safe_str(discipline)
+    allowlist = trusted_standards_source_allowlist(allowlist_entries)
+    if not operator_authorized:
+        return _controlled_lookup_blocked_response(
+            source_url=url,
+            source_id=source_id_text,
+            source_type=source_type_text,
+            jurisdiction=jurisdiction_rec,
+            agency=agency_text,
+            discipline=discipline_text,
+            fetch_status="blocked_by_operator_authorization",
+            reason="operator_authorized must be true for controlled single-source lookup.",
+            allowlist=allowlist,
+        )
+    missing = []
+    for field, value in (
+        ("source_url", url),
+        ("jurisdiction", jurisdiction_rec),
+        ("agency", agency_text),
+        ("source_type", source_type_text),
+        ("discipline", discipline_text),
+    ):
+        if not value:
+            missing.append(field)
+    if missing:
+        return _controlled_lookup_blocked_response(
+            source_url=url,
+            source_id=source_id_text,
+            source_type=source_type_text,
+            jurisdiction=jurisdiction_rec,
+            agency=agency_text,
+            discipline=discipline_text,
+            fetch_status="blocked_by_missing_required_metadata",
+            reason=f"Controlled single-source lookup requires: {', '.join(missing)}.",
+            allowlist=allowlist,
+        )
+    classification = classify_live_standards_source(
+        source_url=url,
+        source_type=source_type_text,
+        jurisdiction=jurisdiction_rec,
+        agency=agency_text,
+        source_owner=source_owner,
+        uploaded_by=uploaded_by,
+        allowlist_entries=allowlist_entries,
+    )
+    if classification.get("blocked"):
+        reason = "; ".join(safe_list(classification.get("reasons"))) or "Source is blocked by live-source policy."
+        return _controlled_lookup_blocked_response(
+            source_url=url,
+            source_id=source_id_text,
+            source_type=source_type_text,
+            jurisdiction=jurisdiction_rec,
+            agency=agency_text,
+            discipline=discipline_text,
+            fetch_status="blocked_by_policy",
+            reason=reason,
+            classification=classification,
+            allowlist=allowlist,
+        )
+    if not classification.get("allowlist_matched"):
+        return _controlled_lookup_blocked_response(
+            source_url=url,
+            source_id=source_id_text,
+            source_type=source_type_text,
+            jurisdiction=jurisdiction_rec,
+            agency=agency_text,
+            discipline=discipline_text,
+            fetch_status="blocked_by_allowlist",
+            reason="Source does not match trusted jurisdiction/agency/domain allowlist.",
+            classification=classification,
+            allowlist=allowlist,
+        )
+    body = ""
+    resolved_url = url
+    headers: Dict[str, Any] = {}
+    try:
+        response = session.get(url, timeout=20)
+        response.raise_for_status()
+        body = safe_str(getattr(response, "text", ""))
+        resolved_url = safe_str(getattr(response, "url", "")) or url
+        headers = safe_dict(getattr(response, "headers", {}))
+    except Exception as exc:
+        return _controlled_lookup_blocked_response(
+            source_url=url,
+            source_id=source_id_text,
+            source_type=source_type_text,
+            jurisdiction=jurisdiction_rec,
+            agency=agency_text,
+            discipline=discipline_text,
+            fetch_status="fetch_failed",
+            reason=safe_str(exc, "Network fetch failed."),
+            classification=classification,
+            allowlist=allowlist,
+        )
+    content_type = safe_str(headers.get("content-type")).lower()
+    is_pdf = "pdf" in content_type or safe_str(urlparse(resolved_url).path).lower().endswith(".pdf")
+    is_html_or_text = "html" in content_type or content_type.startswith("text/") or "<html" in body.lower()
+    if not is_pdf and not is_html_or_text:
+        return _controlled_lookup_blocked_response(
+            source_url=url,
+            source_id=source_id_text,
+            source_type=source_type_text,
+            jurisdiction=jurisdiction_rec,
+            agency=agency_text,
+            discipline=discipline_text,
+            fetch_status="unsupported_content_type",
+            reason="Controlled single-source lookup supports HTML, text, or PDF sources only.",
+            classification=classification,
+            allowlist=allowlist,
+        )
+    extractable_text = "" if is_pdf else extract_text_from_html(body) if "<html" in body.lower() else body
+    candidates = extract_rule_candidates_from_text(extractable_text, source_id=source_id_text, source_url=resolved_url) if extractable_text else []
+    for candidate in candidates:
+        candidate["source_type"] = safe_str(classification.get("source_type"))
+        candidate["confidence"] = "live_source_candidate"
+        candidate["acceptance_status"] = "candidate"
+        candidate["status"] = "candidate"
+        candidate["requires_user_acceptance"] = True
+        candidate["source_document_title"] = safe_str(document_title or source_id_text)
+        candidate["source_version_or_effective_date"] = safe_str(version or effective_date)
+        candidate["lookup_discipline"] = discipline_text
+        candidate["needs_review"] = True
+    fetch_record = build_live_source_fetch_record(
+        source_url=url,
+        resolved_url=resolved_url,
+        jurisdiction=jurisdiction_rec,
+        agency=agency_text,
+        source_type=source_type_text,
+        document_title=document_title or source_id_text,
+        effective_date=effective_date,
+        version=version,
+        fetch_status="fetched_pdf_candidate" if is_pdf else "fetched",
+        confidence=safe_str(classification.get("confidence")),
+        content=body,
+        source_owner=source_owner,
+        uploaded_by=uploaded_by,
+        allowlist_entries=allowlist_entries,
+    )
+    source_registry = build_standards_source_registry(
+        jurisdiction=jurisdiction_rec,
+        sources=[
+            {
+                "source_id": source_id_text,
+                "agency": agency_text,
+                "discipline": discipline_text,
+                "source_url": resolved_url,
+                "document_title": document_title or source_id_text,
+                "version_or_effective_date": version or effective_date,
+                "retrieved_at": fetch_record["retrieved_at"],
+                "source_type": safe_str(classification.get("source_type")),
+                "confidence": safe_str(classification.get("confidence")),
+                "acceptance_status": "unaccepted",
+                "allowlist_matched": True,
+            }
+        ],
+        candidate_rules=candidates,
+    )
+    candidate_rule_report = build_candidate_rule_report(candidates, source_registry=source_registry)
+    warnings = ["PDF extraction is deferred; source is recorded as candidate evidence only."] if is_pdf else []
+    return {
+        "success": True,
+        "workflow_version": "controlled_single_source_lookup_v1",
+        "source_id": source_id_text,
+        "discipline": discipline_text,
+        "source_classification": classification,
+        "trusted_allowlist": allowlist,
+        "fetch_record": fetch_record,
+        "source_registry": source_registry,
+        "candidate_rule_report": candidate_rule_report,
+        "candidate_rules": candidate_rule_report["candidate_rules"],
+        "candidate_count": len(candidate_rule_report["candidate_rules"]),
+        "warnings": warnings,
+        "blockers": [],
+        "production_usable": False,
+        "construction_release_allowed": False,
+        "truth_label": "Controlled single-source lookup returns candidate evidence only; engineer/user acceptance and all broader gates are still required.",
+    }
+
+
 def _candidate_acceptance_status(raw: Any = "") -> str:
     status = safe_str(raw).lower()
     return status if status in {"candidate", "unaccepted"} else "candidate"
@@ -1610,6 +1855,7 @@ __all__ = [
     "build_standards_source_registry",
     "build_standards_review_packet",
     "classify_live_standards_source",
+    "controlled_single_source_lookup",
     "discover_standards_sources",
     "extract_rule_candidates_from_text",
     "extract_text_from_html",

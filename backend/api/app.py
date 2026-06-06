@@ -86,6 +86,7 @@ from backend.application.project_workflows import (
 from backend.application.session_workflows import maybe_export_session as application_maybe_export_session
 from backend.application.standards_workflows import (
     accept_standards_response as application_accept_standards_response,
+    controlled_single_source_lookup_response as application_controlled_single_source_lookup_response,
     discover_standards_response as application_discover_standards_response,
     extract_standards_candidates_response as application_extract_standards_candidates_response,
     fetch_live_standards_source_candidate_response as application_fetch_live_standards_source_candidate_response,
@@ -312,6 +313,22 @@ class StandardsLiveSourceFetchPayload(BaseModel):
     effective_date: str = ""
     version: str = ""
     allow_network_fetch: bool = False
+    source_owner: str = ""
+    uploaded_by: str = ""
+    allowlist_entries: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class StandardsSingleSourceLookupPayload(BaseModel):
+    source_url: str
+    source_id: str = "single_source_lookup"
+    jurisdiction: Dict[str, Any] = Field(default_factory=dict)
+    agency: str = ""
+    source_type: str = ""
+    discipline: str = ""
+    operator_authorized: bool = False
+    document_title: str = ""
+    effective_date: str = ""
+    version: str = ""
     source_owner: str = ""
     uploaded_by: str = ""
     allowlist_entries: List[Dict[str, Any]] = Field(default_factory=list)
@@ -933,6 +950,29 @@ def fetch_live_standards_source_candidate(
         effective_date=payload.effective_date,
         version=payload.version,
         allow_network_fetch=payload.allow_network_fetch,
+        source_owner=payload.source_owner,
+        uploaded_by=payload.uploaded_by,
+        allowlist_entries=payload.allowlist_entries,
+    )
+
+
+@app.post("/api/standards/single-source-lookup")
+def controlled_single_source_lookup(
+    payload: StandardsSingleSourceLookupPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    _ = current_user
+    return application_controlled_single_source_lookup_response(
+        source_url=payload.source_url,
+        source_id=payload.source_id,
+        jurisdiction=payload.jurisdiction,
+        agency=payload.agency,
+        source_type=payload.source_type,
+        discipline=payload.discipline,
+        operator_authorized=payload.operator_authorized,
+        document_title=payload.document_title,
+        effective_date=payload.effective_date,
+        version=payload.version,
         source_owner=payload.source_owner,
         uploaded_by=payload.uploaded_by,
         allowlist_entries=payload.allowlist_entries,

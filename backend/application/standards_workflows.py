@@ -6,6 +6,7 @@ from backend.planning.golden_runner import run_golden_scenarios
 from backend.planning.standards_discovery import (
     accept_standards_rules,
     build_standards_review_packet,
+    controlled_single_source_lookup,
     discover_standards_sources,
     fetch_and_extract_rule_candidates,
     fetch_live_standards_source_candidate,
@@ -129,12 +130,46 @@ def fetch_live_standards_source_candidate_response(
     )
 
 
+def controlled_single_source_lookup_response(
+    *,
+    source_url: str,
+    source_id: str = "single_source_lookup",
+    jurisdiction: Optional[Dict[str, Any]] = None,
+    agency: str = "",
+    source_type: str = "",
+    discipline: str = "",
+    operator_authorized: bool = False,
+    document_title: str = "",
+    effective_date: str = "",
+    version: str = "",
+    source_owner: str = "",
+    uploaded_by: str = "",
+    allowlist_entries: Optional[Iterable[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    return controlled_single_source_lookup(
+        source_url=source_url,
+        source_id=source_id,
+        jurisdiction=jurisdiction,
+        agency=agency,
+        source_type=source_type,
+        discipline=discipline,
+        operator_authorized=operator_authorized,
+        document_title=document_title,
+        effective_date=effective_date,
+        version=version,
+        source_owner=source_owner,
+        uploaded_by=uploaded_by,
+        allowlist_entries=allowlist_entries,
+    )
+
+
 def run_golden_scenarios_response(*, scenario_ids: Optional[Iterable[str]] = None) -> Dict[str, Any]:
     return run_golden_scenarios(scenario_ids)
 
 
 __all__ = [
     "accept_standards_response",
+    "controlled_single_source_lookup_response",
     "discover_standards_response",
     "extract_standards_candidates_response",
     "fetch_live_standards_source_candidate_response",
