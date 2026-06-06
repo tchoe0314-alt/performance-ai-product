@@ -49,7 +49,13 @@ class ApplicationStandardsWorkflowsTests(unittest.TestCase):
         accepted = accept_standards_response(
             review_packet=packet,
             accepted_rule_ids=["austin_cover"],
-            company_standards={"source": "company_manual", "cad_layers": "CIVORA", "production_usable": True},
+            company_standards={
+                "source": "company_manual",
+                "cad_layers": "CIVORA",
+                "approved_by": "QA Manager",
+                "approval_date": "2026-06-05",
+                "production_usable": True,
+            },
             accepted_by="engineer-1",
         )
 
@@ -63,6 +69,8 @@ class ApplicationStandardsWorkflowsTests(unittest.TestCase):
         self.assertTrue(accepted["standards_package"]["selected_standards_source"]["explicitly_selected"])
         self.assertFalse(accepted["standards_package"]["construction_release_blocked"])
         self.assertEqual(accepted["standards_acceptance"]["accepted_rules"][0]["accepted_by"], "engineer-1")
+        audit = {item["rule_id"]: item for item in accepted["standards_acceptance"]["audit_trail"]}
+        self.assertEqual(audit["austin_cover"]["decision"], "accepted")
         self.assertEqual(accepted["company_standards"]["cad_layers"], "CIVORA")
         self.assertIn("official rules", accepted["truth_label"])
 

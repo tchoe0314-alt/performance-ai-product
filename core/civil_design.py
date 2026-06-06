@@ -779,6 +779,25 @@ def _standards_production_blockers(standards: Dict[str, Any], accepted_rules: Se
     return derived
 
 
+def _company_standards_missing_trace(company: Dict[str, Any]) -> List[str]:
+    if not company:
+        return []
+    missing: List[str] = []
+    source_present = any(
+        _safe_str(company.get(key))
+        for key in ("source", "source_url", "file", "document_title", "standard_id", "cad_layer_standard", "cad_layers")
+    )
+    approved_by = _safe_str(company.get("approved_by") or company.get("reviewed_by"))
+    approval_date = _safe_str(company.get("approval_date") or company.get("reviewed_at") or company.get("accepted_date"))
+    if not source_present:
+        missing.append("source")
+    if not approved_by:
+        missing.append("approved_by")
+    if not approval_date:
+        missing.append("approval_date")
+    return missing
+
+
 def _coordinate_system_blockers(coordinate: Dict[str, Any]) -> List[Dict[str, Any]]:
     rec = _safe_dict(coordinate)
     blockers = [_safe_dict(item) for item in _safe_list(rec.get("blockers")) if _safe_dict(item)]
@@ -949,6 +968,17 @@ def check_standards_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
                 "Attach approved company CAD/layer/sheet/detail standards or mark the current profile production-usable with review evidence.",
             )
         )
+    else:
+        missing_company_trace = _company_standards_missing_trace(company)
+        if missing_company_trace:
+            gaps.append(
+                _production_gap(
+                    "standards",
+                    "company_standards_approval",
+                    "Production-usable company standards need source, approved_by, and approval_date trace.",
+                    "Attach company standards source plus approved_by and approval_date metadata.",
+                )
+            )
     package_qa_status = _safe_str(_safe_dict(standards_package.get("qa")).get("status") or standards_report.get("qa_status"))
     if package_qa_status == "blocked":
         acceptance_state = "blocked"

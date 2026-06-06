@@ -29,7 +29,12 @@ def _official_evidence(*, company_usable: bool = True) -> dict:
     return standards_project_evidence_from_acceptance(
         accepted,
         review_packet=packet,
-        company_standards={"source": "company_manual", "production_usable": company_usable},
+        company_standards={
+            "source": "company_manual",
+            "approved_by": "QA Manager",
+            "approval_date": "2026-06-05",
+            "production_usable": company_usable,
+        },
     )
 
 
@@ -63,7 +68,12 @@ class StandardsPackageTests(unittest.TestCase):
         evidence = standards_project_evidence_from_acceptance(
             accepted,
             review_packet=packet,
-            company_standards={"source": "company_manual", "production_usable": True},
+            company_standards={
+                "source": "company_manual",
+                "approved_by": "QA Manager",
+                "approval_date": "2026-06-05",
+                "production_usable": True,
+            },
         )
 
         package = build_standards_package(evidence)
@@ -90,6 +100,16 @@ class StandardsPackageTests(unittest.TestCase):
         fields = {item["field"] for item in package["blockers"]}
         self.assertIn("company_standards", fields)
 
+    def test_unapproved_company_standards_block_package(self) -> None:
+        evidence = _official_evidence()
+        evidence["company_standards"] = {"source": "company_manual", "production_usable": True}
+
+        package = build_standards_package(evidence)
+
+        self.assertEqual(package["status"], "blocked")
+        self.assertFalse(package["production_usable"])
+        self.assertIn("company_standards_approval", {item["field"] for item in package["blockers"]})
+
     def test_missing_jurisdiction_blocks_package(self) -> None:
         evidence = _official_evidence()
         evidence["jurisdiction_standards"] = {"source_urls": ["https://city.example.gov/manual"], "production_usable": True}
@@ -100,7 +120,7 @@ class StandardsPackageTests(unittest.TestCase):
         fields = {item["field"] for item in package["blockers"]}
         self.assertIn("jurisdiction", fields)
 
-    def test_stale_official_standards_need_review_without_fake_compliance(self) -> None:
+    def test_stale_official_standards_block_without_fake_compliance(self) -> None:
         evidence = _official_evidence()
         evidence["standards_acceptance"]["retrieved_date"] = "2000-01-01"
         evidence["design_standards"]["retrieved_date"] = "2000-01-01"
@@ -111,10 +131,10 @@ class StandardsPackageTests(unittest.TestCase):
 
         package = build_standards_package(evidence)
 
-        self.assertEqual(package["status"], "needs_review")
+        self.assertEqual(package["status"], "blocked")
         self.assertFalse(package["production_usable"])
         self.assertTrue(package["staleness"]["stale"])
-        self.assertIn("standards_stale", {item["field"] for item in package["warnings"]})
+        self.assertIn("standards_stale", {item["field"] for item in package["blockers"]})
 
     def test_complete_override_history_is_preserved_without_blocking_package(self) -> None:
         evidence = _official_evidence()
@@ -169,7 +189,12 @@ class StandardsPackageTests(unittest.TestCase):
                 "production_usable": True,
             },
             "standards_review_packet": packet,
-            "company_standards": {"source": "company_manual", "production_usable": True},
+            "company_standards": {
+                "source": "company_manual",
+                "approved_by": "QA Manager",
+                "approval_date": "2026-06-05",
+                "production_usable": True,
+            },
         }
 
         package = build_standards_package(evidence)
@@ -297,15 +322,20 @@ class StandardsPackageTests(unittest.TestCase):
         evidence = standards_project_evidence_from_acceptance(
             reviewed,
             review_packet=packet,
-            company_standards={"source": "company_manual", "production_usable": True},
+            company_standards={
+                "source": "company_manual",
+                "approved_by": "QA Manager",
+                "approval_date": "2026-06-05",
+                "production_usable": True,
+            },
         )
 
         package = build_standards_package(evidence)
 
-        self.assertEqual(package["status"], "needs_review")
+        self.assertEqual(package["status"], "blocked")
         self.assertFalse(package["production_usable"])
         self.assertTrue(package["staleness"]["stale"])
-        self.assertIn("standards_stale", {item["field"] for item in package["warnings"]})
+        self.assertIn("standards_stale", {item["field"] for item in package["blockers"]})
         self.assertFalse(package["requirements_gate"]["construction_allowed"])
 
     def test_accepted_candidate_flows_to_package_but_missing_company_gate_blocks(self) -> None:

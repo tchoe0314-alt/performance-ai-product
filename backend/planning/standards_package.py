@@ -209,6 +209,25 @@ def _overrides(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
     ]
 
 
+def _company_standards_missing_trace(company: Dict[str, Any]) -> List[str]:
+    if not company:
+        return []
+    missing: List[str] = []
+    source_present = any(
+        safe_str(company.get(key))
+        for key in ("source", "source_url", "file", "document_title", "standard_id", "cad_layer_standard", "cad_layers")
+    )
+    approved_by = safe_str(company.get("approved_by") or company.get("reviewed_by"))
+    approval_date = safe_str(company.get("approval_date") or company.get("reviewed_at") or company.get("accepted_date"))
+    if not source_present:
+        missing.append("source")
+    if not approved_by:
+        missing.append("approved_by")
+    if not approval_date:
+        missing.append("approval_date")
+    return missing
+
+
 def _validation(meta: Dict[str, Any], accepted_rules: List[Dict[str, Any]]) -> Dict[str, Any]:
     acceptance = safe_dict(meta.get("standards_acceptance"))
     design = safe_dict(meta.get("design_standards"))
@@ -520,6 +539,16 @@ def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
                 next_action="Approve company CAD/layer/sheet/detail standards or record why they remain review-only.",
             )
         )
+    else:
+        missing_company_trace = _company_standards_missing_trace(company)
+        if missing_company_trace:
+            blockers.append(
+                _blocker(
+                    "company_standards_approval",
+                    "Company standards marked production-usable must include source and approval trace.",
+                    next_action="Attach company standards source plus approved_by and approval_date metadata.",
+                )
+            )
     if bool(acceptance.get("needs_source_review")):
         warnings.append(
             _blocker(
@@ -530,12 +559,11 @@ def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
             )
         )
     if staleness.get("stale"):
-        warnings.append(
+        blockers.append(
             _blocker(
                 "standards_stale",
                 "Accepted standards source evidence is stale and needs confirmation before permit-style QA.",
                 next_action="Re-check the official source, refresh retrieved_date, or keep standards in review-only mode.",
-                severity="warning",
             )
         )
     if source_registry_staleness.get("stale_source_count"):

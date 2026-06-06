@@ -814,6 +814,8 @@ class StandardsDiscoveryTests(unittest.TestCase):
         self.assertEqual(accepted["accepted_rule_count"], 0)
         self.assertFalse(accepted["accepted_for_qa"])
         self.assertIn("city_cover", {rule["rule_id"] for rule in accepted["pending_rules"]})
+        audit = {item["rule_id"]: item for item in accepted["audit_trail"]}
+        self.assertEqual(audit["city_cover"]["decision"], "pending")
         self.assertTrue(accepted["action_errors"])
         self.assertIn("accepted_rules", {item["field"] for item in accepted["production_validation"]["blockers"]})
 
@@ -837,7 +839,13 @@ class StandardsDiscoveryTests(unittest.TestCase):
         evidence = standards_project_evidence_from_acceptance(
             accepted,
             review_packet=packet,
-            company_standards={"source": "company_manual", "cad_layers": "CIVORA", "production_usable": True},
+            company_standards={
+                "source": "company_manual",
+                "cad_layers": "CIVORA",
+                "approved_by": "QA Manager",
+                "approval_date": "2026-06-05",
+                "production_usable": True,
+            },
         )
 
         readiness = civil_design_readiness({"meta": evidence})
@@ -866,7 +874,12 @@ class StandardsDiscoveryTests(unittest.TestCase):
         evidence = standards_project_evidence_from_acceptance(
             accepted,
             review_packet=packet,
-            company_standards={"source": "company_manual", "production_usable": True},
+            company_standards={
+                "source": "company_manual",
+                "approved_by": "QA Manager",
+                "approval_date": "2026-06-05",
+                "production_usable": True,
+            },
         )
 
         self.assertTrue(evidence["production_usable"])

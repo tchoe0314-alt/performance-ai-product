@@ -1457,12 +1457,23 @@ def accept_standards_rules(
     rejected_rules: List[Dict[str, Any]] = []
     pending_rules: List[Dict[str, Any]] = []
     action_errors: List[Dict[str, Any]] = []
+    audit_trail: List[Dict[str, Any]] = []
     reviewer = safe_str(accepted_by)
     for rule in candidates:
         rule_id = safe_str(rule.get("rule_id"))
         edited = dict(rule)
         if rule_id in edit_map:
             edited.update(safe_dict(edit_map[rule_id]))
+        audit_record = {
+            "rule_id": rule_id,
+            "requested_action": "accepted" if rule_id in accepted else "rejected",
+            "decision": "pending",
+            "reviewed_at": _today(),
+            "reviewed_by": reviewer,
+            "source_id": safe_str(edited.get("source_id")),
+            "source_url": safe_str(edited.get("source_url")),
+            "source_section": safe_str(edited.get("source_section")),
+        }
         if rule_id in accepted:
             if reviewer:
                 edited["status"] = "accepted"
@@ -1470,8 +1481,10 @@ def accept_standards_rules(
                 edited["accepted_date"] = _today()
                 edited["accepted_at"] = _today()
                 edited["accepted_by"] = reviewer
+                edited["requires_user_acceptance"] = False
                 edited["needs_human_confirmation"] = False
                 accepted_rules.append(edited)
+                audit_record["decision"] = "accepted"
             else:
                 edited["status"] = "pending"
                 edited["acceptance_status"] = "candidate"
@@ -1479,10 +1492,15 @@ def accept_standards_rules(
                 edited["pending_reason"] = "Acceptance requires reviewer identity or approval metadata."
                 pending_rules.append(edited)
                 action_errors.append({"rule_id": rule_id, "action": "accepted", "reason": edited["pending_reason"]})
+                audit_record["decision"] = "pending"
+                audit_record["blocked_reason"] = edited["pending_reason"]
         else:
             edited["status"] = "not_accepted"
             edited["acceptance_status"] = "unaccepted"
+            edited["requires_user_acceptance"] = False
             rejected_rules.append(edited)
+            audit_record["decision"] = "rejected"
+        audit_trail.append(audit_record)
     source_urls = sorted({safe_str(rule.get("source_url")) for rule in accepted_rules if safe_str(rule.get("source_url"))})
     official_source_count = sum(
         1
@@ -1504,6 +1522,8 @@ def accept_standards_rules(
         "official_source_count": official_source_count,
         "needs_source_review": bool(accepted_rules and official_source_count <= 0),
         "accepted_for_qa": bool(accepted_rules),
+        "reviewer_id": reviewer,
+        "audit_trail": audit_trail,
         "action_errors": action_errors,
         "truth_label": "Only explicitly accepted rules with reviewer identity are eligible for production QA; baseline rules remain concept-only unless explicitly accepted.",
     }
@@ -1533,6 +1553,17 @@ def standards_pack_from_acceptance(acceptance: Dict[str, Any]) -> Dict[str, Any]
     pack["production_validation"] = validate_standards_acceptance_for_production(pack)
     pack["production_usable"] = bool(pack["production_validation"].get("production_usable"))
     return pack
+
+
+def _company_standards_trace_ready(company: Dict[str, Any]) -> bool:
+    rec = safe_dict(company)
+    source_present = any(
+        safe_str(rec.get(key))
+        for key in ("source", "source_url", "file", "document_title", "standard_id", "cad_layer_standard", "cad_layers")
+    )
+    approved_by = safe_str(rec.get("approved_by") or rec.get("reviewed_by"))
+    approval_date = safe_str(rec.get("approval_date") or rec.get("reviewed_at") or rec.get("accepted_date"))
+    return bool(rec.get("production_usable") is True and source_present and approved_by and approval_date)
 
 
 def standards_project_evidence_from_acceptance(
@@ -1572,7 +1603,7 @@ def standards_project_evidence_from_acceptance(
         "production_usable": (
             bool(pack.get("production_usable"))
             and bool(jurisdiction_profile.get("production_usable"))
-            and bool(company_profile.get("production_usable"))
+            and _company_standards_trace_ready(company_profile)
         ),
         "truth_label": "Project standards evidence is production-usable only after accepted official rules and jurisdiction traceability are present.",
     }
@@ -1631,6 +1662,7 @@ def validate_standards_acceptance_for_production(standards: Dict[str, Any]) -> D
         if _rule_is_inferred(rule)
     ]
     non_accepted_status_rules = []
+    stale_rules = []
     for index, rule in enumerate(rules, start=1):
         status = safe_str(rule.get("status")).lower()
         acceptance_status = safe_str(rule.get("acceptance_status")).lower()
@@ -1640,6 +1672,16 @@ def validate_standards_acceptance_for_production(standards: Dict[str, Any]) -> D
                     "rule_id": safe_str(rule.get("rule_id"), f"rule_{index}"),
                     "status": status,
                     "acceptance_status": acceptance_status,
+                }
+            )
+        staleness = _staleness_fields(rule.get("retrieved_at") or rule.get("retrieved_date"))
+        if bool(staleness.get("stale")):
+            stale_rules.append(
+                {
+                    "rule_id": safe_str(rule.get("rule_id"), f"rule_{index}"),
+                    "retrieved_at": safe_str(rule.get("retrieved_at") or rule.get("retrieved_date")),
+                    "age_days": staleness.get("age_days"),
+                    "stale_after_days": staleness.get("stale_after_days"),
                 }
             )
     if rules and not official_urls:
@@ -1675,11 +1717,19 @@ def validate_standards_acceptance_for_production(standards: Dict[str, Any]) -> D
                 "rules": non_accepted_status_rules,
             }
         )
+    if stale_rules:
+        blockers.append(
+            {
+                "field": "standards_stale",
+                "reason": "Accepted standards source evidence is stale and must be refreshed or reaccepted before production QA.",
+                "rules": stale_rules,
+            }
+        )
     incomplete_rules = []
     for rule in rules:
         missing = [
             key
-            for key in ("discipline", "topic", "candidate_value", "source_url", "source_section", "accepted_by", "accepted_date")
+            for key in ("discipline", "topic", "candidate_value", "source_id", "source_url", "source_section", "accepted_by", "accepted_date")
             if not safe_str(rule.get(key))
         ]
         if missing:
