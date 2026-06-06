@@ -91,6 +91,7 @@ uvicorn backend.api.app:app --reload --port 8002
 4. Build a request, save it as a project, or queue a planner job
 5. Review assumptions, issues, and backend result output in the dashboard
 6. Follow the review-only onboarding guide in [docs/private-alpha-onboarding.md](/Users/tommychoe/Documents/Playground/Civora%20AI/docs/private-alpha-onboarding.md)
+7. For controlled pilot launch operations, use [docs/controlled-pilot-operations-checklist.md](/Users/tommychoe/Documents/Playground/Civora%20AI/docs/controlled-pilot-operations-checklist.md)
 
 ## Current private alpha limits
 
