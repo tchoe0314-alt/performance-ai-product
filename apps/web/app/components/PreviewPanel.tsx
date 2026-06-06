@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { Maximize2, X } from "lucide-react";
+import { Download, FileText, Lock, Maximize2, RefreshCw, RotateCcw, Unlock, X } from "lucide-react";
 
 import type {
   Preview3DItem,
@@ -15,6 +15,11 @@ import { formatCount, formatMetric } from "../utils/formatting";
 import Preview3DCanvas from "./Preview3DCanvas";
 
 type PreviewPhaseLabel = { label: string } | null;
+type EngineeringSystemStatus = "fresh" | "stale" | "not_generated";
+type EngineeringSystemStatuses = Record<
+  "roads" | "parking" | "grading" | "drainage" | "utilities",
+  EngineeringSystemStatus
+>;
 
 type PreviewPanelProps = {
   previewReview: PreviewReview | null;
@@ -31,6 +36,11 @@ type PreviewPanelProps = {
   previewInteraction: "static" | "edit";
   previewQuality: "standard" | "high";
   previewLabelDensity: "low" | "standard" | "high";
+  systemStatuses: EngineeringSystemStatuses;
+  hasTerrainSource: boolean;
+  hasBasinPlaced: boolean;
+  siteTooLargeForGrading: boolean;
+  hasHardSystemBlock: boolean;
   hasGeneratedPlan: boolean;
   onSetPreviewMode: (value: "2d" | "3d") => void;
   onSetPreviewInteraction: (value: "static" | "edit") => void;
@@ -141,6 +151,11 @@ export default function PreviewPanel({
   previewInteraction,
   previewQuality,
   previewLabelDensity,
+  systemStatuses,
+  hasTerrainSource,
+  hasBasinPlaced,
+  siteTooLargeForGrading,
+  hasHardSystemBlock,
   hasGeneratedPlan,
   onSetPreviewMode,
   onSetPreviewInteraction,
@@ -2303,9 +2318,83 @@ export default function PreviewPanel({
     setFocusTransform({ scale: Math.min(Math.max(scale, 1), 3), tx: centerX, ty: centerY });
   }, [analysisHighlight, analysisPaths, buildingPlacements, lotHeight, lotWidth, suggestedPlacements]);
   const showParkingAnalysis = Boolean(analysisPaths && analysisPaths.length);
+  const releaseStatus = String(previewReview?.release_status || "review").toLowerCase();
+  const releaseLabel =
+    releaseStatus === "ready"
+      ? "Export Ready"
+      : releaseStatus === "blocked"
+        ? "Export Blocked"
+        : "Review Only";
+  const trustScore =
+    typeof previewReview?.trust_score === "number"
+      ? Math.round(previewReview.trust_score)
+      : null;
+  const staleSystems = (Object.entries(systemStatuses) as Array<[keyof EngineeringSystemStatuses, EngineeringSystemStatus]>)
+    .filter(([, status]) => status === "stale")
+    .map(([system]) => system);
+  const blockedExports = Array.isArray(previewReview?.blocked_exports)
+    ? previewReview.blocked_exports.filter(Boolean)
+    : [];
+  const blockedReasons = Array.isArray(previewReview?.blocked_reasons)
+    ? previewReview.blocked_reasons.filter(Boolean)
+    : [];
+  const assumptionCategories = Array.isArray(previewReview?.assumption_categories)
+    ? previewReview.assumption_categories.filter(Boolean)
+    : [];
+  const failedDeliverables = Array.isArray(previewReview?.failed_deliverables)
+    ? previewReview.failed_deliverables.filter(Boolean)
+    : [];
+  const missingInputs = [
+    !lotWidth || !lotHeight ? "site boundary" : null,
+    !hasTerrainSource ? "terrain source" : null,
+    !hasBasinPlaced && systemStatuses.drainage !== "fresh" ? "detention basin" : null,
+  ].filter(Boolean) as string[];
+  const exportBlocked = releaseStatus === "blocked" || hasHardSystemBlock || Boolean(blockedExports.length || failedDeliverables.length);
+  const reviewCards = [
+    {
+      label: "Missing Inputs",
+      value: missingInputs.length ? missingInputs.slice(0, 3).join(", ") : "None flagged",
+      tone: missingInputs.length ? "amber" : "slate",
+    },
+    {
+      label: "Readiness",
+      value: releaseLabel,
+      tone: exportBlocked ? "rose" : releaseStatus === "ready" ? "emerald" : "amber",
+    },
+    {
+      label: "Engine Confidence",
+      value: trustScore === null ? "Not reported" : `${trustScore}%`,
+      tone: trustScore === null ? "slate" : trustScore >= 80 ? "emerald" : trustScore >= 55 ? "amber" : "rose",
+    },
+    {
+      label: "Stale Outputs",
+      value: staleSystems.length ? staleSystems.slice(0, 4).join(", ") : "None",
+      tone: staleSystems.length ? "amber" : "slate",
+    },
+    {
+      label: "Assumptions",
+      value: assumptionCategories.length ? assumptionCategories.slice(0, 3).join(", ") : "None reported",
+      tone: assumptionCategories.length ? "amber" : "slate",
+    },
+    {
+      label: "Blocked Systems",
+      value: siteTooLargeForGrading
+        ? "grading area too large"
+        : blockedReasons.length
+          ? blockedReasons.slice(0, 2).join(", ")
+          : "None recorded",
+      tone: siteTooLargeForGrading || blockedReasons.length ? "rose" : "slate",
+    },
+  ] as const;
+  const toneClass = {
+    slate: "border-slate-200 bg-white text-slate-700",
+    amber: "border-amber-200 bg-amber-50 text-amber-900",
+    rose: "border-rose-200 bg-rose-50 text-rose-900",
+    emerald: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  } as const;
   return (
     <div className="flex h-full flex-col rounded-xl border border-slate-200 bg-white/92 p-3 shadow-[0_20px_60px_-44px_rgba(15,23,42,0.45)] backdrop-blur">
-      <div className="hidden">
+      <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center rounded-md bg-slate-950 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white">
@@ -2345,17 +2434,18 @@ export default function PreviewPanel({
             </div>
           ) : null}
         </div>
-          <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 xl:justify-end">
           {showMap ? (
             <button
               type="button"
               onClick={() => setMapLocked((prev) => !prev)}
-              className={`rounded-xl border px-3 py-2 text-sm font-medium transition ${
+              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition ${
                 mapLocked
                   ? "border-slate-900 bg-slate-950 text-white"
                   : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
               }`}
             >
+              {mapLocked ? <Unlock className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
               {mapLocked ? "Unlock Map" : "Lock Map"}
             </button>
           ) : null}
@@ -2366,8 +2456,9 @@ export default function PreviewPanel({
                 setFocusTransform(null);
                 onClearHighlights?.();
               }}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
             >
+              <X className="h-4 w-4" />
               Clear highlights
             </button>
           ) : null}
@@ -2377,23 +2468,25 @@ export default function PreviewPanel({
               setFocusTransform(null);
               onResetView?.();
             }}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
           >
+            <RotateCcw className="h-4 w-4" />
             Reset view
           </button>
           <button
             type="button"
             onClick={onRefreshPreview}
             disabled={busy}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
+            <RefreshCw className="h-4 w-4" />
             Refresh Preview
           </button>
           {planPreviewUrl || showMap ? (
             <button
               type="button"
               onClick={onOpenFullscreen}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
             >
               <Maximize2 className="h-4 w-4" />
               Fullscreen Preview
@@ -2403,30 +2496,45 @@ export default function PreviewPanel({
             type="button"
             onClick={onExportDxf}
             disabled={busy}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
+            <Download className="h-4 w-4" />
             Export DXF
           </button>
           <button
             type="button"
             onClick={onExportReport}
             disabled={busy}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
+            <FileText className="h-4 w-4" />
             Export Report
           </button>
         </div>
       </div>
 
+      <div className="mb-3 grid grid-cols-2 gap-2 xl:grid-cols-6">
+        {reviewCards.map((item) => (
+          <div key={item.label} className={`min-h-[62px] rounded-lg border px-3 py-2 ${toneClass[item.tone]}`}>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-70">
+              {item.label}
+            </p>
+            <p className="mt-1 text-[11px] font-semibold leading-4 capitalize">
+              {item.value}
+            </p>
+          </div>
+        ))}
+      </div>
+
       <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
-          <div className="hidden">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white/85 px-3 py-2">
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               <span>Preview Mode</span>
               <button
                 type="button"
                 data-testid="preview-mode-2d"
                 onClick={() => onSetPreviewMode("2d")}
-                className={`rounded-full border px-2.5 py-1 ${
+                className={`rounded-lg border px-2.5 py-1 ${
                   previewMode === "2d"
                     ? "border-slate-900 bg-slate-950 text-white"
                     : "border-slate-200 bg-white text-slate-600"
@@ -2441,7 +2549,7 @@ export default function PreviewPanel({
                   if (!canUse3D) return;
                   onSetPreviewMode("3d");
                 }}
-                className={`rounded-full border px-2.5 py-1 ${
+                className={`rounded-lg border px-2.5 py-1 ${
                   previewMode === "3d"
                     ? "border-slate-900 bg-slate-950 text-white"
                     : "border-slate-200 bg-white text-slate-600"
@@ -2456,7 +2564,7 @@ export default function PreviewPanel({
               <button
                 type="button"
                 onClick={() => onSetPreviewInteraction("static")}
-                className={`rounded-full border px-2.5 py-1 ${
+                className={`rounded-lg border px-2.5 py-1 ${
                   previewInteraction === "static"
                     ? "border-slate-900 bg-slate-950 text-white"
                     : "border-slate-200 bg-white text-slate-600"
@@ -2466,13 +2574,13 @@ export default function PreviewPanel({
               </button>
               <button
                 type="button"
-                data-testid="preview-quality-standard"
+                data-testid="preview-interaction-edit"
                 onClick={() => {
                   if (previewInteraction === "edit") return;
                   onQueuePreviewRefresh("Entering edit mode...");
                   onSetPreviewInteraction("edit");
                 }}
-                className={`rounded-full border px-2.5 py-1 ${
+                className={`rounded-lg border px-2.5 py-1 ${
                   previewInteraction === "edit"
                     ? "border-slate-900 bg-slate-950 text-white"
                     : "border-slate-200 bg-white text-slate-600"
@@ -2485,13 +2593,13 @@ export default function PreviewPanel({
               <span>Quality</span>
               <button
                 type="button"
-                data-testid="preview-quality-high"
+                data-testid="preview-quality-standard"
                 onClick={() => {
                   if (previewQuality === "standard") return;
                   onQueuePreviewRefresh("Requesting standard-quality preview...");
                   onSetPreviewQuality("standard");
                 }}
-                className={`rounded-full border px-2.5 py-1 ${
+                className={`rounded-lg border px-2.5 py-1 ${
                   previewQuality === "standard"
                     ? "border-slate-900 bg-slate-950 text-white"
                     : "border-slate-200 bg-white text-slate-600"
@@ -2501,12 +2609,13 @@ export default function PreviewPanel({
               </button>
               <button
                 type="button"
+                data-testid="preview-quality-high"
                 onClick={() => {
                   if (previewQuality === "high") return;
                   onQueuePreviewRefresh("Requesting high-quality preview...");
                   onSetPreviewQuality("high");
                 }}
-                className={`rounded-full border px-2.5 py-1 ${
+                className={`rounded-lg border px-2.5 py-1 ${
                   previewQuality === "high"
                     ? "border-slate-900 bg-slate-950 text-white"
                     : "border-slate-200 bg-white text-slate-600"

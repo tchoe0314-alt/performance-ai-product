@@ -768,7 +768,7 @@ function PerformanceAIDashboardView({
     createWelcomeMessage(),
   ]);
   const [demoWorkspaceEnabled, setDemoWorkspaceEnabled] = useState(false);
-  const effectiveDemoWorkspaceEnabled = forceDemoWorkspace || demoWorkspaceEnabled || isDemoWorkspaceQuery();
+  const effectiveDemoWorkspaceEnabled = forceDemoWorkspace || demoWorkspaceEnabled;
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [chatCollapsed, setChatCollapsed] = useState(false);
   const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>("objects");
@@ -12035,6 +12035,11 @@ function PerformanceAIDashboardView({
                 previewInteraction={previewInteraction}
                 previewQuality={previewQuality}
                 previewLabelDensity={previewLabelDensity}
+                systemStatuses={systemStatuses}
+                hasTerrainSource={hasTerrainSource}
+                hasBasinPlaced={hasBasinPlaced}
+                siteTooLargeForGrading={siteTooLargeForGrading}
+                hasHardSystemBlock={hasHardSystemBlock}
                 hasGeneratedPlan={Boolean(planPreviewUrl && backendResult)}
                 placementMode={placementModeEnabled || Boolean(activePlacementId)}
                 onViewportCenter={handleViewportCenter}
