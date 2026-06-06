@@ -2,6 +2,7 @@ import unittest
 
 from backend.planning.standards_discovery import (
     accept_standards_rules,
+    build_candidate_rule_report,
     build_standards_source_registry,
     build_standards_review_packet,
     discover_standards_sources,
@@ -110,6 +111,11 @@ class StandardsDiscoveryTests(unittest.TestCase):
         self.assertTrue(all(item["needs_human_confirmation"] for item in candidates))
         self.assertEqual({item["acceptance_status"] for item in candidates}, {"candidate"})
         self.assertEqual({item["source_type"] for item in candidates}, {"scraped_candidate"})
+        cover = next(item for item in candidates if item["topic"] == "minimum cover")
+        self.assertEqual(cover["extracted_text_or_summary"], cover["candidate_value"])
+        self.assertTrue(cover["requires_user_acceptance"])
+        self.assertEqual(cover["numeric_thresholds"][0]["value"], 3.0)
+        self.assertEqual(cover["numeric_thresholds"][0]["comparator"], "min")
 
     def test_fetch_and_extract_rule_candidates_from_html(self) -> None:
         class Response:
@@ -129,7 +135,92 @@ class StandardsDiscoveryTests(unittest.TestCase):
         self.assertEqual(result["candidate_count"], 1)
         self.assertEqual(result["source_registry"]["accepted_source_count"], 0)
         self.assertEqual(result["candidate_rules"][0]["acceptance_status"], "candidate")
+        self.assertIn("roadway", result["candidate_rule_report"]["by_discipline"])
         self.assertIn("candidates only", result["truth_label"])
+
+    def test_candidate_rule_report_groups_rules_and_flags_duplicates(self) -> None:
+        registry = build_standards_source_registry(
+            sources=[
+                {
+                    "source_id": "city_manual",
+                    "source_url": "https://city.example.gov/manual",
+                    "document_title": "City Manual",
+                    "version_or_effective_date": "2026-01-01",
+                    "retrieved_at": "2026-06-05",
+                    "source_type": "official_candidate",
+                }
+            ],
+            candidate_rules=[
+                {"rule_id": "cover_a", "source_id": "city_manual"},
+                {"rule_id": "cover_b", "source_id": "city_manual"},
+            ],
+        )
+
+        report = build_candidate_rule_report(
+            [
+                {
+                    "rule_id": "cover_a",
+                    "discipline": "utilities",
+                    "topic": "minimum cover",
+                    "candidate_value": "Minimum cover shall be 4 feet.",
+                    "source_id": "city_manual",
+                    "source_url": "https://city.example.gov/manual",
+                },
+                {
+                    "rule_id": "cover_b",
+                    "discipline": "utilities",
+                    "topic": "minimum cover",
+                    "candidate_value": "Minimum cover shall be 4 feet.",
+                    "source_id": "city_manual",
+                    "source_url": "https://city.example.gov/manual",
+                },
+            ],
+            source_registry=registry,
+        )
+
+        self.assertEqual(report["version"], "standards_candidate_rule_report_v1")
+        self.assertEqual(report["accepted_rule_count"], 0)
+        self.assertFalse(report["production_usable"])
+        self.assertIn("utilities", report["by_discipline"])
+        self.assertEqual(len(report["by_source"]["city_manual"]), 2)
+        self.assertEqual(report["duplicate_rule_ids"], ["cover_a", "cover_b"])
+        self.assertTrue(all(rule["requires_user_acceptance"] for rule in report["candidate_rules"]))
+        self.assertEqual(report["candidate_rules"][0]["source_document_title"], "City Manual")
+        self.assertEqual(report["candidate_rules"][0]["source_version_or_effective_date"], "2026-01-01")
+
+    def test_stale_source_candidates_are_marked_needs_review(self) -> None:
+        registry = build_standards_source_registry(
+            sources=[
+                {
+                    "source_id": "old_manual",
+                    "source_url": "https://city.example.gov/manual",
+                    "document_title": "Old City Manual",
+                    "retrieved_at": "2000-01-01",
+                    "source_type": "official_candidate",
+                }
+            ],
+            candidate_rules=[{"rule_id": "old_cover", "source_id": "old_manual"}],
+        )
+
+        report = build_candidate_rule_report(
+            [
+                {
+                    "rule_id": "old_cover",
+                    "discipline": "utilities",
+                    "topic": "minimum cover",
+                    "candidate_value": "Minimum cover shall be 4 feet.",
+                    "source_id": "old_manual",
+                    "source_url": "https://city.example.gov/manual",
+                }
+            ],
+            source_registry=registry,
+        )
+
+        rule = report["candidate_rules"][0]
+
+        self.assertTrue(rule["needs_review"])
+        self.assertIn("source_stale", rule["review_reasons"])
+        self.assertEqual(report["stale_rule_ids"], ["old_cover"])
 
     def test_standards_production_validation_requires_official_source(self) -> None:
         packet = build_standards_review_packet(

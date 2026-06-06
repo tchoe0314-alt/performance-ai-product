@@ -223,12 +223,51 @@ class StandardsPackageTests(unittest.TestCase):
 
         self.assertEqual(package["status"], "blocked")
         self.assertEqual(package["standards_source_registry"]["accepted_source_count"], 0)
+        self.assertEqual(package["candidate_rule_report"]["accepted_rule_count"], 0)
+        self.assertFalse(package["candidate_rule_report"]["production_usable"])
         self.assertIn("candidate_cover", {
             rule_id
             for source in package["standards_source_registry"]["sources"]
             for rule_id in source["candidate_rule_ids"]
         })
         self.assertIn("accepted_rules", {item["field"] for item in package["blockers"]})
+        self.assertIn("candidate_standards", {item["field"] for item in package["warnings"]})
+        self.assertIn("candidate_standards", {item["field"] for item in package["standards_acceptance_report"]["reviewer_comments"]})
+        self.assertEqual(package["standards_acceptance_report"]["rules"]["candidates"]["candidate_count"], 4)
+        self.assertFalse(package["requirements_gate"]["construction_allowed"])
+
+    def test_duplicate_candidate_rules_surface_in_package_review_warnings(self) -> None:
+        packet = build_standards_review_packet(
+            city="Austin",
+            state="Texas",
+            extracted_rules=[
+                {
+                    "rule_id": "cover_a",
+                    "discipline": "utilities",
+                    "topic": "minimum cover",
+                    "candidate_value": "Minimum cover shall be 4 feet.",
+                    "source_id": "city_manual",
+                    "source_url": "https://city.example.gov/manual",
+                    "source_section": "Section 5.1",
+                },
+                {
+                    "rule_id": "cover_b",
+                    "discipline": "utilities",
+                    "topic": "minimum cover",
+                    "candidate_value": "Minimum cover shall be 4 feet.",
+                    "source_id": "city_manual",
+                    "source_url": "https://city.example.gov/manual",
+                    "source_section": "Section 5.1",
+                },
+            ],
+        )
+
+        package = build_standards_package({"standards_review_packet": packet})
+
+        self.assertEqual(package["candidate_rule_report"]["duplicate_rule_ids"], ["cover_a", "cover_b"])
+        warning = next(item for item in package["warnings"] if item["field"] == "candidate_standards")
+        self.assertIn("duplicates", warning["reason"])
+        self.assertFalse(package["production_usable"])
         self.assertFalse(package["requirements_gate"]["construction_allowed"])
 
     def test_stale_source_registry_adds_review_warning(self) -> None:

@@ -191,6 +191,16 @@ def _source_registry_staleness(registry: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _candidate_rule_report(meta: Dict[str, Any]) -> Dict[str, Any]:
+    packet = safe_dict(meta.get("standards_review_packet"))
+    report = safe_dict(
+        meta.get("standards_candidate_rule_report")
+        or packet.get("candidate_rule_report")
+        or safe_dict(meta.get("standards_package")).get("candidate_rule_report")
+    )
+    return deepcopy(report)
+
+
 def _overrides(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
     return [
         safe_dict(item)
@@ -388,6 +398,7 @@ def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     staleness = _staleness(retrieved_date)
     source_registry = _source_registry(meta)
     source_registry_staleness = _source_registry_staleness(source_registry)
+    candidate_rule_report = _candidate_rule_report(meta)
     overrides = _overrides(meta)
     source_urls = _source_urls(
         acceptance.get("source_urls"),
@@ -536,6 +547,22 @@ def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
                 severity="warning",
             )
         )
+    if candidate_rule_report.get("candidate_count"):
+        duplicate_count = int(candidate_rule_report.get("duplicate_count") or 0)
+        stale_count = len(safe_list(candidate_rule_report.get("stale_rule_ids")))
+        reason = f"{candidate_rule_report.get('candidate_count')} candidate standards rules need user acceptance before they can be used for production QA."
+        if duplicate_count:
+            reason += f" {duplicate_count} candidate rule IDs are flagged as duplicates."
+        if stale_count:
+            reason += f" {stale_count} candidate rule IDs come from stale source records."
+        warnings.append(
+            _blocker(
+                "candidate_standards",
+                reason,
+                next_action="Review candidate rules, resolve duplicates/stale sources, then explicitly accept applicable official-source rules.",
+                severity="warning",
+            )
+        )
     incomplete_overrides: List[Dict[str, Any]] = []
     for override in overrides:
         missing = [
@@ -588,6 +615,7 @@ def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
         "selected_standards_source": source_selection,
         "rules": {
             "accepted": deepcopy(accepted_rules),
+            "candidates": deepcopy(candidate_rule_report),
             "accepted_rule_ids": deepcopy(validation.get("accepted_rule_ids") or [safe_str(rule.get("rule_id")) for rule in accepted_rules if safe_str(rule.get("rule_id"))]),
             "inferred_rule_ids": inferred_rule_ids,
             "missing_rules": missing_rules,
@@ -631,6 +659,7 @@ def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
         "source_urls": source_urls,
         "standards_source_registry": source_registry,
         "source_registry_staleness": source_registry_staleness,
+        "candidate_rule_report": candidate_rule_report,
         "official_source_count": validation.get("official_source_count", 0),
         "accepted_rule_count": len(accepted_rules),
         "accepted_rules": deepcopy(accepted_rules),

@@ -60,6 +60,14 @@ class StandardsRuleCandidate:
     needs_human_confirmation: bool
 
 
+@dataclass(frozen=True)
+class NumericThreshold:
+    value: float
+    unit: str
+    comparator: str
+    raw_text: str
+
+
 BASELINE_US_CONCEPT_RULES: Tuple[StandardsRuleCandidate, ...] = (
     StandardsRuleCandidate(
         rule_id="us_baseline_ada_cross_slope",
@@ -173,6 +181,179 @@ def _registry_confidence(source: Dict[str, Any], source_type: str) -> str:
     if source_type == "search_candidate":
         return "search"
     return "candidate"
+
+
+def _source_registry_by_id(source_registry: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    return {
+        safe_str(source.get("source_id")): safe_dict(source)
+        for source in safe_list(safe_dict(source_registry).get("sources"))
+        if safe_str(safe_dict(source).get("source_id"))
+    }
+
+
+def _numeric_thresholds_from_text(text: str) -> List[Dict[str, Any]]:
+    thresholds: List[Dict[str, Any]] = []
+    haystack = safe_str(text)
+    pattern = re.compile(
+        r"(?i)(?P<prefix>.{0,45}?)(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>%|percent|feet|foot|ft|'|inches|inch|in|hours|hour|hrs|hr|gpm|gallons per minute|psi|fps|ft/s|feet per second)"
+    )
+    for match in pattern.finditer(haystack):
+        prefix = " ".join(match.group("prefix").lower().split())
+        comparator = "stated"
+        if any(token in prefix for token in ("maximum", "max", "not exceed", "shall not exceed", "no greater", "up to")):
+            comparator = "max"
+        elif any(token in prefix for token in ("minimum", "min", "at least", "not less", "greater than")):
+            comparator = "min"
+        raw_text = safe_str(match.group(0)).strip()
+        thresholds.append(
+            asdict(
+                NumericThreshold(
+                    value=float(match.group("value")),
+                    unit=safe_str(match.group("unit")).lower(),
+                    comparator=comparator,
+                    raw_text=raw_text,
+                )
+            )
+        )
+    return thresholds
+
+
+def _duplicate_signature(rule: Dict[str, Any]) -> Tuple[Any, ...]:
+    thresholds = []
+    for threshold in safe_list(rule.get("numeric_thresholds")):
+        rec = safe_dict(threshold)
+        thresholds.append(
+            (
+                rec.get("value"),
+                safe_str(rec.get("unit")).lower(),
+                safe_str(rec.get("comparator")).lower(),
+            )
+        )
+    text = re.sub(r"\s+", " ", safe_str(rule.get("extracted_text_or_summary") or rule.get("candidate_value")).lower()).strip()
+    return (
+        safe_str(rule.get("discipline")).lower(),
+        safe_str(rule.get("topic")).lower(),
+        tuple(sorted(thresholds)),
+        text[:180],
+    )
+
+
+def _normalize_candidate_rule(
+    raw_rule: Dict[str, Any],
+    *,
+    source_registry_lookup: Dict[str, Dict[str, Any]],
+    index: int,
+) -> Dict[str, Any]:
+    rule = safe_dict(raw_rule)
+    source_id = safe_str(rule.get("source_id"), "unknown_source")
+    source = safe_dict(source_registry_lookup.get(source_id))
+    extracted = safe_str(
+        rule.get("extracted_text_or_summary")
+        or rule.get("candidate_value")
+        or rule.get("value")
+        or rule.get("summary")
+    )
+    numeric_thresholds = safe_list(rule.get("numeric_thresholds")) or _numeric_thresholds_from_text(extracted)
+    retrieved_at = safe_str(rule.get("retrieved_at") or rule.get("retrieved_date") or source.get("retrieved_at"), _today())
+    source_stale = bool(source.get("stale"))
+    acceptance_status = _candidate_acceptance_status(rule.get("acceptance_status"))
+    normalized = {
+        "rule_id": safe_str(rule.get("rule_id"), f"candidate_rule_{index}"),
+        "discipline": safe_str(rule.get("discipline"), "general"),
+        "topic": safe_str(rule.get("topic"), "Unclassified standard"),
+        "extracted_text_or_summary": extracted,
+        "candidate_value": extracted,
+        "numeric_thresholds": numeric_thresholds,
+        "source_id": source_id,
+        "source_url": safe_str(rule.get("source_url") or source.get("source_url")),
+        "source_document_title": safe_str(
+            rule.get("source_document_title")
+            or rule.get("document_title")
+            or source.get("document_title")
+            or source.get("agency")
+        ),
+        "source_version_or_effective_date": safe_str(
+            rule.get("source_version_or_effective_date")
+            or rule.get("version_or_effective_date")
+            or source.get("version_or_effective_date")
+        ),
+        "source_section": safe_str(rule.get("source_section")),
+        "retrieved_date": safe_str(rule.get("retrieved_date") or retrieved_at),
+        "retrieved_at": retrieved_at,
+        "confidence": safe_str(rule.get("confidence"), "candidate"),
+        "status": safe_str(rule.get("status"), "candidate"),
+        "acceptance_status": acceptance_status,
+        "requires_user_acceptance": True,
+        "needs_human_confirmation": True,
+        "source_type": safe_str(rule.get("source_type")) or _registry_source_type(rule),
+        "needs_review": source_stale or acceptance_status in {"candidate", "unaccepted"},
+        "review_reasons": [],
+    }
+    if source_stale:
+        normalized["review_reasons"].append("source_stale")
+    if acceptance_status in {"candidate", "unaccepted"}:
+        normalized["review_reasons"].append("requires_user_acceptance")
+    return normalized
+
+
+def build_candidate_rule_report(
+    candidate_rules: Iterable[Dict[str, Any]],
+    *,
+    source_registry: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    registry = safe_dict(source_registry)
+    source_lookup = _source_registry_by_id(registry)
+    normalized_rules = [
+        _normalize_candidate_rule(raw_rule, source_registry_lookup=source_lookup, index=index)
+        for index, raw_rule in enumerate(candidate_rules or (), start=1)
+        if safe_dict(raw_rule)
+    ]
+    by_discipline: Dict[str, List[Dict[str, Any]]] = {}
+    by_source: Dict[str, List[Dict[str, Any]]] = {}
+    duplicate_lookup: Dict[Tuple[Any, ...], List[str]] = {}
+    for rule in normalized_rules:
+        by_discipline.setdefault(safe_str(rule.get("discipline"), "general"), []).append(rule)
+        by_source.setdefault(safe_str(rule.get("source_id"), "unknown_source"), []).append(rule)
+        duplicate_lookup.setdefault(_duplicate_signature(rule), []).append(safe_str(rule.get("rule_id")))
+
+    duplicate_groups = [
+        {"rule_ids": sorted(rule_ids), "duplicate_count": len(rule_ids)}
+        for rule_ids in duplicate_lookup.values()
+        if len(rule_ids) > 1
+    ]
+    duplicate_rule_ids = sorted({rule_id for group in duplicate_groups for rule_id in group["rule_ids"]})
+    stale_rule_ids = sorted(
+        safe_str(rule.get("rule_id"))
+        for rule in normalized_rules
+        if "source_stale" in safe_list(rule.get("review_reasons"))
+    )
+    needs_review_rule_ids = sorted(
+        safe_str(rule.get("rule_id"))
+        for rule in normalized_rules
+        if bool(rule.get("needs_review"))
+    )
+    for rule in normalized_rules:
+        rule["duplicate_candidate"] = safe_str(rule.get("rule_id")) in set(duplicate_rule_ids)
+        if rule["duplicate_candidate"] and "duplicate_candidate" not in rule["review_reasons"]:
+            rule["review_reasons"].append("duplicate_candidate")
+
+    return {
+        "version": "standards_candidate_rule_report_v1",
+        "candidate_count": len(normalized_rules),
+        "candidate_rules": normalized_rules,
+        "by_discipline": by_discipline,
+        "by_source": by_source,
+        "duplicate_rule_ids": duplicate_rule_ids,
+        "duplicate_groups": duplicate_groups,
+        "duplicate_count": len(duplicate_rule_ids),
+        "stale_rule_ids": stale_rule_ids,
+        "needs_review_rule_ids": needs_review_rule_ids,
+        "requires_user_acceptance": True,
+        "acceptance_status": "candidate",
+        "accepted_rule_count": 0,
+        "production_usable": False,
+        "truth_label": "Candidate standards are review inputs only and cannot satisfy production compliance until explicitly accepted through the standards acceptance workflow.",
+    }
 
 
 def build_standards_source_registry(
@@ -405,12 +586,14 @@ def build_standards_review_packet(
         sources=safe_list(discovery.get("sources")),
         candidate_rules=candidates,
     )
+    candidate_rule_report = build_candidate_rule_report(candidates, source_registry=source_registry)
     return {
         "success": True,
         "source_type": "standards_review_packet",
         "discovery": discovery,
         "source_registry": source_registry,
-        "candidate_rules": candidates,
+        "candidate_rule_report": candidate_rule_report,
+        "candidate_rules": candidate_rule_report["candidate_rules"],
         "accepted_rules": [],
         "rejected_rules": [],
         "truth_label": "Candidate standards require user acceptance/editing before production QA can rely on them.",
@@ -724,21 +907,29 @@ def extract_rule_candidates_from_text(
             start = max(0, match.start() - 120)
             end = min(len(haystack), match.end() + 120)
             excerpt = " ".join(haystack[start:end].split())
+            numeric_thresholds = _numeric_thresholds_from_text(safe_str(match.group(0)))
             candidates.append(
                 {
                     "rule_id": f"{source_id}_{discipline}_{pattern_index}_{match_index}",
                     "discipline": discipline,
                     "topic": topic,
+                    "extracted_text_or_summary": excerpt,
                     "candidate_value": excerpt,
+                    "numeric_thresholds": numeric_thresholds,
                     "source_id": source_id,
                     "source_url": source_url,
+                    "source_document_title": "",
+                    "source_version_or_effective_date": "",
                     "source_section": source_section or topic,
                     "retrieved_date": _today(),
                     "retrieved_at": _today(),
                     "confidence": "text_pattern_candidate",
                     "status": "candidate",
                     "acceptance_status": "candidate",
+                    "requires_user_acceptance": True,
                     "source_type": "scraped_candidate",
+                    "needs_review": True,
+                    "review_reasons": ["requires_user_acceptance"],
                     "needs_human_confirmation": True,
                 }
             )
@@ -765,7 +956,6 @@ def fetch_and_extract_rule_candidates(
         text = extract_text_from_html(body)
     else:
         text = body
-    candidates = extract_rule_candidates_from_text(text, source_id=source_id, source_url=url)
     source_record = {
         "source_id": source_id,
         "source_url": url,
@@ -775,16 +965,20 @@ def fetch_and_extract_rule_candidates(
         "confidence": "text_pattern_candidate",
         "status": "candidate",
     }
+    candidates = extract_rule_candidates_from_text(text, source_id=source_id, source_url=url)
+    source_registry = build_standards_source_registry(
+        sources=[source_record],
+        candidate_rules=candidates,
+    )
+    candidate_rule_report = build_candidate_rule_report(candidates, source_registry=source_registry)
     return {
         "success": True,
         "source_url": url,
         "source_id": source_id,
         "source_metadata": source_record,
-        "source_registry": build_standards_source_registry(
-            sources=[source_record],
-            candidate_rules=candidates,
-        ),
-        "candidate_rules": candidates,
+        "source_registry": source_registry,
+        "candidate_rule_report": candidate_rule_report,
+        "candidate_rules": candidate_rule_report["candidate_rules"],
         "candidate_count": len(candidates),
         "retrieved_date": _today(),
         "retrieved_at": _today(),
@@ -796,6 +990,7 @@ __all__ = [
     "BASELINE_US_CONCEPT_RULES",
     "accept_standards_rules",
     "baseline_us_rule_candidates",
+    "build_candidate_rule_report",
     "build_standards_source_registry",
     "build_standards_review_packet",
     "discover_standards_sources",
