@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -26,6 +27,10 @@ class ExportExternalVerificationTests(unittest.TestCase):
 
         self.assertEqual(result["local_parse_status"], "passed")
         self.assertEqual(result["layer_contract_status"], "passed")
+        self.assertTrue(result["sidecar_metadata"]["present"])
+        self.assertTrue(result["sidecar_metadata"]["artifact_path_matches"])
+        self.assertTrue(result["sidecar_metadata"]["export_package_report_present"])
+        self.assertTrue(result["sidecar_current_canonical_check"]["matches_current_canonical"])
         self.assertFalse(result["unknown_layers"])
         self.assertIn("PIPE", result["used_layers"])
         self.assertTrue(result["canonical_id_traceability"]["present"])
@@ -40,6 +45,41 @@ class ExportExternalVerificationTests(unittest.TestCase):
         self.assertFalse(result["construction_release_allowed"])
         self.assertTrue(result["construction_release_blocked"])
 
+    def test_dxf_verification_fails_without_sidecar_metadata(self) -> None:
+        plan = _plan()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            artifact_path = Path(tmpdir) / "missing-sidecar.dxf"
+            save_dxf(plan, filename=str(artifact_path))
+            artifact_path.with_suffix(".dxf.metadata.json").unlink()
+
+            result = verify_dxf_export(artifact_path, plan=plan)
+
+        self.assertEqual(result["local_parse_status"], "passed")
+        self.assertFalse(result["sidecar_metadata"]["present"])
+        self.assertFalse(result["local_contract_verified"])
+        self.assertIn("sidecar_metadata_missing", result["failures"])
+
+    def test_dxf_verification_blocks_stale_sidecar_metadata(self) -> None:
+        plan = _plan()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            artifact_path = Path(tmpdir) / "stale-sidecar.dxf"
+            save_dxf(plan, filename=str(artifact_path))
+            sidecar_path = artifact_path.with_suffix(".dxf.metadata.json")
+            sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+            sidecar["source_canonical_hash"] = "hash-rev-1"
+            sidecar["stale_outputs_detected"] = ["grading"]
+            sidecar_path.write_text(json.dumps(sidecar), encoding="utf-8")
+
+            result = verify_dxf_export(artifact_path, plan=plan)
+
+        self.assertEqual(result["local_parse_status"], "passed")
+        self.assertFalse(result["local_contract_verified"])
+        self.assertFalse(result["sidecar_current_canonical_check"]["matches_current_canonical"])
+        self.assertIn("stale_export_blocked", result["failures"])
+        self.assertIn("sidecar_canonical_reference_mismatch", result["failures"])
+
     def test_landxml_contract_roundtrips_with_canonical_ids_but_keeps_civil3d_not_verified(self) -> None:
         plan = _plan()
         xml_text = build_landxml_pipe_network(plan, network_name="External Verification")
@@ -53,12 +93,30 @@ class ExportExternalVerificationTests(unittest.TestCase):
         self.assertGreaterEqual(result["structure_count"], 1)
         self.assertIn("storm-1", result["canonical_id_traceability"]["canonical_ids"])
         self.assertTrue(result["export_package_report_present"])
+        self.assertTrue(result["review_only_flags_ok"])
+        self.assertTrue(result["construction_release_flags_ok"])
         self.assertEqual(result["landxml_external_verification_status"], "not_verified")
         self.assertEqual(result["civil3d_external_verification_status"], "not_verified")
         self.assertEqual(result["dwg_support_status"], "unsupported_no_writer")
         self.assertFalse(result["externally_verified"])
         self.assertFalse(result["construction_release_allowed"])
         self.assertTrue(result["construction_release_blocked"])
+
+    def test_landxml_contract_rejects_civil3d_or_release_overclaims(self) -> None:
+        plan = _plan()
+        xml_text = build_landxml_pipe_network(plan, network_name="External Verification")
+        xml_text = xml_text.replace('civoraCivil3dVerificationStatus="not_verified"', 'civoraCivil3dVerificationStatus="verified"', 1)
+        xml_text = xml_text.replace('civoraConstructionReleaseAllowed="false"', 'civoraConstructionReleaseAllowed="true"', 1)
+        xml_text = xml_text.replace('civil3d_external_verification_status="not_verified"', 'civil3d_external_verification_status="verified"', 1)
+
+        result = verify_landxml_export(xml_text, plan=plan)
+
+        self.assertEqual(result["local_parse_status"], "passed")
+        self.assertEqual(result["schema_like_contract_status"], "failed")
+        self.assertFalse(result["local_contract_verified"])
+        self.assertIn("civil3d_verification_overclaimed", result["failures"])
+        self.assertIn("landxml_review_only_flags_missing", result["failures"])
+        self.assertIn("landxml_construction_release_flags_invalid", result["failures"])
 
     def test_supported_limited_unsupported_matrix_never_promotes_civil3d_or_dwg_without_proof(self) -> None:
         plan = _plan()

@@ -77,6 +77,10 @@ def _unique(values: Iterable[Any]) -> List[str]:
     return out
 
 
+def _default_sidecar_path(artifact_path: Path) -> Path:
+    return artifact_path.with_suffix(f"{artifact_path.suffix}.metadata.json")
+
+
 def _load_sidecar(sidecar_path: Optional[Path]) -> Dict[str, Any]:
     if sidecar_path is None or not sidecar_path.exists():
         return {}
@@ -95,12 +99,54 @@ def _package_report_from_plan_or_sidecar(plan: Dict[str, Any], sidecar: Dict[str
 
 def _sidecar_metadata_check(artifact_path: Path, sidecar_path: Optional[Path], sidecar: Dict[str, Any]) -> Dict[str, Any]:
     present = bool(sidecar_path and sidecar_path.exists() and sidecar)
+    report = safe_dict(sidecar.get("export_package_report_v1"))
+    stale = safe_list(sidecar.get("stale_outputs_detected") or report.get("stale_outputs_detected"))
     return {
         "present": present,
         "path": str(sidecar_path) if sidecar_path else "",
         "artifact_path_matches": bool(present and safe_str(sidecar.get("artifact_path")) == str(artifact_path)),
         "export_package_report_present": bool(present and safe_dict(sidecar.get("export_package_report_v1"))),
+        "source_canonical_revision": safe_str(sidecar.get("source_canonical_revision") or report.get("source_canonical_revision")),
+        "source_canonical_hash": safe_str(sidecar.get("source_canonical_hash") or report.get("source_canonical_hash")),
+        "stale_outputs_detected": stale,
+        "stale_export_blocked": bool(stale),
         "construction_release_allowed": bool(sidecar.get("construction_release_allowed")),
+    }
+
+
+def _current_canonical_reference(plan: Dict[str, Any]) -> Dict[str, str]:
+    meta = safe_dict(plan.get("meta"))
+    return {
+        "revision": safe_str(
+            meta.get("source_canonical_revision")
+            or meta.get("canonical_revision")
+            or meta.get("canonical_model_revision")
+            or meta.get("final_model_revision")
+            or meta.get("revision")
+        ),
+        "hash": safe_str(
+            meta.get("source_canonical_hash")
+            or meta.get("canonical_model_hash")
+            or meta.get("final_model_hash")
+            or meta.get("model_hash")
+        ),
+    }
+
+
+def _sidecar_current_check(plan: Dict[str, Any], sidecar_check: Dict[str, Any]) -> Dict[str, Any]:
+    current = _current_canonical_reference(plan)
+    sidecar_revision = safe_str(sidecar_check.get("source_canonical_revision"))
+    sidecar_hash = safe_str(sidecar_check.get("source_canonical_hash"))
+    revision_matches = bool(not current["revision"] or (sidecar_revision and sidecar_revision == current["revision"]))
+    hash_matches = bool(not current["hash"] or (sidecar_hash and sidecar_hash == current["hash"]))
+    return {
+        "current_canonical_revision": current["revision"],
+        "current_canonical_hash": current["hash"],
+        "sidecar_canonical_revision": sidecar_revision,
+        "sidecar_canonical_hash": sidecar_hash,
+        "revision_matches_current": revision_matches,
+        "hash_matches_current": hash_matches,
+        "matches_current_canonical": revision_matches and hash_matches,
     }
 
 
@@ -142,6 +188,8 @@ def verify_dxf_export(
     allowed_layers: Optional[Set[str]] = None,
 ) -> Dict[str, Any]:
     plan = plan or {}
+    if sidecar_path is None:
+        sidecar_path = _default_sidecar_path(artifact_path)
     sidecar = _load_sidecar(sidecar_path)
     allowed = set(allowed_layers or DXF_ALLOWED_LAYERS)
     parseable = False
@@ -169,14 +217,32 @@ def verify_dxf_export(
     if unknown_layers:
         failures.append("dxf_layer_contract_failed")
     sidecar_check = _sidecar_metadata_check(artifact_path, sidecar_path, sidecar)
+    sidecar_current_check = _sidecar_current_check(plan, sidecar_check)
     trace_check = _canonical_trace_check(plan, sidecar)
     linkage_check = _profile_section_linkage_check(plan, sidecar)
     local_contract_ok = (
         parseable
         and not unknown_layers
-        and (not sidecar_path or sidecar_check["present"])
+        and sidecar_check["present"]
+        and sidecar_check["artifact_path_matches"]
+        and sidecar_check["export_package_report_present"]
+        and not sidecar_check["stale_export_blocked"]
+        and sidecar_current_check["matches_current_canonical"]
+        and trace_check["present"]
         and sidecar_check["construction_release_allowed"] is False
     )
+    if not sidecar_check["present"]:
+        failures.append("sidecar_metadata_missing")
+    if sidecar_check["present"] and not sidecar_check["artifact_path_matches"]:
+        failures.append("sidecar_artifact_path_mismatch")
+    if sidecar_check["present"] and not sidecar_check["export_package_report_present"]:
+        failures.append("sidecar_export_package_report_missing")
+    if sidecar_check["stale_export_blocked"]:
+        failures.append("stale_export_blocked")
+    if not sidecar_current_check["matches_current_canonical"]:
+        failures.append("sidecar_canonical_reference_mismatch")
+    if not trace_check["present"]:
+        failures.append("canonical_id_traceability_missing")
     return {
         "source": "export_external_verification_v1",
         "format": "dxf",
@@ -187,6 +253,7 @@ def verify_dxf_export(
         "declared_layers": table_layers,
         "unknown_layers": unknown_layers,
         "sidecar_metadata": sidecar_check,
+        "sidecar_current_canonical_check": sidecar_current_check,
         "canonical_id_traceability": trace_check,
         "profile_section_linkage": linkage_check,
         "civil3d_external_verification_status": "not_verified",
@@ -209,11 +276,26 @@ def verify_landxml_export(xml_text: str, *, plan: Optional[Dict[str, Any]] = Non
     report_present = False
     civil3d_status = "not_verified"
     landxml_status = "not_verified"
+    review_only_flags_ok = False
+    construction_release_flags_ok = False
     try:
         root = ET.fromstring(xml_text)
         ET.fromstring(ET.tostring(root, encoding="unicode"))
         pipe_count = len(root.findall(".//Pipe"))
         struct_count = len(root.findall(".//Struct"))
+        network = root.find(".//PipeNetwork")
+        network_attrs = network.attrib if network is not None else {}
+        review_only_flags_ok = (
+            safe_str(network_attrs.get("civoraReviewOnly")).lower() == "true"
+            and safe_str(network_attrs.get("civoraExternalVerificationRequired")).lower() == "true"
+            and safe_str(network_attrs.get("civoraCivil3dVerificationStatus"), "not_verified") == "not_verified"
+        )
+        release_flags: List[str] = []
+        for item in list(root.findall(".//Pipe")) + list(root.findall(".//Struct")):
+            release_flags.append(safe_str(item.attrib.get("civoraConstructionReleaseAllowed"), "false").lower())
+            if safe_str(item.attrib.get("civoraExternalVerificationStatus"), "not_verified") != "not_verified":
+                failures.append("landxml_external_verification_overclaimed")
+        construction_release_flags_ok = bool(release_flags) and all(value == "false" for value in release_flags)
         canonical_ids = _unique(
             item.attrib.get("civoraCanonicalId")
             for item in list(root.findall(".//Pipe")) + list(root.findall(".//Struct"))
@@ -232,6 +314,14 @@ def verify_landxml_export(xml_text: str, *, plan: Optional[Dict[str, Any]] = Non
         failures.append("canonical_id_traceability_missing")
     if not report_present:
         failures.append("export_package_report_missing")
+    if not review_only_flags_ok:
+        failures.append("landxml_review_only_flags_missing")
+    if not construction_release_flags_ok:
+        failures.append("landxml_construction_release_flags_invalid")
+    if civil3d_status != "not_verified":
+        failures.append("civil3d_verification_overclaimed")
+    if landxml_status != "not_verified":
+        failures.append("landxml_external_verification_overclaimed")
 
     return {
         "source": "export_external_verification_v1",
@@ -246,6 +336,8 @@ def verify_landxml_export(xml_text: str, *, plan: Optional[Dict[str, Any]] = Non
             "canonical_ids": canonical_ids,
         },
         "export_package_report_present": report_present,
+        "review_only_flags_ok": review_only_flags_ok,
+        "construction_release_flags_ok": construction_release_flags_ok,
         "landxml_external_verification_status": landxml_status,
         "civil3d_external_verification_status": civil3d_status or "not_verified",
         "dwg_support_status": "unsupported_no_writer",

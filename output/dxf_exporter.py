@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime
+import json
 import math
 import re
 import time
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import ezdxf
@@ -317,6 +319,44 @@ def mark_heavy_export_timeout(
     meta["export_audit"] = audit
     meta["export_package_report_v1"] = build_export_package_report_v1(plan, export_type="dxf")
     return audit
+
+
+def _dxf_sidecar_path(filename: str) -> Path:
+    artifact_path = Path(filename)
+    return artifact_path.with_suffix(f"{artifact_path.suffix}.metadata.json")
+
+
+def _write_export_sidecar(plan: Dict[str, Any], filename: str) -> Path:
+    meta = safe_dict(plan.get("meta"))
+    report = safe_dict(meta.get("export_package_report_v1")) or build_export_package_report_v1(plan, export_type="dxf")
+    sidecar = {
+        "source": "civora_export_sidecar_v1",
+        "artifact_path": str(Path(filename)),
+        "artifact_format": "dxf",
+        "source_project_id": safe_text(report.get("source_project_id") or meta.get("project_id")),
+        "source_canonical_revision": safe_text(report.get("source_canonical_revision")),
+        "source_canonical_hash": safe_text(report.get("source_canonical_hash")),
+        "generated_at": safe_text(report.get("generated_at")),
+        "review_package_only": True,
+        "engineer_review_required": True,
+        "civora_signoff_allowed": False,
+        "construction_release_allowed": False,
+        "construction_release_blocked": True,
+        "stale_outputs_detected": deepcopy(safe_list(report.get("stale_outputs_detected"))),
+        "missing_inputs": deepcopy(safe_list(report.get("missing_inputs"))),
+        "canonical_ids_included": deepcopy(safe_list(report.get("canonical_ids_included"))),
+        "civil3d_external_verification_status": "not_verified",
+        "dwg_support_status": "unsupported_no_writer",
+        "export_audit": deepcopy(safe_dict(meta.get("export_audit"))),
+        "export_package_report_v1": deepcopy(report),
+        "truth_label": (
+            "DXF sidecar records traceability for a review package only; Civil3D is not verified "
+            "and DWG is unsupported unless a real writer and verification record are attached."
+        ),
+    }
+    sidecar_path = _dxf_sidecar_path(filename)
+    sidecar_path.write_text(json.dumps(sidecar, indent=2, sort_keys=True), encoding="utf-8")
+    return sidecar_path
 
 
 PAGE_WIDTH_MM = 420.0
@@ -4377,5 +4417,17 @@ def save_dxf(
     stage_started = time.perf_counter()
     doc.saveas(filename)
     _record_export_stage(plan, "save.write_file", stage_started)
-    perf.update({"status": "completed", "elapsed_seconds": round(time.perf_counter() - export_started, 6), "artifact_path": filename})
+    check_timeout("save.write_file")
+
+    stage_started = time.perf_counter()
+    sidecar_path = _write_export_sidecar(plan, filename)
+    _record_export_stage(plan, "save.write_sidecar", stage_started, sidecar_path=str(sidecar_path))
+    perf.update(
+        {
+            "status": "completed",
+            "elapsed_seconds": round(time.perf_counter() - export_started, 6),
+            "artifact_path": filename,
+            "sidecar_path": str(sidecar_path),
+        }
+    )
     return filename
