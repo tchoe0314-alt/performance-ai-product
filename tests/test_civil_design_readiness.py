@@ -191,6 +191,7 @@ def _production_ready_meta() -> dict:
     meta["depth_validation"] = {
         "stormwater": {"production_ready": True, "blockers": [], "canonical_model_id": "MODEL-FINAL-1"},
         "water": {"production_ready": True, "blockers": [], "canonical_model_id": "MODEL-FINAL-1"},
+        "grading": {"production_ready": True, "blockers": [], "canonical_model_id": "MODEL-FINAL-1"},
         "roadway_corridor": {"production_ready": True, "blockers": [], "canonical_model_id": "MODEL-FINAL-1"},
     }
     meta["alignments"] = [{"id": "ALG-ROAD-1", "name": "Road A", "points": [[0.0, 0.0], [100.0, 0.0]]}]

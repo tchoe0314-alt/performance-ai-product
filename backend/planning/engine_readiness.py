@@ -6,7 +6,7 @@ from typing import Any, Dict, Iterable, List, Sequence, Set, Tuple
 from core.civil_design import civil_design_readiness
 
 from .common import readiness_issue_explanations
-from .depth_validators import validate_profile_section_depth, validate_roadway_corridor_depth, validate_stormwater_depth
+from .depth_validators import validate_grading_depth, validate_profile_section_depth, validate_roadway_corridor_depth, validate_stormwater_depth
 from .engine_contracts import EngineContract, engine_contracts
 from .reactive_model import validate_reactive_model_depth
 
@@ -230,6 +230,7 @@ def _depth_validation_for_engine(engine_id: str, meta: Dict[str, Any]) -> Dict[s
         or _safe_dict(meta.get("drainage") or meta.get("drainage_canonical"))
     )
     grading = _safe_dict(meta.get("grading") or meta.get("grading_summary") or meta.get("grading_detail"))
+    has_grading_depth = bool(grading or _safe_dict(meta.get("earthwork") or meta.get("earthwork_summary")))
     has_roadway_or_grading = bool(
         _safe_list(meta.get("alignments") or meta.get("road_alignments"))
         or _safe_list(meta.get("profiles") or meta.get("road_profiles"))
@@ -242,6 +243,8 @@ def _depth_validation_for_engine(engine_id: str, meta: Dict[str, Any]) -> Dict[s
         return _safe_dict(validations.get("stormwater")) or (validate_stormwater_depth(meta) if has_storm_or_drainage else {})
     if engine_id == "water":
         return _safe_dict(validations.get("water"))
+    if engine_id == "grading":
+        return _safe_dict(validations.get("grading")) or (validate_grading_depth(meta) if has_grading_depth else {})
     if engine_id == "roadway_corridor":
         return _safe_dict(validations.get("roadway_corridor")) or (validate_roadway_corridor_depth(meta) if has_roadway_or_grading else {})
     if engine_id == "hydrology":
@@ -260,6 +263,7 @@ def _depth_blockers_for_engine(engine_id: str, meta: Dict[str, Any]) -> List[Dic
     area = {
         "storm_pipe": "storm_depth",
         "water": "water_depth",
+        "grading": "grading_depth",
         "roadway_corridor": "roadway_depth",
         "hydrology": "hydrology_depth",
         "profile_section": "profile_section_depth",

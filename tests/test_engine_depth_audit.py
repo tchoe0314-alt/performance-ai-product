@@ -20,7 +20,7 @@ from backend.planning.golden_runner import run_golden_scenario
 from backend.planning.production_depth import enrich_storm_production_depth
 from core.civil_design import civil_design_readiness
 from tests.test_civil_design_readiness import _complete_meta
-from tests.test_depth_validators import _complete_roadway_corridor_meta
+from tests.test_depth_validators import _complete_grading_depth_meta
 
 
 def _review_depth_meta() -> dict:
@@ -182,7 +182,7 @@ def _hgl_egl_depth_plan(payload: dict) -> dict:
 
 
 def _complete_roadway_grading_fixture_meta() -> dict:
-    meta = deepcopy(_complete_roadway_corridor_meta())
+    meta = deepcopy(_complete_grading_depth_meta())
     grading = meta["grading"]
     grading["source"] = "roadway_grading_depth_fixture"
     grading["accepted_existing_surface_id"] = "EG-ACCEPTED-1"
@@ -409,12 +409,29 @@ class EngineDepthAuditTests(unittest.TestCase):
         self.assertEqual(depth["surface_traceability"]["existing_surface_id"], "EG-ACCEPTED-1")
         self.assertEqual(depth["surface_traceability"]["proposed_surface_id"], "FG-ACCEPTED-1")
 
+    def test_complete_grading_fixture_proves_grading_depth(self) -> None:
+        report = run_engine_depth_audit(scenario_ids=["roadway_corridor"], build_plan_fn=_roadway_grading_depth_plan)
+
+        grading = report["engine_results"]["grading"]
+        self.assertEqual(grading["actual_depth_classification"], CLASS_PRODUCTION_DEPTH)
+        self.assertEqual(grading["score"], 100.0)
+        self.assertEqual(grading["first_failing_layer"], "")
+        self.assertFalse(report["construction_release_allowed"])
+        self.assertEqual(report["summary"]["construction_gate_recommendation"], "block_construction_not_production_depth")
+
+        plan = _roadway_grading_depth_plan({"project_name": "grading depth fixture"})
+        grading_depth = plan["meta"]["engine_readiness"]["engines"]["grading"]
+        self.assertEqual(grading_depth["status"], "production_ready")
+        self.assertIn("depth_validation", grading_depth["evidence"])
+
     def test_roadway_grading_fixture_missing_evidence_remains_blocked(self) -> None:
         meta = _complete_roadway_grading_fixture_meta()
         meta["grading"]["road_crown_controls"][0].pop("actual_left_cross_slope")
         meta["grading"]["road_crown_controls"][0].pop("actual_cross_slope")
         meta["grading"]["curb_gutter_controls"][0].pop("alignment_id")
         meta["grading"]["surface_traceability"].pop("proposed_surface_id")
+        meta["grading"].pop("proposed_surface_id", None)
+        meta["grading"]["proposed_surface"].pop("id")
         meta["grading"]["pad_tie_ins"][0].pop("proposed_surface_id")
         meta["grading"]["contours"][0]["actual_contour_count"] = 0
         plan = {"meta": meta}

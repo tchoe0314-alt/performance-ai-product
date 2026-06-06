@@ -194,10 +194,10 @@ def _roadway_crown_expected_actual(row: Dict[str, Any]) -> Dict[str, Any]:
     actual_crown = rec.get("actual_crown_elev_ft", rec.get("crown_elev_ft"))
     expected_cross = rec.get("expected_cross_slope", rec.get("design_cross_slope", rec.get("standard_cross_slope")))
     actual_cross = rec.get("actual_cross_slope", rec.get("cross_slope"))
-    expected_left_cross = rec.get("expected_left_cross_slope", expected_cross)
-    actual_left_cross = rec.get("actual_left_cross_slope", rec.get("left_cross_slope", actual_cross))
-    expected_right_cross = rec.get("expected_right_cross_slope", expected_cross)
-    actual_right_cross = rec.get("actual_right_cross_slope", rec.get("right_cross_slope", actual_cross))
+    expected_left_cross = rec.get("expected_left_cross_slope")
+    actual_left_cross = rec.get("actual_left_cross_slope")
+    expected_right_cross = rec.get("expected_right_cross_slope")
+    actual_right_cross = rec.get("actual_right_cross_slope")
     crown_tolerance = safe_float(rec.get("crown_tolerance_ft"), 0.0)
     slope_tolerance = safe_float(rec.get("cross_slope_tolerance"), 0.0)
     valid = bool(
@@ -334,7 +334,10 @@ def _roadway_contour_expected_actual(row: Dict[str, Any], surface_trace: Dict[st
     actual_surface = safe_str(rec.get("proposed_surface_id") or rec.get("surface_id") or rec.get("accepted_surface_id"))
     interval = rec.get("interval_ft")
     sample_values = safe_list(rec.get("sample_elevations_ft") or rec.get("sample_values") or rec.get("contour_values_ft"))
-    actual_count = rec.get("actual_contour_count", rec.get("contour_count", len(sample_values)))
+    if "actual_contour_count" in rec:
+        actual_count = rec.get("actual_contour_count")
+    else:
+        actual_count = rec.get("contour_count", len(sample_values))
     expected_min_count = rec.get("expected_min_contour_count", rec.get("expected_min_sample_count"))
     count_ok = True
     if _present(expected_min_count):
@@ -357,6 +360,147 @@ def _roadway_contour_expected_actual(row: Dict[str, Any], surface_trace: Dict[st
         "actual_contour_count": actual_count,
         "sample_elevations_ft": sample_values,
         "valid": valid,
+    }
+
+
+def _grading_surface_source_expected_actual(grading: Dict[str, Any], surface_trace: Dict[str, Any]) -> Dict[str, Any]:
+    proposed_surface = safe_dict(grading.get("proposed_surface"))
+    source = safe_str(
+        grading.get("proposed_surface_source")
+        or proposed_surface.get("source")
+        or safe_dict(grading.get("grading_source")).get("source_status")
+    )
+    confidence = grading.get("proposed_surface_confidence", proposed_surface.get("confidence"))
+    confidence_value = safe_float(confidence, -1.0) if isinstance(confidence, (int, float)) else -1.0
+    confidence_text = safe_str(confidence).lower()
+    confidence_valid = bool(confidence_value >= 0.75 or confidence_text in {"high", "accepted", "calculated_from_accepted_surfaces"})
+    return {
+        "expected_existing_surface_id": surface_trace.get("existing_surface_id"),
+        "actual_existing_surface_id": surface_trace.get("existing_surface_id"),
+        "expected_proposed_surface_id": surface_trace.get("proposed_surface_id"),
+        "actual_proposed_surface_id": surface_trace.get("proposed_surface_id"),
+        "proposed_surface_source": source,
+        "proposed_surface_confidence": confidence,
+        "valid": bool(surface_trace.get("valid") is True and source and confidence_valid and not _text_has_concept_marker(source)),
+    }
+
+
+def _grading_cut_fill_expected_actual(grading: Dict[str, Any], meta: Dict[str, Any]) -> Dict[str, Any]:
+    earthwork = safe_dict(grading.get("earthwork") or meta.get("earthwork") or meta.get("earthwork_summary"))
+    expected_cut = earthwork.get("expected_cut_cf", earthwork.get("design_cut_cf"))
+    actual_cut = earthwork.get("actual_cut_cf", earthwork.get("cut_cf"))
+    expected_fill = earthwork.get("expected_fill_cf", earthwork.get("design_fill_cf"))
+    actual_fill = earthwork.get("actual_fill_cf", earthwork.get("fill_cf"))
+    expected_net = earthwork.get("expected_net_cf", earthwork.get("design_net_cf"))
+    actual_net = earthwork.get("actual_net_cf", earthwork.get("net_cf"))
+    tolerance = safe_float(earthwork.get("volume_tolerance_cf"), 0.0)
+    valid = bool(
+        _present(expected_cut)
+        and _present(actual_cut)
+        and _present(expected_fill)
+        and _present(actual_fill)
+        and _present(expected_net)
+        and _present(actual_net)
+        and abs(safe_float(actual_cut, 0.0) - safe_float(expected_cut, 0.0)) <= tolerance
+        and abs(safe_float(actual_fill, 0.0) - safe_float(expected_fill, 0.0)) <= tolerance
+        and abs(safe_float(actual_net, 0.0) - safe_float(expected_net, 0.0)) <= tolerance
+        and _row_is_production_evidence(earthwork)
+    )
+    return {
+        "expected_cut_cf": expected_cut,
+        "actual_cut_cf": actual_cut,
+        "expected_fill_cf": expected_fill,
+        "actual_fill_cf": actual_fill,
+        "expected_net_cf": expected_net,
+        "actual_net_cf": actual_net,
+        "volume_tolerance_cf": tolerance,
+        "source_surface_ids": safe_list(earthwork.get("source_surface_ids")),
+        "valid": valid,
+    }
+
+
+def _grading_slope_expected_actual(grading: Dict[str, Any]) -> Dict[str, Any]:
+    slope = safe_dict(grading.get("slope_summary") or grading.get("surface_controls"))
+    expected_min = slope.get("expected_min_slope", slope.get("min_required_slope"))
+    actual_min = slope.get("actual_min_slope", slope.get("min_slope"))
+    expected_max = slope.get("expected_max_slope", slope.get("max_allowed_slope"))
+    actual_max = slope.get("actual_max_slope", slope.get("max_slope"))
+    expected_average = slope.get("expected_average_slope")
+    actual_average = slope.get("actual_average_slope", slope.get("average_slope"))
+    valid = bool(
+        _present(expected_min)
+        and _present(actual_min)
+        and _present(expected_max)
+        and _present(actual_max)
+        and _present(expected_average)
+        and _present(actual_average)
+        and safe_float(actual_min, -1.0) >= safe_float(expected_min, 0.0)
+        and safe_float(actual_max, 1.0) <= safe_float(expected_max, 0.0)
+        and _row_is_production_evidence(slope)
+    )
+    return {
+        "expected_min_slope": expected_min,
+        "actual_min_slope": actual_min,
+        "expected_max_slope": expected_max,
+        "actual_max_slope": actual_max,
+        "expected_average_slope": expected_average,
+        "actual_average_slope": actual_average,
+        "valid": valid,
+    }
+
+
+def _grading_repair_expected_actual(grading: Dict[str, Any]) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for index, row in enumerate(safe_list(grading.get("drainage_aware_repairs") or grading.get("grading_repairs"))):
+        rec = safe_dict(row)
+        before = safe_dict(rec.get("before"))
+        after = safe_dict(rec.get("after"))
+        rows.append(
+            {
+                "repair_id": safe_str(rec.get("repair_id") or rec.get("id"), f"repair-{index + 1}"),
+                "expected_valid": True,
+                "actual_valid": rec.get("valid"),
+                "reason": safe_str(rec.get("reason") or rec.get("why")),
+                "drainage_evidence_id": safe_str(rec.get("drainage_evidence_id") or rec.get("drainage_id")),
+                "before_low_point_count": before.get("low_point_count"),
+                "after_low_point_count": after.get("low_point_count"),
+                "before_min_slope": before.get("min_slope"),
+                "after_min_slope": after.get("min_slope"),
+                "valid": bool(
+                    rec.get("valid") is True
+                    and safe_str(rec.get("reason") or rec.get("why"))
+                    and safe_str(rec.get("drainage_evidence_id") or rec.get("drainage_id"))
+                    and bool(before)
+                    and bool(after)
+                    and _row_is_production_evidence(rec)
+                ),
+            }
+        )
+    return rows
+
+
+def _grading_retaining_wall_expected_actual(grading: Dict[str, Any], meta: Dict[str, Any], surface_trace: Dict[str, Any]) -> Dict[str, Any]:
+    walls = safe_list(grading.get("retaining_walls") or meta.get("retaining_walls"))
+    checks = [safe_dict(row) for row in safe_list(grading.get("wall_tie_in_checks") or meta.get("wall_tie_in_checks"))]
+    if not walls:
+        return {"required": False, "valid": True, "status": "not_required"}
+    valid_checks = [
+        row
+        for row in checks
+        if row.get("valid") is True
+        and safe_str(row.get("wall_id") or row.get("retaining_wall_id"))
+        and safe_str(row.get("proposed_surface_id") or row.get("surface_id")) == safe_str(surface_trace.get("proposed_surface_id"))
+        and _present(row.get("top_tie_elev_ft"))
+        and _present(row.get("bottom_tie_elev_ft"))
+        and _row_is_production_evidence(row)
+    ]
+    return {
+        "required": True,
+        "wall_count": len(walls),
+        "tie_in_check_count": len(checks),
+        "valid_tie_in_check_count": len(valid_checks),
+        "expected_proposed_surface_id": surface_trace.get("proposed_surface_id"),
+        "valid": len(valid_checks) >= len(walls),
     }
 
 
@@ -952,6 +1096,61 @@ def validate_water_system_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     return _finalize("water_system_depth", checks)
 
 
+def validate_grading_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
+    meta = safe_dict(plan_or_meta.get("meta")) if "meta" in plan_or_meta else safe_dict(plan_or_meta)
+    grading = _combined_grading_detail(meta)
+    surface_trace = _surface_traceability(meta)
+    surface_trace["contour_interval_ft"] = grading.get("contour_interval_ft")
+    surface_source_trace = _grading_surface_source_expected_actual(grading, surface_trace)
+    cut_fill_trace = _grading_cut_fill_expected_actual(grading, meta)
+    slope_trace = _grading_slope_expected_actual(grading)
+    ada_rows = [safe_dict(row) for row in safe_list(grading.get("ada_path_checks"))]
+    ada_trace = [_roadway_ada_expected_actual(row) for row in ada_rows]
+    pad_rows = [safe_dict(row) for row in safe_list(grading.get("pad_tie_ins") or meta.get("pad_tie_ins"))]
+    pad_trace = [_roadway_pad_tie_expected_actual(row, surface_trace) for row in pad_rows]
+    contour_rows = [safe_dict(row) for row in safe_list(grading.get("contours") or meta.get("contours"))]
+    contour_trace = [_roadway_contour_expected_actual(row, surface_trace) for row in contour_rows]
+    repair_trace = _grading_repair_expected_actual(grading)
+    retaining_wall_trace = _grading_retaining_wall_expected_actual(grading, meta, surface_trace)
+    checks = [
+        _check("accepted_surfaces", surface_trace.get("valid") is True, evidence="accepted existing/proposed surface IDs", blocker="Grading depth needs accepted existing/proposed surface IDs."),
+        _check("proposed_surface_source", surface_source_trace["valid"], evidence="proposed surface source/confidence", blocker="Grading depth needs proposed surface source and confidence evidence."),
+        _check("cut_fill", cut_fill_trace["valid"], evidence="cut/fill expected/actual volumes", blocker="Grading depth needs cut/fill expected/actual volume evidence tied to accepted surfaces."),
+        _check("slope_summary", slope_trace["valid"], evidence="slope expected/actual summary", blocker="Grading depth needs slope summary expected/actual evidence."),
+        _check("ada_or_repair", (bool(ada_trace) and all(row["valid"] for row in ada_trace)) or (bool(repair_trace) and all(row["valid"] for row in repair_trace)), evidence="ADA path or drainage repair expected/actual evidence", blocker="Grading depth needs ADA path or drainage-aware repair expected/actual evidence."),
+        _check("pad_tie_ins", bool(pad_trace) and all(row["valid"] for row in pad_trace), evidence="pad tie-in expected/actual evidence", blocker="Grading depth needs pad tie-in evidence tied to the accepted proposed surface."),
+        _check("contours", bool(contour_trace) and all(row["valid"] for row in contour_trace), evidence="contour interval/count/sample evidence", blocker="Grading depth needs contour interval and sample/count evidence tied to the accepted proposed surface."),
+        _check("drainage_aware_repairs", bool(repair_trace) and all(row["valid"] for row in repair_trace), evidence="drainage-aware grading repair evidence", blocker="Grading depth needs drainage-aware grading repair evidence."),
+        _check("retaining_wall_tie_ins", retaining_wall_trace["valid"], evidence="retaining wall tie-in evidence or no wall scope", blocker="Grading depth needs retaining wall tie-in evidence when wall scope exists."),
+    ]
+    result = _finalize("grading_depth", checks)
+    result.update(
+        {
+            "surface_traceability": surface_trace,
+            "surface_source_trace": surface_source_trace,
+            "cut_fill_trace": cut_fill_trace,
+            "slope_trace": slope_trace,
+            "ada_path_trace": ada_trace,
+            "pad_tie_in_trace": pad_trace,
+            "contour_trace": contour_trace,
+            "drainage_repair_trace": repair_trace,
+            "retaining_wall_trace": retaining_wall_trace,
+            "expected_actual_checks": [
+                surface_trace,
+                surface_source_trace,
+                cut_fill_trace,
+                slope_trace,
+                *ada_trace,
+                *pad_trace,
+                *contour_trace,
+                *repair_trace,
+                retaining_wall_trace,
+            ],
+        }
+    )
+    return result
+
+
 def validate_roadway_corridor_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     meta = safe_dict(plan_or_meta.get("meta")) if "meta" in plan_or_meta else safe_dict(plan_or_meta)
     grading_detail = _combined_grading_detail(meta)
@@ -1005,6 +1204,7 @@ def validate_roadway_corridor_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, A
 
 
 __all__ = [
+    "validate_grading_depth",
     "validate_profile_section_depth",
     "validate_roadway_corridor_depth",
     "validate_stormwater_depth",

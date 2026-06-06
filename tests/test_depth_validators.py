@@ -3,6 +3,7 @@ import unittest
 
 from backend.planning.production_depth import enrich_drainage_production_depth, enrich_water_production_depth
 from backend.planning.depth_validators import (
+    validate_grading_depth,
     validate_profile_section_depth,
     validate_roadway_corridor_depth,
     validate_stormwater_depth,
@@ -116,6 +117,64 @@ def _complete_roadway_corridor_meta() -> dict:
             }
         ],
     }
+
+
+def _complete_grading_depth_meta() -> dict:
+    meta = deepcopy(_complete_roadway_corridor_meta())
+    grading = meta["grading"]
+    grading.update(
+        {
+            "source_quality": "accepted_engine_depth_fixture",
+            "accepted_existing_surface_id": "EG-ACCEPTED-1",
+            "accepted_proposed_surface_id": "FG-ACCEPTED-1",
+            "existing_surface": {"id": "EG-ACCEPTED-1", "source_quality": "accepted_engine_depth_fixture"},
+            "proposed_surface": {"id": "FG-ACCEPTED-1", "source": "calculated_from_accepted_surfaces", "confidence": "high"},
+            "proposed_surface_source": "calculated_from_accepted_surfaces",
+            "proposed_surface_confidence": "high",
+            "low_points": [{"id": "LP-1", "x": 100.0, "y": 80.0, "z": 99.0}],
+            "high_points": [{"id": "HP-1", "x": 0.0, "y": 0.0, "z": 103.0}],
+            "spot_grades": [{"id": "SG-1", "x": 20.0, "y": 20.0, "z": 101.2, "surface_id": "FG-ACCEPTED-1"}],
+            "slope_summary": {
+                "expected_min_slope": 0.01,
+                "actual_min_slope": 0.012,
+                "expected_max_slope": 0.05,
+                "actual_max_slope": 0.043,
+                "expected_average_slope": 0.025,
+                "actual_average_slope": 0.026,
+                "source": "accepted_surface_slope_analysis",
+            },
+            "earthwork": {
+                "expected_cut_cf": 1200.0,
+                "actual_cut_cf": 1200.0,
+                "cut_cf": 1200.0,
+                "expected_fill_cf": 900.0,
+                "actual_fill_cf": 900.0,
+                "fill_cf": 900.0,
+                "expected_net_cf": 300.0,
+                "actual_net_cf": 300.0,
+                "net_cf": 300.0,
+                "volume_tolerance_cf": 0.0,
+                "source_surface_ids": ["EG-ACCEPTED-1", "FG-ACCEPTED-1"],
+                "source": "accepted_surface_volume_comparison",
+            },
+            "drainage_aware_repairs": [
+                {
+                    "repair_id": "GAR-1",
+                    "valid": True,
+                    "reason": "remove pad-adjacent sump and preserve positive drainage",
+                    "drainage_evidence_id": "DRN-LP-1",
+                    "before": {"low_point_count": 2, "min_slope": 0.004},
+                    "after": {"low_point_count": 1, "min_slope": 0.012},
+                    "source": "accepted_surface_repair_trace",
+                }
+            ],
+        }
+    )
+    grading["surface_traceability"]["contour_interval_ft"] = 2.0
+    grading["contours"][0]["contour_values_ft"] = [100.0, 102.0]
+    grading["contours"][0]["actual_contour_count"] = 2
+    meta["earthwork"] = grading["earthwork"]
+    return meta
 
 
 class DepthValidatorTests(unittest.TestCase):
@@ -623,6 +682,78 @@ class DepthValidatorTests(unittest.TestCase):
 
         self.assertFalse(result["production_ready"])
         self.assertIn("Water depth needs passing fire-flow validation.", result["blockers"])
+
+    def test_grading_depth_passes_with_standalone_proof_evidence(self) -> None:
+        result = validate_grading_depth({"meta": _complete_grading_depth_meta()})
+
+        self.assertTrue(result["production_ready"])
+        self.assertEqual(result["surface_traceability"]["existing_surface_id"], "EG-ACCEPTED-1")
+        self.assertEqual(result["surface_traceability"]["proposed_surface_id"], "FG-ACCEPTED-1")
+        self.assertEqual(result["surface_source_trace"]["proposed_surface_source"], "calculated_from_accepted_surfaces")
+        self.assertEqual(result["surface_source_trace"]["proposed_surface_confidence"], "high")
+        self.assertEqual(result["cut_fill_trace"]["expected_cut_cf"], 1200.0)
+        self.assertEqual(result["cut_fill_trace"]["actual_cut_cf"], 1200.0)
+        self.assertEqual(result["cut_fill_trace"]["expected_fill_cf"], 900.0)
+        self.assertEqual(result["cut_fill_trace"]["actual_fill_cf"], 900.0)
+        self.assertEqual(result["cut_fill_trace"]["expected_net_cf"], 300.0)
+        self.assertEqual(result["cut_fill_trace"]["actual_net_cf"], 300.0)
+        self.assertEqual(result["slope_trace"]["expected_min_slope"], 0.01)
+        self.assertEqual(result["slope_trace"]["actual_min_slope"], 0.012)
+        self.assertEqual(result["slope_trace"]["expected_max_slope"], 0.05)
+        self.assertEqual(result["slope_trace"]["actual_max_slope"], 0.043)
+        self.assertEqual(result["ada_path_trace"][0]["expected_max_running_slope"], 0.05)
+        self.assertEqual(result["ada_path_trace"][0]["actual_running_slope"], 0.04)
+        self.assertEqual(result["pad_tie_in_trace"][0]["expected_proposed_surface_id"], "FG-ACCEPTED-1")
+        self.assertEqual(result["pad_tie_in_trace"][0]["actual_proposed_surface_id"], "FG-ACCEPTED-1")
+        self.assertEqual(result["contour_trace"][0]["actual_contour_count"], 2)
+        self.assertEqual(result["contour_trace"][0]["sample_elevations_ft"], [100.0, 102.0])
+        self.assertEqual(result["drainage_repair_trace"][0]["repair_id"], "GAR-1")
+        self.assertEqual(result["drainage_repair_trace"][0]["before_low_point_count"], 2)
+        self.assertEqual(result["drainage_repair_trace"][0]["after_low_point_count"], 1)
+        self.assertFalse(result["retaining_wall_trace"]["required"])
+        self.assertTrue(result["expected_actual_checks"])
+
+    def test_grading_depth_blocks_missing_standalone_proof_evidence(self) -> None:
+        meta = deepcopy(_complete_grading_depth_meta())
+        meta["grading"]["surface_traceability"].pop("proposed_surface_id")
+        meta["grading"].pop("proposed_surface_id", None)
+        meta["grading"]["proposed_surface"].pop("id")
+        meta["grading"]["proposed_surface_confidence"] = ""
+        meta["grading"]["earthwork"].pop("actual_cut_cf")
+        meta["grading"]["earthwork"].pop("cut_cf")
+        meta["grading"]["slope_summary"].pop("actual_min_slope")
+        meta["grading"]["pad_tie_ins"][0].pop("proposed_surface_id")
+        meta["grading"]["contours"][0]["actual_contour_count"] = 0
+        meta["grading"]["drainage_aware_repairs"][0]["valid"] = False
+
+        result = validate_grading_depth({"meta": meta})
+
+        self.assertFalse(result["production_ready"])
+        self.assertFalse(result["surface_traceability"]["valid"])
+        self.assertFalse(result["surface_source_trace"]["valid"])
+        self.assertFalse(result["cut_fill_trace"]["valid"])
+        self.assertFalse(result["slope_trace"]["valid"])
+        self.assertFalse(result["pad_tie_in_trace"][0]["valid"])
+        self.assertFalse(result["contour_trace"][0]["valid"])
+        self.assertFalse(result["drainage_repair_trace"][0]["valid"])
+        self.assertIn("Grading depth needs accepted existing/proposed surface IDs.", result["blockers"])
+        self.assertIn("Grading depth needs proposed surface source and confidence evidence.", result["blockers"])
+        self.assertIn("Grading depth needs cut/fill expected/actual volume evidence tied to accepted surfaces.", result["blockers"])
+        self.assertIn("Grading depth needs slope summary expected/actual evidence.", result["blockers"])
+        self.assertIn("Grading depth needs pad tie-in evidence tied to the accepted proposed surface.", result["blockers"])
+        self.assertIn("Grading depth needs contour interval and sample/count evidence tied to the accepted proposed surface.", result["blockers"])
+        self.assertIn("Grading depth needs drainage-aware grading repair evidence.", result["blockers"])
+
+    def test_grading_depth_blocks_retaining_wall_scope_without_tie_in(self) -> None:
+        meta = deepcopy(_complete_grading_depth_meta())
+        meta["grading"]["retaining_walls"] = [{"wall_id": "RW-1"}]
+
+        result = validate_grading_depth({"meta": meta})
+
+        self.assertFalse(result["production_ready"])
+        self.assertTrue(result["retaining_wall_trace"]["required"])
+        self.assertFalse(result["retaining_wall_trace"]["valid"])
+        self.assertIn("Grading depth needs retaining wall tie-in evidence when wall scope exists.", result["blockers"])
 
     def test_roadway_depth_blocks_missing_corridor_controls(self) -> None:
         result = validate_roadway_corridor_depth({"meta": {"alignments": [{"name": "Road A"}]}})
