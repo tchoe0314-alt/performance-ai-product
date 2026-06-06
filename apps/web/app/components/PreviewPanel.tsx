@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ComponentType } from "react";
+import type { ComponentType, CSSProperties } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { Download, FileText, Hand, Lock, MapPin, Maximize2, MousePointer2, Pentagon, PencilLine, RefreshCw, RotateCcw, Square, Trash2, Unlock, X } from "lucide-react";
@@ -13,6 +13,19 @@ import type {
   BuildingPlacement,
 } from "../types";
 import { formatCount, formatMetric } from "../utils/formatting";
+import {
+  boundsForSiteGeometry,
+  mapLngLatToSite,
+  resizeSiteGeometryFromOrigin,
+  resolveCoordinateMode,
+  screenToSitePoint as transformScreenToSitePoint,
+  siteRectToPercent,
+  siteToMapLngLat,
+  siteToRelativePoint,
+  siteTupleToPercent,
+  translateSiteGeometry,
+  coordinateModeLabel,
+} from "../utils/geometryTransforms";
 import Preview3DCanvas from "./Preview3DCanvas";
 
 type PreviewPhaseLabel = { label: string } | null;
@@ -364,11 +377,11 @@ export default function PreviewPanel({
   } as const;
   const highPalette = {
     building: "#111827",
-    buildingFill: "rgba(17, 24, 39, 0.28)",
+    buildingFill: "rgba(17, 24, 39, 0.24)",
     parking: "#6b7280",
-    parkingFill: "rgba(107, 114, 128, 0.3)",
+    parkingFill: "rgba(107, 114, 128, 0.24)",
     road: "#1f2937",
-    roadFill: "rgba(31, 41, 55, 0.35)",
+    roadFill: "rgba(31, 41, 55, 0.3)",
     drainage: "#0ea5e9",
     utilities: "#8b5cf6",
     detectedStroke: "#f59e0b",
@@ -377,6 +390,140 @@ export default function PreviewPanel({
     siteFill: "bg-white/15",
   } as const;
   const legendPalette = previewQuality === "high" ? highPalette : normalPalette;
+  const currentSiteSize = useMemo(
+    () => ({ width: Math.max(lotWidth, 1), height: Math.max(lotHeight, 1) }),
+    [lotHeight, lotWidth],
+  );
+  const isHighQuality = previewQuality === "high";
+  const resolveVisualKind = useCallback((item: BuildingPlacement) => {
+    const type = String(item.type || "building");
+    if (type.includes("building") || type === "pad" || !item.type) return "building";
+    if (type === "road" || type === "driveway") return "road";
+    if (type === "parking") return "parking";
+    if (type === "basin" || type === "pond" || type === "pool") return "water";
+    if (type === "open_space" || type === "landscape" || type === "amenity") return "landscape";
+    if (type === "sidewalk") return "sidewalk";
+    if (
+      type === "inlet" ||
+      type === "outfall" ||
+      type === "hydrant" ||
+      type === "manhole" ||
+      type === "utility_corridor"
+    ) {
+      return "utility";
+    }
+    return "fallback";
+  }, []);
+  const resolveSvgVisualStyle = useCallback(
+    (item: BuildingPlacement, selected = false) => {
+      const kind = resolveVisualKind(item);
+      if (!isHighQuality) {
+        return {
+          fill: kind === "parking" ? legendPalette.parkingFill : legendPalette.buildingFill,
+          stroke: selected ? "#f59e0b" : kind === "road" ? legendPalette.road : legendPalette.building,
+          strokeWidth: selected ? 0.75 : 0.45,
+        };
+      }
+      if (kind === "road") {
+        return { fill: "none", stroke: selected ? "#fbbf24" : "#111827", strokeWidth: selected ? 1.35 : 1.05 };
+      }
+      if (kind === "parking") {
+        return { fill: "rgba(71, 85, 105, 0.32)", stroke: selected ? "#fbbf24" : "#64748b", strokeWidth: selected ? 0.75 : 0.42 };
+      }
+      if (kind === "water") {
+        return { fill: "rgba(14, 165, 233, 0.28)", stroke: selected ? "#fbbf24" : "#0284c7", strokeWidth: selected ? 0.75 : 0.45 };
+      }
+      if (kind === "landscape") {
+        return { fill: "rgba(34, 197, 94, 0.22)", stroke: selected ? "#fbbf24" : "#16a34a", strokeWidth: selected ? 0.75 : 0.4 };
+      }
+      if (kind === "sidewalk") {
+        return { fill: "none", stroke: selected ? "#fbbf24" : "#0f766e", strokeWidth: selected ? 0.85 : 0.55 };
+      }
+      if (kind === "utility") {
+        return { fill: "rgba(124, 58, 237, 0.14)", stroke: selected ? "#fbbf24" : "#7c3aed", strokeWidth: selected ? 0.75 : 0.45 };
+      }
+      return { fill: "rgba(148, 163, 184, 0.18)", stroke: selected ? "#fbbf24" : "#64748b", strokeWidth: selected ? 0.75 : 0.42 };
+    },
+    [isHighQuality, legendPalette.building, legendPalette.buildingFill, legendPalette.parkingFill, legendPalette.road, resolveVisualKind],
+  );
+  const resolveObjectBoxStyle = useCallback(
+    (item: BuildingPlacement): CSSProperties => {
+      const kind = resolveVisualKind(item);
+      if (!isHighQuality) {
+        return {
+          backgroundColor: "rgba(15, 23, 42, 0.22)",
+          borderColor: (item.meta as { style?: { outline_color?: string } } | undefined)?.style?.outline_color,
+        };
+      }
+      const outlineColor = (item.meta as { style?: { outline_color?: string } } | undefined)?.style?.outline_color;
+      const base: CSSProperties = {
+        borderColor: outlineColor,
+        boxShadow: "0 8px 22px rgba(15,23,42,0.2)",
+      };
+      if (kind === "building") {
+        return {
+          ...base,
+          backgroundColor: "rgba(30, 41, 59, 0.82)",
+          backgroundImage:
+            "linear-gradient(135deg, rgba(255,255,255,0.2), rgba(15,23,42,0.2)), repeating-linear-gradient(90deg, rgba(255,255,255,0.12) 0 1px, transparent 1px 14px)",
+        };
+      }
+      if (kind === "road") {
+        return {
+          ...base,
+          backgroundColor: "rgba(31, 41, 55, 0.82)",
+          backgroundImage:
+            "linear-gradient(90deg, transparent 0 45%, rgba(248,250,252,0.55) 45% 50%, transparent 50% 100%)",
+        };
+      }
+      if (kind === "parking") {
+        return {
+          ...base,
+          backgroundColor: "rgba(71, 85, 105, 0.34)",
+          backgroundImage: "repeating-linear-gradient(90deg, rgba(255,255,255,0.58) 0 1px, transparent 1px 12px)",
+          boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.24), 0 6px 18px rgba(15,23,42,0.12)",
+        };
+      }
+      if (kind === "water") {
+        return {
+          ...base,
+          backgroundColor: "rgba(14, 165, 233, 0.34)",
+          backgroundImage: "linear-gradient(135deg, rgba(255,255,255,0.32), rgba(14,116,144,0.16))",
+          boxShadow: "inset 0 0 18px rgba(56,189,248,0.22), 0 6px 18px rgba(14,116,144,0.16)",
+        };
+      }
+      if (kind === "landscape") {
+        return {
+          ...base,
+          backgroundColor: "rgba(34, 197, 94, 0.22)",
+          backgroundImage:
+            "radial-gradient(circle at 20% 30%, rgba(22,163,74,0.22) 0 2px, transparent 2px), radial-gradient(circle at 70% 65%, rgba(132,204,22,0.2) 0 2px, transparent 2px)",
+        };
+      }
+      if (kind === "sidewalk") {
+        return {
+          ...base,
+          backgroundColor: "rgba(240, 253, 250, 0.58)",
+          backgroundImage: "repeating-linear-gradient(90deg, rgba(15,118,110,0.25) 0 1px, transparent 1px 10px)",
+          boxShadow: "inset 0 0 0 1px rgba(15,118,110,0.24)",
+        };
+      }
+      if (kind === "utility") {
+        return {
+          ...base,
+          backgroundColor: "rgba(124, 58, 237, 0.18)",
+          backgroundImage: "repeating-linear-gradient(135deg, rgba(124,58,237,0.28) 0 1px, transparent 1px 9px)",
+          boxShadow: "inset 0 0 0 1px rgba(124,58,237,0.2)",
+        };
+      }
+      return {
+        ...base,
+        backgroundColor: "rgba(148, 163, 184, 0.2)",
+        backgroundImage: "repeating-linear-gradient(45deg, rgba(100,116,139,0.22) 0 1px, transparent 1px 9px)",
+      };
+    },
+    [isHighQuality, resolveVisualKind],
+  );
   const hoveredObject = useMemo(
     () =>
       [...buildingPlacements, ...suggestedPlacements].find(
@@ -457,26 +604,27 @@ export default function PreviewPanel({
       const effectiveLotHeight = drawMode === "site" ? drawingLotHeight : lotHeight;
       if (!containerRef.current || !bounds || !effectiveLotWidth || !effectiveLotHeight) return null;
       const rect = containerRef.current.getBoundingClientRect();
-      const localX = clientX - rect.left - bounds.left;
-      const localY = clientY - rect.top - bounds.top;
-      const unscaledX = (localX - canvasView.offsetX) / Math.max(canvasView.scale, 0.1);
-      const unscaledY = (localY - canvasView.offsetY) / Math.max(canvasView.scale, 0.1);
-      const relX = unscaledX / Math.max(bounds.width, 1);
-      const relY = unscaledY / Math.max(bounds.height, 1);
+      const rawSitePoint = transformScreenToSitePoint(
+        { x: clientX, y: clientY },
+        { left: rect.left, top: rect.top },
+        bounds,
+        { width: effectiveLotWidth, height: effectiveLotHeight },
+        canvasView,
+      );
+      const relX = rawSitePoint.x / Math.max(effectiveLotWidth, 1);
+      const relY = rawSitePoint.y / Math.max(effectiveLotHeight, 1);
       if (!Number.isFinite(relX) || !Number.isFinite(relY)) return null;
       if (relX < 0 || relX > 1 || relY < 0 || relY > 1) return null;
       const snapStep = drawMode === "point" ? 1 : drawMode === "site" ? 5 : 2;
       return {
-        x: Math.round((relX * effectiveLotWidth) / snapStep) * snapStep,
-        y: Math.round((relY * effectiveLotHeight) / snapStep) * snapStep,
+        x: Math.round(rawSitePoint.x / snapStep) * snapStep,
+        y: Math.round(rawSitePoint.y / snapStep) * snapStep,
         relX,
         relY,
       };
     },
     [
-      canvasView.offsetX,
-      canvasView.offsetY,
-      canvasView.scale,
+      canvasView,
       drawMode,
       drawingLotHeight,
       drawingLotWidth,
@@ -685,12 +833,13 @@ export default function PreviewPanel({
     (event: React.MouseEvent<HTMLDivElement>, bounds: { left: number; top: number; width: number; height: number }) => {
       if (!draggingBuildingId || !draggingMode) return;
       const rect = event.currentTarget.getBoundingClientRect();
-      const localX =
-        (event.clientX - rect.left - bounds.left - canvasView.offsetX) /
-        Math.max(canvasView.scale, 0.1);
-      const localY =
-        (event.clientY - rect.top - bounds.top - canvasView.offsetY) /
-        Math.max(canvasView.scale, 0.1);
+      const sitePoint = transformScreenToSitePoint(
+        { x: event.clientX, y: event.clientY },
+        { left: rect.left, top: rect.top },
+        bounds,
+        currentSiteSize,
+        canvasView,
+      );
       const target =
         buildingPlacements.find((item) => item.id === draggingBuildingId) ??
         suggestedPlacements.find((item) => item.id === draggingBuildingId);
@@ -701,22 +850,26 @@ export default function PreviewPanel({
       if (draggingMode === "resize" && !caps.resizable) return;
       if (draggingMode === "rotate" && !caps.rotatable) return;
       if (draggingMode === "move") {
+        const dragSiteOffset = {
+          x: (dragOffset.x / Math.max(bounds.width, 1)) * lotWidth,
+          y: (dragOffset.y / Math.max(bounds.height, 1)) * lotHeight,
+        };
         const x = snapValue(
-          clampValue(((localX - dragOffset.x) / Math.max(bounds.width, 1)) * lotWidth, 0, Math.max(lotWidth - target.w, 0)),
+          clampValue(sitePoint.x - dragSiteOffset.x, 0, Math.max(lotWidth - target.w, 0)),
           5,
         );
         const y = snapValue(
-          clampValue(((localY - dragOffset.y) / Math.max(bounds.height, 1)) * lotHeight, 0, Math.max(lotHeight - target.d, 0)),
+          clampValue(sitePoint.y - dragSiteOffset.y, 0, Math.max(lotHeight - target.d, 0)),
           5,
         );
         const deltaX = x - (target.x ?? 0);
         const deltaY = y - (target.y ?? 0);
         const updates: Partial<BuildingPlacement> = { x, y, placed: true };
         if (target.geometryType && Array.isArray(target.geometry)) {
-          updates.geometry = (target.geometry as Array<[number, number]>).map((pt) => [
-            pt[0] + deltaX,
-            pt[1] + deltaY,
-          ]);
+          updates.geometry = translateSiteGeometry(target.geometry as Array<[number, number]>, {
+            x: deltaX,
+            y: deltaY,
+          });
         }
         if (target.source === "detected_from_image") {
           onUpdateSuggested(draggingBuildingId, updates);
@@ -730,8 +883,8 @@ export default function PreviewPanel({
         draggingVertex &&
         (target.geometryType === "polyline" || target.geometryType === "polygon")
       ) {
-        const rawX = (localX / Math.max(bounds.width, 1)) * lotWidth;
-        const rawY = (localY / Math.max(bounds.height, 1)) * lotHeight;
+        const rawX = sitePoint.x;
+        const rawY = sitePoint.y;
         const nextX = snapValue(clampValue(rawX, 0, lotWidth), 1);
         const nextY = snapValue(clampValue(rawY, 0, lotHeight), 1);
         const nextGeometry: Array<[number, number]> = Array.isArray(target.geometry)
@@ -739,18 +892,13 @@ export default function PreviewPanel({
               idx === draggingVertex.index ? [nextX, nextY] : pt,
             )
           : [];
-        const xs = nextGeometry.map((pt) => pt[0]);
-        const ys = nextGeometry.map((pt) => pt[1]);
-        const minX = Math.min(...xs);
-        const maxX = Math.max(...xs);
-        const minY = Math.min(...ys);
-        const maxY = Math.max(...ys);
+        const nextBounds = boundsForSiteGeometry(nextGeometry);
         const updates = {
           geometry: nextGeometry,
-          x: minX,
-          y: minY,
-          w: Math.max(5, maxX - minX),
-          d: Math.max(5, maxY - minY),
+          x: nextBounds.minX,
+          y: nextBounds.minY,
+          w: Math.max(5, nextBounds.width),
+          d: Math.max(5, nextBounds.height),
           placed: true,
         };
         if (target.source === "detected_from_image") {
@@ -761,8 +909,8 @@ export default function PreviewPanel({
         return;
       }
       if (draggingMode === "resize") {
-        const rawW = clampValue((localX / Math.max(bounds.width, 1)) * lotWidth, 10, lotWidth);
-        const rawD = clampValue((localY / Math.max(bounds.height, 1)) * lotHeight, 10, lotHeight);
+        const rawW = clampValue(sitePoint.x, 10, lotWidth);
+        const rawD = clampValue(sitePoint.y, 10, lotHeight);
         const nextW = Math.max(10, snapValue(rawW - (target.x ?? 0), 5));
         const nextD = Math.max(10, snapValue(rawD - (target.y ?? 0), 5));
         const updates: Partial<BuildingPlacement> = { w: nextW, d: nextD };
@@ -774,12 +922,12 @@ export default function PreviewPanel({
         ) {
           const originX = target.x ?? 0;
           const originY = target.y ?? 0;
-          const scaleX = nextW / Math.max(target.w, 1);
-          const scaleY = nextD / Math.max(target.d, 1);
-          updates.geometry = target.geometry.map(([px, py]) => [
-            originX + (px - originX) * scaleX,
-            originY + (py - originY) * scaleY,
-          ]);
+          updates.geometry = resizeSiteGeometryFromOrigin(
+            target.geometry as Array<[number, number]>,
+            { x: originX, y: originY },
+            { width: target.w, height: target.d },
+            { width: nextW, height: nextD },
+          );
         } else if (target.geometryType === "point" && Array.isArray(target.geometry)) {
           updates.geometry = [[(target.x ?? 0) + nextW / 2, (target.y ?? 0) + nextD / 2]];
         }
@@ -793,7 +941,9 @@ export default function PreviewPanel({
       if (draggingMode === "rotate") {
         const centerX = bounds.left + ((target.x ?? 0) + target.w / 2) / Math.max(lotWidth, 1) * bounds.width;
         const centerY = bounds.top + ((target.y ?? 0) + target.d / 2) / Math.max(lotHeight, 1) * bounds.height;
-        const angle = Math.atan2(localY + bounds.top - centerY, localX + bounds.left - centerX);
+        const pointerViewportX = (sitePoint.x / Math.max(lotWidth, 1)) * bounds.width;
+        const pointerViewportY = (sitePoint.y / Math.max(lotHeight, 1)) * bounds.height;
+        const angle = Math.atan2(pointerViewportY + bounds.top - centerY, pointerViewportX + bounds.left - centerX);
         const deg = (angle * 180) / Math.PI;
         const normalized = (deg + 360) % 360;
         const snapped = snapValue(normalized, 15);
@@ -812,9 +962,8 @@ export default function PreviewPanel({
       draggingVertex,
       draggingBuildingId,
       draggingMode,
-      canvasView.offsetX,
-      canvasView.offsetY,
-      canvasView.scale,
+      canvasView,
+      currentSiteSize,
       lotHeight,
       lotWidth,
       getEditCapabilities,
@@ -850,18 +999,13 @@ export default function PreviewPanel({
       });
       const nextGeometry = [...geometry];
       nextGeometry.splice(segmentIndex + 1, 0, [nextX, nextY]);
-      const xs = nextGeometry.map((pt) => pt[0]);
-      const ys = nextGeometry.map((pt) => pt[1]);
-      const minX = Math.min(...xs);
-      const maxX = Math.max(...xs);
-      const minY = Math.min(...ys);
-      const maxY = Math.max(...ys);
+      const nextBounds = boundsForSiteGeometry(nextGeometry);
       const updates = {
         geometry: nextGeometry,
-        x: minX,
-        y: minY,
-        w: Math.max(5, maxX - minX),
-        d: Math.max(5, maxY - minY),
+        x: nextBounds.minX,
+        y: nextBounds.minY,
+        w: Math.max(5, nextBounds.width),
+        d: Math.max(5, nextBounds.height),
         placed: true,
       };
       if (item.source === "detected_from_image") {
@@ -898,18 +1042,13 @@ export default function PreviewPanel({
     });
     const nextGeometry = geometry.filter((_, idx) => idx !== selectedVertex.index);
     if (nextGeometry.length < minVertices) return;
-    const xs = nextGeometry.map((pt) => pt[0]);
-    const ys = nextGeometry.map((pt) => pt[1]);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
+    const nextBounds = boundsForSiteGeometry(nextGeometry);
     const updates = {
       geometry: nextGeometry,
-      x: minX,
-      y: minY,
-      w: Math.max(5, maxX - minX),
-      d: Math.max(5, maxY - minY),
+      x: nextBounds.minX,
+      y: nextBounds.minY,
+      w: Math.max(5, nextBounds.width),
+      d: Math.max(5, nextBounds.height),
       placed: true,
     };
     if (target.source === "detected_from_image") {
@@ -1392,45 +1531,59 @@ export default function PreviewPanel({
 
   const geocodeLat = geocode?.lat;
   const geocodeLng = geocode?.lng;
+  const mapAnchor = useMemo(
+    () =>
+      geocodeLat && geocodeLng && lotWidth > 0 && lotHeight > 0
+        ? {
+            lat: geocodeLat,
+            lng: geocodeLng,
+            siteWidth: lotWidth,
+            siteHeight: lotHeight,
+            rotationDeg: siteRotationDeg,
+          }
+        : null,
+    [geocodeLat, geocodeLng, lotHeight, lotWidth, siteRotationDeg],
+  );
+  const coordinateMode = resolveCoordinateMode(mapAnchor);
 
   const siteToLatLng = useCallback(
     (xFt: number, yFt: number) => {
-      if (!geocodeLat || !geocodeLng) return null;
-      const metersPerDegLat = 111320;
-      const metersPerDegLng = 111320 * Math.cos((geocodeLat * Math.PI) / 180);
-      const dxFt = xFt - lotWidth / 2;
-      const dyFt = lotHeight / 2 - yFt;
-      const rotationDeg = typeof siteRotationDeg === "number" ? siteRotationDeg : 0;
-      const theta = (rotationDeg * Math.PI) / 180;
-      const dxRot = dxFt * Math.cos(theta) - dyFt * Math.sin(theta);
-      const dyRot = dxFt * Math.sin(theta) + dyFt * Math.cos(theta);
-      const dxM = dxRot * 0.3048;
-      const dyM = dyRot * 0.3048;
-      const lng = geocodeLng + dxM / metersPerDegLng;
-      const lat = geocodeLat + dyM / metersPerDegLat;
-      return [lng, lat] as [number, number];
+      return mapAnchor ? siteToMapLngLat({ x: xFt, y: yFt }, mapAnchor) : null;
     },
-    [geocodeLat, geocodeLng, lotHeight, lotWidth, siteRotationDeg],
+    [mapAnchor],
   );
 
   const latLngToSite = useCallback(
     (lat: number, lng: number) => {
-      if (!geocodeLat || !geocodeLng) return null;
-      const metersPerDegLat = 111320;
-      const metersPerDegLng = 111320 * Math.cos((geocodeLat * Math.PI) / 180);
-      const dxM = (lng - geocodeLng) * metersPerDegLng;
-      const dyM = (lat - geocodeLat) * metersPerDegLat;
-      const dxFt = dxM / 0.3048;
-      const dyFt = dyM / 0.3048;
-      const rotationDeg = typeof siteRotationDeg === "number" ? siteRotationDeg : 0;
-      const theta = (rotationDeg * Math.PI) / 180;
-      const invDx = dxFt * Math.cos(-theta) - dyFt * Math.sin(-theta);
-      const invDy = dxFt * Math.sin(-theta) + dyFt * Math.cos(-theta);
-      const x = invDx + lotWidth / 2;
-      const y = lotHeight / 2 - invDy;
-      return { x, y };
+      return mapAnchor ? mapLngLatToSite({ lat, lng }, mapAnchor) : null;
     },
-    [geocodeLat, geocodeLng, lotHeight, lotWidth, siteRotationDeg],
+    [mapAnchor],
+  );
+
+  const sitePointToSvgPercent = useCallback(
+    (point: [number, number]) => {
+      const [x, y] = siteTupleToPercent(point, currentSiteSize);
+      return `${x},${y}`;
+    },
+    [currentSiteSize],
+  );
+
+  const siteRectPercent = useCallback(
+    (item: BuildingPlacement) => {
+      const rotated = (item.rotation ?? 0) % 180 !== 0;
+      const displayW = rotated ? item.d : item.w;
+      const displayD = rotated ? item.w : item.d;
+      return siteRectToPercent(
+        {
+          x: item.x ?? 0,
+          y: item.y ?? 0,
+          width: displayW,
+          height: displayD,
+        },
+        currentSiteSize,
+      );
+    },
+    [currentSiteSize],
   );
 
   useEffect(() => {
@@ -1640,8 +1793,9 @@ export default function PreviewPanel({
         if (!sitePoint || !lotWidth || !lotHeight) {
           return;
         }
-        const relativeX = sitePoint.x / Math.max(lotWidth, 1);
-        const relativeY = sitePoint.y / Math.max(lotHeight, 1);
+        const relative = siteToRelativePoint(sitePoint, currentSiteSize);
+        const relativeX = relative.x;
+        const relativeY = relative.y;
         console.debug("[placement] map-click", {
           sitePoint,
           relativeX,
@@ -1690,7 +1844,7 @@ export default function PreviewPanel({
       map.off("moveend", reportCenter);
       map.off("zoomend", reportCenter);
     };
-  }, [latLngToSite, lotHeight, lotWidth, mapAvailable, mapLoaded, onMapScaleUpdate, onPlaceBuilding, onPlaceObject, placementMode, selectedBuildingId, onSelectBuilding, showHover, onViewportCenter, onViewportFootprint, siteLocked]);
+  }, [currentSiteSize, latLngToSite, lotHeight, lotWidth, mapAvailable, mapLoaded, onMapScaleUpdate, onPlaceBuilding, onPlaceObject, placementMode, selectedBuildingId, onSelectBuilding, showHover, onViewportCenter, onViewportFootprint, siteLocked]);
 
   useEffect(() => {
     if (!mapAvailable || !mapLoaded || !mapRef.current) return;
@@ -2250,13 +2404,15 @@ export default function PreviewPanel({
       return { type: "FeatureCollection", features };
     };
 
-    const buildings = placedObjects.filter((item) => !item.type || item.type === "building");
+    const buildings = placedObjects.filter((item) => resolveVisualKind(item) === "building");
     const roads = placedObjects.filter((item) => item.type === "road" || item.type === "driveway");
     const sidewalks = placedObjects.filter((item) => item.type === "sidewalk");
     const parking = placedObjects.filter((item) => item.type === "parking");
     const basins = placedObjects.filter((item) => item.type === "basin");
     const customAreas = placedObjects.filter(
-      (item) => item.type === "custom" && (item.geometryType === "polygon" || item.geometryType === "rect"),
+      (item) =>
+        (item.type === "custom" || resolveVisualKind(item) === "landscape") &&
+        (item.geometryType === "polygon" || item.geometryType === "rect"),
     );
     const customLines = placedObjects.filter(
       (item) => item.type === "custom" && item.geometryType === "polyline",
@@ -2501,6 +2657,24 @@ export default function PreviewPanel({
         "fill-color": "#0ea5e9",
         "fill-opacity": 0.28,
       });
+      ensureLayer("civora-custom-areas-fill", "civora-custom-areas", "fill", {
+        "fill-color": [
+          "case",
+          ["==", ["get", "type"], "open_space"],
+          "#22c55e",
+          ["==", ["get", "type"], "landscape"],
+          "#22c55e",
+          ["==", ["get", "type"], "amenity"],
+          "#84cc16",
+          "#94a3b8",
+        ],
+        "fill-opacity": [
+          "case",
+          ["any", ["==", ["get", "type"], "open_space"], ["==", ["get", "type"], "landscape"]],
+          0.22,
+          0.16,
+        ],
+      });
       ensureLayer("civora-custom-areas-line", "civora-custom-areas", "line", {
         "line-color": "#0284c7",
         "line-width": 1.4,
@@ -2558,6 +2732,7 @@ export default function PreviewPanel({
     mapLoaded,
     mapRevision,
     planPreviewUrl,
+    resolveVisualKind,
     showMap,
     showSiteBounds,
     suggestedPlacements.length,
@@ -2765,10 +2940,25 @@ export default function PreviewPanel({
             <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
               {previewQuality === "high" ? "High Quality" : "Standard"}
             </span>
+            {isHighQuality ? (
+              <span
+                data-testid="high-quality-preview-only-label"
+                className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-800"
+              >
+                Visual preview only — canonical geometry unchanged.
+              </span>
+            ) : null}
             <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
               {previewMode.toUpperCase()}
             </span>
+            <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              {coordinateModeLabel(coordinateMode)}
+            </span>
           </div>
+          <p className="max-w-3xl text-xs text-slate-500">
+            Visual anchoring keeps objects consistent in the model view. Civora does not stamp, seal, sign, certify,
+            approve construction, submit construction documents, or act as engineer of record.
+          </p>
           {previewTotalPhaseCount > 0 && previewCompletedPhaseCount < previewTotalPhaseCount ? (
             <div className="inline-flex max-w-3xl items-start rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               <div>
@@ -3159,6 +3349,7 @@ export default function PreviewPanel({
                 <Preview3DCanvas
                   items={preview3DEffectiveItems}
                   interactive={allowEdits}
+                  previewQuality={previewQuality}
                   onOpenFullscreen={onOpenFullscreen}
                 />
                 {usingAnnotation3D ? (
@@ -3432,28 +3623,31 @@ export default function PreviewPanel({
                         {gradingBlocker ? (
                           (() => {
                             const toPct = (pt: { x: number; y: number }) => ({
-                              x: (pt.x / Math.max(lotWidth, 1)) * 100,
-                              y: (pt.y / Math.max(lotHeight, 1)) * 100,
+                              x: siteTupleToPercent([pt.x, pt.y], currentSiteSize)[0],
+                              y: siteTupleToPercent([pt.x, pt.y], currentSiteSize)[1],
                             });
                             const source = gradingBlocker.sourcePoint ? toPct(gradingBlocker.sourcePoint) : null;
                             const target = gradingBlocker.blockedTarget ? toPct(gradingBlocker.blockedTarget) : null;
                             const blocker = gradingBlocker.blockerLocation ? toPct(gradingBlocker.blockerLocation) : null;
                             const zone = gradingBlocker.suggestedFixZone
-                              ? {
-                                  x: (gradingBlocker.suggestedFixZone.x / Math.max(lotWidth, 1)) * 100,
-                                  y: (gradingBlocker.suggestedFixZone.y / Math.max(lotHeight, 1)) * 100,
-                                  w: (gradingBlocker.suggestedFixZone.w / Math.max(lotWidth, 1)) * 100,
-                                  h: (gradingBlocker.suggestedFixZone.h / Math.max(lotHeight, 1)) * 100,
-                                }
+                              ? siteRectToPercent(
+                                  {
+                                    x: gradingBlocker.suggestedFixZone.x,
+                                    y: gradingBlocker.suggestedFixZone.y,
+                                    width: gradingBlocker.suggestedFixZone.w,
+                                    height: gradingBlocker.suggestedFixZone.h,
+                                  },
+                                  currentSiteSize,
+                                )
                               : null;
                             return (
                               <g>
                                 {zone ? (
                                   <rect
-                                    x={zone.x}
-                                    y={zone.y}
-                                    width={zone.w}
-                                    height={zone.h}
+                                    x={zone.left}
+                                    y={zone.top}
+                                    width={zone.width}
+                                    height={zone.height}
                                     fill="rgba(248,113,113,0.12)"
                                     stroke="rgba(248,113,113,0.8)"
                                     strokeDasharray="2 2"
@@ -3487,21 +3681,22 @@ export default function PreviewPanel({
                         {buildingPlacements
                           .filter((item) => item.geometryType === "polyline" && Array.isArray(item.geometry))
                           .map((item) => {
-                            const points = (item.geometry || []).map((pt) => {
-                              const x = (pt[0] / Math.max(lotWidth, 1)) * 100;
-                              const y = (pt[1] / Math.max(lotHeight, 1)) * 100;
-                              return `${x},${y}`;
-                            });
+                            const points = (item.geometry || []).map(sitePointToSvgPercent);
                             if (points.length < 2) return null;
-                            const stroke =
-                              item.type === "road" || item.type === "driveway"
-                                ? legendPalette.road
-                                : item.type === "sidewalk"
-                                  ? legendPalette.utilities
-                                  : legendPalette.building;
+                            const visualStyle = resolveSvgVisualStyle(item, selectedBuildingId === item.id);
                             const isSelectedPolyline = selectedBuildingId === item.id;
                             return (
                               <g key={`poly-${item.id}`}>
+                                {isHighQuality && (item.type === "road" || item.type === "driveway") ? (
+                                  <polyline
+                                    points={points.join(" ")}
+                                    fill="none"
+                                    stroke="rgba(15, 23, 42, 0.18)"
+                                    strokeWidth={1.85}
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  />
+                                ) : null}
                                 {isSelectedPolyline ? (
                                   <polyline
                                     points={points.join(" ")}
@@ -3515,31 +3710,39 @@ export default function PreviewPanel({
                                 <polyline
                                   points={points.join(" ")}
                                   fill="none"
-                                  stroke={stroke}
-                                  strokeWidth={0.65}
+                                  stroke={visualStyle.stroke}
+                                  strokeWidth={visualStyle.strokeWidth}
                                   strokeLinecap="round"
                                   strokeLinejoin="round"
                                 />
+                                {isHighQuality && (item.type === "road" || item.type === "driveway") ? (
+                                  <polyline
+                                    points={points.join(" ")}
+                                    fill="none"
+                                    stroke="rgba(248, 250, 252, 0.72)"
+                                    strokeWidth={0.2}
+                                    strokeDasharray="1.4 1.4"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  />
+                                ) : null}
                               </g>
                             );
                           })}
                         {buildingPlacements
                           .filter((item) => item.geometryType === "polygon" && Array.isArray(item.geometry))
                           .map((item) => {
-                            const points = (item.geometry || []).map((pt) => {
-                              const x = (pt[0] / Math.max(lotWidth, 1)) * 100;
-                              const y = (pt[1] / Math.max(lotHeight, 1)) * 100;
-                              return `${x},${y}`;
-                            });
+                            const points = (item.geometry || []).map(sitePointToSvgPercent);
                             if (points.length < 3) return null;
                             const isSelectedPolygon = selectedBuildingId === item.id;
+                            const visualStyle = resolveSvgVisualStyle(item, isSelectedPolygon);
                             return (
                               <polygon
                                 key={`custom-poly-${item.id}`}
                                 points={points.join(" ")}
-                                fill={legendPalette.buildingFill}
-                                stroke={isSelectedPolygon ? "#f59e0b" : legendPalette.building}
-                                strokeWidth={isSelectedPolygon ? 0.75 : 0.45}
+                                fill={visualStyle.fill}
+                                stroke={visualStyle.stroke}
+                                strokeWidth={visualStyle.strokeWidth}
                                 strokeLinejoin="round"
                               />
                             );
@@ -3548,8 +3751,7 @@ export default function PreviewPanel({
                           .filter((item) => item.type === "parking" && item.placed)
                           .flatMap((item) =>
                             buildParkingModules(item, accessPointsForParking).map((module, idx) => {
-                              const toPct = (pt: number[]) =>
-                                `${(pt[0] / Math.max(lotWidth, 1)) * 100},${(pt[1] / Math.max(lotHeight, 1)) * 100}`;
+                              const toPct = (pt: [number, number]) => sitePointToSvgPercent(pt);
                               const moduleFill = module.isAdaModule
                                 ? "rgba(16,185,129,0.18)"
                                 : module.isCompactModule
@@ -3615,30 +3817,19 @@ export default function PreviewPanel({
                         {suggestedPlacements
                           .filter((item) => item.geometryType && Array.isArray(item.geometry))
                           .map((item) => {
-                            const points = (item.geometry || []).map((pt) => {
-                              const x = (pt[0] / Math.max(lotWidth, 1)) * 100;
-                              const y = (pt[1] / Math.max(lotHeight, 1)) * 100;
-                              return `${x},${y}`;
-                            });
+                            const points = (item.geometry || []).map(sitePointToSvgPercent);
                             if (!points.length) return null;
                             const isLine = item.geometryType === "polyline";
-                            const stroke =
-                              item.source === "detected_from_image"
-                                ? legendPalette.detectedStroke
-                                : item.type === "road"
-                                  ? legendPalette.road
-                                  : legendPalette.building;
-                            const fill =
-                              item.source === "detected_from_image"
-                                ? legendPalette.detectedFill
-                                : legendPalette.buildingFill;
+                            const visualStyle = resolveSvgVisualStyle(item, selectedBuildingId === item.id);
+                            const stroke = item.source === "detected_from_image" ? legendPalette.detectedStroke : visualStyle.stroke;
+                            const fill = item.source === "detected_from_image" ? legendPalette.detectedFill : visualStyle.fill;
                             return isLine ? (
                               <polyline
                                 key={`geom-${item.id}`}
                                 points={points.join(" ")}
                                 fill="none"
                                 stroke={stroke}
-                                strokeWidth={0.45}
+                                strokeWidth={visualStyle.strokeWidth}
                                 strokeDasharray={item.source === "detected_from_image" ? "2 2" : undefined}
                               />
                             ) : (
@@ -3647,15 +3838,14 @@ export default function PreviewPanel({
                                 points={points.join(" ")}
                                 fill={fill}
                                 stroke={stroke}
-                                strokeWidth={0.45}
+                                strokeWidth={visualStyle.strokeWidth}
                                 strokeDasharray={item.source === "detected_from_image" ? "2 2" : undefined}
                               />
                             );
                           })}
                         {(surveyPoints ?? []).length
                           ? (surveyPoints ?? []).slice(0, 1500).map((pt, idx) => {
-                              const x = (pt.x / Math.max(lotWidth, 1)) * 100;
-                              const y = (pt.y / Math.max(lotHeight, 1)) * 100;
+                              const [x, y] = siteTupleToPercent([pt.x, pt.y], currentSiteSize);
                               return (
                                 <circle
                                   key={`survey-${idx}`}
@@ -3677,9 +3867,9 @@ export default function PreviewPanel({
                             if (!points.length) return null;
                             const effectiveLotWidth = drawMode === "site" ? drawingLotWidth : lotWidth;
                             const effectiveLotHeight = drawMode === "site" ? drawingLotHeight : lotHeight;
+                            const effectiveSiteSize = { width: effectiveLotWidth, height: effectiveLotHeight };
                             const pct = points.map((pt) => {
-                              const x = (pt[0] / Math.max(effectiveLotWidth, 1)) * 100;
-                              const y = (pt[1] / Math.max(effectiveLotHeight, 1)) * 100;
+                              const [x, y] = siteTupleToPercent(pt, effectiveSiteSize);
                               return `${x},${y}`;
                             });
                             if ((drawMode === "polygon" || drawMode === "site") && pct.length >= 3) {
@@ -3696,8 +3886,8 @@ export default function PreviewPanel({
                                   {points.map((pt, idx) => (
                                     <circle
                                       key={`draft-poly-${idx}`}
-                                      cx={(pt[0] / Math.max(effectiveLotWidth, 1)) * 100}
-                                      cy={(pt[1] / Math.max(effectiveLotHeight, 1)) * 100}
+                                      cx={siteTupleToPercent(pt, effectiveSiteSize)[0]}
+                                      cy={siteTupleToPercent(pt, effectiveSiteSize)[1]}
                                       r={0.55}
                                       fill={draftColor}
                                     />
@@ -3707,16 +3897,21 @@ export default function PreviewPanel({
                             }
                             if (drawMode === "rect" && points.length >= 2) {
                               const [a, b] = points;
-                              const x = (Math.min(a[0], b[0]) / Math.max(effectiveLotWidth, 1)) * 100;
-                              const y = (Math.min(a[1], b[1]) / Math.max(effectiveLotHeight, 1)) * 100;
-                              const w = (Math.abs(a[0] - b[0]) / Math.max(effectiveLotWidth, 1)) * 100;
-                              const h = (Math.abs(a[1] - b[1]) / Math.max(effectiveLotHeight, 1)) * 100;
+                              const rectPct = siteRectToPercent(
+                                {
+                                  x: Math.min(a[0], b[0]),
+                                  y: Math.min(a[1], b[1]),
+                                  width: Math.abs(a[0] - b[0]),
+                                  height: Math.abs(a[1] - b[1]),
+                                },
+                                effectiveSiteSize,
+                              );
                               return (
                                 <rect
-                                  x={x}
-                                  y={y}
-                                  width={w}
-                                  height={h}
+                                  x={rectPct.left}
+                                  y={rectPct.top}
+                                  width={rectPct.width}
+                                  height={rectPct.height}
                                   fill="rgba(14,165,233,0.08)"
                                   stroke="#0284c7"
                                   strokeWidth={0.55}
@@ -3739,8 +3934,8 @@ export default function PreviewPanel({
                                   {points.map((pt, idx) => (
                                     <circle
                                       key={`draft-line-${idx}`}
-                                      cx={(pt[0] / Math.max(effectiveLotWidth, 1)) * 100}
-                                      cy={(pt[1] / Math.max(effectiveLotHeight, 1)) * 100}
+                                      cx={siteTupleToPercent(pt, effectiveSiteSize)[0]}
+                                      cy={siteTupleToPercent(pt, effectiveSiteSize)[1]}
                                       r={0.55}
                                       fill="#0284c7"
                                     />
@@ -3751,8 +3946,8 @@ export default function PreviewPanel({
                             const [pt] = points;
                             return (
                               <circle
-                                cx={(pt[0] / Math.max(effectiveLotWidth, 1)) * 100}
-                                cy={(pt[1] / Math.max(effectiveLotHeight, 1)) * 100}
+                                cx={siteTupleToPercent(pt, effectiveSiteSize)[0]}
+                                cy={siteTupleToPercent(pt, effectiveSiteSize)[1]}
                                 r={0.65}
                                 fill="#0284c7"
                               />
@@ -3805,13 +4000,7 @@ export default function PreviewPanel({
                       .map((item) => {
                         const caps = getEditCapabilities(item);
                         const isSelected = selectedBuildingId === item.id;
-                        const left = ((item.x || 0) / Math.max(lotWidth, 1)) * 100;
-                        const top = ((item.y || 0) / Math.max(lotHeight, 1)) * 100;
-                        const rotated = (item.rotation ?? 0) % 180 !== 0;
-                        const displayW = rotated ? item.d : item.w;
-                        const displayD = rotated ? item.w : item.d;
-                        const width = (displayW / Math.max(lotWidth, 1)) * 100;
-                        const height = (displayD / Math.max(lotHeight, 1)) * 100;
+                        const rectPct = siteRectPercent(item);
                         const rotation = item.rotation ?? 0;
                         const borderColorMap: Record<string, string> = {
                           site: previewQuality === "high" ? "border-white/70" : "border-slate-400",
@@ -3840,6 +4029,8 @@ export default function PreviewPanel({
                         const isCustomArea = isPolygon;
                         const showBox = !isPolyline && !isCustomArea;
                         const isSite = item.type === "site";
+                        const visualKind = resolveVisualKind(item);
+                        const objectBoxStyle = resolveObjectBoxStyle(item);
                         const allowItemInteraction =
                           drawMode === "select" &&
                           (!isSite || (previewInteraction === "edit" && !siteLocked));
@@ -3847,12 +4038,14 @@ export default function PreviewPanel({
                           <div
                             key={item.id}
                             data-object-overlay
+                            data-preview-quality={previewQuality}
+                            data-visual-kind={visualKind}
                             className={`${allowItemInteraction ? "pointer-events-auto" : "pointer-events-none"} absolute z-[30]`}
                             style={{
-                              left: `${left}%`,
-                              top: `${top}%`,
-                              width: `${width}%`,
-                              height: `${height}%`,
+                              left: `${rectPct.left}%`,
+                              top: `${rectPct.top}%`,
+                              width: `${rectPct.width}%`,
+                              height: `${rectPct.height}%`,
                               transform: `rotate(${rotation}deg)`,
                               transformOrigin: "center",
                               cursor: caps.movable ? (isPolyline ? "grab" : "move") : "default",
@@ -3885,23 +4078,18 @@ export default function PreviewPanel({
                                 showBox && isSelected ? "ring-2 ring-amber-300" : ""
                               } ${showBox && isAccessHighlight ? "ring-2 ring-rose-300" : ""}`}
                               style={{
-                                backgroundColor:
-                                  showBox
-                                    ? previewQuality === "high"
-                                      ? "rgba(17, 24, 39, 0.38)"
-                                      : "rgba(15, 23, 42, 0.22)"
-                                    : "transparent",
-                                borderColor: outlineColor || undefined,
-                                backgroundImage:
-                                  showBox && previewQuality === "high"
-                                    ? "linear-gradient(135deg, rgba(255,255,255,0.08), rgba(0,0,0,0.18))"
-                                    : undefined,
-                                boxShadow:
-                                  showBox && previewQuality === "high"
-                                    ? "0 6px 18px rgba(15,23,42,0.25)"
-                                    : undefined,
+                                ...(showBox ? objectBoxStyle : { backgroundColor: "transparent", borderColor: outlineColor || undefined }),
                               }}
                             />
+                            {showBox && isHighQuality && visualKind === "building" ? (
+                              <div className="pointer-events-none absolute inset-x-[16%] top-1/2 h-px -translate-y-1/2 bg-white/35" />
+                            ) : null}
+                            {showBox && isHighQuality && visualKind === "water" ? (
+                              <div className="pointer-events-none absolute inset-x-[14%] top-1/2 h-px -translate-y-1/2 bg-sky-100/60 shadow-[0_5px_0_rgba(224,242,254,0.34),0_-5px_0_rgba(224,242,254,0.24)]" />
+                            ) : null}
+                            {showBox && isHighQuality && visualKind === "utility" ? (
+                              <div className="pointer-events-none absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/80 bg-violet-500/80" />
+                            ) : null}
                             {isSelected && isEditableVertexGeometry && Array.isArray(item.geometry)
                               ? item.geometry.map((pt, idx) => {
                                   const handleLeft = ((pt[0] - (item.x ?? 0)) / Math.max(item.w, 1)) * 100;
@@ -4139,23 +4327,17 @@ export default function PreviewPanel({
                       {suggestedPlacements
                       .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
                       .map((item) => {
-                        const left = ((item.x || 0) / Math.max(lotWidth, 1)) * 100;
-                        const top = ((item.y || 0) / Math.max(lotHeight, 1)) * 100;
-                        const rotated = (item.rotation ?? 0) % 180 !== 0;
-                        const displayW = rotated ? item.d : item.w;
-                        const displayD = rotated ? item.w : item.d;
-                        const width = (displayW / Math.max(lotWidth, 1)) * 100;
-                        const height = (displayD / Math.max(lotHeight, 1)) * 100;
+                        const rectPct = siteRectPercent(item);
                         const rotation = item.rotation ?? 0;
                         return (
                           <div
                             key={item.id}
                             className="pointer-events-auto absolute"
                             style={{
-                              left: `${left}%`,
-                              top: `${top}%`,
-                              width: `${width}%`,
-                              height: `${height}%`,
+                              left: `${rectPct.left}%`,
+                              top: `${rectPct.top}%`,
+                              width: `${rectPct.width}%`,
+                              height: `${rectPct.height}%`,
                               transform: `rotate(${rotation}deg)`,
                               transformOrigin: "center",
                               cursor: "move",
@@ -4198,14 +4380,12 @@ export default function PreviewPanel({
                             : [path.from, path.to];
                           const coords = points
                             .map((pt) => {
-                              const x = (pt.x / Math.max(lotWidth, 1)) * 100;
-                              const y = (pt.y / Math.max(lotHeight, 1)) * 100;
+                              const [x, y] = siteTupleToPercent([pt.x, pt.y], currentSiteSize);
                               return `${x},${y}`;
                             })
                             .join(" ");
                           const labelPoint = points[Math.floor(points.length / 2)] ?? path.from;
-                          const labelX = (labelPoint.x / Math.max(lotWidth, 1)) * 100;
-                          const labelY = (labelPoint.y / Math.max(lotHeight, 1)) * 100;
+                          const [labelX, labelY] = siteTupleToPercent([labelPoint.x, labelPoint.y], currentSiteSize);
                           return (
                             <g key={path.id}>
                               <polyline
@@ -4506,13 +4686,7 @@ export default function PreviewPanel({
                     {buildingPlacements
                       .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
                       .map((item) => {
-                        const left = ((item.x || 0) / Math.max(lotWidth, 1)) * 100;
-                        const top = ((item.y || 0) / Math.max(lotHeight, 1)) * 100;
-                        const rotated = (item.rotation ?? 0) % 180 !== 0;
-                        const displayW = rotated ? item.d : item.w;
-                        const displayD = rotated ? item.w : item.d;
-                        const width = (displayW / Math.max(lotWidth, 1)) * 100;
-                        const height = (displayD / Math.max(lotHeight, 1)) * 100;
+                        const rectPct = siteRectPercent(item);
                         const rotation = item.rotation ?? 0;
                         const isSite = item.type === "site";
                         const allowItemInteraction =
@@ -4541,10 +4715,10 @@ export default function PreviewPanel({
                             data-object-overlay
                             className={`${allowMapInteraction || !allowItemInteraction ? "pointer-events-none" : "pointer-events-auto"} absolute`}
                             style={{
-                              left: `${left}%`,
-                              top: `${top}%`,
-                              width: `${width}%`,
-                              height: `${height}%`,
+                              left: `${rectPct.left}%`,
+                              top: `${rectPct.top}%`,
+                              width: `${rectPct.width}%`,
+                              height: `${rectPct.height}%`,
                               transform: `rotate(${rotation}deg)`,
                               transformOrigin: "center",
                               cursor: placementMode ? "move" : "default",
@@ -4587,13 +4761,7 @@ export default function PreviewPanel({
                       {suggestedPlacements
                         .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
                         .map((item) => {
-                          const left = ((item.x || 0) / Math.max(lotWidth, 1)) * 100;
-                          const top = ((item.y || 0) / Math.max(lotHeight, 1)) * 100;
-                          const rotated = (item.rotation ?? 0) % 180 !== 0;
-                          const displayW = rotated ? item.d : item.w;
-                          const displayD = rotated ? item.w : item.d;
-                          const width = (displayW / Math.max(lotWidth, 1)) * 100;
-                          const height = (displayD / Math.max(lotHeight, 1)) * 100;
+                          const rectPct = siteRectPercent(item);
                           const rotation = item.rotation ?? 0;
                           const borderColorMap: Record<string, string> = {
                             site: "border-slate-400",
@@ -4615,10 +4783,10 @@ export default function PreviewPanel({
                               key={item.id}
                               className="pointer-events-auto absolute"
                               style={{
-                                left: `${left}%`,
-                                top: `${top}%`,
-                                width: `${width}%`,
-                                height: `${height}%`,
+                                left: `${rectPct.left}%`,
+                                top: `${rectPct.top}%`,
+                                width: `${rectPct.width}%`,
+                                height: `${rectPct.height}%`,
                                 transform: `rotate(${rotation}deg)`,
                                 transformOrigin: "center",
                                 cursor: "pointer",

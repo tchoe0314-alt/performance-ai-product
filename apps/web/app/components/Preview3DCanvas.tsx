@@ -4,10 +4,12 @@ import type { Preview3DItem } from "../types";
 export default function Preview3DCanvas({
   items,
   interactive,
+  previewQuality = "standard",
   onOpenFullscreen,
 }: {
   items: Preview3DItem[];
   interactive: boolean;
+  previewQuality?: "standard" | "high";
   onOpenFullscreen?: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -65,7 +67,35 @@ export default function Preview3DCanvas({
       };
     };
 
-    ctx.fillStyle = "#eef2f7";
+    const highQuality = previewQuality === "high";
+    const layerStyles = (layer: string) => {
+      const key = layer.toUpperCase();
+      if (!highQuality) {
+        return {
+          top: itemColorFallback(key, "#dbe5ff"),
+          sideDark: key === "BUILDING" ? "#94a3b8" : "#cbd5f5",
+          sideLight: key === "BUILDING" ? "#bfc7d4" : "#dbe5ff",
+        };
+      }
+      if (key === "BUILDING") {
+        return { top: "#334155", sideDark: "#1f2937", sideLight: "#475569" };
+      }
+      if (key === "ROAD" || key === "PARKING") {
+        return { top: "#3f4652", sideDark: "#252b34", sideLight: "#5b6472" };
+      }
+      if (key === "DRAINAGE" || key === "WATER") {
+        return { top: "#38bdf8", sideDark: "#0369a1", sideLight: "#7dd3fc" };
+      }
+      if (key === "UTILITY") {
+        return { top: "#8b5cf6", sideDark: "#5b21b6", sideLight: "#a78bfa" };
+      }
+      if (key === "LANDSCAPE" || key === "TERRAIN") {
+        return { top: "#86efac", sideDark: "#16a34a", sideLight: "#bbf7d0" };
+      }
+      return { top: "#cbd5e1", sideDark: "#94a3b8", sideLight: "#e2e8f0" };
+    };
+
+    ctx.fillStyle = highQuality ? "#f8fafc" : "#eef2f7";
     ctx.fillRect(0, 0, width, height);
 
     const drawFace = (points: { x: number; y: number }[], color: string) => {
@@ -79,6 +109,14 @@ export default function Preview3DCanvas({
       ctx.fill();
       ctx.strokeStyle = "rgba(15,23,42,0.15)";
       ctx.stroke();
+    };
+    const itemColorFallback = (layer: string, fallback: string) => {
+      if (layer === "BUILDING") return "#bfc7d4";
+      if (layer === "ROAD" || layer === "PARKING") return "#cbd5e1";
+      if (layer === "DRAINAGE" || layer === "WATER") return "#bfdbfe";
+      if (layer === "UTILITY") return "#e9d5ff";
+      if (layer === "LANDSCAPE" || layer === "TERRAIN") return "#dcfce7";
+      return fallback;
     };
 
     const sorted = [...items].sort((a, b) => a.x + a.y - (b.x + b.y));
@@ -97,13 +135,34 @@ export default function Preview3DCanvas({
         project(item.x + item.w, item.y + item.h, topZ),
         project(item.x, item.y + item.h, topZ),
       ];
-      const sideDark = item.layer === "BUILDING" ? "#94a3b8" : "#cbd5f5";
-      const sideLight = item.layer === "BUILDING" ? "#bfc7d4" : "#dbe5ff";
-      drawFace([base[0], base[1], top[1], top[0]], sideDark);
-      drawFace([base[1], base[2], top[2], top[1]], sideLight);
-      drawFace([top[0], top[1], top[2], top[3]], item.color);
+      const style = layerStyles(item.layer);
+      drawFace([base[0], base[1], top[1], top[0]], style.sideDark);
+      drawFace([base[1], base[2], top[2], top[1]], style.sideLight);
+      drawFace([top[0], top[1], top[2], top[3]], highQuality ? style.top : item.color || style.top);
+      if (highQuality && item.layer === "BUILDING") {
+        const ridgeA = project(item.x + item.w * 0.18, item.y + item.h * 0.5, topZ + item.height * 0.05);
+        const ridgeB = project(item.x + item.w * 0.82, item.y + item.h * 0.5, topZ + item.height * 0.05);
+        ctx.beginPath();
+        ctx.moveTo(ridgeA.x, ridgeA.y);
+        ctx.lineTo(ridgeB.x, ridgeB.y);
+        ctx.strokeStyle = "rgba(255,255,255,0.42)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+      if (highQuality && (item.layer === "ROAD" || item.layer === "PARKING")) {
+        const midA = project(item.x + item.w * 0.15, item.y + item.h * 0.5, topZ + 0.04);
+        const midB = project(item.x + item.w * 0.85, item.y + item.h * 0.5, topZ + 0.04);
+        ctx.beginPath();
+        ctx.moveTo(midA.x, midA.y);
+        ctx.lineTo(midB.x, midB.y);
+        ctx.strokeStyle = "rgba(248,250,252,0.55)";
+        ctx.setLineDash(item.layer === "PARKING" ? [2, 3] : [6, 5]);
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
     }
-  }, [items, rotation]);
+  }, [items, previewQuality, rotation]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

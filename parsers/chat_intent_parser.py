@@ -2706,6 +2706,120 @@ def _metadata_for_decision(
     }
 
 
+def _specific_input_label(value: str) -> str:
+    text = str(value or "").strip()
+    labels = {
+        "detention basin or outfall target": "a basin or outfall target",
+        "site size or boundary": "a site size or boundary",
+        "building dimensions": "building footprint dimensions",
+        "object location": "the object location",
+        "what road change you want": "the exact road change",
+        "water and sanitary tie-in locations or assumptions": "water and sanitary tie-in locations",
+        "terrain, slope, or target drainage direction": "terrain, slope, or drainage direction",
+        "saved canonical project record": "a saved project",
+    }
+    return labels.get(text, text)
+
+
+def _suggested_replies_for_decision(metadata: Dict[str, Any]) -> List[str]:
+    missing = [str(item) for item in list(metadata.get("required_missing_inputs") or metadata.get("missing_inputs") or []) if str(item)]
+    command_intent = str(metadata.get("intent") or "")
+    suggestions: List[str] = []
+    if "detention basin or outfall target" in missing:
+        suggestions.extend(["add a draft basin in the low corner", "I selected an outfall target"])
+    elif "site size or boundary" in missing:
+        suggestions.extend(["set site to 500 by 800", "open setup"])
+    elif "building dimensions" in missing:
+        suggestions.extend(["100 ft by 60 ft", "cancel that"])
+    elif "object location" in missing:
+        suggestions.extend(["put it in the southeast corner", "use the selected shape"])
+    elif "what road change you want" in missing:
+        suggestions.extend(["move the road away from the building", "widen the road"])
+    elif command_intent == "site_setup":
+        suggestions.extend(["lock site boundary", "draw the boundary instead"])
+    elif command_intent == "export_readiness":
+        suggestions.extend(["open deliver", "what is blocking export?"])
+    elif command_intent == "unsupported_or_not_understood":
+        suggestions.extend(["open setup", "what should I do next?"])
+    return suggestions[:3]
+
+
+def _compose_specific_response(decision: Dict[str, Any], context: Dict[str, Any], message: str) -> Dict[str, Any]:
+    updated = dict(decision)
+    metadata = dict(updated.get("response_metadata") or {})
+    command_intent = str(metadata.get("intent") or updated.get("intent") or "")
+    action_taken = str(metadata.get("action_taken") or updated.get("action_taken") or "")
+    action_blocked_reason = str(metadata.get("action_blocked_reason") or updated.get("action_blocked_reason") or "")
+    missing = [str(item) for item in list(metadata.get("required_missing_inputs") or updated.get("required_missing_inputs") or []) if str(item)]
+    blockers = [str(item) for item in list(metadata.get("blockers") or []) if str(item)]
+    if action_blocked_reason and action_blocked_reason not in blockers:
+        blockers.append(action_blocked_reason)
+    if metadata.get("blocker") and str(metadata["blocker"]) not in blockers:
+        blockers.append(str(metadata["blocker"]))
+
+    completed_actions: List[str] = []
+    blocked_actions: List[str] = []
+    if action_taken and not action_blocked_reason and not missing and not action_taken.startswith("blocked"):
+        completed_actions.append(action_taken)
+    if action_blocked_reason or missing or action_taken.startswith("blocked"):
+        blocked_actions.append(action_taken or command_intent or "requested_action")
+
+    can_execute_now = bool(
+        updated.get("run_mode") not in {"none", ""}
+        and not missing
+        and not action_blocked_reason
+        and not action_taken.startswith("blocked")
+    )
+    if action_taken in {"routed_ui_action", "answered", "answered_from_project_context", "prepared_site_setup_update", "updated_chat_controls"}:
+        can_execute_now = False
+
+    exact_missing = [_specific_input_label(item) for item in missing]
+    next_best_action = str(metadata.get("next_best_action") or updated.get("next_best_action") or "").strip()
+    assistant_message = str(updated.get("assistant_message") or "").strip()
+
+    if command_intent == "drainage_command" and "detention basin or outfall target" in missing:
+        assistant_message = (
+            "I can’t run drainage yet because I need a basin or outfall target. "
+            "Select/draw one, or say ‘add a draft basin in the low corner’."
+        )
+        next_best_action = "Select/draw a basin or outfall target, or say 'add a draft basin in the low corner'."
+    elif command_intent == "export_readiness" and (blockers or action_blocked_reason):
+        reason = "; ".join(blockers[:3]) or "export review evidence is not ready"
+        assistant_message = f"Before export, clear {reason}. Open Deliver after those blockers are cleared."
+        next_best_action = next_best_action or "Clear the listed export blockers, then open Deliver."
+    elif command_intent == "unsupported_or_not_understood":
+        understood = str(metadata.get("action_planning", {}).get("user_goal") or message).strip()
+        unsupported = str(metadata.get("unsupported_reason") or action_blocked_reason or "that is not a supported Civora chat action yet").strip()
+        assistant_message = (
+            f"I understood this as: {understood}. I can’t do that from chat yet because {unsupported}. "
+            "I can help set up the site, open panels, draw/classify supported objects, explain blockers, generate supported systems, or prepare engineer-review evidence."
+        )
+        next_best_action = "Try a supported site, object, grading, drainage, utility, review, or UI navigation command."
+    elif missing and any(generic in assistant_message.lower() for generic in ["missing inputs", "missing requirements", "cannot proceed", "manual validation failed"]):
+        need = _format_missing_requirements(exact_missing[:2])
+        assistant_message = f"I understood the goal, but I need {need} first. {next_best_action or 'Give me that exact detail and I’ll continue.'}"
+
+    generic_phrases = ["manual validation failed", "missing requirements", "missing inputs", "cannot proceed"]
+    if any(phrase in assistant_message.lower() for phrase in generic_phrases) and (missing or blockers):
+        detail = _format_missing_requirements(exact_missing[:2]) if exact_missing else "; ".join(blockers[:2])
+        assistant_message += f" Exact blocker: {detail}."
+
+    metadata["understood_goal"] = str(metadata.get("action_planning", {}).get("user_goal") or message).strip()
+    metadata["completed_actions"] = completed_actions
+    metadata["blocked_actions"] = blocked_actions
+    metadata["exact_missing_inputs"] = exact_missing
+    metadata["missing_inputs"] = list(dict.fromkeys([*list(metadata.get("missing_inputs") or []), *missing]))
+    metadata["blockers"] = list(dict.fromkeys(blockers))
+    metadata["next_best_action"] = next_best_action
+    metadata["suggested_user_replies"] = _suggested_replies_for_decision(metadata)
+    metadata["can_execute_now"] = can_execute_now
+    updated["response_metadata"] = metadata
+    updated["assistant_message"] = assistant_message
+    updated["required_missing_inputs"] = missing
+    updated["next_best_action"] = next_best_action
+    return updated
+
+
 def _attach_action_planning_metadata(decision: Dict[str, Any], action_plan: Dict[str, Any]) -> Dict[str, Any]:
     updated = dict(decision)
     metadata = dict(updated.get("response_metadata") or {})
@@ -3755,6 +3869,7 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
     local = _local_chat_decision(payload_data)
     action_plan = plan_chat_action(message, context)
     local = _attach_action_planning_metadata(local, action_plan)
+    local = _compose_specific_response(local, context, message)
     local_metadata = dict(local.get("response_metadata") or {})
     if str(local_metadata.get("intent") or "") in {
         "site_setup",
@@ -3769,8 +3884,15 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         "export_readiness",
         "mode_command",
         "responsibility_guard",
+        "settings",
         "unsupported_or_not_understood",
         "workspace_state",
+    }:
+        return local
+    if str(local_metadata.get("intent") or "") == "conversation" and str(local_metadata.get("action_taken") or "") in {
+        "answered",
+        "answered_from_project_context",
+        "asked_clarifying_question",
     }:
         return local
 
@@ -3921,7 +4043,7 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             data["assumptions"] = metadata["assumptions"]
             data["next_best_action"] = metadata["next_best_action"]
         data["success"] = True
-        return _attach_action_planning_metadata(data, action_plan)
+        return _compose_specific_response(_attach_action_planning_metadata(data, action_plan), context, message)
     except Exception:
         return local
 

@@ -103,7 +103,7 @@ def _truthful_decision_update(
     updated["affected_systems"] = list(metadata.get("affected_systems") or [])
     updated["assumptions"] = list(metadata.get("assumptions") or [])
     updated["next_best_action"] = next_best_action
-    return updated
+    return _enrich_response_contract(updated, message=str(metadata.get("understood_goal") or ""))
 
 
 def _save_project_record(project_store: Any, record: Dict[str, Any], *, project_input: Dict[str, Any], latest_result: Dict[str, Any]) -> None:
@@ -155,6 +155,63 @@ def _next_draft_id(items: List[Any], prefix: str) -> str:
 
 def _normalized_text(value: str) -> str:
     return " ".join(str(value or "").strip().lower().split())
+
+
+def _human_missing_input(value: str) -> str:
+    text = str(value or "").strip()
+    labels = {
+        "detention basin or outfall target": "a basin or outfall target",
+        "saved canonical project record": "a saved project",
+        "valid canonical_geometry_handoff_v1": "a valid drawn-geometry handoff",
+        "supported canonical road edit workflow": "a supported road edit workflow",
+        "supported canonical road creation workflow": "a supported road creation workflow",
+        "building dimensions": "building footprint dimensions",
+        "explicit user-provided command inputs": "explicit user-provided command inputs",
+    }
+    return labels.get(text, text)
+
+
+def _suggested_replies(metadata: Dict[str, Any]) -> List[str]:
+    missing = [str(item) for item in _safe_list(metadata.get("required_missing_inputs")) if str(item)]
+    if "detention basin or outfall target" in missing:
+        return ["add a draft basin in the low corner", "I selected an outfall target"]
+    if "saved canonical project record" in missing:
+        return ["save project", "load project"]
+    if any("road" in item for item in missing):
+        return ["use the road panel", "describe the full design change"]
+    if "building dimensions" in missing:
+        return ["100 ft by 60 ft", "cancel that"]
+    if str(metadata.get("intent") or "") == "site_setup":
+        return ["lock site boundary", "draw the boundary instead"]
+    return []
+
+
+def _enrich_response_contract(decision: Dict[str, Any], *, message: str) -> Dict[str, Any]:
+    updated = dict(decision)
+    metadata = _safe_dict(updated.get("response_metadata"))
+    missing = [str(item) for item in _safe_list(metadata.get("required_missing_inputs")) if str(item)]
+    action_taken = str(metadata.get("action_taken") or updated.get("action_taken") or "")
+    action_blocked_reason = str(metadata.get("action_blocked_reason") or updated.get("action_blocked_reason") or "")
+    blockers = [str(item) for item in _safe_list(metadata.get("blockers")) if str(item)]
+    if action_blocked_reason and action_blocked_reason not in blockers:
+        blockers.append(action_blocked_reason)
+    if metadata.get("blocker") and str(metadata["blocker"]) not in blockers:
+        blockers.append(str(metadata["blocker"]))
+    metadata["understood_goal"] = str(metadata.get("understood_goal") or message).strip()
+    metadata["completed_actions"] = [action_taken] if action_taken and not missing and not action_blocked_reason and not action_taken.startswith("blocked") else []
+    metadata["blocked_actions"] = [action_taken] if action_taken and (missing or action_blocked_reason or action_taken.startswith("blocked")) else []
+    metadata["exact_missing_inputs"] = [_human_missing_input(item) for item in missing]
+    metadata["missing_inputs"] = list(dict.fromkeys([*list(metadata.get("missing_inputs") or []), *missing]))
+    metadata["blockers"] = list(dict.fromkeys(blockers))
+    metadata["suggested_user_replies"] = _suggested_replies(metadata)
+    metadata["can_execute_now"] = bool(
+        updated.get("run_mode") not in {"", "none"}
+        and not missing
+        and not action_blocked_reason
+        and not action_taken.startswith("blocked")
+    )
+    updated["response_metadata"] = metadata
+    return updated
 
 
 def _classification_type_from_message(message: str) -> str:
@@ -964,4 +1021,4 @@ def decide_chat(
             "memory_summary": memory_summary,
         }
     )
-    return decision
+    return _enrich_response_contract(decision, message=message)

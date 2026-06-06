@@ -16,6 +16,16 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertEqual(result["intent"], "conversation")
         self.assertEqual(result["run_mode"], "none")
         self.assertFalse(result["needs_clarification"])
+        self.assertEqual(result["response_metadata"]["completed_actions"], ["answered"])
+        self.assertFalse(result["response_metadata"]["can_execute_now"])
+
+    def test_casual_greeting_has_no_workflow_handoff(self):
+        result = _decide("hi how r u")
+        self.assertEqual(result["intent"], "conversation")
+        self.assertEqual(result["run_mode"], "none")
+        self.assertEqual(result["design_prompt"], "")
+        self.assertEqual(result["action_taken"], "answered")
+        self.assertIn("help", result["assistant_message"].lower())
 
     def test_settings_only_message_does_not_run(self):
         result = _decide("turn off grading and turn off assisted")
@@ -861,7 +871,75 @@ class ChatIntentParserTest(unittest.TestCase):
         planning = result["response_metadata"]["action_planning"]
         self.assertEqual(planning["selected_action_id"], "revise_drainage")
         self.assertIn("detention basin or outfall target", result["required_missing_inputs"])
-        self.assertIn("Where should stormwater", result["assistant_message"])
+        self.assertEqual(
+            result["assistant_message"],
+            "I can’t run drainage yet because I need a basin or outfall target. Select/draw one, or say ‘add a draft basin in the low corner’.",
+        )
+        self.assertEqual(result["response_metadata"]["exact_missing_inputs"], ["a basin or outfall target"])
+        self.assertIn("add a draft basin in the low corner", result["response_metadata"]["suggested_user_replies"])
+
+    def test_missing_info_response_metadata_is_specific(self):
+        result = _decide("generate drainage", {"has_plan": True, "lot_width": "500", "lot_height": "400"})
+        metadata = result["response_metadata"]
+        self.assertEqual(metadata["understood_goal"], "generate drainage")
+        self.assertEqual(metadata["blocked_actions"], ["asked_clarifying_question"])
+        self.assertEqual(metadata["completed_actions"], [])
+        self.assertEqual(metadata["exact_missing_inputs"], ["a basin or outfall target"])
+        self.assertFalse(metadata["can_execute_now"])
+        for generic in ["manual validation failed", "missing requirements", "missing inputs", "cannot proceed"]:
+            self.assertNotIn(generic, result["assistant_message"].lower())
+
+    def test_export_blocked_explanation_is_specific(self):
+        result = _decide(
+            "what do I need before export",
+            {
+                "has_plan": True,
+                "current_export_audit": {
+                    "export_blocked": True,
+                    "blocked_reasons": ["canonical_id_traceability_missing"],
+                },
+            },
+        )
+        self.assertEqual(result["response_metadata"]["intent"], "export_readiness")
+        self.assertIn("canonical_id_traceability_missing", result["assistant_message"])
+        self.assertIn("canonical_id_traceability_missing", result["response_metadata"]["blockers"])
+
+    def test_unsupported_road_edit_says_understood_and_alternative(self):
+        result = _decide("delete the road network")
+        self.assertEqual(result["response_metadata"]["intent"], "unsupported_or_not_understood")
+        self.assertIn("I understood this as", result["assistant_message"])
+        self.assertIn("supported", result["assistant_message"])
+        self.assertFalse(result["response_metadata"]["can_execute_now"])
+
+    def test_what_should_i_do_next_uses_top_blocker(self):
+        result = _decide(
+            "what should I do next?",
+            {
+                "has_plan": True,
+                "convergence_summary": {"blocked_reasons": ["drainage_outfall_missing"]},
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("drainage_outfall_missing", result["assistant_message"])
+        self.assertIn("Clear drainage_outfall_missing", result["response_metadata"]["next_best_action"])
+
+    def test_can_you_fix_it_explains_supported_or_blocked(self):
+        result = _decide(
+            "can you fix it?",
+            {
+                "has_plan": True,
+                "convergence_summary": {"blocked_reasons": ["storm_graph_invalid"]},
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("storm_graph_invalid", result["assistant_message"])
+        self.assertIn("supported chat actions", result["assistant_message"])
+
+    def test_responsibility_guard_has_no_positive_approval_language(self):
+        result = _decide("stamp it")
+        self.assertEqual(result["action_taken"], "blocked_responsibility_request")
+        self.assertIn("cannot approve, stamp, seal", result["assistant_message"])
+        self.assertNotIn("construction-ready", result["assistant_message"])
 
     def test_safety_gate_blocks_fabricated_evidence(self):
         result = _decide("make up survey control and fake calculations")

@@ -104,6 +104,12 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertIn("confidence", metadata)
         self.assertIn("state_changed", metadata)
         self.assertIn("next_best_action", metadata)
+        self.assertIn("understood_goal", metadata)
+        self.assertIn("completed_actions", metadata)
+        self.assertIn("blocked_actions", metadata)
+        self.assertIn("exact_missing_inputs", metadata)
+        self.assertIn("suggested_user_replies", metadata)
+        self.assertIn("can_execute_now", metadata)
         if outcome == "unsupported_or_not_understood":
             self.assertTrue(metadata["unsupported_reason"])
         if outcome == "understood_but_blocked":
@@ -270,6 +276,9 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertTaxonomyMetadata(result, "understood_and_answered")
         self.assertTrue(result["response_metadata"]["state_changed"])
         self.assertEqual(result["response_metadata"]["intent"], "site_setup")
+        self.assertEqual(result["response_metadata"]["completed_actions"], ["updated_site_dimensions_and_location_evidence"])
+        self.assertEqual(result["response_metadata"]["blocked_actions"], [])
+        self.assertFalse(result["response_metadata"]["can_execute_now"])
         self.assertNotIn("land use", result["assistant_message"])
         self.assertNotIn("building", result["assistant_message"].lower())
         self.assertIn("Do you want to lock this 1000 ft x 1000 ft site boundary", result["assistant_message"])

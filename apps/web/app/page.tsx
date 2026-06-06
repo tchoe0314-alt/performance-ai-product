@@ -113,6 +113,25 @@ type WorkspaceMode =
   | "data"
   | "settings";
 type SidebarStatus = "ok" | "review" | "block" | "idle";
+type CapabilityExposure = {
+  key: string;
+  label: string;
+  exposed: "yes" | "no";
+  surfaces: string[];
+  status: SidebarStatus;
+  value: string;
+  missingWiring: string;
+  exactFix: string;
+};
+type AddressSuggestion = {
+  lat: number;
+  lng: number;
+  display_name: string;
+  provider?: string;
+  confidence?: number | string | null;
+  crs?: Record<string, unknown>;
+  location_context?: Record<string, unknown>;
+};
 type BottomPanelTab = "model_review" | "systems" | "objects" | "properties" | "history";
 type SidebarNavItem = {
   label: string;
@@ -1284,12 +1303,8 @@ function PerformanceAIDashboardView({
     parking: true,
     grading: false,
   });
-  const [addressSuggestions, setAddressSuggestions] = useState<
-    Array<{ lat: number; lng: number; display_name: string; provider?: string }>
-  >([]);
-  const [selectedAddressSuggestion, setSelectedAddressSuggestion] = useState<
-    { lat: number; lng: number; display_name: string; provider?: string } | null
-  >(null);
+  const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
+  const [selectedAddressSuggestion, setSelectedAddressSuggestion] = useState<AddressSuggestion | null>(null);
   const addressSuggestTimeoutRef = useRef<number | null>(null);
   const [imageUploadState, setImageUploadState] = useState<"idle" | "uploading" | "uploaded" | "detecting" | "failed">("idle");
   const [imageUploadNote, setImageUploadNote] = useState<string | null>(null);
@@ -5564,9 +5579,31 @@ function PerformanceAIDashboardView({
     }
 
     if (/(fix|improve)\b/.test(normalized)) {
+      const nextHint = workflowActionHints[0];
+      if (nextHint) {
+        const targetPanel: SidePanelKey =
+          nextHint.startsWith("Setup panel")
+            ? "site_existing"
+            : nextHint.startsWith("Data panel")
+              ? "data"
+              : nextHint.startsWith("Objects panel")
+                ? "objects"
+                : nextHint.startsWith("Generate Systems panel")
+                  ? "generate"
+                  : nextHint.startsWith("Deliver panel")
+                    ? "deliverables"
+                    : "reports";
+        handleOpenSidePanel(targetPanel);
+        appendChatMessage(
+          "assistant",
+          `Next fix: ${nextHint} I opened the ${sidePanelCopy[targetPanel].title} panel. Civora can prepare engineer-review-ready evidence only; external engineer approval remains required.`,
+          "status",
+        );
+        return true;
+      }
       appendChatMessage(
         "assistant",
-        "What should I fix? You can say 'fix layout overlaps', 'fix drainage', or 'improve parking'.",
+        "I do not see a single automatic fix to apply. Open Review for blockers, or ask for a specific action like 'fix drainage' or 'improve parking'.",
         "status",
       );
       return true;
@@ -9308,8 +9345,10 @@ function PerformanceAIDashboardView({
     if (busy) {
       return "wait for the current operation to finish";
     }
-    if (!backendResult && !projectId) {
-      return "run the planner or load a saved project before exporting";
+    if (!backendResult) {
+      return projectId
+        ? "run systems or load a generated review package before exporting"
+        : "run the planner or load a saved project before exporting";
     }
     return "";
   }, [backendResult, busy, projectId, token]);
@@ -9709,6 +9748,8 @@ function PerformanceAIDashboardView({
           label: item.label ?? SITE_OBJECT_CATALOG[item.type ?? "building"]?.label ?? "Object",
           layer: isBuilding
             ? "BUILDING"
+            : isParking
+              ? "PARKING"
             : isDrainage
               ? "DRAINAGE"
               : isUtility
@@ -9732,11 +9773,16 @@ function PerformanceAIDashboardView({
   const missingSite = !(lotBounds.w && lotBounds.h);
   const missingImage = !mapSnapshotPath;
   const hasBasinPlaced = buildingPlacements.some((item) => item.type === "basin" && item.placed);
+  const hasLocationEvidence =
+    Boolean(siteInputs?.address || siteAddress.trim()) ||
+    Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng) ||
+    Boolean(uploadedImageApiUrl || uploadedImagePreviewUrl);
+  const hasVerifiedSurveyControl = Boolean(surveyFileName && surveyPreviewPoints.length);
   const hasTerrainSource =
     (Boolean(surveyFileName) && useSurveyForGrading) ||
     Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng) ||
-    Boolean(surveySlopeEstimate?.slope_percent) ||
-    Boolean(siteInputs?.address || siteAddress.trim());
+    Boolean(surveySlopeEstimate?.slope_percent);
+  const siteSizeSet = Boolean(parsePositiveNumber(lotWidth) && parsePositiveNumber(lotHeight));
   const gradingSourceSummary = useMemo(() => {
     const hasSurvey = Boolean(siteInputs?.survey_file?.stored_filename || siteInputs?.survey_file?.survey_url);
     const hasMapAnalysis = Boolean(siteInputs?.map_analysis);
@@ -9974,6 +10020,343 @@ function PerformanceAIDashboardView({
     [projects],
   );
   const hasHardSystemBlock = issues.some((issue) => issue.severity === "error") || siteTooLargeForGrading;
+  const existingConditionRows = [
+    {
+      label: "Address / location evidence",
+      value: hasLocationEvidence ? "Imported / applied" : "Missing",
+      status: hasLocationEvidence ? "review" : "block",
+      action: "Setup panel -> enter an address, pick a geocode suggestion, then Apply address.",
+    },
+    {
+      label: "Survey / control",
+      value: hasVerifiedSurveyControl ? "Uploaded / verify control" : "Missing verified control",
+      status: hasVerifiedSurveyControl ? "review" : "block",
+      action: "Import & Survey panel -> upload survey/topo/control evidence.",
+    },
+    {
+      label: "Datum / CRS",
+      value: (siteInputs as { coordinate_system?: string } | null)?.coordinate_system || "Missing",
+      status: (siteInputs as { coordinate_system?: string } | null)?.coordinate_system ? "review" : "block",
+      action: "Data panel -> add coordinate system/datum evidence when available.",
+    },
+    {
+      label: "Terrain",
+      value: hasTerrainSource ? "Available for review" : "Missing survey, DEM, or assumed slope",
+      status: hasTerrainSource ? "review" : "block",
+      action: "Import & Survey panel -> upload terrain, apply geocoded map terrain, or choose assumed slope when prompted.",
+    },
+    {
+      label: "GIS / map context",
+      value: mapAnalysis?.success ? "Analyzed" : uploadedImageApiUrl || uploadedImagePreviewUrl ? "Image uploaded" : "Missing",
+      status: mapAnalysis?.success || uploadedImageApiUrl || uploadedImagePreviewUrl ? "review" : "block",
+      action: "Setup panel -> upload a map snapshot and run Analyze map snapshot.",
+    },
+  ] as const;
+  const getSystemBlockers = (target: "grading" | "drainage" | "storm" | "sanitary" | "water" | "utilities" | "roadway") => {
+    const blockers: string[] = [];
+    if (missingSite) blockers.push("Set site width and depth.");
+    if (!siteScaleLocked) blockers.push("Lock the site boundary.");
+    if (siteTooLargeForGrading && (target === "grading" || target === "drainage" || target === "storm")) {
+      blockers.push(OVERSIZED_SITE_MESSAGE);
+    }
+    if ((target === "grading" || target === "drainage" || target === "storm") && !hasTerrainSource) {
+      blockers.push("Add survey, DEM/geocoded terrain, or explicitly accept an assumed slope.");
+    }
+    if ((target === "drainage" || target === "storm") && !hasBasinPlaced) {
+      blockers.push("Place a basin or outfall target.");
+    }
+    if (target === "roadway" && confirmedObjectCounts.buildings === 0 && confirmedObjectCounts.access === 0) {
+      blockers.push("Add at least one building, entrance, driveway, road, or parking object.");
+    }
+    if ((target === "sanitary" || target === "water" || target === "utilities") && !utilities) {
+      blockers.push("Enable utility generation.");
+    }
+    if ((target === "sanitary" || target === "water") && confirmedObjectCounts.buildings === 0) {
+      blockers.push("Add buildings or service/demand targets.");
+    }
+    if (hasHardSystemBlock && target !== "roadway") {
+      blockers.push("Resolve active hard model blockers.");
+    }
+    return blockers;
+  };
+  const systemReadinessRows = [
+    { key: "grading", label: "Grading", panel: "grading" as SidePanelKey, runTarget: "grading" as SystemGenerationTarget, status: systemStatuses.grading, blockers: getSystemBlockers("grading") },
+    { key: "drainage", label: "Drainage", panel: "drainage" as SidePanelKey, runTarget: "drainage" as SystemGenerationTarget, status: systemStatuses.drainage, blockers: getSystemBlockers("drainage") },
+    { key: "storm", label: "Storm", panel: "drainage" as SidePanelKey, runTarget: "drainage" as SystemGenerationTarget, status: systemStatuses.drainage, blockers: getSystemBlockers("storm") },
+    { key: "sanitary", label: "Sanitary", panel: "sanitary" as SidePanelKey, runTarget: "utilities" as SystemGenerationTarget, status: systemStatuses.utilities, blockers: getSystemBlockers("sanitary") },
+    { key: "water", label: "Water", panel: "water" as SidePanelKey, runTarget: "utilities" as SystemGenerationTarget, status: systemStatuses.utilities, blockers: getSystemBlockers("water") },
+    { key: "utilities", label: "Utilities", panel: "utilities" as SidePanelKey, runTarget: "utilities" as SystemGenerationTarget, status: systemStatuses.utilities, blockers: getSystemBlockers("utilities") },
+    { key: "roadway", label: "Roadway", panel: "roadway" as SidePanelKey, runTarget: "roads" as SystemGenerationTarget, status: systemStatuses.roads, blockers: getSystemBlockers("roadway") },
+  ] as const;
+  const workflowActionHints = [
+    !hasLocationEvidence ? "Setup panel -> Start from address or blank site." : "",
+    !siteSizeSet ? "Setup panel -> enter site width and depth." : "",
+    !buildingPlacements.some((item) => item.type === "site") ? "Setup panel -> Draw site boundary." : "",
+    !siteScaleLocked ? "Setup panel -> Lock site boundary." : "",
+    existingConditionRows.some((item) => item.status === "block") ? "Data panel -> resolve missing existing-condition evidence." : "",
+    placedObjectCount <= 1 ? "Objects panel -> add or draw buildings, parking, roads, basin/outfall, and utility points/lines." : "",
+    systemReadinessRows.some((row) => row.blockers.length) ? `Generate Systems panel -> ${systemReadinessRows.find((row) => row.blockers.length)?.label}: ${systemReadinessRows.find((row) => row.blockers.length)?.blockers[0]}` : "",
+    getExportBlockReason() ? `Deliver panel -> export blocked: ${getExportBlockReason()}.` : "",
+  ].filter(Boolean);
+  const formatSupportValue = (value: string, blocked = false) => ({ value, status: blocked ? "block" : "review" });
+  const deliverableSupportRows = [
+    ["DXF", formatSupportValue(getExportBlockReason() || (backendResult ? "Review export available" : "Needs planner run"), Boolean(getExportBlockReason()))],
+    ["Engineer-review report", formatSupportValue(getExportBlockReason() || (backendResult ? "Available" : "Needs planner run"), Boolean(getExportBlockReason()))],
+    ["LandXML", formatSupportValue("Not generated in this UI yet", true)],
+    ["Civil 3D", formatSupportValue("No native Civil 3D package; use review exports externally", true)],
+    ["DWG", formatSupportValue("Not exported directly; DXF review export only", true)],
+    ["Construction document support package", formatSupportValue(backendResult ? "Review-only package; external engineer approval required" : "Needs run and review gates", !backendResult)],
+    ["External engineer approval", formatSupportValue("Always required outside Civora")],
+  ] as const;
+  const capabilityAuditRows = useMemo<CapabilityExposure[]>(() => {
+    const meta = currentPlanMeta as Record<string, unknown>;
+    const readRecord = (key: string): Record<string, unknown> =>
+      meta[key] && typeof meta[key] === "object" ? (meta[key] as Record<string, unknown>) : {};
+    const readArray = (record: Record<string, unknown>, key: string): unknown[] =>
+      Array.isArray(record[key]) ? (record[key] as unknown[]) : [];
+    const blockerCount = (record: Record<string, unknown>) =>
+      readArray(record, "blockers").length +
+      readArray(record, "warnings").length +
+      readArray(record, "missing_inputs").length;
+    const packageStatus = (...keys: string[]) => {
+      for (const key of keys) {
+        const rec = readRecord(key);
+        const status = String(
+          rec.status ||
+            rec.review_status ||
+            rec.export_status ||
+            rec.readiness_status ||
+            rec.qa_status ||
+            "",
+        );
+        if (status) return status;
+      }
+      return "";
+    };
+    const hasRecord = (...keys: string[]) => keys.some((key) => Object.keys(readRecord(key)).length > 0);
+    const statusFrom = (present: boolean, blocked: boolean, review = true): SidebarStatus =>
+      !present ? "idle" : blocked ? "block" : review ? "review" : "ok";
+    const row = (
+      key: string,
+      label: string,
+      present: boolean,
+      surfaces: string[],
+      value: string,
+      missingWiring: string,
+      exactFix: string,
+      blocked = false,
+      review = true,
+    ): CapabilityExposure => ({
+      key,
+      label,
+      exposed: present ? "yes" : "no",
+      surfaces,
+      status: statusFrom(present, blocked, review),
+      value,
+      missingWiring: present ? "None for status visibility" : missingWiring,
+      exactFix: present ? "Review the listed blockers or accept/reupload evidence where required." : exactFix,
+    });
+
+    const standardsPackage = readRecord("standards_package");
+    const standardsRegistry = readRecord("standards_source_registry");
+    const standardsCandidateReport = readRecord("candidate_rule_report");
+    const standardsAcceptanceReport = readRecord("standards_acceptance_report");
+    const existingPackage = readRecord("existing_conditions_package");
+    const surveyControl = readRecord("survey_control_package");
+    const mapFeatureReport = readRecord("map_feature_detection_report_v1");
+    const engineDepth = readRecord("engine_depth_audit");
+    const productionEvidence = readRecord("production_evidence");
+    const quantityCost = productionEvidence.quantity_cost && typeof productionEvidence.quantity_cost === "object"
+      ? (productionEvidence.quantity_cost as Record<string, unknown>)
+      : {};
+    const exportPackage = readRecord("export_package_report_v1");
+    const constructionPackage = readRecord("construction_document_support_package_v1");
+    const constructionManifest = readRecord("construction_package_manifest");
+    const engineerReviewPackage = readRecord("engineer_review_package_v1");
+    const reactiveReport = readRecord("reactive_update_report");
+    const reactivePartial = readRecord("reactive_partial_rerun");
+    const handoffs =
+      Array.isArray((currentProject?.project_input?.manual_fields as Record<string, unknown> | undefined)?.canonical_geometry_handoff_v1)
+        ? ((currentProject?.project_input?.manual_fields as Record<string, unknown>).canonical_geometry_handoff_v1 as unknown[])
+        : buildingPlacements.filter((item) => item.meta && typeof item.meta === "object" && "canonical_geometry_handoff_v1" in item.meta);
+    const mapCandidateCount = Number(mapFeatureReport.candidate_count ?? 0);
+    const acceptedStandards = Number(
+      standardsCandidateReport.accepted_rule_count ??
+        (standardsAcceptanceReport.rules && typeof standardsAcceptanceReport.rules === "object"
+          ? (standardsAcceptanceReport.rules as Record<string, unknown>).accepted_rule_count
+          : 0) ??
+        0,
+    );
+    const standardsCandidateCount = Number(
+      standardsCandidateReport.candidate_count ??
+        (standardsAcceptanceReport.rules && typeof standardsAcceptanceReport.rules === "object"
+          ? ((standardsAcceptanceReport.rules as Record<string, unknown>).candidates as Record<string, unknown> | undefined)?.candidate_count
+          : 0) ??
+        0,
+    );
+    const surveyPresent = hasRecord("survey_control_package") || hasVerifiedSurveyControl;
+    const existingPresent = hasRecord("existing_conditions_package") || existingConditionRows.some((item) => item.status !== "block");
+    const costPresent = hasRecord("production_evidence") || hasRecord("cost_estimate") || quantityRows.length > 0;
+    const exportBlocked = Boolean(exportPackage.export_blocked || getExportBlockReason());
+    const reactivePresent = hasRecord("reactive_update_report") || hasRecord("reactive_partial_rerun") || reactiveChangedSystems.length > 0;
+    return [
+      row(
+        "standards_source_registry",
+        "Standards source registry",
+        hasRecord("standards_source_registry", "standards_package"),
+        ["UI", "chat", "API", "report"],
+        standardsRegistry.accepted_source_count !== undefined
+          ? `${standardsRegistry.accepted_source_count} accepted source(s)`
+          : packageStatus("standards_package") || "Needs accepted official source",
+        "Registry is only produced after standards discovery/acceptance evidence exists.",
+        "Run standards discovery, review candidate sources, accept official HTTPS sources, then regenerate the standards package.",
+        blockerCount(standardsPackage) > 0 || standardsRegistry.accepted_source_count === 0,
+      ),
+      row(
+        "candidate_standards_review",
+        "Candidate standards review",
+        hasRecord("candidate_rule_report", "standards_acceptance_report", "standards_package"),
+        ["UI", "chat", "API", "report"],
+        `${standardsCandidateCount || 0} candidate(s), ${acceptedStandards || 0} accepted`,
+        "Candidate rules are absent until extraction/review packet evidence is saved.",
+        "Extract standards candidates or build a standards review packet, then accept/reject each candidate rule.",
+        standardsCandidateCount > 0 && acceptedStandards === 0,
+      ),
+      row(
+        "existing_conditions_package",
+        "Existing conditions package",
+        existingPresent,
+        ["UI", "chat", "API", "report"],
+        packageStatus("existing_conditions_package") || (existingPresent ? "Imported / review required" : "Missing imports"),
+        "No existing conditions import package is attached.",
+        "Upload survey/topo/GIS files or fetch online existing-condition sources, then rerun import validation.",
+        blockerCount(existingPackage) > 0 || !hasLocationEvidence,
+      ),
+      row(
+        "survey_control_package",
+        "Survey control package",
+        surveyPresent,
+        ["UI", "chat", "API", "report"],
+        packageStatus("survey_control_package") || (hasVerifiedSurveyControl ? "Uploaded / verify control" : "Missing verified control"),
+        "Survey/control status is blocked until control evidence exists.",
+        "Upload survey/control evidence with datum, benchmark, coordinate system, and verification status.",
+        blockerCount(surveyControl) > 0 || !hasVerifiedSurveyControl,
+      ),
+      row(
+        "map_feature_candidates",
+        "Map feature candidates",
+        hasRecord("map_feature_detection_report_v1") || Boolean(mapAnalysis?.success || uploadedImageApiUrl || uploadedImagePreviewUrl),
+        ["UI", "chat", "API", "report"],
+        mapCandidateCount ? `${mapCandidateCount} candidate(s) need review` : mapAnalysis?.success ? "Map analyzed; candidates need review" : "No candidates yet",
+        "No map feature report is attached.",
+        "Upload/analyze a map snapshot or accept GIS feature sources, then review candidates before drafting objects.",
+        blockerCount(mapFeatureReport) > 0 || mapCandidateCount === 0,
+      ),
+      row(
+        "engine_depth_audit",
+        "Engine depth audit",
+        hasRecord("engine_depth_audit", "engine_readiness"),
+        ["chat", "API", "report"],
+        packageStatus("engine_depth_audit", "engine_readiness") || "Needs generated model evidence",
+        "No engine depth audit is present in the current plan meta.",
+        "Run the planner or golden depth audit so each discipline records readiness, blockers, and validation depth.",
+        blockerCount(engineDepth) > 0,
+      ),
+      row(
+        "production_evidence",
+        "Production evidence",
+        hasRecord("production_evidence"),
+        ["chat", "API", "report"],
+        productionEvidence.production_evidence_ready === true ? "Ready for review handoff" : "Review/blocked evidence only",
+        "No canonical production evidence record is present.",
+        "Run production evidence assembly after standards, existing conditions, quantities, export audit, and reactive checks exist.",
+        productionEvidence.production_evidence_ready !== true,
+      ),
+      row(
+        "cost_book_pricing",
+        "Cost book / pricing",
+        costPresent,
+        ["UI", "chat", "API", "report"],
+        quantityCost.ready === true ? "Approved pricing source covers quantities" : "Blocked without approved/current unit-price book",
+        "Cost pricing validation is absent until quantities and a unit-price book exist.",
+        "Normalize and validate an approved unit-price book, then rerun quantities/cost evidence.",
+        quantityCost.ready !== true,
+      ),
+      row(
+        "export_package_report",
+        "Export package report",
+        hasRecord("export_package_report_v1") || Boolean(backendResult),
+        ["UI", "chat", "API", "report"],
+        packageStatus("export_package_report_v1") || (exportBlocked ? String(getExportBlockReason()) : "Review export available"),
+        "No export package report has been generated yet.",
+        "Generate a report/DXF export package so export audit, support matrix, traceability, and blockers are recorded.",
+        exportBlocked || blockerCount(exportPackage) > 0,
+      ),
+      row(
+        "construction_document_support_package",
+        "Construction document support package",
+        hasRecord("construction_document_support_package_v1", "construction_package_manifest"),
+        ["UI", "chat", "API", "report"],
+        packageStatus("construction_document_support_package_v1", "construction_package_manifest") || "Review-only support; external approval required",
+        "Construction document support package is not attached to this plan.",
+        "Build the construction document support package after deliverable artifacts, standards, survey/control, QA, and pricing evidence exist.",
+        blockerCount(constructionPackage) > 0 || blockerCount(constructionManifest) > 0 || true,
+      ),
+      row(
+        "engineer_review_package",
+        "Engineer review package",
+        hasRecord("engineer_review_package_v1"),
+        ["UI", "chat", "API", "report"],
+        packageStatus("engineer_review_package_v1") ||
+          (blockerCount(engineerReviewPackage)
+            ? `${blockerCount(engineerReviewPackage)} review blocker(s)`
+            : "External licensed engineer review required"),
+        "No engineer review package is attached.",
+        "Generate the engineer review package from the current plan and route blockers to a licensed external reviewer.",
+        true,
+      ),
+      row(
+        "reactive_rerun_evidence",
+        "Reactive rerun evidence",
+        reactivePresent,
+        ["UI", "chat", "API", "report"],
+        reactiveRerunSummary.enabled
+          ? `${reactiveRerunSummary.rerunStages.length} rerun stage(s), ${reactiveRerunSummary.skippedStages.length} skipped`
+          : reactiveChangedSystems.length
+            ? `${reactiveChangedSystems.length} stale system(s) need rerun`
+            : "No reactive rerun yet",
+        "Reactive evidence appears only after a saved edit or partial rerun.",
+        "Make a scoped model edit, confirm the reactive policy if required, and run the dependency-aware partial rerun.",
+        readArray(reactiveReport, "stale_outputs").length > 0 || readArray(reactivePartial, "stale_outputs").length > 0 || reactiveChangedSystems.length > 0,
+      ),
+      row(
+        "cad_geometry_handoff",
+        "CAD geometry handoff",
+        handoffs.length > 0 || placedObjectCount > 0,
+        ["UI", "chat", "API", "report"],
+        handoffs.length ? `${handoffs.length} canonical handoff(s)` : placedObjectCount ? "Draft objects need canonical handoff review" : "No geometry yet",
+        "No canonical geometry handoff exists.",
+        "Draw or import geometry, classify it, then preserve the canonical_geometry_handoff_v1 record for CAD/export.",
+        handoffs.length === 0,
+      ),
+    ];
+  }, [
+    backendResult,
+    buildingPlacements,
+    currentPlanMeta,
+    currentProject?.project_input?.manual_fields,
+    existingConditionRows,
+    getExportBlockReason,
+    hasLocationEvidence,
+    hasVerifiedSurveyControl,
+    mapAnalysis,
+    placedObjectCount,
+    quantityRows.length,
+    reactiveChangedSystems,
+    reactiveRerunSummary,
+    uploadedImageApiUrl,
+    uploadedImagePreviewUrl,
+  ]);
   const systemHealthItems = useMemo(
     () => [
       {
@@ -10360,7 +10743,6 @@ function PerformanceAIDashboardView({
       status: "review",
     },
   ] as const;
-  const siteSizeSet = Boolean(parsePositiveNumber(lotWidth) && parsePositiveNumber(lotHeight));
   const setupChecklistItems = [
     {
       label: "Address / map",
@@ -11090,6 +11472,29 @@ function PerformanceAIDashboardView({
                         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700">Next required step</p>
                         <p className="mt-1 text-sm font-semibold text-amber-900">{nextSetupAction}</p>
                       </div>
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Existing conditions evidence</p>
+                        <div className="mt-2 space-y-2">
+                          {existingConditionRows.map((item) => (
+                            <div key={item.label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                              <div className="flex items-center justify-between gap-3 text-sm">
+                                <span className="font-semibold text-slate-700">{item.label}</span>
+                                <span className={`text-right text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                                  item.status === "block" ? "text-red-600" : "text-amber-600"
+                                }`}>
+                                  {item.value}
+                                </span>
+                              </div>
+                              {item.status === "block" ? (
+                                <p className="mt-1 text-xs text-slate-500">{item.action}</p>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                        <p className="mt-2 text-xs font-medium text-slate-500">
+                          No imported source is labeled survey-backed unless survey/control evidence is uploaded and reviewed.
+                        </p>
+                      </div>
                     </div>
                     <input
                       ref={mapSnapshotInputRef}
@@ -11333,6 +11738,33 @@ function PerformanceAIDashboardView({
                             <p className="mt-1 truncate font-semibold text-slate-800">{value}</p>
                           </div>
                         ))}
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {capabilityAuditRows
+                          .filter((item) =>
+                            [
+                              "existing_conditions_package",
+                              "survey_control_package",
+                              "map_feature_candidates",
+                              "standards_source_registry",
+                              "candidate_standards_review",
+                            ].includes(item.key),
+                          )
+                          .map((item) => (
+                            <div key={item.key} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                              <div className="flex items-center justify-between gap-3 text-sm">
+                                <span className="font-semibold text-slate-700">{item.label}</span>
+                                <span className={`text-right text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                                  item.status === "block" ? "text-red-600" : item.status === "idle" ? "text-slate-400" : "text-amber-600"
+                                }`}>
+                                  {item.value}
+                                </span>
+                              </div>
+                              {item.status === "block" || item.status === "idle" ? (
+                                <p className="mt-1 text-xs text-slate-500">{item.exactFix}</p>
+                              ) : null}
+                            </div>
+                          ))}
                       </div>
                     </div>
                     <div>
@@ -11985,27 +12417,40 @@ function PerformanceAIDashboardView({
                         Run one discipline or regenerate the whole coordinated model.
                       </p>
                       <div className="mt-4 grid grid-cols-2 gap-2">
-                        {([
-                          ["roads", "Roads"],
-                          ["parking", "Parking"],
-                          ["grading", "Grading"],
-                          ["drainage", "Drainage"],
-                          ["utilities", "Utilities"],
-                        ] as const).map(([system, label]) => {
-                          const status = systemStatuses[system];
+                        {systemReadinessRows.map((row) => {
+                          const blocked = row.blockers.length > 0;
+                          const statusLabel = blocked
+                            ? row.blockers[0]
+                            : row.status === "fresh"
+                              ? "Run complete / current"
+                              : busy || visibleActiveJob
+                                ? "Queue or wait for current run"
+                                : "Ready to run";
                           return (
                             <button
-                              key={system}
+                              key={row.key}
                               type="button"
-                              data-testid={`generate-${system}`}
-                              onClick={() => handleGenerateSystem(system)}
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-slate-950 hover:bg-slate-50"
+                              data-testid={`generate-${row.key}`}
+                              onClick={() => blocked ? handleOpenSidePanel(row.panel) : handleGenerateSystem(row.runTarget)}
+                              title={blocked ? `Blocked: ${row.blockers.join("; ")}` : `Run ${row.label}`}
+                              className={`rounded-xl border px-3 py-3 text-left transition ${
+                                blocked
+                                  ? "border-red-100 bg-red-50 hover:border-red-200"
+                                  : "border-slate-200 bg-white hover:border-slate-950 hover:bg-slate-50"
+                              }`}
                             >
-                              <span className="block text-xs font-semibold uppercase tracking-[0.14em] text-slate-900">
-                                {label}
+                              <span className={`block text-xs font-semibold uppercase tracking-[0.14em] ${
+                                blocked ? "text-red-700" : "text-slate-900"
+                              }`}>
+                                {row.label}
                               </span>
-                              <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                                {status.replace("_", " ")}
+                              <span className={`mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                                blocked ? "text-red-500" : "text-slate-400"
+                              }`}>
+                                {blocked ? "Blocked" : row.status.replace("_", " ")}
+                              </span>
+                              <span className="mt-2 block text-[11px] leading-4 text-slate-500">
+                                {statusLabel}
                               </span>
                             </button>
                           );
@@ -12940,14 +13385,35 @@ function PerformanceAIDashboardView({
                       </div>
                     </div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Standards packs</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Standards source registry</p>
                       <div className="mt-3 space-y-2 text-sm font-semibold text-slate-700">
-                        {["Company default", "US baseline review", "ADA surface checks", "Utility clearance rules"].map((label) => (
-                          <label key={label} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                            <span>{label}</span>
-                            <input type="checkbox" checked readOnly className="h-4 w-4 accent-slate-950" />
-                          </label>
-                        ))}
+                        {capabilityAuditRows
+                          .filter((item) => item.key === "standards_source_registry" || item.key === "candidate_standards_review")
+                          .map((item) => (
+                            <div key={item.key} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                              <div className="flex items-start justify-between gap-3">
+                                <span>{item.label}</span>
+                                <span className={`text-right text-[10px] uppercase tracking-[0.12em] ${
+                                  item.status === "block" ? "text-red-600" : item.status === "idle" ? "text-slate-400" : "text-amber-600"
+                                }`}>
+                                  {item.value}
+                                </span>
+                              </div>
+                              {item.status === "block" || item.status === "idle" ? (
+                                <p className="mt-1 text-xs font-medium normal-case tracking-normal text-slate-500">
+                                  {item.exactFix}
+                                </p>
+                              ) : null}
+                            </div>
+                          ))}
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <button type="button" onClick={() => handleOpenSidePanel("data")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">
+                          Source data
+                        </button>
+                        <button type="button" onClick={() => handleOpenSidePanel("reports")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">
+                          Review gates
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -13321,6 +13787,36 @@ function PerformanceAIDashboardView({
                             ))}
                           </div>
                         </div>
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Backend capability audit</p>
+                          <div className="mt-3 space-y-2">
+                            {capabilityAuditRows.map((item) => (
+                              <div key={item.key} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-semibold text-slate-800">{item.label}</p>
+                                    <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                                      Exposed {item.exposed} in {item.surfaces.join(" / ")}
+                                    </p>
+                                  </div>
+                                  <span className={`max-w-[150px] text-right text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                                    item.status === "block"
+                                      ? "text-red-600"
+                                      : item.status === "idle"
+                                        ? "text-slate-400"
+                                        : item.status === "ok"
+                                          ? "text-slate-600"
+                                          : "text-amber-600"
+                                  }`}>
+                                    {item.value}
+                                  </span>
+                                </div>
+                                <p className="mt-2 text-xs text-slate-500">Missing wiring: {item.missingWiring}</p>
+                                <p className="mt-1 text-xs font-medium text-slate-600">Exact fix: {item.exactFix}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       </>
                     ) : null}
                     {activeSidePanel === "quantities" ? (
@@ -13379,6 +13875,56 @@ function PerformanceAIDashboardView({
                               </div>
                             ))}
                           </div>
+                          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Format support status</p>
+                            <div className="mt-2 space-y-2">
+                              {deliverableSupportRows.map(([label, item]) => (
+                                <div key={label} className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                                  <span className="font-semibold text-slate-700">{label}</span>
+                                  <span className={`max-w-[180px] text-right text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                                    item.status === "block" ? "text-red-600" : "text-amber-600"
+                                  }`}>
+                                    {item.value}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Package support status</p>
+                            <div className="mt-2 space-y-2">
+                              {capabilityAuditRows
+                                .filter((item) =>
+                                  [
+                                    "production_evidence",
+                                    "cost_book_pricing",
+                                    "export_package_report",
+                                    "construction_document_support_package",
+                                    "engineer_review_package",
+                                    "reactive_rerun_evidence",
+                                    "cad_geometry_handoff",
+                                  ].includes(item.key),
+                                )
+                                .map((item) => (
+                                  <div key={item.key} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <span className="font-semibold text-slate-700">{item.label}</span>
+                                      <span className={`max-w-[170px] text-right text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                                        item.status === "block" ? "text-red-600" : item.status === "idle" ? "text-slate-400" : "text-amber-600"
+                                      }`}>
+                                        {item.value}
+                                      </span>
+                                    </div>
+                                    {item.status === "block" || item.status === "idle" ? (
+                                      <p className="mt-1 text-xs text-slate-500">{item.exactFix}</p>
+                                    ) : null}
+                                  </div>
+                                ))}
+                            </div>
+                          </div>
+                          <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                            Civora never stamps, seals, signs, certifies, approves construction, submits construction documents, or acts as engineer of record.
+                          </p>
                         </div>
                         <div className="rounded-2xl border border-slate-200 bg-white p-4">
                           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Review gates</p>
