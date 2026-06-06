@@ -715,6 +715,132 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertIn("weakest part", result["assistant_message"])
         self.assertIn("storm coordination", result["assistant_message"])
 
+    def test_site_area_command_routes_as_site_update(self):
+        result = _decide("make the site 14 acres", {"has_plan": True})
+        self.assertEqual(result["intent"], "design")
+        self.assertEqual(result["run_mode"], "run")
+        self.assertIn("14 acres", result["design_prompt"])
+        self.assertEqual(result["response_metadata"]["intent"], "site_update")
+        self.assertEqual(result["action_taken"], "queued_design_run")
+        self.assertIn("site", result["affected_systems"])
+
+    def test_building_command_asks_for_site_when_no_plan(self):
+        result = _decide("add a 100 by 60 building")
+        self.assertEqual(result["intent"], "conversation")
+        self.assertTrue(result["needs_clarification"])
+        self.assertIn("site size", result["assistant_message"])
+        self.assertEqual(result["response_metadata"]["intent"], "object_or_layout_command")
+        self.assertIn("site size or boundary", result["required_missing_inputs"])
+        self.assertEqual(result["action_taken"], "asked_clarifying_question")
+
+    def test_building_command_runs_against_existing_plan(self):
+        result = _decide("add a 100 by 60 building", {"has_plan": True, "lot_width": "500", "lot_height": "400"})
+        self.assertEqual(result["intent"], "design")
+        self.assertEqual(result["run_mode"], "run")
+        self.assertEqual(result["response_metadata"]["intent"], "object_or_layout_command")
+        self.assertIn("layout", result["affected_systems"])
+
+    def test_detention_basin_low_corner_runs_drainage_layout_command(self):
+        result = _decide(
+            "put detention basin in the low corner",
+            {"has_plan": True, "lot_width": "500", "lot_height": "400"},
+        )
+        self.assertEqual(result["intent"], "design")
+        self.assertEqual(result["run_mode"], "run")
+        self.assertEqual(result["response_metadata"]["intent"], "object_or_layout_command")
+        self.assertIn("drainage", result["affected_systems"])
+
+    def test_generate_drainage_asks_for_outfall_without_target(self):
+        result = _decide("generate drainage", {"has_plan": True, "lot_width": "500", "lot_height": "400"})
+        self.assertEqual(result["intent"], "conversation")
+        self.assertTrue(result["needs_clarification"])
+        self.assertIn("detention basin or outfall", result["assistant_message"])
+        self.assertEqual(result["response_metadata"]["intent"], "drainage_command")
+        self.assertIn("detention basin or outfall target", result["required_missing_inputs"])
+
+    def test_generate_drainage_runs_when_basin_exists_in_canonical_context(self):
+        result = _decide(
+            "generate drainage",
+            {
+                "has_plan": True,
+                "lot_width": "500",
+                "lot_height": "400",
+                "current_project": {
+                    "latest_result": {
+                        "final_plan": {
+                            "meta": {
+                                "drainage_canonical": {
+                                    "basins": [{"id": "BASIN-1", "label": "Detention basin"}]
+                                }
+                            }
+                        }
+                    }
+                },
+            },
+        )
+        self.assertEqual(result["intent"], "design")
+        self.assertEqual(result["run_mode"], "run")
+        self.assertEqual(result["control_overrides"]["drainage"], True)
+        self.assertEqual(result["response_metadata"]["intent"], "drainage_command")
+
+    def test_why_is_storm_blocked_uses_specific_blocker_state(self):
+        result = _decide(
+            "why is storm blocked",
+            {
+                "has_plan": True,
+                "convergence_summary": {
+                    "blocked_exports": ["storm"],
+                    "blocked_reasons": ["storm_graph_invalid"],
+                },
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("storm_graph_invalid", result["assistant_message"])
+        self.assertEqual(result["response_metadata"]["intent"], "blocker_explanation")
+        self.assertEqual(result["action_taken"], "answered_from_project_context")
+
+    def test_change_the_road_asks_specific_question(self):
+        result = _decide("change the road", {"has_plan": True, "lot_width": "500", "lot_height": "400"})
+        self.assertEqual(result["intent"], "conversation")
+        self.assertTrue(result["needs_clarification"])
+        self.assertIn("move it, widen it, reroute it", result["assistant_message"])
+        self.assertIn("what road change you want", result["required_missing_inputs"])
+
+    def test_make_parking_fit_buildings_routes_layout_run(self):
+        result = _decide(
+            "make parking fit the buildings",
+            {"has_plan": True, "lot_width": "500", "lot_height": "400", "building_count": "3"},
+        )
+        self.assertEqual(result["intent"], "design")
+        self.assertEqual(result["run_mode"], "run")
+        self.assertEqual(result["response_metadata"]["intent"], "object_or_layout_command")
+        self.assertIn("layout", result["affected_systems"])
+
+    def test_before_export_question_returns_export_metadata(self):
+        result = _decide(
+            "what do I need before export",
+            {
+                "has_plan": True,
+                "convergence_summary": {"blocked_reasons": ["storm_graph_invalid"]},
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("Before export", result["assistant_message"])
+        self.assertEqual(result["response_metadata"]["intent"], "export_readiness")
+        self.assertIn("export", result["affected_systems"])
+
+    def test_use_assisted_mode_is_mode_command(self):
+        result = _decide("use assisted mode")
+        self.assertEqual(result["intent"], "settings")
+        self.assertEqual(result["control_overrides"]["strategyMode"], "assisted")
+        self.assertEqual(result["response_metadata"]["intent"], "mode_command")
+
+    def test_dont_assume_anything_switches_to_user_mode(self):
+        result = _decide("don't assume anything")
+        self.assertEqual(result["intent"], "settings")
+        self.assertEqual(result["control_overrides"]["strategyMode"], "user")
+        self.assertEqual(result["response_metadata"]["intent"], "mode_command")
+
 
 if __name__ == "__main__":
     unittest.main()

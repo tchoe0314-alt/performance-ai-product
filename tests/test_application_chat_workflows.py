@@ -22,6 +22,57 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertEqual(result["intent"], "conversation")
         self.assertEqual(called["payload"]["message"], "hello")
 
+    def test_decide_chat_hydrates_canonical_project_context(self):
+        called = {}
+
+        class FakeProjectStore:
+            def get_project(self, *, user_id, project_id):
+                return {
+                    "project_id": project_id,
+                    "name": "Saved Project",
+                    "description": "",
+                    "session_id": None,
+                    "tags": [],
+                    "project_input": {"project_type": "mixed_use"},
+                    "latest_result": {
+                        "success": True,
+                        "final_plan": {
+                            "meta": {
+                                "convergence_summary": {
+                                    "blocked_reasons": ["storm_graph_invalid"],
+                                },
+                                "deliverables": {"produced": ["preview"]},
+                            }
+                        },
+                    },
+                    "session_state": {},
+                    "metadata": {},
+                }
+
+            def save_project(self, **_kwargs):
+                return {}
+
+        def fake_decider(payload):
+            called["context"] = dict(payload["context"])
+            return {"success": True, "intent": "conversation"}
+
+        result = decide_chat(
+            {
+                "message": "why is storm blocked",
+                "context": {
+                    "current_project": {"project_id": "project_123", "name": "Stale Project"},
+                    "convergence_summary": {},
+                },
+            },
+            decide_chat_message=fake_decider,
+            project_store=FakeProjectStore(),
+            user_id="user_1",
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertTrue(called["context"]["has_plan"])
+        self.assertEqual(called["context"]["current_project"]["name"], "Saved Project")
+        self.assertEqual(called["context"]["convergence_summary"]["blocked_reasons"], ["storm_graph_invalid"])
+
 
 if __name__ == "__main__":
     unittest.main()

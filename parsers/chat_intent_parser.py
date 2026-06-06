@@ -41,6 +41,13 @@ CHAT_DECISION_SCHEMA: Dict[str, Any] = {
             },
             "required": [],
         },
+        "response_metadata": {"type": "object"},
+        "required_missing_inputs": {"type": "array", "items": {"type": "string"}},
+        "action_taken": {"type": "string"},
+        "action_blocked_reason": {"type": "string"},
+        "affected_systems": {"type": "array", "items": {"type": "string"}},
+        "assumptions": {"type": "array", "items": {"type": "string"}},
+        "next_best_action": {"type": "string"},
     },
     "required": [
         "intent",
@@ -290,6 +297,7 @@ def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
         "units": context.get("units") or "ft",
         "lot_width": context.get("lot_width"),
         "lot_height": context.get("lot_height"),
+        "building_count": context.get("building_count"),
         "parking_count": context.get("parking_count"),
         "disciplines": {
             "roads": bool(context.get("roads", True)),
@@ -300,6 +308,12 @@ def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
         "has_plan": bool(context.get("has_plan")),
         "has_preview": bool(context.get("has_preview")),
         "current_project_name": current_project.get("name"),
+        "current_project": {
+            "project_id": current_project.get("project_id"),
+            "name": current_project.get("name"),
+            "project_input": dict(current_project.get("project_input") or {}),
+            "latest_result": dict(current_project.get("latest_result") or {}),
+        },
         "truth_success": current_truth.get("success", context.get("truth_success")),
         "engineering_trust_score": current_truth.get(
             "engineering_trust_score", context.get("engineering_trust_score")
@@ -349,6 +363,83 @@ def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
         "memory_summary": memory_summary,
         "chat_history": _trim_chat_history(context.get("chat_thread")),
     }
+
+
+def _ctx_has_site_size(context: Dict[str, Any]) -> bool:
+    if _safe_positive_number(context.get("lot_width")) and _safe_positive_number(context.get("lot_height")):
+        return True
+    current_project = context.get("current_project") or {}
+    for source in [
+        context,
+        current_project,
+        current_project.get("project_input") if isinstance(current_project, dict) else {},
+        current_project.get("latest_result") if isinstance(current_project, dict) else {},
+    ]:
+        if not isinstance(source, dict):
+            continue
+        if source.get("site_area_acres") or source.get("site_area"):
+            return True
+    return False
+
+
+def _ctx_has_low_point(context: Dict[str, Any]) -> bool:
+    current_project = context.get("current_project") or {}
+    sources = [context]
+    if isinstance(current_project, dict):
+        sources.extend([current_project, current_project.get("latest_result") or {}, current_project.get("project_input") or {}])
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        text = json.dumps(source, default=str).lower()[:20000]
+        if any(token in text for token in ["low_point", "low points", "low corner", "southeast corner", "southwest corner"]):
+            return True
+    return False
+
+
+def _ctx_has_buildings(context: Dict[str, Any]) -> bool:
+    if _safe_positive_number(context.get("building_count")):
+        return True
+    current_project = context.get("current_project") or {}
+    sources = [context]
+    if isinstance(current_project, dict):
+        sources.extend([current_project, current_project.get("latest_result") or {}, current_project.get("project_input") or {}])
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        text = json.dumps(source, default=str).lower()[:20000]
+        if any(token in text for token in ["building", "buildings", "building_placements"]):
+            return True
+    return False
+
+
+def _ctx_has_drainage_target(context: Dict[str, Any]) -> bool:
+    if _ctx_has_low_point(context):
+        return True
+    current_project = context.get("current_project") or {}
+    sources = [context]
+    if isinstance(current_project, dict):
+        sources.extend([current_project, current_project.get("latest_result") or {}, current_project.get("project_input") or {}])
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        text = json.dumps(source, default=str).lower()[:20000]
+        if any(token in text for token in ["detention", "basin", "outfall", "pond"]):
+            return True
+    return False
+
+
+def _ctx_has_utility_tie_ins(context: Dict[str, Any]) -> bool:
+    current_project = context.get("current_project") or {}
+    sources = [context]
+    if isinstance(current_project, dict):
+        sources.extend([current_project, current_project.get("latest_result") or {}, current_project.get("project_input") or {}])
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        text = json.dumps(source, default=str).lower()[:20000]
+        if any(token in text for token in ["water", "sanitary", "sewer", "tie", "connection", "utility"]):
+            return True
+    return False
 
 
 def _is_casual_chat_message(text: str) -> bool:
@@ -435,6 +526,8 @@ def _extract_control_overrides(message: str, context: Dict[str, Any]) -> Dict[st
         overrides["strategyMode"] = "user"
     elif re.search(r"\bassisted mode\b|\buse assisted\b|\bswitch to assisted\b|\bassisted on\b|\bturn on assisted\b|\benable assisted\b", lowered):
         overrides["strategyMode"] = "assisted"
+    if re.search(r"\bdon't assume anything\b|\bdont assume anything\b|\bno assumptions\b|\bdo not assume\b", lowered):
+        overrides["strategyMode"] = "user"
 
     for field, patterns in {
         "roads": [r"\bturn on roads\b", r"\benable roads\b", r"\binclude roads\b", r"\bwith roads\b"],
@@ -1159,6 +1252,32 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
             return "The core design inputs are already there. The next most useful supporting information would be " + _format_missing_requirements(support[:4]) + "."
         return "You already have the core inputs I’d normally ask for. At this point I’d focus on reviewing the current design outputs and tightening any open review items."
     if (
+        "what do i need before export" in lowered
+        or "what do we need before export" in lowered
+        or "what is needed before export" in lowered
+        or "ready for export" in lowered
+        or "export ready" in lowered
+    ):
+        needs: List[str] = []
+        if blocked_exports or blocked_reasons:
+            needs.append("resolve blockers: " + "; ".join(str(item) for item in (blocked_reasons[:2] or blocked_exports[:2])))
+        if unresolved_categories:
+            needs.append("review " + ", ".join(str(item) for item in unresolved_categories[:2]))
+        if assumptions:
+            fields = [
+                str(item.get("field_name") or item.get("field") or "an input").replace("_", " ")
+                for item in assumptions[:2]
+                if isinstance(item, dict)
+            ]
+            fields = [item for item in fields if item]
+            if fields:
+                needs.append("replace assumptions for " + ", ".join(fields))
+        if not deliverables:
+            needs.append("generate and review deliverables")
+        if needs:
+            return "Before export, you need to " + _format_missing_requirements(needs[:4]) + "."
+        return "I do not see recorded blockers before export right now, but I would still review assumptions, warnings, and deliverables before issuing anything final."
+    if (
         "what supplies" in lowered
         or "what materials" in lowered
         or "what equipment" in lowered
@@ -1374,6 +1493,11 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         or "why is it blocked" in lowered
         or "why did it block" in lowered
         or "why is export blocked" in lowered
+        or "why is storm blocked" in lowered
+        or "why is drainage blocked" in lowered
+        or "why is utility blocked" in lowered
+        or "why are utilities blocked" in lowered
+        or "why is grading blocked" in lowered
         or "why did export fail" in lowered
         or "por que esta bloqueado" in lowered
     ):
@@ -1940,6 +2064,139 @@ def _infer_project_type_from_message(message: str) -> str:
     return ""
 
 
+def _extract_site_area_acres(message: str) -> Optional[str]:
+    match = re.search(r"\b(\d+(?:\.\d+)?)\s*(?:ac|acre|acres)\b", _normalized_chat_text(message))
+    return match.group(1) if match else None
+
+
+def _command_family(message: str) -> str:
+    lowered = _normalized_chat_text(message)
+    if any(phrase in lowered for phrase in ["what do i need before export", "before export", "export ready", "ready to export"]):
+        return "export_readiness"
+    if re.search(r"\bwhy\b.*\b(storm|drainage|export|utility|utilities|grading)\b.*\b(blocked|failed|stuck)\b", lowered):
+        return "blocker_explanation"
+    if any(phrase in lowered for phrase in ["use assisted mode", "turn on assisted", "enable assisted", "assisted mode", "don't assume anything", "dont assume anything", "no assumptions"]):
+        return "mode_command"
+    if any(phrase in lowered for phrase in ["generate drainage", "generate storm", "run drainage", "design drainage", "design storm"]):
+        return "drainage_command"
+    if any(phrase in lowered for phrase in ["generate grading", "run grading", "grade the site", "create contours", "generate contours"]):
+        return "grading_command"
+    if any(phrase in lowered for phrase in ["generate utilities", "run utilities", "design utilities", "water system", "sanitary system", "sewer system"]):
+        return "utility_command"
+    if any(phrase in lowered for phrase in ["generate systems", "generate the systems", "generate everything", "run the engines", "run all systems"]):
+        return "generate_command"
+    if any(target in lowered for target in ["building", "basin", "detention", "parking", "road"]) and any(
+        verb in lowered for verb in ["add", "put", "place", "make", "change", "move", "fit"]
+    ):
+        if "site" in lowered and _extract_site_area_acres(message):
+            return "site_update"
+        return "object_or_layout_command"
+    if any(phrase in lowered for phrase in ["make the site", "site area", "lot area"]) and _extract_site_area_acres(message):
+        return "site_update"
+    return "conversation"
+
+
+def _affected_systems_for_command(command_intent: str, message: str) -> List[str]:
+    lowered = _normalized_chat_text(message)
+    systems: List[str] = []
+    mapping = [
+        ("site", ["site", "lot", "acre"]),
+        ("layout", ["building", "parking", "road", "layout", "basin", "detention"]),
+        ("grading", ["grading", "grade", "contour", "slope", "low corner"]),
+        ("drainage", ["drainage", "storm", "detention", "basin", "outfall", "inlet", "pipe"]),
+        ("utilities", ["utility", "utilities", "water", "sanitary", "sewer"]),
+        ("export", ["export", "deliverable"]),
+    ]
+    for system, tokens in mapping:
+        if any(token in lowered for token in tokens):
+            systems.append(system)
+    if command_intent == "grading_command":
+        systems.append("grading")
+    if command_intent == "drainage_command":
+        systems.extend(["drainage", "grading"])
+    if command_intent == "utility_command":
+        systems.append("utilities")
+    if command_intent == "generate_command":
+        systems.extend(["layout", "grading", "drainage", "utilities"])
+    if command_intent == "export_readiness":
+        systems.append("export")
+    return list(dict.fromkeys(systems))
+
+
+def _missing_inputs_for_command(command_intent: str, message: str, context: Dict[str, Any]) -> List[str]:
+    lowered = _normalized_chat_text(message)
+    missing: List[str] = []
+    has_plan = bool(context.get("has_plan"))
+    if command_intent in {"object_or_layout_command", "grading_command", "drainage_command", "utility_command", "generate_command"} and not has_plan:
+        explicit_site_size = (
+            bool(re.search(r"\b(?:site|lot)\b.*\b\d+(?:\.\d+)?\s*(?:ft|feet|m|meters)?\s*(?:x|by)\s*\d+(?:\.\d+)?", lowered))
+            or bool(_extract_site_area_acres(message))
+        )
+        if not _ctx_has_site_size(context) and not explicit_site_size:
+            missing.append("site size or boundary")
+    if command_intent == "object_or_layout_command":
+        if (
+            "building" in lowered
+            and any(phrase in lowered for phrase in ["add a", "add one", "place a", "put a", "create a", "new building"])
+            and not re.search(r"\b\d+(?:\.\d+)?\s*(?:ft|feet|m|meters)?\s*(?:x|by)\s*\d+(?:\.\d+)?", lowered)
+        ):
+            missing.append("building dimensions")
+        if "basin" in lowered or "detention" in lowered:
+            if not (_ctx_has_low_point(context) or "low corner" in lowered or any(corner in lowered for corner in ["northwest", "northeast", "southwest", "southeast"])):
+                missing.append("basin location or low point")
+        if "change the road" in lowered or lowered in {"change road", "change the roads"}:
+            missing.append("what road change you want")
+    if command_intent == "grading_command" and not any(token in lowered for token in ["slope", "contour", "elevation", "low", "high"]) and not _ctx_has_low_point(context):
+        missing.append("terrain, slope, or target drainage direction")
+    if command_intent == "drainage_command":
+        if not _ctx_has_drainage_target(context) and not any(token in lowered for token in ["basin", "outfall", "pond", "low corner"]):
+            missing.append("detention basin or outfall target")
+    if command_intent == "utility_command" and not _ctx_has_utility_tie_ins(context):
+        missing.append("water and sanitary tie-in locations or assumptions")
+    if command_intent == "object_or_layout_command" and "parking" in lowered and "fit" in lowered and not (_ctx_has_buildings(context) or "building" in lowered):
+        missing.append("building program or occupancy target")
+    return list(dict.fromkeys(missing))
+
+
+def _specific_missing_question(command_intent: str, missing: List[str], context: Dict[str, Any]) -> str:
+    if not missing:
+        return ""
+    first = missing[0]
+    if command_intent == "drainage_command":
+        return "I can generate drainage, but I need the detention basin or outfall target first. Where should stormwater discharge or be stored?"
+    if command_intent == "grading_command":
+        return "I can generate grading, but I need terrain direction first. What is the high side, low side, or approximate slope?"
+    if command_intent == "utility_command":
+        return "I can generate utilities, but I need tie-in assumptions first. Where should water and sanitary connect?"
+    if command_intent == "object_or_layout_command" and "building dimensions" in missing:
+        return "I can add the building, but I need its footprint dimensions first, for example 100 ft by 60 ft."
+    if command_intent == "object_or_layout_command" and "what road change you want" in missing:
+        return "I can change the road, but I need the target change: move it, widen it, reroute it, add an entrance, or reduce its footprint?"
+    return "I can do that, but I need " + _format_missing_requirements(missing[:2]) + " first."
+
+
+def _metadata_for_decision(
+    *,
+    command_intent: str,
+    missing: Optional[List[str]] = None,
+    action_taken: str = "responded",
+    action_blocked_reason: str = "",
+    affected_systems: Optional[List[str]] = None,
+    assumptions: Optional[List[str]] = None,
+    next_best_action: str = "",
+) -> Dict[str, Any]:
+    required_missing = list(missing or [])
+    return {
+        "intent": command_intent,
+        "required_missing_inputs": required_missing,
+        "action_taken": action_taken,
+        "action_blocked_reason": action_blocked_reason,
+        "affected_systems": list(affected_systems or []),
+        "assumptions": list(assumptions or []),
+        "next_best_action": next_best_action,
+    }
+
+
 def _build_design_readiness_reply(
     *,
     context: Dict[str, Any],
@@ -2136,7 +2393,9 @@ def _base_decision(
     reason: str,
     confidence: float,
     control_overrides: Optional[Dict[str, Any]] = None,
+    response_metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    metadata = dict(response_metadata or _metadata_for_decision(command_intent=intent))
     return {
         "success": True,
         "intent": intent,
@@ -2147,6 +2406,13 @@ def _base_decision(
         "reason": reason,
         "confidence": confidence,
         "control_overrides": dict(control_overrides or {}),
+        "response_metadata": metadata,
+        "required_missing_inputs": list(metadata.get("required_missing_inputs") or []),
+        "action_taken": str(metadata.get("action_taken") or ""),
+        "action_blocked_reason": str(metadata.get("action_blocked_reason") or ""),
+        "affected_systems": list(metadata.get("affected_systems") or []),
+        "assumptions": list(metadata.get("assumptions") or []),
+        "next_best_action": str(metadata.get("next_best_action") or ""),
     }
 
 
@@ -2156,6 +2422,8 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
     context = _chat_context_summary(dict(payload_data.get("context") or {}))
     strategy_mode = str(context.get("strategy_mode") or "assisted").strip().lower()
     overrides = _extract_control_overrides(message, context)
+    command_intent = _command_family(message)
+    affected_systems = _affected_systems_for_command(command_intent, message)
     if not message:
         return _base_decision(
             intent="conversation",
@@ -2163,6 +2431,13 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             needs_clarification=True,
             reason="Empty message",
             confidence=0.2,
+            response_metadata=_metadata_for_decision(
+                command_intent="conversation",
+                missing=["chat message"],
+                action_taken="asked_clarifying_question",
+                action_blocked_reason="No chat message was provided.",
+                next_best_action="Tell Civora what to design, revise, or explain.",
+            ),
         )
 
     if _is_settings_only_message(message, overrides):
@@ -2172,6 +2447,86 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             reason="Settings-only update detected",
             confidence=0.95,
             control_overrides=overrides,
+            response_metadata=_metadata_for_decision(
+                command_intent=command_intent if command_intent != "conversation" else "settings",
+                action_taken="updated_chat_controls",
+                affected_systems=affected_systems,
+                next_best_action="Give a design command when you want Civora to run the planner.",
+            ),
+        )
+
+    if command_intent in {
+        "site_update",
+        "object_or_layout_command",
+        "grading_command",
+        "drainage_command",
+        "utility_command",
+        "generate_command",
+    }:
+        missing_inputs = _missing_inputs_for_command(command_intent, message, context)
+        if missing_inputs:
+            ask = _specific_missing_question(command_intent, missing_inputs, context)
+            return _base_decision(
+                intent="conversation",
+                assistant_message=ask + _remembered_instruction_fragment(context),
+                needs_clarification=True,
+                reason="Command is missing required inputs",
+                confidence=0.91,
+                control_overrides=overrides,
+                response_metadata=_metadata_for_decision(
+                    command_intent=command_intent,
+                    missing=missing_inputs,
+                    action_taken="asked_clarifying_question",
+                    action_blocked_reason="Required command inputs are missing.",
+                    affected_systems=affected_systems,
+                    next_best_action=ask,
+                ),
+            )
+
+        if command_intent == "site_update" and _extract_site_area_acres(message):
+            area = _extract_site_area_acres(message)
+            prompt = f"Update the current site area to {area} acres and rerun affected layout, grading, drainage, utility, and export readiness checks."
+            return _base_decision(
+                intent="design",
+                assistant_message=f"I’ll update the canonical site area to {area} acres and rerun the affected design systems.",
+                run_mode="run",
+                design_prompt=prompt,
+                reason="Site area update command detected",
+                confidence=0.9,
+                control_overrides=overrides,
+                response_metadata=_metadata_for_decision(
+                    command_intent=command_intent,
+                    action_taken="queued_design_run",
+                    affected_systems=affected_systems or ["site", "layout", "grading", "drainage", "utilities"],
+                    assumptions=[],
+                    next_best_action="Review the updated site extents and downstream system status.",
+                ),
+            )
+
+        if command_intent == "drainage_command":
+            overrides["drainage"] = True
+        elif command_intent == "grading_command":
+            overrides["grading"] = True
+        elif command_intent == "utility_command":
+            overrides["utilities"] = True
+        elif command_intent == "generate_command":
+            overrides.update({"roads": True, "grading": True, "drainage": True, "utilities": True})
+
+        return _base_decision(
+            intent="design",
+            assistant_message=_revision_acknowledgement(message, context),
+            run_mode="run",
+            design_prompt=message,
+            reason=f"{command_intent.replace('_', ' ').title()} detected",
+            confidence=0.9,
+            control_overrides=overrides,
+            response_metadata=_metadata_for_decision(
+                command_intent=command_intent,
+                action_taken="queued_design_run",
+                affected_systems=affected_systems,
+                assumptions=[],
+                next_best_action="Review the generated systems and any blockers returned by the planner.",
+            ),
         )
 
     contextual_reply = _contextual_question_reply(message, context)
@@ -2192,6 +2547,11 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
                 "why did it block",
                 "why is export blocked",
                 "why did export fail",
+                "why is storm blocked",
+                "why is drainage blocked",
+                "why is utility blocked",
+                "why are utilities blocked",
+                "why is grading blocked",
                 "why is that better",
                 "why is it better",
                 "why do you think that is better",
@@ -2204,6 +2564,12 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             reason="Answered from current workspace context",
             confidence=0.9,
             control_overrides=overrides,
+            response_metadata=_metadata_for_decision(
+                command_intent=command_intent if command_intent != "conversation" else intent,
+                action_taken="answered_from_project_context",
+                affected_systems=affected_systems,
+                next_best_action="Use a targeted command if you want Civora to change the design.",
+            ),
         )
 
     if strategy_mode == "assisted" and _looks_like_assisted_scope_confirmation(message):
@@ -2393,6 +2759,19 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError("Chat message is required.")
     context = _chat_context_summary(dict(payload_data.get("context") or {}))
     local = _local_chat_decision(payload_data)
+    local_metadata = dict(local.get("response_metadata") or {})
+    if str(local_metadata.get("intent") or "") in {
+        "site_update",
+        "object_or_layout_command",
+        "grading_command",
+        "drainage_command",
+        "utility_command",
+        "generate_command",
+        "blocker_explanation",
+        "export_readiness",
+        "mode_command",
+    }:
+        return local
 
     system_prompt = (
         "You are Civora AI, an AI-powered civil engineering design assistant. "
@@ -2453,6 +2832,22 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             merged = dict(data.get("control_overrides") or {})
             merged.update(overrides)
             data["control_overrides"] = merged
+        local_metadata = dict(local.get("response_metadata") or {})
+        data_metadata = dict(data.get("response_metadata") or {})
+        merged_metadata = {**local_metadata, **{key: value for key, value in data_metadata.items() if value not in (None, "", [])}}
+        if not merged_metadata:
+            merged_metadata = _metadata_for_decision(command_intent=str(data.get("intent") or "conversation"))
+        data["response_metadata"] = merged_metadata
+        for key in [
+            "required_missing_inputs",
+            "action_taken",
+            "action_blocked_reason",
+            "affected_systems",
+            "assumptions",
+            "next_best_action",
+        ]:
+            if not data.get(key):
+                data[key] = merged_metadata.get(key, [] if key in {"required_missing_inputs", "affected_systems", "assumptions"} else "")
         if str(data.get("intent") or "") == "design":
             readiness_issue = _design_readiness_check(message, context)
             if readiness_issue:
@@ -2480,6 +2875,21 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
                         "confidence": min(float(data.get("confidence") or 0.0), 0.92),
                     }
                 )
+                metadata = _metadata_for_decision(
+                    command_intent=str(merged_metadata.get("intent") or "design"),
+                    missing=list(readiness_issue.get("missing_requirements") or []),
+                    action_taken="asked_clarifying_question",
+                    action_blocked_reason=str(readiness_issue.get("reason") or "Missing required inputs."),
+                    affected_systems=list(merged_metadata.get("affected_systems") or []),
+                    next_best_action=str(data.get("assistant_message") or ""),
+                )
+                data["response_metadata"] = metadata
+                data["required_missing_inputs"] = metadata["required_missing_inputs"]
+                data["action_taken"] = metadata["action_taken"]
+                data["action_blocked_reason"] = metadata["action_blocked_reason"]
+                data["affected_systems"] = metadata["affected_systems"]
+                data["assumptions"] = metadata["assumptions"]
+                data["next_best_action"] = metadata["next_best_action"]
         elif _is_well_specified_design_request(message, context) or _looks_like_follow_up_design_edit(message, context):
             data.update(
                 {
@@ -2496,6 +2906,19 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
                     "confidence": max(float(data.get("confidence") or 0.0), 0.88),
                 }
             )
+            metadata = _metadata_for_decision(
+                command_intent=str(merged_metadata.get("intent") or "design"),
+                action_taken="queued_design_run",
+                affected_systems=list(merged_metadata.get("affected_systems") or []),
+                next_best_action="Review the planner result and any returned blockers.",
+            )
+            data["response_metadata"] = metadata
+            data["required_missing_inputs"] = metadata["required_missing_inputs"]
+            data["action_taken"] = metadata["action_taken"]
+            data["action_blocked_reason"] = metadata["action_blocked_reason"]
+            data["affected_systems"] = metadata["affected_systems"]
+            data["assumptions"] = metadata["assumptions"]
+            data["next_best_action"] = metadata["next_best_action"]
         data["success"] = True
         return data
     except Exception:

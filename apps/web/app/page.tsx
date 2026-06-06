@@ -3658,7 +3658,7 @@ function PerformanceAIDashboardView({
       ...designMemory.constraints,
     ].slice(-8);
     return {
-      strategy_mode: "user",
+      strategy_mode: assistedEnabled ? "assisted" : "user",
       site_name: overrides.siteName ?? siteName,
       file_name: overrides.fileName ?? fileName,
       project_type: overrides.projectType ?? projectType,

@@ -860,6 +860,21 @@ export type ChatDecisionResponse = {
   reason: string;
   confidence: number;
   control_overrides: ControlOverrides;
+  response_metadata?: {
+    intent?: string;
+    required_missing_inputs?: string[];
+    action_taken?: string;
+    action_blocked_reason?: string;
+    affected_systems?: string[];
+    assumptions?: string[];
+    next_best_action?: string;
+  };
+  required_missing_inputs?: string[];
+  action_taken?: string;
+  action_blocked_reason?: string;
+  affected_systems?: string[];
+  assumptions?: string[];
+  next_best_action?: string;
 };
 
 export type ChatMessage = {
