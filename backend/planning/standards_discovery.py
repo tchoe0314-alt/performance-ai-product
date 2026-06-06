@@ -3,10 +3,11 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from datetime import date
+import hashlib
 from html.parser import HTMLParser
 import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 import requests
 
@@ -120,10 +121,39 @@ BASELINE_US_CONCEPT_RULES: Tuple[StandardsRuleCandidate, ...] = (
 )
 
 STANDARDS_REGISTRY_STALE_DAYS = 365
+STANDARDS_LIVE_SOURCE_REFRESH_DAYS = 180
+ALLOWED_LIVE_SOURCE_TYPES = {
+    "official_city",
+    "official_county",
+    "official_state_dot",
+    "official_utility",
+    "official_federal",
+    "company_uploaded",
+}
+BLOCKED_LIVE_SOURCE_TYPES = {
+    "blogs",
+    "forums",
+    "ai_summaries",
+    "unofficial_mirrors",
+    "unknown_pdf_without_source_owner",
+}
 
 
 def _today() -> str:
     return date.today().isoformat()
+
+
+def standards_live_source_policy() -> Dict[str, Any]:
+    return {
+        "version": "standards_live_source_policy_v1",
+        "allowed_source_types": sorted(ALLOWED_LIVE_SOURCE_TYPES),
+        "blocked_source_types": sorted(BLOCKED_LIVE_SOURCE_TYPES),
+        "default_refresh_after_days": STANDARDS_LIVE_SOURCE_REFRESH_DAYS,
+        "candidate_only": True,
+        "acceptance_status": "unaccepted",
+        "network_fetch_default": "disabled_until_explicit_single_source_request",
+        "truth_label": "Live standards sources are discovery candidates only. Fetching or extracting a rule does not imply code compliance, construction approval, or accepted standards.",
+    }
 
 
 def _parse_date(value: Any) -> Optional[date]:
@@ -151,6 +181,208 @@ def _staleness_fields(value: Any, *, stale_after_days: int = STANDARDS_REGISTRY_
         "age_days": age_days,
         "stale": age_days > stale_after_days,
         "staleness_evaluated": True,
+    }
+
+
+def _domain_from_url(url: str) -> str:
+    parsed = urlparse(safe_str(url))
+    return safe_str(parsed.netloc).lower()
+
+
+def _next_refresh_due(retrieved_at: str, refresh_after_days: int) -> str:
+    parsed = _parse_date(retrieved_at)
+    if parsed is None:
+        return ""
+    return date.fromordinal(parsed.toordinal() + refresh_after_days).isoformat()
+
+
+def _normalize_live_source_type(source_type: Any) -> str:
+    return safe_str(source_type).lower().replace("-", "_").replace(" ", "_")
+
+
+def classify_live_standards_source(
+    *,
+    source_url: str,
+    source_type: str = "",
+    agency: str = "",
+    source_owner: str = "",
+) -> Dict[str, Any]:
+    normalized_type = _normalize_live_source_type(source_type)
+    url = safe_str(source_url)
+    domain = _domain_from_url(url)
+    parsed_path = safe_str(urlparse(url).path).lower()
+    reasons: List[str] = []
+    allowed = normalized_type in ALLOWED_LIVE_SOURCE_TYPES
+    blocked = normalized_type in BLOCKED_LIVE_SOURCE_TYPES
+    if parsed_path.endswith(".pdf") and not safe_str(agency or source_owner) and not allowed:
+        normalized_type = "unknown_pdf_without_source_owner"
+        blocked = True
+        reasons.append("PDF source has no traceable owner/agency metadata.")
+    if not url.startswith("https://") and normalized_type != "company_uploaded":
+        blocked = True
+        reasons.append("Live standards sources must use HTTPS unless they are company-uploaded files.")
+    if not normalized_type:
+        reasons.append("Source type is missing and must be classified before live research.")
+    if normalized_type in {"blogs", "forums", "ai_summaries", "unofficial_mirrors"}:
+        reasons.append("Source type is not an official standards authority.")
+    confidence = "official_candidate" if allowed and not blocked else "blocked" if blocked else "low"
+    return {
+        "version": "standards_live_source_policy_v1",
+        "source_url": url,
+        "domain": domain,
+        "source_type": normalized_type or "unknown",
+        "allowed": allowed and not blocked,
+        "blocked": blocked or not allowed,
+        "confidence": confidence,
+        "candidate_only": True,
+        "acceptance_status": "unaccepted",
+        "reasons": reasons,
+        "truth_label": "Source classification is not standards acceptance and does not imply code compliance or construction approval.",
+    }
+
+
+def build_live_source_fetch_record(
+    *,
+    source_url: str,
+    resolved_url: str = "",
+    jurisdiction: Optional[Dict[str, Any]] = None,
+    agency: str = "",
+    source_type: str = "",
+    document_title: str = "",
+    effective_date: str = "",
+    version: str = "",
+    fetch_status: str = "not_fetched",
+    confidence: str = "",
+    content: str = "",
+    retrieved_at: str = "",
+    source_owner: str = "",
+) -> Dict[str, Any]:
+    url = safe_str(source_url)
+    resolved = safe_str(resolved_url) or url
+    retrieved = safe_str(retrieved_at, _today())
+    classification = classify_live_standards_source(
+        source_url=resolved,
+        source_type=source_type,
+        agency=agency,
+        source_owner=source_owner,
+    )
+    refresh_after_days = STANDARDS_LIVE_SOURCE_REFRESH_DAYS
+    staleness = _staleness_fields(retrieved, stale_after_days=refresh_after_days)
+    policy_confidence = safe_str(confidence) or safe_str(classification.get("confidence"))
+    content_text = safe_str(content)
+    needs_review = bool(classification.get("blocked")) or bool(staleness.get("stale")) or policy_confidence in {"", "low", "blocked"}
+    return {
+        "version": "standards_live_source_fetch_record_v1",
+        "policy_version": "standards_live_source_policy_v1",
+        "source_url": url,
+        "resolved_url": resolved,
+        "domain": _domain_from_url(resolved),
+        "jurisdiction": deepcopy(safe_dict(jurisdiction)),
+        "agency": safe_str(agency or source_owner),
+        "source_type": safe_str(classification.get("source_type")),
+        "retrieved_at": retrieved,
+        "content_hash": hashlib.sha256(content_text.encode("utf-8")).hexdigest() if content_text else "",
+        "document_title": safe_str(document_title),
+        "effective_date": safe_str(effective_date),
+        "version_or_effective_date": safe_str(version or effective_date),
+        "fetch_status": safe_str(fetch_status),
+        "confidence": policy_confidence,
+        "candidate_only": True,
+        "acceptance_status": "unaccepted",
+        "refresh_after_days": refresh_after_days,
+        "next_refresh_due": _next_refresh_due(retrieved, refresh_after_days),
+        "staleness": staleness,
+        "needs_review": needs_review,
+        "policy_decision": classification,
+        "truth_label": "Fetched source records are candidate evidence only and do not imply code compliance or construction approval.",
+    }
+
+
+def fetch_live_standards_source_candidate(
+    *,
+    source_url: str,
+    source_id: str = "live_source",
+    source_type: str = "",
+    jurisdiction: Optional[Dict[str, Any]] = None,
+    agency: str = "",
+    document_title: str = "",
+    effective_date: str = "",
+    version: str = "",
+    session: Any = requests,
+    allow_network_fetch: bool = False,
+) -> Dict[str, Any]:
+    policy = standards_live_source_policy()
+    classification = classify_live_standards_source(source_url=source_url, source_type=source_type, agency=agency)
+    body = ""
+    resolved_url = safe_str(source_url)
+    fetch_status = "blocked_by_policy" if classification.get("blocked") else "deferred_by_policy"
+    warnings: List[str] = []
+    if classification.get("blocked"):
+        warnings.extend(safe_list(classification.get("reasons")) or ["Source is not allowed by live-source policy."])
+    elif not allow_network_fetch:
+        warnings.append("Network fetch deferred; controlled live fetching requires explicit single-source enablement.")
+    else:
+        try:
+            response = session.get(source_url, timeout=20)
+            response.raise_for_status()
+            body = safe_str(getattr(response, "text", ""))
+            resolved_url = safe_str(getattr(response, "url", "")) or safe_str(source_url)
+            fetch_status = "fetched"
+        except Exception as exc:
+            fetch_status = "fetch_failed"
+            warnings.append(safe_str(exc))
+    fetch_record = build_live_source_fetch_record(
+        source_url=source_url,
+        resolved_url=resolved_url,
+        jurisdiction=jurisdiction,
+        agency=agency,
+        source_type=source_type,
+        document_title=document_title or source_id,
+        effective_date=effective_date,
+        version=version,
+        fetch_status=fetch_status,
+        confidence=safe_str(classification.get("confidence")),
+        content=body,
+    )
+    candidates = extract_rule_candidates_from_text(body, source_id=source_id, source_url=resolved_url) if body else []
+    for candidate in candidates:
+        candidate["source_type"] = safe_str(classification.get("source_type"))
+        candidate["confidence"] = "live_source_candidate"
+        candidate["acceptance_status"] = "candidate"
+        candidate["status"] = "candidate"
+        candidate["requires_user_acceptance"] = True
+        candidate["source_document_title"] = safe_str(document_title or source_id)
+        candidate["source_version_or_effective_date"] = safe_str(version or effective_date)
+    source_registry = build_standards_source_registry(
+        jurisdiction=jurisdiction,
+        sources=[
+            {
+                "source_id": source_id,
+                "agency": agency,
+                "discipline": "general",
+                "source_url": resolved_url,
+                "document_title": document_title or source_id,
+                "version_or_effective_date": version or effective_date,
+                "retrieved_at": fetch_record["retrieved_at"],
+                "source_type": safe_str(classification.get("source_type")),
+                "confidence": safe_str(classification.get("confidence")),
+                "acceptance_status": "unaccepted",
+            }
+        ],
+        candidate_rules=candidates,
+    )
+    candidate_rule_report = build_candidate_rule_report(candidates, source_registry=source_registry)
+    return {
+        "success": fetch_status == "fetched",
+        "policy": policy,
+        "source_classification": classification,
+        "fetch_record": fetch_record,
+        "source_registry": source_registry,
+        "candidate_rule_report": candidate_rule_report,
+        "candidate_rules": candidate_rule_report["candidate_rules"],
+        "candidate_count": len(candidate_rule_report["candidate_rules"]),
+        "warnings": warnings,
+        "truth_label": "Controlled live-source discovery returns candidate evidence only; engineer/user acceptance is required before production standards gates can use any rule.",
     }
 
 
@@ -1226,13 +1458,17 @@ __all__ = [
     "accept_standards_rules",
     "baseline_us_rule_candidates",
     "build_candidate_rule_report",
+    "build_live_source_fetch_record",
     "build_standards_source_registry",
     "build_standards_review_packet",
+    "classify_live_standards_source",
     "discover_standards_sources",
     "extract_rule_candidates_from_text",
     "extract_text_from_html",
     "fetch_and_extract_rule_candidates",
+    "fetch_live_standards_source_candidate",
     "review_candidate_standards",
+    "standards_live_source_policy",
     "standards_pack_from_acceptance",
     "standards_project_evidence_from_acceptance",
     "validate_standards_acceptance_for_production",

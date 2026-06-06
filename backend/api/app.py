@@ -88,7 +88,9 @@ from backend.application.standards_workflows import (
     accept_standards_response as application_accept_standards_response,
     discover_standards_response as application_discover_standards_response,
     extract_standards_candidates_response as application_extract_standards_candidates_response,
+    fetch_live_standards_source_candidate_response as application_fetch_live_standards_source_candidate_response,
     run_golden_scenarios_response as application_run_golden_scenarios_response,
+    standards_live_source_policy_response as application_standards_live_source_policy_response,
     standards_review_packet_response as application_standards_review_packet_response,
 )
 from backend.application.professional_workflows import (
@@ -298,6 +300,18 @@ class StandardsAcceptancePayload(BaseModel):
 class StandardsExtractPayload(BaseModel):
     source_url: str
     source_id: str = "official_source"
+
+
+class StandardsLiveSourceFetchPayload(BaseModel):
+    source_url: str
+    source_id: str = "live_source"
+    source_type: str = ""
+    jurisdiction: Dict[str, Any] = Field(default_factory=dict)
+    agency: str = ""
+    document_title: str = ""
+    effective_date: str = ""
+    version: str = ""
+    allow_network_fetch: bool = False
 
 
 class GoldenScenarioRunPayload(BaseModel):
@@ -889,6 +903,33 @@ def extract_standards(
     return application_extract_standards_candidates_response(
         source_url=payload.source_url,
         source_id=payload.source_id,
+    )
+
+
+@app.get("/api/standards/live-source-policy")
+def standards_live_source_policy(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    _ = current_user
+    return application_standards_live_source_policy_response()
+
+
+@app.post("/api/standards/live-source-candidate")
+def fetch_live_standards_source_candidate(
+    payload: StandardsLiveSourceFetchPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    _ = current_user
+    return application_fetch_live_standards_source_candidate_response(
+        source_url=payload.source_url,
+        source_id=payload.source_id,
+        source_type=payload.source_type,
+        jurisdiction=payload.jurisdiction,
+        agency=payload.agency,
+        document_title=payload.document_title,
+        effective_date=payload.effective_date,
+        version=payload.version,
+        allow_network_fetch=payload.allow_network_fetch,
     )
 
 

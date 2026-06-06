@@ -8,7 +8,9 @@ from backend.planning.standards_discovery import (
     build_standards_review_packet,
     discover_standards_sources,
     fetch_and_extract_rule_candidates,
+    fetch_live_standards_source_candidate,
     review_candidate_standards,
+    standards_live_source_policy,
     standards_pack_from_acceptance,
     standards_project_evidence_from_acceptance,
 )
@@ -89,6 +91,35 @@ def extract_standards_candidates_response(*, source_url: str, source_id: str = "
     return fetch_and_extract_rule_candidates(source_url, source_id=source_id)
 
 
+def standards_live_source_policy_response() -> Dict[str, Any]:
+    return standards_live_source_policy()
+
+
+def fetch_live_standards_source_candidate_response(
+    *,
+    source_url: str,
+    source_id: str = "live_source",
+    source_type: str = "",
+    jurisdiction: Optional[Dict[str, Any]] = None,
+    agency: str = "",
+    document_title: str = "",
+    effective_date: str = "",
+    version: str = "",
+    allow_network_fetch: bool = False,
+) -> Dict[str, Any]:
+    return fetch_live_standards_source_candidate(
+        source_url=source_url,
+        source_id=source_id,
+        source_type=source_type,
+        jurisdiction=jurisdiction,
+        agency=agency,
+        document_title=document_title,
+        effective_date=effective_date,
+        version=version,
+        allow_network_fetch=allow_network_fetch,
+    )
+
+
 def run_golden_scenarios_response(*, scenario_ids: Optional[Iterable[str]] = None) -> Dict[str, Any]:
     return run_golden_scenarios(scenario_ids)
 
@@ -97,7 +128,9 @@ __all__ = [
     "accept_standards_response",
     "discover_standards_response",
     "extract_standards_candidates_response",
+    "fetch_live_standards_source_candidate_response",
     "review_candidate_standards_response",
     "run_golden_scenarios_response",
+    "standards_live_source_policy_response",
     "standards_review_packet_response",
 ]

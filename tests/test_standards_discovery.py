@@ -3,12 +3,15 @@ import unittest
 from backend.planning.standards_discovery import (
     accept_standards_rules,
     build_candidate_rule_report,
+    build_live_source_fetch_record,
     build_standards_source_registry,
     build_standards_review_packet,
     discover_standards_sources,
     extract_rule_candidates_from_text,
     fetch_and_extract_rule_candidates,
+    fetch_live_standards_source_candidate,
     review_candidate_standards,
+    standards_live_source_policy,
     standards_pack_from_acceptance,
     standards_project_evidence_from_acceptance,
     validate_standards_acceptance_for_production,
@@ -138,6 +141,126 @@ class StandardsDiscoveryTests(unittest.TestCase):
         self.assertEqual(result["candidate_rules"][0]["acceptance_status"], "candidate")
         self.assertIn("roadway", result["candidate_rule_report"]["by_discipline"])
         self.assertIn("candidates only", result["truth_label"])
+
+    def test_live_source_policy_lists_allowed_and_blocked_types(self) -> None:
+        policy = standards_live_source_policy()
+
+        self.assertEqual(policy["version"], "standards_live_source_policy_v1")
+        self.assertIn("official_city", policy["allowed_source_types"])
+        self.assertIn("official_utility", policy["allowed_source_types"])
+        self.assertIn("blogs", policy["blocked_source_types"])
+        self.assertTrue(policy["candidate_only"])
+        self.assertEqual(policy["acceptance_status"], "unaccepted")
+
+    def test_official_live_source_fetch_is_candidate_only(self) -> None:
+        class Response:
+            url = "https://city.example.gov/manual"
+            text = "<html><body>Minimum cover shall be 4 feet.</body></html>"
+
+            def raise_for_status(self):
+                return None
+
+        class Session:
+            def get(self, url, timeout=None):
+                return Response()
+
+        result = fetch_live_standards_source_candidate(
+            source_url="https://city.example.gov/manual",
+            source_id="city_manual",
+            source_type="official_city",
+            jurisdiction={"city": "Example City", "state": "Texas"},
+            agency="Example City Public Works",
+            document_title="Engineering Criteria Manual",
+            version="2026-01",
+            session=Session(),
+            allow_network_fetch=True,
+        )
+
+        record = result["fetch_record"]
+        rule = result["candidate_rules"][0]
+
+        self.assertTrue(result["success"])
+        self.assertEqual(record["source_type"], "official_city")
+        self.assertEqual(record["fetch_status"], "fetched")
+        self.assertTrue(record["content_hash"])
+        self.assertTrue(record["candidate_only"])
+        self.assertEqual(record["acceptance_status"], "unaccepted")
+        self.assertEqual(result["source_registry"]["accepted_source_count"], 0)
+        self.assertEqual(rule["acceptance_status"], "candidate")
+        self.assertTrue(rule["requires_user_acceptance"])
+        self.assertFalse(result["candidate_rule_report"]["production_usable"])
+
+    def test_unofficial_live_source_is_blocked_or_low_confidence(self) -> None:
+        result = fetch_live_standards_source_candidate(
+            source_url="https://standards-blog.example.com/city-manual-summary",
+            source_id="blog_summary",
+            source_type="blogs",
+            agency="",
+            allow_network_fetch=True,
+        )
+
+        self.assertFalse(result["success"])
+        self.assertTrue(result["source_classification"]["blocked"])
+        self.assertEqual(result["fetch_record"]["fetch_status"], "blocked_by_policy")
+        self.assertEqual(result["fetch_record"]["confidence"], "blocked")
+        self.assertTrue(result["fetch_record"]["candidate_only"])
+        self.assertEqual(result["fetch_record"]["acceptance_status"], "unaccepted")
+        self.assertEqual(result["candidate_count"], 0)
+
+    def test_unknown_pdf_without_source_owner_is_blocked(self) -> None:
+        result = fetch_live_standards_source_candidate(
+            source_url="https://files.example.com/standards.pdf",
+            source_id="unknown_pdf",
+            source_type="",
+            agency="",
+            allow_network_fetch=True,
+        )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["source_classification"]["source_type"], "unknown_pdf_without_source_owner")
+        self.assertTrue(result["source_classification"]["blocked"])
+        self.assertEqual(result["fetch_record"]["fetch_status"], "blocked_by_policy")
+
+    def test_stale_live_source_record_needs_review(self) -> None:
+        record = build_live_source_fetch_record(
+            source_url="https://city.example.gov/manual",
+            agency="Example City Public Works",
+            source_type="official_city",
+            retrieved_at="2000-01-01",
+            fetch_status="deferred_by_policy",
+        )
+
+        self.assertTrue(record["staleness"]["stale"])
+        self.assertTrue(record["needs_review"])
+        self.assertTrue(record["next_refresh_due"])
+
+    def test_fetched_candidate_cannot_satisfy_production_compliance(self) -> None:
+        validation = validate_standards_acceptance_for_production(
+            {
+                "accepted_rules": [
+                    {
+                        "rule_id": "city_manual_utilities_1_1",
+                        "discipline": "utilities",
+                        "topic": "minimum cover",
+                        "candidate_value": "Minimum cover shall be 4 feet.",
+                        "source_id": "city_manual",
+                        "source_url": "https://city.example.gov/manual",
+                        "source_section": "minimum cover",
+                        "retrieved_date": "2026-06-05",
+                        "confidence": "live_source_candidate",
+                        "status": "candidate",
+                        "acceptance_status": "candidate",
+                        "source_type": "official_city",
+                        "accepted_by": "engineer-1",
+                        "accepted_date": "2026-06-05",
+                    }
+                ],
+                "source_urls": ["https://city.example.gov/manual"],
+            }
+        )
+
+        self.assertFalse(validation["production_usable"])
+        self.assertIn("rule_acceptance_status", {item["field"] for item in validation["blockers"]})
 
     def test_candidate_rule_report_groups_rules_and_flags_duplicates(self) -> None:
         registry = build_standards_source_registry(
