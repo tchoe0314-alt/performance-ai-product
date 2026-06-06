@@ -28,7 +28,7 @@
         "failed_recent_count": 0,
         "historical_failed_count": null,
         "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
-        "last_check_at": "2026-06-06T04:22:14Z",
+        "last_check_at": "2026-06-06T19:23:57Z",
         "mode_ready": true,
         "monitored_job_types": [
           "drainage_only",
@@ -45,15 +45,15 @@
         "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
         "version": "job_queue_monitoring_evidence_v1"
       },
-      "peak_rss_mb": 93.6,
+      "peak_rss_mb": 101.8,
       "process": {
         "previous_shutdown_clean": true,
-        "recent_start_count": 1,
+        "recent_start_count": 2,
         "sample_count": 3,
         "status": "healthy"
       },
       "readiness_mode": "private_alpha_review",
-      "rss_mb": 93.6,
+      "rss_mb": 101.8,
       "status": "healthy",
       "truth_label": "Aggregated alpha smoke/soak runtime sample. Missing queue or process evidence keeps alpha monitoring blocked.",
       "warnings": []
@@ -73,7 +73,7 @@
         "failed_recent_count": 0,
         "historical_failed_count": null,
         "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
-        "last_check_at": "2026-06-06T04:22:14Z",
+        "last_check_at": "2026-06-06T19:23:57Z",
         "mode_ready": true,
         "monitored_job_types": [
           "drainage_only",
@@ -137,7 +137,7 @@
           "failed_recent_count": 0,
           "historical_failed_count": null,
           "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
-          "last_check_at": "2026-06-06T04:22:14Z",
+          "last_check_at": "2026-06-06T19:23:57Z",
           "mode_ready": true,
           "monitored_job_types": [
             "drainage_only",
@@ -154,15 +154,15 @@
           "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
           "version": "job_queue_monitoring_evidence_v1"
         },
-        "peak_rss_mb": 93.6,
+        "peak_rss_mb": 101.8,
         "process": {
           "previous_shutdown_clean": true,
-          "recent_start_count": 1,
+          "recent_start_count": 2,
           "sample_count": 3,
           "status": "healthy"
         },
         "readiness_mode": "private_alpha_review",
-        "rss_mb": 93.6,
+        "rss_mb": 101.8,
         "status": "healthy",
         "truth_label": "Aggregated alpha smoke/soak runtime sample. Missing queue or process evidence keeps alpha monitoring blocked.",
         "warnings": []
@@ -181,7 +181,7 @@
       "version": "alpha_monitoring_report_v1",
       "warnings": []
     },
-    "duration_seconds": 0.072,
+    "duration_seconds": 0.043,
     "readiness_mode": "private_alpha_review",
     "requested_iterations": 3,
     "sample_count": 3,
@@ -200,9 +200,11 @@
             "async_jobs_enabled": true,
             "blockers": [],
             "confidence": "live_runtime",
-            "failed_count": 6,
+            "failed_count": 0,
+            "failed_recent_count": 0,
+            "historical_failed_count": 6,
             "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
-            "last_check_at": "2026-06-06T04:22:14Z",
+            "last_check_at": "2026-06-06T19:23:57Z",
             "mode_ready": true,
             "monitored_job_types": [
               "drainage_only",
@@ -267,9 +269,11 @@
               "async_jobs_enabled": true,
               "blockers": [],
               "confidence": "live_runtime",
-              "failed_count": 6,
+              "failed_count": 0,
+              "failed_recent_count": 0,
+              "historical_failed_count": 6,
               "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
-              "last_check_at": "2026-06-06T04:22:14Z",
+              "last_check_at": "2026-06-06T19:23:57Z",
               "mode_ready": true,
               "monitored_job_types": [
                 "drainage_only",
@@ -288,23 +292,23 @@
             },
             "memory_critical_mb": 1024.0,
             "memory_warn_mb": 512.0,
-            "peak_rss_mb": 93.6,
+            "peak_rss_mb": 101.8,
             "process": {
-              "instance_id": "98483-1780719377521",
-              "last_shutdown_at": 1780699344.9483678,
-              "last_start_at": 1780719377.5211399,
+              "instance_id": "73204-1780773780899",
+              "last_shutdown_at": 1780773646.521695,
+              "last_start_at": 1780773780.899034,
               "previous_shutdown_clean": true,
-              "recent_start_count": 1,
+              "recent_start_count": 2,
               "restart_critical_count": 5,
               "restart_warning_count": 3,
               "restart_window_seconds": 900.0,
               "state_file": "<local_runtime_path>",
               "status": "healthy",
               "truth_label": "Process monitoring flags crash/restart risk; it must be paired with deploy logs for root cause.",
-              "uptime_seconds": 356.478,
+              "uptime_seconds": 56.785,
               "warnings": []
             },
-            "rss_mb": 93.6,
+            "rss_mb": 101.8,
             "status": "healthy",
             "truth_label": "Runtime monitoring reports operational risk only; it does not prove construction readiness.",
             "warnings": []
@@ -359,7 +363,6 @@
           "worker_count": 1
         },
         "launch_stage": "private_alpha",
-        "mapbox_token_prefix": "",
         "mapbox_token_present": false,
         "mapbox_token_source": null,
         "monitoring": {
@@ -391,9 +394,11 @@
             "async_jobs_enabled": true,
             "blockers": [],
             "confidence": "live_runtime",
-            "failed_count": 6,
+            "failed_count": 0,
+            "failed_recent_count": 0,
+            "historical_failed_count": 6,
             "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
-            "last_check_at": "2026-06-06T04:22:14Z",
+            "last_check_at": "2026-06-06T19:23:57Z",
             "mode_ready": true,
             "monitored_job_types": [
               "drainage_only",
@@ -412,38 +417,37 @@
           },
           "memory_critical_mb": 1024.0,
           "memory_warn_mb": 512.0,
-          "peak_rss_mb": 93.6,
+          "peak_rss_mb": 101.8,
           "process": {
-            "instance_id": "98483-1780719377521",
-            "last_shutdown_at": 1780699344.9483678,
-            "last_start_at": 1780719377.5211399,
+            "instance_id": "73204-1780773780899",
+            "last_shutdown_at": 1780773646.521695,
+            "last_start_at": 1780773780.899034,
             "previous_shutdown_clean": true,
-            "recent_start_count": 1,
+            "recent_start_count": 2,
             "restart_critical_count": 5,
             "restart_warning_count": 3,
             "restart_window_seconds": 900.0,
             "state_file": "<local_runtime_path>",
             "status": "healthy",
             "truth_label": "Process monitoring flags crash/restart risk; it must be paired with deploy logs for root cause.",
-            "uptime_seconds": 356.478,
+            "uptime_seconds": 56.785,
             "warnings": []
           },
-          "rss_mb": 93.6,
+          "rss_mb": 101.8,
           "status": "healthy",
           "truth_label": "Runtime monitoring reports operational risk only; it does not prove construction readiness.",
           "warnings": []
         },
-        "peak_rss_mb": 93.6,
-        "pid": 98483,
+        "peak_rss_mb": 101.8,
+        "pid": 73204,
         "port": null,
         "product_mode": "private_alpha",
         "review_only": true,
-        "rss_mb": 93.6,
+        "rss_mb": 101.8,
         "status": "ok",
-        "storage_dir": "<local_runtime_path>",
         "storage_dir_exists": true,
         "storage_kind": "sqlite",
-        "uptime_seconds": 356.479
+        "uptime_seconds": 56.785
       },
       {
         "alpha_monitoring_report": {
@@ -457,9 +461,11 @@
             "async_jobs_enabled": true,
             "blockers": [],
             "confidence": "live_runtime",
-            "failed_count": 6,
+            "failed_count": 0,
+            "failed_recent_count": 0,
+            "historical_failed_count": 6,
             "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
-            "last_check_at": "2026-06-06T04:22:14Z",
+            "last_check_at": "2026-06-06T19:23:57Z",
             "mode_ready": true,
             "monitored_job_types": [
               "drainage_only",
@@ -524,9 +530,11 @@
               "async_jobs_enabled": true,
               "blockers": [],
               "confidence": "live_runtime",
-              "failed_count": 6,
+              "failed_count": 0,
+              "failed_recent_count": 0,
+              "historical_failed_count": 6,
               "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
-              "last_check_at": "2026-06-06T04:22:14Z",
+              "last_check_at": "2026-06-06T19:23:57Z",
               "mode_ready": true,
               "monitored_job_types": [
                 "drainage_only",
@@ -545,23 +553,23 @@
             },
             "memory_critical_mb": 1024.0,
             "memory_warn_mb": 512.0,
-            "peak_rss_mb": 93.6,
+            "peak_rss_mb": 101.8,
             "process": {
-              "instance_id": "98483-1780719377521",
-              "last_shutdown_at": 1780699344.9483678,
-              "last_start_at": 1780719377.5211399,
+              "instance_id": "73204-1780773780899",
+              "last_shutdown_at": 1780773646.521695,
+              "last_start_at": 1780773780.899034,
               "previous_shutdown_clean": true,
-              "recent_start_count": 1,
+              "recent_start_count": 2,
               "restart_critical_count": 5,
               "restart_warning_count": 3,
               "restart_window_seconds": 900.0,
               "state_file": "<local_runtime_path>",
               "status": "healthy",
               "truth_label": "Process monitoring flags crash/restart risk; it must be paired with deploy logs for root cause.",
-              "uptime_seconds": 356.484,
+              "uptime_seconds": 56.792,
               "warnings": []
             },
-            "rss_mb": 93.6,
+            "rss_mb": 101.8,
             "status": "healthy",
             "truth_label": "Runtime monitoring reports operational risk only; it does not prove construction readiness.",
             "warnings": []
@@ -616,7 +624,6 @@
           "worker_count": 1
         },
         "launch_stage": "private_alpha",
-        "mapbox_token_prefix": "",
         "mapbox_token_present": false,
         "mapbox_token_source": null,
         "monitoring": {
@@ -648,9 +655,11 @@
             "async_jobs_enabled": true,
             "blockers": [],
             "confidence": "live_runtime",
-            "failed_count": 6,
+            "failed_count": 0,
+            "failed_recent_count": 0,
+            "historical_failed_count": 6,
             "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
-            "last_check_at": "2026-06-06T04:22:14Z",
+            "last_check_at": "2026-06-06T19:23:57Z",
             "mode_ready": true,
             "monitored_job_types": [
               "drainage_only",
@@ -669,38 +678,37 @@
           },
           "memory_critical_mb": 1024.0,
           "memory_warn_mb": 512.0,
-          "peak_rss_mb": 93.6,
+          "peak_rss_mb": 101.8,
           "process": {
-            "instance_id": "98483-1780719377521",
-            "last_shutdown_at": 1780699344.9483678,
-            "last_start_at": 1780719377.5211399,
+            "instance_id": "73204-1780773780899",
+            "last_shutdown_at": 1780773646.521695,
+            "last_start_at": 1780773780.899034,
             "previous_shutdown_clean": true,
-            "recent_start_count": 1,
+            "recent_start_count": 2,
             "restart_critical_count": 5,
             "restart_warning_count": 3,
             "restart_window_seconds": 900.0,
             "state_file": "<local_runtime_path>",
             "status": "healthy",
             "truth_label": "Process monitoring flags crash/restart risk; it must be paired with deploy logs for root cause.",
-            "uptime_seconds": 356.484,
+            "uptime_seconds": 56.792,
             "warnings": []
           },
-          "rss_mb": 93.6,
+          "rss_mb": 101.8,
           "status": "healthy",
           "truth_label": "Runtime monitoring reports operational risk only; it does not prove construction readiness.",
           "warnings": []
         },
-        "peak_rss_mb": 93.6,
-        "pid": 98483,
+        "peak_rss_mb": 101.8,
+        "pid": 73204,
         "port": null,
         "product_mode": "private_alpha",
         "review_only": true,
-        "rss_mb": 93.6,
+        "rss_mb": 101.8,
         "status": "ok",
-        "storage_dir": "<local_runtime_path>",
         "storage_dir_exists": true,
         "storage_kind": "sqlite",
-        "uptime_seconds": 356.484
+        "uptime_seconds": 56.792
       },
       {
         "alpha_monitoring_report": {
@@ -714,9 +722,11 @@
             "async_jobs_enabled": true,
             "blockers": [],
             "confidence": "live_runtime",
-            "failed_count": 6,
+            "failed_count": 0,
+            "failed_recent_count": 0,
+            "historical_failed_count": 6,
             "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
-            "last_check_at": "2026-06-06T04:22:14Z",
+            "last_check_at": "2026-06-06T19:23:57Z",
             "mode_ready": true,
             "monitored_job_types": [
               "drainage_only",
@@ -781,9 +791,11 @@
               "async_jobs_enabled": true,
               "blockers": [],
               "confidence": "live_runtime",
-              "failed_count": 6,
+              "failed_count": 0,
+              "failed_recent_count": 0,
+              "historical_failed_count": 6,
               "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
-              "last_check_at": "2026-06-06T04:22:14Z",
+              "last_check_at": "2026-06-06T19:23:57Z",
               "mode_ready": true,
               "monitored_job_types": [
                 "drainage_only",
@@ -802,23 +814,23 @@
             },
             "memory_critical_mb": 1024.0,
             "memory_warn_mb": 512.0,
-            "peak_rss_mb": 93.6,
+            "peak_rss_mb": 101.8,
             "process": {
-              "instance_id": "98483-1780719377521",
-              "last_shutdown_at": 1780699344.9483678,
-              "last_start_at": 1780719377.5211399,
+              "instance_id": "73204-1780773780899",
+              "last_shutdown_at": 1780773646.521695,
+              "last_start_at": 1780773780.899034,
               "previous_shutdown_clean": true,
-              "recent_start_count": 1,
+              "recent_start_count": 2,
               "restart_critical_count": 5,
               "restart_warning_count": 3,
               "restart_window_seconds": 900.0,
               "state_file": "<local_runtime_path>",
               "status": "healthy",
               "truth_label": "Process monitoring flags crash/restart risk; it must be paired with deploy logs for root cause.",
-              "uptime_seconds": 356.487,
+              "uptime_seconds": 56.797,
               "warnings": []
             },
-            "rss_mb": 93.6,
+            "rss_mb": 101.8,
             "status": "healthy",
             "truth_label": "Runtime monitoring reports operational risk only; it does not prove construction readiness.",
             "warnings": []
@@ -873,7 +885,6 @@
           "worker_count": 1
         },
         "launch_stage": "private_alpha",
-        "mapbox_token_prefix": "",
         "mapbox_token_present": false,
         "mapbox_token_source": null,
         "monitoring": {
@@ -905,9 +916,11 @@
             "async_jobs_enabled": true,
             "blockers": [],
             "confidence": "live_runtime",
-            "failed_count": 6,
+            "failed_count": 0,
+            "failed_recent_count": 0,
+            "historical_failed_count": 6,
             "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
-            "last_check_at": "2026-06-06T04:22:14Z",
+            "last_check_at": "2026-06-06T19:23:57Z",
             "mode_ready": true,
             "monitored_job_types": [
               "drainage_only",
@@ -926,38 +939,37 @@
           },
           "memory_critical_mb": 1024.0,
           "memory_warn_mb": 512.0,
-          "peak_rss_mb": 93.6,
+          "peak_rss_mb": 101.8,
           "process": {
-            "instance_id": "98483-1780719377521",
-            "last_shutdown_at": 1780699344.9483678,
-            "last_start_at": 1780719377.5211399,
+            "instance_id": "73204-1780773780899",
+            "last_shutdown_at": 1780773646.521695,
+            "last_start_at": 1780773780.899034,
             "previous_shutdown_clean": true,
-            "recent_start_count": 1,
+            "recent_start_count": 2,
             "restart_critical_count": 5,
             "restart_warning_count": 3,
             "restart_window_seconds": 900.0,
             "state_file": "<local_runtime_path>",
             "status": "healthy",
             "truth_label": "Process monitoring flags crash/restart risk; it must be paired with deploy logs for root cause.",
-            "uptime_seconds": 356.487,
+            "uptime_seconds": 56.797,
             "warnings": []
           },
-          "rss_mb": 93.6,
+          "rss_mb": 101.8,
           "status": "healthy",
           "truth_label": "Runtime monitoring reports operational risk only; it does not prove construction readiness.",
           "warnings": []
         },
-        "peak_rss_mb": 93.6,
-        "pid": 98483,
+        "peak_rss_mb": 101.8,
+        "pid": 73204,
         "port": null,
         "product_mode": "private_alpha",
         "review_only": true,
-        "rss_mb": 93.6,
+        "rss_mb": 101.8,
         "status": "ok",
-        "storage_dir": "<local_runtime_path>",
         "storage_dir_exists": true,
         "storage_kind": "sqlite",
-        "uptime_seconds": 356.488
+        "uptime_seconds": 56.797
       }
     ],
     "status": "ready",
@@ -1169,21 +1181,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 3223.066
+            "value": 2431.784
           },
           {
             "max": 1024.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 97.391
+            "value": 157.562
           },
           {
             "max": 1536.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 97.391
+            "value": 157.562
           }
         ],
         "load_thresholds": {
@@ -1987,21 +1999,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 15831.55
+            "value": 9357.871
           },
           {
             "max": 1024.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 132.672
+            "value": 175.75
           },
           {
             "max": 1536.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 132.672
+            "value": 175.75
           }
         ],
         "load_thresholds": {
@@ -2972,21 +2984,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 39800.689
+            "value": 23102.096
           },
           {
             "max": 1280.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 257.234
+            "value": 301.906
           },
           {
             "max": 1792.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 257.234
+            "value": 301.906
           }
         ],
         "load_thresholds": {
@@ -3903,21 +3915,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 19212.769
+            "value": 16727.289
           },
           {
             "max": 1024.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 257.234
+            "value": 301.906
           },
           {
             "max": 1536.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 257.234
+            "value": 301.906
           }
         ],
         "load_thresholds": {
@@ -4854,21 +4866,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 18829.148
+            "value": 13258.221
           },
           {
             "max": 1280.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 257.234
+            "value": 301.906
           },
           {
             "max": 1792.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 257.234
+            "value": 301.906
           }
         ],
         "load_thresholds": {
@@ -5806,21 +5818,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 14434.39
+            "value": 10555.176
           },
           {
             "max": 1280.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 257.234
+            "value": 301.906
           },
           {
             "max": 1792.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 257.234
+            "value": 301.906
           }
         ],
         "load_thresholds": {
@@ -6720,21 +6732,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 6265.148
+            "value": 3472.401
           },
           {
             "max": 1024.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 257.234
+            "value": 301.906
           },
           {
             "max": 1536.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 257.234
+            "value": 301.906
           }
         ],
         "load_thresholds": {
@@ -7628,21 +7640,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 24650.308
+            "value": 16757.919
           },
           {
             "max": 1024.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 257.234
+            "value": 301.906
           },
           {
             "max": 1536.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 257.234
+            "value": 301.906
           }
         ],
         "load_thresholds": {
@@ -8527,21 +8539,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 10126.806
+            "value": 6690.45
           },
           {
             "max": 768.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 257.234
+            "value": 301.906
           },
           {
             "max": 1024.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 257.234
+            "value": 301.906
           }
         ],
         "load_thresholds": {
@@ -9707,21 +9719,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 1405.318
+            "value": 1038.951
           },
           {
             "max": 768.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 257.234
+            "value": 301.906
           },
           {
             "max": 1024.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 257.234
+            "value": 301.906
           }
         ],
         "load_thresholds": {
@@ -10693,7 +10705,7 @@
         "failed_recent_count": 0,
         "historical_failed_count": null,
         "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
-        "last_check_at": "2026-06-06T04:22:14Z",
+        "last_check_at": "2026-06-06T19:23:57Z",
         "mode_ready": true,
         "monitored_job_types": [
           "drainage_only",
