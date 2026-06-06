@@ -790,6 +790,73 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertIn("accepted_standards_missing", result["assistant_message"])
         self.assertIn("survey_control_missing", result["assistant_message"])
 
+    def test_chat_explains_real_survey_control_package_status(self):
+        store = RecordingProjectStore(
+            _record()
+            | {
+                "latest_result": {
+                    "success": True,
+                    "final_plan": {
+                        "meta": {
+                            "survey_control_package": {
+                                "status": "blocked",
+                                "blockers": [{"field": "survey_control_verified"}],
+                            },
+                        }
+                    },
+                }
+            }
+        )
+
+        result = decide_chat(
+            {
+                "message": "explain survey control status",
+                "context": {"current_project": {"project_id": "project_123"}},
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "answered_from_project_context")
+        self.assertIn("Survey control package", result["assistant_message"])
+        self.assertIn("survey_control_verified", result["assistant_message"])
+        self.assertIn("exact fix", result["assistant_message"])
+
+    def test_chat_explains_cost_pricing_blockers(self):
+        store = RecordingProjectStore(
+            _record()
+            | {
+                "latest_result": {
+                    "success": True,
+                    "final_plan": {
+                        "meta": {
+                            "production_evidence": {
+                                "quantity_cost": {
+                                    "ready": False,
+                                    "blockers": [{"field": "approved_cost_source"}],
+                                },
+                            },
+                        }
+                    },
+                }
+            }
+        )
+
+        result = decide_chat(
+            {
+                "message": "what is the cost pricing status?",
+                "context": {"current_project": {"project_id": "project_123"}},
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "answered_from_project_context")
+        self.assertIn("Cost book / pricing", result["assistant_message"])
+        self.assertIn("approved_cost_source", result["assistant_message"])
+
     def test_no_assumption_mode_asks_one_targeted_question(self):
         result = decide_chat(
             {

@@ -328,6 +328,141 @@ def _handoff_blockers(handoff: Dict[str, Any]) -> List[str]:
     return list(dict.fromkeys(blockers))
 
 
+def _package_status(record: Dict[str, Any]) -> str:
+    for key in ("status", "review_status", "export_status", "readiness_status", "qa_status"):
+        value = str(record.get(key) or "").strip()
+        if value:
+            return value
+    if record.get("ready") is True or record.get("production_usable") is True or record.get("production_evidence_ready") is True:
+        return "ready_for_review"
+    if record.get("construction_release_blocked") is True or record.get("export_blocked") is True:
+        return "blocked"
+    return "present" if record else "missing"
+
+
+def _package_blockers(record: Dict[str, Any]) -> List[str]:
+    blockers: List[str] = []
+    for key in ("blockers", "warnings", "missing_inputs", "blocked_reasons", "post_rerun_stale_outputs", "stale_outputs"):
+        for item in _safe_list(record.get(key)):
+            if isinstance(item, dict):
+                text = str(item.get("field") or item.get("reason") or item.get("message") or item.get("code") or "").strip()
+            else:
+                text = str(item or "").strip()
+            if text and text not in blockers:
+                blockers.append(text)
+    return blockers
+
+
+def _build_capability_statuses(project_input: Dict[str, Any], latest_result: Dict[str, Any]) -> List[Dict[str, Any]]:
+    final_plan = _safe_dict(latest_result.get("final_plan"))
+    meta = _safe_dict(final_plan.get("meta") or latest_result.get("metadata") or latest_result.get("meta"))
+    production = _safe_dict(meta.get("production_evidence"))
+    quantity_cost = _safe_dict(production.get("quantity_cost"))
+    handoffs = _canonical_geometry_handoffs(project_input, latest_result)
+
+    def rec(key: str) -> Dict[str, Any]:
+        return _safe_dict(meta.get(key))
+
+    def row(key: str, label: str, record: Dict[str, Any], *, next_action: str) -> Dict[str, Any]:
+        blockers = _package_blockers(record)
+        present = bool(record)
+        return {
+            "key": key,
+            "label": label,
+            "exposed": present,
+            "surfaces": ["UI", "chat", "API", "report"],
+            "status": _package_status(record),
+            "blockers": blockers,
+            "missing_wiring": "" if present else f"{label} evidence is not attached to the current plan.",
+            "exact_fix": next_action if (blockers or not present) else "Review accepted evidence and regenerate the package if project inputs changed.",
+        }
+
+    return [
+        row(
+            "standards_source_registry",
+            "Standards source registry",
+            rec("standards_source_registry") or rec("standards_package"),
+            next_action="Run standards discovery, review official HTTPS sources, accept the applicable source, and regenerate the standards package.",
+        ),
+        row(
+            "candidate_standards_review",
+            "Candidate standards review",
+            rec("candidate_rule_report") or rec("standards_acceptance_report") or rec("standards_package"),
+            next_action="Build or extract a standards review packet, then accept or reject each candidate rule before relying on it.",
+        ),
+        row(
+            "existing_conditions_package",
+            "Existing conditions package",
+            rec("existing_conditions_package"),
+            next_action="Upload or fetch survey/topo/GIS existing-condition sources and rerun import validation.",
+        ),
+        row(
+            "survey_control_package",
+            "Survey control package",
+            rec("survey_control_package"),
+            next_action="Attach survey/control evidence with datum, benchmark, coordinate system, and verification status.",
+        ),
+        row(
+            "map_feature_candidates",
+            "Map feature candidates",
+            rec("map_feature_detection_report_v1"),
+            next_action="Analyze a map snapshot or official GIS source, then review candidates before turning them into draft objects.",
+        ),
+        row(
+            "engine_depth_audit",
+            "Engine depth audit",
+            rec("engine_depth_audit") or rec("engine_readiness"),
+            next_action="Run the engine depth audit and address each discipline validation blocker.",
+        ),
+        row(
+            "production_evidence",
+            "Production evidence",
+            production,
+            next_action="Assemble production evidence after standards, existing conditions, quantities, export audit, and reactive checks exist.",
+        ),
+        row(
+            "cost_book_pricing",
+            "Cost book / pricing",
+            quantity_cost or rec("cost_estimate") or rec("cost_package_status"),
+            next_action="Normalize and validate an approved current unit-price book, then rerun quantities/cost evidence.",
+        ),
+        row(
+            "export_package_report",
+            "Export package report",
+            rec("export_package_report_v1") or rec("export_audit"),
+            next_action="Generate the export package report so support matrix, traceability, and blockers are recorded.",
+        ),
+        row(
+            "construction_document_support_package",
+            "Construction document support package",
+            rec("construction_document_support_package_v1") or rec("construction_package_manifest"),
+            next_action="Build the construction document support package after deliverables, QA, standards, survey/control, and pricing evidence exist.",
+        ),
+        row(
+            "engineer_review_package",
+            "Engineer review package",
+            rec("engineer_review_package_v1"),
+            next_action="Generate the engineer review package and route unresolved blockers to a licensed external reviewer.",
+        ),
+        row(
+            "reactive_rerun_evidence",
+            "Reactive rerun evidence",
+            rec("reactive_update_report") or rec("reactive_partial_rerun"),
+            next_action="Make a scoped model edit and run the dependency-aware partial rerun before exporting stale outputs.",
+        ),
+        {
+            "key": "cad_geometry_handoff",
+            "label": "CAD geometry handoff",
+            "exposed": bool(handoffs),
+            "surfaces": ["UI", "chat", "API", "report"],
+            "status": "present" if handoffs else "missing",
+            "blockers": [] if handoffs else ["canonical_geometry_handoff_v1_missing"],
+            "missing_wiring": "" if handoffs else "No canonical geometry handoff exists for current drawn/imported geometry.",
+            "exact_fix": "Draw or import geometry, classify it, and preserve canonical_geometry_handoff_v1 for CAD/export.",
+        },
+    ]
+
+
 def _apply_chat_command_execution(
     decision: Dict[str, Any],
     *,
@@ -920,6 +1055,9 @@ def _canonical_chat_context(context: Dict[str, Any], record: Optional[Dict[str, 
         or merged.get("produced_deliverables")
         or []
     )
+    capability_statuses = _build_capability_statuses(project_input, latest_result)
+    if capability_statuses:
+        merged["capability_statuses"] = capability_statuses
 
     if not merged.get("project_type"):
         merged["project_type"] = project_input.get("project_type") or meta.get("project_type")

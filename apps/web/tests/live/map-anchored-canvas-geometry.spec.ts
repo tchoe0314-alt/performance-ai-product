@@ -2,8 +2,10 @@ import { expect, test } from "@playwright/test";
 
 import {
   boundsForSiteGeometry,
+  coordinateModeLabel,
   mapLngLatToSite,
   resizeSiteGeometryFromOrigin,
+  resolveCoordinateMode,
   screenToSitePoint,
   siteToMapLngLat,
   siteToScreenPoint,
@@ -81,6 +83,11 @@ test.describe("map anchored canvas geometry transforms", () => {
       expect(bounds.height).toBe(60);
       expect(JSON.stringify(building)).toBe(canonicalBefore);
     }
+  });
+
+  test("coordinate mode labels distinguish map anchored from local site fallback", () => {
+    expect(coordinateModeLabel(resolveCoordinateMode({ lat: 41.2565, lng: -95.9345 }))).toBe("Map anchored");
+    expect(coordinateModeLabel(resolveCoordinateMode(null))).toBe("Local site coordinates");
   });
 
   test("map projection round trips site coordinates without mutating geometry", () => {

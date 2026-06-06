@@ -361,6 +361,11 @@ def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
         "explanation_summary": current_explanation.get("summary")
         or current_explanation.get("overview"),
         "produced_deliverables": [str(item) for item in produced_deliverables[:8]],
+        "capability_statuses": [
+            dict(item)
+            for item in list(context.get("capability_statuses") or [])[:16]
+            if isinstance(item, dict)
+        ],
         "missing_inputs": [str(item) for item in missing_inputs[:8]],
         "blockers": [str(item) for item in blockers[:8]],
         "next_best_action": str(context.get("next_best_action") or ""),
@@ -1229,6 +1234,7 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
     existing_conditions_status = str(context.get("existing_conditions_status") or "").strip()
     engine_depth_status = str(context.get("engine_depth_status") or "").strip()
     engineer_review_status = str(context.get("engineer_review_status") or "").strip()
+    capability_statuses = [item for item in list(context.get("capability_statuses") or []) if isinstance(item, dict)]
     recorded_next_best_action = str(context.get("next_best_action") or "").strip()
 
     def _format_requested_systems() -> str:
@@ -1313,6 +1319,51 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
             return "Review the current design assumptions, warnings, and engineer-review blockers."
         return "Load a project or provide the site inputs needed to start."
 
+    def _matching_capability_status() -> Optional[Dict[str, Any]]:
+        if not capability_statuses:
+            return None
+        synonyms = {
+            "standards_source_registry": ["standards source", "source registry", "standards registry", "official source"],
+            "candidate_standards_review": ["candidate standards", "standards candidates", "candidate rules", "acceptance status"],
+            "existing_conditions_package": ["existing conditions", "existing condition", "imports"],
+            "survey_control_package": ["survey control", "control package", "survey/control", "datum", "benchmark"],
+            "map_feature_candidates": ["map feature", "map candidates", "feature candidates", "gis candidates"],
+            "engine_depth_audit": ["engine depth", "depth audit", "engine audit"],
+            "production_evidence": ["production evidence", "production readiness"],
+            "cost_book_pricing": ["cost", "pricing", "price book", "unit price", "cost book"],
+            "export_package_report": ["export package", "export report", "support matrix", "export support"],
+            "construction_document_support_package": ["construction document", "construction package", "document support"],
+            "engineer_review_package": ["engineer review", "review package", "engineer package"],
+            "reactive_rerun_evidence": ["reactive", "rerun evidence", "partial rerun", "stale outputs"],
+            "cad_geometry_handoff": ["cad", "geometry handoff", "canonical geometry", "handoff"],
+        }
+        for item in capability_statuses:
+            key = str(item.get("key") or "")
+            label = str(item.get("label") or "").lower()
+            terms = synonyms.get(key, []) + [key.replace("_", " "), label]
+            if any(term and term in lowered for term in terms):
+                return item
+        return None
+
+    def _capability_reply(item: Dict[str, Any]) -> str:
+        label = str(item.get("label") or item.get("key") or "Capability")
+        status = str(item.get("status") or "missing")
+        exposed = "yes" if item.get("exposed") else "no"
+        surfaces = [str(value) for value in list(item.get("surfaces") or []) if str(value)]
+        blockers = [str(value) for value in list(item.get("blockers") or []) if str(value)]
+        missing = str(item.get("missing_wiring") or "None for status visibility.").strip()
+        fix = str(item.get("exact_fix") or _primary_next_action()).strip()
+        parts = [
+            f"{label}: exposed {exposed}",
+            "surfaces " + (", ".join(surfaces) if surfaces else "chat/API"),
+            f"status {status}",
+        ]
+        if blockers:
+            parts.append("blockers " + "; ".join(blockers[:3]))
+        parts.append("missing wiring " + missing)
+        parts.append("exact fix " + fix)
+        return ". ".join(parts) + "."
+
     def _blocked_text(system_hint: str = "") -> Optional[str]:
         focused = []
         if system_hint:
@@ -1328,6 +1379,11 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
                 [str(item) for item in missing_inputs[:3]]
             ) + "."
         return None
+
+    if any(token in lowered for token in ["status", "explain", "what is", "what's", "whats", "show", "tell me"]):
+        capability = _matching_capability_status()
+        if capability:
+            return _capability_reply(capability)
 
     if (
         "what am i doing" in lowered

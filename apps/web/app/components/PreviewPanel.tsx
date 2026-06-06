@@ -2951,7 +2951,10 @@ export default function PreviewPanel({
             <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
               {previewMode.toUpperCase()}
             </span>
-            <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            <span
+              className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500"
+              data-testid="coordinate-mode-label"
+            >
               {coordinateModeLabel(coordinateMode)}
             </span>
           </div>
