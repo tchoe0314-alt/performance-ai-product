@@ -10273,6 +10273,19 @@ function PerformanceAIDashboardView({
     !hasTerrainSource ? "terrain" : null,
     !hasBasinPlaced && systemStatuses.drainage !== "fresh" ? "basin" : null,
   ].filter(Boolean) as string[];
+  const sidebarHasTruthEvidence = Boolean(
+    backendResult ||
+      siteScaleLocked ||
+      buildingPlacements.length ||
+      siteAddress.trim() ||
+      siteInputs?.address ||
+      siteInputs?.geocode?.lat ||
+      siteInputs?.geocode?.lng ||
+      uploadedImagePreviewUrl ||
+      uploadedImageApiUrl ||
+      surveyPreviewPoints.length ||
+      mapSnapshotPath,
+  );
   const sidebarReleaseStatus = String(previewReview?.release_status || "review").toLowerCase();
   const sidebarTrustScore =
     typeof previewReview?.trust_score === "number" ? `${Math.round(previewReview.trust_score)}%` : "not reported";
@@ -10282,45 +10295,75 @@ function PerformanceAIDashboardView({
   const sidebarTruthItems: Array<{ label: string; value: string; status: SidebarStatus }> = [
     {
       label: "Missing inputs",
-      value: sidebarMissingInputs.length ? sidebarMissingInputs.slice(0, 2).join(", ") : "none flagged",
-      status: sidebarMissingInputs.length ? "review" : "idle",
+      value: !sidebarHasTruthEvidence
+        ? "not evaluated"
+        : sidebarMissingInputs.length
+          ? sidebarMissingInputs.slice(0, 2).join(", ")
+          : "none flagged",
+      status: !sidebarHasTruthEvidence ? "idle" : sidebarMissingInputs.length ? "review" : "ok",
     },
     {
       label: "Engineer review",
-      value: sidebarReleaseStatus === "ready" ? "ready_for_engineer_review" : sidebarReleaseStatus === "blocked" ? "blocked" : "review required",
-      status: sidebarReleaseStatus === "blocked" ? "block" : "review",
+      value: !sidebarHasTruthEvidence
+        ? "not evaluated"
+        : sidebarReleaseStatus === "ready"
+          ? "ready_for_engineer_review"
+          : sidebarReleaseStatus === "blocked"
+            ? "blocked"
+            : "review required",
+      status: !sidebarHasTruthEvidence ? "idle" : sidebarReleaseStatus === "blocked" ? "block" : "review",
     },
     {
       label: "Construction blocks",
-      value: "blocked",
-      status: "block",
+      value: sidebarHasTruthEvidence ? "external approval required" : "not evaluated",
+      status: sidebarHasTruthEvidence ? "block" : "idle",
     },
     {
       label: "Low confidence",
-      value: typeof previewReview?.trust_score === "number" && previewReview.trust_score >= 80 ? "none flagged" : sidebarTrustScore,
-      status: typeof previewReview?.trust_score === "number" && previewReview.trust_score >= 80 ? "idle" : "review",
+      value: !sidebarHasTruthEvidence
+        ? "not evaluated"
+        : typeof previewReview?.trust_score === "number" && previewReview.trust_score >= 80
+          ? "none flagged"
+          : sidebarTrustScore,
+      status: !sidebarHasTruthEvidence
+        ? "idle"
+        : typeof previewReview?.trust_score === "number" && previewReview.trust_score >= 80
+          ? "ok"
+          : "review",
     },
     {
       label: "Assumptions",
-      value: sidebarAssumptions.length ? `${sidebarAssumptions.length} need acceptance` : "acceptance required",
-      status: "review",
+      value: !backendResult
+        ? "not evaluated"
+        : sidebarAssumptions.length
+          ? `${sidebarAssumptions.length} need acceptance`
+          : "none reported",
+      status: !backendResult ? "idle" : sidebarAssumptions.length ? "review" : "ok",
     },
     {
       label: "Stale outputs",
-      value: sidebarStaleSystems.length ? sidebarStaleSystems.slice(0, 2).join(", ") : "none",
-      status: sidebarStaleSystems.length ? "review" : "idle",
+      value: !backendResult
+        ? "not evaluated"
+        : sidebarStaleSystems.length
+          ? sidebarStaleSystems.slice(0, 2).join(", ")
+          : "none",
+      status: !backendResult ? "idle" : sidebarStaleSystems.length ? "review" : "ok",
     },
     {
       label: "Blocked systems",
-      value: hasHardSystemBlock || previewBlockedReasons.length ? "review blockers" : "none recorded",
-      status: hasHardSystemBlock || previewBlockedReasons.length ? "block" : "idle",
+      value: !sidebarHasTruthEvidence
+        ? "not evaluated"
+        : hasHardSystemBlock || previewBlockedReasons.length
+          ? "review blockers"
+          : "none recorded",
+      status: !sidebarHasTruthEvidence ? "idle" : hasHardSystemBlock || previewBlockedReasons.length ? "block" : "ok",
     },
   ] as const;
   const sidebarTruthCounts = {
-    ready: sidebarTruthItems.filter((item) => item.status === "idle" || item.status === "ok").length,
-    review: sidebarTruthItems.filter((item) => item.status === "review").length,
-    issues: sidebarMissingInputs.length + analysisIssues.length + issues.length,
-    blocked: sidebarTruthItems.filter((item) => item.status === "block").length,
+    ready: sidebarHasTruthEvidence ? sidebarTruthItems.filter((item) => item.status === "ok").length : 0,
+    review: sidebarHasTruthEvidence ? sidebarTruthItems.filter((item) => item.status === "review").length : 0,
+    issues: sidebarHasTruthEvidence ? sidebarMissingInputs.length + analysisIssues.length + issues.length : 0,
+    blocked: sidebarHasTruthEvidence ? sidebarTruthItems.filter((item) => item.status === "block").length : 0,
     notRun: backendResult ? 0 : 1,
   };
   const sidebarTruthTotal = Math.max(
@@ -10331,17 +10374,19 @@ function PerformanceAIDashboardView({
       sidebarTruthCounts.blocked +
       sidebarTruthCounts.notRun,
   );
-  const sidebarTruthScore = Math.max(
-    0,
-    Math.min(
-      100,
-      Math.round(
-        ((sidebarTruthCounts.ready + sidebarTruthCounts.review * 0.45) /
-          sidebarTruthTotal) *
+  const sidebarTruthScore = sidebarHasTruthEvidence
+    ? Math.max(
+        0,
+        Math.min(
           100,
-      ),
-    ),
-  );
+          Math.round(
+            ((sidebarTruthCounts.ready + sidebarTruthCounts.review * 0.45) /
+              sidebarTruthTotal) *
+              100,
+          ),
+        ),
+      )
+    : null;
   const truthReadyDeg = (sidebarTruthCounts.ready / sidebarTruthTotal) * 360;
   const truthReviewDeg = truthReadyDeg + (sidebarTruthCounts.review / sidebarTruthTotal) * 360;
   const truthIssuesDeg = truthReviewDeg + (sidebarTruthCounts.issues / sidebarTruthTotal) * 360;
@@ -10479,11 +10524,13 @@ function PerformanceAIDashboardView({
                   style={{
                     background: `conic-gradient(#64748b 0deg ${truthReadyDeg}deg, #f59e0b ${truthReadyDeg}deg ${truthReviewDeg}deg, #ef4444 ${truthReviewDeg}deg ${truthIssuesDeg}deg, #8b5cf6 ${truthIssuesDeg}deg ${truthBlockedDeg}deg, #cbd5e1 ${truthBlockedDeg}deg 360deg)`,
                   }}
-                  aria-label={`Truth score ${sidebarTruthScore}`}
+                  aria-label={sidebarTruthScore === null ? "Truth status not evaluated" : `Truth score ${sidebarTruthScore}`}
                 >
                   <div className="grid h-16 w-16 place-items-center rounded-full bg-white text-center shadow-inner">
-                    <span className="text-xl font-semibold text-slate-950">{sidebarTruthScore}</span>
-                    <span className="-mt-2 text-[9px] font-semibold text-slate-500">Overall</span>
+                    <span className="text-xl font-semibold text-slate-950">{sidebarTruthScore ?? "-"}</span>
+                    <span className="-mt-2 text-[9px] font-semibold text-slate-500">
+                      {sidebarTruthScore === null ? "No data" : "Overall"}
+                    </span>
                   </div>
                 </div>
                 <div className="min-w-0 flex-1 space-y-1.5">
@@ -10512,7 +10559,9 @@ function PerformanceAIDashboardView({
                 View all issues
               </button>
               <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                Engineer review required | Construction blocked until external approval
+                {sidebarHasTruthEvidence
+                  ? "Engineer review required | Construction blocked until external approval"
+                  : "No project evidence yet | Engineer review required before release"}
               </p>
             </div>
             <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
