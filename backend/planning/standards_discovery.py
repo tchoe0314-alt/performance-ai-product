@@ -137,6 +137,12 @@ BLOCKED_LIVE_SOURCE_TYPES = {
     "unofficial_mirrors",
     "unknown_pdf_without_source_owner",
 }
+LIVE_SOURCE_CONFIDENCE_ORDER = {
+    "blocked": 0,
+    "low": 1,
+    "official_candidate": 2,
+    "trusted_candidate": 3,
+}
 
 
 def _today() -> str:
@@ -153,6 +159,34 @@ def standards_live_source_policy() -> Dict[str, Any]:
         "acceptance_status": "unaccepted",
         "network_fetch_default": "disabled_until_explicit_single_source_request",
         "truth_label": "Live standards sources are discovery candidates only. Fetching or extracting a rule does not imply code compliance, construction approval, or accepted standards.",
+    }
+
+
+def trusted_standards_source_allowlist(entries: Optional[Iterable[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    normalized_entries = []
+    for entry in entries or []:
+        rec = safe_dict(entry)
+        normalized_entries.append(
+            {
+                "jurisdiction": deepcopy(safe_dict(rec.get("jurisdiction"))),
+                "agency": safe_str(rec.get("agency")),
+                "allowed_domains": sorted({_normalize_domain(item) for item in safe_list(rec.get("allowed_domains")) if _normalize_domain(item)}),
+                "allowed_source_types": sorted({_normalize_live_source_type(item) for item in safe_list(rec.get("allowed_source_types")) if _normalize_live_source_type(item)}),
+                "disciplines": sorted({safe_str(item).lower() for item in safe_list(rec.get("disciplines")) if safe_str(item)}),
+                "effective_from": safe_str(rec.get("effective_from")),
+                "effective_to": safe_str(rec.get("effective_to")),
+                "configured_by": safe_str(rec.get("configured_by")),
+                "configured_at": safe_str(rec.get("configured_at"), _today()),
+                "confidence_cap": _cap_confidence(safe_str(rec.get("confidence_cap"), "official_candidate")),
+            }
+        )
+    return {
+        "version": "trusted_standards_source_allowlist_v1",
+        "entries": normalized_entries,
+        "entry_count": len(normalized_entries),
+        "candidate_only": True,
+        "acceptance_status": "unaccepted",
+        "truth_label": "Trusted source allowlist configuration can raise candidate-source confidence only; it is not standards acceptance, code compliance, or construction approval.",
     }
 
 
@@ -189,6 +223,69 @@ def _domain_from_url(url: str) -> str:
     return safe_str(parsed.netloc).lower()
 
 
+def _normalize_domain(value: Any) -> str:
+    text = safe_str(value).lower().strip()
+    if not text:
+        return ""
+    if "://" in text:
+        return _domain_from_url(text)
+    return text.strip("/")
+
+
+def _domain_matches(domain: str, allowed_domain: str) -> bool:
+    normalized_domain = _normalize_domain(domain)
+    allowed = _normalize_domain(allowed_domain)
+    return bool(normalized_domain and allowed and (normalized_domain == allowed or normalized_domain.endswith(f".{allowed}")))
+
+
+def _cap_confidence(value: str) -> str:
+    normalized = safe_str(value).lower()
+    return normalized if normalized in LIVE_SOURCE_CONFIDENCE_ORDER else "official_candidate"
+
+
+def _min_confidence(left: str, right: str) -> str:
+    left_norm = _cap_confidence(left)
+    right_norm = _cap_confidence(right)
+    if LIVE_SOURCE_CONFIDENCE_ORDER[left_norm] <= LIVE_SOURCE_CONFIDENCE_ORDER[right_norm]:
+        return left_norm
+    return right_norm
+
+
+def _jurisdiction_matches(source_jurisdiction: Dict[str, Any], allowlist_jurisdiction: Dict[str, Any]) -> bool:
+    expected = {safe_str(key).lower(): safe_str(value).lower() for key, value in allowlist_jurisdiction.items() if safe_str(value)}
+    if not expected:
+        return True
+    actual = {safe_str(key).lower(): safe_str(value).lower() for key, value in source_jurisdiction.items() if safe_str(value)}
+    return all(actual.get(key) == value for key, value in expected.items())
+
+
+def _match_trusted_allowlist_entry(
+    *,
+    domain: str,
+    jurisdiction: Optional[Dict[str, Any]],
+    agency: str,
+    source_type: str,
+    allowlist_entries: Optional[Iterable[Dict[str, Any]]] = None,
+) -> Optional[Dict[str, Any]]:
+    normalized_type = _normalize_live_source_type(source_type)
+    normalized_agency = safe_str(agency).lower()
+    source_jurisdiction = safe_dict(jurisdiction)
+    for entry in trusted_standards_source_allowlist(allowlist_entries).get("entries", []):
+        allowed_domains = safe_list(entry.get("allowed_domains"))
+        allowed_types = set(safe_list(entry.get("allowed_source_types")))
+        entry_agency = safe_str(entry.get("agency")).lower()
+        if allowed_domains and not any(_domain_matches(domain, item) for item in allowed_domains):
+            continue
+        if allowed_types and normalized_type not in allowed_types:
+            continue
+        if entry_agency and normalized_agency != entry_agency:
+            continue
+        if not _jurisdiction_matches(source_jurisdiction, safe_dict(entry.get("jurisdiction"))):
+            continue
+        return safe_dict(entry)
+    return None
+
+
 def _next_refresh_due(retrieved_at: str, refresh_after_days: int) -> str:
     parsed = _parse_date(retrieved_at)
     if parsed is None:
@@ -204,8 +301,11 @@ def classify_live_standards_source(
     *,
     source_url: str,
     source_type: str = "",
+    jurisdiction: Optional[Dict[str, Any]] = None,
     agency: str = "",
     source_owner: str = "",
+    uploaded_by: str = "",
+    allowlist_entries: Optional[Iterable[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     normalized_type = _normalize_live_source_type(source_type)
     url = safe_str(source_url)
@@ -214,6 +314,9 @@ def classify_live_standards_source(
     reasons: List[str] = []
     allowed = normalized_type in ALLOWED_LIVE_SOURCE_TYPES
     blocked = normalized_type in BLOCKED_LIVE_SOURCE_TYPES
+    if normalized_type == "company_uploaded" and not safe_str(source_owner or uploaded_by):
+        blocked = True
+        reasons.append("Company-uploaded standards require uploaded_by or source_owner metadata.")
     if parsed_path.endswith(".pdf") and not safe_str(agency or source_owner) and not allowed:
         normalized_type = "unknown_pdf_without_source_owner"
         blocked = True
@@ -225,15 +328,34 @@ def classify_live_standards_source(
         reasons.append("Source type is missing and must be classified before live research.")
     if normalized_type in {"blogs", "forums", "ai_summaries", "unofficial_mirrors"}:
         reasons.append("Source type is not an official standards authority.")
-    confidence = "official_candidate" if allowed and not blocked else "blocked" if blocked else "low"
+    allowlist_match = None
+    if allowed and not blocked:
+        allowlist_match = _match_trusted_allowlist_entry(
+            domain=domain,
+            jurisdiction=jurisdiction,
+            agency=agency or source_owner,
+            source_type=normalized_type,
+            allowlist_entries=allowlist_entries,
+        )
+        if allowlist_match:
+            confidence = _min_confidence("trusted_candidate", safe_str(allowlist_match.get("confidence_cap"), "official_candidate"))
+        else:
+            confidence = "low"
+            reasons.append("Source is allowed by type but does not match trusted jurisdiction/agency/domain allowlist configuration.")
+    else:
+        confidence = "blocked" if blocked else "low"
     return {
         "version": "standards_live_source_policy_v1",
+        "allowlist_version": "trusted_standards_source_allowlist_v1",
         "source_url": url,
         "domain": domain,
         "source_type": normalized_type or "unknown",
         "allowed": allowed and not blocked,
         "blocked": blocked or not allowed,
         "confidence": confidence,
+        "allowlist_matched": bool(allowlist_match),
+        "allowlist_entry": allowlist_match or {},
+        "review_only": confidence in {"low", "blocked"},
         "candidate_only": True,
         "acceptance_status": "unaccepted",
         "reasons": reasons,
@@ -256,6 +378,8 @@ def build_live_source_fetch_record(
     content: str = "",
     retrieved_at: str = "",
     source_owner: str = "",
+    uploaded_by: str = "",
+    allowlist_entries: Optional[Iterable[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     url = safe_str(source_url)
     resolved = safe_str(resolved_url) or url
@@ -263,8 +387,11 @@ def build_live_source_fetch_record(
     classification = classify_live_standards_source(
         source_url=resolved,
         source_type=source_type,
+        jurisdiction=jurisdiction,
         agency=agency,
         source_owner=source_owner,
+        uploaded_by=uploaded_by,
+        allowlist_entries=allowlist_entries,
     )
     refresh_after_days = STANDARDS_LIVE_SOURCE_REFRESH_DAYS
     staleness = _staleness_fields(retrieved, stale_after_days=refresh_after_days)
@@ -274,6 +401,7 @@ def build_live_source_fetch_record(
     return {
         "version": "standards_live_source_fetch_record_v1",
         "policy_version": "standards_live_source_policy_v1",
+        "allowlist_version": "trusted_standards_source_allowlist_v1",
         "source_url": url,
         "resolved_url": resolved,
         "domain": _domain_from_url(resolved),
@@ -287,6 +415,7 @@ def build_live_source_fetch_record(
         "version_or_effective_date": safe_str(version or effective_date),
         "fetch_status": safe_str(fetch_status),
         "confidence": policy_confidence,
+        "review_only": bool(classification.get("review_only")),
         "candidate_only": True,
         "acceptance_status": "unaccepted",
         "refresh_after_days": refresh_after_days,
@@ -310,9 +439,21 @@ def fetch_live_standards_source_candidate(
     version: str = "",
     session: Any = requests,
     allow_network_fetch: bool = False,
+    source_owner: str = "",
+    uploaded_by: str = "",
+    allowlist_entries: Optional[Iterable[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     policy = standards_live_source_policy()
-    classification = classify_live_standards_source(source_url=source_url, source_type=source_type, agency=agency)
+    allowlist = trusted_standards_source_allowlist(allowlist_entries)
+    classification = classify_live_standards_source(
+        source_url=source_url,
+        source_type=source_type,
+        jurisdiction=jurisdiction,
+        agency=agency,
+        source_owner=source_owner,
+        uploaded_by=uploaded_by,
+        allowlist_entries=allowlist_entries,
+    )
     body = ""
     resolved_url = safe_str(source_url)
     fetch_status = "blocked_by_policy" if classification.get("blocked") else "deferred_by_policy"
@@ -343,6 +484,9 @@ def fetch_live_standards_source_candidate(
         fetch_status=fetch_status,
         confidence=safe_str(classification.get("confidence")),
         content=body,
+        source_owner=source_owner,
+        uploaded_by=uploaded_by,
+        allowlist_entries=allowlist_entries,
     )
     candidates = extract_rule_candidates_from_text(body, source_id=source_id, source_url=resolved_url) if body else []
     for candidate in candidates:
@@ -367,6 +511,9 @@ def fetch_live_standards_source_candidate(
                 "source_type": safe_str(classification.get("source_type")),
                 "confidence": safe_str(classification.get("confidence")),
                 "acceptance_status": "unaccepted",
+                "source_owner": safe_str(source_owner),
+                "uploaded_by": safe_str(uploaded_by),
+                "allowlist_matched": bool(classification.get("allowlist_matched")),
             }
         ],
         candidate_rules=candidates,
@@ -375,6 +522,7 @@ def fetch_live_standards_source_candidate(
     return {
         "success": fetch_status == "fetched",
         "policy": policy,
+        "trusted_allowlist": allowlist,
         "source_classification": classification,
         "fetch_record": fetch_record,
         "source_registry": source_registry,
@@ -1471,5 +1619,6 @@ __all__ = [
     "standards_live_source_policy",
     "standards_pack_from_acceptance",
     "standards_project_evidence_from_acceptance",
+    "trusted_standards_source_allowlist",
     "validate_standards_acceptance_for_production",
 ]

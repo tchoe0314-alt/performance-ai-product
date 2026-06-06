@@ -14,6 +14,7 @@ from backend.planning.standards_discovery import (
     standards_live_source_policy,
     standards_pack_from_acceptance,
     standards_project_evidence_from_acceptance,
+    trusted_standards_source_allowlist,
     validate_standards_acceptance_for_production,
 )
 from core.civil_design import civil_design_readiness
@@ -152,6 +153,31 @@ class StandardsDiscoveryTests(unittest.TestCase):
         self.assertTrue(policy["candidate_only"])
         self.assertEqual(policy["acceptance_status"], "unaccepted")
 
+    def test_trusted_allowlist_normalizes_required_fields(self) -> None:
+        allowlist = trusted_standards_source_allowlist(
+            [
+                {
+                    "jurisdiction": {"city": "Example City", "state": "Texas"},
+                    "agency": "Example City Public Works",
+                    "allowed_domains": ["https://www.examplecity.gov/standards"],
+                    "allowed_source_types": ["Official City"],
+                    "disciplines": ["roadway", "utilities"],
+                    "effective_from": "2026-01-01",
+                    "configured_by": "admin-1",
+                    "configured_at": "2026-06-05",
+                    "confidence_cap": "trusted_candidate",
+                }
+            ]
+        )
+
+        entry = allowlist["entries"][0]
+
+        self.assertEqual(allowlist["version"], "trusted_standards_source_allowlist_v1")
+        self.assertEqual(entry["allowed_domains"], ["www.examplecity.gov"])
+        self.assertEqual(entry["allowed_source_types"], ["official_city"])
+        self.assertEqual(entry["confidence_cap"], "trusted_candidate")
+        self.assertTrue(allowlist["candidate_only"])
+
     def test_official_live_source_fetch_is_candidate_only(self) -> None:
         class Response:
             url = "https://city.example.gov/manual"
@@ -189,6 +215,128 @@ class StandardsDiscoveryTests(unittest.TestCase):
         self.assertEqual(rule["acceptance_status"], "candidate")
         self.assertTrue(rule["requires_user_acceptance"])
         self.assertFalse(result["candidate_rule_report"]["production_usable"])
+
+    def test_allowlisted_official_city_domain_gets_high_confidence_candidate_source(self) -> None:
+        allowlist_entries = [
+            {
+                "jurisdiction": {"city": "Example City", "state": "Texas"},
+                "agency": "Example City Public Works",
+                "allowed_domains": ["city.example.gov"],
+                "allowed_source_types": ["official_city"],
+                "disciplines": ["utilities"],
+                "configured_by": "standards-admin",
+                "configured_at": "2026-06-05",
+                "confidence_cap": "trusted_candidate",
+            }
+        ]
+
+        record = build_live_source_fetch_record(
+            source_url="https://city.example.gov/manual",
+            jurisdiction={"city": "Example City", "state": "Texas"},
+            agency="Example City Public Works",
+            source_type="official_city",
+            allowlist_entries=allowlist_entries,
+        )
+
+        self.assertEqual(record["confidence"], "trusted_candidate")
+        self.assertTrue(record["policy_decision"]["allowlist_matched"])
+        self.assertFalse(record["review_only"])
+        self.assertTrue(record["candidate_only"])
+        self.assertEqual(record["acceptance_status"], "unaccepted")
+
+    def test_unmatched_official_looking_domain_remains_review_only(self) -> None:
+        record = build_live_source_fetch_record(
+            source_url="https://city.example.gov/manual",
+            jurisdiction={"city": "Example City", "state": "Texas"},
+            agency="Example City Public Works",
+            source_type="official_city",
+            allowlist_entries=[
+                {
+                    "jurisdiction": {"city": "Other City", "state": "Texas"},
+                    "agency": "Other City Public Works",
+                    "allowed_domains": ["other.example.gov"],
+                    "allowed_source_types": ["official_city"],
+                    "disciplines": ["utilities"],
+                    "configured_by": "standards-admin",
+                }
+            ],
+        )
+
+        self.assertEqual(record["confidence"], "low")
+        self.assertTrue(record["review_only"])
+        self.assertFalse(record["policy_decision"]["allowlist_matched"])
+        self.assertTrue(record["needs_review"])
+
+    def test_blocked_source_type_remains_blocked_even_if_domain_looks_allowed(self) -> None:
+        record = build_live_source_fetch_record(
+            source_url="https://city.example.gov/manual-summary",
+            jurisdiction={"city": "Example City", "state": "Texas"},
+            agency="Example City Public Works",
+            source_type="blogs",
+            allowlist_entries=[
+                {
+                    "jurisdiction": {"city": "Example City", "state": "Texas"},
+                    "agency": "Example City Public Works",
+                    "allowed_domains": ["city.example.gov"],
+                    "allowed_source_types": ["official_city", "blogs"],
+                    "disciplines": ["utilities"],
+                    "confidence_cap": "trusted_candidate",
+                }
+            ],
+        )
+
+        self.assertEqual(record["confidence"], "blocked")
+        self.assertTrue(record["policy_decision"]["blocked"])
+        self.assertFalse(record["policy_decision"]["allowlist_matched"])
+        self.assertTrue(record["needs_review"])
+
+    def test_company_uploaded_without_owner_metadata_is_review_only_blocked(self) -> None:
+        record = build_live_source_fetch_record(
+            source_url="internal://company-uploads/water-standards.pdf",
+            source_type="company_uploaded",
+            allowlist_entries=[
+                {
+                    "agency": "Example Utility",
+                    "allowed_domains": ["company-uploads"],
+                    "allowed_source_types": ["company_uploaded"],
+                    "disciplines": ["water"],
+                    "confidence_cap": "trusted_candidate",
+                }
+            ],
+        )
+
+        self.assertEqual(record["confidence"], "blocked")
+        self.assertTrue(record["policy_decision"]["blocked"])
+        self.assertTrue(record["review_only"])
+        self.assertIn("uploaded_by", " ".join(record["policy_decision"]["reasons"]))
+
+    def test_allowlisted_candidate_cannot_satisfy_production_without_acceptance(self) -> None:
+        validation = validate_standards_acceptance_for_production(
+            {
+                "accepted_rules": [
+                    {
+                        "rule_id": "city_manual_utilities_1_1",
+                        "discipline": "utilities",
+                        "topic": "minimum cover",
+                        "candidate_value": "Minimum cover shall be 4 feet.",
+                        "source_id": "city_manual",
+                        "source_url": "https://city.example.gov/manual",
+                        "source_section": "minimum cover",
+                        "retrieved_date": "2026-06-05",
+                        "confidence": "trusted_candidate",
+                        "status": "candidate",
+                        "acceptance_status": "candidate",
+                        "source_type": "official_city",
+                    }
+                ],
+                "source_urls": ["https://city.example.gov/manual"],
+            }
+        )
+
+        self.assertFalse(validation["production_usable"])
+        blocker_fields = {item["field"] for item in validation["blockers"]}
+        self.assertIn("rule_acceptance_status", blocker_fields)
+        self.assertIn("rule_metadata", blocker_fields)
 
     def test_unofficial_live_source_is_blocked_or_low_confidence(self) -> None:
         result = fetch_live_standards_source_candidate(

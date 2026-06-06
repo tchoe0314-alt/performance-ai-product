@@ -312,6 +312,9 @@ class StandardsLiveSourceFetchPayload(BaseModel):
     effective_date: str = ""
     version: str = ""
     allow_network_fetch: bool = False
+    source_owner: str = ""
+    uploaded_by: str = ""
+    allowlist_entries: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class GoldenScenarioRunPayload(BaseModel):
@@ -930,6 +933,9 @@ def fetch_live_standards_source_candidate(
         effective_date=payload.effective_date,
         version=payload.version,
         allow_network_fetch=payload.allow_network_fetch,
+        source_owner=payload.source_owner,
+        uploaded_by=payload.uploaded_by,
+        allowlist_entries=payload.allowlist_entries,
     )
 
 

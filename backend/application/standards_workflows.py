@@ -13,6 +13,7 @@ from backend.planning.standards_discovery import (
     standards_live_source_policy,
     standards_pack_from_acceptance,
     standards_project_evidence_from_acceptance,
+    trusted_standards_source_allowlist,
 )
 from backend.planning.standards_package import build_standards_package
 
@@ -92,7 +93,9 @@ def extract_standards_candidates_response(*, source_url: str, source_id: str = "
 
 
 def standards_live_source_policy_response() -> Dict[str, Any]:
-    return standards_live_source_policy()
+    policy = standards_live_source_policy()
+    policy["trusted_allowlist"] = trusted_standards_source_allowlist()
+    return policy
 
 
 def fetch_live_standards_source_candidate_response(
@@ -106,6 +109,9 @@ def fetch_live_standards_source_candidate_response(
     effective_date: str = "",
     version: str = "",
     allow_network_fetch: bool = False,
+    source_owner: str = "",
+    uploaded_by: str = "",
+    allowlist_entries: Optional[Iterable[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     return fetch_live_standards_source_candidate(
         source_url=source_url,
@@ -117,6 +123,9 @@ def fetch_live_standards_source_candidate_response(
         effective_date=effective_date,
         version=version,
         allow_network_fetch=allow_network_fetch,
+        source_owner=source_owner,
+        uploaded_by=uploaded_by,
+        allowlist_entries=allowlist_entries,
     )
 
 
