@@ -569,8 +569,12 @@ def build_standards_review_packet(
                 "discipline": safe_str(rec.get("discipline"), "general"),
                 "topic": safe_str(rec.get("topic"), "Unclassified standard"),
                 "candidate_value": safe_str(rec.get("candidate_value") or rec.get("value")),
+                "extracted_text_or_summary": safe_str(rec.get("extracted_text_or_summary") or rec.get("candidate_value") or rec.get("value")),
+                "numeric_thresholds": deepcopy(safe_list(rec.get("numeric_thresholds"))),
                 "source_id": safe_str(rec.get("source_id"), "user_supplied_source"),
                 "source_url": safe_str(rec.get("source_url")),
+                "source_document_title": safe_str(rec.get("source_document_title") or rec.get("document_title")),
+                "source_version_or_effective_date": safe_str(rec.get("source_version_or_effective_date") or rec.get("version_or_effective_date")),
                 "source_section": safe_str(rec.get("source_section")),
                 "retrieved_date": safe_str(rec.get("retrieved_date"), _today()),
                 "retrieved_at": safe_str(rec.get("retrieved_at") or rec.get("retrieved_date"), _today()),
@@ -598,6 +602,220 @@ def build_standards_review_packet(
         "rejected_rules": [],
         "truth_label": "Candidate standards require user acceptance/editing before production QA can rely on them.",
     }
+
+
+def _reviewer_identity(*values: Any) -> str:
+    for value in values:
+        text = safe_str(value)
+        if text:
+            return text
+    return ""
+
+
+def _review_action(rule_id: str, actions_by_rule: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    return safe_dict(actions_by_rule.get(rule_id))
+
+
+def _accepted_candidate_rule(
+    candidate: Dict[str, Any],
+    *,
+    action: Dict[str, Any],
+    reviewer_id: str,
+    approval_metadata: Dict[str, Any],
+) -> Dict[str, Any]:
+    accepted_by = _reviewer_identity(
+        action.get("accepted_by"),
+        action.get("reviewed_by"),
+        action.get("reviewer_id"),
+        reviewer_id,
+        approval_metadata.get("accepted_by"),
+        approval_metadata.get("reviewed_by"),
+        approval_metadata.get("approved_by"),
+        approval_metadata.get("user_id"),
+    )
+    accepted_at = safe_str(action.get("accepted_at") or action.get("reviewed_at") or approval_metadata.get("accepted_at"), _today())
+    accepted = deepcopy(candidate)
+    accepted.update(
+        {
+            "status": "accepted",
+            "acceptance_status": "accepted",
+            "requires_user_acceptance": False,
+            "needs_human_confirmation": False,
+            "accepted_at": accepted_at,
+            "accepted_date": accepted_at[:10],
+            "accepted_by": accepted_by,
+            "acceptance_note": safe_str(action.get("acceptance_note") or action.get("note") or approval_metadata.get("acceptance_note")),
+            "approval_metadata": deepcopy(approval_metadata),
+            "source_id": safe_str(candidate.get("source_id")),
+            "source_url": safe_str(candidate.get("source_url")),
+            "source_version_or_effective_date": safe_str(candidate.get("source_version_or_effective_date")),
+            "candidate_rule_id": safe_str(candidate.get("rule_id")),
+        }
+    )
+    return accepted
+
+
+def review_candidate_standards(
+    review_packet: Dict[str, Any],
+    review_actions: Iterable[Dict[str, Any]],
+    *,
+    reviewer_id: str = "",
+    approval_metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Apply explicit candidate standards review actions without auto-accepting rules."""
+
+    approval = safe_dict(approval_metadata)
+    actions_by_rule = {
+        safe_str(action.get("rule_id")): safe_dict(action)
+        for action in review_actions or ()
+        if safe_str(safe_dict(action).get("rule_id"))
+    }
+    candidate_rules = [
+        safe_dict(rule)
+        for rule in safe_list(
+            safe_dict(review_packet.get("candidate_rule_report")).get("candidate_rules")
+            or review_packet.get("candidate_rules")
+        )
+        if safe_dict(rule)
+    ]
+    accepted_rules: List[Dict[str, Any]] = []
+    rejected_rules: List[Dict[str, Any]] = []
+    pending_rules: List[Dict[str, Any]] = []
+    audit_trail: List[Dict[str, Any]] = []
+    action_errors: List[Dict[str, Any]] = []
+    seen_rule_ids = {safe_str(rule.get("rule_id")) for rule in candidate_rules if safe_str(rule.get("rule_id"))}
+    for rule_id, action in actions_by_rule.items():
+        if rule_id not in seen_rule_ids:
+            action_errors.append(
+                {
+                    "rule_id": rule_id,
+                    "action": safe_str(action.get("action")),
+                    "reason": "Review action references a candidate rule ID that is not in the review packet.",
+                }
+            )
+
+    for candidate in candidate_rules:
+        rule_id = safe_str(candidate.get("rule_id"))
+        action = _review_action(rule_id, actions_by_rule)
+        raw_decision = safe_str(action.get("action") or action.get("decision") or action.get("status"), "pending").lower()
+        decision = {
+            "accept": "accepted",
+            "accepted": "accepted",
+            "approve": "accepted",
+            "approved": "accepted",
+            "reject": "rejected",
+            "rejected": "rejected",
+            "decline": "rejected",
+            "pending": "pending",
+            "defer": "pending",
+            "left_pending": "pending",
+        }.get(raw_decision, "pending")
+        audit_record = {
+            "rule_id": rule_id,
+            "requested_action": raw_decision,
+            "decision": decision,
+            "reviewed_at": safe_str(action.get("reviewed_at") or action.get("accepted_at") or approval.get("reviewed_at"), _today()),
+            "reviewed_by": _reviewer_identity(
+                action.get("reviewed_by"),
+                action.get("accepted_by"),
+                action.get("reviewer_id"),
+                reviewer_id,
+                approval.get("reviewed_by"),
+                approval.get("approved_by"),
+                approval.get("user_id"),
+            ),
+            "approval_metadata": deepcopy(approval),
+            "note": safe_str(action.get("acceptance_note") or action.get("rejection_reason") or action.get("note")),
+            "source_id": safe_str(candidate.get("source_id")),
+            "source_url": safe_str(candidate.get("source_url")),
+        }
+        if decision == "accepted":
+            accepted_by = _reviewer_identity(
+                action.get("accepted_by"),
+                action.get("reviewed_by"),
+                action.get("reviewer_id"),
+                reviewer_id,
+                approval.get("accepted_by"),
+                approval.get("reviewed_by"),
+                approval.get("approved_by"),
+                approval.get("user_id"),
+            )
+            if not accepted_by and not approval:
+                pending = deepcopy(candidate)
+                pending["status"] = "pending"
+                pending["acceptance_status"] = "candidate"
+                pending["requires_user_acceptance"] = True
+                pending["pending_reason"] = "Acceptance requires reviewer identity or approval metadata."
+                pending_rules.append(pending)
+                audit_record["decision"] = "pending"
+                audit_record["blocked_reason"] = pending["pending_reason"]
+                action_errors.append({"rule_id": rule_id, "action": "accepted", "reason": pending["pending_reason"]})
+            else:
+                accepted_rules.append(
+                    _accepted_candidate_rule(
+                        candidate,
+                        action=action,
+                        reviewer_id=reviewer_id,
+                        approval_metadata=approval,
+                    )
+                )
+        elif decision == "rejected":
+            rejected = deepcopy(candidate)
+            rejected["status"] = "rejected"
+            rejected["acceptance_status"] = "unaccepted"
+            rejected["requires_user_acceptance"] = False
+            rejected["rejected_at"] = safe_str(action.get("rejected_at") or action.get("reviewed_at"), _today())
+            rejected["rejected_by"] = audit_record["reviewed_by"]
+            rejected["rejection_reason"] = safe_str(action.get("rejection_reason") or action.get("reason") or action.get("note"))
+            rejected_rules.append(rejected)
+        else:
+            pending = deepcopy(candidate)
+            pending["status"] = "pending"
+            pending["acceptance_status"] = _candidate_acceptance_status(pending.get("acceptance_status"))
+            pending["requires_user_acceptance"] = True
+            pending["pending_reason"] = safe_str(action.get("pending_reason") or action.get("reason"), "No explicit accept/reject action was recorded.")
+            pending_rules.append(pending)
+        audit_trail.append(audit_record)
+
+    source_urls = sorted({safe_str(rule.get("source_url")) for rule in accepted_rules if safe_str(rule.get("source_url"))})
+    accepted_retrieved_dates = [
+        safe_str(rule.get("retrieved_date") or rule.get("retrieved_at"))
+        for rule in accepted_rules
+        if safe_str(rule.get("retrieved_date") or rule.get("retrieved_at"))
+    ]
+    official_source_count = sum(
+        1
+        for url in source_urls
+        if url.startswith("https://")
+        and not any(blocked in url.lower() for blocked in ("google.com/search", "bing.com/search", "internal://"))
+    )
+    result = {
+        "success": bool(accepted_rules or rejected_rules or pending_rules) and not action_errors,
+        "source": "candidate_standards_review_workflow",
+        "version": "standards_candidate_acceptance_v1",
+        "retrieved_date": accepted_retrieved_dates[0] if accepted_retrieved_dates else safe_str(review_packet.get("retrieved_date"), _today()),
+        "accepted_rule_count": len(accepted_rules),
+        "rejected_rule_count": len(rejected_rules),
+        "pending_rule_count": len(pending_rules),
+        "accepted_rules": accepted_rules,
+        "rejected_rules": rejected_rules,
+        "pending_rules": pending_rules,
+        "source_urls": source_urls,
+        "source_registry": deepcopy_source_registry_for_acceptance(review_packet, accepted_rules),
+        "candidate_rule_report": deepcopy(safe_dict(review_packet.get("candidate_rule_report"))),
+        "official_source_count": official_source_count,
+        "needs_source_review": bool(accepted_rules and official_source_count <= 0),
+        "accepted_for_qa": bool(accepted_rules),
+        "reviewer_id": safe_str(reviewer_id),
+        "approval_metadata": deepcopy(approval),
+        "audit_trail": audit_trail,
+        "action_errors": action_errors,
+        "truth_label": "Candidate standards review records explicit decisions only; rejected and pending candidates remain review-only and cannot satisfy production compliance.",
+    }
+    validation = validate_standards_acceptance_for_production(result)
+    result["production_validation"] = validation
+    result["production_usable"] = bool(validation.get("production_usable"))
+    return result
 
 
 def accept_standards_rules(
@@ -666,6 +884,9 @@ def standards_pack_from_acceptance(acceptance: Dict[str, Any]) -> Dict[str, Any]
         "source_urls": list(safe_list(acceptance.get("source_urls"))),
         "official_source_count": safe_dict(acceptance).get("official_source_count", 0),
         "source_registry": deepcopy(safe_dict(acceptance.get("source_registry"))),
+        "rejected_rules": deepcopy(safe_list(acceptance.get("rejected_rules"))),
+        "pending_rules": deepcopy(safe_list(acceptance.get("pending_rules"))),
+        "audit_trail": deepcopy(safe_list(acceptance.get("audit_trail"))),
         "needs_source_review": bool(acceptance.get("needs_source_review")),
         "accepted_for_qa": bool(accepted_rules),
         "truth_label": "User-accepted standards pack. Engineer review is still required for permit use.",
@@ -997,6 +1218,7 @@ __all__ = [
     "extract_rule_candidates_from_text",
     "extract_text_from_html",
     "fetch_and_extract_rule_candidates",
+    "review_candidate_standards",
     "standards_pack_from_acceptance",
     "standards_project_evidence_from_acceptance",
     "validate_standards_acceptance_for_production",

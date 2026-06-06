@@ -3,6 +3,7 @@ import unittest
 from backend.planning.standards_discovery import (
     accept_standards_rules,
     build_standards_review_packet,
+    review_candidate_standards,
     standards_project_evidence_from_acceptance,
 )
 from backend.planning.standards_package import build_standards_package
@@ -268,6 +269,75 @@ class StandardsPackageTests(unittest.TestCase):
         warning = next(item for item in package["warnings"] if item["field"] == "candidate_standards")
         self.assertIn("duplicates", warning["reason"])
         self.assertFalse(package["production_usable"])
+        self.assertFalse(package["requirements_gate"]["construction_allowed"])
+
+    def test_accepted_candidate_with_stale_source_needs_review(self) -> None:
+        packet = build_standards_review_packet(
+            city="Austin",
+            state="Texas",
+            extracted_rules=[
+                {
+                    "rule_id": "old_cover",
+                    "discipline": "utilities",
+                    "topic": "minimum cover",
+                    "candidate_value": "Minimum cover shall be 4 feet.",
+                    "source_id": "old_manual",
+                    "source_url": "https://city.example.gov/manual",
+                    "source_section": "Section 5.1",
+                    "retrieved_date": "2000-01-01",
+                    "retrieved_at": "2000-01-01",
+                }
+            ],
+        )
+        reviewed = review_candidate_standards(
+            packet,
+            [{"rule_id": "old_cover", "action": "accept", "acceptance_note": "Accepted for review, but stale source needs refresh."}],
+            reviewer_id="engineer-1",
+        )
+        evidence = standards_project_evidence_from_acceptance(
+            reviewed,
+            review_packet=packet,
+            company_standards={"source": "company_manual", "production_usable": True},
+        )
+
+        package = build_standards_package(evidence)
+
+        self.assertEqual(package["status"], "needs_review")
+        self.assertFalse(package["production_usable"])
+        self.assertTrue(package["staleness"]["stale"])
+        self.assertIn("standards_stale", {item["field"] for item in package["warnings"]})
+        self.assertFalse(package["requirements_gate"]["construction_allowed"])
+
+    def test_accepted_candidate_flows_to_package_but_missing_company_gate_blocks(self) -> None:
+        packet = build_standards_review_packet(
+            city="Austin",
+            state="Texas",
+            extracted_rules=[
+                {
+                    "rule_id": "city_cover",
+                    "discipline": "utilities",
+                    "topic": "minimum cover",
+                    "candidate_value": "Minimum cover shall be 4 feet.",
+                    "source_id": "city_manual",
+                    "source_url": "https://city.example.gov/manual",
+                    "source_section": "Section 5.1",
+                }
+            ],
+        )
+        reviewed = review_candidate_standards(
+            packet,
+            [{"rule_id": "city_cover", "action": "accept", "acceptance_note": "Accepted for standards package gate."}],
+            reviewer_id="engineer-1",
+        )
+        evidence = standards_project_evidence_from_acceptance(reviewed, review_packet=packet)
+
+        package = build_standards_package(evidence)
+
+        self.assertEqual(package["accepted_rule_count"], 1)
+        self.assertEqual(package["accepted_rules"][0]["rule_id"], "city_cover")
+        self.assertEqual(package["standards_acceptance_report"]["rules"]["accepted_rule_ids"], ["city_cover"])
+        self.assertEqual(package["status"], "blocked")
+        self.assertIn("company_standards", {item["field"] for item in package["blockers"]})
         self.assertFalse(package["requirements_gate"]["construction_allowed"])
 
     def test_stale_source_registry_adds_review_warning(self) -> None:

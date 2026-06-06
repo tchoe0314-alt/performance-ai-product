@@ -8,6 +8,7 @@ from backend.planning.standards_discovery import (
     discover_standards_sources,
     extract_rule_candidates_from_text,
     fetch_and_extract_rule_candidates,
+    review_candidate_standards,
     standards_pack_from_acceptance,
     standards_project_evidence_from_acceptance,
     validate_standards_acceptance_for_production,
@@ -446,6 +447,144 @@ class StandardsDiscoveryTests(unittest.TestCase):
         self.assertIn("rule_acceptance_status", fields)
         self.assertIn("inferred_rules", fields)
         self.assertEqual(validation["official_source_count"], 1)
+
+    def test_review_workflow_accepts_candidate_with_audit_metadata(self) -> None:
+        packet = build_standards_review_packet(
+            city="Austin",
+            state="Texas",
+            extracted_rules=[
+                {
+                    "rule_id": "city_cover",
+                    "discipline": "utilities",
+                    "topic": "minimum cover",
+                    "candidate_value": "Minimum cover shall be 4 feet.",
+                    "source_id": "city_manual",
+                    "source_url": "https://city.example.gov/manual",
+                    "source_document_title": "City Utility Manual",
+                    "source_version_or_effective_date": "2026-01-01",
+                    "source_section": "Section 5.1",
+                }
+            ],
+        )
+
+        reviewed = review_candidate_standards(
+            packet,
+            [{"rule_id": "city_cover", "action": "accept", "acceptance_note": "Applies to private utility cover."}],
+            reviewer_id="engineer-1",
+        )
+
+        accepted = reviewed["accepted_rules"][0]
+
+        self.assertTrue(reviewed["accepted_for_qa"])
+        self.assertEqual(reviewed["accepted_rule_count"], 1)
+        self.assertEqual(accepted["status"], "accepted")
+        self.assertEqual(accepted["acceptance_status"], "accepted")
+        self.assertEqual(accepted["accepted_by"], "engineer-1")
+        self.assertTrue(accepted["accepted_at"])
+        self.assertTrue(accepted["accepted_date"])
+        self.assertEqual(accepted["source_id"], "city_manual")
+        self.assertEqual(accepted["source_url"], "https://city.example.gov/manual")
+        self.assertEqual(accepted["source_version_or_effective_date"], "2026-01-01")
+        self.assertEqual(accepted["acceptance_note"], "Applies to private utility cover.")
+        audit = {item["rule_id"]: item for item in reviewed["audit_trail"]}
+        self.assertEqual(audit["city_cover"]["decision"], "accepted")
+
+    def test_review_workflow_rejects_candidate_and_preserves_reason(self) -> None:
+        packet = build_standards_review_packet(
+            extracted_rules=[
+                {
+                    "rule_id": "wrong_rule",
+                    "discipline": "storm",
+                    "topic": "detention drawdown",
+                    "candidate_value": "Detention drawdown shall be 72 hours.",
+                    "source_url": "https://city.example.gov/manual",
+                    "source_section": "Section 3.2",
+                }
+            ],
+        )
+
+        reviewed = review_candidate_standards(
+            packet,
+            [{"rule_id": "wrong_rule", "action": "reject", "rejection_reason": "Not applicable to this project area."}],
+            reviewer_id="engineer-1",
+        )
+
+        rejected = reviewed["rejected_rules"][0]
+
+        self.assertEqual(reviewed["accepted_rule_count"], 0)
+        self.assertEqual(reviewed["rejected_rule_count"], 1)
+        self.assertEqual(rejected["acceptance_status"], "unaccepted")
+        self.assertEqual(rejected["rejection_reason"], "Not applicable to this project area.")
+        self.assertFalse(reviewed["production_usable"])
+        self.assertIn("accepted_rules", {item["field"] for item in reviewed["production_validation"]["blockers"]})
+
+    def test_review_workflow_pending_candidate_remains_blocked(self) -> None:
+        packet = build_standards_review_packet(
+            extracted_rules=[
+                {
+                    "rule_id": "pending_cover",
+                    "discipline": "utilities",
+                    "topic": "minimum cover",
+                    "candidate_value": "Minimum cover shall be 4 feet.",
+                    "source_url": "https://city.example.gov/manual",
+                    "source_section": "Section 5.1",
+                }
+            ],
+        )
+
+        reviewed = review_candidate_standards(packet, [{"rule_id": "pending_cover", "action": "pending"}])
+
+        self.assertEqual(reviewed["accepted_rule_count"], 0)
+        self.assertEqual(reviewed["pending_rule_count"], len(packet["candidate_rules"]))
+        self.assertTrue(all(rule["requires_user_acceptance"] for rule in reviewed["pending_rules"]))
+        self.assertFalse(reviewed["production_usable"])
+        self.assertIn("accepted_rules", {item["field"] for item in reviewed["production_validation"]["blockers"]})
+
+    def test_review_workflow_accept_requires_identity_or_approval_metadata(self) -> None:
+        packet = build_standards_review_packet(
+            extracted_rules=[
+                {
+                    "rule_id": "city_cover",
+                    "discipline": "utilities",
+                    "topic": "minimum cover",
+                    "candidate_value": "Minimum cover shall be 4 feet.",
+                    "source_url": "https://city.example.gov/manual",
+                    "source_section": "Section 5.1",
+                }
+            ],
+        )
+
+        reviewed = review_candidate_standards(packet, [{"rule_id": "city_cover", "action": "accept"}])
+
+        self.assertEqual(reviewed["accepted_rule_count"], 0)
+        self.assertTrue(reviewed["action_errors"])
+        self.assertIn("Acceptance requires reviewer identity", reviewed["action_errors"][0]["reason"])
+        self.assertIn("city_cover", {rule["rule_id"] for rule in reviewed["pending_rules"]})
+
+    def test_review_workflow_audit_trail_preserved_in_standards_pack(self) -> None:
+        packet = build_standards_review_packet(
+            extracted_rules=[
+                {
+                    "rule_id": "city_cover",
+                    "discipline": "utilities",
+                    "topic": "minimum cover",
+                    "candidate_value": "Minimum cover shall be 4 feet.",
+                    "source_url": "https://city.example.gov/manual",
+                    "source_section": "Section 5.1",
+                }
+            ],
+        )
+        reviewed = review_candidate_standards(
+            packet,
+            [{"rule_id": "city_cover", "action": "accept", "acceptance_note": "Selected for utility cover review."}],
+            reviewer_id="engineer-1",
+        )
+
+        pack = standards_pack_from_acceptance(reviewed)
+
+        audit = {item["rule_id"]: item for item in pack["audit_trail"]}
+        self.assertIn("city_cover", audit)
+        self.assertEqual(pack["rules"][0]["acceptance_note"], "Selected for utility cover review.")
 
 
 if __name__ == "__main__":

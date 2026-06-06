@@ -8,6 +8,7 @@ from backend.planning.standards_discovery import (
     build_standards_review_packet,
     discover_standards_sources,
     fetch_and_extract_rule_candidates,
+    review_candidate_standards,
     standards_pack_from_acceptance,
     standards_project_evidence_from_acceptance,
 )
@@ -60,6 +61,30 @@ def accept_standards_response(
     return evidence
 
 
+def review_candidate_standards_response(
+    *,
+    review_packet: Dict[str, Any],
+    review_actions: Iterable[Dict[str, Any]],
+    reviewer_id: str = "",
+    approval_metadata: Optional[Dict[str, Any]] = None,
+    company_standards: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    acceptance = review_candidate_standards(
+        review_packet,
+        review_actions,
+        reviewer_id=reviewer_id,
+        approval_metadata=approval_metadata,
+    )
+    evidence = standards_project_evidence_from_acceptance(
+        acceptance,
+        review_packet=review_packet,
+        company_standards=company_standards,
+    )
+    evidence["design_standards"] = standards_pack_from_acceptance(acceptance)
+    evidence["standards_package"] = build_standards_package(evidence)
+    return evidence
+
+
 def extract_standards_candidates_response(*, source_url: str, source_id: str = "official_source") -> Dict[str, Any]:
     return fetch_and_extract_rule_candidates(source_url, source_id=source_id)
 
@@ -72,6 +97,7 @@ __all__ = [
     "accept_standards_response",
     "discover_standards_response",
     "extract_standards_candidates_response",
+    "review_candidate_standards_response",
     "run_golden_scenarios_response",
     "standards_review_packet_response",
 ]
