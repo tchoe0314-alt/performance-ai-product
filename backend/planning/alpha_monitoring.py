@@ -116,9 +116,9 @@ def build_job_queue_monitoring_evidence(
     pending_count = _queue_count(monitoring, "pending_count", "queued")
     if pending_count is None:
         pending_count = _queue_count(monitoring, "queued_count")
-    failed_count = _queue_count(monitoring, "failed_count", "failed")
-    if failed_count is None:
-        failed_count = _queue_count(monitoring, "failed_recent_count")
+    failed_recent_count = _queue_count(monitoring, "failed_recent_count")
+    historical_failed_count = _queue_count(monitoring, "failed_count", "failed")
+    failed_count = failed_recent_count if failed_recent_count is not None else historical_failed_count
     timeout_count = _queue_count(monitoring, "timeout_count", "stale_job_count")
     queue_system_present = bool(queue or monitoring)
     source = safe_str(monitoring_source or queue.get("monitoring_source") or monitoring.get("monitoring_source"))
@@ -171,6 +171,8 @@ def build_job_queue_monitoring_evidence(
         "monitored_job_types": monitored_job_types,
         "pending_count": pending_count,
         "failed_count": failed_count,
+        "failed_recent_count": failed_recent_count,
+        "historical_failed_count": historical_failed_count,
         "timeout_count": timeout_count,
         "last_check_at": safe_str(last_check_at) or _utc_now(),
         "monitoring_source": source,
@@ -246,6 +248,20 @@ def build_alpha_monitoring_report(
     if process:
         if safe_str(process.get("status"), "healthy").lower() not in {"healthy", "ok"}:
             blockers.append(_blocker("process_status", "Process monitoring is not healthy.", value=process.get("status")))
+        if "recent_start_count" not in process:
+            blockers.append(
+                _blocker(
+                    "recent_start_count",
+                    "Alpha monitoring needs restart/crash-loop counter evidence.",
+                )
+            )
+        if "previous_shutdown_clean" not in process:
+            blockers.append(
+                _blocker(
+                    "previous_shutdown_clean",
+                    "Alpha monitoring needs previous shutdown/crash evidence.",
+                )
+            )
         starts = safe_int(process.get("recent_start_count"), 0)
         if starts > limits["max_recent_start_count"]:
             blockers.append(_blocker("recent_start_count", "Recent process start count exceeds the alpha restart threshold.", value=starts, limit=limits["max_recent_start_count"]))

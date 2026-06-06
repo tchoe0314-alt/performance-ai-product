@@ -44,12 +44,13 @@ class ApplicationAuthHealthWorkflowsTest(unittest.TestCase):
         )
         self.assertTrue(data["success"])
         self.assertEqual(data["user_count"], 3)
-        self.assertEqual(data["operational_summary"]["status"], "healthy")
+        self.assertEqual(data["operational_summary"]["status"], "blocked")
         self.assertEqual(data["operational_summary"]["mode"], "development")
-        self.assertTrue(data["operational_summary"]["ready_for_ui"])
+        self.assertFalse(data["operational_summary"]["ready_for_ui"])
         self.assertTrue(data["operational_summary"]["review_only"])
         self.assertFalse(data["operational_summary"]["construction_release_enabled"])
         self.assertEqual(data["alpha_monitoring_report"]["readiness"], "blocked")
+        self.assertGreater(data["operational_summary"]["alpha_monitoring_blocker_count"], 0)
 
     def test_health_response_reports_private_alpha_review_only_guard(self):
         data = health_response(
@@ -70,7 +71,7 @@ class ApplicationAuthHealthWorkflowsTest(unittest.TestCase):
                     "stale_job_count": 0,
                     "oldest_active_age_sec": 0.0,
                 },
-                "process": {"status": "healthy", "recent_start_count": 1},
+                "process": {"status": "healthy", "recent_start_count": 1, "previous_shutdown_clean": True},
             },
             release_guard={"construction_release_enabled": False, "construction_release_blocked": True},
         )
@@ -83,6 +84,9 @@ class ApplicationAuthHealthWorkflowsTest(unittest.TestCase):
         self.assertEqual(data["monitoring"]["rss_mb"], 128.0)
         self.assertEqual(data["alpha_monitoring_report"]["readiness"], "ready")
         self.assertEqual(data["operational_summary"]["alpha_monitoring_status"], "ready")
+        self.assertEqual(data["operational_summary"]["pending_count"], 0)
+        self.assertEqual(data["operational_summary"]["failed_count"], 0)
+        self.assertEqual(data["operational_summary"]["timeout_count"], 0)
 
     def test_runtime_monitoring_reports_process_restart_risk(self):
         previous = {

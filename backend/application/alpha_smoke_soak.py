@@ -34,6 +34,16 @@ def _max_from_samples(samples: List[Dict[str, Any]], key: str) -> float:
     return max([safe_float(safe_dict(item.get("monitoring")).get(key), 0.0) for item in samples] or [0.0])
 
 
+def _observed_int_max(records: Iterable[Dict[str, Any]], key: str) -> int | None:
+    values = [safe_int(record.get(key), 0) for record in records if key in record]
+    return max(values) if values else None
+
+
+def _observed_float_max(records: Iterable[Dict[str, Any]], key: str) -> float | None:
+    values = [safe_float(record.get(key), 0.0) for record in records if key in record]
+    return max(values) if values else None
+
+
 def _aggregate_runtime(
     samples: List[Dict[str, Any]],
     *,
@@ -56,21 +66,40 @@ def _aggregate_runtime(
             if safe_str(job_type)
         }
     )
+    live_registered_handlers = sorted(
+        {
+            safe_str(job_type)
+            for queue in queues
+            for job_type in safe_list(queue.get("registered_handlers"))
+            if safe_str(job_type)
+        }
+    )
+    observed_queue_monitorings = [queue for queue in queue_monitorings if queue]
     queue_monitoring = {
         "status": _worst_status(queue.get("status") for queue in queue_monitorings if queue),
-        "failed_recent_count": max([safe_int(queue.get("failed_recent_count"), 0) for queue in queue_monitorings if queue] or [0]),
-        "stale_job_count": max([safe_int(queue.get("stale_job_count"), 0) for queue in queue_monitorings if queue] or [0]),
-        "oldest_active_age_sec": max([safe_float(queue.get("oldest_active_age_sec"), 0.0) for queue in queue_monitorings if queue] or [0.0]),
-        "queued_count": max([safe_int(queue.get("queued_count"), 0) for queue in queue_monitorings if queue] or [0]),
         "monitored_job_types": monitored_job_types,
         "sample_count": len([queue for queue in queues if queue]),
     }
+    observed_counts = {
+        "failed_recent_count": _observed_int_max(observed_queue_monitorings, "failed_recent_count"),
+        "stale_job_count": _observed_int_max(observed_queue_monitorings, "stale_job_count"),
+        "oldest_active_age_sec": _observed_float_max(observed_queue_monitorings, "oldest_active_age_sec"),
+        "queued_count": _observed_int_max(observed_queue_monitorings, "queued_count"),
+    }
+    queue_monitoring.update({key: value for key, value in observed_counts.items() if value is not None})
+    alive_workers = _observed_int_max(queues, "alive_workers")
+    if alive_workers is not None:
+        queue_monitoring["alive_workers"] = alive_workers
+    if live_registered_handlers:
+        queue_monitoring["registered_handlers"] = live_registered_handlers
     process_monitoring = {
         "status": _worst_status(process.get("status") for process in processes if process),
-        "recent_start_count": max([safe_int(process.get("recent_start_count"), 0) for process in processes if process] or [0]),
         "previous_shutdown_clean": all(bool(process.get("previous_shutdown_clean", True)) for process in processes if process),
         "sample_count": len([process for process in processes if process]),
     }
+    recent_start_count = _observed_int_max([process for process in processes if process], "recent_start_count")
+    if recent_start_count is not None:
+        process_monitoring["recent_start_count"] = recent_start_count
     if queue_monitoring["sample_count"] <= 0:
         queue_monitoring = {}
     if process_monitoring["sample_count"] <= 0:

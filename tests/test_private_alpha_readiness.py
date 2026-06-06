@@ -84,7 +84,23 @@ def _ready_meta() -> dict:
             "export_blocked": False,
         },
         "golden_scenario_report": {"status": "passed", "success": True},
-        "alpha_monitoring_report": {"status": "healthy", "success": True},
+        "alpha_monitoring_report": {
+            "version": "alpha_monitoring_report_v1",
+            "status": "healthy",
+            "readiness": "ready",
+            "success": True,
+            "job_queue_monitoring_evidence": {
+                "status": "ready",
+                "queue_system_present": True,
+                "queue_monitoring_ready": True,
+                "alpha_ready": True,
+                "monitored_job_types": ["orchestrate", "drainage_only"],
+                "pending_count": 0,
+                "failed_count": 0,
+                "timeout_count": 0,
+            },
+            "blockers": [],
+        },
     }
 
 
@@ -107,6 +123,16 @@ class PrivateAlphaReadinessTests(unittest.TestCase):
         self.assertIn(("monitoring", "alpha_monitoring_report"), fields)
         self.assertTrue(readiness["blocker_details"])
         self.assertTrue(readiness["next_actions"])
+
+    def test_bare_monitoring_success_without_evidence_blocks(self) -> None:
+        meta = _ready_meta()
+        meta["alpha_monitoring_report"] = {"status": "healthy", "success": True}
+
+        readiness = build_private_alpha_readiness({"meta": meta})
+
+        self.assertEqual(readiness["status"], "blocked")
+        fields = {(item["area"], item["field"]) for item in readiness["blockers"]}
+        self.assertIn(("monitoring", "alpha_monitoring_report"), fields)
 
     def test_alpha_ready_keeps_construction_release_blocked(self) -> None:
         readiness = build_private_alpha_readiness({"meta": _ready_meta()})

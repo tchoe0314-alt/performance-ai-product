@@ -69,6 +69,38 @@ class AlphaSmokeSoakTests(unittest.TestCase):
         self.assertIn("job_queue", fields)
         self.assertIn("pending_count", fields)
 
+    def test_smoke_soak_does_not_convert_missing_queue_counters_to_zero(self) -> None:
+        report = run_alpha_smoke_soak(
+            iterations=1,
+            sample_runtime=lambda: {
+                "status": "ok",
+                "monitoring": {
+                    "status": "healthy",
+                    "rss_mb": 100.0,
+                    "peak_rss_mb": 120.0,
+                    "job_queue": {
+                        "status": "healthy",
+                        "monitored_job_types": ["orchestrate"],
+                    },
+                    "process": {
+                        "status": "healthy",
+                        "recent_start_count": 1,
+                        "previous_shutdown_clean": True,
+                    },
+                },
+            },
+        )
+
+        evidence = report["aggregate_runtime_monitoring"]["job_queue_monitoring_evidence"]
+        self.assertFalse(report["success"])
+        self.assertIsNone(evidence["pending_count"])
+        self.assertIsNone(evidence["failed_count"])
+        self.assertIsNone(evidence["timeout_count"])
+        fields = {item["field"] for item in report["alpha_monitoring_report"]["blockers"]}
+        self.assertIn("pending_count", fields)
+        self.assertIn("failed_count", fields)
+        self.assertIn("timeout_count", fields)
+
     def test_smoke_soak_blocks_sample_failures(self) -> None:
         calls = {"count": 0}
 

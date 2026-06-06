@@ -61,7 +61,7 @@ class AlphaMonitoringTests(unittest.TestCase):
             "status": "healthy",
             "rss_mb": 128.0,
             "peak_rss_mb": 180.0,
-            "process": {"status": "healthy", "recent_start_count": 1},
+            "process": {"status": "healthy", "recent_start_count": 1, "previous_shutdown_clean": True},
         }
 
         report = build_alpha_monitoring_report(runtime, readiness_mode="local_dev")
@@ -81,7 +81,7 @@ class AlphaMonitoringTests(unittest.TestCase):
                 "status": "healthy",
                 "rss_mb": 128.0,
                 "peak_rss_mb": 180.0,
-                "process": {"status": "healthy", "recent_start_count": 1},
+                "process": {"status": "healthy", "recent_start_count": 1, "previous_shutdown_clean": True},
             },
             readiness_mode="private_alpha_review",
         )

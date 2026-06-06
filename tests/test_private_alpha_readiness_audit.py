@@ -126,7 +126,7 @@ class PrivateAlphaReadinessAuditTests(unittest.TestCase):
                     "status": "healthy",
                     "rss_mb": 10.0,
                     "peak_rss_mb": 12.0,
-                    "process": {"status": "healthy", "recent_start_count": 1},
+                    "process": {"status": "healthy", "recent_start_count": 1, "previous_shutdown_clean": True},
                 },
             },
             scenario_ids=["small_commercial_pad"],

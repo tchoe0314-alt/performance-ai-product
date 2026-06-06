@@ -5,6 +5,7 @@ from typing import Any, Dict, Iterable, List
 
 from core.config import PRODUCT_MODE, REVIEW_ONLY_PRODUCT_MODES
 
+from .alpha_monitoring import build_alpha_monitoring_report
 from .common import readiness_issue_explanations, safe_dict, safe_list, safe_str
 
 
@@ -339,26 +340,35 @@ def _golden_section(meta: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _monitoring_section(meta: Dict[str, Any]) -> Dict[str, Any]:
-    monitoring = safe_dict(
-        meta.get("alpha_monitoring_report")
-        or meta.get("runtime_monitoring")
-        or meta.get("monitoring")
-    )
-    status = safe_str(monitoring.get("status") or monitoring.get("readiness")).lower()
-    ready = status in {"healthy", "ready", "ok", "pass", "passed"} or monitoring.get("success") is True
+    raw = safe_dict(meta.get("alpha_monitoring_report"))
+    runtime_snapshot = safe_dict(meta.get("runtime_monitoring") or meta.get("monitoring"))
+    if raw and safe_str(raw.get("version")) == "alpha_monitoring_report_v1":
+        monitoring = raw
+    elif raw and safe_dict(raw.get("job_queue_monitoring_evidence")):
+        monitoring = raw
+    elif runtime_snapshot:
+        monitoring = build_alpha_monitoring_report(runtime_snapshot, readiness_mode="private_alpha_review")
+    else:
+        monitoring = raw
+    status = safe_str(monitoring.get("readiness") or monitoring.get("status")).lower()
+    ready = status in {"ready", "pass", "passed"} and monitoring.get("success") is True
     blockers: List[Dict[str, Any]] = []
     if not ready:
-        blockers.append(
-            _blocker(
-                "monitoring",
-                "alpha_monitoring_report",
-                "Private alpha needs runtime monitoring evidence for memory, runtime, crashes, and queue timeout risk.",
-                next_action="Attach runtime monitoring snapshots and alpha deployment health status.",
+        blockers.extend([safe_dict(item) for item in safe_list(monitoring.get("blockers")) if safe_dict(item)])
+        if not blockers:
+            blockers.append(
+                _blocker(
+                    "monitoring",
+                    "alpha_monitoring_report",
+                    "Private alpha needs runtime monitoring evidence for memory, runtime, crashes, and queue timeout risk.",
+                    next_action="Attach runtime monitoring snapshots and alpha deployment health status.",
+                )
             )
-        )
     return {
         "status": _status_from_section(ready, blockers),
         "monitoring": deepcopy(monitoring),
+        "runtime_health_snapshot": deepcopy(runtime_snapshot),
+        "job_queue_monitoring_evidence": deepcopy(safe_dict(monitoring.get("job_queue_monitoring_evidence"))),
         "blockers": blockers,
     }
 
