@@ -1,6 +1,7 @@
 import unittest
 
 import report_builder
+from tests.test_export_package_report import _plan
 
 
 class ReportBuilderTest(unittest.TestCase):
@@ -270,6 +271,42 @@ class ReportBuilderTest(unittest.TestCase):
             report["release"]["release_blockers"],
         )
         self.assertEqual(report["summary"]["release_blocker_count"], 2)
+
+    def test_build_report_export_trace_includes_quantity_profile_section_and_support_labels(self):
+        final_plan = _plan()
+
+        report = report_builder.build_report(final_plan=final_plan)
+        export_trace = report["exports"]["export_trace"]
+
+        self.assertEqual(export_trace["source"], "report_export_trace_v1")
+        self.assertEqual(export_trace["export_package_report"]["export_type"], "report")
+        self.assertTrue(export_trace["quantity_report"]["line_items"])
+        self.assertIn("storm-1", export_trace["quantity_report"]["canonical_ids"])
+        self.assertFalse(export_trace["quantity_report"]["construction_release_allowed"])
+        self.assertEqual(export_trace["profile_section_export"]["profile_count"], 1)
+        self.assertEqual(export_trace["profile_section_export"]["section_count"], 1)
+        self.assertIn("profile-canon-1", export_trace["profile_section_export"]["profiles"][0]["canonical_ids"])
+        self.assertIn("section-canon-1", export_trace["profile_section_export"]["sections"][0]["canonical_ids"])
+        self.assertEqual(export_trace["civil3d_external_verification_status"], "not_verified")
+        self.assertEqual(export_trace["dwg_support_status"], "unsupported_no_writer")
+        self.assertFalse(export_trace["profile_section_export"]["construction_release_allowed"])
+
+    def test_build_report_blocks_stale_export_package_report(self):
+        final_plan = _plan()
+        final_plan["meta"]["export_package_report_v1"] = {
+            "source": "export_package_report_v1",
+            "export_type": "report",
+            "stale_outputs_detected": ["grading"],
+            "quantity_line_items": [],
+            "profile_packages": [],
+            "section_packages": [],
+        }
+
+        report = report_builder.build_report(final_plan=final_plan)
+
+        self.assertFalse(report["release"]["release_ready"])
+        self.assertIn("stale_exports_block_report", report["release"]["release_blockers"])
+        self.assertTrue(report["exports"]["export_trace"]["stale_export_blocked"])
 
     def test_build_report_blocks_stale_ready_with_construction_package_metadata(self):
         report = report_builder.build_report(

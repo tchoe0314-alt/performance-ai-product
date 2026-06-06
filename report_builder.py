@@ -29,6 +29,7 @@ from copy import deepcopy
 from typing import Any, Dict, List, Optional, Sequence
 
 from backend.planning.common import blocker_explanations, construction_package_record
+from backend.planning.export_package_report import build_export_package_report_v1
 from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
     final_plan_requires_construction_release,
@@ -307,6 +308,12 @@ def _release_review_block(
         reactive_blocker_name = _safe_str(reactive_blocker)
         if reactive_blocker_name and reactive_blocker_name not in blockers:
             blockers.append(reactive_blocker_name)
+    export_audit = _safe_dict(meta.get("export_audit"))
+    export_report = _safe_dict(meta.get("export_package_report_v1"))
+    if export_audit.get("export_blocked") is True and "export_audit_blocked" not in blockers:
+        blockers.append("export_audit_blocked")
+    if _safe_list(export_report.get("stale_outputs_detected")) and "stale_exports_block_report" not in blockers:
+        blockers.append("stale_exports_block_report")
     deliverables = _safe_dict(meta.get("deliverables"))
 
     def _merged_deliverables(*values: Any) -> List[str]:
@@ -413,6 +420,53 @@ def _release_review_block(
     }
 
 
+def _report_export_trace(final_plan: Dict[str, Any]) -> Dict[str, Any]:
+    meta = _extract_plan_meta(final_plan)
+    report = deepcopy(_safe_dict(meta.get("export_package_report_v1")))
+    if not report:
+        report = build_export_package_report_v1(final_plan, export_type="report")
+    quantity_rows = deepcopy(_safe_list(report.get("quantity_line_items")))
+    profile_packages = deepcopy(_safe_list(report.get("profile_packages")))
+    section_packages = deepcopy(_safe_list(report.get("section_packages")))
+    stale_outputs = deepcopy(_safe_list(report.get("stale_outputs_detected")))
+    return {
+        "source": "report_export_trace_v1",
+        "export_package_report": report,
+        "quantity_report": {
+            "line_items": quantity_rows,
+            "line_item_count": len(quantity_rows),
+            "canonical_ids": list(
+                dict.fromkeys(
+                    _safe_str(canonical_id)
+                    for row in quantity_rows
+                    for canonical_id in _safe_list(_safe_dict(row).get("canonical_ids"))
+                    if _safe_str(canonical_id)
+                )
+            ),
+            "review_package_only": True,
+            "engineer_review_required": True,
+            "construction_release_allowed": False,
+        },
+        "profile_section_export": {
+            "profiles": profile_packages,
+            "sections": section_packages,
+            "profile_count": len(profile_packages),
+            "section_count": len(section_packages),
+            "review_package_only": True,
+            "engineer_review_required": True,
+            "construction_release_allowed": False,
+        },
+        "stale_outputs_detected": stale_outputs,
+        "stale_export_blocked": bool(stale_outputs),
+        "civil3d_external_verification_status": "not_verified",
+        "dwg_support_status": "unsupported_no_writer",
+        "truth_label": (
+            "Report exports carry traceable review metadata only; Civil3D is not verified "
+            "and DWG is unsupported unless a real writer and verification record are attached."
+        ),
+    }
+
+
 # =============================================================================
 # REPORT BUILDER
 # =============================================================================
@@ -487,6 +541,7 @@ class ReportBuilder:
             manager_conflicts=manager_conflicts,
             coordination_metadata=coordination_metadata,
         )
+        export_trace = _report_export_trace(final_plan)
 
         alternatives_summary = _build_alternative_summary(alternatives)
 
@@ -548,6 +603,9 @@ class ReportBuilder:
             exports={
                 "report_sections": [s.section_id for s in sections],
                 "top_metric_rows": _top_metric_rows(manager_metrics),
+                "export_trace": deepcopy(export_trace),
+                "quantity_report": deepcopy(export_trace["quantity_report"]),
+                "profile_section_export": deepcopy(export_trace["profile_section_export"]),
             },
             release=release,
             sections=sections,
