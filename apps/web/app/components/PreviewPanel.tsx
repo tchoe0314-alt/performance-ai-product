@@ -105,6 +105,7 @@ type PreviewPanelProps = {
   geocode?: { lat?: number; lng?: number } | null;
   siteRotationDeg?: number | null;
   showSiteBounds?: boolean;
+  siteDrawRequest?: number;
   fitToSiteRequest?: number;
   alignToRoadRequest?: number;
   onSetSiteRotationDeg?: (value: number) => void;
@@ -214,6 +215,7 @@ export default function PreviewPanel({
   geocode,
   siteRotationDeg,
   showSiteBounds = false,
+  siteDrawRequest = 0,
   fitToSiteRequest,
   alignToRoadRequest,
   onSetSiteRotationDeg,
@@ -253,6 +255,7 @@ export default function PreviewPanel({
   const [drawMode, setDrawMode] = useState<DrawMode>("select");
   const [draftPoints, setDraftPoints] = useState<Array<[number, number]>>([]);
   const [draftPreviewPoint, setDraftPreviewPoint] = useState<[number, number] | null>(null);
+  const lastSiteDrawRequestRef = useRef(siteDrawRequest);
   const [canvasView, setCanvasView] = useState({ scale: 1, offsetX: 0, offsetY: 0 });
   const drawingLotWidth = lotWidth > 0 ? lotWidth : 500;
   const drawingLotHeight = lotHeight > 0 ? lotHeight : 300;
@@ -410,7 +413,7 @@ export default function PreviewPanel({
       return;
     }
     if ([...buildingPlacements, ...suggestedPlacements].some((item) => item.id === entityId)) {
-      setHoveredObjectId(entityId);
+      setHoveredObjectId((current) => (current === entityId ? current : entityId));
     }
   }, [activeAnnotation, buildingPlacements, suggestedPlacements]);
   const activeHighlightBounds = activeAnnotation?.bounds ?? null;
@@ -479,26 +482,42 @@ export default function PreviewPanel({
       setter: React.Dispatch<React.SetStateAction<{ left: number; top: number; width: number; height: number } | null>>,
     ) => {
       if (!containerRef.current || !imageRef.current) {
-        setter(null);
+        setter((current) => (current === null ? current : null));
         return;
       }
       const containerRect = containerRef.current.getBoundingClientRect();
       const imageRect = imageRef.current.getBoundingClientRect();
       const width = Math.max(imageRect.width, 1);
       const height = Math.max(imageRect.height, 1);
-      setter({
+      const nextBounds = {
         left: imageRect.left - containerRect.left,
         top: imageRect.top - containerRect.top,
         width,
         height,
-      });
+      };
+      setter((current) =>
+        current &&
+        Math.abs(current.left - nextBounds.left) < 0.5 &&
+        Math.abs(current.top - nextBounds.top) < 0.5 &&
+        Math.abs(current.width - nextBounds.width) < 0.5 &&
+        Math.abs(current.height - nextBounds.height) < 0.5
+          ? current
+          : nextBounds,
+      );
     },
     [],
   );
   const updateContainerBounds = useCallback(() => {
     if (!previewRef.current) return;
     const rect = previewRef.current.getBoundingClientRect();
-    setPreviewContainerBounds({ left: 0, top: 0, width: rect.width, height: rect.height });
+    const nextBounds = { left: 0, top: 0, width: rect.width, height: rect.height };
+    setPreviewContainerBounds((current) =>
+      current &&
+      Math.abs(current.width - nextBounds.width) < 0.5 &&
+      Math.abs(current.height - nextBounds.height) < 0.5
+        ? current
+        : nextBounds,
+    );
   }, []);
   const resolveHover = useCallback(
     (
@@ -950,6 +969,15 @@ export default function PreviewPanel({
     setDraftPoints([]);
     setDraftPreviewPoint(null);
   }, []);
+
+  useEffect(() => {
+    if (siteDrawRequest === lastSiteDrawRequestRef.current) return;
+    lastSiteDrawRequestRef.current = siteDrawRequest;
+    if (siteLocked) return;
+    clearDraftGeometry();
+    setDrawMode("site");
+    onSetPreviewInteraction("edit");
+  }, [clearDraftGeometry, onSetPreviewInteraction, siteDrawRequest, siteLocked]);
 
   const finishDraftGeometry = useCallback(() => {
     if (drawMode !== "site" && drawMode !== "polyline" && drawMode !== "polygon" && drawMode !== "rect") return;
@@ -2517,7 +2545,14 @@ export default function PreviewPanel({
         updateContainerBounds();
         if (showMap && previewRef.current) {
           const rect = previewRef.current.getBoundingClientRect();
-          setPreviewImageBounds({ left: 0, top: 0, width: rect.width, height: rect.height });
+          const nextBounds = { left: 0, top: 0, width: rect.width, height: rect.height };
+          setPreviewImageBounds((current) =>
+            current &&
+            Math.abs(current.width - nextBounds.width) < 0.5 &&
+            Math.abs(current.height - nextBounds.height) < 0.5
+              ? current
+              : nextBounds,
+          );
           const nextSize = { w: Math.round(rect.width), h: Math.round(rect.height) };
           const prev = previewSizeRef.current;
           if (!prev || prev.w !== nextSize.w || prev.h !== nextSize.h) {
@@ -2558,7 +2593,14 @@ export default function PreviewPanel({
         fullscreenResizeRafRef.current = null;
         if (showMap && fullscreenRef.current) {
           const rect = fullscreenRef.current.getBoundingClientRect();
-          setFullscreenImageBounds({ left: 0, top: 0, width: rect.width, height: rect.height });
+          const nextBounds = { left: 0, top: 0, width: rect.width, height: rect.height };
+          setFullscreenImageBounds((current) =>
+            current &&
+            Math.abs(current.width - nextBounds.width) < 0.5 &&
+            Math.abs(current.height - nextBounds.height) < 0.5
+              ? current
+              : nextBounds,
+          );
           const nextSize = { w: Math.round(rect.width), h: Math.round(rect.height) };
           const prev = fullscreenSizeRef.current;
           if (!prev || prev.w !== nextSize.w || prev.h !== nextSize.h) {
@@ -2594,7 +2636,7 @@ export default function PreviewPanel({
     if (!focusDetectedId) return;
     const target = suggestedPlacements.find((item) => item.id === focusDetectedId);
     if (target) {
-      setHoveredObjectId(target.id);
+      setHoveredObjectId((current) => (current === target.id ? current : target.id));
       onSelectBuilding(target.id);
     }
     if (onClearFocusDetected) {
@@ -2617,7 +2659,15 @@ export default function PreviewPanel({
     const scale = Math.min(1 / (boxW + padding), 1 / (boxH + padding));
     const centerX = (minX + maxX) / 2 / lotWidth;
     const centerY = (minY + maxY) / 2 / lotHeight;
-    setFocusTransform({ scale: Math.min(Math.max(scale, 1), 3), tx: centerX, ty: centerY });
+    const nextTransform = { scale: Math.min(Math.max(scale, 1), 3), tx: centerX, ty: centerY };
+    setFocusTransform((current) =>
+      current &&
+      Math.abs(current.scale - nextTransform.scale) < 0.001 &&
+      Math.abs(current.tx - nextTransform.tx) < 0.001 &&
+      Math.abs(current.ty - nextTransform.ty) < 0.001
+        ? current
+        : nextTransform,
+    );
     if (onClearFocusObject) {
       const timer = window.setTimeout(() => onClearFocusObject(), 500);
       return () => window.clearTimeout(timer);
@@ -2656,7 +2706,15 @@ export default function PreviewPanel({
     const scale = Math.min(1 / (boxW + padding), 1 / (boxH + padding));
     const centerX = (minX + maxX) / 2 / lotWidth;
     const centerY = (minY + maxY) / 2 / lotHeight;
-    setFocusTransform({ scale: Math.min(Math.max(scale, 1), 3), tx: centerX, ty: centerY });
+    const nextTransform = { scale: Math.min(Math.max(scale, 1), 3), tx: centerX, ty: centerY };
+    setFocusTransform((current) =>
+      current &&
+      Math.abs(current.scale - nextTransform.scale) < 0.001 &&
+      Math.abs(current.tx - nextTransform.tx) < 0.001 &&
+      Math.abs(current.ty - nextTransform.ty) < 0.001
+        ? current
+        : nextTransform,
+    );
   }, [analysisHighlight, analysisPaths, buildingPlacements, lotHeight, lotWidth, suggestedPlacements]);
   const showParkingAnalysis = Boolean(analysisPaths && analysisPaths.length);
   return (

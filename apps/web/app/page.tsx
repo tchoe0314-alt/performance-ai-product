@@ -1182,6 +1182,7 @@ function PerformanceAIDashboardView({
   const [siteRotationInput, setSiteRotationInput] = useState("0");
   const [showSiteBounds, setShowSiteBounds] = useState(false);
   const [fitToSiteRequest, setFitToSiteRequest] = useState(0);
+  const [siteDrawRequest, setSiteDrawRequest] = useState(0);
   const [mapCenterRequest, setMapCenterRequest] = useState(0);
   const [alignToRoadRequest, setAlignToRoadRequest] = useState(0);
   const debugPreview = useMemo(() => {
@@ -7719,6 +7720,85 @@ function PerformanceAIDashboardView({
     setStatusMessage("Site unlocked for editing.");
   }, [currentProject, payloadPreview, saveProject, siteScaleLocked]);
 
+  const handleStartBlankSite = useCallback(() => {
+    const width = parsePositiveNumber(lotWidth) ?? 300;
+    const height = parsePositiveNumber(lotHeight) ?? 300;
+    clearGeneratedPreview();
+    setSiteAddress("");
+    setSelectedAddressSuggestion(null);
+    setAddressSuggestions([]);
+    setUploadedImagePreviewUrl("");
+    setUploadedImageApiUrl("");
+    setMapSnapshotPath("");
+    setMapAnalysis(null);
+    setSiteSelectionMode(true);
+    setShowSiteBounds(true);
+    setPreviewInteraction("edit");
+    autoFitSite(width, height, "Blank Site Boundary", undefined, true, false);
+    lastAppliedSiteRef.current = null;
+    const currentInput = currentProject?.project_input ?? payloadPreview;
+    const nextSiteInputs: Record<string, unknown> = {
+      ...(currentInput?.meta?.site_inputs ?? {}),
+      site_alignment_locked: false,
+      site_boundary_source: "blank_user_defined",
+      site_boundary_state: "draft_editable",
+    };
+    delete nextSiteInputs.address;
+    delete nextSiteInputs.geocode;
+    delete nextSiteInputs.map_analysis;
+    delete nextSiteInputs.viewport_bounds;
+    void saveProject({
+      silent: true,
+      projectInputOverride: {
+        ...currentInput,
+        input_mode: "user",
+        strict_mode: false,
+        allow_ai_fill_for_blanks: false,
+        meta: {
+          ...(currentInput?.meta ?? {}),
+          site_inputs: nextSiteInputs,
+        },
+        manual_fields: {
+          ...(currentInput?.manual_fields ?? {}),
+          lot: {
+            x: 0,
+            y: 0,
+            w: width,
+            h: height,
+          },
+        },
+      },
+    });
+    setStatusMessage("Blank site started. Set dimensions, draw the boundary, then lock it for review.");
+  }, [
+    autoFitSite,
+    clearGeneratedPreview,
+    currentProject,
+    lotHeight,
+    lotWidth,
+    payloadPreview,
+    saveProject,
+  ]);
+
+  const handleStartSiteBoundaryDraw = useCallback(() => {
+    const width = parsePositiveNumber(lotWidth);
+    const height = parsePositiveNumber(lotHeight);
+    if (!width || !height) {
+      setStatusMessage("Set site width and depth before drawing the boundary.");
+      return;
+    }
+    if (siteScaleLocked) {
+      handleUnlockSite();
+    }
+    setActiveWorkspaceMode("canvas");
+    setActiveSidePanel(null);
+    setShowSiteBounds(true);
+    setSiteSelectionMode(true);
+    setPreviewInteraction("edit");
+    setSiteDrawRequest((value) => value + 1);
+    setStatusMessage("Draw the site boundary on the canvas. Double-click or use Finish to lock it.");
+  }, [handleUnlockSite, lotHeight, lotWidth, siteScaleLocked]);
+
   const computeViewportSiteSize = useCallback(() => {
     if (typeof window === "undefined") return null;
     if (!detectionScaleFtPerPx) return null;
@@ -7997,7 +8077,9 @@ function PerformanceAIDashboardView({
         provider: geocode.provider ?? "nominatim",
       };
       nextSiteInputs.site_alignment_locked = false;
-      setActiveSidePanel("data");
+      setAddressSuggestions([]);
+      setActiveWorkspaceMode("setup");
+      setActiveSidePanel("site_existing");
       const viewportSize = viewportFootprint ?? computeViewportSiteSize();
       const viewportWidth =
         viewportSize && "width" in viewportSize ? viewportSize.width : viewportSize?.widthFt;
@@ -10196,6 +10278,9 @@ function PerformanceAIDashboardView({
   const handleOpenWorkspaceMode = useCallback((mode: WorkspaceMode) => {
     handleOpenSidePanel(workspacePanelByMode[mode]);
     setActiveWorkspaceMode(mode);
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      setLeftSidebarOpen(false);
+    }
   }, [handleOpenSidePanel]);
   const controlsHealthStatus = Object.values(systemStatuses).some((value) => value === "fresh") ? "ok" : "review";
   const panelStatus = (target: SidePanelKey): SidebarStatus => {
@@ -10676,7 +10761,10 @@ function PerformanceAIDashboardView({
           </aside>
           ) : null}
           {activeSidePanel ? (
-            <aside className="order-3 m-3 flex min-h-0 w-auto shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white/96 shadow-[var(--civora-shadow-panel)] backdrop-blur-xl lg:ml-0 lg:h-[calc(100%-1.5rem)] lg:w-[372px]">
+            <aside
+              data-testid="workspace-right-panel"
+              className="order-3 m-3 flex min-h-0 w-auto shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white/96 shadow-[var(--civora-shadow-panel)] backdrop-blur-xl lg:ml-0 lg:h-[calc(100%-1.5rem)] lg:w-[372px]"
+            >
               <div className="flex items-center justify-between border-b border-[var(--civora-border)] px-4 py-4">
                 <div>
                   <p className="civora-muted-label">{activePanelTitle}</p>
@@ -10999,12 +11087,8 @@ function PerformanceAIDashboardView({
                         </button>
                         <button
                           type="button"
-                          onClick={() => {
-                            if (!parsePositiveNumber(lotWidth)) setLotWidth("300");
-                            if (!parsePositiveNumber(lotHeight)) setLotHeight("300");
-                            setSiteSelectionMode(true);
-                            setStatusMessage("Blank site started. Set dimensions, then draw or lock the boundary.");
-                          }}
+                          onClick={handleStartBlankSite}
+                          aria-label="Start a blank site and clear address map evidence"
                           className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-white"
                         >
                           Start from blank site
@@ -11028,11 +11112,12 @@ function PerformanceAIDashboardView({
                           />
                         </label>
                         {addressSuggestions.length && !siteScaleLocked ? (
-                          <div className="mt-2 rounded-xl border border-slate-200 bg-white p-2 text-xs text-slate-600">
+                          <div className="mt-2 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 text-xs text-slate-600">
                             {addressSuggestions.map((suggestion) => (
                               <button
                                 key={`${suggestion.lat}-${suggestion.lng}`}
                                 type="button"
+                                aria-label={`Use address suggestion ${suggestion.display_name}`}
                                 onClick={() => {
                                   setSelectedAddressSuggestion(suggestion);
                                   setSiteAddress(suggestion.display_name);
@@ -11044,7 +11129,7 @@ function PerformanceAIDashboardView({
                                     : "hover:bg-slate-50"
                                 }`}
                               >
-                                {suggestion.display_name}
+                                <span className="block truncate">{suggestion.display_name}</span>
                               </button>
                             ))}
                           </div>
@@ -11126,6 +11211,7 @@ function PerformanceAIDashboardView({
                                 const side = Math.round(Math.sqrt(acres * SQFT_PER_ACRE));
                                 setLotWidth(String(side));
                                 setLotHeight(String(side));
+                                autoFitSite(side, side, "Blank Site Boundary", undefined, true, false);
                                 setSiteSelectionMode(true);
                                 setStatusMessage(`Set a blank ${acres}-acre site. Review dimensions, then draw or lock the boundary.`);
                               }}
@@ -11165,6 +11251,7 @@ function PerformanceAIDashboardView({
                         <button
                           type="button"
                           onClick={() => mapSnapshotInputRef.current?.click()}
+                          aria-label="Upload site image or map snapshot"
                           className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
                         >
                           <span>Upload site image / map</span>
@@ -11174,6 +11261,7 @@ function PerformanceAIDashboardView({
                           type="button"
                           onClick={analyzeMapSnapshot}
                           disabled={!mapSnapshotPath}
+                          aria-label="Analyze uploaded map snapshot"
                           className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           <span>Analyze map snapshot</span>
@@ -11181,16 +11269,18 @@ function PerformanceAIDashboardView({
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleAddObject("site")}
+                          onClick={handleStartSiteBoundaryDraw}
                           disabled={siteScaleLocked}
+                          aria-label="Open canvas draw mode for site boundary"
                           className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           <span>Draw site boundary</span>
-                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">{siteScaleLocked ? "Locked" : "Draw"}</span>
+                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">{siteScaleLocked ? "Locked" : "Canvas"}</span>
                         </button>
                         <button
                           type="button"
                           onClick={siteScaleLocked ? handleUnlockSite : () => void handleApplySite()}
+                          aria-label={siteScaleLocked ? "Unlock site boundary for editing" : "Lock current site boundary for engineer review"}
                           className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
                         >
                           <span>{siteScaleLocked ? "Change site boundary" : "Lock site boundary"}</span>
@@ -11395,11 +11485,12 @@ function PerformanceAIDashboardView({
                         className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none"
                       />
                       {addressSuggestions.length ? (
-                        <div className="mt-2 rounded-2xl border border-slate-200 bg-white p-2 text-xs text-slate-600">
+                        <div className="mt-2 max-h-40 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 text-xs text-slate-600">
                           {addressSuggestions.map((suggestion) => (
                             <button
                               key={`${suggestion.lat}-${suggestion.lng}`}
                               type="button"
+                              aria-label={`Use address suggestion ${suggestion.display_name}`}
                               onClick={() => {
                                 setSelectedAddressSuggestion(suggestion);
                                 setSiteAddress(suggestion.display_name);
@@ -11411,7 +11502,7 @@ function PerformanceAIDashboardView({
                                   : "hover:bg-slate-50"
                               }`}
                             >
-                              {suggestion.display_name}
+                              <span className="block truncate">{suggestion.display_name}</span>
                             </button>
                           ))}
                         </div>
@@ -13617,6 +13708,7 @@ function PerformanceAIDashboardView({
                 geocode={siteInputs?.geocode ?? null}
                 siteRotationDeg={siteInputs?.site_rotation_deg ?? 0}
                 showSiteBounds={showSiteBounds}
+                siteDrawRequest={siteDrawRequest}
                 gradingBlocker={gradingBlocker}
                 fitToSiteRequest={fitToSiteRequest}
                 mapCenterRequest={mapCenterRequest}
