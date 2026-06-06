@@ -1108,6 +1108,7 @@ function PerformanceAIDashboardView({
     createWelcomeMessage(),
   ]);
   const [demoWorkspaceEnabled, setDemoWorkspaceEnabled] = useState(false);
+  const [clientMounted, setClientMounted] = useState(false);
   const effectiveDemoWorkspaceEnabled = forceDemoWorkspace || routeDemoWorkspaceEnabled || demoWorkspaceEnabled;
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [, setChatCollapsed] = useState(false);
@@ -1196,9 +1197,9 @@ function PerformanceAIDashboardView({
   const [mapCenterRequest, setMapCenterRequest] = useState(0);
   const [alignToRoadRequest, setAlignToRoadRequest] = useState(0);
   const debugPreview = useMemo(() => {
-    if (typeof window === "undefined") return false;
+    if (!clientMounted || typeof window === "undefined") return false;
     return window.location.search.includes("debugPreview=1");
-  }, []);
+  }, [clientMounted]);
   const rotationSaveTimeoutRef = useRef<number | null>(null);
   const scaleSaveTimeoutRef = useRef<number | null>(null);
   const [focusDetectedId, setFocusDetectedId] = useState<string | null>(null);
@@ -1438,6 +1439,10 @@ function PerformanceAIDashboardView({
           email: "demo@civora.local",
         }
       : null);
+
+  useEffect(() => {
+    setClientMounted(true);
+  }, []);
 
   useEffect(() => {
     setDemoWorkspaceEnabled(forceDemoWorkspace || isDemoWorkspaceQuery());

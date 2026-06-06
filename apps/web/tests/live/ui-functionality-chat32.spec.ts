@@ -1,0 +1,91 @@
+import { expect, test } from "@playwright/test";
+
+async function openDemoWorkspace(page: import("@playwright/test").Page) {
+  await page.goto("/demo/workspace?debugPreview=1", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
+  await expect(page.getByTestId("workspace-canvas-shell")).toContainText("Detention Basin A", { timeout: 30_000 });
+}
+
+test.describe("Chat 32 UI functionality QA", () => {
+  test("desktop controls are wired or truthfully blocked", async ({ page }) => {
+    await openDemoWorkspace(page);
+
+    await expect(page.getByRole("button", { name: "Search unavailable" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Undo unavailable" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Redo unavailable" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Notifications unavailable" })).toBeDisabled();
+
+    const canvas = page.getByTestId("workspace-canvas-shell");
+    await expect(canvas.getByRole("button", { name: "Export DXF" })).toBeDisabled();
+    await expect(canvas.getByRole("button", { name: "Export Report" })).toBeDisabled();
+    await expect(canvas).toContainText("Export blocked: sign in with a backend session before exporting review packages");
+
+    await canvas.getByTestId("preview-quality-high").click();
+    await expect(canvas).toContainText("High Quality");
+    await canvas.getByTestId("preview-quality-standard").click();
+    await expect(canvas).toContainText("Standard");
+
+    await canvas.getByTestId("preview-mode-3d").click();
+    await expect(canvas).toContainText("3D");
+    await canvas.getByTestId("preview-mode-2d").click();
+    await expect(canvas).toContainText("2D");
+
+    await canvas.getByTestId("preview-interaction-edit").click();
+    await expect(canvas.getByRole("button", { name: "Add Line" })).toBeEnabled();
+    await expect(canvas.getByRole("button", { name: "Add Area" })).toBeEnabled();
+    await expect(canvas.getByRole("button", { name: "Add Box" })).toBeEnabled();
+    await expect(canvas.getByRole("button", { name: "Add Point" })).toBeEnabled();
+  });
+
+  test("chat answers common QA commands without claiming construction readiness", async ({ page }) => {
+    await openDemoWorkspace(page);
+
+    await page.locator("header").getByRole("button", { name: "Chat" }).click();
+    const composer = page.getByPlaceholder("Message Civora AI with what you want to create or change...");
+    const send = page.getByRole("button", { name: "Send" });
+    const messageBodies = page.locator("p.whitespace-pre-wrap");
+
+    await composer.fill("what should I do next");
+    await send.click();
+    await expect(messageBodies.filter({ hasText: "Civora does not stamp, seal, sign, submit, approve construction, or act as engineer of record." })).toBeVisible();
+
+    await composer.fill("why can't I export");
+    await send.click();
+    await expect(messageBodies.filter({ hasText: "Export is blocked: sign in with a backend session before exporting review packages." })).toBeVisible();
+
+    await composer.fill("make this a basin");
+    await send.click();
+    await expect(messageBodies.filter({ hasText: "This is draft geometry and still requires engineer review." })).toBeVisible();
+
+    await composer.fill("stamp this construction-ready");
+    await send.click();
+    await expect(messageBodies.filter({ hasText: "Civora cannot stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record." })).toBeVisible();
+  });
+
+  test("mobile workspace has no horizontal page overflow and keeps critical controls reachable", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openDemoWorkspace(page);
+
+    await expect(page.getByTestId("floating-command-bar")).toBeVisible();
+    await expect(page.getByTestId("bottom-review-panel")).toBeVisible();
+
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(1);
+
+    const offscreenBottomTabs = await page.evaluate(() => {
+      const viewportWidth = document.documentElement.clientWidth;
+      return Array.from(document.querySelectorAll('[data-testid="bottom-review-panel"] button'))
+        .map((button) => button.getBoundingClientRect())
+        .filter((rect) => rect.width > 0 && (rect.left < -1 || rect.right > viewportWidth + 1))
+        .length;
+    });
+    expect(offscreenBottomTabs).toBe(0);
+
+    const sidebarToggle = page.getByRole("button", { name: "Hide left sidebar" });
+    await expect(sidebarToggle).toBeVisible();
+    await sidebarToggle.click();
+    await expect(page.getByRole("button", { name: "Show left sidebar" })).toBeVisible();
+    await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
+  });
+});
