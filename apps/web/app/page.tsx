@@ -256,6 +256,130 @@ const SITE_OBJECT_CATALOG: Record<
 const clampValue = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
+type CustomGeometryMode = "polygon" | "polyline" | "rect" | "point";
+
+const isCustomGeometryMode = (value: unknown): value is CustomGeometryMode =>
+  value === "polygon" || value === "polyline" || value === "rect" || value === "point";
+
+const normalizeGeometryPoints = (points: unknown): Array<[number, number]> | undefined =>
+  Array.isArray(points)
+    ? points
+        .map((pt) => (Array.isArray(pt) ? ([Number(pt[0]), Number(pt[1])] as [number, number]) : null))
+        .filter((pt): pt is [number, number] => pt !== null && Number.isFinite(pt[0]) && Number.isFinite(pt[1]))
+    : undefined;
+
+const getGeometryBounds = (geometry: Array<[number, number]>) => {
+  const xs = geometry.map((pt) => pt[0]);
+  const ys = geometry.map((pt) => pt[1]);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  return {
+    minX,
+    maxX,
+    minY,
+    maxY,
+    width: Math.max(0, maxX - minX),
+    depth: Math.max(0, maxY - minY),
+  };
+};
+
+const getGeometryLength = (geometry: Array<[number, number]>, closed = false) => {
+  const points = closed && geometry.length > 2 ? [...geometry, geometry[0]] : geometry;
+  return points.slice(1).reduce((sum, pt, idx) => {
+    const prev = points[idx];
+    return sum + Math.hypot(pt[0] - prev[0], pt[1] - prev[1]);
+  }, 0);
+};
+
+const getPolygonArea = (geometry: Array<[number, number]>) => {
+  if (geometry.length < 3) return 0;
+  const sum = geometry.reduce((acc, pt, idx) => {
+    const next = geometry[(idx + 1) % geometry.length];
+    return acc + pt[0] * next[1] - next[0] * pt[1];
+  }, 0);
+  return Math.abs(sum) / 2;
+};
+
+const getCustomGeometryMetrics = (item: Pick<BuildingPlacement, "geometry" | "geometryType" | "w" | "d">) => {
+  const geometry = Array.isArray(item.geometry) ? item.geometry : [];
+  const isArea = item.geometryType === "polygon" || item.geometryType === "rect";
+  const areaSf = isArea ? getPolygonArea(geometry) : 0;
+  const lengthFt =
+    item.geometryType === "polyline"
+      ? getGeometryLength(geometry)
+      : isArea
+        ? getGeometryLength(geometry, true)
+        : 0;
+  const bounds = geometry.length ? getGeometryBounds(geometry) : { width: item.w, depth: item.d };
+  return {
+    areaSf,
+    lengthFt,
+    widthFt: bounds.width || item.w,
+    depthFt: bounds.depth || item.d,
+  };
+};
+
+const buildCustomGeometryMeta = (
+  id: string,
+  label: string,
+  geometryType: CustomGeometryMode,
+  geometry: Array<[number, number]>,
+  units: string,
+  previousMeta?: Record<string, unknown>,
+) => {
+  const previousVertices = Array.isArray(previousMeta?.vertices)
+    ? (previousMeta.vertices as Array<{ id?: unknown }>)
+    : [];
+  const metrics = getCustomGeometryMetrics({ geometry, geometryType, w: 0, d: 0 });
+  return {
+    ...(previousMeta ?? {}),
+    category: "advanced",
+    custom_geometry: true,
+    object_id: id,
+    geometry_id: id,
+    reference_name: label,
+    source: "manual_drawn",
+    confidence: "user_drawn_review_required",
+    engineering_status: "draft_review_required",
+    review_status: "engineer_review_required",
+    construction_release_allowed: false,
+    units,
+    coordinate_system: `site_local_${units || "ft"}`,
+    coordinates_are: "site_local",
+    vertices: geometry.map(([x, y], idx) => ({
+      id:
+        typeof previousVertices[idx]?.id === "string"
+          ? previousVertices[idx].id
+          : `${id}-v-${idx + 1}`,
+      x,
+      y,
+      units,
+    })),
+    metrics: {
+      length_ft: Number(metrics.lengthFt.toFixed(2)),
+      area_sf: Number(metrics.areaSf.toFixed(2)),
+      width_ft: Number(metrics.widthFt.toFixed(2)),
+      depth_ft: Number(metrics.depthFt.toFixed(2)),
+    },
+    canonical_note:
+      "Stored as user-authored project geometry for engineer review. Engineering generation only uses it where existing systems support the object type.",
+  };
+};
+
+const formatCustomGeometryMetrics = (item: BuildingPlacement) => {
+  const metrics = getCustomGeometryMetrics(item);
+  const parts = [`${metrics.widthFt.toFixed(1)} ft x ${metrics.depthFt.toFixed(1)} ft`];
+  if (item.geometryType === "polyline" && metrics.lengthFt > 0) {
+    parts.push(`${metrics.lengthFt.toFixed(1)} ft length`);
+  }
+  if ((item.geometryType === "polygon" || item.geometryType === "rect") && metrics.areaSf > 0) {
+    parts.push(`${metrics.areaSf.toFixed(0)} sf area`);
+  }
+  return parts.join(" · ");
+};
+
 type SystemStatus = "fresh" | "stale" | "not_generated";
 
 const DEFAULT_SYSTEM_STATUS: Record<
@@ -2266,18 +2390,8 @@ function PerformanceAIDashboardView({
         const d = typeof rawD === "number" ? rawD : rawD !== undefined ? Number(rawD) : NaN;
         if (!Number.isFinite(w) || !Number.isFinite(d)) return null;
         const placed = Number.isFinite(x) && Number.isFinite(y);
-        const geometryType =
-          rec.geometry_type === "polygon" ||
-          rec.geometry_type === "polyline" ||
-          rec.geometry_type === "rect" ||
-          rec.geometry_type === "point"
-            ? rec.geometry_type
-            : undefined;
-        const geometry = Array.isArray(rec.geometry)
-          ? rec.geometry
-              .map((pt) => (Array.isArray(pt) ? [Number(pt[0]), Number(pt[1])] as [number, number] : null))
-              .filter((pt): pt is [number, number] => pt !== null && Number.isFinite(pt[0]) && Number.isFinite(pt[1]))
-          : undefined;
+        const geometryType = isCustomGeometryMode(rec.geometry_type) ? rec.geometry_type : undefined;
+        const geometry = normalizeGeometryPoints(rec.geometry);
         return {
           id: typeof rec.id === "string" ? rec.id : `building-${Date.now()}-${idx}`,
           label:
@@ -2297,6 +2411,7 @@ function PerformanceAIDashboardView({
           placed,
           source:
             rec.source === "generated" ||
+            rec.source === "manual_drawn" ||
             rec.source === "inferred" ||
             rec.source === "detected_from_image" ||
             rec.source === "user_confirmed"
@@ -2401,18 +2516,8 @@ function PerformanceAIDashboardView({
         const d = typeof rawD === "number" ? rawD : rawD !== undefined ? Number(rawD) : NaN;
         if (!Number.isFinite(w) || !Number.isFinite(d)) return null;
         const placed = Number.isFinite(x) && Number.isFinite(y);
-        const geometryType =
-          rec.geometry_type === "polygon" ||
-          rec.geometry_type === "polyline" ||
-          rec.geometry_type === "rect" ||
-          rec.geometry_type === "point"
-            ? rec.geometry_type
-            : undefined;
-        const geometry = Array.isArray(rec.geometry)
-          ? rec.geometry
-              .map((pt) => (Array.isArray(pt) ? [Number(pt[0]), Number(pt[1])] as [number, number] : null))
-              .filter((pt): pt is [number, number] => pt !== null && Number.isFinite(pt[0]) && Number.isFinite(pt[1]))
-          : undefined;
+        const geometryType = isCustomGeometryMode(rec.geometry_type) ? rec.geometry_type : undefined;
+        const geometry = normalizeGeometryPoints(rec.geometry);
         return {
           id: typeof rec.id === "string" ? rec.id : `site-object-${Date.now()}-${idx}`,
           label:
@@ -2432,11 +2537,12 @@ function PerformanceAIDashboardView({
           placed,
           source:
             rec.source === "generated" ||
+            rec.source === "manual_drawn" ||
             rec.source === "inferred" ||
             rec.source === "detected_from_image" ||
             rec.source === "user_confirmed"
               ? rec.source
-              : "user",
+              : "manual_drawn",
           generated: Boolean(rec.generated),
           geometryType,
           geometry: geometry?.length ? geometry : undefined,
@@ -3171,7 +3277,7 @@ function PerformanceAIDashboardView({
       nextUpdates.placed = true;
     }
     if (
-      target?.geometryType === "polyline" &&
+      target?.geometryType &&
       Array.isArray(target.geometry) &&
       (typeof updates.x === "number" || typeof updates.y === "number")
     ) {
@@ -3179,6 +3285,28 @@ function PerformanceAIDashboardView({
       const deltaY = (typeof updates.y === "number" ? updates.y : target.y ?? 0) - (target.y ?? 0);
       if (Number.isFinite(deltaX) && Number.isFinite(deltaY)) {
         nextUpdates.geometry = target.geometry.map(([px, py]) => [px + deltaX, py + deltaY]);
+      }
+    }
+    if (target?.type === "custom") {
+      const geometryType = isCustomGeometryMode(updates.geometryType ?? target.geometryType)
+        ? (updates.geometryType ?? target.geometryType) as CustomGeometryMode
+        : undefined;
+      const geometry = Array.isArray(nextUpdates.geometry)
+        ? nextUpdates.geometry
+        : Array.isArray(target.geometry)
+          ? target.geometry
+          : undefined;
+      if (geometryType && geometry?.length) {
+        nextUpdates.source = "manual_drawn";
+        nextUpdates.generated = false;
+        nextUpdates.meta = buildCustomGeometryMeta(
+          target.id,
+          updates.label ?? target.label,
+          geometryType,
+          geometry,
+          units || "ft",
+          target.meta,
+        );
       }
     }
     if (target?.type === "parking") {
@@ -3537,9 +3665,13 @@ function PerformanceAIDashboardView({
       const isPoint = payload.mode === "point";
       const existingCustomCount =
         buildingPlacements.filter((item) => item.type === "custom").length + 1;
+      const nextId = `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const nextLabel =
+        payload.label ??
+        `Custom ${payload.mode === "polyline" ? "Line" : payload.mode === "polygon" ? "Area" : payload.mode === "rect" ? "Rectangle" : "Point"} ${existingCustomCount}`;
       const nextPlacement: BuildingPlacement = {
-        id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        label: payload.label ?? `Custom ${payload.mode === "polyline" ? "Line" : payload.mode === "polygon" ? "Area" : payload.mode === "rect" ? "Rectangle" : "Point"} ${existingCustomCount}`,
+        id: nextId,
+        label: nextLabel,
         type: "custom",
         x: isPoint ? geometry[0][0] - 5 : minX,
         y: isPoint ? geometry[0][1] - 5 : minY,
@@ -3548,23 +3680,18 @@ function PerformanceAIDashboardView({
         rotation: 0,
         locked: false,
         placed: true,
-        source: "user",
+        source: "manual_drawn",
         generated: false,
         geometryType: payload.mode,
         geometry,
         capabilities: {
           movable: true,
-          resizable: payload.mode === "rect" || payload.mode === "point",
+          resizable: payload.mode === "rect" || payload.mode === "polygon" || payload.mode === "point",
           rotatable: payload.mode === "rect",
           deletable: true,
         },
         systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
-        meta: {
-          category: "advanced",
-          custom_geometry: true,
-          engineering_status: "draft_user_geometry",
-          canonical_note: "Stored as user-authored project geometry. Engineering generation only uses it where existing systems support the object type.",
-        },
+        meta: buildCustomGeometryMeta(nextId, nextLabel, payload.mode, geometry, units || "ft"),
       };
       if (isLine) {
         nextPlacement.capabilities = {
@@ -3590,7 +3717,7 @@ function PerformanceAIDashboardView({
           };
         });
     },
-    [buildingPlacements, clearGeneratedPreview, ensureSiteBoundary, markSystemsStale, resolveLotBounds],
+    [buildingPlacements, clearGeneratedPreview, ensureSiteBoundary, markSystemsStale, resolveLotBounds, units],
   );
 
   const handleTogglePlacementMode = useCallback(() => {
@@ -5477,10 +5604,10 @@ function PerformanceAIDashboardView({
       });
       appendChatMessage(
         "assistant",
-        `Approved the current phase. Starting ${nextPhaseLabel}.`,
+        `Accepted the current phase for review workflow. Starting ${nextPhaseLabel}.`,
         "status",
       );
-      setStatusMessage(`Approved ${data.job.job_id}. Starting ${nextPhaseLabel}.`);
+      setStatusMessage(`Accepted ${data.job.job_id} for review workflow. Starting ${nextPhaseLabel}.`);
       if (data.job.job_id) {
         setActiveJobId(data.job.job_id);
         setApprovalPendingJobId(data.job.job_id);
@@ -9725,9 +9852,14 @@ function PerformanceAIDashboardView({
       status: sidebarMissingInputs.length ? "review" : "idle",
     },
     {
-      label: "Release",
-      value: sidebarReleaseStatus === "ready" ? "export ready" : sidebarReleaseStatus === "blocked" ? "blocked" : "review-only",
-      status: sidebarReleaseStatus === "ready" ? "ok" : sidebarReleaseStatus === "blocked" ? "block" : "review",
+      label: "Engineer review",
+      value: sidebarReleaseStatus === "ready" ? "ready_for_engineer_review" : sidebarReleaseStatus === "blocked" ? "blocked" : "review required",
+      status: sidebarReleaseStatus === "blocked" ? "block" : "review",
+    },
+    {
+      label: "Construction",
+      value: "blocked",
+      status: "block",
     },
     {
       label: "Stale outputs",
@@ -9736,8 +9868,8 @@ function PerformanceAIDashboardView({
     },
     {
       label: "Assumptions",
-      value: sidebarAssumptions.length ? `${sidebarAssumptions.length} labeled` : "none reported",
-      status: sidebarAssumptions.length ? "review" : "idle",
+      value: sidebarAssumptions.length ? `${sidebarAssumptions.length} need acceptance` : "acceptance required",
+      status: "review",
     },
     {
       label: "Blocked systems",
@@ -9748,6 +9880,33 @@ function PerformanceAIDashboardView({
       label: "Engine confidence",
       value: sidebarTrustScore,
       status: typeof previewReview?.trust_score === "number" && previewReview.trust_score >= 80 ? "ok" : "review",
+    },
+  ] as const;
+  const reviewGateItems = [
+    {
+      label: "Standards",
+      value: panelStatus("standards") === "ok" ? "engineer/user acceptance" : "sources or criteria needed",
+      status: panelStatus("standards") === "ok" ? "review" : "block",
+    },
+    {
+      label: "Survey / control",
+      value: hasTerrainSource ? "verification required" : "missing",
+      status: hasTerrainSource ? "review" : "block",
+    },
+    {
+      label: "Calculations",
+      value: backendResult ? "engineer review required" : "not generated",
+      status: backendResult ? "review" : "block",
+    },
+    {
+      label: "Exports",
+      value: sidebarReleaseStatus === "ready" ? "review package ready" : sidebarReleaseStatus === "blocked" ? "blocked" : "review package",
+      status: sidebarReleaseStatus === "blocked" ? "block" : "review",
+    },
+    {
+      label: "External approval",
+      value: "required outside Civora",
+      status: "review",
     },
   ] as const;
   const activePanelTitle =
@@ -10069,11 +10228,11 @@ function PerformanceAIDashboardView({
                           <span
                             className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
                               workflowReviewDashboard.release_ready
-                                ? "bg-emerald-50 text-emerald-600"
+                                ? "bg-amber-50 text-amber-700"
                                 : "bg-amber-50 text-amber-700"
                             }`}
                           >
-                            {workflowReviewDashboard.release_ready ? "Release ready" : "Review"}
+                            {workflowReviewDashboard.release_ready ? "Ready for engineer review" : "Review required"}
                           </span>
                         </div>
                         <div className="mt-3 grid grid-cols-3 gap-2">
@@ -10097,7 +10256,7 @@ function PerformanceAIDashboardView({
                             <span className="block uppercase tracking-[0.14em] text-slate-400">Deliverables</span>
                             <span className="mt-1 block text-sm text-slate-900">
                               {(workflowReviewDashboard.deliverable_manager?.ready ?? []).length}/
-                              {(workflowReviewDashboard.deliverable_manager?.requested ?? []).length} ready
+                              {(workflowReviewDashboard.deliverable_manager?.requested ?? []).length} review ready
                             </span>
                           </button>
                           <button
@@ -10107,7 +10266,7 @@ function PerformanceAIDashboardView({
                           >
                             <span className="block uppercase tracking-[0.14em] text-slate-400">Assumptions</span>
                             <span className="mt-1 block text-sm text-slate-900">
-                              {workflowReviewDashboard.assumption_review?.requires_approval ? "Review needed" : "Clear"}
+                              {workflowReviewDashboard.assumption_review?.requires_approval ? "Acceptance required" : "Engineer acceptance required"}
                             </span>
                           </button>
                         </div>
@@ -11913,7 +12072,7 @@ function PerformanceAIDashboardView({
                       {[
                         ["Model issues", issues.length],
                         ["Access issues", analysisIssues.length],
-                        ["Systems ready", systemHealthItems.filter((item) => item.state === "complete").length],
+                        ["Systems complete", systemHealthItems.filter((item) => item.state === "complete").length],
                         ["Blocked", systemHealthItems.filter((item) => item.state === "blocked").length],
                       ].map(([label, value]) => (
                         <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
@@ -11962,9 +12121,9 @@ function PerformanceAIDashboardView({
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Generated outputs</p>
                       <div className="mt-3 space-y-2">
                         {[
-                          ["Preview", planPreviewUrl ? "Ready" : "Not generated"],
-                          ["Report", backendResult ? "Ready" : "Not generated"],
-                          ["DXF", backendResult ? "Ready to export" : "Needs run"],
+                          ["Preview", planPreviewUrl ? "Review ready" : "Not generated"],
+                          ["Report", backendResult ? "Review package" : "Not generated"],
+                          ["DXF", backendResult ? "Review export" : "Needs run"],
                         ].map(([label, value]) => (
                           <div key={label} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
                             <span className="font-semibold text-slate-700">{label}</span>
@@ -12040,9 +12199,9 @@ function PerformanceAIDashboardView({
                           ["Appearance", previewQuality],
                           ["Layout", leftSidebarOpen ? "Sidebar on" : "Sidebar off"],
                           ["AI behavior", assistedEnabled ? "Assisted" : "Manual"],
-                          ["Exports", sidebarReleaseStatus === "ready" ? "Audit ready" : sidebarReleaseStatus],
+                          ["Exports", sidebarReleaseStatus === "ready" ? "Review audit ready" : sidebarReleaseStatus],
                           ["Shortcuts", "Default"],
-                          ["Standards", panelStatus("standards")],
+                          ["Standards", panelStatus("standards") === "ok" ? "Acceptance required" : panelStatus("standards")],
                         ].map(([label, value]) => (
                           <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                             <p className="text-slate-400">{label}</p>
@@ -12233,9 +12392,14 @@ function PerformanceAIDashboardView({
                                     {item.placed ? "Placed" : "Unplaced"}
                                   </p>
                                   {item.type === "custom" ? (
-                                    <p className="mt-1 uppercase tracking-[0.12em] text-slate-500">
-                                      Canonical geometry · Engineering review draft
-                                    </p>
+                                    <div className="mt-1 space-y-1 uppercase tracking-[0.12em] text-slate-500">
+                                      <p>Canonical geometry · Engineering review draft</p>
+                                      <p>Type: {item.geometryType ?? "custom"} · Name: {item.label}</p>
+                                      <p>{formatCustomGeometryMetrics(item)}</p>
+                                      <p>Source: manual_drawn</p>
+                                      <p>Confidence: user_drawn_review_required</p>
+                                      <p>Engineering status: draft/review_required</p>
+                                    </div>
                                   ) : null}
                                 </div>
                                 {item.type !== "site" ? (
@@ -12369,6 +12533,21 @@ function PerformanceAIDashboardView({
                             ))}
                           </div>
                         </div>
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Review gates</p>
+                          <div className="mt-3 space-y-2">
+                            {reviewGateItems.map((item) => (
+                              <div key={item.label} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                                <span className="font-semibold text-slate-700">{item.label}</span>
+                                <span className={`text-right text-xs font-semibold uppercase tracking-[0.12em] ${
+                                  item.status === "block" ? "text-red-600" : "text-amber-600"
+                                }`}>
+                                  {item.value}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       </>
                     ) : null}
                     {activeSidePanel === "quantities" ? (
@@ -12402,13 +12581,16 @@ function PerformanceAIDashboardView({
                             <div>
                               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Package gate</p>
                               <p className="mt-1 text-sm font-semibold text-slate-900">
-                                {sidebarReleaseStatus === "ready" ? "Export review available" : sidebarReleaseStatus === "blocked" ? "Construction package blocked" : "Review-only package"}
+                                {sidebarReleaseStatus === "ready" ? "Ready for engineer review" : sidebarReleaseStatus === "blocked" ? "Construction package blocked" : "Review-only package"}
+                              </p>
+                              <p className="mt-1 text-xs font-medium text-slate-500">
+                                Construction remains blocked unless an external licensed engineer approval record exists.
                               </p>
                             </div>
                             <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
                               sidebarReleaseStatus === "blocked" ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-700"
                             }`}>
-                              {sidebarReleaseStatus === "ready" ? "Audit" : sidebarReleaseStatus === "blocked" ? "Blocked" : "Review"}
+                              {sidebarReleaseStatus === "ready" ? "Review" : sidebarReleaseStatus === "blocked" ? "Blocked" : "Review"}
                             </span>
                           </div>
                           <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
@@ -12421,6 +12603,21 @@ function PerformanceAIDashboardView({
                               <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                                 <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
                                 <p className="mt-1 font-semibold text-slate-800">{value}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Review gates</p>
+                          <div className="mt-3 space-y-2">
+                            {reviewGateItems.map((item) => (
+                              <div key={item.label} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                                <span className="font-semibold text-slate-700">{item.label}</span>
+                                <span className={`text-right text-xs font-semibold uppercase tracking-[0.12em] ${
+                                  item.status === "block" ? "text-red-600" : "text-amber-600"
+                                }`}>
+                                  {item.value}
+                                </span>
                               </div>
                             ))}
                           </div>
@@ -13149,8 +13346,13 @@ function PerformanceAIDashboardView({
                                 <span>{item.w} ft x {item.d} ft</span>
                               </div>
                               {item.type === "custom" ? (
-                                <div className="mt-1 text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                                  Canonical geometry · Engineering review draft
+                                <div className="mt-1 space-y-1 text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                                  <p>Canonical geometry · Engineering review draft</p>
+                                  <p>Type: {item.geometryType ?? "custom"} · Name: {item.label}</p>
+                                  <p>{formatCustomGeometryMetrics(item)}</p>
+                                  <p>Source: manual_drawn</p>
+                                  <p>Confidence: user_drawn_review_required</p>
+                                  <p>Engineering status: draft/review_required</p>
                                 </div>
                               ) : null}
                               {item.type !== "site" ? (
@@ -13575,8 +13777,13 @@ function PerformanceAIDashboardView({
                                 <span>{item.w} ft x {item.d} ft</span>
                               </div>
                               {item.type === "custom" ? (
-                                <div className="mt-1 text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                                  Canonical geometry · Engineering review draft
+                                <div className="mt-1 space-y-1 text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                                  <p>Canonical geometry · Engineering review draft</p>
+                                  <p>Type: {item.geometryType ?? "custom"} · Name: {item.label}</p>
+                                  <p>{formatCustomGeometryMetrics(item)}</p>
+                                  <p>Source: manual_drawn</p>
+                                  <p>Confidence: user_drawn_review_required</p>
+                                  <p>Engineering status: draft/review_required</p>
                                 </div>
                               ) : null}
                               {typeof item.x === "number" && typeof item.y === "number" ? (

@@ -666,7 +666,7 @@ export default function PreviewPanel({
         const deltaX = x - (target.x ?? 0);
         const deltaY = y - (target.y ?? 0);
         const updates: Partial<BuildingPlacement> = { x, y, placed: true };
-        if (target.geometryType === "polyline" && Array.isArray(target.geometry)) {
+        if (target.geometryType && Array.isArray(target.geometry)) {
           updates.geometry = (target.geometry as Array<[number, number]>).map((pt) => [
             pt[0] + deltaX,
             pt[1] + deltaY,
@@ -679,7 +679,11 @@ export default function PreviewPanel({
         }
         return;
       }
-      if (draggingMode === "vertex" && draggingVertex && target.geometryType === "polyline") {
+      if (
+        draggingMode === "vertex" &&
+        draggingVertex &&
+        (target.geometryType === "polyline" || target.geometryType === "polygon")
+      ) {
         const rawX = (localX / Math.max(bounds.width, 1)) * lotWidth;
         const rawY = (localY / Math.max(bounds.height, 1)) * lotHeight;
         const nextX = snapValue(clampValue(rawX, 0, lotWidth), 1);
@@ -715,10 +719,28 @@ export default function PreviewPanel({
         const rawD = clampValue((localY / Math.max(bounds.height, 1)) * lotHeight, 10, lotHeight);
         const nextW = Math.max(10, snapValue(rawW - (target.x ?? 0), 5));
         const nextD = Math.max(10, snapValue(rawD - (target.y ?? 0), 5));
+        const updates: Partial<BuildingPlacement> = { w: nextW, d: nextD };
+        if (
+          (target.geometryType === "polygon" || target.geometryType === "rect") &&
+          Array.isArray(target.geometry) &&
+          target.w > 0 &&
+          target.d > 0
+        ) {
+          const originX = target.x ?? 0;
+          const originY = target.y ?? 0;
+          const scaleX = nextW / Math.max(target.w, 1);
+          const scaleY = nextD / Math.max(target.d, 1);
+          updates.geometry = target.geometry.map(([px, py]) => [
+            originX + (px - originX) * scaleX,
+            originY + (py - originY) * scaleY,
+          ]);
+        } else if (target.geometryType === "point" && Array.isArray(target.geometry)) {
+          updates.geometry = [[(target.x ?? 0) + nextW / 2, (target.y ?? 0) + nextD / 2]];
+        }
         if (target.source === "detected_from_image") {
-          onUpdateSuggested(draggingBuildingId, { w: nextW, d: nextD });
+          onUpdateSuggested(draggingBuildingId, updates);
         } else {
-          onUpdateBuilding(draggingBuildingId, { w: nextW, d: nextD });
+          onUpdateBuilding(draggingBuildingId, updates);
         }
         return;
       }
@@ -767,8 +789,8 @@ export default function PreviewPanel({
       if (!rect.width || !rect.height) return;
       const xPct = (event.clientX - rect.left) / rect.width;
       const yPct = (event.clientY - rect.top) / rect.height;
-      const nextX = snapValue(clampValue(xPct * lotWidth, 0, lotWidth), 1);
-      const nextY = snapValue(clampValue(yPct * lotHeight, 0, lotHeight), 1);
+      const nextX = snapValue(clampValue((item.x ?? 0) + xPct * item.w, 0, lotWidth), 1);
+      const nextY = snapValue(clampValue((item.y ?? 0) + yPct * item.d, 0, lotHeight), 1);
       const geometry = item.geometry as Array<[number, number]>;
       setLastPolylineEdit({
         id: item.id,
@@ -816,7 +838,8 @@ export default function PreviewPanel({
       suggestedPlacements.find((item) => item.id === selectedVertex.id);
     if (!target || !Array.isArray(target.geometry)) return;
     const geometry = target.geometry as Array<[number, number]>;
-    if (geometry.length <= 2) return;
+    const minVertices = target.geometryType === "polygon" ? 3 : 2;
+    if (geometry.length <= minVertices) return;
     setLastPolylineEdit({
       id: target.id,
       geometry: geometry.map((pt) => [pt[0], pt[1]]),
@@ -827,7 +850,7 @@ export default function PreviewPanel({
       ts: Date.now(),
     });
     const nextGeometry = geometry.filter((_, idx) => idx !== selectedVertex.index);
-    if (nextGeometry.length < 2) return;
+    if (nextGeometry.length < minVertices) return;
     const xs = nextGeometry.map((pt) => pt[0]);
     const ys = nextGeometry.map((pt) => pt[1]);
     const minX = Math.min(...xs);
@@ -1076,7 +1099,10 @@ export default function PreviewPanel({
       if (mode === "rotate" && !caps.rotatable) return;
       event.preventDefault();
       event.stopPropagation();
-      if (building.geometryType === "polyline" && Array.isArray(building.geometry)) {
+      if (
+        (building.geometryType === "polyline" || building.geometryType === "polygon") &&
+        Array.isArray(building.geometry)
+      ) {
         if (mode === "move") {
           setLastPolylineEdit({
             id: building.id,
@@ -2568,10 +2594,10 @@ export default function PreviewPanel({
   const releaseStatus = String(previewReview?.release_status || "review").toLowerCase();
   const releaseLabel =
     releaseStatus === "ready"
-      ? "Export Ready"
+      ? "Review Package Available"
       : releaseStatus === "blocked"
-        ? "Export Blocked"
-        : "Review Only";
+        ? "Construction Blocked"
+        : "Engineer Review";
   const trustScore =
     typeof previewReview?.trust_score === "number"
       ? Math.round(previewReview.trust_score)
@@ -2606,7 +2632,17 @@ export default function PreviewPanel({
     {
       label: "Readiness",
       value: releaseLabel,
-      tone: exportBlocked ? "rose" : releaseStatus === "ready" ? "emerald" : "amber",
+      tone: exportBlocked ? "rose" : "amber",
+    },
+    {
+      label: "Engineer Review",
+      value: "Required",
+      tone: "amber",
+    },
+    {
+      label: "Construction",
+      value: "Blocked",
+      tone: "rose",
     },
     {
       label: "Engine Confidence",
@@ -2620,8 +2656,8 @@ export default function PreviewPanel({
     },
     {
       label: "Assumptions",
-      value: assumptionCategories.length ? assumptionCategories.slice(0, 3).join(", ") : "None reported",
-      tone: assumptionCategories.length ? "amber" : "slate",
+      value: assumptionCategories.length ? assumptionCategories.slice(0, 3).join(", ") : "Engineer acceptance",
+      tone: "amber",
     },
     {
       label: "Blocked Systems",
@@ -2936,7 +2972,7 @@ export default function PreviewPanel({
                 <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-600">
                   {draftPoints.length
                     ? "Draft geometry"
-                    : "Canonical after finish"}
+                    : "Canonical project geometry after finish"}
                 </span>
                 <button
                   type="button"
@@ -3029,6 +3065,7 @@ export default function PreviewPanel({
               } ${
                 placementMode || allowEdits ? "cursor-crosshair" : "cursor-default"
               }`}
+              style={{ touchAction: drawMode === "select" ? "auto" : "none" }}
               onDragOver={(event) => {
                 event.preventDefault();
               }}
@@ -3656,7 +3693,9 @@ export default function PreviewPanel({
                           analysisHighlight &&
                           (analysisHighlight.buildingId === item.id || analysisHighlight.accessId === item.id);
                         const isPolyline = item.geometryType === "polyline";
-                        const isCustomArea = item.geometryType === "polygon";
+                        const isPolygon = item.geometryType === "polygon";
+                        const isEditableVertexGeometry = isPolyline || isPolygon;
+                        const isCustomArea = isPolygon;
                         const showBox = !isPolyline && !isCustomArea;
                         const isSite = item.type === "site";
                         const allowItemInteraction =
@@ -3721,10 +3760,10 @@ export default function PreviewPanel({
                                     : undefined,
                               }}
                             />
-                            {isSelected && isPolyline && Array.isArray(item.geometry)
+                            {isSelected && isEditableVertexGeometry && Array.isArray(item.geometry)
                               ? item.geometry.map((pt, idx) => {
-                                  const handleLeft = (pt[0] / Math.max(lotWidth, 1)) * 100;
-                                  const handleTop = (pt[1] / Math.max(lotHeight, 1)) * 100;
+                                  const handleLeft = ((pt[0] - (item.x ?? 0)) / Math.max(item.w, 1)) * 100;
+                                  const handleTop = ((pt[1] - (item.y ?? 0)) / Math.max(item.d, 1)) * 100;
                                   const isDragging =
                                     draggingMode === "vertex" &&
                                     draggingVertex?.id === item.id &&
@@ -3777,10 +3816,10 @@ export default function PreviewPanel({
                                 })
                               : null}
                             {isSelected &&
-                            isPolyline &&
+                            isEditableVertexGeometry &&
                             Array.isArray(item.geometry) &&
                             item.geometry.length > 1 &&
-                            (item.type === "road" || item.type === "driveway" || item.type === "sidewalk") ? (
+                            (isPolygon || item.type === "custom" || item.type === "road" || item.type === "driveway" || item.type === "sidewalk") ? (
                               <svg
                                 ref={polylineSegmentRef}
                                 className="absolute inset-0"
@@ -3788,12 +3827,12 @@ export default function PreviewPanel({
                                 preserveAspectRatio="none"
                               >
                                 {(item.geometry ?? []).map((pt, idx, arr) => {
-                                  if (idx === arr.length - 1) return null;
-                                  const next = arr[idx + 1];
-                                  const x1 = (pt[0] / Math.max(lotWidth, 1)) * 100;
-                                  const y1 = (pt[1] / Math.max(lotHeight, 1)) * 100;
-                                  const x2 = (next[0] / Math.max(lotWidth, 1)) * 100;
-                                  const y2 = (next[1] / Math.max(lotHeight, 1)) * 100;
+                                  if (idx === arr.length - 1 && !isPolygon) return null;
+                                  const next = idx === arr.length - 1 ? arr[0] : arr[idx + 1];
+                                  const x1 = ((pt[0] - (item.x ?? 0)) / Math.max(item.w, 1)) * 100;
+                                  const y1 = ((pt[1] - (item.y ?? 0)) / Math.max(item.d, 1)) * 100;
+                                  const x2 = ((next[0] - (item.x ?? 0)) / Math.max(item.w, 1)) * 100;
+                                  const y2 = ((next[1] - (item.y ?? 0)) / Math.max(item.d, 1)) * 100;
                                   const isHoveredSeg =
                                     hoveredSegment?.id === item.id && hoveredSegment?.index === idx;
                                   return (
@@ -3832,13 +3871,13 @@ export default function PreviewPanel({
                                 })}
                               </svg>
                             ) : null}
-                            {isSelected && isPolyline ? (
+                            {isSelected && isEditableVertexGeometry ? (
                               <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-amber-700 shadow">
                                 Vertex edit
                               </div>
                             ) : null}
                             {isSelected &&
-                            isPolyline &&
+                            isEditableVertexGeometry &&
                             lastPolylineEdit?.id === item.id ? (
                               <button
                                 type="button"
@@ -3852,7 +3891,7 @@ export default function PreviewPanel({
                                 Undo
                               </button>
                             ) : null}
-                            {isSelected && isPolyline && selectedVertex?.id === item.id ? (
+                            {isSelected && isEditableVertexGeometry && selectedVertex?.id === item.id ? (
                               <button
                                 type="button"
                                 className="absolute -bottom-16 left-1/2 -translate-x-1/2 rounded-full border border-rose-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-rose-600 shadow"
@@ -3881,9 +3920,9 @@ export default function PreviewPanel({
                               </button>
                             ) : null}
                             {isSelected &&
-                            isPolyline &&
+                            isEditableVertexGeometry &&
                             !polylineInsertHintDismissed &&
-                            (item.type === "road" || item.type === "driveway" || item.type === "sidewalk") ? (
+                            (isPolygon || item.type === "custom" || item.type === "road" || item.type === "driveway" || item.type === "sidewalk") ? (
                               <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-600 shadow">
                                 Click a segment to add a vertex
                               </div>

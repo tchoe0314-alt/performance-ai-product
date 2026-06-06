@@ -801,7 +801,7 @@ export type BuildingPlacement = {
   type?: SiteObjectType;
   use?: string;
   stallCount?: number;
-  source?: "user" | "generated" | "inferred" | "detected_from_image" | "user_confirmed";
+  source?: "user" | "manual_drawn" | "generated" | "inferred" | "detected_from_image" | "user_confirmed";
   generated?: boolean;
   confidence?: number;
   confirmed?: boolean;
