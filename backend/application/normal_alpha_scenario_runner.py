@@ -4,6 +4,7 @@ from copy import deepcopy
 from time import perf_counter
 from typing import Any, Dict
 
+from backend.planning.construction_package import build_construction_document_support_package
 from backend.planning.engine_depth_audit import run_engine_depth_audit_for_scenario
 from backend.planning.engine_readiness import evaluate_engine_readiness
 from backend.planning.engineer_review_package import build_engineer_review_package
@@ -14,7 +15,14 @@ from core.civil_design import civil_design_readiness
 
 
 RUNNER_VERSION = "normal_alpha_scenario_runner_v1"
+REAL_PROJECT_SUITE_VERSION = "real_project_scenario_suite_v1"
 HEAVY_EXPORT_BLOCKER = "heavy_cad_dxf_export_skipped_review_only"
+LICENSED_ENGINEER_REVIEW_BLOCKER = "external_licensed_engineer_review_required"
+
+RESPONSIBILITY_LABEL = (
+    "Civora prepares engineer-review-ready evidence only; Civora does not stamp, seal, sign, "
+    "certify, approve construction, submit construction documents, or act as engineer of record."
+)
 
 
 def _storm_fixture() -> tuple[Dict[str, Any], Dict[str, Any]]:
@@ -91,8 +99,12 @@ def _base_meta() -> Dict[str, Any]:
         "canonical_model_id": "canon-normal-alpha-scenario",
         "canonical_model_hash": "hash-normal-alpha-scenario-001",
         "canonical_revision": "rev-normal-alpha-scenario-001",
+        "product_mode": "private_alpha",
         "ready_language": "ready_for_engineer_review",
         "construction_release_allowed": False,
+        "construction_release_blocked": True,
+        "construction_release_required": True,
+        "responsibility_label": RESPONSIBILITY_LABEL,
         "site_locked": True,
         "site_boundary": {"id": "SITE-ALPHA", **lot, "locked": True},
         "site": {"lot": lot, "locked": True},
@@ -158,6 +170,22 @@ def _base_meta() -> Dict[str, Any]:
             "heavy_export_skipped": True,
             "truth_label": "Heavy CAD/DXF export is intentionally skipped in the lightweight alpha runner; no CAD export success is claimed.",
         },
+        "standards_package": {
+            "status": "blocked_review_required",
+            "production_usable": False,
+            "construction_release_allowed": False,
+            "construction_release_blocked": True,
+            "blockers": [
+                {
+                    "area": "standards",
+                    "field": "adopted_jurisdictional_standards",
+                    "message": "No externally accepted jurisdictional standards package is attached.",
+                    "severity": "blocker",
+                    "engineer_review_required": True,
+                }
+            ],
+            "truth_label": "Fixture scenarios do not fake adopted standards or jurisdictional approval.",
+        },
         "cad_interop": {"dxf": False, "landxml": False, "civil3d": False, "dwg": False},
         "deliverables": {
             "requested": ["site_plan", "grading_plan", "drainage_plan", "storm_pipe_plan", "utility_plan", "dxf", "report", "engineer_review_package"],
@@ -210,6 +238,7 @@ def build_normal_alpha_scenario_plan(*, attach_audit: bool = True) -> Dict[str, 
     meta["engine_readiness"] = evaluate_engine_readiness(plan)
     meta["export_package_report_v1"] = build_export_package_report_v1(plan, export_type="report")
     meta["engineer_review_package_v1"] = build_engineer_review_package(plan)
+    meta["construction_document_support_package_v1"] = build_construction_document_support_package(plan)
     if attach_audit:
         meta["engine_depth_audit_report_v1"] = run_engine_depth_audit_for_scenario(
             "mixed_use_14_acre_site",
@@ -249,6 +278,7 @@ def run_normal_alpha_scenario() -> Dict[str, Any]:
         "plan": plan,
         "export_package_report_v1": deepcopy(meta["export_package_report_v1"]),
         "engineer_review_package_v1": deepcopy(meta["engineer_review_package_v1"]),
+        "construction_document_support_package_v1": deepcopy(meta["construction_document_support_package_v1"]),
         "engine_depth_audit_report_v1": audit,
         "blockers": blockers,
         "blocker_count": len(blockers),
@@ -257,9 +287,297 @@ def run_normal_alpha_scenario() -> Dict[str, Any]:
     }
 
 
+def _review_blocker(area: str, field: str, message: str) -> Dict[str, Any]:
+    return {
+        "area": area,
+        "field": field,
+        "message": message,
+        "severity": "blocker",
+        "engineer_review_required": True,
+    }
+
+
+def _scenario_fixture_inputs(scenario_id: str) -> list[Dict[str, Any]]:
+    root = "backend/fixtures/real_input_benchmarks"
+    fixture_map = {
+        "survey_backed_commercial_pad": [
+            {"type": "survey_csv", "path": f"{root}/survey_points.csv", "fixture": True},
+            {"type": "constraints_geojson", "path": f"{root}/constraints.geojson", "fixture": True},
+            {"type": "landxml_metadata", "path": f"{root}/surface_pipe.landxml", "fixture": True},
+        ],
+        "dem_backed_drainage_detention_site": [
+            {"type": "dem_grid", "path": "deterministic_inline_2x2_dem_fixture", "fixture": True},
+            {"type": "constraints_geojson", "path": f"{root}/constraints.geojson", "fixture": True},
+        ],
+        "utility_heavy_site": [
+            {"type": "utility_conflict_rows", "path": "deterministic_inline_utility_crossings", "fixture": True},
+            {"type": "survey_csv", "path": f"{root}/survey_points.csv", "fixture": True},
+        ],
+        "roadway_corridor": [
+            {"type": "alignment_profile_sections", "path": "deterministic_inline_corridor_fixture", "fixture": True},
+            {"type": "landxml_metadata", "path": f"{root}/surface_pipe.landxml", "fixture": True},
+        ],
+        "incomplete_bad_input_case": [
+            {"type": "incomplete_payload", "path": "missing_site_boundary_missing_control_missing_standards", "fixture": True}
+        ],
+    }
+    return deepcopy(fixture_map[scenario_id])
+
+
+def _base_project_plan(project_id: str, project_name: str) -> Dict[str, Any]:
+    plan = build_normal_alpha_scenario_plan(attach_audit=False)
+    meta = plan["meta"]
+    plan["project_id"] = project_id
+    plan["project_name"] = project_name
+    meta["project_id"] = project_id
+    meta["source_project_id"] = project_id
+    meta["canonical_model_id"] = f"canon-{project_id}"
+    meta["canonical_model_hash"] = f"hash-{project_id}-001"
+    meta["canonical_revision"] = f"rev-{project_id}-001"
+    return plan
+
+
+def _attach_survey_control_fixture(meta: Dict[str, Any]) -> None:
+    meta["survey"] = {
+        "point_count": 5,
+        "benchmark": "REAL-BM-1",
+        "benchmark_elevation": 612.42,
+        "horizontal_datum": "NAD83",
+        "datum": "NAVD88",
+        "control_verified": True,
+        "survey_date": "2026-06-01",
+        "surveyor": "Fixture Surveyor",
+        "surveyor_license": "TX-00000",
+        "fixture_only": True,
+    }
+    meta["coordinate_system"] = {"epsg": "EPSG:2276", "units": "ft", "horizontal_datum": "NAD83", "source": "deterministic_fixture"}
+    meta["existing_conditions_import_validation"] = {
+        "production_usable": False,
+        "blockers": [_review_blocker("existing_conditions", "fixture_control_not_external_project_control", "Fixture survey control is deterministic test evidence, not externally verified project control.")],
+    }
+    meta["survey_control_package"] = {
+        "version": "survey_control_package_v1",
+        "production_usable": False,
+        "status": "fixture_control_review_required",
+        "control_verified": True,
+        "construction_release_allowed": False,
+        "blockers": [_review_blocker("survey_control", "external_project_control_required", "Fixture control must be replaced or accepted by the licensed engineer for a real project.")],
+    }
+
+
+def _add_roadway_depth(meta: Dict[str, Any]) -> None:
+    meta["alignments"] = [
+        {
+            "id": "ROAD-A1",
+            "alignment_id": "ROAD-A1",
+            "type": "roadway_corridor",
+            "points": [[0.0, 100.0], [450.0, 105.0], [900.0, 100.0]],
+            "length_ft": 900.0,
+        }
+    ]
+    meta["profiles"] = [
+        {
+            "id": "PROF-A1",
+            "alignment_id": "ROAD-A1",
+            "profile_points": [{"station": 0.0, "elevation_ft": 612.0}, {"station": 900.0, "elevation_ft": 606.5}],
+        }
+    ]
+    meta["cross_sections"] = [
+        {
+            "id": "XS-10",
+            "alignment_id": "ROAD-A1",
+            "station": 100.0,
+            "existing_surface_id": "EG-REVIEW-1",
+            "proposed_surface_id": "FG-REVIEW-1",
+            "section_points": [{"offset_ft": -30, "elevation_ft": 611}, {"offset_ft": 0, "elevation_ft": 612}, {"offset_ft": 30, "elevation_ft": 611}],
+        }
+    ]
+    meta["intersections"] = [{"id": "INT-1", "alignment_ids": ["ROAD-A1"], "valid": True}]
+    meta["curb_returns"] = [{"id": "CR-1", "radius_ft": 25.0, "valid": True}]
+    meta["pedestrian_paths"] = [{"id": "SW-1", "points": [[0.0, 120.0], [900.0, 120.0]], "width_ft": 5.0, "valid": True}]
+    meta["grading"]["road_crown_controls"] = [{"road_id": "ROAD-A1", "expected_cross_slope": 0.02, "actual_cross_slope": 0.02, "valid": True}]
+    meta["grading"]["curb_gutter_controls"] = [{"road_id": "ROAD-A1", "gutter_slope": 0.01, "valid": True}]
+    meta["grading"]["ada_path_checks"] = [{"path_id": "SW-1", "max_running_slope": 0.04, "max_cross_slope": 0.015, "valid": True}]
+    meta["grading"]["pad_tie_ins"] = [{"pad_id": "PAD-1", "proposed_surface_id": "FG-REVIEW-1", "valid": True}]
+    meta["profile_bands"] = [
+        {"system": "storm_pipe", "alignment_id": "ROAD-A1", "valid": True},
+        {"system": "sanitary", "alignment_id": "ROAD-A1", "valid": True},
+        {"system": "water", "alignment_id": "ROAD-A1", "valid": True},
+    ]
+
+
+def _scenario_plan(scenario_id: str) -> Dict[str, Any]:
+    names = {
+        "survey_backed_commercial_pad": "Survey-Backed Commercial Pad",
+        "dem_backed_drainage_detention_site": "DEM-Backed Drainage/Detention Site",
+        "utility_heavy_site": "Utility-Heavy Site",
+        "roadway_corridor": "Roadway Corridor",
+        "incomplete_bad_input_case": "Incomplete/Bad Input Case",
+    }
+    plan = _base_project_plan(scenario_id, names[scenario_id])
+    meta = plan["meta"]
+    meta["real_project_scenario_id"] = scenario_id
+    meta["input_fixtures"] = _scenario_fixture_inputs(scenario_id)
+    meta["construction_release_allowed"] = False
+    meta["construction_release_blocked"] = True
+    meta["construction_release_required"] = True
+    meta["construction_release_blockers"] = [LICENSED_ENGINEER_REVIEW_BLOCKER, HEAVY_EXPORT_BLOCKER]
+
+    if scenario_id == "survey_backed_commercial_pad":
+        _attach_survey_control_fixture(meta)
+        meta["systems_completed_override"] = ["layout", "grading", "drainage", "storm_pipes", "sanitary", "utility_network", "coordination_resolution", "qa"]
+        meta["systems_blocked_override"] = ["standards_acceptance", "heavy_cad_export", "external_engineer_release"]
+    elif scenario_id == "dem_backed_drainage_detention_site":
+        meta["survey_control_package"] = {
+            "version": "survey_control_package_v1",
+            "production_usable": False,
+            "status": "dem_fixture_no_survey_control",
+            "blockers": [_review_blocker("survey_control", "survey_control_missing", "DEM fixture is not a sealed survey/control source.")],
+        }
+        meta["grading"]["existing_surface"]["source_quality"] = "dem_fixture"
+        meta["systems_completed_override"] = ["grading", "drainage", "storm_pipes", "hydrology", "earthwork"]
+        meta["systems_blocked_override"] = ["survey_control", "standards_acceptance", "heavy_cad_export", "external_engineer_release"]
+    elif scenario_id == "utility_heavy_site":
+        _attach_survey_control_fixture(meta)
+        meta["coordination"] = {
+            "success": True,
+            "detected_conflicts": 3,
+            "resolved_conflicts": [{"id": "UC-1", "method": "reroute"}],
+            "unresolved_conflicts": [{"id": "UC-2", "severity": "review_required"}],
+            "resolution_history": [{"id": "UC-1", "post_validation": "passed"}, {"id": "UC-2", "post_validation": "blocked"}],
+        }
+        meta["systems_completed_override"] = ["storm_pipes", "sanitary", "utility_network", "coordination_resolution"]
+        meta["systems_blocked_override"] = ["unresolved_utility_conflict_review", "standards_acceptance", "heavy_cad_export", "external_engineer_release"]
+    elif scenario_id == "roadway_corridor":
+        _attach_survey_control_fixture(meta)
+        _add_roadway_depth(meta)
+        meta["deliverables"]["requested"].extend(["road_profile", "cross_sections"])
+        meta["deliverables"]["produced"].extend(["road_profile", "cross_sections"])
+        meta["systems_completed_override"] = ["roadway_corridor", "profile_section", "grading", "utility_coordination"]
+        meta["systems_blocked_override"] = ["standards_acceptance", "civil3d_corridor_export", "external_engineer_release"]
+    elif scenario_id == "incomplete_bad_input_case":
+        meta["site_locked"] = False
+        meta["site_boundary"] = {}
+        meta["survey_control_package"] = {
+            "version": "survey_control_package_v1",
+            "production_usable": False,
+            "status": "missing_required_input",
+            "blockers": [_review_blocker("survey_control", "missing_control", "No survey/control fixture or accepted control source was provided.")],
+        }
+        meta["truth_audit"] = {"success": False, "failures": ["missing_site_boundary", "missing_control", "missing_standards"]}
+        meta["manual_validation"] = {"success": False, "failures": ["missing_site_boundary", "missing_control", "missing_standards"]}
+        meta["systems_completed_override"] = []
+        meta["systems_blocked_override"] = ["site_boundary", "survey_control", "standards_acceptance", "engine_depth", "exports", "engineer_review_package", "construction_document_support_package"]
+
+    meta["production_evidence"] = build_production_evidence(plan)
+    meta["civil_design_readiness"] = civil_design_readiness(plan)
+    meta["engine_readiness"] = evaluate_engine_readiness(plan)
+    meta["export_package_report_v1"] = build_export_package_report_v1(plan, export_type="report")
+    meta["engineer_review_package_v1"] = build_engineer_review_package(plan)
+    meta["construction_document_support_package_v1"] = build_construction_document_support_package(plan)
+    return plan
+
+
+def _status_from_package(package: Dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = package.get(key)
+        if value not in (None, ""):
+            return str(value)
+    return "present"
+
+
+def _scenario_report(scenario_id: str) -> Dict[str, Any]:
+    plan = _scenario_plan(scenario_id)
+    meta = plan["meta"]
+    engine_readiness = deepcopy(meta["engine_readiness"])
+    export_report = deepcopy(meta["export_package_report_v1"])
+    review_package = deepcopy(meta["engineer_review_package_v1"])
+    support_package = deepcopy(meta["construction_document_support_package_v1"])
+    blockers = [
+        _review_blocker("professional_responsibility", LICENSED_ENGINEER_REVIEW_BLOCKER, "Only the licensed engineer/user can review, approve, stamp, seal, sign, submit, and take legal responsibility."),
+        _review_blocker("deliverables", HEAVY_EXPORT_BLOCKER, "Heavy CAD/DXF export is intentionally skipped in this deterministic scenario suite."),
+    ]
+    blockers.extend(deepcopy(meta.get("survey_control_package", {}).get("blockers") or []))
+    blockers.extend(deepcopy(meta.get("standards_package", {}).get("blockers") or []))
+    blockers.extend(
+        _review_blocker("scenario_system", str(field), f"Scenario system remains blocked: {field}.")
+        for field in deepcopy(meta.get("systems_blocked_override") or [])
+    )
+    ready_for_review = scenario_id != "incomplete_bad_input_case"
+    return {
+        "scenario_id": scenario_id,
+        "name": plan["project_name"],
+        "inputs_used": deepcopy(meta["input_fixtures"]),
+        "survey_control_status": _status_from_package(deepcopy(meta.get("survey_control_package") or {}), "status"),
+        "standards_status": _status_from_package(deepcopy(meta.get("standards_package") or {}), "status"),
+        "systems_completed": deepcopy(meta.get("systems_completed_override") or []),
+        "systems_blocked": deepcopy(meta.get("systems_blocked_override") or []),
+        "engine_depth_summary": {
+            "contract_version": engine_readiness["contract_version"],
+            "review_state": engine_readiness["review_state"],
+            "production_ready_count": engine_readiness["production_ready_count"],
+            "production_blocked_engine_ids": deepcopy(engine_readiness["production_blocked_engine_ids"]),
+            "blocked_engine_ids": deepcopy(engine_readiness["blocked_engine_ids"]),
+            "not_evidenced_engine_ids": deepcopy(engine_readiness["not_evidenced_engine_ids"][:8]),
+        },
+        "production_evidence_v1": deepcopy(meta["production_evidence"]),
+        "production_evidence_status": "ready" if meta["production_evidence"].get("production_evidence_ready") is True else "blocked",
+        "export_package_status": _status_from_package(export_report, "status", "export_status"),
+        "engineer_review_package_status": _status_from_package(review_package, "review_status", "status"),
+        "construction_document_support_package_status": support_package["package_status"],
+        "blockers": blockers,
+        "ready_for_engineer_review": ready_for_review,
+        "construction_release_allowed": False,
+        "plan": plan,
+        "export_package_report_v1": export_report,
+        "engineer_review_package_v1": review_package,
+        "construction_document_support_package_v1": support_package,
+        "truth_label": RESPONSIBILITY_LABEL,
+    }
+
+
+def run_real_project_scenario_suite() -> Dict[str, Any]:
+    scenario_ids = [
+        "survey_backed_commercial_pad",
+        "dem_backed_drainage_detention_site",
+        "utility_heavy_site",
+        "roadway_corridor",
+        "incomplete_bad_input_case",
+    ]
+    scenarios = [_scenario_report(scenario_id) for scenario_id in scenario_ids]
+    return {
+        "version": REAL_PROJECT_SUITE_VERSION,
+        "runner_version": RUNNER_VERSION,
+        "status": "completed_with_blockers",
+        "scenario_count": len(scenarios),
+        "construction_release_allowed": False,
+        "construction_release_blocked": True,
+        "scenarios": scenarios,
+        "scenario_matrix": [
+            {
+                "scenario_id": row["scenario_id"],
+                "survey_control_status": row["survey_control_status"],
+                "standards_status": row["standards_status"],
+                "systems_completed": row["systems_completed"],
+                "systems_blocked": row["systems_blocked"],
+                "export_package_status": row["export_package_status"],
+                "engineer_review_package_status": row["engineer_review_package_status"],
+                "construction_document_support_package_status": row["construction_document_support_package_status"],
+                "ready_for_engineer_review": row["ready_for_engineer_review"],
+                "construction_release_allowed": False,
+            }
+            for row in scenarios
+        ],
+        "truth_label": RESPONSIBILITY_LABEL,
+    }
+
+
 __all__ = [
     "HEAVY_EXPORT_BLOCKER",
+    "LICENSED_ENGINEER_REVIEW_BLOCKER",
+    "REAL_PROJECT_SUITE_VERSION",
     "RUNNER_VERSION",
     "build_normal_alpha_scenario_plan",
+    "run_real_project_scenario_suite",
     "run_normal_alpha_scenario",
 ]
