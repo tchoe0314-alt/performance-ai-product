@@ -457,6 +457,9 @@ export type ManualFields = {
   buildings?: Array<{
     id?: string;
     name: string;
+    label?: string;
+    x?: number;
+    y?: number;
     w?: number;
     d?: number;
     height_ft?: number;
@@ -466,6 +469,28 @@ export type ManualFields = {
     locked?: boolean;
     source?: string;
     generated?: boolean;
+    geometry_type?: "polygon" | "polyline" | "rect" | "point";
+    geometry?: Array<[number, number]>;
+    meta?: Record<string, unknown>;
+    systemDependencies?: string[];
+  }>;
+  site_objects?: Array<{
+    id?: string;
+    name?: string;
+    label?: string;
+    type?: string;
+    x?: number;
+    y?: number;
+    w?: number;
+    d?: number;
+    height_ft?: number;
+    rotation?: number;
+    locked?: boolean;
+    source?: string;
+    generated?: boolean;
+    geometry_type?: "polygon" | "polyline" | "rect" | "point";
+    geometry?: Array<[number, number]>;
+    meta?: Record<string, unknown>;
     systemDependencies?: string[];
   }>;
   site_plan?: { parking_count?: number };
@@ -493,6 +518,9 @@ export type ManualFields = {
     locked?: boolean;
     source?: string;
     generated?: boolean;
+    geometry_type?: "polygon" | "polyline" | "rect" | "point";
+    geometry?: Array<[number, number]>;
+    meta?: Record<string, unknown>;
     systemDependencies?: string[];
   }>;
   access_points?: Array<{
@@ -506,6 +534,9 @@ export type ManualFields = {
     locked?: boolean;
     source?: string;
     generated?: boolean;
+    geometry_type?: "polygon" | "polyline" | "rect" | "point";
+    geometry?: Array<[number, number]>;
+    meta?: Record<string, unknown>;
     systemDependencies?: string[];
   }>;
   disciplines?: string[];
@@ -774,7 +805,7 @@ export type BuildingPlacement = {
   generated?: boolean;
   confidence?: number;
   confirmed?: boolean;
-  geometryType?: "polygon" | "polyline" | "rect";
+  geometryType?: "polygon" | "polyline" | "rect" | "point";
   geometry?: Array<[number, number]>;
   capabilities?: {
     movable?: boolean;
@@ -813,7 +844,8 @@ export type SiteObjectType =
   | "hydrant"
   | "utility_corridor"
   | "lot_block"
-  | "bridge";
+  | "bridge"
+  | "custom";
 
 export type SiteObjectPlacement = BuildingPlacement & {
   type: SiteObjectType;

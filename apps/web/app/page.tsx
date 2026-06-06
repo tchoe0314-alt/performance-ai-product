@@ -188,7 +188,7 @@ const ADD_MENU_SECTIONS: Array<{
   {
     title: "Advanced",
     key: "advanced",
-    items: ["utility_corridor", "lot_block", "bridge"],
+    items: ["utility_corridor", "lot_block", "bridge", "custom"],
     collapsible: true,
   },
 ];
@@ -250,6 +250,7 @@ const SITE_OBJECT_CATALOG: Record<
   utility_corridor: { label: "Utility Corridor", category: "advanced", defaultW: 140, defaultD: 24 },
   lot_block: { label: "Lot / Subdivision Block", category: "advanced", defaultW: 160, defaultD: 120 },
   bridge: { label: "Bridge", category: "advanced", defaultW: 80, defaultD: 24 },
+  custom: { label: "Custom Geometry", category: "advanced", defaultW: 16, defaultD: 16 },
 };
 
 const clampValue = (value: number, min: number, max: number) =>
@@ -1247,6 +1248,9 @@ function PerformanceAIDashboardView({
         locked: placement.locked,
         source: placement.source,
         generated: placement.generated,
+        geometry_type: placement.geometryType,
+        geometry: placement.geometry,
+        meta: placement.meta,
         systemDependencies: placement.systemDependencies,
       }));
     const basinOverrides = placementOverrides.filter((placement) => placement.type === "basin");
@@ -1285,6 +1289,9 @@ function PerformanceAIDashboardView({
         locked: placement.locked,
         source: placement.source,
         generated: placement.generated,
+        geometry_type: placement.geometry_type,
+        geometry: placement.geometry,
+        meta: placement.meta,
         systemDependencies: placement.systemDependencies,
       }));
     }
@@ -1300,6 +1307,9 @@ function PerformanceAIDashboardView({
         locked: placement.locked,
         source: placement.source,
         generated: placement.generated,
+        geometry_type: placement.geometry_type,
+        geometry: placement.geometry,
+        meta: placement.meta,
         systemDependencies: placement.systemDependencies,
       }));
     }
@@ -1326,6 +1336,28 @@ function PerformanceAIDashboardView({
 
     if (resolvedParkingCount !== null) {
       manualFields.site_plan = { parking_count: resolvedParkingCount };
+    }
+
+    if (placementOverrides.length) {
+      manualFields.site_objects = placementOverrides.map((placement) => ({
+        id: placement.id,
+        name: placement.label,
+        label: placement.label,
+        type: placement.type,
+        x: placement.x,
+        y: placement.y,
+        w: placement.w,
+        d: placement.d,
+        height_ft: placement.height_ft,
+        rotation: placement.rotation,
+        locked: placement.locked,
+        source: placement.source,
+        generated: placement.generated,
+        geometry_type: placement.geometry_type,
+        geometry: placement.geometry,
+        meta: placement.meta,
+        systemDependencies: placement.systemDependencies,
+      }));
     }
 
     if (minSlopeValue !== null) {
@@ -2238,6 +2270,24 @@ function PerformanceAIDashboardView({
         const d = typeof rawD === "number" ? rawD : rawD !== undefined ? Number(rawD) : NaN;
         if (!Number.isFinite(w) || !Number.isFinite(d)) return null;
         const placed = Number.isFinite(x) && Number.isFinite(y);
+        const geometry = Array.isArray(rec.geometry)
+          ? rec.geometry
+              .map((point) => {
+                if (!Array.isArray(point) || point.length < 2) return null;
+                const gx = Number(point[0]);
+                const gy = Number(point[1]);
+                return Number.isFinite(gx) && Number.isFinite(gy) ? ([gx, gy] as [number, number]) : null;
+              })
+              .filter((point): point is [number, number] => Boolean(point))
+          : undefined;
+        const rawGeometryType = rec.geometry_type;
+        const geometryType =
+          rawGeometryType === "polygon" ||
+          rawGeometryType === "polyline" ||
+          rawGeometryType === "rect" ||
+          rawGeometryType === "point"
+            ? rawGeometryType
+            : undefined;
         return {
           id: typeof rec.id === "string" ? rec.id : `building-${Date.now()}-${idx}`,
           label:
@@ -2255,6 +2305,21 @@ function PerformanceAIDashboardView({
           use: typeof rec.use === "string" ? rec.use : undefined,
           locked: Boolean(rec.locked),
           placed,
+          source:
+            rec.source === "user" ||
+            rec.source === "generated" ||
+            rec.source === "inferred" ||
+            rec.source === "detected_from_image" ||
+            rec.source === "user_confirmed"
+              ? rec.source
+              : "generated",
+          generated: Boolean(rec.generated),
+          geometryType,
+          geometry,
+          meta: typeof rec.meta === "object" && rec.meta !== null ? (rec.meta as Record<string, unknown>) : undefined,
+          systemDependencies: Array.isArray(rec.systemDependencies)
+            ? (rec.systemDependencies as BuildingPlacement["systemDependencies"])
+            : undefined,
         } as BuildingPlacement;
       })
       .filter(Boolean) as BuildingPlacement[];
@@ -2333,7 +2398,77 @@ function PerformanceAIDashboardView({
       })
       .filter(Boolean) as BuildingPlacement[];
 
-    const mergedPlacements = [...parsedPlacements, ...pondPlacements, ...inletPlacements];
+    const siteObjectPlacements = (Array.isArray(manualFields.site_objects) ? manualFields.site_objects : [])
+      .map((raw, idx) => {
+        if (!raw || typeof raw !== "object") return null;
+        const rec = raw as Record<string, unknown>;
+        const rawX = rec.x;
+        const rawY = rec.y;
+        const x = typeof rawX === "number" ? rawX : rawX !== undefined ? Number(rawX) : NaN;
+        const y = typeof rawY === "number" ? rawY : rawY !== undefined ? Number(rawY) : NaN;
+        const rawW = rec.w ?? 16;
+        const rawD = rec.d ?? 16;
+        const w = typeof rawW === "number" ? rawW : rawW !== undefined ? Number(rawW) : NaN;
+        const d = typeof rawD === "number" ? rawD : rawD !== undefined ? Number(rawD) : NaN;
+        if (!Number.isFinite(w) || !Number.isFinite(d)) return null;
+        const geometry = Array.isArray(rec.geometry)
+          ? rec.geometry
+              .map((point) => {
+                if (!Array.isArray(point) || point.length < 2) return null;
+                const gx = Number(point[0]);
+                const gy = Number(point[1]);
+                return Number.isFinite(gx) && Number.isFinite(gy) ? ([gx, gy] as [number, number]) : null;
+              })
+              .filter((point): point is [number, number] => Boolean(point))
+          : undefined;
+        const rawGeometryType = rec.geometry_type;
+        const geometryType =
+          rawGeometryType === "polygon" ||
+          rawGeometryType === "polyline" ||
+          rawGeometryType === "rect" ||
+          rawGeometryType === "point"
+            ? rawGeometryType
+            : undefined;
+        const placed = Number.isFinite(x) && Number.isFinite(y);
+        return {
+          id: typeof rec.id === "string" ? rec.id : `custom-${Date.now()}-${idx}`,
+          label:
+            typeof rec.label === "string"
+              ? rec.label
+              : typeof rec.name === "string"
+                ? rec.name
+                : "Custom Geometry",
+          type: (typeof rec.type === "string" ? rec.type : "custom") as SiteObjectType,
+          x: placed ? x : undefined,
+          y: placed ? y : undefined,
+          w,
+          d,
+          h: typeof rec.height_ft === "number" ? rec.height_ft : undefined,
+          rotation: typeof rec.rotation === "number" ? rec.rotation : undefined,
+          locked: Boolean(rec.locked),
+          placed,
+          source:
+            rec.source === "user" ||
+            rec.source === "generated" ||
+            rec.source === "inferred" ||
+            rec.source === "detected_from_image" ||
+            rec.source === "user_confirmed"
+              ? rec.source
+              : "user",
+          generated: Boolean(rec.generated),
+          geometryType,
+          geometry,
+          meta: typeof rec.meta === "object" && rec.meta !== null ? (rec.meta as Record<string, unknown>) : undefined,
+          systemDependencies: Array.isArray(rec.systemDependencies)
+            ? (rec.systemDependencies as BuildingPlacement["systemDependencies"])
+            : ["roads", "parking", "grading", "drainage", "utilities"],
+        } as BuildingPlacement;
+      })
+      .filter(Boolean) as BuildingPlacement[];
+
+    const mergedPlacements = siteObjectPlacements.length
+      ? siteObjectPlacements
+      : [...parsedPlacements, ...pondPlacements, ...inletPlacements];
     setBuildingPlacements(mergedPlacements);
     setPlacementModeEnabled(false);
     setActivePlacementId(null);
@@ -3366,6 +3501,109 @@ function PerformanceAIDashboardView({
         .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object placement...", track: true });
     },
     [buildDefaultPolyline, buildingPlacements, clearGeneratedPreview, ensureSiteBoundary, markSystemsStale, resolveLotBounds, systemsImpactedByPlacement],
+  );
+
+  const handleCreateCustomGeometry = useCallback(
+    (payload: { mode: "polyline" | "polygon" | "rect" | "point"; points: Array<[number, number]>; label?: string }) => {
+      clearGeneratedPreview();
+      const lot = resolveLotBounds();
+      if (!lot.w || !lot.h) {
+        const ok = ensureSiteBoundary("Draw the geometry again to place it on the new site.");
+        if (!ok) {
+          setStatusMessage("Set the site width and height before drawing custom geometry.");
+        }
+        return;
+      }
+
+      const clampedPoints = payload.points
+        .map(([x, y]) => [
+          Math.min(Math.max(x, lot.x), lot.x + lot.w),
+          Math.min(Math.max(y, lot.y), lot.y + lot.h),
+        ] as [number, number])
+        .filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y));
+
+      const minPoints = payload.mode === "point" ? 1 : payload.mode === "rect" ? 2 : payload.mode === "polygon" ? 3 : 2;
+      if (clampedPoints.length < minPoints) {
+        setStatusMessage("Add more points before finishing this geometry.");
+        return;
+      }
+
+      const geometry =
+        payload.mode === "rect"
+          ? ([
+              [clampedPoints[0][0], clampedPoints[0][1]],
+              [clampedPoints[1][0], clampedPoints[0][1]],
+              [clampedPoints[1][0], clampedPoints[1][1]],
+              [clampedPoints[0][0], clampedPoints[1][1]],
+            ] as Array<[number, number]>)
+          : clampedPoints;
+
+      const xs = geometry.map(([x]) => x);
+      const ys = geometry.map(([, y]) => y);
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
+      const sequence = buildingPlacements.filter((item) => item.type === "custom").length + 1;
+      const modeLabel =
+        payload.mode === "polyline"
+          ? "Line"
+          : payload.mode === "polygon"
+            ? "Area"
+            : payload.mode === "rect"
+              ? "Rectangle"
+              : "Point";
+      const id = `custom-${payload.mode}-${Date.now()}`;
+      const nextPlacement: BuildingPlacement = {
+        id,
+        label: payload.label ?? `Custom ${modeLabel} ${sequence}`,
+        type: "custom",
+        x: minX,
+        y: minY,
+        w: Math.max(2, maxX - minX || SITE_OBJECT_CATALOG.custom.defaultW),
+        d: Math.max(2, maxY - minY || SITE_OBJECT_CATALOG.custom.defaultD),
+        rotation: 0,
+        source: "user",
+        generated: false,
+        placed: true,
+        geometryType: payload.mode,
+        geometry,
+        capabilities: {
+          movable: true,
+          resizable: payload.mode !== "polyline",
+          rotatable: payload.mode === "rect",
+          deletable: true,
+        },
+        systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+        meta: {
+          category: "advanced",
+          custom_geometry: true,
+          engineering_status: "draft_user_geometry",
+          canonical_note:
+            "Stored as user-authored project geometry. Engineering generation only uses it where existing systems support the object type.",
+        },
+      };
+
+      setBuildingPlacements((prev) => [...prev, nextPlacement]);
+      setActivePlacementId(id);
+      setPlacementModeEnabled(false);
+      setPreviewMode("2d");
+      setPreviewInteraction("edit");
+      markSystemsStale(nextPlacement.systemDependencies);
+      setStatusMessage("Custom geometry added. Regenerate supported systems only when you are ready.");
+      void ensureProjectDraftRef.current()
+        .then(() => saveProjectRef.current({ silent: true }))
+        .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after custom geometry...", track: true });
+    },
+    [
+      buildingPlacements,
+      clearGeneratedPreview,
+      ensureSiteBoundary,
+      markSystemsStale,
+      resolveLotBounds,
+      setPreviewInteraction,
+      setPreviewMode,
+    ],
   );
 
   const handleTogglePlacementMode = useCallback(() => {
@@ -6162,6 +6400,7 @@ function PerformanceAIDashboardView({
         utility_corridor: "Detected Utility Corridor",
         lot_block: "Detected Lot Block",
         bridge: "Detected Bridge",
+        custom: "Detected Custom Geometry",
       };
       return {
         id: `detected_${Math.random().toString(36).slice(2, 9)}`,
@@ -12098,6 +12337,7 @@ function PerformanceAIDashboardView({
                 externalRectUndo={externalRectUndo}
               onPlaceBuilding={handlePlaceBuilding}
               onPlaceObject={handlePlaceObject}
+              onCreateCustomGeometry={handleCreateCustomGeometry}
               buildingPlacements={buildingPlacements}
               suggestedPlacements={filteredDetectedPlacements}
               selectedBuildingId={activePlacementId}

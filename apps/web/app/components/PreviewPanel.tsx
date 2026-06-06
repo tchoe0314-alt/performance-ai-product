@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ComponentType } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { Download, FileText, Lock, Maximize2, RefreshCw, RotateCcw, Unlock, X } from "lucide-react";
+import { Download, FileText, Hand, Lock, MapPin, Maximize2, MousePointer2, Pentagon, PencilLine, RefreshCw, RotateCcw, Square, Trash2, Unlock, X } from "lucide-react";
 
 import type {
   Preview3DItem,
@@ -20,6 +21,7 @@ type EngineeringSystemStatuses = Record<
   "roads" | "parking" | "grading" | "drainage" | "utilities",
   EngineeringSystemStatus
 >;
+type DrawMode = "select" | "pan" | "polyline" | "polygon" | "rect" | "point";
 
 type PreviewPanelProps = {
   previewReview: PreviewReview | null;
@@ -55,6 +57,11 @@ type PreviewPanelProps = {
   placementMode: boolean;
   onPlaceBuilding: (position: { x: number; y: number }) => void;
   onPlaceObject: (id: string, position: { x: number; y: number }) => void;
+  onCreateCustomGeometry: (payload: {
+    mode: "polyline" | "polygon" | "rect" | "point";
+    points: Array<[number, number]>;
+    label?: string;
+  }) => void;
   buildingPlacements: BuildingPlacement[];
   suggestedPlacements: BuildingPlacement[];
   selectedBuildingId: string | null;
@@ -170,6 +177,7 @@ export default function PreviewPanel({
   placementMode,
   onPlaceBuilding,
   onPlaceObject,
+  onCreateCustomGeometry,
   buildingPlacements,
   suggestedPlacements,
   selectedBuildingId,
@@ -240,6 +248,16 @@ export default function PreviewPanel({
   const [fullscreenContainerReady, setFullscreenContainerReady] = useState(false);
   const [previewContainerBounds, setPreviewContainerBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [cursorSitePoint, setCursorSitePoint] = useState<{ x: number; y: number } | null>(null);
+  const [drawMode, setDrawMode] = useState<DrawMode>("select");
+  const [draftPoints, setDraftPoints] = useState<Array<[number, number]>>([]);
+  const [draftPreviewPoint, setDraftPreviewPoint] = useState<[number, number] | null>(null);
+  const [canvasView, setCanvasView] = useState({ scale: 1, offsetX: 0, offsetY: 0 });
+  const [canvasPanStart, setCanvasPanStart] = useState<{
+    x: number;
+    y: number;
+    offsetX: number;
+    offsetY: number;
+  } | null>(null);
   const [draggingBuildingId, setDraggingBuildingId] = useState<string | null>(null);
   const [draggingMode, setDraggingMode] = useState<"move" | "resize" | "rotate" | "vertex" | null>(null);
   const [draggingVertex, setDraggingVertex] = useState<{ id: string; index: number } | null>(null);
@@ -402,6 +420,40 @@ export default function PreviewPanel({
       height: `${Math.max(bottom - top, 1)}%`,
     };
   };
+  const viewportTransformStyle = useMemo(
+    () => ({
+      transform: `translate(${canvasView.offsetX}px, ${canvasView.offsetY}px) scale(${canvasView.scale})`,
+      transformOrigin: "top left",
+    }),
+    [canvasView.offsetX, canvasView.offsetY, canvasView.scale],
+  );
+  const screenToSitePoint = useCallback(
+    (
+      clientX: number,
+      clientY: number,
+      containerRef: React.RefObject<HTMLDivElement | null>,
+      bounds: { left: number; top: number; width: number; height: number } | null,
+    ) => {
+      if (!containerRef.current || !bounds || !lotWidth || !lotHeight) return null;
+      const rect = containerRef.current.getBoundingClientRect();
+      const localX = clientX - rect.left - bounds.left;
+      const localY = clientY - rect.top - bounds.top;
+      const unscaledX = (localX - canvasView.offsetX) / Math.max(canvasView.scale, 0.1);
+      const unscaledY = (localY - canvasView.offsetY) / Math.max(canvasView.scale, 0.1);
+      const relX = unscaledX / Math.max(bounds.width, 1);
+      const relY = unscaledY / Math.max(bounds.height, 1);
+      if (!Number.isFinite(relX) || !Number.isFinite(relY)) return null;
+      if (relX < 0 || relX > 1 || relY < 0 || relY > 1) return null;
+      const snapStep = drawMode === "point" ? 1 : 2;
+      return {
+        x: Math.round((relX * lotWidth) / snapStep) * snapStep,
+        y: Math.round((relY * lotHeight) / snapStep) * snapStep,
+        relX,
+        relY,
+      };
+    },
+    [canvasView.offsetX, canvasView.offsetY, canvasView.scale, drawMode, lotHeight, lotWidth],
+  );
   const updateImageBounds = useCallback(
     (
       containerRef: React.RefObject<HTMLDivElement | null>,
@@ -488,14 +540,10 @@ export default function PreviewPanel({
       }
       const rect = containerRef.current.getBoundingClientRect();
       const bounds = imageBounds || { left: 0, top: 0, width: rect.width, height: rect.height };
-      const relativeX = (event.clientX - rect.left - bounds.left) / Math.max(bounds.width, 1);
-      const relativeY = (event.clientY - rect.top - bounds.top) / Math.max(bounds.height, 1);
-      if (!Number.isFinite(relativeX) || !Number.isFinite(relativeY)) {
-        return;
-      }
-      if (relativeX < 0 || relativeX > 1 || relativeY < 0 || relativeY > 1) {
-        return;
-      }
+      const sitePoint = screenToSitePoint(event.clientX, event.clientY, containerRef, bounds);
+      if (!sitePoint) return;
+      const relativeX = sitePoint.relX;
+      const relativeY = sitePoint.relY;
       console.debug("[placement] canvas-click", {
         source: "overlay",
         relativeX,
@@ -509,7 +557,7 @@ export default function PreviewPanel({
       }
       onPlaceBuilding({ x: relativeX, y: relativeY });
     },
-    [buildingPlacements, onPlaceBuilding, onPlaceObject, placementMode, selectedBuildingId],
+    [buildingPlacements, onPlaceBuilding, onPlaceObject, placementMode, screenToSitePoint, selectedBuildingId],
   );
 
   const clampValue = (value: number, min: number, max: number) =>
@@ -536,6 +584,7 @@ export default function PreviewPanel({
       "parking",
       "road",
       "sidewalk",
+      "custom",
     ]);
     const resizableTypes = new Set([
       "site",
@@ -553,6 +602,7 @@ export default function PreviewPanel({
       "setback_zone",
       "parking",
       "driveway",
+      "custom",
     ]);
     const rotatableTypes = new Set([
       "site",
@@ -568,6 +618,7 @@ export default function PreviewPanel({
       "open_space",
       "parking",
       "driveway",
+      "custom",
     ]);
     const deletableTypes = new Set([...editableTypes].filter((t) => t !== "site"));
     const isSite = type === "site";
@@ -588,8 +639,12 @@ export default function PreviewPanel({
     (event: React.MouseEvent<HTMLDivElement>, bounds: { left: number; top: number; width: number; height: number }) => {
       if (!draggingBuildingId || !draggingMode) return;
       const rect = event.currentTarget.getBoundingClientRect();
-      const localX = event.clientX - rect.left - bounds.left;
-      const localY = event.clientY - rect.top - bounds.top;
+      const localX =
+        (event.clientX - rect.left - bounds.left - canvasView.offsetX) /
+        Math.max(canvasView.scale, 0.1);
+      const localY =
+        (event.clientY - rect.top - bounds.top - canvasView.offsetY) /
+        Math.max(canvasView.scale, 0.1);
       const target =
         buildingPlacements.find((item) => item.id === draggingBuildingId) ??
         suggestedPlacements.find((item) => item.id === draggingBuildingId);
@@ -689,6 +744,9 @@ export default function PreviewPanel({
       draggingVertex,
       draggingBuildingId,
       draggingMode,
+      canvasView.offsetX,
+      canvasView.offsetY,
+      canvasView.scale,
       lotHeight,
       lotWidth,
       onUpdateBuilding,
@@ -794,6 +852,8 @@ export default function PreviewPanel({
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest?.("input, textarea, select, [contenteditable='true']")) return;
       if (event.key !== "Backspace" && event.key !== "Delete") return;
       if (!selectedVertex) return;
       event.preventDefault();
@@ -845,6 +905,91 @@ export default function PreviewPanel({
     setLastRectEdit(null);
   }, [lastRectEdit, onRemoveBuilding, onRestoreBuilding, onUpdateBuilding]);
 
+  const clearDraftGeometry = useCallback(() => {
+    setDraftPoints([]);
+    setDraftPreviewPoint(null);
+  }, []);
+
+  const finishDraftGeometry = useCallback(() => {
+    if (drawMode !== "polyline" && drawMode !== "polygon") return;
+    const effectivePoints =
+      draftPreviewPoint &&
+      !draftPoints.some(
+        (pt) => Math.abs(pt[0] - draftPreviewPoint[0]) < 0.001 && Math.abs(pt[1] - draftPreviewPoint[1]) < 0.001,
+      )
+        ? [...draftPoints, draftPreviewPoint]
+        : draftPoints;
+    const minPoints = drawMode === "polygon" ? 3 : 2;
+    if (effectivePoints.length < minPoints) return;
+    onCreateCustomGeometry({ mode: drawMode, points: effectivePoints });
+    clearDraftGeometry();
+    setDrawMode("select");
+  }, [clearDraftGeometry, draftPoints, draftPreviewPoint, drawMode, onCreateCustomGeometry]);
+
+  const handleDrawPointer = useCallback(
+    (
+      event: React.MouseEvent<HTMLDivElement>,
+      bounds: { left: number; top: number; width: number; height: number } | null,
+    ) => {
+      if (drawMode === "select") return false;
+      if (!bounds || !previewRef.current) return false;
+      if (drawMode === "pan") {
+        event.preventDefault();
+        setCanvasPanStart({
+          x: event.clientX,
+          y: event.clientY,
+          offsetX: canvasView.offsetX,
+          offsetY: canvasView.offsetY,
+        });
+        return true;
+      }
+      const sitePoint = screenToSitePoint(event.clientX, event.clientY, previewRef, bounds);
+      if (!sitePoint) return true;
+      event.preventDefault();
+      event.stopPropagation();
+      const point: [number, number] = [sitePoint.x, sitePoint.y];
+      if (drawMode === "point") {
+        onCreateCustomGeometry({ mode: "point", points: [point] });
+        clearDraftGeometry();
+        setDrawMode("select");
+        return true;
+      }
+      if (drawMode === "rect") {
+        setDraftPoints((prev) => {
+          if (!prev.length) return [point];
+          onCreateCustomGeometry({ mode: "rect", points: [prev[0], point] });
+          setDrawMode("select");
+          setDraftPreviewPoint(null);
+          return [];
+        });
+        return true;
+      }
+      setDraftPoints((prev) => [...prev, point]);
+      return true;
+    },
+    [
+      canvasView.offsetX,
+      canvasView.offsetY,
+      clearDraftGeometry,
+      drawMode,
+      onCreateCustomGeometry,
+      screenToSitePoint,
+    ],
+  );
+
+  const drawModeButtons: Array<{
+    mode: DrawMode;
+    label: string;
+    icon: ComponentType<{ className?: string }>;
+  }> = [
+    { mode: "select", label: "Select", icon: MousePointer2 },
+    { mode: "pan", label: "Pan", icon: Hand },
+    { mode: "polyline", label: "Line", icon: PencilLine },
+    { mode: "polygon", label: "Area", icon: Pentagon },
+    { mode: "rect", label: "Rectangle", icon: Square },
+    { mode: "point", label: "Point", icon: MapPin },
+  ];
+
   useEffect(() => {
     if (!externalRectUndo) return;
     setLastRectEdit(externalRectUndo);
@@ -867,6 +1012,51 @@ export default function PreviewPanel({
     window.addEventListener("keydown", handleUndo);
     return () => window.removeEventListener("keydown", handleUndo);
   }, [applyPolylineUndo, applyRectUndo, lastPolylineEdit, lastRectEdit]);
+
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest?.("input, textarea, select, [contenteditable='true']")) return;
+      if (event.key === "Escape") {
+        if (draftPoints.length || drawMode !== "select") {
+          event.preventDefault();
+          clearDraftGeometry();
+          setDrawMode("select");
+        }
+        return;
+      }
+      if (event.key === "Enter") {
+        if (drawMode === "polyline" || drawMode === "polygon") {
+          event.preventDefault();
+          finishDraftGeometry();
+        }
+        return;
+      }
+      if ((event.key === "Backspace" || event.key === "Delete") && selectedBuildingId && !selectedVertex) {
+        const targetObject = buildingPlacements.find((item) => item.id === selectedBuildingId);
+        if (!targetObject || targetObject.type === "site" || targetObject.locked) return;
+        event.preventDefault();
+        setLastRectEdit({
+          id: targetObject.id,
+          snapshot: { ...targetObject },
+          action: "delete",
+          ts: Date.now(),
+        });
+        onRemoveBuilding(targetObject.id);
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [
+    buildingPlacements,
+    clearDraftGeometry,
+    draftPoints.length,
+    drawMode,
+    finishDraftGeometry,
+    onRemoveBuilding,
+    selectedBuildingId,
+    selectedVertex,
+  ]);
 
   const handleBuildingMouseDown = useCallback(
     (
@@ -911,9 +1101,12 @@ export default function PreviewPanel({
       setDraggingVertex(null);
       onSelectBuilding(building.id);
       const rect = event.currentTarget.getBoundingClientRect();
-      setDragOffset({ x: event.clientX - rect.left, y: event.clientY - rect.top });
+      setDragOffset({
+        x: (event.clientX - rect.left) / Math.max(canvasView.scale, 0.1),
+        y: (event.clientY - rect.top) / Math.max(canvasView.scale, 0.1),
+      });
     },
-    [allowEdits, getEditCapabilities, onSelectBuilding, selectedBuildingId],
+    [allowEdits, canvasView.scale, getEditCapabilities, onSelectBuilding, selectedBuildingId],
   );
 
   const formatHoverValue = (value: number | null | undefined, suffix: string) => {
@@ -1321,6 +1514,9 @@ export default function PreviewPanel({
           "civora-parking-fill",
           "civora-basins-fill",
           "civora-roads-line",
+          "civora-custom-areas-line",
+          "civora-custom-lines-line",
+          "civora-custom-points-circle",
         ],
       });
       const hit = features?.[0];
@@ -1793,6 +1989,18 @@ export default function PreviewPanel({
     }
 
     const buildPolygon = (item: BuildingPlacement) => {
+      if ((item.geometryType === "polygon" || item.geometryType === "rect") && Array.isArray(item.geometry) && item.geometry.length > 2) {
+        const closed = [...item.geometry];
+        const first = closed[0];
+        const last = closed[closed.length - 1];
+        if (first && last && (first[0] !== last[0] || first[1] !== last[1])) {
+          closed.push([first[0], first[1]]);
+        }
+        const coords = closed
+          .map((pt) => siteToLatLng(pt[0], pt[1]))
+          .filter(Boolean) as Array<[number, number]>;
+        return coords.length === closed.length ? coords : null;
+      }
       const x = item.x ?? 0;
       const y = item.y ?? 0;
       const rotation = item.rotation ?? 0;
@@ -1903,6 +2111,15 @@ export default function PreviewPanel({
     const sidewalks = placedObjects.filter((item) => item.type === "sidewalk");
     const parking = placedObjects.filter((item) => item.type === "parking");
     const basins = placedObjects.filter((item) => item.type === "basin");
+    const customAreas = placedObjects.filter(
+      (item) => item.type === "custom" && (item.geometryType === "polygon" || item.geometryType === "rect"),
+    );
+    const customLines = placedObjects.filter(
+      (item) => item.type === "custom" && item.geometryType === "polyline",
+    );
+    const customPoints = placedObjects.filter(
+      (item) => item.type === "custom" && item.geometryType === "point",
+    );
     const accessPoints = placedObjects
       .filter((item) => item.type === "entrance" || item.type === "road" || item.type === "driveway")
       .map((item) => ({ x: (item.x ?? 0) + item.w / 2, y: (item.y ?? 0) + item.d / 2 }));
@@ -2020,6 +2237,22 @@ export default function PreviewPanel({
           .filter(Boolean),
       });
       ensureSource("civora-basins", toFeatureCollection(basins, "Polygon"));
+      ensureSource("civora-custom-areas", toFeatureCollection(customAreas, "Polygon"));
+      ensureSource("civora-custom-lines", toFeatureCollection(customLines, "LineString"));
+      ensureSource("civora-custom-points", {
+        type: "FeatureCollection",
+        features: customPoints
+          .map((item) => {
+            const coord = siteToLatLng((item.x ?? 0) + item.w / 2, (item.y ?? 0) + item.d / 2);
+            if (!coord) return null;
+            return {
+              type: "Feature",
+              geometry: { type: "Point", coordinates: coord },
+              properties: { id: item.id, label: item.label },
+            };
+          })
+          .filter(Boolean),
+      });
       if (sitePolygon) {
         ensureSource("civora-site", {
           type: "FeatureCollection",
@@ -2122,6 +2355,20 @@ export default function PreviewPanel({
       ensureLayer("civora-basins-fill", "civora-basins", "fill", {
         "fill-color": "#0ea5e9",
         "fill-opacity": 0.28,
+      });
+      ensureLayer("civora-custom-areas-line", "civora-custom-areas", "line", {
+        "line-color": "#0284c7",
+        "line-width": 1.4,
+      });
+      ensureLayer("civora-custom-lines-line", "civora-custom-lines", "line", {
+        "line-color": "#0284c7",
+        "line-width": 1.4,
+      });
+      ensureLayer("civora-custom-points-circle", "civora-custom-points", "circle", {
+        "circle-color": "#0284c7",
+        "circle-radius": 4,
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": 1,
       });
       if (showSiteBounds && sitePolygon) {
         ensureLayer("civora-site-line", "civora-site", "line", {
@@ -2654,6 +2901,75 @@ export default function PreviewPanel({
               ) : null}
             </div>
           </div>
+          {previewMode === "2d" ? (
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white/85 px-3 py-2">
+              <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                <span className="mr-1">Draw</span>
+                {drawModeButtons.map((item) => {
+                  const Icon = item.icon;
+                  const active = drawMode === item.mode;
+                  return (
+                    <button
+                      key={item.mode}
+                      type="button"
+                      title={item.label}
+                      aria-label={item.label}
+                      onClick={() => {
+                        setDrawMode(item.mode);
+                        clearDraftGeometry();
+                        if (item.mode !== "select") {
+                          onSetPreviewInteraction("edit");
+                        }
+                      }}
+                      className={`inline-flex h-8 w-8 items-center justify-center rounded-md border transition ${
+                        active
+                          ? "border-slate-900 bg-slate-950 text-white"
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      <Icon className="h-4 w-4" />
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                <button
+                  type="button"
+                  onClick={() => setCanvasView({ scale: 1, offsetX: 0, offsetY: 0 })}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 text-slate-600 hover:bg-slate-50"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  View
+                </button>
+                <span className="min-w-12 text-right">{Math.round(canvasView.scale * 100)}%</span>
+                {draftPoints.length ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={finishDraftGeometry}
+                      disabled={
+                        drawMode === "polygon"
+                          ? draftPoints.length + (draftPreviewPoint ? 1 : 0) < 3
+                          : draftPoints.length + (draftPreviewPoint ? 1 : 0) < 2
+                      }
+                      className="inline-flex h-8 items-center rounded-md border border-slate-900 bg-slate-950 px-2 text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                    >
+                      Finish
+                    </button>
+                    <button
+                      type="button"
+                      onClick={clearDraftGeometry}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                      aria-label="Clear draft geometry"
+                      title="Clear draft geometry"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
           {show3D ? (
             preview3DEffectiveItems.length ? (
               <div
@@ -2743,6 +3059,22 @@ export default function PreviewPanel({
                   onSetSiteRotationDeg(Math.max(-180, Math.min(180, nextValue)));
                   return;
                 }
+                if (canvasPanStart) {
+                  setCanvasView((prev) => ({
+                    ...prev,
+                    offsetX: canvasPanStart.offsetX + event.clientX - canvasPanStart.x,
+                    offsetY: canvasPanStart.offsetY + event.clientY - canvasPanStart.y,
+                  }));
+                  return;
+                }
+                if (drawMode !== "select" && drawMode !== "pan" && overlayBoundsResolved) {
+                  const sitePoint = screenToSitePoint(event.clientX, event.clientY, previewRef, overlayBoundsResolved);
+                  setDraftPreviewPoint(sitePoint ? [sitePoint.x, sitePoint.y] : null);
+                  if (sitePoint) {
+                    setCursorSitePoint({ x: sitePoint.x, y: sitePoint.y });
+                  }
+                  return;
+                }
                 if (overlayBoundsResolved) {
                   updateDraggedBuilding(event, overlayBoundsResolved);
                 }
@@ -2754,21 +3086,8 @@ export default function PreviewPanel({
                   if (hoveredAnnotation) setHoveredAnnotation(null);
                 }
                 if (showHover && overlayBoundsResolved && lotWidth > 0 && lotHeight > 0 && previewRef.current) {
-                  const rect = previewRef.current.getBoundingClientRect();
-                  const relX =
-                    (event.clientX - rect.left - overlayBoundsResolved.left) /
-                    Math.max(overlayBoundsResolved.width, 1);
-                  const relY =
-                    (event.clientY - rect.top - overlayBoundsResolved.top) /
-                    Math.max(overlayBoundsResolved.height, 1);
-                  if (relX >= 0 && relX <= 1 && relY >= 0 && relY <= 1) {
-                    setCursorSitePoint({
-                      x: relX * lotWidth,
-                      y: relY * lotHeight,
-                    });
-                  } else {
-                    setCursorSitePoint(null);
-                  }
+                  const sitePoint = screenToSitePoint(event.clientX, event.clientY, previewRef, overlayBoundsResolved);
+                  setCursorSitePoint(sitePoint ? { x: sitePoint.x, y: sitePoint.y } : null);
                 } else if (!showHover) {
                   setCursorSitePoint(null);
                 } else {
@@ -2782,14 +3101,20 @@ export default function PreviewPanel({
                 setCursorSitePoint(null);
                 setDraggingBuildingId(null);
                 setDraggingMode(null);
+                setCanvasPanStart(null);
+                setDraftPreviewPoint(null);
               }}
               onMouseUp={() => {
                 setDraggingBuildingId(null);
                 setDraggingMode(null);
                 setRotateDragStart(null);
+                setCanvasPanStart(null);
               }}
               onClick={(event) => {
                 if (allowMapInteraction) return;
+                if (drawMode !== "select") {
+                  if (handleDrawPointer(event, overlayBoundsResolved)) return;
+                }
                 if (placementMode) {
                   resolvePlacement(event, previewRef, overlayBoundsResolved);
                   return;
@@ -2799,11 +3124,44 @@ export default function PreviewPanel({
                   prev?.label === hoveredAnnotation.label ? null : hoveredAnnotation,
                 );
               }}
+              onDoubleClick={(event) => {
+                if (drawMode !== "polyline" && drawMode !== "polygon") return;
+                event.preventDefault();
+                event.stopPropagation();
+                finishDraftGeometry();
+              }}
+              onWheel={(event) => {
+                if (!allowEdits || !overlayBoundsResolved || showMap) return;
+                event.preventDefault();
+                const nextScale = Math.min(
+                  Math.max(canvasView.scale + (event.deltaY < 0 ? 0.12 : -0.12), 0.55),
+                  4,
+                );
+                const rect = previewRef.current?.getBoundingClientRect();
+                if (!rect) {
+                  setCanvasView((prev) => ({ ...prev, scale: nextScale }));
+                  return;
+                }
+                const localX = event.clientX - rect.left - overlayBoundsResolved.left;
+                const localY = event.clientY - rect.top - overlayBoundsResolved.top;
+                setCanvasView((prev) => {
+                  const ratio = nextScale / Math.max(prev.scale, 0.1);
+                  return {
+                    scale: nextScale,
+                    offsetX: localX - (localX - prev.offsetX) * ratio,
+                    offsetY: localY - (localY - prev.offsetY) * ratio,
+                  };
+                });
+              }}
             >
               <div
                 className="relative flex h-full w-full items-center justify-center overflow-hidden"
                 onMouseDown={(event) => {
                   if (allowMapInteraction) return;
+                  if (drawMode === "pan") {
+                    handleDrawPointer(event, overlayBoundsResolved);
+                    return;
+                  }
                   if (rotateDragActive && onSetSiteRotationDeg) {
                     event.preventDefault();
                     event.stopPropagation();
@@ -2880,6 +3238,7 @@ export default function PreviewPanel({
                     {!siteLocked && showSiteBounds && lotWidth > 0 && lotHeight > 0 ? (
                       <div
                         className={`absolute inset-0 rounded-[16px] border border-dashed ${legendPalette.siteBorder} ${legendPalette.siteFill}`}
+                        style={viewportTransformStyle}
                       />
                     ) : null}
                     {(buildingPlacements.length || suggestedPlacements.length || (surveyPoints?.length ?? 0) > 0) ? (
@@ -2887,6 +3246,7 @@ export default function PreviewPanel({
                         className="absolute inset-0"
                         viewBox="0 0 100 100"
                         preserveAspectRatio="none"
+                        style={viewportTransformStyle}
                       >
                         {gradingBlocker ? (
                           (() => {
@@ -2980,6 +3340,27 @@ export default function PreviewPanel({
                                   strokeLinejoin="round"
                                 />
                               </g>
+                            );
+                          })}
+                        {buildingPlacements
+                          .filter((item) => item.geometryType === "polygon" && Array.isArray(item.geometry))
+                          .map((item) => {
+                            const points = (item.geometry || []).map((pt) => {
+                              const x = (pt[0] / Math.max(lotWidth, 1)) * 100;
+                              const y = (pt[1] / Math.max(lotHeight, 1)) * 100;
+                              return `${x},${y}`;
+                            });
+                            if (points.length < 3) return null;
+                            const isSelectedPolygon = selectedBuildingId === item.id;
+                            return (
+                              <polygon
+                                key={`custom-poly-${item.id}`}
+                                points={points.join(" ")}
+                                fill={legendPalette.buildingFill}
+                                stroke={isSelectedPolygon ? "#f59e0b" : legendPalette.building}
+                                strokeWidth={isSelectedPolygon ? 0.75 : 0.45}
+                                strokeLinejoin="round"
+                              />
                             );
                           })}
                         {buildingPlacements
@@ -3106,15 +3487,105 @@ export default function PreviewPanel({
                               );
                             })
                           : null}
+                        {draftPoints.length || draftPreviewPoint ? (
+                          (() => {
+                            const points =
+                              draftPreviewPoint && drawMode !== "point"
+                                ? [...draftPoints, draftPreviewPoint]
+                                : draftPoints;
+                            if (!points.length) return null;
+                            const pct = points.map((pt) => {
+                              const x = (pt[0] / Math.max(lotWidth, 1)) * 100;
+                              const y = (pt[1] / Math.max(lotHeight, 1)) * 100;
+                              return `${x},${y}`;
+                            });
+                            if (drawMode === "polygon" && pct.length >= 3) {
+                              return (
+                                <g>
+                                  <polygon
+                                    points={pct.join(" ")}
+                                    fill="rgba(14,165,233,0.08)"
+                                    stroke="#0284c7"
+                                    strokeWidth={0.55}
+                                    strokeDasharray="1.5 1"
+                                  />
+                                  {points.map((pt, idx) => (
+                                    <circle
+                                      key={`draft-poly-${idx}`}
+                                      cx={(pt[0] / Math.max(lotWidth, 1)) * 100}
+                                      cy={(pt[1] / Math.max(lotHeight, 1)) * 100}
+                                      r={0.55}
+                                      fill="#0284c7"
+                                    />
+                                  ))}
+                                </g>
+                              );
+                            }
+                            if (drawMode === "rect" && points.length >= 2) {
+                              const [a, b] = points;
+                              const x = (Math.min(a[0], b[0]) / Math.max(lotWidth, 1)) * 100;
+                              const y = (Math.min(a[1], b[1]) / Math.max(lotHeight, 1)) * 100;
+                              const w = (Math.abs(a[0] - b[0]) / Math.max(lotWidth, 1)) * 100;
+                              const h = (Math.abs(a[1] - b[1]) / Math.max(lotHeight, 1)) * 100;
+                              return (
+                                <rect
+                                  x={x}
+                                  y={y}
+                                  width={w}
+                                  height={h}
+                                  fill="rgba(14,165,233,0.08)"
+                                  stroke="#0284c7"
+                                  strokeWidth={0.55}
+                                  strokeDasharray="1.5 1"
+                                />
+                              );
+                            }
+                            if (pct.length >= 2) {
+                              return (
+                                <g>
+                                  <polyline
+                                    points={pct.join(" ")}
+                                    fill="none"
+                                    stroke="#0284c7"
+                                    strokeWidth={0.55}
+                                    strokeDasharray="1.5 1"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  />
+                                  {points.map((pt, idx) => (
+                                    <circle
+                                      key={`draft-line-${idx}`}
+                                      cx={(pt[0] / Math.max(lotWidth, 1)) * 100}
+                                      cy={(pt[1] / Math.max(lotHeight, 1)) * 100}
+                                      r={0.55}
+                                      fill="#0284c7"
+                                    />
+                                  ))}
+                                </g>
+                              );
+                            }
+                            const [pt] = points;
+                            return (
+                              <circle
+                                cx={(pt[0] / Math.max(lotWidth, 1)) * 100}
+                                cy={(pt[1] / Math.max(lotHeight, 1)) * 100}
+                                r={0.65}
+                                fill="#0284c7"
+                              />
+                            );
+                          })()
+                        ) : null}
                       </svg>
                     ) : null}
                     <div
                       className={`${overlayPointerEvents} absolute inset-0 z-[30]`}
                       style={{
                         transformOrigin: "top left",
-                        transform: focusTransform
-                          ? `translate(50%, 50%) scale(${focusTransform.scale}) translate(-${focusTransform.tx * 100}%, -${focusTransform.ty * 100}%)`
-                          : undefined,
+                        transform: `${viewportTransformStyle.transform}${
+                          focusTransform
+                            ? ` translate(50%, 50%) scale(${focusTransform.scale}) translate(-${focusTransform.tx * 100}%, -${focusTransform.ty * 100}%)`
+                            : ""
+                        }`,
                       }}
                       onMouseDown={(event) => {
                         if (!showMap || mapLocked) return;
@@ -3180,10 +3651,12 @@ export default function PreviewPanel({
                           analysisHighlight &&
                           (analysisHighlight.buildingId === item.id || analysisHighlight.accessId === item.id);
                         const isPolyline = item.geometryType === "polyline";
-                        const showBox = !isPolyline;
+                        const isCustomArea = item.geometryType === "polygon";
+                        const showBox = !isPolyline && !isCustomArea;
                         const isSite = item.type === "site";
                         const allowItemInteraction =
-                          !isSite || (previewInteraction === "edit" && !siteLocked);
+                          drawMode === "select" &&
+                          (!isSite || (previewInteraction === "edit" && !siteLocked));
                         return (
                           <div
                             key={item.id}
