@@ -14,6 +14,7 @@ from engines.surface_engine import GridSurface, SurfaceEngine, SurveyPoint
 from .common import dedupe_keep_order, readiness_issue_explanations, safe_dict, safe_float, safe_int, safe_list, safe_str
 from .existing_conditions import REQUIRED_GIS_LAYERS
 from .landxml_io import import_landxml
+from .survey_control import build_survey_control_package
 
 
 SURVEY_X_COLUMNS = ("x", "easting", "east", "lon", "longitude")
@@ -289,6 +290,12 @@ def _terrain_source_confidence(rec: Dict[str, Any]) -> Dict[str, Any]:
     sources = [safe_dict(item) for item in safe_list(rec.get("sources"))]
     surfaces = [safe_dict(item) for item in safe_list(rec.get("surfaces"))]
     survey = safe_dict(rec.get("survey"))
+    control_package = build_survey_control_package(
+        rec.get("survey_control_package") or survey.get("survey_control_package") or rec.get("survey_control"),
+        survey=survey,
+        coordinate_system=safe_dict(rec.get("coordinate_system")),
+        sources=safe_list(rec.get("sources")),
+    )
     source_types = {
         safe_str(item.get("source_type"))
         for item in sources + surfaces
@@ -297,8 +304,11 @@ def _terrain_source_confidence(rec: Dict[str, Any]) -> Dict[str, Any]:
     has_points = safe_int(survey.get("point_count"), len(safe_list(survey.get("points")))) >= 3
     has_survey_surface = any(item in source_types for item in {"survey_csv", "surface_xyz_csv", "dxf_existing_conditions", "landxml"})
     has_dem_surface = any(item in source_types for item in {"geotiff_surface", "las_point_cloud"})
-    if has_survey_surface or (has_points and not has_dem_surface):
+    control_verified = bool(control_package.get("production_usable"))
+    if (has_survey_surface or (has_points and not has_dem_surface)) and control_verified:
         label = "survey-backed"
+    elif has_survey_surface or (has_points and not has_dem_surface):
+        label = "survey-unverified"
     elif has_dem_surface:
         label = "DEM-backed"
     elif surfaces or any(bool(item.get("canonicalized")) for item in sources):
@@ -308,10 +318,12 @@ def _terrain_source_confidence(rec: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "label": label,
         "survey_backed": label == "survey-backed",
+        "survey_unverified": label == "survey-unverified",
         "dem_backed": label == "DEM-backed",
         "inferred": label == "inferred",
         "missing": label == "missing",
         "source_types": sorted(source_types),
+        "survey_control_confidence": safe_str(control_package.get("confidence"), "missing"),
         "truth_label": "Terrain confidence labels source evidence only; they do not certify survey/control or production readiness.",
     }
 
@@ -1206,6 +1218,11 @@ def merge_imported_existing_conditions(*imports: Dict[str, Any]) -> Dict[str, An
         "canonical_targets": dedupe_keep_order(canonical_targets),
         "warnings": warnings,
     }
+    merged["survey_control_package"] = build_survey_control_package(
+        survey=safe_dict(merged.get("survey")),
+        coordinate_system=safe_dict(merged.get("coordinate_system")),
+        sources=safe_list(merged.get("sources")),
+    )
     merged["import_validation"] = validate_imported_existing_conditions_package(merged)
     merged["canonical_existing_conditions_model"] = build_canonical_existing_conditions_model(merged)
     return merged
@@ -1220,10 +1237,16 @@ def build_canonical_existing_conditions_model(merged: Dict[str, Any]) -> Dict[st
 
     rec = safe_dict(merged)
     survey = safe_dict(rec.get("survey"))
+    sources = [safe_dict(item) for item in safe_list(rec.get("sources"))]
+    survey_control_package = build_survey_control_package(
+        rec.get("survey_control_package") or survey.get("survey_control_package") or rec.get("survey_control"),
+        survey=survey,
+        coordinate_system=safe_dict(rec.get("coordinate_system")),
+        sources=sources,
+    )
     gis_layers = safe_dict(rec.get("gis_layers") or rec.get("existing_conditions"))
     surfaces = [safe_dict(item) for item in safe_list(rec.get("surfaces"))]
     validation = safe_dict(rec.get("import_validation"))
-    sources = [safe_dict(item) for item in safe_list(rec.get("sources"))]
     canonical_sources = [source for source in sources if bool(source.get("canonicalized"))]
     metadata_only_sources = [source for source in sources if bool(source.get("metadata_only"))]
     terrain_surfaces = []
@@ -1247,6 +1270,7 @@ def build_canonical_existing_conditions_model(merged: Dict[str, Any]) -> Dict[st
             "points": deepcopy(safe_list(survey.get("points"))),
             "breakline_count": safe_int(survey.get("breakline_count"), len(safe_list(survey.get("breaklines")))),
             "breaklines": deepcopy(safe_list(survey.get("breaklines"))),
+            "survey_control_package": deepcopy(survey_control_package),
             "metadata_only": not bool(safe_list(survey.get("points")) or safe_list(survey.get("breaklines"))),
         },
         "terrain": {
@@ -1350,6 +1374,12 @@ def validate_imported_existing_conditions_package(
     point_quality = _point_quality(survey_points)
     surface_count = len(safe_list(rec.get("surfaces")))
     terrain_confidence = _terrain_source_confidence(rec)
+    survey_control_package = build_survey_control_package(
+        rec.get("survey_control_package") or survey.get("survey_control_package") or rec.get("survey_control"),
+        survey=survey,
+        coordinate_system=coordinate or (coordinate_systems[0] if coordinate_systems else {}),
+        sources=sources,
+    )
     survey_source = safe_str(survey.get("source"))
     if point_count > 0 and not survey_source:
         blockers.append(
@@ -1385,21 +1415,35 @@ def validate_imported_existing_conditions_package(
     elif point_count >= 3 and breakline_count <= 0:
         warnings.append("Survey points are present, but no breaklines were imported.")
     if point_count > 0 or surface_count > 0:
-        if not safe_str(survey.get("benchmark") or survey.get("benchmark_id")):
+        if not safe_str(survey_control_package.get("benchmark_id")):
             blockers.append(
                 {
                     "field": "survey_benchmark",
                     "reason": "Survey import needs benchmark evidence before it is production-usable.",
                 }
             )
-        if not safe_str(survey.get("datum") or survey.get("vertical_datum")):
+        if not safe_str(survey_control_package.get("horizontal_datum")):
+            blockers.append(
+                {
+                    "field": "survey_horizontal_datum",
+                    "reason": "Survey import needs horizontal datum evidence before it is production-usable.",
+                }
+            )
+        if not safe_str(survey_control_package.get("vertical_datum")):
             blockers.append(
                 {
                     "field": "survey_datum",
                     "reason": "Survey import needs vertical datum evidence before it is production-usable.",
                 }
             )
-        if survey.get("control_verified") is not True:
+        if survey_control_package.get("benchmark_elevation") is None:
+            blockers.append(
+                {
+                    "field": "survey_benchmark_elevation",
+                    "reason": "Survey import needs benchmark elevation evidence before it is production-usable.",
+                }
+            )
+        if survey_control_package.get("control_verified") is not True:
             blockers.append(
                 {
                     "field": "survey_control_verified",
@@ -1440,8 +1484,9 @@ def validate_imported_existing_conditions_package(
         ),
         _production_requirement(
             "survey_datum_control",
-            not any(item.get("field") in {"survey_benchmark", "survey_datum", "survey_control_verified"} for item in blockers),
-            "Datum, benchmark, and verified control are required for production-grade survey use.",
+            bool(survey_control_package.get("production_usable")),
+            "Coordinate system, horizontal/vertical datum, benchmark, elevation, source, and verified control are required for production-grade survey use.",
+            evidence=survey_control_package,
         ),
         _production_requirement(
             "coordinate_system",
@@ -1452,7 +1497,7 @@ def validate_imported_existing_conditions_package(
         _production_requirement(
             "terrain_source_confidence",
             terrain_confidence["label"] in {"survey-backed", "DEM-backed"},
-            "Terrain source confidence must be survey-backed or DEM-backed for production-grade existing conditions.",
+            "Terrain source confidence must be survey-backed with verified control or DEM-backed for production-grade existing conditions.",
             evidence=terrain_confidence,
         ),
         _production_requirement(
@@ -1493,6 +1538,7 @@ def validate_imported_existing_conditions_package(
         "metadata_only_source_count": len(metadata_only_sources),
         "dependency_blocked_sources": dependency_blocked_sources,
         "terrain_source_confidence": terrain_confidence,
+        "survey_control_package": survey_control_package,
         "production_requirements": production_requirements,
         "importer_production_matrix": importer_matrix,
         "coordinate_system_validation": coordinate_validation,

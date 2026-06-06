@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 
 from .common import readiness_issue_explanations, safe_dict, safe_list, safe_str
 from .existing_conditions import REQUIRED_GIS_LAYERS, summarize_existing_conditions
+from .survey_control import build_survey_control_package
 
 
 def _package_blocker(field: str, reason: str, *, next_action: str = "") -> Dict[str, Any]:
@@ -167,6 +168,17 @@ def build_existing_conditions_package(plan_or_meta: Dict[str, Any], *, accepted_
     production_requirements = safe_list(validation.get("production_requirements"))
     importer_matrix = safe_list(validation.get("importer_production_matrix"))
     terrain_confidence = safe_dict(validation.get("terrain_source_confidence")) or safe_dict(safe_dict(canonical_model.get("terrain")).get("confidence"))
+    survey_control_package = (
+        safe_dict(validation.get("survey_control_package"))
+        or safe_dict(summary.get("survey")).get("survey_control_package")
+        or safe_dict(safe_dict(canonical_model.get("survey")).get("survey_control_package"))
+        or safe_dict(meta.get("survey_control_package"))
+        or build_survey_control_package(
+            survey=safe_dict(meta.get("survey")),
+            coordinate_system=safe_dict(meta.get("coordinate_system")),
+            sources=safe_list(meta.get("sources") or safe_dict(meta.get("existing_conditions_import")).get("sources")),
+        )
+    )
     return {
         "version": "existing_conditions_package_v1",
         "status": status,
@@ -186,6 +198,7 @@ def build_existing_conditions_package(plan_or_meta: Dict[str, Any], *, accepted_
         "source_count": _source_count(meta, validation),
         "canonical_existing_conditions": {
             "survey": deepcopy(meta.get("survey")),
+            "survey_control_package": deepcopy(survey_control_package),
             "gis_layers": deepcopy(meta.get("gis_layers") or meta.get("existing_conditions")),
             "coordinate_system": deepcopy(meta.get("coordinate_system")),
             "surfaces": deepcopy(meta.get("surfaces")),
@@ -200,6 +213,7 @@ def build_existing_conditions_package(plan_or_meta: Dict[str, Any], *, accepted_
         "production_requirements": deepcopy(production_requirements),
         "importer_production_matrix": deepcopy(importer_matrix),
         "terrain_source_confidence": deepcopy(terrain_confidence),
+        "survey_control_package": deepcopy(survey_control_package),
         "survey_ready": bool(survey.get("ready")),
         "gis_ready": bool(gis.get("ready")),
         "coordinate_system_ready": bool(coordinate.get("ready")),

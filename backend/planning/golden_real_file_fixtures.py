@@ -88,6 +88,7 @@ def golden_real_file_payload_overrides(scenario_id: str) -> Dict[str, Any]:
     coordinate_system = {
         "epsg": "EPSG:2276",
         "units": "ft",
+        "horizontal_datum": "NAD83",
         "source": f"{scenario_id}_fixture_control",
     }
     imports = _fixture_imports(scenario_id, spec, coordinate_system)
@@ -95,6 +96,8 @@ def golden_real_file_payload_overrides(scenario_id: str) -> Dict[str, Any]:
     merged["survey"].update(
         {
             "benchmark": f"{scenario_id.upper()}-BM-1",
+            "benchmark_elevation": 100.0,
+            "horizontal_datum": "NAD83",
             "datum": "NAVD88",
             "control_verified": True,
         }

@@ -13,6 +13,8 @@ def _complete_meta(*, accepted: bool = True) -> dict:
             "source": "imported_existing_conditions",
             "point_count": 4,
             "benchmark": "BM-1",
+            "benchmark_elevation": 100.0,
+            "horizontal_datum": "NAD83",
             "datum": "NAVD88",
             "control_verified": True,
             "points": [
@@ -23,7 +25,7 @@ def _complete_meta(*, accepted: bool = True) -> dict:
             ],
         },
         "gis_layers": layers,
-        "coordinate_system": {"epsg": "EPSG:2276", "units": "ft", "source": "survey_control"},
+        "coordinate_system": {"epsg": "EPSG:2276", "units": "ft", "horizontal_datum": "NAD83", "source": "survey_control"},
         "sources": [{"source": "survey.csv", "source_type": "survey_csv", "success": True}],
         "existing_conditions_import_validation": {
             "success": True,
@@ -104,6 +106,28 @@ class ExistingConditionsPackageTests(unittest.TestCase):
         self.assertIn("coordinate_system", fields)
         self.assertIn("import_validation", fields)
         self.assertTrue(package["blocker_details"])
+
+    def test_survey_control_package_v1_surfaces_missing_control_fields(self) -> None:
+        meta = _complete_meta(accepted=True)
+        meta["survey"].pop("benchmark_elevation")
+        meta["survey"].pop("horizontal_datum")
+        meta["survey"].pop("control_verified")
+        meta["existing_conditions_import_validation"] = {
+            **meta["existing_conditions_import_validation"],
+            "production_usable": False,
+            "blockers": [
+                {"field": "survey_benchmark_elevation", "reason": "Survey import needs benchmark elevation evidence before it is production-usable."},
+                {"field": "survey_control_verified", "reason": "Survey/control evidence must be explicitly verified before production use."},
+            ],
+        }
+
+        package = build_existing_conditions_package({"meta": meta})
+        control = package["survey_control_package"]
+
+        self.assertEqual(control["version"], "survey_control_package_v1")
+        self.assertFalse(control["production_usable"])
+        self.assertIn("benchmark_elevation", control["blockers"][0]["missing_fields"])
+        self.assertIn("control_verified", control["blockers"][0]["missing_fields"])
 
     def test_blocked_validation_package_reports_gate_requirements(self) -> None:
         meta = _complete_meta(accepted=True)

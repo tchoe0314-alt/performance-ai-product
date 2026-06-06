@@ -15,11 +15,14 @@ from backend.planning.existing_conditions_importers import (
     import_landxml_metadata,
     import_survey_csv,
     merge_imported_existing_conditions,
+    validate_imported_existing_conditions_package,
 )
+from backend.planning.existing_conditions_package import build_existing_conditions_package
+from backend.planning.existing_conditions import summarize_existing_conditions
 
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "backend" / "fixtures" / "real_input_benchmarks"
-CONTROL_CRS = {"epsg": "EPSG:2276", "units": "ft", "source": "benchmark survey control note"}
+CONTROL_CRS = {"epsg": "EPSG:2276", "units": "ft", "horizontal_datum": "NAD83", "source": "benchmark survey control note"}
 
 
 def _blocker_fields(merged: Dict[str, Any]) -> List[str]:
@@ -136,8 +139,43 @@ class RealInputFileBenchmarkTests(unittest.TestCase):
         self.assertFalse(validation["production_usable"])
         self.assertEqual(
             {item["field"] for item in validation["blockers"]},
-            {"survey_benchmark", "survey_datum", "survey_control_verified"},
+            {"survey_benchmark", "survey_datum", "survey_benchmark_elevation", "survey_control_verified"},
         )
+
+    def test_real_input_benchmark_can_attach_survey_control_package_v1(self) -> None:
+        survey = import_survey_csv(FIXTURE_DIR / "survey_points.csv", coordinate_system=CONTROL_CRS)
+        geojson = import_geojson(FIXTURE_DIR / "constraints.geojson", coordinate_system=CONTROL_CRS)
+        landxml = import_landxml_metadata(FIXTURE_DIR / "surface_pipe.landxml", coordinate_system=CONTROL_CRS)
+        merged = merge_imported_existing_conditions(survey, geojson, landxml)
+        merged["survey"].update(
+            {
+                "benchmark": "REAL-BM-1",
+                "benchmark_elevation": 612.42,
+                "horizontal_datum": "NAD83",
+                "datum": "NAVD88",
+                "control_verified": True,
+                "survey_date": "2026-06-01",
+                "surveyor": "Fixture Surveyor",
+                "surveyor_license": "TX-00000",
+            }
+        )
+        merged["import_validation"] = validate_imported_existing_conditions_package(merged)
+        package_meta = {
+            "survey": merged["survey"],
+            "gis_layers": merged["gis_layers"],
+            "coordinate_system": merged["coordinate_system"],
+            "surfaces": merged["surfaces"],
+            "sources": merged["sources"],
+            "existing_conditions_import_validation": merged["import_validation"],
+            "existing_conditions_package": {"acceptance": {"accepted": True, "accepted_by": "fixture"}},
+        }
+        package_meta["existing_conditions_summary"] = summarize_existing_conditions({"meta": package_meta})
+
+        package = build_existing_conditions_package({"meta": package_meta})
+
+        self.assertEqual(package["survey_control_package"]["version"], "survey_control_package_v1")
+        self.assertTrue(package["survey_control_package"]["production_usable"])
+        self.assertEqual(package["terrain_source_confidence"]["label"], "survey-backed")
 
     def _build_dxf_benchmark(self, path: Path) -> Dict[str, Any]:
         classification = classify_existing_conditions_file(path)

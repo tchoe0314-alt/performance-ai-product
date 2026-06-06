@@ -51,6 +51,33 @@ class ReleaseGateTests(unittest.TestCase):
 
         self.assertIn("construction_professional_release_missing", blockers)
 
+    def test_survey_control_evidence_does_not_clear_external_construction_release(self) -> None:
+        meta = {
+            "existing_conditions_package": {
+                "status": "ready",
+                "production_ready": True,
+                "survey_control_package": {
+                    "version": "survey_control_package_v1",
+                    "control_verified": True,
+                    "production_usable": True,
+                },
+            },
+            "construction_readiness": {"ready": True},
+            "construction_package": {
+                "release_allowed": True,
+                "construction_package_artifact_status": {
+                    "complete_for_release": True,
+                    "release_ready_flag": True,
+                    "production_ready_flag": True,
+                    "model_matches_expected": True,
+                },
+            },
+        }
+
+        blockers = construction_release_blockers_from_meta(meta, requires_construction_release=True)
+
+        self.assertIn("construction_professional_release_missing", blockers)
+
     def test_release_allowed_package_still_surfaces_artifact_defects(self) -> None:
         meta = {
             "construction_readiness": {"ready": True},

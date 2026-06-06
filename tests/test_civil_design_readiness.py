@@ -144,6 +144,8 @@ def _production_ready_meta() -> dict:
         "point_count": 18,
         "source": "survey_points",
         "benchmark": "BM-1",
+        "benchmark_elevation": 100.0,
+        "horizontal_datum": "NAD83",
         "datum": "NAVD88",
         "control_verified": True,
     }
@@ -155,7 +157,7 @@ def _production_ready_meta() -> dict:
         "wetlands": [{"id": "WET-1", "source": "NWI"}],
         "existing_utilities": [{"id": "EX-W-1", "source": "utility_atlas"}],
     }
-    meta["coordinate_system"] = {"epsg": "EPSG:2276", "units": "ft", "source": "survey_control", "production_usable": True}
+    meta["coordinate_system"] = {"epsg": "EPSG:2276", "units": "ft", "horizontal_datum": "NAD83", "source": "survey_control", "production_usable": True}
     meta["existing_conditions_summary"] = {
         "production_ready": True,
         "survey_ready": True,

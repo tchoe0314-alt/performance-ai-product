@@ -4,6 +4,7 @@ from copy import deepcopy
 from typing import Any, Dict, Iterable, List, Optional
 
 from .common import readiness_issue_explanations, safe_dict, safe_float, safe_int, safe_list, safe_str
+from .survey_control import build_survey_control_package
 
 
 REQUIRED_GIS_LAYERS = ("parcels", "easements", "row", "floodplain", "wetlands", "existing_utilities")
@@ -177,9 +178,15 @@ def _survey_summary(meta: Dict[str, Any], parsed: Dict[str, Any], grading: Dict[
         or parsed.get("survey_file")
         or surface_evidence_source
     )
-    has_benchmark = bool(survey.get("benchmark") or survey.get("benchmark_id"))
-    has_datum = bool(survey.get("datum") or survey.get("vertical_datum"))
-    control_verified = bool(survey.get("control_verified"))
+    control_package = build_survey_control_package(
+        meta.get("survey_control_package") or survey.get("survey_control_package") or survey.get("survey_control"),
+        survey=survey,
+        coordinate_system=safe_dict(meta.get("coordinate_system") or parsed.get("coordinate_system")),
+        sources=safe_list(meta.get("sources") or parsed.get("sources")),
+    )
+    has_benchmark = bool(control_package.get("benchmark_id"))
+    has_datum = bool(control_package.get("horizontal_datum") and control_package.get("vertical_datum"))
+    control_verified = bool(control_package.get("control_verified"))
     approved_surface = bool(survey.get("approved_for_production") or survey.get("surface_approved") or control_verified)
     ready = point_count >= 3 or surface_count > 0 or surface_source == "survey" or (bool(source) and approved_surface)
     return {
@@ -191,7 +198,11 @@ def _survey_summary(meta: Dict[str, Any], parsed: Dict[str, Any], grading: Dict[
         "has_control": bool(survey.get("control_points") or (has_benchmark and has_datum and control_verified)),
         "has_benchmark": has_benchmark,
         "has_datum": has_datum,
+        "has_horizontal_datum": bool(control_package.get("horizontal_datum")),
+        "has_vertical_datum": bool(control_package.get("vertical_datum")),
+        "has_benchmark_elevation": control_package.get("benchmark_elevation") is not None,
         "control_verified": control_verified,
+        "survey_control_package": control_package,
         "approved_surface": approved_surface,
     }
 
@@ -269,12 +280,17 @@ def summarize_existing_conditions(plan_or_meta: Dict[str, Any], parsed: Optional
         missing.append({"field": "coordinate_system", "reason": "No CRS/EPSG/projection is attached for real-world coordinates."})
     elif not coordinate_system["production_usable"]:
         missing.extend(deepcopy(safe_list(coordinate_system.get("blockers"))))
-    survey_control_verified = bool(survey["has_control"] and survey["has_benchmark"] and survey["has_datum"] and survey["control_verified"])
+    control_package = safe_dict(survey.get("survey_control_package"))
+    survey_control_verified = bool(control_package.get("production_usable"))
     if survey["ready"]:
         if not survey["has_benchmark"]:
             missing.append({"field": "survey_benchmark", "reason": "Survey evidence exists but benchmark metadata is missing."})
-        if not survey["has_datum"]:
+        if not survey["has_horizontal_datum"]:
+            missing.append({"field": "survey_horizontal_datum", "reason": "Survey evidence exists but horizontal datum metadata is missing."})
+        if not survey["has_vertical_datum"]:
             missing.append({"field": "survey_datum", "reason": "Survey evidence exists but vertical datum metadata is missing."})
+        if not survey["has_benchmark_elevation"]:
+            missing.append({"field": "survey_benchmark_elevation", "reason": "Survey benchmark elevation is missing."})
         if not survey["control_verified"]:
             missing.append({"field": "survey_control_verified", "reason": "Survey/control evidence is not explicitly verified."})
         if not survey_control_verified:
@@ -311,6 +327,7 @@ def summarize_existing_conditions(plan_or_meta: Dict[str, Any], parsed: Optional
             "survey": deepcopy(survey),
             "gis_layer_counts": {layer: item["count"] for layer, item in gis["layers"].items()},
             "coordinate_system": deepcopy(coordinate_system),
+            "survey_control_package": deepcopy(control_package),
         },
     }
 

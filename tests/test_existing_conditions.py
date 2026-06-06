@@ -25,6 +25,8 @@ class ExistingConditionsTests(unittest.TestCase):
                         "point_count": 8,
                         "source": "uploaded_csv",
                         "benchmark": "BM-1",
+                        "benchmark_elevation": 100.0,
+                        "horizontal_datum": "NAD83",
                         "datum": "NAVD88",
                         "control_verified": True,
                     },
@@ -36,7 +38,7 @@ class ExistingConditionsTests(unittest.TestCase):
                         "wetlands": {"verified_absent": True, "source": "NWI review"},
                         "existing_utilities": [{"id": "EX-W", "source": "utility_atlas"}],
                     },
-                    "coordinate_system": {"epsg": "EPSG:2276", "units": "ft", "source": "survey"},
+                    "coordinate_system": {"epsg": "EPSG:2276", "units": "ft", "horizontal_datum": "NAD83", "source": "survey"},
                 }
             }
         )

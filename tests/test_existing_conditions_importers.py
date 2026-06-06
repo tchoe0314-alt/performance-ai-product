@@ -206,6 +206,8 @@ class ExistingConditionsImporterTests(unittest.TestCase):
                 "source": "survey.csv",
                 "point_count": 4,
                 "benchmark": "BM-1",
+                "benchmark_elevation": 100.0,
+                "horizontal_datum": "NAD83",
                 "datum": "NAVD88",
                 "control_verified": True,
                 "points": [
@@ -221,8 +223,8 @@ class ExistingConditionsImporterTests(unittest.TestCase):
                 layer: [{"id": layer, "source": f"{layer}_source"}]
                 for layer in ("parcels", "easements", "row", "floodplain", "wetlands", "existing_utilities")
             },
-            "coordinate_system": {"epsg": "EPSG:2276", "units": "ft", "source": "survey_control"},
-            "coordinate_systems": [{"epsg": "EPSG:2276", "units": "ft", "source": "survey_control"}],
+            "coordinate_system": {"epsg": "EPSG:2276", "units": "ft", "horizontal_datum": "NAD83", "source": "survey_control"},
+            "coordinate_systems": [{"epsg": "EPSG:2276", "units": "ft", "horizontal_datum": "NAD83", "source": "survey_control"}],
         }
 
         validation = validate_imported_existing_conditions_package(merged)
@@ -295,6 +297,40 @@ class ExistingConditionsImporterTests(unittest.TestCase):
         detail = next(item for item in validation["blocker_details"] if item["field"] == "survey_benchmark")
         self.assertIn("benchmark", detail["what_failed"].lower())
         self.assertTrue(detail["next_action"])
+
+    def test_verified_control_clears_only_control_verification_blocker(self) -> None:
+        merged = {
+            "sources": [{"source": "merged", "source_type": "test", "success": True, "canonicalized": True}],
+            "survey": {
+                "source": "survey.csv",
+                "point_count": 4,
+                "benchmark": "BM-1",
+                "benchmark_elevation": 100.0,
+                "horizontal_datum": "NAD83",
+                "datum": "NAVD88",
+                "points": [
+                    {"x": 0.0, "y": 0.0, "z": 100.0},
+                    {"x": 10.0, "y": 0.0, "z": 101.0},
+                    {"x": 0.0, "y": 10.0, "z": 99.0},
+                    {"x": 10.0, "y": 10.0, "z": 100.0},
+                ],
+            },
+            "gis_layers": {
+                layer: [{"id": layer, "source": f"{layer}_source"}]
+                for layer in ("parcels", "easements", "row", "floodplain", "wetlands", "existing_utilities")
+            },
+            "coordinate_system": {"epsg": "EPSG:2276", "units": "ft", "horizontal_datum": "NAD83", "source": "survey_control"},
+            "coordinate_systems": [{"epsg": "EPSG:2276", "units": "ft", "horizontal_datum": "NAD83", "source": "survey_control"}],
+        }
+
+        blocked = validate_imported_existing_conditions_package(merged)
+        merged["survey"]["control_verified"] = True
+        cleared = validate_imported_existing_conditions_package(merged)
+
+        self.assertIn("survey_control_verified", {item["field"] for item in blocked["blockers"]})
+        self.assertNotIn("survey_control_verified", {item["field"] for item in cleared["blockers"]})
+        self.assertTrue(cleared["survey_control_package"]["production_usable"])
+        self.assertEqual(cleared["terrain_source_confidence"]["label"], "survey-backed")
 
     def test_import_package_validation_blocks_geographic_crs_for_engineering_truth(self) -> None:
         merged = {
@@ -382,7 +418,15 @@ class ExistingConditionsImporterTests(unittest.TestCase):
                 coordinate_system={"epsg": "EPSG:2276", "units": "ft", "source": "survey_control"},
             )
             merged = merge_imported_existing_conditions(imported)
-            merged["survey"].update({"benchmark": "BM-1", "datum": "NAVD88", "control_verified": True})
+            merged["survey"].update(
+                {
+                    "benchmark": "BM-1",
+                    "benchmark_elevation": 100.0,
+                    "horizontal_datum": "NAD83",
+                    "datum": "NAVD88",
+                    "control_verified": True,
+                }
+            )
             merged["gis_layers"] = {
                 layer: [{"id": layer, "source": f"{layer}_source"}]
                 for layer in ("parcels", "easements", "row", "floodplain", "wetlands", "existing_utilities")
