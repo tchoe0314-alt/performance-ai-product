@@ -28,7 +28,7 @@ export default function AppHeader({
           <button
             type="button"
             onClick={onToggleSidebar}
-            className="hidden h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 lg:inline-flex"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50"
             aria-label={sidebarOpen ? "Hide left sidebar" : "Show left sidebar"}
             title={sidebarOpen ? "Hide left sidebar" : "Show left sidebar"}
           >

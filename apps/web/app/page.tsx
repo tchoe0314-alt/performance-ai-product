@@ -7,7 +7,6 @@ import {
   BookOpen,
   Box,
   ClipboardCheck,
-  ClipboardList,
   CheckCircle2,
   Circle,
   Database,
@@ -115,6 +114,14 @@ type SidePanelKey =
   | "system_roadway"
   | "system_utilities"
   | "system_landscape";
+type SidebarStatus = "ok" | "review" | "block" | "idle";
+type SidebarNavItem = {
+  label: string;
+  caption: string;
+  target: SidePanelKey;
+  icon: typeof Gauge;
+  status: SidebarStatus;
+};
 
 const SQFT_PER_ACRE = 43_560;
 const SITE_WARNING_ACRES = 250;
@@ -9257,24 +9264,24 @@ function PerformanceAIDashboardView({
   const sidePanelCopy: Record<SidePanelKey, { title: string; desc: string }> = {
     projects: { title: "Project", desc: "Open, create, and manage project records." },
     dashboard: { title: "Dashboard", desc: "Review project readiness, health, and active work." },
-    model: { title: "Canvas", desc: "Inspect live canvas health and canonical state." },
+    model: { title: "Canvas / Preview Controls", desc: "Control 2D/3D mode, quality, overlays, and viewport behavior." },
     site_existing: { title: "Site & Existing", desc: "Review site boundary, existing conditions, and constraints." },
     import_survey: { title: "Import & Survey", desc: "Bring in survey, map snapshots, and terrain sources." },
     objects: { title: "Objects", desc: "Add, size, and place model objects." },
     generate: { title: "Generate", desc: "Run focused engines from one control panel." },
-    grading: { title: "Grading", desc: "Control grading rules, terrain inputs, and slope limits." },
-    drainage: { title: "Drainage", desc: "Control drainage rules, sources, and repair behavior." },
-    sanitary: { title: "Sanitary Sewer", desc: "Configure sanitary coverage, slopes, and service assumptions." },
-    water: { title: "Water", desc: "Configure water, hydrant, loop, and pressure assumptions." },
-    utilities: { title: "Utilities", desc: "Control utility generation and coordination assumptions." },
-    roadway: { title: "Roadway", desc: "Control roads, parking, and corridor behavior." },
-    landscape: { title: "Landscape", desc: "Place open space and landscape-related site objects." },
+    grading: { title: "Grading Controls", desc: "Control grading rules, terrain inputs, and slope limits." },
+    drainage: { title: "Drainage Controls", desc: "Control drainage rules, sources, and repair behavior." },
+    sanitary: { title: "Sanitary Controls", desc: "Configure sanitary coverage, slopes, and service assumptions." },
+    water: { title: "Water Controls", desc: "Configure water, hydrant, loop, and pressure assumptions." },
+    utilities: { title: "Utility Controls", desc: "Control utility generation and coordination assumptions." },
+    roadway: { title: "Roadway Controls", desc: "Control roads, parking, and corridor behavior." },
+    landscape: { title: "Landscape Controls", desc: "Place open space and landscape-related site objects." },
     details: { title: "Details", desc: "Inspect selected objects, locks, and engineering metadata." },
     layers: { title: "Layers", desc: "Choose visible model layers and labels." },
-    analysis: { title: "Analysis", desc: "Review model issues, access checks, and QA signals." },
+    analysis: { title: "Review & QA", desc: "Review model issues, access checks, blockers, and QA signals." },
     reports: { title: "Reports", desc: "Open readable engineering summaries." },
     quantities: { title: "Quantities", desc: "Review takeoff totals and cost inputs." },
-    deliverables: { title: "Deliverables", desc: "Export plans, reports, and production files." },
+    deliverables: { title: "Deliverables / Exports", desc: "Export plans, reports, and production files." },
     files: { title: "Files", desc: "Manage imported inputs and generated outputs." },
     standards: { title: "Standards", desc: "Review rule packs, assumptions, and project criteria." },
     libraries: { title: "Libraries", desc: "Use reusable objects, templates, and project presets." },
@@ -9340,6 +9347,186 @@ function PerformanceAIDashboardView({
     const nextStep = workflowByPanel[panel];
     if (nextStep) setActiveWorkflowStep(nextStep);
   }, []);
+  const controlsHealthStatus = Object.values(systemStatuses).some((value) => value === "fresh") ? "ok" : "review";
+  const systemHealthStatus = (target: SidePanelKey): SidebarStatus => {
+    if (target === "system_grading") {
+      return siteTooLargeForGrading ? "block" : systemStatuses.grading === "fresh" ? "ok" : "review";
+    }
+    if (target === "system_storm") {
+      return hasHardSystemBlock ? "block" : systemStatuses.drainage === "fresh" ? "ok" : "review";
+    }
+    if (target === "system_sanitary" || target === "system_water" || target === "system_utilities") {
+      return hasHardSystemBlock ? "block" : systemStatuses.utilities === "fresh" ? "ok" : "review";
+    }
+    if (target === "system_roadway") {
+      return systemStatuses.roads === "fresh" ? "ok" : "review";
+    }
+    if (target === "system_landscape") {
+      return buildingPlacements.some((value) => ["open_space", "amenity", "pool"].includes(value.type ?? ""))
+        ? "ok"
+        : "idle";
+    }
+    return "idle";
+  };
+  const panelStatus = (target: SidePanelKey): SidebarStatus => {
+    if (target === "dashboard" || target === "analysis") {
+      return issues.length || analysisIssues.length || hasHardSystemBlock ? "review" : backendResult ? "ok" : "idle";
+    }
+    if (target === "site_existing" || target === "data") {
+      return siteScaleLocked || Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng) ? "ok" : "review";
+    }
+    if (target === "import_survey" || target === "files") {
+      return hasTerrainSource || surveyPreviewPoints.length || uploadedImagePreviewUrl || uploadedImageApiUrl || mapSnapshotPath
+        ? "ok"
+        : "review";
+    }
+    if (target === "model" || target === "layers") {
+      return placedObjectCount > 0 || planPreviewUrl ? "ok" : "idle";
+    }
+    if (target === "objects" || target === "details") {
+      return buildingPlacements.length > 0 ? "ok" : "idle";
+    }
+    if (target === "generate") {
+      return controlsHealthStatus;
+    }
+    if (target === "grading") {
+      return siteTooLargeForGrading ? "block" : hasTerrainSource || systemStatuses.grading === "fresh" ? "ok" : "review";
+    }
+    if (target === "drainage") {
+      return hasHardSystemBlock ? "block" : hasBasinPlaced || systemStatuses.drainage === "fresh" ? "ok" : "review";
+    }
+    if (target === "sanitary" || target === "water" || target === "utilities") {
+      return hasHardSystemBlock ? "block" : utilities || systemStatuses.utilities === "fresh" ? "ok" : "review";
+    }
+    if (target === "roadway") {
+      return roads || systemStatuses.roads === "fresh" ? "ok" : "review";
+    }
+    if (target === "landscape") {
+      return buildingPlacements.some((value) => ["open_space", "amenity", "pool", "sidewalk"].includes(value.type ?? ""))
+        ? "ok"
+        : "idle";
+    }
+    if (target === "reports" || target === "quantities" || target === "deliverables") {
+      return backendResult ? "ok" : "idle";
+    }
+    if (target === "standards") {
+      return minSlopePct || maxRoadGradePct || pipeMinSlopePct || maxAdaCrossSlopePct ? "ok" : "review";
+    }
+    if (target === "libraries" || target === "settings" || target === "chat" || target === "projects") {
+      return "ok";
+    }
+    return "idle";
+  };
+  const sidebarSections: Array<{ label: string; items: SidebarNavItem[] }> = [
+    {
+      label: "Project",
+      items: [
+        { label: "Projects", caption: "Open and manage", target: "projects", icon: FolderOpen, status: panelStatus("projects") },
+        { label: "Dashboard", caption: "Readiness overview", target: "dashboard", icon: Gauge, status: panelStatus("dashboard") },
+        { label: "Site & Existing", caption: "Boundary and context", target: "site_existing", icon: MapPinned, status: panelStatus("site_existing") },
+        { label: "Import & Survey", caption: "Survey and terrain", target: "import_survey", icon: FolderOpen, status: panelStatus("import_survey") },
+        { label: "Objects", caption: "Add and edit objects", target: "objects", icon: Box, status: panelStatus("objects") },
+      ],
+    },
+    {
+      label: "Canvas",
+      items: [
+        { label: "Canvas / Preview", caption: "2D, 3D, quality", target: "model", icon: Gauge, status: panelStatus("model") },
+        { label: "Layers", caption: "Visibility and labels", target: "layers", icon: Layers, status: panelStatus("layers") },
+        { label: "Chat", caption: "Assistant workflow", target: "chat", icon: MessageSquare, status: panelStatus("chat") },
+      ],
+    },
+    {
+      label: "Discipline Controls",
+      items: [
+        { label: "Generate Systems", caption: "Run engines", target: "generate", icon: PlayCircle, status: panelStatus("generate") },
+        { label: "Grading Controls", caption: "Rules and terrain", target: "grading", icon: Mountain, status: panelStatus("grading") },
+        { label: "Drainage Controls", caption: "Storm source rules", target: "drainage", icon: Droplets, status: panelStatus("drainage") },
+        { label: "Sanitary Controls", caption: "Sewer assumptions", target: "sanitary", icon: HardHat, status: panelStatus("sanitary") },
+        { label: "Water Controls", caption: "Hydrants and loops", target: "water", icon: Droplets, status: panelStatus("water") },
+        { label: "Utility Controls", caption: "Coordination rules", target: "utilities", icon: Wrench, status: panelStatus("utilities") },
+        { label: "Roadway Controls", caption: "Roads and parking", target: "roadway", icon: Route, status: panelStatus("roadway") },
+        { label: "Landscape Controls", caption: "Open space objects", target: "landscape", icon: Sprout, status: panelStatus("landscape") },
+      ],
+    },
+    {
+      label: "System Health",
+      items: [
+        { label: "Grading Health", caption: "Readiness only", target: "system_grading", icon: Mountain, status: systemHealthStatus("system_grading") },
+        { label: "Storm Health", caption: "Readiness only", target: "system_storm", icon: Droplets, status: systemHealthStatus("system_storm") },
+        { label: "Sanitary Health", caption: "Readiness only", target: "system_sanitary", icon: HardHat, status: systemHealthStatus("system_sanitary") },
+        { label: "Water Health", caption: "Readiness only", target: "system_water", icon: Droplets, status: systemHealthStatus("system_water") },
+        { label: "Roadway Health", caption: "Readiness only", target: "system_roadway", icon: Route, status: systemHealthStatus("system_roadway") },
+        { label: "Utility Health", caption: "Readiness only", target: "system_utilities", icon: Wrench, status: systemHealthStatus("system_utilities") },
+        { label: "Landscape Health", caption: "Readiness only", target: "system_landscape", icon: Sprout, status: systemHealthStatus("system_landscape") },
+      ],
+    },
+    {
+      label: "Review & Output",
+      items: [
+        { label: "Review & QA", caption: "Issues and blockers", target: "analysis", icon: ClipboardCheck, status: panelStatus("analysis") },
+        { label: "Reports", caption: "Readable summaries", target: "reports", icon: FileText, status: panelStatus("reports") },
+        { label: "Quantities", caption: "Takeoffs and totals", target: "quantities", icon: Database, status: panelStatus("quantities") },
+        { label: "Deliverables / Exports", caption: "DXF and report files", target: "deliverables", icon: SquareStack, status: panelStatus("deliverables") },
+      ],
+    },
+    {
+      label: "Data & Admin",
+      items: [
+        { label: "Data", caption: "Site and map inputs", target: "data", icon: MapPinned, status: panelStatus("data") },
+        { label: "Files", caption: "Inputs and outputs", target: "files", icon: FolderOpen, status: panelStatus("files") },
+        { label: "Standards", caption: "Criteria packs", target: "standards", icon: BookOpen, status: panelStatus("standards") },
+        { label: "Libraries", caption: "Reusable objects", target: "libraries", icon: Library, status: panelStatus("libraries") },
+        { label: "Settings", caption: "Defaults and toggles", target: "settings", icon: Settings, status: panelStatus("settings") },
+      ],
+    },
+  ];
+  const sidebarStaleSystems = (Object.entries(systemStatuses) as Array<[EngineeringSystemKey, SystemStatus]>)
+    .filter(([, status]) => status === "stale")
+    .map(([system]) => system);
+  const sidebarMissingInputs = [
+    missingSite ? "site" : null,
+    !hasTerrainSource ? "terrain" : null,
+    !hasBasinPlaced && systemStatuses.drainage !== "fresh" ? "basin" : null,
+  ].filter(Boolean) as string[];
+  const sidebarReleaseStatus = String(previewReview?.release_status || "review").toLowerCase();
+  const sidebarTrustScore =
+    typeof previewReview?.trust_score === "number" ? `${Math.round(previewReview.trust_score)}%` : "not reported";
+  const sidebarAssumptions = Array.isArray(previewReview?.assumption_categories)
+    ? previewReview.assumption_categories.filter(Boolean)
+    : [];
+  const sidebarTruthItems = [
+    {
+      label: "Missing inputs",
+      value: sidebarMissingInputs.length ? sidebarMissingInputs.slice(0, 2).join(", ") : "none flagged",
+      status: sidebarMissingInputs.length ? "review" : "idle",
+    },
+    {
+      label: "Release",
+      value: sidebarReleaseStatus === "ready" ? "export ready" : sidebarReleaseStatus === "blocked" ? "blocked" : "review-only",
+      status: sidebarReleaseStatus === "ready" ? "ok" : sidebarReleaseStatus === "blocked" ? "block" : "review",
+    },
+    {
+      label: "Stale outputs",
+      value: sidebarStaleSystems.length ? sidebarStaleSystems.slice(0, 2).join(", ") : "none",
+      status: sidebarStaleSystems.length ? "review" : "idle",
+    },
+    {
+      label: "Assumptions",
+      value: sidebarAssumptions.length ? `${sidebarAssumptions.length} labeled` : "none reported",
+      status: sidebarAssumptions.length ? "review" : "idle",
+    },
+    {
+      label: "Blocked systems",
+      value: hasHardSystemBlock || previewBlockedReasons.length ? "review blockers" : "none recorded",
+      status: hasHardSystemBlock || previewBlockedReasons.length ? "block" : "idle",
+    },
+    {
+      label: "Engine confidence",
+      value: sidebarTrustScore,
+      status: typeof previewReview?.trust_score === "number" && previewReview.trust_score >= 80 ? "ok" : "review",
+    },
+  ] as const;
 
   if (!effectiveUser) {
     return (
@@ -9379,7 +9566,10 @@ function PerformanceAIDashboardView({
 
         <div className="flex h-[calc(100vh-4rem)] min-h-0 flex-col overflow-hidden lg:flex-row">
           {leftSidebarOpen ? (
-          <aside className="hidden h-full w-[252px] shrink-0 border-r border-slate-200 bg-white/95 px-4 py-5 shadow-[18px_0_40px_-36px_rgba(15,23,42,0.5)] backdrop-blur-xl lg:flex lg:flex-col">
+          <aside
+            data-testid="left-sidebar"
+            className="fixed inset-x-3 top-20 z-40 flex max-h-[calc(100vh-6rem)] shrink-0 flex-col rounded-xl border border-slate-200 bg-white/98 px-4 py-5 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.65)] backdrop-blur-xl lg:static lg:inset-auto lg:z-auto lg:h-full lg:max-h-none lg:w-[276px] lg:rounded-none lg:border-y-0 lg:border-l-0 lg:shadow-[18px_0_40px_-36px_rgba(15,23,42,0.5)]"
+          >
             <button
               type="button"
               onClick={() => handleOpenSidePanel("projects")}
@@ -9395,202 +9585,55 @@ function PerformanceAIDashboardView({
                   : "Site not locked"}
               </p>
             </button>
+            <div className="mb-4 rounded-lg border border-slate-200 bg-white px-3 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                Truth
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {sidebarTruthItems.map((item) => (
+                  <div key={item.label} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${
+                          item.status === "ok"
+                            ? "bg-emerald-500"
+                            : item.status === "block"
+                              ? "bg-red-500"
+                              : item.status === "review"
+                                ? "bg-amber-500"
+                                : "bg-slate-300"
+                        }`}
+                      />
+                      <p className="truncate text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                        {item.label}
+                      </p>
+                    </div>
+                    <p className="mt-1 truncate text-[11px] font-semibold capitalize text-slate-700">
+                      {item.value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
             <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
-              {[
-                {
-                  label: "Project",
-                  items: [
-                    "Dashboard",
-                    "Site & Existing",
-                    "Import & Survey",
-                    "Design",
-                    "Objects",
-                    "Generate",
-                    "Grading",
-                    "Drainage",
-                    "Utilities",
-                    "Roadway",
-                    "Landscape",
-                    "Details",
-                  ],
-                },
-                { label: "Data", items: ["Files", "Standards", "Libraries"] },
-                { label: "Systems", items: ["Grading", "Storm Drainage", "Sanitary Sewer", "Water", "Roadway", "Utilities", "Landscape"] },
-              ].map((section) => (
+              {sidebarSections.map((section) => (
                 <div key={section.label}>
                   <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                     {section.label}
                   </p>
                   <div className="flex flex-col gap-1">
                     {section.items.map((item) => {
-                      const targetMap: Record<string, SidePanelKey> = {
-                        Project: "projects",
-                        Dashboard: "dashboard",
-                        "Site & Existing": "site_existing",
-                        "Import & Survey": "import_survey",
-                        Design: "model",
-                        Canvas: "model",
-                        Objects: "objects",
-                        Generate: "generate",
-                        Grading: "grading",
-                        Drainage: "drainage",
-                        "Storm Drainage": "drainage",
-                        "Sanitary Sewer": "sanitary",
-                        Water: "water",
-                        Utilities: "utilities",
-                        Roadway: "roadway",
-                        Landscape: "landscape",
-                        Details: "details",
-                        Layers: "layers",
-                        Analysis: "analysis",
-                        Chat: "chat",
-                        Reports: "reports",
-                        Quantities: "quantities",
-                        Deliverables: "deliverables",
-                        Files: "files",
-                        Standards: "standards",
-                        Libraries: "libraries",
-                        Data: "data",
-                        Settings: "settings",
-                      };
-                      const iconMap: Record<string, typeof Gauge> = {
-                        Dashboard: Gauge,
-                        "Site & Existing": MapPinned,
-                        "Import & Survey": FolderOpen,
-                        Design: Gauge,
-                        Canvas: Gauge,
-                        Objects: Box,
-                        Generate: PlayCircle,
-                        Grading: Mountain,
-                        Drainage: Droplets,
-                        "Storm Drainage": Droplets,
-                        "Sanitary Sewer": HardHat,
-                        Water: Droplets,
-                        Utilities: Wrench,
-                        Roadway: Route,
-                        Landscape: Sprout,
-                        Details: ClipboardList,
-                        Layers,
-                        Analysis: ClipboardCheck,
-                        Chat: MessageSquare,
-                        Reports: FileText,
-                        Quantities: Database,
-                        Deliverables: SquareStack,
-                        Files: FolderOpen,
-                        Standards: BookOpen,
-                        Libraries: Library,
-                        Data: MapPinned,
-                        Settings,
-                      };
-                      const systemTargetMap: Record<string, SidePanelKey> = {
-                        Grading: "system_grading",
-                        "Storm Drainage": "system_storm",
-                        "Sanitary Sewer": "system_sanitary",
-                        Water: "system_water",
-                        Roadway: "system_roadway",
-                        Utilities: "system_utilities",
-                        Landscape: "system_landscape",
-                      };
-                      const target = section.label === "Systems" ? (systemTargetMap[item] ?? "dashboard") : (targetMap[item] ?? "model");
+                      const target = item.target;
                       const isActive = activeSidePanel === target;
-                      const status =
-                        item === "Design" || item === "Canvas"
-                          ? placedObjectCount > 0
-                            ? "ok"
-                            : "idle"
-                          : item === "Dashboard"
-                            ? issues.length || analysisIssues.length || hasHardSystemBlock
-                              ? "review"
-                              : backendResult
-                                ? "ok"
-                                : "idle"
-                          : item === "Site & Existing"
-                            ? siteScaleLocked || Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng)
-                              ? "ok"
-                              : "review"
-                          : item === "Import & Survey"
-                            ? hasTerrainSource || surveyPreviewPoints.length || uploadedImagePreviewUrl || uploadedImageApiUrl
-                              ? "ok"
-                              : "review"
-                          : item === "Objects"
-                            ? buildingPlacements.length > 0
-                              ? "ok"
-                              : "idle"
-                            : item === "Generate"
-                              ? Object.values(systemStatuses).some((value) => value === "fresh")
-                                ? "ok"
-                                : "review"
-                              : item === "Grading"
-                                ? siteTooLargeForGrading
-                                  ? "block"
-                                  : systemStatuses.grading === "fresh"
-                                    ? "ok"
-                                    : "review"
-                              : item === "Drainage" || item === "Storm Drainage"
-                                  ? hasHardSystemBlock
-                                    ? "block"
-                                    : systemStatuses.drainage === "fresh"
-                                      ? "ok"
-                                      : "review"
-                                  : item === "Sanitary Sewer" || item === "Water"
-                                    ? hasHardSystemBlock
-                                      ? "block"
-                                      : systemStatuses.utilities === "fresh"
-                                        ? "ok"
-                                        : "review"
-                                  : item === "Utilities"
-                                    ? hasHardSystemBlock
-                                      ? "block"
-                                      : systemStatuses.utilities === "fresh"
-                                        ? "ok"
-                                        : "review"
-                                    : item === "Roadway"
-                                      ? systemStatuses.roads === "fresh"
-                                        ? "ok"
-                                        : "review"
-                                      : item === "Landscape"
-                                        ? buildingPlacements.some((value) => ["open_space", "amenity", "pool"].includes(value.type ?? ""))
-                                          ? "ok"
-                                          : "idle"
-                                        : item === "Data"
-                                          ? siteScaleLocked || Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng)
-                                            ? "ok"
-                                            : "review"
-                                          : item === "Details"
-                                            ? buildingPlacements.length > 0
-                                              ? "ok"
-                                              : "idle"
-                                            : item === "Files"
-                                              ? uploadedImagePreviewUrl || uploadedImageApiUrl || mapSnapshotPath || surveyPreviewPoints.length || planPreviewUrl
-                                                ? "ok"
-                                                : "idle"
-                                              : item === "Standards"
-                                                ? minSlopePct || maxRoadGradePct || pipeMinSlopePct || maxAdaCrossSlopePct
-                                                  ? "ok"
-                                                  : "review"
-                                                : item === "Libraries"
-                                                  ? "ok"
-                                                  : item === "Analysis"
-                                              ? issues.length || analysisIssues.length
-                                                ? "review"
-                                                : "idle"
-                                              : item === "Reports" || item === "Quantities" || item === "Deliverables"
-                                                ? backendResult
-                                                  ? "ok"
-                                                  : "idle"
-                                                : item === "Layers"
-                                                  ? Object.values(systemStatuses).some((value) => value === "fresh")
-                                                    ? "ok"
-                                                    : "idle"
-                                                  : "idle";
-                      const Icon = iconMap[item] ?? Gauge;
+                      const status = item.status;
+                      const Icon = item.icon;
                       const StatusIcon = status === "ok" ? CheckCircle2 : status === "block" ? AlertCircle : status === "review" ? AlertCircle : Circle;
                       return (
                         <button
-                          key={item}
+                          key={`${section.label}-${item.label}`}
                           type="button"
                           onClick={() => handleOpenSidePanel(target)}
-                          className={`flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                          className={`flex min-h-12 items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition ${
                             isActive
                               ? "bg-slate-950 text-white"
                               : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
@@ -9598,7 +9641,14 @@ function PerformanceAIDashboardView({
                         >
                           <span className="flex min-w-0 items-center gap-3">
                             <Icon className="h-4 w-4 shrink-0" />
-                            <span className="truncate">{item}</span>
+                            <span className="min-w-0">
+                              <span className="block truncate text-sm font-semibold">{item.label}</span>
+                              <span className={`block truncate text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                isActive ? "text-white/55" : "text-slate-400"
+                              }`}>
+                                {item.caption}
+                              </span>
+                            </span>
                           </span>
                           <StatusIcon
                             className={`h-3.5 w-3.5 shrink-0 ${
