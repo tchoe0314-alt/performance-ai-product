@@ -1,5 +1,11 @@
 import unittest
 
+from backend.fixtures.standards.real_official_sources import (
+    AUSTIN_WATER_CONSTRUCTION_STANDARDS_ALLOWLIST,
+    AUSTIN_WATER_CONSTRUCTION_STANDARDS_RECORDED_HTML,
+    AUSTIN_WATER_CONSTRUCTION_STANDARDS_SOURCE,
+)
+from backend.planning.standards_package import build_standards_package
 from backend.planning.standards_discovery import (
     accept_standards_rules,
     build_candidate_rule_report,
@@ -18,7 +24,7 @@ from backend.planning.standards_discovery import (
     trusted_standards_source_allowlist,
     validate_standards_acceptance_for_production,
 )
-from core.civil_design import civil_design_readiness
+from core.civil_design import civil_design_readiness, construction_readiness
 
 
 class StandardsDiscoveryTests(unittest.TestCase):
@@ -438,6 +444,82 @@ class StandardsDiscoveryTests(unittest.TestCase):
         self.assertFalse(result["candidate_rule_report"]["production_usable"])
         self.assertFalse(result["production_usable"])
         self.assertFalse(result["construction_release_allowed"])
+
+    def test_real_official_single_source_lookup_uses_candidate_only_recorded_fixture(self) -> None:
+        source = AUSTIN_WATER_CONSTRUCTION_STANDARDS_SOURCE
+
+        class Response:
+            url = source["source_url"]
+            text = AUSTIN_WATER_CONSTRUCTION_STANDARDS_RECORDED_HTML
+            headers = {"content-type": "text/html"}
+
+            def raise_for_status(self):
+                return None
+
+        class Session:
+            def get(self, url, timeout=None):
+                self.requested_url = url
+                return Response()
+
+        session = Session()
+        result = controlled_single_source_lookup(
+            source_url=source["source_url"],
+            source_id=source["source_id"],
+            jurisdiction=source["jurisdiction"],
+            agency=source["agency"],
+            source_type=source["source_type"],
+            discipline=source["discipline"],
+            operator_authorized=True,
+            document_title=source["document_title"],
+            session=session,
+            allowlist_entries=AUSTIN_WATER_CONSTRUCTION_STANDARDS_ALLOWLIST,
+        )
+        meta = {
+            "standards_source_registry": result["source_registry"],
+            "standards_candidate_rule_report": result["candidate_rule_report"],
+            "selected_standards_source": {
+                "source_id": source["source_id"],
+                "source_url": source["source_url"],
+                "source_urls": [source["source_url"]],
+                "candidate_only": True,
+                "acceptance_status": "unaccepted",
+            },
+            "jurisdiction_standards": {
+                "city": "Austin",
+                "state": "Texas",
+                "agency": source["agency"],
+                "source_urls": [source["source_url"]],
+                "production_usable": False,
+            },
+        }
+        meta["standards_package"] = build_standards_package(meta)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(session.requested_url, source["source_url"])
+        self.assertEqual(result["fetch_record"]["fetch_status"], "fetched")
+        self.assertEqual(result["fetch_record"]["source_url"], source["source_url"])
+        self.assertTrue(result["source_classification"]["allowlist_matched"])
+        self.assertEqual(result["source_classification"]["confidence"], "trusted_candidate")
+        self.assertTrue(result["fetch_record"]["candidate_only"])
+        self.assertEqual(result["fetch_record"]["acceptance_status"], "unaccepted")
+        self.assertEqual(result["source_registry"]["accepted_source_count"], 0)
+        self.assertEqual(result["source_registry"]["sources"][0]["acceptance_status"], "unaccepted")
+        self.assertEqual(result["candidate_rule_report"]["accepted_rule_count"], 0)
+        self.assertFalse(result["candidate_rule_report"]["production_usable"])
+        self.assertTrue(result["candidate_rule_report"]["requires_user_acceptance"])
+        self.assertFalse(result["production_usable"])
+        self.assertFalse(result["construction_release_allowed"])
+        self.assertEqual(result["candidate_count"], 0)
+        self.assertIn("Austin Water", source["why_official"])
+
+        readiness = civil_design_readiness({"meta": meta})
+        release = construction_readiness({"meta": meta})
+
+        self.assertFalse(meta["standards_package"]["production_usable"])
+        self.assertTrue(meta["standards_package"]["construction_release_blocked"])
+        self.assertFalse(readiness["production_ready"])
+        self.assertFalse(release["ready"])
+        self.assertEqual(release["status"], "not_construction_ready")
 
     def test_single_source_lookup_handles_network_failure_safely(self) -> None:
         class Session:
