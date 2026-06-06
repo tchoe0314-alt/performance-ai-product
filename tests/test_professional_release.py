@@ -27,7 +27,9 @@ class ProfessionalReleaseTests(unittest.TestCase):
         record = build_professional_review_record(
             engineer_name="Alex Morgan",
             license_number="TX-123456",
+            status="released_for_construction",
             review_date="2026-05-28",
+            sealed=True,
             jurisdiction="Test City",
             license_jurisdiction="TX",
         )
@@ -41,7 +43,9 @@ class ProfessionalReleaseTests(unittest.TestCase):
         response = professional_release_response(
             engineer_name="Alex Morgan",
             license_number="TX-123456",
+            status="released_for_construction",
             review_date="2026-05-28",
+            sealed=True,
             jurisdiction="Test City",
             license_jurisdiction="TX",
         )
@@ -49,7 +53,24 @@ class ProfessionalReleaseTests(unittest.TestCase):
 
         self.assertTrue(response["success"])
         self.assertTrue(validation["success"])
-        self.assertIn("does not stamp", response["truth_label"])
+        self.assertIn("never stamps, seals, signs, certifies, approves construction", response["truth_label"])
+
+    def test_professional_release_builder_defaults_to_blocked_draft_record(self) -> None:
+        record = build_professional_review_record(
+            engineer_name="Alex Morgan",
+            license_number="TX-123456",
+            jurisdiction="Test City",
+            license_jurisdiction="TX",
+        )
+        fields = {item["field"] for item in record["validation"]["blockers"]}
+
+        self.assertFalse(record["validation"]["success"])
+        self.assertFalse(record["validation"]["released_for_construction"])
+        self.assertEqual(record["status"], "draft_external_review_record")
+        self.assertFalse(record["sealed"])
+        self.assertEqual(record["review_date"], "")
+        self.assertIn("sealed_release", fields)
+        self.assertIn("review_date", fields)
 
     def test_professional_release_requires_license_jurisdiction_and_civil_scope(self) -> None:
         validation = validate_professional_release(

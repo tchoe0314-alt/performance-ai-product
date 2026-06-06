@@ -9,9 +9,9 @@ def professional_release_response(
     *,
     engineer_name: str,
     license_number: str,
-    status: str = "released_for_construction",
+    status: str = "",
     review_date: str = "",
-    sealed: bool = True,
+    sealed: bool = False,
     jurisdiction: str = "",
     license_jurisdiction: str = "",
     discipline: str = "civil",
@@ -33,7 +33,11 @@ def professional_release_response(
     return {
         "success": bool(record["validation"]["success"]),
         "professional_review": record,
-        "truth_label": "Attach this professional_review record to project meta only after licensed review; Civora does not stamp drawings.",
+        "truth_label": (
+            "Attach this professional_review record to project meta only after external licensed review; "
+            "Civora never stamps, seals, signs, certifies, approves construction, submits construction documents, "
+            "or acts as engineer of record."
+        ),
     }
 
 

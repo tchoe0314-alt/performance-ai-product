@@ -135,9 +135,12 @@ ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _cors_allow_origins() -> list[str]:
-    raw = str(os.getenv("CORS_ALLOW_ORIGINS") or "*").strip()
+    default_origins = "https://www.civoraai.com,https://civoraai.com,http://localhost:3000,http://127.0.0.1:3000"
+    raw = str(os.getenv("CORS_ALLOW_ORIGINS") or default_origins).strip()
     if not raw or raw == "*":
-        return ["*"]
+        if PRODUCT_MODE in {"development", "local"}:
+            return ["*"]
+        return [origin.strip() for origin in default_origins.split(",")]
     cleaned: list[str] = []
     for item in raw.split(","):
         value = item.strip().rstrip("/")
@@ -356,9 +359,9 @@ class UnitPriceBookCsvPayload(BaseModel):
 class ProfessionalReleasePayload(BaseModel):
     engineer_name: str = ""
     license_number: str = ""
-    status: str = "released_for_construction"
+    status: str = ""
     review_date: str = ""
-    sealed: bool = True
+    sealed: bool = False
     jurisdiction: str = ""
     license_jurisdiction: str = ""
     discipline: str = "civil"
@@ -600,12 +603,6 @@ def _final_plan_from_result(result_data: Dict[str, Any]) -> Dict[str, Any]:
     return application_final_plan_from_result(result_data)
 
 
-def _safe_token_prefix(token: str) -> str:
-    if not token:
-        return ""
-    return f"{token[:6]}..."
-
-
 def _mapbox_token() -> tuple[Optional[str], str]:
     for source in ("MAPBOX_TOKEN", "NEXT_PUBLIC_MAPBOX_TOKEN"):
         token = (os.getenv(source) or "").strip()
@@ -622,7 +619,6 @@ def _log_mapbox_token_config() -> None:
                 "event": "mapbox_token_config",
                 "present": bool(token),
                 "source": source,
-                "prefix": _safe_token_prefix(token),
                 "using_public_fallback": source == "NEXT_PUBLIC_MAPBOX_TOKEN",
             }
         ),
@@ -659,12 +655,10 @@ def _runtime_debug_payload() -> Dict[str, Any]:
         "construction_release_guard": release_guard,
         "monitoring": monitoring,
         "alpha_monitoring_report": alpha_monitoring_report,
-        "storage_dir": str(STORAGE_DIR),
         "storage_dir_exists": STORAGE_DIR.exists(),
         "storage_kind": DB.storage_kind,
         "mapbox_token_source": token_source,
         "mapbox_token_present": bool(token),
-        "mapbox_token_prefix": _safe_token_prefix(token),
         "port": os.getenv("PORT"),
         "job_queue": job_queue,
     }
@@ -757,7 +751,8 @@ def health() -> Dict[str, Any]:
 
 
 @app.get("/api/debug/runtime")
-def debug_runtime() -> Dict[str, Any]:
+def debug_runtime(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    _ = current_user
     return _runtime_debug_payload()
 
 
@@ -1162,7 +1157,7 @@ def geocode_address(
     address = str(payload.address or "").strip()
     if not address:
         raise HTTPException(status_code=400, detail="Address is required.")
-    token_source, token = _mapbox_token()
+    _, token = _mapbox_token()
     if not token:
         raise HTTPException(status_code=500, detail="Mapbox token is not configured.")
     try:
@@ -1179,22 +1174,15 @@ def geocode_address(
         if status_code == 403:
             detail = (
                 "Mapbox geocoding returned 403 Forbidden. "
-                f"token_source={token_source}; token_prefix={_safe_token_prefix(token)}. "
                 "Configure backend MAPBOX_TOKEN with Geocoding access."
             )
         else:
-            detail = (
-                f"Mapbox geocoding returned HTTP {status_code}. "
-                f"token_source={token_source}; token_prefix={_safe_token_prefix(token)}."
-            )
+            detail = f"Mapbox geocoding returned HTTP {status_code}."
         raise HTTPException(status_code=502, detail=detail) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=502,
-            detail=(
-                "Geocoding failed before a valid Mapbox response was parsed. "
-                f"token_source={token_source}; token_prefix={_safe_token_prefix(token)}."
-            ),
+            detail="Geocoding failed before a valid Mapbox response was parsed.",
         ) from exc
     features = data.get("features") if isinstance(data, dict) else None
     if not features:
@@ -1332,6 +1320,8 @@ def chat_learning_cron(
         auth_value = str(authorization or "").strip()
         if auth_value.lower().startswith("bearer "):
             token = auth_value[7:].strip()
+    if not CRON_SECRET:
+        raise HTTPException(status_code=503, detail="Cron endpoint is disabled until CIVORA_CRON_SECRET is configured.")
     if CRON_SECRET and token != CRON_SECRET:
         raise HTTPException(status_code=401, detail="Invalid cron secret.")
     from backend.services.chat_learning_store import chat_learning_enabled

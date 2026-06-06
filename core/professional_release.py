@@ -58,7 +58,7 @@ def _professional_blocker_details(blockers: List[Dict[str, str]]) -> List[Dict[s
                     "Construction-ready claims require traceable licensed review metadata tied to the exact civil package."
                 ),
                 "missing_data": [field],
-                "next_action": "Correct the professional release record and rerun construction release validation.",
+                "next_action": "Attach external licensed-engineer release evidence before rerunning construction release validation.",
                 "engineer_review_required": True,
             }
         )
@@ -173,7 +173,10 @@ def validate_professional_release(record: Dict[str, Any]) -> Dict[str, Any]:
         "jurisdiction": project_jurisdiction,
         "discipline": discipline,
         "review_scope": scope_items or scope_text,
-        "truth_label": "Professional release metadata records reviewer signoff evidence; Civora does not stamp drawings.",
+        "truth_label": (
+            "Professional release metadata records external reviewer signoff evidence only; Civora never stamps, "
+            "seals, signs, certifies, approves construction, submits construction documents, or acts as engineer of record."
+        ),
     }
 
 
@@ -181,9 +184,9 @@ def build_professional_review_record(
     *,
     engineer_name: str,
     license_number: str,
-    status: str = "released_for_construction",
+    status: str = "",
     review_date: str = "",
-    sealed: bool = True,
+    sealed: bool = False,
     jurisdiction: str = "",
     license_jurisdiction: str = "",
     discipline: str = "civil",
@@ -194,8 +197,8 @@ def build_professional_review_record(
         "source": "professional_release_workflow",
         "engineer_name": _safe_str(engineer_name),
         "license_number": _safe_str(license_number),
-        "status": _safe_str(status, "released_for_construction"),
-        "review_date": _safe_str(review_date, _today()),
+        "status": _safe_str(status, "draft_external_review_record"),
+        "review_date": _safe_str(review_date),
         "sealed": bool(sealed),
         "jurisdiction": _safe_str(jurisdiction),
         "license_jurisdiction": _safe_str(license_jurisdiction),
