@@ -1959,6 +1959,36 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                 "Import and verify survey, GIS constraints, existing utilities, and projected coordinate control.",
             )
         )
+    existing_package = _safe_dict(meta.get("existing_conditions_package"))
+    if not existing_package:
+        blockers.append(
+            _construction_gap(
+                "existing_conditions",
+                "existing_conditions_package",
+                "Construction release requires an existing-conditions package gate, not loose survey/GIS metadata.",
+                "Build existing_conditions_package from import validation before construction release.",
+            )
+        )
+    else:
+        package_status = _safe_str(existing_package.get("status")).lower()
+        if package_status != "ready" or existing_package.get("production_ready") is not True:
+            blockers.append(
+                _construction_gap(
+                    "existing_conditions",
+                    "existing_conditions_package",
+                    "Construction release requires the existing-conditions package gate to be ready and production-ready.",
+                    "Resolve existing_conditions_package blockers and rerun existing-conditions validation.",
+                )
+            )
+        if existing_package.get("metadata_only") is True:
+            blockers.append(
+                _construction_gap(
+                    "existing_conditions",
+                    "metadata_only_imports",
+                    "Metadata-only imports cannot satisfy construction-release existing-condition requirements.",
+                    "Import canonical survey, terrain, and GIS evidence with CRS/source/control metadata.",
+                )
+            )
     survey = _safe_dict(meta.get("survey"))
     if not survey or not (_safe_int(survey.get("point_count"), 0) > 0 and _safe_str(survey.get("source"))):
         blockers.append(

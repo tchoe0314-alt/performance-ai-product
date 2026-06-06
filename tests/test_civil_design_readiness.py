@@ -161,6 +161,13 @@ def _production_ready_meta() -> dict:
         "gis_ready": True,
         "coordinate_system_ready": True,
     }
+    meta["existing_conditions_package"] = {
+        "status": "ready",
+        "production_ready": True,
+        "metadata_only": False,
+        "blockers": [],
+        "gate": {"status": "ready", "terrain_source_confidence": "survey-backed"},
+    }
     meta["grading"]["source_quality"] = "survey"
     meta["grading"]["road_crown_controls"] = [{"road": "A", "cross_slope": 0.02}]
     meta["grading"]["curb_gutter_controls"] = [{"road": "A", "gutter_slope": 0.01}]
@@ -605,6 +612,22 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertFalse(readiness["ready"])
         self.assertIn(("existing_conditions", "gis_wetlands"), blockers)
         self.assertIn(("existing_conditions", "gis_existing_utilities"), blockers)
+
+    def test_construction_readiness_blocks_metadata_only_existing_conditions_package(self) -> None:
+        meta = _production_ready_meta()
+        meta["existing_conditions_package"] = {
+            "status": "blocked",
+            "production_ready": False,
+            "metadata_only": True,
+            "blockers": [{"field": "metadata_only_imports"}],
+        }
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(("existing_conditions", "existing_conditions_package"), blockers)
+        self.assertIn(("existing_conditions", "metadata_only_imports"), blockers)
 
     def test_construction_readiness_requires_production_usable_coordinate_source(self) -> None:
         meta = _production_ready_meta()

@@ -135,12 +135,52 @@ def build_existing_conditions_package(plan_or_meta: Dict[str, Any], *, accepted_
         layer: safe_intish(safe_dict(safe_dict(gis.get("layers")).get(layer)).get("count"))
         for layer in REQUIRED_GIS_LAYERS
     }
+    canonical_model = safe_dict(
+        meta.get("canonical_existing_conditions_model")
+        or safe_dict(meta.get("existing_conditions_import")).get("canonical_existing_conditions_model")
+    )
+    if not canonical_model:
+        try:
+            from .existing_conditions_importers import build_canonical_existing_conditions_model
+
+            canonical_model = build_canonical_existing_conditions_model(
+                {
+                    "survey": meta.get("survey"),
+                    "gis_layers": meta.get("gis_layers") or meta.get("existing_conditions"),
+                    "coordinate_system": meta.get("coordinate_system"),
+                    "surfaces": meta.get("surfaces"),
+                    "sources": meta.get("sources") or safe_dict(meta.get("existing_conditions_import")).get("sources"),
+                    "metadata_only_sources": meta.get("metadata_only_sources")
+                    or safe_dict(meta.get("existing_conditions_import")).get("metadata_only_sources"),
+                    "canonical_targets": meta.get("canonical_targets")
+                    or safe_dict(meta.get("existing_conditions_import")).get("canonical_targets"),
+                    "import_validation": validation,
+                }
+            )
+        except Exception:
+            canonical_model = {}
+    metadata_only_sources = safe_list(
+        canonical_model.get("metadata_only_sources")
+        or meta.get("metadata_only_sources")
+        or safe_dict(meta.get("existing_conditions_import")).get("metadata_only_sources")
+    )
+    production_requirements = safe_list(validation.get("production_requirements"))
+    importer_matrix = safe_list(validation.get("importer_production_matrix"))
+    terrain_confidence = safe_dict(validation.get("terrain_source_confidence")) or safe_dict(safe_dict(canonical_model.get("terrain")).get("confidence"))
     return {
         "version": "existing_conditions_package_v1",
         "status": status,
         "production_ready": status == "ready" and production_ready,
         "review_usable": status in {"ready", "needs_review"} and not blockers,
-        "metadata_only": not bool(validation),
+        "metadata_only": not bool(validation) or (bool(canonical_model.get("metadata_only")) if canonical_model else False),
+        "gate": {
+            "status": status,
+            "production_ready": status == "ready" and production_ready,
+            "terrain_source_confidence": safe_str(terrain_confidence.get("label"), "missing"),
+            "metadata_only_source_count": len(metadata_only_sources),
+            "dependency_blocked_source_count": len(safe_list(validation.get("dependency_blocked_sources"))),
+            "truth_label": "The existing-conditions gate separates parsed evidence from production-grade survey/GIS/control readiness.",
+        },
         "accepted": bool(acceptance["accepted"]),
         "acceptance": acceptance,
         "source_count": _source_count(meta, validation),
@@ -150,9 +190,16 @@ def build_existing_conditions_package(plan_or_meta: Dict[str, Any], *, accepted_
             "coordinate_system": deepcopy(meta.get("coordinate_system")),
             "surfaces": deepcopy(meta.get("surfaces")),
             "sources": deepcopy(meta.get("sources") or safe_dict(meta.get("existing_conditions_import")).get("sources")),
+            "model": deepcopy(canonical_model),
+            "metadata_only_sources": deepcopy(metadata_only_sources),
         },
+        "canonical_existing_conditions_model": deepcopy(canonical_model),
+        "metadata_only_sources": deepcopy(metadata_only_sources),
         "summary": deepcopy(summary),
         "import_validation": deepcopy(validation),
+        "production_requirements": deepcopy(production_requirements),
+        "importer_production_matrix": deepcopy(importer_matrix),
+        "terrain_source_confidence": deepcopy(terrain_confidence),
         "survey_ready": bool(survey.get("ready")),
         "gis_ready": bool(gis.get("ready")),
         "coordinate_system_ready": bool(coordinate.get("ready")),

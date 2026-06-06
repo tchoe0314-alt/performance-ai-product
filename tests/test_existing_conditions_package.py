@@ -32,6 +32,24 @@ def _complete_meta(*, accepted: bool = True) -> dict:
             "warnings": [],
             "source_count": 1,
             "layer_counts": {layer: 1 for layer in layers},
+            "terrain_source_confidence": {"label": "survey-backed"},
+            "production_requirements": [
+                {"field": "survey_source", "ready": True},
+                {"field": "survey_datum_control", "ready": True},
+                {"field": "coordinate_system", "ready": True},
+                {"field": "terrain_source_confidence", "ready": True},
+                {"field": "canonical_imports", "ready": True},
+            ],
+            "importer_production_matrix": [
+                {
+                    "source": "survey.csv",
+                    "source_type": "survey_csv",
+                    "success": True,
+                    "canonicalized": True,
+                    "metadata_only": False,
+                    "production_usable": True,
+                }
+            ],
         },
         "existing_conditions_package": {
             "acceptance": {"accepted": accepted, "accepted_by": "u1" if accepted else ""},
@@ -50,6 +68,10 @@ class ExistingConditionsPackageTests(unittest.TestCase):
         self.assertTrue(package["accepted"])
         self.assertFalse(package["metadata_only"])
         self.assertFalse(package["blockers"])
+        self.assertEqual(package["gate"]["status"], "ready")
+        self.assertEqual(package["terrain_source_confidence"]["label"], "survey-backed")
+        self.assertTrue(package["production_requirements"][0]["ready"])
+        self.assertTrue(package["importer_production_matrix"][0]["production_usable"])
 
     def test_complete_unaccepted_import_package_needs_review(self) -> None:
         package = build_existing_conditions_package({"meta": _complete_meta(accepted=False)})
@@ -82,6 +104,36 @@ class ExistingConditionsPackageTests(unittest.TestCase):
         self.assertIn("coordinate_system", fields)
         self.assertIn("import_validation", fields)
         self.assertTrue(package["blocker_details"])
+
+    def test_blocked_validation_package_reports_gate_requirements(self) -> None:
+        meta = _complete_meta(accepted=True)
+        meta["existing_conditions_import_validation"] = {
+            "success": False,
+            "production_usable": False,
+            "blockers": [{"field": "metadata_only_imports", "reason": "Metadata-only imports cannot satisfy production."}],
+            "warnings": [],
+            "source_count": 1,
+            "terrain_source_confidence": {"label": "missing"},
+            "production_requirements": [{"field": "canonical_imports", "ready": False}],
+            "importer_production_matrix": [
+                {
+                    "source": "network.landxml",
+                    "source_type": "landxml",
+                    "success": True,
+                    "canonicalized": False,
+                    "metadata_only": True,
+                    "production_usable": False,
+                }
+            ],
+        }
+
+        package = build_existing_conditions_package({"meta": meta})
+
+        self.assertEqual(package["status"], "blocked")
+        self.assertEqual(package["gate"]["status"], "blocked")
+        self.assertEqual(package["gate"]["terrain_source_confidence"], "missing")
+        self.assertFalse(package["production_requirements"][0]["ready"])
+        self.assertTrue(package["importer_production_matrix"][0]["metadata_only"])
 
 
 if __name__ == "__main__":

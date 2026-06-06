@@ -203,6 +203,7 @@ class ExistingConditionsImporterTests(unittest.TestCase):
         merged = {
             "sources": [{"source": "merged", "source_type": "test", "success": True}],
             "survey": {
+                "source": "survey.csv",
                 "point_count": 4,
                 "benchmark": "BM-1",
                 "datum": "NAVD88",
@@ -228,6 +229,8 @@ class ExistingConditionsImporterTests(unittest.TestCase):
 
         self.assertTrue(validation["production_usable"])
         self.assertFalse(validation["blockers"])
+        self.assertEqual(validation["terrain_source_confidence"]["label"], "survey-backed")
+        self.assertTrue(next(item for item in validation["production_requirements"] if item["field"] == "survey_source")["ready"])
 
     def test_import_package_validation_blocks_source_less_gis_layers(self) -> None:
         merged = {
@@ -428,6 +431,25 @@ class ExistingConditionsImporterTests(unittest.TestCase):
             self.assertIn("survey_control_verified", fields)
             self.assertEqual(merged["import_validation"]["surface_count"], 1)
 
+    def test_landxml_without_existing_terrain_is_labeled_metadata_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "network.landxml"
+            path.write_text(
+                '<LandXML><PipeNetworks><PipeNetwork name="Existing Utility"><Pipes><Pipe name="P-1"/></Pipes></PipeNetwork></PipeNetworks></LandXML>',
+                encoding="utf-8",
+            )
+
+            imported = import_landxml_metadata(path)
+            merged = merge_imported_existing_conditions(imported)
+            source = merged["sources"][0]
+            model = merged["canonical_existing_conditions_model"]
+
+            self.assertTrue(imported["success"])
+            self.assertTrue(source["metadata_only"])
+            self.assertFalse(source["canonicalized"])
+            self.assertIn("pipe_network_metadata", source["canonical_targets"])
+            self.assertEqual(model["metadata_only_sources"][0]["source_type"], "landxml")
+
     def test_dependency_blocked_heavy_format_remains_visible_in_package_validation(self) -> None:
         blocked = dependency_blocked_existing_conditions_import(
             Path("constraints.shp"),
@@ -445,6 +467,8 @@ class ExistingConditionsImporterTests(unittest.TestCase):
             "gis_layers": merged["gis_layers"],
             "coordinate_system": merged["coordinate_system"],
             "sources": merged["sources"],
+            "canonical_existing_conditions_model": merged["canonical_existing_conditions_model"],
+            "metadata_only_sources": merged["metadata_only_sources"],
             "existing_conditions_import_validation": merged["import_validation"],
         }
         package_meta["existing_conditions_summary"] = summarize_existing_conditions({"meta": package_meta})
@@ -453,8 +477,29 @@ class ExistingConditionsImporterTests(unittest.TestCase):
 
         self.assertEqual(package["status"], "blocked")
         self.assertTrue(source["dependency_blocked"])
+        self.assertTrue(source["metadata_only"])
+        self.assertTrue(package["canonical_existing_conditions"]["metadata_only_sources"][0]["metadata_only"])
         self.assertEqual(source["required_dependency"], "Shapefile import requires fiona/geopandas or GDAL.")
-        self.assertIn("sources", {item["field"] for item in package["blockers"]})
+        fields = {item["field"] for item in package["blockers"]}
+        self.assertIn("sources", fields)
+        self.assertIn("dependency_blocked_imports", fields)
+        blocker = next(item for item in merged["import_validation"]["blockers"] if item["field"] == "dependency_blocked_imports")
+        self.assertEqual(blocker["required_dependencies"][0]["required_dependency"], "Shapefile import requires fiona/geopandas or GDAL.")
+
+    def test_supported_existing_condition_formats_are_classified(self) -> None:
+        expected = {
+            "survey.csv": ("csv", "survey_or_surface_xyz"),
+            "constraints.geojson": ("geojson", "gis_features"),
+            "surface.landxml": ("landxml", "surface_or_alignment_metadata"),
+            "survey.dxf": ("dxf", "survey_breaklines_or_existing_utilities"),
+            "terrain.tif": ("geotiff", "raster_surface"),
+            "cloud.las": ("las", "point_cloud"),
+        }
+
+        for filename, (fmt, mode) in expected.items():
+            classified = classify_existing_conditions_file(Path(filename))
+            self.assertEqual(classified["format"], fmt)
+            self.assertEqual(classified["mode"], mode)
 
     def test_geopackage_vector_import_classifies_layers(self) -> None:
         import geopandas as gpd
@@ -496,11 +541,16 @@ class ExistingConditionsImporterTests(unittest.TestCase):
                 dataset.write(data, 1)
 
             imported = import_geotiff_surface(path)
+            merged = merge_imported_existing_conditions(imported)
+            model = merged["canonical_existing_conditions_model"]
 
             self.assertTrue(imported["success"])
             self.assertEqual(imported["surface"].ncols, 2)
             self.assertEqual(imported["surface"].nrows, 2)
             self.assertEqual(imported["coordinate_system"]["name"], "EPSG:2276")
+            self.assertIn("terrain_surface", imported["canonical_import"]["canonical_targets"])
+            self.assertEqual(model["terrain"]["surface_count"], 1)
+            self.assertFalse(model["terrain"]["surfaces"][0]["metadata_only"])
 
     def test_las_import_samples_point_cloud(self) -> None:
         import laspy
@@ -516,10 +566,15 @@ class ExistingConditionsImporterTests(unittest.TestCase):
             las.write(path)
 
             imported = import_las_point_cloud(path)
+            merged = merge_imported_existing_conditions(imported)
+            model = merged["canonical_existing_conditions_model"]
 
             self.assertTrue(imported["success"])
             self.assertEqual(imported["point_count"], 4)
             self.assertEqual(imported["bounds"]["max_x"], 10.0)
+            self.assertIn("lidar_point_cloud", imported["canonical_import"]["canonical_targets"])
+            self.assertEqual(model["survey"]["point_count"], 4)
+            self.assertFalse(model["survey"]["metadata_only"])
 
 
 if __name__ == "__main__":

@@ -34,6 +34,7 @@ GEOGRAPHIC_EPSG_CODES = {"4326", "4269", "4258"}
 ENGINEERING_UNITS = {"ft", "foot", "feet", "us-ft", "us_survey_ft", "survey_ft", "m", "meter", "meters", "metre", "metres"}
 COORDINATE_SOURCE_KEYS = ("source", "authority", "control_source", "source_url", "official_source_url", "survey_control")
 GIS_SOURCE_KEYS = ("source", "provider", "source_url", "file", "file_name", "dataset", "authority", "agency")
+CANONICAL_MODEL_VERSION = "canonical_existing_conditions_v1"
 
 
 def _normalized_field_map(fieldnames: Iterable[str]) -> Dict[str, str]:
@@ -188,6 +189,144 @@ def _coordinate_from_import(rec: Dict[str, Any]) -> Dict[str, Any]:
     return _normalize_coordinate_system(safe_dict(profile.get("coordinate_system")))
 
 
+def _canonical_import_record(
+    *,
+    canonicalized: bool,
+    targets: Iterable[str] = (),
+    metadata_only: bool = False,
+    reason: str = "",
+) -> Dict[str, Any]:
+    return {
+        "canonicalized": bool(canonicalized),
+        "metadata_only": bool(metadata_only or not canonicalized),
+        "canonical_targets": dedupe_keep_order([safe_str(item) for item in targets if safe_str(item)]),
+        "reason": safe_str(reason),
+    }
+
+
+def _canonical_status_from_import(rec: Dict[str, Any]) -> Dict[str, Any]:
+    explicit = safe_dict(rec.get("canonical_import"))
+    if explicit:
+        return {
+            "canonicalized": bool(explicit.get("canonicalized")),
+            "metadata_only": bool(explicit.get("metadata_only")),
+            "canonical_targets": dedupe_keep_order(safe_list(explicit.get("canonical_targets"))),
+            "reason": safe_str(explicit.get("reason")),
+        }
+    if rec.get("dependency_blocked") or not bool(rec.get("success")):
+        return _canonical_import_record(
+            canonicalized=False,
+            metadata_only=True,
+            reason=safe_str(rec.get("truth_label"), "Import was not canonicalized."),
+        )
+    source_type = safe_str(rec.get("source_type"))
+    if source_type in {"survey_csv", "las_point_cloud"}:
+        return _canonical_import_record(canonicalized=True, targets=("survey_points", "terrain_evidence"))
+    if source_type == "surface_xyz_csv":
+        return _canonical_import_record(canonicalized=True, targets=("terrain_surface",))
+    if source_type == "geotiff_surface":
+        return _canonical_import_record(canonicalized=True, targets=("dem_surface", "terrain_surface"))
+    if source_type in {"geojson", "geospatial_vector"}:
+        return _canonical_import_record(canonicalized=True, targets=("gis_layers",))
+    if source_type == "dxf_existing_conditions":
+        targets: List[str] = []
+        if safe_list(rec.get("points")):
+            targets.append("survey_points")
+        if safe_list(rec.get("breaklines")):
+            targets.append("breaklines")
+        if any(safe_list(items) for items in safe_dict(rec.get("layers")).values()):
+            targets.append("gis_layers")
+        return _canonical_import_record(canonicalized=bool(targets), targets=targets, metadata_only=not bool(targets))
+    if source_type == "landxml":
+        targets = []
+        if safe_list(rec.get("points")):
+            targets.append("survey_points")
+        if safe_list(rec.get("surfaces")):
+            targets.append("terrain_surface_metadata")
+        if safe_list(rec.get("alignments")):
+            targets.append("alignment_metadata")
+        if safe_list(rec.get("pipe_networks")):
+            targets.append("pipe_network_metadata")
+        geometry_targets = {"survey_points", "terrain_surface_metadata"}
+        canonicalized = bool(geometry_targets.intersection(targets))
+        return _canonical_import_record(
+            canonicalized=canonicalized,
+            targets=targets,
+            metadata_only=not canonicalized,
+            reason="" if canonicalized else "LandXML contained exchange metadata but no usable existing terrain geometry.",
+        )
+    return _canonical_import_record(
+        canonicalized=False,
+        metadata_only=True,
+        reason="Importer did not expose canonical existing-condition geometry.",
+    )
+
+
+def _surface_metadata_from_surface_rec(rec: Dict[str, Any]) -> Dict[str, Any]:
+    surface = rec.get("surface")
+    profile = safe_dict(getattr(surface, "_inferred_profile", {})) if surface is not None else {}
+    source_type = safe_str(rec.get("source_type") or profile.get("source_detail"))
+    source_quality = safe_str(profile.get("source_quality"))
+    result = {
+        "source": safe_str(rec.get("source") or profile.get("source_file")),
+        "source_type": source_type,
+        "source_quality": source_quality,
+        "ncols": safe_int(rec.get("ncols") or getattr(surface, "ncols", 0), 0),
+        "nrows": safe_int(rec.get("nrows") or getattr(surface, "nrows", 0), 0),
+        "cell_size": safe_float(rec.get("cell_size") or getattr(surface, "cell_size", 0.0), 0.0),
+        "bounds": safe_dict(rec.get("bounds"))
+        or {
+            "min_x": safe_float(getattr(surface, "x_min", 0.0), 0.0),
+            "min_y": safe_float(getattr(surface, "y_min", 0.0), 0.0),
+            "max_x": safe_float(getattr(surface, "x_max", 0.0), 0.0),
+            "max_y": safe_float(getattr(surface, "y_max", 0.0), 0.0),
+        },
+    }
+    return {key: value for key, value in result.items() if value not in ("", 0, 0.0, {}, [])}
+
+
+def _terrain_source_confidence(rec: Dict[str, Any]) -> Dict[str, Any]:
+    sources = [safe_dict(item) for item in safe_list(rec.get("sources"))]
+    surfaces = [safe_dict(item) for item in safe_list(rec.get("surfaces"))]
+    survey = safe_dict(rec.get("survey"))
+    source_types = {
+        safe_str(item.get("source_type"))
+        for item in sources + surfaces
+        if safe_str(item.get("source_type")) and not bool(item.get("metadata_only"))
+    }
+    has_points = safe_int(survey.get("point_count"), len(safe_list(survey.get("points")))) >= 3
+    has_survey_surface = any(item in source_types for item in {"survey_csv", "surface_xyz_csv", "dxf_existing_conditions", "landxml"})
+    has_dem_surface = any(item in source_types for item in {"geotiff_surface", "las_point_cloud"})
+    if has_points or has_survey_surface:
+        label = "survey-backed"
+    elif has_dem_surface:
+        label = "DEM-backed"
+    elif surfaces or any(bool(item.get("canonicalized")) for item in sources):
+        label = "inferred"
+    else:
+        label = "missing"
+    return {
+        "label": label,
+        "survey_backed": label == "survey-backed",
+        "dem_backed": label == "DEM-backed",
+        "inferred": label == "inferred",
+        "missing": label == "missing",
+        "source_types": sorted(source_types),
+        "truth_label": "Terrain confidence labels source evidence only; they do not certify survey/control or production readiness.",
+    }
+
+
+def _production_requirement(field: str, ready: bool, reason: str, *, evidence: Any = None) -> Dict[str, Any]:
+    rec: Dict[str, Any] = {
+        "field": field,
+        "ready": bool(ready),
+        "reason": reason,
+    }
+    if evidence not in (None, "", [], {}):
+        rec["evidence"] = evidence
+    return rec
+
+
 def import_survey_csv(path: Path, *, coordinate_system: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     points: List[Dict[str, Any]] = []
     warnings: List[str] = []
@@ -205,6 +344,11 @@ def import_survey_csv(path: Path, *, coordinate_system: Optional[Dict[str, Any]]
                 "success": False,
                 "source": str(path),
                 "source_type": "survey_csv",
+                "canonical_import": _canonical_import_record(
+                    canonicalized=False,
+                    metadata_only=True,
+                    reason="Survey CSV did not include usable x/y/z columns.",
+                ),
                 "points": [],
                 "point_count": 0,
                 "invalid_rows": 0,
@@ -245,6 +389,12 @@ def import_survey_csv(path: Path, *, coordinate_system: Optional[Dict[str, Any]]
         "coordinate_system": safe_dict(coordinate_system),
         "coordinate_validation": _coordinate_validation(safe_dict(coordinate_system)) if coordinate_system else {},
         "warnings": warnings,
+        "canonical_import": _canonical_import_record(
+            canonicalized=len(points) >= 3 and safe_int(quality.get("unique_xy_count"), 0) >= 3 and bool(quality.get("has_surface_span")),
+            targets=("survey_points", "terrain_evidence"),
+            metadata_only=not (len(points) >= 3 and safe_int(quality.get("unique_xy_count"), 0) >= 3 and bool(quality.get("has_surface_span"))),
+            reason="" if len(points) >= 3 else "Survey CSV parsed but does not contain enough points to canonicalize terrain evidence.",
+        ),
     }
 
 
@@ -299,6 +449,11 @@ def import_surface_grid_csv(path: Path, *, coordinate_system: Optional[Dict[str,
             "source": str(path),
             "source_type": "surface_xyz_csv",
             "surface": None,
+            "canonical_import": _canonical_import_record(
+                canonicalized=False,
+                metadata_only=True,
+                reason="Surface CSV did not contain enough x/y/z rows to build a canonical surface.",
+            ),
             "coordinate_system": safe_dict(coordinate_system),
             "invalid_rows": invalid_rows,
             "recognized_columns": columns,
@@ -312,6 +467,11 @@ def import_surface_grid_csv(path: Path, *, coordinate_system: Optional[Dict[str,
             "source": str(path),
             "source_type": "surface_xyz_csv",
             "surface": None,
+            "canonical_import": _canonical_import_record(
+                canonicalized=False,
+                metadata_only=True,
+                reason="Surface CSV rows do not span a usable canonical grid.",
+            ),
             "coordinate_system": safe_dict(coordinate_system),
             "invalid_rows": invalid_rows,
             "recognized_columns": columns,
@@ -369,6 +529,7 @@ def import_surface_grid_csv(path: Path, *, coordinate_system: Optional[Dict[str,
         "bounds": {"min_x": xs[0], "min_y": ys[0], "max_x": xs[-1], "max_y": ys[-1]},
         "coordinate_system": safe_dict(coordinate_system),
         "warnings": warnings,
+        "canonical_import": _canonical_import_record(canonicalized=True, targets=("terrain_surface",)),
     }
 
 
@@ -411,6 +572,12 @@ def import_geojson(path: Path, *, layer_hint: str = "", coordinate_system: Optio
         "unknown_feature_count": len(unknown),
         "coordinate_system": safe_dict(coordinate_system) or _coordinate_from_geojson(payload),
         "warnings": warnings,
+        "canonical_import": _canonical_import_record(
+            canonicalized=bool(features),
+            targets=("gis_layers",),
+            metadata_only=not bool(features),
+            reason="" if features else "GeoJSON had no features to canonicalize.",
+        ),
     }
 
 
@@ -513,6 +680,12 @@ def dependency_blocked_existing_conditions_import(
         "format": source_format,
         "mode": safe_str(rec.get("mode"), "unsupported"),
         "dependency_blocked": True,
+        "metadata_only": True,
+        "canonical_import": _canonical_import_record(
+            canonicalized=False,
+            metadata_only=True,
+            reason="Importer is unsupported or missing a required dependency.",
+        ),
         "required_dependency": required_dependency,
         "warnings": [required_dependency],
         "truth_label": "This existing-condition file was stored but not canonicalized because the importer is unsupported or missing a required dependency.",
@@ -644,6 +817,16 @@ def import_dxf_existing_conditions(path: Path, *, coordinate_system: Optional[Di
         "elevation_range": {"min": min(point_elevations), "max": max(point_elevations)} if point_elevations else None,
         "coordinate_system": safe_dict(coordinate_system),
         "warnings": warnings,
+        "canonical_import": _canonical_import_record(
+            canonicalized=bool(survey_points or breaklines or any(layers.values())),
+            targets=(
+                (["survey_points"] if survey_points else [])
+                + (["breaklines"] if breaklines else [])
+                + (["gis_layers"] if any(layers.values()) else [])
+            ),
+            metadata_only=not bool(survey_points or breaklines or any(layers.values())),
+            reason="" if (survey_points or breaklines or any(layers.values())) else "DXF had no recognized existing-condition entities.",
+        ),
         "truth_label": "DXF geometry was imported as existing-condition evidence; CRS, survey control, and layer semantics require review before production use.",
     }
 
@@ -671,6 +854,12 @@ def import_geospatial_vector_file(path: Path, *, layer_hint: str = "", coordinat
             "success": False,
             "source": str(path),
             "source_type": "geospatial_vector",
+            "metadata_only": True,
+            "canonical_import": _canonical_import_record(
+                canonicalized=False,
+                metadata_only=True,
+                reason="GeoPandas/GDAL dependency is missing.",
+            ),
             "warnings": ["GeoPandas is required for Shapefile/GeoPackage vector import."],
         }
     import geopandas as gpd
@@ -679,7 +868,14 @@ def import_geospatial_vector_file(path: Path, *, layer_hint: str = "", coordinat
     try:
         gdf = gpd.read_file(path)
     except Exception as exc:
-        return {"success": False, "source": str(path), "source_type": "geospatial_vector", "warnings": [safe_str(exc)]}
+        return {
+            "success": False,
+            "source": str(path),
+            "source_type": "geospatial_vector",
+            "metadata_only": True,
+            "canonical_import": _canonical_import_record(canonicalized=False, metadata_only=True, reason=safe_str(exc)),
+            "warnings": [safe_str(exc)],
+        }
     crs_text = safe_str(gdf.crs.to_string() if gdf.crs is not None else "")
     if gdf.crs is not None:
         try:
@@ -715,6 +911,12 @@ def import_geospatial_vector_file(path: Path, *, layer_hint: str = "", coordinat
         "unknown_feature_count": unknown,
         "coordinate_system": safe_dict(coordinate_system) or ({"name": crs_text, "source": "vector_crs"} if crs_text else {}),
         "warnings": warnings,
+        "canonical_import": _canonical_import_record(
+            canonicalized=len(export_gdf) > 0,
+            targets=("gis_layers",),
+            metadata_only=len(export_gdf) <= 0,
+            reason="" if len(export_gdf) > 0 else "Vector file had no features to canonicalize.",
+        ),
     }
 
 
@@ -733,7 +935,18 @@ def _json_safe_value(value: Any) -> Any:
 
 def import_geotiff_surface(path: Path, *, coordinate_system: Optional[Dict[str, Any]] = None, max_cells: int = 40000) -> Dict[str, Any]:
     if not _module_available("rasterio"):
-        return {"success": False, "source": str(path), "source_type": "geotiff_surface", "warnings": ["Rasterio/GDAL is required for GeoTIFF import."]}
+        return {
+            "success": False,
+            "source": str(path),
+            "source_type": "geotiff_surface",
+            "metadata_only": True,
+            "canonical_import": _canonical_import_record(
+                canonicalized=False,
+                metadata_only=True,
+                reason="Rasterio/GDAL dependency is missing.",
+            ),
+            "warnings": ["Rasterio/GDAL is required for GeoTIFF import."],
+        }
     import math
     import rasterio
 
@@ -775,7 +988,14 @@ def import_geotiff_surface(path: Path, *, coordinate_system: Optional[Dict[str, 
             )
             crs_text = safe_str(dataset.crs.to_string() if dataset.crs is not None else "")
     except Exception as exc:
-        return {"success": False, "source": str(path), "source_type": "geotiff_surface", "warnings": [safe_str(exc)]}
+        return {
+            "success": False,
+            "source": str(path),
+            "source_type": "geotiff_surface",
+            "metadata_only": True,
+            "canonical_import": _canonical_import_record(canonicalized=False, metadata_only=True, reason=safe_str(exc)),
+            "warnings": [safe_str(exc)],
+        }
     setattr(
         surface,
         "_inferred_profile",
@@ -797,24 +1017,51 @@ def import_geotiff_surface(path: Path, *, coordinate_system: Optional[Dict[str, 
         "ncols": surface.ncols,
         "nrows": surface.nrows,
         "cell_size": surface.cell_size,
+        "bounds": {"min_x": surface.x_min, "min_y": surface.y_min, "max_x": surface.x_max, "max_y": surface.y_max},
         "coordinate_system": safe_dict(coordinate_system) or ({"name": crs_text, "source": "geotiff_crs"} if crs_text else {}),
         "warnings": warnings,
+        "canonical_import": _canonical_import_record(canonicalized=True, targets=("dem_surface", "terrain_surface")),
     }
 
 
 def import_las_point_cloud(path: Path, *, coordinate_system: Optional[Dict[str, Any]] = None, max_points: int = 5000) -> Dict[str, Any]:
     if not _module_available("laspy"):
-        return {"success": False, "source": str(path), "source_type": "las_point_cloud", "warnings": ["laspy is required for LAS/LAZ import."]}
+        return {
+            "success": False,
+            "source": str(path),
+            "source_type": "las_point_cloud",
+            "metadata_only": True,
+            "canonical_import": _canonical_import_record(
+                canonicalized=False,
+                metadata_only=True,
+                reason="laspy dependency is missing.",
+            ),
+            "warnings": ["laspy is required for LAS/LAZ import."],
+        }
     import laspy
 
     warnings: List[str] = []
     try:
         las = laspy.read(path)
     except Exception as exc:
-        return {"success": False, "source": str(path), "source_type": "las_point_cloud", "warnings": [safe_str(exc)]}
+        return {
+            "success": False,
+            "source": str(path),
+            "source_type": "las_point_cloud",
+            "metadata_only": True,
+            "canonical_import": _canonical_import_record(canonicalized=False, metadata_only=True, reason=safe_str(exc)),
+            "warnings": [safe_str(exc)],
+        }
     total = len(las.x)
     if total <= 0:
-        return {"success": False, "source": str(path), "source_type": "las_point_cloud", "warnings": ["LAS/LAZ file has no points."]}
+        return {
+            "success": False,
+            "source": str(path),
+            "source_type": "las_point_cloud",
+            "metadata_only": True,
+            "canonical_import": _canonical_import_record(canonicalized=False, metadata_only=True, reason="LAS/LAZ file has no points."),
+            "warnings": ["LAS/LAZ file has no points."],
+        }
     step = max(1, int(total / max(1, max_points)))
     points = [
         {"x": float(las.x[index]), "y": float(las.y[index]), "z": float(las.z[index])}
@@ -832,6 +1079,12 @@ def import_las_point_cloud(path: Path, *, coordinate_system: Optional[Dict[str, 
         "bounds": _bounds(points),
         "coordinate_system": safe_dict(coordinate_system),
         "warnings": warnings,
+        "canonical_import": _canonical_import_record(
+            canonicalized=len(points) >= 3,
+            targets=("survey_points", "terrain_evidence", "lidar_point_cloud"),
+            metadata_only=len(points) < 3,
+            reason="" if len(points) >= 3 else "Point cloud sample did not contain enough points to canonicalize terrain evidence.",
+        ),
         "truth_label": "Point cloud imported as sampled surface evidence; classification/breakline extraction still needs deeper processing.",
     }
 
@@ -840,6 +1093,8 @@ def import_landxml_metadata(path: Path, *, coordinate_system: Optional[Dict[str,
     imported = import_landxml(path)
     if coordinate_system:
         imported["coordinate_system"] = safe_dict(coordinate_system)
+    imported["canonical_import"] = _canonical_status_from_import(imported)
+    imported["metadata_only"] = bool(imported["canonical_import"]["metadata_only"])
     return imported
 
 
@@ -864,19 +1119,30 @@ def merge_imported_existing_conditions(*imports: Dict[str, Any]) -> Dict[str, An
     coordinate_system: Dict[str, Any] = {}
     coordinate_systems: List[Dict[str, Any]] = []
     sources: List[Dict[str, Any]] = []
+    metadata_only_sources: List[Dict[str, Any]] = []
+    canonical_targets: List[str] = []
     for item in imports:
         rec = safe_dict(item)
         if not rec:
             continue
+        canonical_status = _canonical_status_from_import(rec)
         source_record = {
             "source": safe_str(rec.get("source")),
             "source_type": safe_str(rec.get("source_type")),
             "success": bool(rec.get("success")),
+            "canonicalized": bool(canonical_status.get("canonicalized")),
+            "metadata_only": bool(canonical_status.get("metadata_only")),
+            "canonical_targets": safe_list(canonical_status.get("canonical_targets")),
         }
         for key in ("format", "mode", "dependency_blocked", "required_dependency", "truth_label"):
             if rec.get(key) not in (None, "", [], {}):
                 source_record[key] = rec.get(key)
+        if safe_str(canonical_status.get("reason")):
+            source_record["canonical_reason"] = safe_str(canonical_status.get("reason"))
         sources.append(source_record)
+        canonical_targets.extend(safe_list(canonical_status.get("canonical_targets")))
+        if bool(canonical_status.get("metadata_only")):
+            metadata_only_sources.append(source_record)
         warnings.extend(safe_list(rec.get("warnings")))
         rec_coordinate = _coordinate_from_import(rec)
         if rec_coordinate:
@@ -888,7 +1154,18 @@ def merge_imported_existing_conditions(*imports: Dict[str, Any]) -> Dict[str, An
         if rec.get("source_type") in {"dxf_existing_conditions", "landxml"}:
             breaklines.extend(safe_list(rec.get("breaklines")))
         if rec.get("source_type") in {"surface_xyz_csv", "geotiff_surface"} and rec.get("surface") is not None:
-            surfaces.append({"source": rec.get("source"), "surface": rec.get("surface"), "ncols": rec.get("ncols"), "nrows": rec.get("nrows")})
+            surface_rec = {
+                "source": rec.get("source"),
+                "source_type": rec.get("source_type"),
+                "surface": rec.get("surface"),
+                "ncols": rec.get("ncols"),
+                "nrows": rec.get("nrows"),
+                "cell_size": rec.get("cell_size"),
+                "bounds": rec.get("bounds"),
+                "canonicalized": True,
+                "metadata_only": False,
+            }
+            surfaces.append(surface_rec)
         if rec.get("source_type") == "landxml":
             for surface in safe_list(rec.get("surfaces")):
                 surface_rec = safe_dict(surface)
@@ -901,6 +1178,8 @@ def merge_imported_existing_conditions(*imports: Dict[str, Any]) -> Dict[str, An
                             "point_count": safe_int(surface_rec.get("point_count"), len(safe_list(surface_rec.get("points")))),
                             "face_count": safe_int(surface_rec.get("face_count"), len(safe_list(surface_rec.get("faces")))),
                             "breakline_count": safe_int(surface_rec.get("breakline_count"), len(safe_list(surface_rec.get("breaklines")))),
+                            "canonicalized": True,
+                            "metadata_only": False,
                         }
                     )
         if rec.get("source_type") in {"geojson", "geospatial_vector", "dxf_existing_conditions"}:
@@ -912,7 +1191,7 @@ def merge_imported_existing_conditions(*imports: Dict[str, Any]) -> Dict[str, An
         "source_type": "merged_existing_conditions",
         "sources": sources,
         "survey": {
-            "source": "imported_existing_conditions" if survey_points else "missing",
+            "source": "imported_existing_conditions" if (survey_points or surfaces) else "missing",
             "point_count": len(survey_points),
             "points": survey_points,
             "breakline_count": len(breaklines),
@@ -923,10 +1202,74 @@ def merge_imported_existing_conditions(*imports: Dict[str, Any]) -> Dict[str, An
         "coordinate_system": _normalize_coordinate_system(coordinate_system),
         "coordinate_systems": coordinate_systems,
         "surfaces": surfaces,
+        "metadata_only_sources": metadata_only_sources,
+        "canonical_targets": dedupe_keep_order(canonical_targets),
         "warnings": warnings,
     }
     merged["import_validation"] = validate_imported_existing_conditions_package(merged)
+    merged["canonical_existing_conditions_model"] = build_canonical_existing_conditions_model(merged)
     return merged
+
+
+def build_canonical_existing_conditions_model(merged: Dict[str, Any]) -> Dict[str, Any]:
+    """Build the normalized existing-conditions model used by downstream systems.
+
+    The model is canonical evidence, not professional approval. Metadata-only
+    sources remain visible but are intentionally separated from usable geometry.
+    """
+
+    rec = safe_dict(merged)
+    survey = safe_dict(rec.get("survey"))
+    gis_layers = safe_dict(rec.get("gis_layers") or rec.get("existing_conditions"))
+    surfaces = [safe_dict(item) for item in safe_list(rec.get("surfaces"))]
+    validation = safe_dict(rec.get("import_validation"))
+    sources = [safe_dict(item) for item in safe_list(rec.get("sources"))]
+    canonical_sources = [source for source in sources if bool(source.get("canonicalized"))]
+    metadata_only_sources = [source for source in sources if bool(source.get("metadata_only"))]
+    terrain_surfaces = []
+    for index, surface in enumerate(surfaces, start=1):
+        metadata = _surface_metadata_from_surface_rec(surface)
+        metadata["id"] = safe_str(surface.get("id"), f"terrain-surface-{index}")
+        metadata["canonicalized"] = bool(surface.get("canonicalized", True))
+        metadata["metadata_only"] = bool(surface.get("metadata_only"))
+        terrain_surfaces.append(metadata)
+    layer_counts = {layer: len(safe_list(gis_layers.get(layer))) for layer in REQUIRED_GIS_LAYERS}
+    terrain_confidence = _terrain_source_confidence(rec)
+    model = {
+        "version": CANONICAL_MODEL_VERSION,
+        "source_type": "canonical_existing_conditions_model",
+        "canonicalized": bool(canonical_sources or terrain_surfaces or safe_list(survey.get("points")) or any(layer_counts.values())),
+        "metadata_only": not bool(canonical_sources or terrain_surfaces or safe_list(survey.get("points")) or any(layer_counts.values())),
+        "canonical_targets": dedupe_keep_order(safe_list(rec.get("canonical_targets"))),
+        "survey": {
+            "source": safe_str(survey.get("source"), "missing"),
+            "point_count": safe_int(survey.get("point_count"), len(safe_list(survey.get("points")))),
+            "points": deepcopy(safe_list(survey.get("points"))),
+            "breakline_count": safe_int(survey.get("breakline_count"), len(safe_list(survey.get("breaklines")))),
+            "breaklines": deepcopy(safe_list(survey.get("breaklines"))),
+            "metadata_only": not bool(safe_list(survey.get("points")) or safe_list(survey.get("breaklines"))),
+        },
+        "terrain": {
+            "source_confidence": terrain_confidence["label"],
+            "confidence": terrain_confidence,
+            "surface_count": len(terrain_surfaces),
+            "surfaces": terrain_surfaces,
+            "metadata_only": not bool(terrain_surfaces),
+        },
+        "gis_layers": deepcopy(gis_layers),
+        "gis_layer_counts": layer_counts,
+        "coordinate_system": deepcopy(_normalize_coordinate_system(safe_dict(rec.get("coordinate_system")))),
+        "sources": deepcopy(sources),
+        "canonical_sources": deepcopy(canonical_sources),
+        "metadata_only_sources": deepcopy(metadata_only_sources),
+        "validation": {
+            "production_usable": bool(validation.get("production_usable")),
+            "blocker_count": len(safe_list(validation.get("blockers"))),
+            "warning_count": len(safe_list(validation.get("warnings"))),
+        },
+        "truth_label": "Canonical existing conditions are parsed evidence only; metadata-only sources are separated and production use still depends on validation and professional review.",
+    }
+    return model
 
 
 def validate_imported_existing_conditions_package(
@@ -946,6 +1289,8 @@ def validate_imported_existing_conditions_package(
     blockers: List[Dict[str, Any]] = []
     warnings: List[str] = [safe_str(item) for item in safe_list(rec.get("warnings")) if safe_str(item)]
     sources = [safe_dict(item) for item in safe_list(rec.get("sources"))]
+    metadata_only_sources = [source for source in sources if bool(source.get("metadata_only"))]
+    dependency_blocked_sources = [source for source in sources if bool(source.get("dependency_blocked"))]
     failed_sources = [source for source in sources if source and not bool(source.get("success"))]
     if failed_sources:
         blockers.append(
@@ -953,6 +1298,31 @@ def validate_imported_existing_conditions_package(
                 "field": "sources",
                 "reason": "One or more existing-condition imports failed.",
                 "sources": failed_sources,
+            }
+        )
+    if dependency_blocked_sources:
+        blockers.append(
+            {
+                "field": "dependency_blocked_imports",
+                "reason": "One or more existing-condition imports are blocked by missing importer dependencies.",
+                "required_dependencies": [
+                    {
+                        "source": safe_str(source.get("source")),
+                        "source_type": safe_str(source.get("source_type")),
+                        "required_dependency": safe_str(source.get("required_dependency")),
+                    }
+                    for source in dependency_blocked_sources
+                ],
+            }
+        )
+    canonical_sources = [source for source in sources if bool(source.get("canonicalized"))]
+    all_sources_explicitly_metadata_only = bool(sources) and len(metadata_only_sources) == len(sources)
+    if all_sources_explicitly_metadata_only:
+        blockers.append(
+            {
+                "field": "metadata_only_imports",
+                "reason": "Only metadata-only existing-condition imports are present; metadata-only imports cannot satisfy production-grade requirements.",
+                "metadata_only_sources": metadata_only_sources,
             }
         )
 
@@ -979,6 +1349,15 @@ def validate_imported_existing_conditions_package(
     survey_points = [safe_dict(item) for item in safe_list(survey.get("points"))]
     point_quality = _point_quality(survey_points)
     surface_count = len(safe_list(rec.get("surfaces")))
+    terrain_confidence = _terrain_source_confidence(rec)
+    survey_source = safe_str(survey.get("source"))
+    if point_count > 0 and not survey_source:
+        blockers.append(
+            {
+                "field": "survey_source",
+                "reason": "Survey evidence requires traceable source metadata before production-grade use.",
+            }
+        )
     if require_surface and point_count < 3 and surface_count <= 0:
         blockers.append(
             {
@@ -1052,6 +1431,52 @@ def validate_imported_existing_conditions_package(
                 "missing_source_layers": source_missing_layers,
             }
         )
+    production_requirements = [
+        _production_requirement(
+            "survey_source",
+            bool(survey_source and survey_source != "missing") if point_count > 0 else surface_count > 0,
+            "Survey or terrain source metadata is required for production-grade existing conditions.",
+            evidence=survey_source or None,
+        ),
+        _production_requirement(
+            "survey_datum_control",
+            not any(item.get("field") in {"survey_benchmark", "survey_datum", "survey_control_verified"} for item in blockers),
+            "Datum, benchmark, and verified control are required for production-grade survey use.",
+        ),
+        _production_requirement(
+            "coordinate_system",
+            bool(coordinate_validation.get("valid")),
+            "Projected coordinate system with engineering units and source/control metadata is required for geospatial/GIS use.",
+            evidence=safe_dict(coordinate_validation.get("coordinate_system")),
+        ),
+        _production_requirement(
+            "terrain_source_confidence",
+            terrain_confidence["label"] in {"survey-backed", "DEM-backed"},
+            "Terrain source confidence must be survey-backed or DEM-backed for production-grade existing conditions.",
+            evidence=terrain_confidence,
+        ),
+        _production_requirement(
+            "canonical_imports",
+            bool(canonical_sources) or not all_sources_explicitly_metadata_only,
+            "At least one imported source must canonicalize usable existing-condition evidence.",
+            evidence={"canonical_source_count": len(canonical_sources), "metadata_only_source_count": len(metadata_only_sources)},
+        ),
+    ]
+    importer_matrix = []
+    for source in sources:
+        importer_matrix.append(
+            {
+                "source": safe_str(source.get("source")),
+                "source_type": safe_str(source.get("source_type")),
+                "success": bool(source.get("success")),
+                "canonicalized": bool(source.get("canonicalized")),
+                "metadata_only": bool(source.get("metadata_only")),
+                "production_usable": bool(source.get("success")) and bool(source.get("canonicalized")) and not bool(source.get("metadata_only")) and not bool(source.get("dependency_blocked")),
+                "canonical_targets": safe_list(source.get("canonical_targets")),
+                "dependency_blocked": bool(source.get("dependency_blocked")),
+                "required_dependency": safe_str(source.get("required_dependency")),
+            }
+        )
 
     return {
         "success": not blockers,
@@ -1065,6 +1490,11 @@ def validate_imported_existing_conditions_package(
         "survey_point_quality": point_quality,
         "breakline_count": breakline_count,
         "layer_counts": layer_counts,
+        "metadata_only_source_count": len(metadata_only_sources),
+        "dependency_blocked_sources": dependency_blocked_sources,
+        "terrain_source_confidence": terrain_confidence,
+        "production_requirements": production_requirements,
+        "importer_production_matrix": importer_matrix,
         "coordinate_system_validation": coordinate_validation,
         "truth_label": "Successful import is not production approval; CRS, surface evidence, and required GIS layers must validate first.",
     }
@@ -1072,6 +1502,7 @@ def validate_imported_existing_conditions_package(
 
 __all__ = [
     "dependency_blocked_existing_conditions_import",
+    "build_canonical_existing_conditions_model",
     "import_geojson",
     "classify_existing_conditions_file",
     "import_geospatial_vector_file",
