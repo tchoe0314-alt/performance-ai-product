@@ -41,6 +41,28 @@ def _plan() -> dict:
                 ],
                 "structures": [{"id": "cb-1", "name": "CB-1", "x": 0, "y": 0}],
             },
+            "profiles": [
+                {
+                    "id": "profile-1",
+                    "name": "ROAD PROFILE 1",
+                    "alignment_id": "align-1",
+                    "canonical_source_id": "profile-canon-1",
+                }
+            ],
+            "cross_sections": [
+                {
+                    "id": "section-1",
+                    "name": "ROAD SECTION 1",
+                    "alignment_id": "align-1",
+                    "canonical_source_id": "section-canon-1",
+                }
+            ],
+            "quantities": {
+                "quantity_audit": {
+                    "pipe_length_ft": {"source_object_ids": ["storm-1"]},
+                    "profile_length_ft": {"source_object_ids": ["profile-canon-1"]},
+                }
+            },
             "construction_readiness": {
                 "ready": True,
                 "status": "construction_ready",
@@ -66,10 +88,23 @@ class ExportPackageReportTests(unittest.TestCase):
         self.assertEqual(report["source_canonical_revision"], "rev-2")
         self.assertEqual(report["source_canonical_hash"], "hash-rev-2")
         self.assertIn("storm-1", report["canonical_ids_included"])
+        self.assertIn("profile-canon-1", report["canonical_ids_included"])
+        self.assertIn("section-canon-1", report["canonical_ids_included"])
+        self.assertIn("align-1", report["canonical_ids_included"])
         self.assertIn("storm_pipes", report["included_systems"])
+        self.assertIn("profiles", report["included_systems"])
+        self.assertIn("cross_sections", report["included_systems"])
         self.assertEqual(report["standards_status"], "ready")
         self.assertEqual(report["existing_conditions_status"], "ready")
         self.assertEqual(report["engine_depth_status"], "ready")
+        self.assertTrue(report["engineer_review_required"])
+        self.assertFalse(report["civora_signoff_allowed"])
+        self.assertFalse(report["construction_release_allowed"])
+        self.assertTrue(report["construction_release_blocked"])
+        self.assertEqual(report["deliverable_confidence"], "construction_blocked")
+        self.assertIn("construction_package_manifest_missing", report["construction_release_blockers"])
+        self.assertEqual(report["profile_packages"][0]["canonical_ids"], ["profile-canon-1", "align-1", "profile-1"])
+        self.assertEqual(report["section_packages"][0]["canonical_ids"], ["section-canon-1", "align-1", "section-1"])
 
     def test_stale_canonical_revision_blocks_export_readiness(self) -> None:
         plan = _plan()
@@ -80,6 +115,7 @@ class ExportPackageReportTests(unittest.TestCase):
         self.assertTrue(report["construction_release_blocked"])
         self.assertIn("last_exported_canonical_hash", report["stale_outputs_detected"])
         self.assertEqual(report["deliverable_confidence"], "construction_blocked")
+        self.assertFalse(report["construction_release_allowed"])
 
     def test_missing_standards_imports_and_depth_gates_block_construction_status(self) -> None:
         plan = _plan()
@@ -98,6 +134,7 @@ class ExportPackageReportTests(unittest.TestCase):
         self.assertIn("production_usable_standards", report["missing_inputs"])
         self.assertIn("production_ready_existing_conditions", report["missing_inputs"])
         self.assertIn("production_ready_engine_depth", report["missing_inputs"])
+        self.assertEqual(report["deliverable_confidence"], "construction_blocked")
 
     def test_dxf_landxml_and_report_package_include_audit_metadata(self) -> None:
         plan = _plan()
@@ -113,11 +150,17 @@ class ExportPackageReportTests(unittest.TestCase):
         self.assertEqual(report_node.attrib["source"], "export_package_report_v1")
         self.assertEqual(report_node.attrib["export_type"], "landxml")
         self.assertEqual(report_node.attrib["source_canonical_hash"], "hash-rev-2")
+        self.assertEqual(report_node.attrib["engineer_review_required"], "true")
+        self.assertEqual(report_node.attrib["civora_signoff_allowed"], "false")
+        self.assertEqual(report_node.attrib["construction_release_allowed"], "false")
+        self.assertEqual(report_node.attrib["construction_release_blocked"], "true")
 
         report = build_export_package_report_v1(plan, export_type="report", generated_at="2026-06-06T00:00:00Z")
         self.assertEqual(report["export_type"], "report")
         self.assertEqual(report["source"], "export_package_report_v1")
         self.assertIn("supported_deliverables", report)
+        self.assertTrue(report["profile_packages"])
+        self.assertTrue(report["section_packages"])
 
     def test_unsupported_civil3d_and_dwg_are_labeled_honestly(self) -> None:
         plan = _plan()
@@ -130,6 +173,30 @@ class ExportPackageReportTests(unittest.TestCase):
         self.assertEqual(report["supported_deliverables"]["dwg"]["status"], "unsupported_no_writer")
         self.assertFalse(report["supported_deliverables"]["civil3d"]["construction_ready"])
         self.assertFalse(report["supported_deliverables"]["dwg"]["construction_ready"])
+
+    def test_civora_never_approves_signs_or_seals_construction_deliverables(self) -> None:
+        plan = _plan()
+        plan["meta"]["professional_review"] = {
+            "engineer_name": "External Engineer",
+            "license_number": "PE-12345",
+            "license_jurisdiction": "TX",
+            "jurisdiction": "TX",
+            "discipline": "civil",
+            "status": "released_for_construction",
+            "sealed": True,
+            "review_date": "2026-06-01",
+            "scope": ["civil review package"],
+            "manual_external_record": True,
+        }
+
+        finalize_export_metadata(plan)
+        report = plan["meta"]["export_package_report_v1"]
+
+        self.assertTrue(report["engineer_review_required"])
+        self.assertFalse(report["civora_signoff_allowed"])
+        self.assertFalse(report["construction_release_allowed"])
+        self.assertTrue(report["construction_release_blocked"])
+        self.assertIn("Civora never signs, seals, certifies, or approves construction", report["truth_label"])
 
 
 if __name__ == "__main__":

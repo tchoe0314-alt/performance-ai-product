@@ -176,7 +176,65 @@ def _canonical_ids(meta: Dict[str, Any]) -> List[str]:
     quantity_audit = safe_dict(safe_dict(quantities.get("meta_summary")).get("quantity_audit"))
     for row in quantity_audit.values():
         ids.extend(safe_list(safe_dict(row).get("source_object_ids")))
+    for key in ("quantity_audit", "trace", "explain"):
+        for row in safe_dict(quantities.get(key)).values():
+            ids.extend(_ids_from_record(safe_dict(row)))
+    for key in ("profiles", "cross_sections", "alignments"):
+        for row in safe_list(meta.get(key)):
+            ids.extend(_ids_from_record(safe_dict(row)))
     return _unique(ids)
+
+
+def _ids_from_record(record: Dict[str, Any]) -> List[str]:
+    ids: List[str] = []
+    for key in (
+        "canonical_id",
+        "canonical_source_id",
+        "canonical_model_id",
+        "alignment_id",
+        "alignment_owner",
+        "id",
+        "profile_id",
+        "section_id",
+        "source_object_id",
+        "quantity_source_id",
+    ):
+        value = safe_str(record.get(key))
+        if value:
+            ids.append(value)
+    for key in ("canonical_ids", "canonical_source_ids", "source_object_ids", "quantity_source_ids"):
+        ids.extend(safe_list(record.get(key)))
+    trace = safe_dict(record.get("trace") or record.get("explain") or record.get("canonical_id_traceability"))
+    if trace and trace is not record:
+        ids.extend(_ids_from_record(trace))
+    return _unique(ids)
+
+
+def _deliverable_records(meta: Dict[str, Any], key: str, export_type: str) -> List[Dict[str, Any]]:
+    records: List[Dict[str, Any]] = []
+    for index, row in enumerate(safe_list(meta.get(key)), start=1):
+        rec = safe_dict(row)
+        if not rec:
+            continue
+        records.append(
+            {
+                "package_type": export_type,
+                "record_type": key[:-1] if key.endswith("s") else key,
+                "record_id": safe_str(
+                    rec.get("id")
+                    or rec.get("name")
+                    or rec.get("profile_id")
+                    or rec.get("section_id"),
+                    f"{key}-{index}",
+                ),
+                "canonical_ids": _ids_from_record(rec),
+                "engineer_review_required": True,
+                "civora_signoff_allowed": False,
+                "construction_release_allowed": False,
+                "review_package_only": True,
+            }
+        )
+    return records
 
 
 def _layer_contract_status(meta: Dict[str, Any], cad_interop: Dict[str, Any]) -> str:
@@ -250,15 +308,17 @@ def build_export_package_report_v1(
     )
     audit_blocked = export_audit.get("export_blocked") is True or export_audit.get("production_export_ready") is False
     gate_blocked = any(status != "ready" for status in (standards_status, existing_status, depth_status))
-    construction_release_blocked = bool(construction_blockers or audit_blocked or gate_blocked or stale)
+    construction_release_blocked = True
     formats = _format_matrix(cad_interop, bool(export_audit and not audit_blocked))
+    review_blocked = bool(audit_blocked or gate_blocked or stale)
     deliverable_confidence = (
         "construction_blocked"
-        if construction_release_blocked
-        else "audited_review_ready"
+        if review_blocked
+        else "ready_for_engineer_review"
         if export_audit.get("production_export_ready") is True
         else "review_only_unverified"
     )
+    canonical_ids = _canonical_ids(meta)
     return {
         "source": "export_package_report_v1",
         "export_type": safe_str(export_type),
@@ -273,17 +333,23 @@ def build_export_package_report_v1(
         "standards_status": standards_status,
         "existing_conditions_status": existing_status,
         "engine_depth_status": depth_status,
+        "engineer_review_required": True,
+        "civora_signoff_allowed": False,
+        "construction_release_allowed": False,
         "construction_release_blocked": construction_release_blocked,
+        "external_construction_release_required": True,
         "construction_release_blockers": _unique(construction_blockers + safe_list(export_audit.get("blocked_reasons"))),
         "construction_release_blocker_details": blocker_explanations(_unique(construction_blockers + safe_list(export_audit.get("blocked_reasons")))),
-        "canonical_ids_included": _canonical_ids(meta),
+        "canonical_ids_included": canonical_ids,
         "layer_contract_status": _layer_contract_status(meta, cad_interop),
         "deliverable_confidence": deliverable_confidence,
+        "profile_packages": _deliverable_records(meta, "profiles", safe_str(export_type)),
+        "section_packages": _deliverable_records(meta, "cross_sections", safe_str(export_type)),
         "supported_deliverables": deepcopy(formats),
         "civil3d_compatibility": "unsupported_limited_not_verified",
         "dwg_compatibility": "unsupported_no_writer",
         "landxml_compatibility": formats["landxml"]["status"],
-        "truth_label": "Export package report is traceable review metadata only; construction release stays blocked unless standards, imports, engine depth, stale-output, audit, and professional gates pass.",
+        "truth_label": "Export package report is traceable review metadata only. Civora never signs, seals, certifies, or approves construction; construction release requires external licensed engineer/user action outside Civora.",
     }
 
 
