@@ -108,6 +108,11 @@ class ApplicationFileWorkflowsTest(unittest.TestCase):
             self.assertIn("existing_conditions_package", result)
             self.assertEqual(result["existing_conditions_package"]["status"], "blocked")
             self.assertIn("import_validation", result["existing_conditions_package"])
+            self.assertIn("import_matrix", result)
+            self.assertEqual(result["import_matrix"][0]["status"], "review_required")
+            self.assertFalse(result["import_matrix"][0]["production_usable"])
+            self.assertIn("Survey import needs benchmark evidence before it is production-usable.", result["import_matrix"][0]["blocker_messages"])
+            self.assertEqual(result["canonical_vs_metadata_only"]["canonical_source_count"], 1)
 
     def test_upload_existing_conditions_rejects_unsupported_extension_before_storage(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -146,6 +151,21 @@ class ApplicationFileWorkflowsTest(unittest.TestCase):
             source = result["existing_conditions_package"]["canonical_existing_conditions"]["sources"][0]
             self.assertTrue(source["dependency_blocked"])
             self.assertIn("sources", {item["field"] for item in result["existing_conditions_package"]["blockers"]})
+            self.assertEqual(result["import_matrix"][0]["status"], "blocked")
+            self.assertIn("One or more existing-condition imports failed.", result["import_matrix"][0]["blocker_messages"])
+
+    def test_upload_existing_conditions_accepts_zipped_shapefile_for_dependency_aware_import(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            upload = UploadFile(filename="constraints.zip", file=BytesIO(b"not a real zip"))
+            result = upload_existing_conditions_file(
+                upload_dir=Path(tmpdir),
+                file=upload,
+                current_user={"user_id": "u1"},
+            )
+
+            self.assertFalse(result["success"])
+            self.assertEqual(result["format_classification"]["format"], "zip")
+            self.assertEqual(result["import_matrix"][0]["status"], "blocked")
 
     def test_online_sources_returns_truth_labeled_registry(self):
         result = existing_conditions_online_sources(address="1 Main St", bbox={"west": -97, "south": 32, "east": -96, "north": 33})

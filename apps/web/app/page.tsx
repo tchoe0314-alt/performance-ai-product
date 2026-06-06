@@ -38,11 +38,11 @@ import type {
   PlanMeta,
   PlanResponse,
   SurveySlopeResponse,
-  SurveyPointsResponse,
   ImageDetectResponse,
   MapAnalysis,
   PreviewResponse,
   UploadImageResponse,
+  UploadExistingConditionsResponse,
   UploadSurveyResponse,
   UserRecord,
   PlanToolMode,
@@ -6857,59 +6857,89 @@ function PerformanceAIDashboardView({
     return mapped.filter((_, idx) => idx % step === 0);
   }
 
-  const uploadSurvey = async (file: File) => {
+  const summarizeExistingConditionsUpload = (data: UploadExistingConditionsResponse) => {
+    const matrix = data.import_matrix ?? data.import_validation?.import_matrix ?? data.import_validation?.importer_production_matrix ?? [];
+    const countByStatus = (status: string) => matrix.filter((item) => item.status === status).length;
+    const canonical = countByStatus("canonical");
+    const reviewRequired = countByStatus("review_required");
+    const metadataOnly = countByStatus("metadata_only");
+    const blocked = countByStatus("blocked");
+    const confidence = String(
+      data.import_validation?.terrain_source_confidence?.label ??
+        ((data.existing_conditions_package?.terrain_source_confidence as Record<string, unknown> | undefined)?.label) ??
+        "missing",
+    );
+    const blockerMessages = matrix
+      .flatMap((item) => item.blocker_messages ?? [])
+      .concat((data.blockers ?? []).map((item) => String(item.reason || item.message || item.field || "")))
+      .filter((item, index, items) => item && items.indexOf(item) === index)
+      .slice(0, 5);
+    const targets = matrix
+      .flatMap((item) => item.canonical_targets ?? [])
+      .filter((item, index, items) => item && items.indexOf(item) === index);
+    return [
+      `Existing-condition import: ${data.filename ?? "file"} (${data.file_type ?? "unknown"}).`,
+      `Matrix: canonical ${canonical}, review-required ${reviewRequired}, metadata-only ${metadataOnly}, blocked ${blocked}.`,
+      `Terrain confidence: ${confidence}. Canonical targets: ${targets.length ? targets.join(", ") : "none"}.`,
+      blockerMessages.length ? `Exact blockers:\n${blockerMessages.map((item) => `- ${item}`).join("\n")}` : "Exact blockers: none recorded.",
+    ].join("\n");
+  };
+
+  const uploadExistingConditions = async (file: File) => {
     if (!token) return;
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const data = await postForm<UploadSurveyResponse>("/api/upload-survey", formData, {
+      const data = await postForm<UploadExistingConditionsResponse>("/api/upload-existing-conditions", formData, {
         token,
       });
       const storedFilename = data.stored_filename || file.name;
+      const canonical = data.canonical_existing_conditions ?? {};
+      const survey = canonical.survey && typeof canonical.survey === "object" ? canonical.survey as Record<string, unknown> : {};
+      const surveyPoints = Array.isArray(survey.points)
+        ? (survey.points as Array<Record<string, unknown>>)
+            .map((point) => [Number(point.x), Number(point.y), Number(point.z)])
+            .filter((point) => point.every((value) => Number.isFinite(value)))
+        : [];
       setSurveyFileName(storedFilename);
+      setSurveyPoints(surveyPoints);
+      setSurveyPreviewPoints(mapSurveyPointsToSite(surveyPoints));
       setSurveyDiagnostics({
         fileType: data.file_type,
-        parseSuccess: data.parse_success,
-        pointCount: data.point_count,
-        contourCount: data.contour_count,
-        recognizedColumns: data.recognized_columns,
-        invalidRows: data.invalid_rows,
-        bounds: data.bounds,
-        elevationRange: data.elevation_range,
+        parseSuccess: Boolean(data.success && surveyPoints.length),
+        pointCount: Number(survey.point_count ?? surveyPoints.length ?? 0),
+        contourCount: Number(survey.breakline_count ?? 0),
+        recognizedColumns: {},
+        invalidRows: 0,
+        bounds: survey.bounds as UploadSurveyResponse["bounds"],
+        elevationRange: survey.elevation_range as UploadSurveyResponse["elevation_range"],
         warnings: data.warnings,
       });
-      let pointsResponse: SurveyPointsResponse | null = null;
-      if (storedFilename && (data.file_type || "").toLowerCase() === "csv") {
-        pointsResponse = await postJson<SurveyPointsResponse>(
-          "/api/survey/points",
-          { filename: storedFilename },
-          { token },
-        );
-        const points = Array.isArray(pointsResponse.points) ? pointsResponse.points : [];
-        setSurveyPoints(points);
-        setSurveyPreviewPoints(mapSurveyPointsToSite(points));
-      } else {
-        setSurveyPoints([]);
-        setSurveyPreviewPoints([]);
-      }
       const currentInput = currentProject?.project_input ?? payloadPreview;
       const nextSiteInputs = {
         ...(currentInput?.meta?.site_inputs ?? {}),
         survey_file: {
           filename: data.filename || file.name,
           stored_filename: storedFilename,
-          survey_url: data.survey_url || "",
+          survey_url: data.file_url || "",
         },
         survey_file_type: data.file_type,
-        survey_parse_success: data.parse_success,
-        survey_point_count: pointsResponse?.point_count ?? data.point_count ?? 0,
-        survey_point_columns: pointsResponse?.recognized_columns ?? data.recognized_columns ?? {},
-        survey_invalid_rows: pointsResponse?.invalid_rows ?? data.invalid_rows ?? 0,
-        survey_point_warnings: pointsResponse?.warnings ?? data.warnings ?? [],
-        survey_points: pointsResponse?.points ?? [],
-        survey_bounds: data.bounds ?? null,
-        survey_elevation_range: data.elevation_range ?? null,
+        survey_parse_success: Boolean(data.success && surveyPoints.length),
+        survey_point_count: Number(survey.point_count ?? surveyPoints.length ?? 0),
+        survey_point_warnings: data.warnings ?? [],
+        survey_points: surveyPoints,
+        survey_bounds: (survey.bounds as SiteInputs["survey_bounds"]) ?? null,
+        survey_elevation_range: (survey.elevation_range as SiteInputs["survey_elevation_range"]) ?? null,
         use_survey_for_grading: useSurveyForGrading,
+        existing_conditions_import: {
+          filename: data.filename || file.name,
+          stored_filename: storedFilename,
+          file_type: data.file_type,
+          import_matrix: data.import_matrix ?? data.import_validation?.import_matrix ?? data.import_validation?.importer_production_matrix ?? [],
+          canonical_vs_metadata_only: data.canonical_vs_metadata_only ?? data.import_validation?.canonical_vs_metadata_only ?? {},
+          blockers: data.blockers ?? data.import_validation?.blockers ?? [],
+          package_status: String(data.existing_conditions_package?.status ?? "unknown"),
+        },
       };
       await saveProject({
         silent: true,
@@ -6921,14 +6951,26 @@ function PerformanceAIDashboardView({
           meta: {
             ...(currentInput?.meta ?? {}),
             site_inputs: nextSiteInputs,
+            existing_conditions_package: data.existing_conditions_package,
+            existing_conditions_import_validation: data.import_validation,
+            existing_conditions_summary: data.existing_conditions_summary,
+            canonical_existing_conditions: data.canonical_existing_conditions,
+            canonical_existing_conditions_model: data.canonical_existing_conditions?.canonical_existing_conditions_model,
+            import_matrix: data.import_matrix ?? data.import_validation?.import_matrix ?? data.import_validation?.importer_production_matrix,
+            canonical_vs_metadata_only: data.canonical_vs_metadata_only ?? data.import_validation?.canonical_vs_metadata_only,
           },
         },
       });
-      setStatusMessage(data.parse_success ? "Survey uploaded and parsed." : "Survey uploaded.");
+      appendChatMessage("assistant", summarizeExistingConditionsUpload(data), "status");
+      setStatusMessage(
+        data.existing_conditions_package?.status === "ready"
+          ? "Existing conditions imported and ready."
+          : "Existing conditions imported; review blockers are recorded.",
+      );
     } catch (error) {
       setSurveyFileName(file.name);
       setStatusMessage(
-        error instanceof Error ? error.message : "Survey upload failed.",
+        error instanceof Error ? error.message : "Existing-condition upload failed.",
       );
     }
   };
@@ -11794,12 +11836,12 @@ function PerformanceAIDashboardView({
                       <input
                         ref={surveyInputRef}
                         type="file"
-                        accept=".csv,.txt,.xml,.las,.laz,.xyz,.pts"
+                        accept=".csv,.geojson,.json,.dxf,.shp,.zip,.gpkg,.tif,.tiff,.las,.laz,.xml,.landxml"
                         className="hidden"
                         onChange={async (event) => {
                           const file = event.currentTarget.files?.[0];
                           if (file) {
-                            await uploadSurvey(file);
+                            await uploadExistingConditions(file);
                           }
                           event.currentTarget.value = "";
                         }}

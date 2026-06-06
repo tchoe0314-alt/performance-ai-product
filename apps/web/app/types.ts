@@ -805,6 +805,48 @@ export type UploadSurveyResponse = {
   message?: string;
 };
 
+export type ExistingConditionsImportMatrixRow = {
+  source?: string;
+  source_type?: string;
+  success?: boolean;
+  canonicalized?: boolean;
+  metadata_only?: boolean;
+  status?: "canonical" | "metadata_only" | "blocked" | "review_required" | string;
+  review_required?: boolean;
+  production_usable?: boolean;
+  canonical_targets?: string[];
+  dependency_blocked?: boolean;
+  required_dependency?: string;
+  blocker_messages?: string[];
+};
+
+export type UploadExistingConditionsResponse = {
+  success: boolean;
+  message?: string;
+  filename?: string;
+  stored_filename?: string;
+  file_url?: string;
+  file_type?: string;
+  imports?: Array<Record<string, unknown>>;
+  canonical_existing_conditions?: Record<string, unknown>;
+  import_validation?: {
+    production_usable?: boolean;
+    blockers?: Array<Record<string, unknown>>;
+    warnings?: string[];
+    terrain_source_confidence?: Record<string, unknown>;
+    import_matrix?: ExistingConditionsImportMatrixRow[];
+    importer_production_matrix?: ExistingConditionsImportMatrixRow[];
+    canonical_vs_metadata_only?: Record<string, unknown>;
+  };
+  import_matrix?: ExistingConditionsImportMatrixRow[];
+  canonical_vs_metadata_only?: Record<string, unknown>;
+  blockers?: Array<Record<string, unknown>>;
+  blocker_details?: Array<Record<string, unknown>>;
+  existing_conditions_summary?: Record<string, unknown>;
+  existing_conditions_package?: Record<string, unknown>;
+  warnings?: string[];
+};
+
 export type SurveySlopeResponse = {
   success: boolean;
   slope_ratio?: number;
