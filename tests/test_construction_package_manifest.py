@@ -1,7 +1,11 @@
 import unittest
 
 import planner
-from backend.planning.construction_package import build_construction_package_manifest, build_review_package_manifest
+from backend.planning.construction_package import (
+    build_construction_document_support_package,
+    build_construction_package_manifest,
+    build_review_package_manifest,
+)
 
 
 def _valid_professional_review(model_id: str = "MODEL-FINAL-1", package_id: str = "PKG-IFC-1") -> dict:
@@ -1108,6 +1112,81 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         artifact_status = manifest["construction_package_artifact_status"]
         self.assertFalse(artifact_status["cost_untraced"])
         self.assertFalse(artifact_status["cost_mismatched"])
+
+    def test_construction_document_support_package_scope_matrix_is_review_only(self) -> None:
+        meta = {
+            "grading": {"status": "ready"},
+            "drainage": {"status": "ready"},
+            "utilities": {"status": "ready"},
+            "profiles": [{"profile_id": "P-1"}],
+            "quantities": {"success": True},
+            "assumptions": [{"field_name": "runoff_coefficient", "assumed_value": 0.75}],
+            "standards_package": {"status": "ready", "production_usable": True},
+            "existing_conditions_package": {"status": "ready", "production_ready": True},
+            "engineer_review_package": {
+                "review_status": "ready_for_engineer_review",
+                "approval_checklist": [
+                    {"item_id": "calculations_reviewed", "status": "manual_required"},
+                    {"item_id": "external_engineer_approval_record", "status": "manual_required"},
+                ],
+            },
+            "construction_readiness": {
+                "ready": False,
+                "blockers": [
+                    {
+                        "area": "profile_section",
+                        "field": "cross_sections",
+                        "reason": "Cross sections were requested but are missing.",
+                    }
+                ],
+            },
+        }
+
+        package = build_construction_document_support_package({"actions": [{"task": "draw_site_plan"}], "meta": meta})
+
+        self.assertEqual(package["version"], "construction_document_support_package_v1")
+        self.assertTrue(package["engineer_review_required"])
+        self.assertTrue(package["engineer_approval_required"])
+        self.assertFalse(package["construction_approval"])
+        self.assertFalse(package["construction_release_allowed"])
+        self.assertFalse(package["construction_export_allowed"])
+        self.assertFalse(package["civora_engineer_of_record"])
+        self.assertFalse(package["civora_signoff_allowed"])
+        self.assertIn("never stamps, seals, signs", package["truth_label"])
+
+        matrix = package["section_status_matrix"]
+        self.assertEqual(matrix["site_plan"], "included")
+        self.assertEqual(matrix["grading_plan"], "included")
+        self.assertEqual(matrix["drainage_plan"], "included")
+        self.assertEqual(matrix["utility_plan"], "included")
+        self.assertEqual(matrix["profiles"], "included")
+        self.assertEqual(matrix["sections"], "blocked")
+        self.assertEqual(matrix["quantities"], "included")
+        self.assertEqual(matrix["assumptions"], "review_required")
+        self.assertEqual(matrix["standards_sources"], "review_required")
+        self.assertEqual(matrix["existing_conditions"], "review_required")
+        self.assertEqual(matrix["engineer_review_checklist"], "review_required")
+        self.assertEqual(set(matrix.values()).issubset({"included", "missing", "blocked", "review_required"}), True)
+
+    def test_build_plan_attaches_construction_document_support_package(self) -> None:
+        plan = planner.build_plan(
+            {
+                "project_name": "Construction Document Support Smoke",
+                "units": "ft",
+                "mode": "site_plan",
+                "lot": {"x": 0.0, "y": 0.0, "w": 120.0, "h": 100.0},
+                "site_plan": {"building_width": 40.0, "building_depth": 30.0, "parking_count": 12},
+            }
+        )
+
+        package = plan["meta"]["construction_document_support_package_v1"]
+
+        self.assertEqual(package["source"], "construction_document_support_package_v1")
+        self.assertTrue(package["engineer_review_required"])
+        self.assertFalse(package["construction_approval"])
+        self.assertFalse(package["construction_release_allowed"])
+        self.assertIn("site_plan", package["section_status_matrix"])
+        self.assertIn("engineer_review_checklist", package["section_status_matrix"])
 
 
 if __name__ == "__main__":

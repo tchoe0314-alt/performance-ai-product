@@ -74,6 +74,102 @@ REQUIRED_CONSTRUCTION_ARTIFACTS: Sequence[Dict[str, Any]] = (
 )
 
 
+CONSTRUCTION_DOCUMENT_SUPPORT_SECTIONS: Sequence[Dict[str, Any]] = (
+    {
+        "section_id": "site_plan",
+        "label": "Site Plan",
+        "evidence_keys": ("layout", "site_plan", "actions"),
+        "blocker_areas": ("layout", "civil_design", "site_plan"),
+        "review_when_present": False,
+    },
+    {
+        "section_id": "grading_plan",
+        "label": "Grading Plan",
+        "evidence_keys": ("grading", "grading_summary", "surfaces", "contours"),
+        "blocker_areas": ("grading", "grading_detail", "surface", "terrain"),
+        "review_when_present": False,
+    },
+    {
+        "section_id": "drainage_plan",
+        "label": "Drainage Plan",
+        "evidence_keys": ("drainage", "storm_pipes", "storm_summary", "hydrology"),
+        "blocker_areas": ("drainage", "storm", "storm_pipe", "hydrology", "hydraulics"),
+        "review_when_present": False,
+    },
+    {
+        "section_id": "utility_plan",
+        "label": "Utility Plan",
+        "evidence_keys": ("utilities", "sanitary", "water", "utility_summary", "sanitary_summary", "water_summary"),
+        "blocker_areas": ("utilities", "utility", "sanitary", "water", "coordination"),
+        "review_when_present": False,
+    },
+    {
+        "section_id": "profiles",
+        "label": "Profiles",
+        "evidence_keys": ("profiles", "road_profiles"),
+        "blocker_areas": ("profiles", "roadway", "corridor"),
+        "blocker_fields": ("profiles", "road_profiles", "profile_section", "depth_validation"),
+        "review_when_present": False,
+    },
+    {
+        "section_id": "sections",
+        "label": "Sections",
+        "evidence_keys": ("cross_sections", "corridor_sections"),
+        "blocker_areas": ("sections", "cross_sections", "roadway", "corridor"),
+        "blocker_fields": ("sections", "cross_sections", "corridor_sections", "profile_section", "depth_validation"),
+        "review_when_present": False,
+    },
+    {
+        "section_id": "quantities",
+        "label": "Quantities",
+        "evidence_keys": ("quantities", "quantity_summary", "cost_estimate"),
+        "blocker_areas": ("quantity", "quantities", "cost"),
+        "review_when_present": False,
+    },
+    {
+        "section_id": "assumptions",
+        "label": "Assumptions",
+        "evidence_keys": ("assumptions", "assumption_log", "assumption_summary"),
+        "blocker_areas": ("assumptions",),
+        "review_when_present": True,
+    },
+    {
+        "section_id": "qa_blockers",
+        "label": "QA Blockers",
+        "evidence_keys": ("qa", "truth_audit", "manual_validation", "blockers", "construction_readiness"),
+        "blocker_areas": ("qa", "manual_validation", "reactive_model", "deliverables", "professional_review"),
+        "review_when_present": False,
+    },
+    {
+        "section_id": "standards_sources",
+        "label": "Standards Sources",
+        "evidence_keys": ("standards_package", "standards_review_packet", "standards_acceptance", "standards"),
+        "blocker_areas": ("standards",),
+        "review_when_present": True,
+    },
+    {
+        "section_id": "existing_conditions",
+        "label": "Existing Conditions",
+        "evidence_keys": ("existing_conditions_package", "existing_conditions_summary", "existing_conditions"),
+        "blocker_areas": ("existing_conditions",),
+        "review_when_present": True,
+    },
+    {
+        "section_id": "engineer_review_checklist",
+        "label": "Engineer Review Checklist",
+        "evidence_keys": ("engineer_review_package", "engineer_review_package_v1"),
+        "blocker_areas": ("engineer_approval", "professional_review"),
+        "review_when_present": True,
+    },
+)
+
+SUPPORT_PACKAGE_RESPONSIBILITY_LABEL = (
+    "Construction-document-support package only. Civora never stamps, seals, signs, certifies, approves "
+    "construction, submits construction documents, or acts as engineer of record. The engineer/user must "
+    "review, approve, sign, seal, and submit externally where required."
+)
+
+
 def _normalize_product_mode(value: str) -> str:
     normalized = safe_str(value or "private_alpha").lower().replace("-", "_")
     aliases = {
@@ -894,6 +990,186 @@ def _section_status(
     }
 
 
+def _value_present(value: Any) -> bool:
+    if isinstance(value, dict):
+        return bool(value)
+    if isinstance(value, list):
+        return bool(value)
+    if isinstance(value, bool):
+        return value
+    return value is not None and safe_str(value) != ""
+
+
+def _meta_has_any(plan_or_meta: Dict[str, Any], meta: Dict[str, Any], keys: Sequence[str]) -> bool:
+    for key in keys:
+        if key == "actions" and safe_list(plan_or_meta.get("actions")):
+            return True
+        if _value_present(meta.get(key)):
+            return True
+    production_evidence = safe_dict(meta.get("production_evidence"))
+    for key in keys:
+        if _value_present(production_evidence.get(key)):
+            return True
+    return False
+
+
+def _support_package_blockers(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
+    blockers: List[Dict[str, Any]] = []
+    for source_key in ("construction_readiness", "civil_design_readiness", "engineer_review_package"):
+        source = safe_dict(meta.get(source_key))
+        blockers.extend(safe_dict(item) for item in safe_list(source.get("blockers")) if safe_dict(item))
+        blockers.extend(safe_dict(item) for item in safe_list(source.get("critical_blockers")) if safe_dict(item))
+        blockers.extend(safe_dict(item) for item in safe_list(source.get("production_blockers")) if safe_dict(item))
+    export_audit = safe_dict(meta.get("export_audit"))
+    for item in safe_list(export_audit.get("blocked_reasons") or export_audit.get("blockers")):
+        if isinstance(item, dict):
+            blockers.append(safe_dict(item))
+        elif safe_str(item):
+            blockers.append({"area": "deliverables", "field": safe_str(item), "reason": safe_str(item)})
+    for item in safe_list(meta.get("blockers")):
+        if isinstance(item, dict):
+            blockers.append(safe_dict(item))
+        elif safe_str(item):
+            blockers.append({"area": "qa", "field": safe_str(item), "reason": safe_str(item)})
+    return _unique_blockers(blockers)
+
+
+def _support_package_assumptions(meta: Dict[str, Any]) -> List[Any]:
+    assumptions: List[Any] = []
+    for key in ("assumptions", "assumption_log", "assumption_summary"):
+        value = meta.get(key)
+        if isinstance(value, list):
+            assumptions.extend(deepcopy(value))
+        elif isinstance(value, dict):
+            assumptions.append(deepcopy(value))
+        elif safe_str(value):
+            assumptions.append(safe_str(value))
+    return assumptions
+
+
+def _support_section_record(
+    plan_or_meta: Dict[str, Any],
+    meta: Dict[str, Any],
+    definition: Dict[str, Any],
+    blockers: Sequence[Dict[str, Any]],
+    assumptions: Sequence[Any],
+) -> Dict[str, Any]:
+    section_id = safe_str(definition.get("section_id"))
+    evidence_keys = tuple(safe_str(item) for item in (definition.get("evidence_keys") or ()) if safe_str(item))
+    blocker_areas = {safe_str(item) for item in (definition.get("blocker_areas") or ()) if safe_str(item)}
+    blocker_fields = {safe_str(item) for item in (definition.get("blocker_fields") or ()) if safe_str(item)}
+    present = _meta_has_any(plan_or_meta, meta, evidence_keys)
+
+    def matches_section_blocker(item: Dict[str, Any]) -> bool:
+        area = safe_str(item.get("area"))
+        field = safe_str(item.get("field"))
+        if field and field in blocker_fields:
+            return True
+        if field and field in blocker_areas:
+            return True
+        if area == "profile_section" and blocker_fields:
+            return not field or field in blocker_fields
+        return area in blocker_areas
+
+    section_blockers = [deepcopy(item) for item in blockers if matches_section_blocker(item)]
+    review_reasons: List[str] = []
+    if definition.get("review_when_present") and present:
+        review_reasons.append("engineer_review_required")
+    if section_id == "assumptions" and assumptions:
+        review_reasons.append("assumptions_require_engineer_acceptance")
+    if section_id == "qa_blockers" and present and not section_blockers:
+        review_reasons.append("qa_record_requires_engineer_review")
+    if section_id == "engineer_review_checklist" and present:
+        checklist = safe_list(safe_dict(meta.get("engineer_review_package")).get("approval_checklist"))
+        manual_required = [
+            safe_str(item.get("item_id"))
+            for item in checklist
+            if safe_str(safe_dict(item).get("status")) == "manual_required"
+        ]
+        if manual_required:
+            review_reasons.extend(manual_required[:6])
+
+    if section_blockers:
+        status = "blocked"
+    elif present and review_reasons:
+        status = "review_required"
+    elif present:
+        status = "included"
+    else:
+        status = "missing"
+
+    return {
+        "section_id": section_id,
+        "label": safe_str(definition.get("label")),
+        "status": status,
+        "included": status in {"included", "review_required", "blocked"} and present,
+        "engineer_review_required": True,
+        "evidence_keys": list(evidence_keys),
+        "evidence_present": {key: _meta_has_any(plan_or_meta, meta, (key,)) for key in evidence_keys},
+        "blocker_fields": sorted(blocker_fields),
+        "blockers": section_blockers,
+        "review_reasons": list(dict.fromkeys(review_reasons)),
+        "no_construction_approval": True,
+    }
+
+
+def build_construction_document_support_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
+    """Build a review-only construction-document-support package scope matrix."""
+
+    meta = safe_dict(plan_or_meta.get("meta")) if "meta" in plan_or_meta else safe_dict(plan_or_meta)
+    blockers = _support_package_blockers(meta)
+    assumptions = _support_package_assumptions(meta)
+    sections = [
+        _support_section_record(plan_or_meta, meta, definition, blockers, assumptions)
+        for definition in CONSTRUCTION_DOCUMENT_SUPPORT_SECTIONS
+    ]
+    section_status_matrix = {section["section_id"]: section["status"] for section in sections}
+    statuses = set(section_status_matrix.values())
+    package_status = "blocked" if "blocked" in statuses else "review_required" if "review_required" in statuses else "incomplete" if "missing" in statuses else "included"
+    construction_manifest = safe_dict(meta.get("construction_package_manifest"))
+    engineer_review_package = safe_dict(meta.get("engineer_review_package") or meta.get("engineer_review_package_v1"))
+    return {
+        "version": "construction_document_support_package_v1",
+        "source": "construction_document_support_package_v1",
+        "package_type": "construction_document_support",
+        "package_status": package_status,
+        "engineer_review_required": True,
+        "required_engineer_review": True,
+        "engineer_approval_required": True,
+        "responsible_party": "licensed_engineer_or_user",
+        "construction_approval": False,
+        "construction_release_allowed": False,
+        "construction_export_allowed": False,
+        "civora_approval_authority": False,
+        "civora_engineer_of_record": False,
+        "civora_signoff_allowed": False,
+        "simulated_seal_allowed": False,
+        "simulated_signature_allowed": False,
+        "submittal_by_civora_allowed": False,
+        "sections": sections,
+        "section_status_matrix": section_status_matrix,
+        "status_counts": {status: sum(1 for item in sections if item["status"] == status) for status in ("included", "missing", "blocked", "review_required")},
+        "assumptions": deepcopy(assumptions),
+        "qa_blockers": deepcopy(blockers),
+        "blockers": deepcopy(blockers),
+        "construction_package_manifest_summary": {
+            "present": bool(construction_manifest),
+            "source": safe_str(construction_manifest.get("source")),
+            "release_state": safe_str(construction_manifest.get("release_state")),
+            "construction_release_allowed": False,
+            "construction_release_blocked": True,
+        },
+        "engineer_review_checklist_summary": {
+            "present": bool(engineer_review_package),
+            "review_status": safe_str(engineer_review_package.get("review_status")),
+            "checklist_count": len(safe_list(engineer_review_package.get("approval_checklist"))),
+            "external_engineer_approval_required": True,
+        },
+        "truth_label": SUPPORT_PACKAGE_RESPONSIBILITY_LABEL,
+        "no_construction_approval": True,
+    }
+
+
 def build_construction_package_manifest(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     """Build the release manifest that gates construction package issue.
 
@@ -975,7 +1251,9 @@ def build_construction_package_manifest(plan_or_meta: Dict[str, Any]) -> Dict[st
 
 __all__ = [
     "CONSTRUCTION_PACKAGE_SECTIONS",
+    "CONSTRUCTION_DOCUMENT_SUPPORT_SECTIONS",
     "REQUIRED_CONSTRUCTION_ARTIFACTS",
+    "build_construction_document_support_package",
     "build_construction_package_manifest",
     "build_review_package_manifest",
 ]

@@ -200,6 +200,7 @@ _PLAN_META_KEYS = {
     "construction_readiness",
     "review_package_manifest",
     "construction_package_manifest",
+    "construction_document_support_package_v1",
     "standards_package",
     "existing_conditions_package",
     "cad_interop",

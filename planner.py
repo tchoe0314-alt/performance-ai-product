@@ -276,6 +276,7 @@ from backend.planning.engineer_review_package import (
     build_engineer_review_package as _build_engineer_review_package,
 )
 from backend.planning.construction_package import (
+    build_construction_document_support_package as _build_construction_document_support_package,
     build_construction_package_manifest as _build_construction_package_manifest,
     build_review_package_manifest as _build_review_package_manifest,
 )
@@ -10724,6 +10725,7 @@ def finalize_plan(plan: Dict[str, Any], *, parsed: Dict[str, Any], route: Routin
     final["meta"]["construction_package_manifest"] = _build_construction_package_manifest(final)
     final["meta"]["engine_readiness"] = _evaluate_engine_readiness(final)
     final["meta"]["engineer_review_package"] = _build_engineer_review_package(final)
+    final["meta"]["construction_document_support_package_v1"] = _build_construction_document_support_package(final)
     final["meta"]["private_alpha_readiness"] = _build_private_alpha_readiness(final)
     final["meta"]["release_readiness_summary"] = _planner_release_readiness_summary(final)
     return final
