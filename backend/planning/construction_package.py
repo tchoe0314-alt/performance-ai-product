@@ -80,6 +80,7 @@ CONSTRUCTION_DOCUMENT_SUPPORT_SECTIONS: Sequence[Dict[str, Any]] = (
         "label": "Site Plan",
         "evidence_keys": ("layout", "site_plan", "actions"),
         "blocker_areas": ("layout", "civil_design", "site_plan"),
+        "artifact_keys": ("sheet_registry", "export_package_report_v1", "review_package_manifest"),
         "review_when_present": False,
     },
     {
@@ -87,6 +88,7 @@ CONSTRUCTION_DOCUMENT_SUPPORT_SECTIONS: Sequence[Dict[str, Any]] = (
         "label": "Grading Plan",
         "evidence_keys": ("grading", "grading_summary", "surfaces", "contours"),
         "blocker_areas": ("grading", "grading_detail", "surface", "terrain"),
+        "artifact_keys": ("sheet_registry", "export_package_report_v1"),
         "review_when_present": False,
     },
     {
@@ -94,6 +96,7 @@ CONSTRUCTION_DOCUMENT_SUPPORT_SECTIONS: Sequence[Dict[str, Any]] = (
         "label": "Drainage Plan",
         "evidence_keys": ("drainage", "storm_pipes", "storm_summary", "hydrology"),
         "blocker_areas": ("drainage", "storm", "storm_pipe", "hydrology", "hydraulics"),
+        "artifact_keys": ("sheet_registry", "export_package_report_v1"),
         "review_when_present": False,
     },
     {
@@ -101,6 +104,7 @@ CONSTRUCTION_DOCUMENT_SUPPORT_SECTIONS: Sequence[Dict[str, Any]] = (
         "label": "Utility Plan",
         "evidence_keys": ("utilities", "sanitary", "water", "utility_summary", "sanitary_summary", "water_summary"),
         "blocker_areas": ("utilities", "utility", "sanitary", "water", "coordination"),
+        "artifact_keys": ("sheet_registry", "export_package_report_v1"),
         "review_when_present": False,
     },
     {
@@ -109,6 +113,8 @@ CONSTRUCTION_DOCUMENT_SUPPORT_SECTIONS: Sequence[Dict[str, Any]] = (
         "evidence_keys": ("profiles", "road_profiles"),
         "blocker_areas": ("profiles", "roadway", "corridor"),
         "blocker_fields": ("profiles", "road_profiles", "profile_section", "depth_validation"),
+        "artifact_keys": ("export_package_report_v1",),
+        "artifact_record_key": "profile_packages",
         "review_when_present": False,
     },
     {
@@ -117,6 +123,8 @@ CONSTRUCTION_DOCUMENT_SUPPORT_SECTIONS: Sequence[Dict[str, Any]] = (
         "evidence_keys": ("cross_sections", "corridor_sections"),
         "blocker_areas": ("sections", "cross_sections", "roadway", "corridor"),
         "blocker_fields": ("sections", "cross_sections", "corridor_sections", "profile_section", "depth_validation"),
+        "artifact_keys": ("export_package_report_v1",),
+        "artifact_record_key": "section_packages",
         "review_when_present": False,
     },
     {
@@ -124,6 +132,8 @@ CONSTRUCTION_DOCUMENT_SUPPORT_SECTIONS: Sequence[Dict[str, Any]] = (
         "label": "Quantities",
         "evidence_keys": ("quantities", "quantity_summary", "cost_estimate"),
         "blocker_areas": ("quantity", "quantities", "cost"),
+        "artifact_keys": ("export_package_report_v1", "cost_package_status"),
+        "artifact_record_key": "quantity_line_items",
         "review_when_present": False,
     },
     {
@@ -131,6 +141,7 @@ CONSTRUCTION_DOCUMENT_SUPPORT_SECTIONS: Sequence[Dict[str, Any]] = (
         "label": "Assumptions",
         "evidence_keys": ("assumptions", "assumption_log", "assumption_summary"),
         "blocker_areas": ("assumptions",),
+        "artifact_keys": ("engineer_review_package", "engineer_review_package_v1"),
         "review_when_present": True,
     },
     {
@@ -138,6 +149,7 @@ CONSTRUCTION_DOCUMENT_SUPPORT_SECTIONS: Sequence[Dict[str, Any]] = (
         "label": "QA Blockers",
         "evidence_keys": ("qa", "truth_audit", "manual_validation", "blockers", "construction_readiness"),
         "blocker_areas": ("qa", "manual_validation", "reactive_model", "deliverables", "professional_review"),
+        "artifact_keys": ("export_audit", "review_package_manifest", "construction_package_manifest"),
         "review_when_present": False,
     },
     {
@@ -145,6 +157,7 @@ CONSTRUCTION_DOCUMENT_SUPPORT_SECTIONS: Sequence[Dict[str, Any]] = (
         "label": "Standards Sources",
         "evidence_keys": ("standards_package", "standards_review_packet", "standards_acceptance", "standards"),
         "blocker_areas": ("standards",),
+        "artifact_keys": ("standards_package",),
         "review_when_present": True,
     },
     {
@@ -152,6 +165,7 @@ CONSTRUCTION_DOCUMENT_SUPPORT_SECTIONS: Sequence[Dict[str, Any]] = (
         "label": "Existing Conditions",
         "evidence_keys": ("existing_conditions_package", "existing_conditions_summary", "existing_conditions"),
         "blocker_areas": ("existing_conditions",),
+        "artifact_keys": ("existing_conditions_package",),
         "review_when_present": True,
     },
     {
@@ -159,6 +173,7 @@ CONSTRUCTION_DOCUMENT_SUPPORT_SECTIONS: Sequence[Dict[str, Any]] = (
         "label": "Engineer Review Checklist",
         "evidence_keys": ("engineer_review_package", "engineer_review_package_v1"),
         "blocker_areas": ("engineer_approval", "professional_review"),
+        "artifact_keys": ("engineer_review_package", "engineer_review_package_v1"),
         "review_when_present": True,
     },
 )
@@ -1000,6 +1015,61 @@ def _value_present(value: Any) -> bool:
     return value is not None and safe_str(value) != ""
 
 
+def _support_canonical_ids_from_value(value: Any) -> List[str]:
+    ids: List[str] = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            key_text = safe_str(key).lower()
+            if key_text in {
+                "canonical_id",
+                "canonical_ids",
+                "canonical_model_id",
+                "canonical_model_hash",
+                "canonical_source_id",
+                "canonical_source_ids",
+                "source_object_id",
+                "source_object_ids",
+                "object_id",
+                "object_ids",
+                "alignment_id",
+                "alignment_owner",
+                "profile_id",
+                "section_id",
+                "pipe_id",
+                "pipe_ids",
+                "structure_id",
+                "structure_ids",
+                "surface_id",
+                "surface_ids",
+                "quantity_source_id",
+                "quantity_source_ids",
+                "quantity_model_hash",
+                "cost_estimate_hash",
+                "price_book_hash",
+            }:
+                ids.extend(_support_canonical_ids_from_value(item))
+            elif isinstance(item, (dict, list)):
+                ids.extend(_support_canonical_ids_from_value(item))
+        return list(dict.fromkeys(safe_str(item) for item in ids if safe_str(item)))
+    if isinstance(value, list):
+        for item in value:
+            ids.extend(_support_canonical_ids_from_value(item))
+        return list(dict.fromkeys(safe_str(item) for item in ids if safe_str(item)))
+    text = safe_str(value)
+    return [text] if text else []
+
+
+def _support_source_value(plan_or_meta: Dict[str, Any], meta: Dict[str, Any], key: str) -> tuple[str, Any]:
+    if key == "actions":
+        return ("plan", safe_list(plan_or_meta.get("actions")))
+    if key in meta:
+        return ("meta", meta.get(key))
+    production_evidence = safe_dict(meta.get("production_evidence"))
+    if key in production_evidence:
+        return ("production_evidence", production_evidence.get(key))
+    return ("", None)
+
+
 def _meta_has_any(plan_or_meta: Dict[str, Any], meta: Dict[str, Any], keys: Sequence[str]) -> bool:
     for key in keys:
         if key == "actions" and safe_list(plan_or_meta.get("actions")):
@@ -1011,6 +1081,127 @@ def _meta_has_any(plan_or_meta: Dict[str, Any], meta: Dict[str, Any], keys: Sequ
         if _value_present(production_evidence.get(key)):
             return True
     return False
+
+
+def _support_evidence_references(plan_or_meta: Dict[str, Any], meta: Dict[str, Any], keys: Sequence[str]) -> List[Dict[str, Any]]:
+    references: List[Dict[str, Any]] = []
+    for key in keys:
+        source, value = _support_source_value(plan_or_meta, meta, key)
+        if not source or not _value_present(value):
+            continue
+        rec = safe_dict(value)
+        references.append(
+            {
+                "key": key,
+                "source": source,
+                "present": True,
+                "record_type": "list" if isinstance(value, list) else "dict" if isinstance(value, dict) else type(value).__name__,
+                "record_count": len(value) if isinstance(value, list) else len(rec) if rec else 1,
+                "status": safe_str(rec.get("status") or rec.get("review_status") or rec.get("source")),
+                "reference_id": safe_str(
+                    rec.get("id")
+                    or rec.get("package_id")
+                    or rec.get("review_package_id")
+                    or rec.get("manifest_id")
+                    or rec.get("version")
+                    or rec.get("source")
+                ),
+                "canonical_ids": _support_canonical_ids_from_value(value)[:25],
+            }
+        )
+    return references
+
+
+def _support_missing_inputs(keys: Sequence[str], evidence_present: Dict[str, bool]) -> List[Dict[str, Any]]:
+    if any(evidence_present.get(key) for key in keys):
+        return []
+    missing_keys = [key for key in keys if not evidence_present.get(key)]
+    return [
+        {
+            "field": "section_evidence",
+            "missing_evidence_keys": missing_keys,
+            "reason": "No source evidence is available for this construction-document-support package section.",
+            "severity": "missing_input",
+            "engineer_review_required": True,
+        }
+    ]
+
+
+def _support_linked_artifacts(meta: Dict[str, Any], definition: Dict[str, Any]) -> List[Dict[str, Any]]:
+    artifacts: List[Dict[str, Any]] = []
+    for key in definition.get("artifact_keys") or ():
+        key_text = safe_str(key)
+        value = meta.get(key_text)
+        if not _value_present(value):
+            continue
+        rec = safe_dict(value)
+        artifact = {
+            "artifact_key": key_text,
+            "present": True,
+            "status": safe_str(rec.get("status") or rec.get("review_status") or rec.get("source")),
+            "artifact_id": safe_str(rec.get("id") or rec.get("package_id") or rec.get("review_package_id") or rec.get("source")),
+            "canonical_ids": _support_canonical_ids_from_value(value)[:25],
+        }
+        record_key = safe_str(definition.get("artifact_record_key"))
+        if record_key and rec:
+            records = safe_list(rec.get(record_key))
+            artifact["linked_record_key"] = record_key
+            artifact["linked_record_count"] = len(records)
+            artifact["linked_record_ids"] = [
+                safe_str(item.get("record_id") or item.get("id") or item.get("metric") or item.get("name"))
+                for item in (safe_dict(row) for row in records)
+                if safe_str(item.get("record_id") or item.get("id") or item.get("metric") or item.get("name"))
+            ][:25]
+        artifacts.append(artifact)
+    return artifacts
+
+
+def _support_stale_dirty_status(meta: Dict[str, Any], section_id: str, evidence_keys: Sequence[str]) -> Dict[str, Any]:
+    export_audit = safe_dict(meta.get("export_audit"))
+    reactive_report = safe_dict(meta.get("reactive_update_report"))
+    stale_status = safe_dict(export_audit.get("stale_output_status"))
+    canonical_integrity = safe_dict(export_audit.get("canonical_integrity"))
+    dirty_values = (
+        safe_list(stale_status.get("dirty_stages"))
+        + safe_list(canonical_integrity.get("dirty_stages"))
+        + safe_list(meta.get("stale_outputs"))
+        + safe_list(meta.get("invalidated_targets") or meta.get("dependency_invalidated_targets"))
+        + safe_list(reactive_report.get("dirty_engine_ids"))
+        + safe_list(reactive_report.get("dirty_state"))
+    )
+    section_terms = {section_id, *evidence_keys}
+    matched = [
+        safe_str(item)
+        for item in dirty_values
+        if safe_str(item) and (safe_str(item) in section_terms or any(term and term in safe_str(item) for term in section_terms))
+    ]
+    export_report = safe_dict(meta.get("export_package_report_v1"))
+    stale_report_values = safe_list(export_report.get("stale_outputs_detected"))
+    matched.extend(
+        safe_str(item)
+        for item in stale_report_values
+        if safe_str(item) and (safe_str(item) in section_terms or any(term and term in safe_str(item) for term in section_terms))
+    )
+    return {
+        "stale": bool(matched),
+        "dirty": bool(matched),
+        "dirty_references": list(dict.fromkeys(item for item in matched if item)),
+        "source": "export_audit/reactive_update_report/export_package_report_v1",
+    }
+
+
+def _support_confidence(*, present: bool, section_blockers: Sequence[Dict[str, Any]], missing_inputs: Sequence[Dict[str, Any]], stale_dirty: Dict[str, Any], linked_artifacts: Sequence[Dict[str, Any]]) -> str:
+    if stale_dirty.get("stale") or stale_dirty.get("dirty"):
+        return "stale_or_dirty"
+    if not present:
+        return "missing"
+    if section_blockers:
+        return "blocked"
+    if missing_inputs:
+        return "partial"
+    if linked_artifacts:
+        return "traceable_review_evidence"
+    return "review_evidence_present"
 
 
 def _support_package_blockers(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -1059,6 +1250,22 @@ def _support_section_record(
     blocker_areas = {safe_str(item) for item in (definition.get("blocker_areas") or ()) if safe_str(item)}
     blocker_fields = {safe_str(item) for item in (definition.get("blocker_fields") or ()) if safe_str(item)}
     present = _meta_has_any(plan_or_meta, meta, evidence_keys)
+    evidence_present = {key: _meta_has_any(plan_or_meta, meta, (key,)) for key in evidence_keys}
+    source_evidence_references = _support_evidence_references(plan_or_meta, meta, evidence_keys)
+    canonical_ids = list(
+        dict.fromkeys(
+            canonical_id
+            for reference in source_evidence_references
+            for canonical_id in safe_list(reference.get("canonical_ids"))
+            if safe_str(canonical_id)
+        )
+    )
+    missing_inputs = _support_missing_inputs(evidence_keys, evidence_present)
+    linked_artifacts = _support_linked_artifacts(meta, definition)
+    for artifact in linked_artifacts:
+        canonical_ids.extend(safe_list(artifact.get("canonical_ids")))
+    canonical_ids = list(dict.fromkeys(safe_str(item) for item in canonical_ids if safe_str(item)))
+    stale_dirty_status = _support_stale_dirty_status(meta, section_id, evidence_keys)
 
     def matches_section_blocker(item: Dict[str, Any]) -> bool:
         area = safe_str(item.get("area"))
@@ -1072,6 +1279,30 @@ def _support_section_record(
         return area in blocker_areas
 
     section_blockers = [deepcopy(item) for item in blockers if matches_section_blocker(item)]
+    if missing_inputs:
+        section_blockers.extend(
+            {
+                "area": section_id,
+                "field": item["field"],
+                "reason": item["reason"],
+                "message": item["reason"],
+                "severity": "missing_input",
+                "engineer_review_required": True,
+            }
+            for item in missing_inputs
+        )
+    if stale_dirty_status["stale"] or stale_dirty_status["dirty"]:
+        section_blockers.append(
+            {
+                "area": section_id,
+                "field": "stale_dirty_evidence",
+                "reason": "Section evidence is stale or dirty relative to current canonical state.",
+                "message": "Section evidence is stale or dirty relative to current canonical state.",
+                "severity": "blocker",
+                "dirty_references": deepcopy(stale_dirty_status.get("dirty_references")),
+                "engineer_review_required": True,
+            }
+        )
     review_reasons: List[str] = []
     if definition.get("review_when_present") and present:
         review_reasons.append("engineer_review_required")
@@ -1088,15 +1319,31 @@ def _support_section_record(
         ]
         if manual_required:
             review_reasons.extend(manual_required[:6])
+    if section_blockers:
+        review_reasons.append("blockers_require_engineer_resolution")
+    if missing_inputs:
+        review_reasons.append("missing_inputs_require_engineer_review")
+    if stale_dirty_status["stale"] or stale_dirty_status["dirty"]:
+        review_reasons.append("stale_dirty_evidence_requires_rerun_or_engineer_review")
 
     if section_blockers:
-        status = "blocked"
+        generated_missing_only = bool(section_blockers) and all(
+            safe_str(item.get("severity")) == "missing_input" for item in section_blockers
+        )
+        status = "missing" if not present and generated_missing_only else "blocked"
     elif present and review_reasons:
         status = "review_required"
     elif present:
         status = "included"
     else:
         status = "missing"
+    confidence = _support_confidence(
+        present=present,
+        section_blockers=section_blockers,
+        missing_inputs=missing_inputs,
+        stale_dirty=stale_dirty_status,
+        linked_artifacts=linked_artifacts,
+    )
 
     return {
         "section_id": section_id,
@@ -1105,10 +1352,17 @@ def _support_section_record(
         "included": status in {"included", "review_required", "blocked"} and present,
         "engineer_review_required": True,
         "evidence_keys": list(evidence_keys),
-        "evidence_present": {key: _meta_has_any(plan_or_meta, meta, (key,)) for key in evidence_keys},
+        "evidence_present": evidence_present,
+        "source_evidence_references": source_evidence_references,
+        "canonical_ids": canonical_ids,
+        "missing_inputs": missing_inputs,
         "blocker_fields": sorted(blocker_fields),
         "blockers": section_blockers,
         "review_reasons": list(dict.fromkeys(review_reasons)),
+        "review_required_reason": "; ".join(dict.fromkeys(review_reasons)) if review_reasons else "",
+        "linked_export_report_artifacts": linked_artifacts,
+        "confidence": confidence,
+        "stale_dirty_status": stale_dirty_status,
         "no_construction_approval": True,
     }
 

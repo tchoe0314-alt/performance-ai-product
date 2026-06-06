@@ -1188,6 +1188,86 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         self.assertIn("site_plan", package["section_status_matrix"])
         self.assertIn("engineer_review_checklist", package["section_status_matrix"])
 
+    def test_construction_document_support_package_preserves_section_traceability(self) -> None:
+        meta = {
+            "layout": {
+                "status": "ready",
+                "canonical_id": "LAYOUT-1",
+                "canonical_source_id": "SITE-PLAN-1",
+            },
+            "grading": {
+                "status": "ready",
+                "surface_id": "SURF-1",
+                "canonical_model_id": "MODEL-1",
+            },
+            "profiles": [{"profile_id": "PROF-1", "canonical_ids": ["ALIGN-1"]}],
+            "assumptions": [{"field_name": "runoff_coefficient", "canonical_source_id": "ASSUME-1"}],
+            "export_package_report_v1": {
+                "source": "export_package_report_v1",
+                "canonical_ids_included": ["MODEL-1"],
+                "stale_outputs_detected": ["grading"],
+                "profile_packages": [
+                    {
+                        "record_id": "PROFILE-PKG-1",
+                        "canonical_ids": ["PROF-1", "ALIGN-1"],
+                    }
+                ],
+            },
+            "export_audit": {
+                "ready": False,
+                "stale_output_status": {"dirty_stages": ["grading"]},
+            },
+            "engineer_review_package": {
+                "review_status": "ready_for_engineer_review",
+                "approval_checklist": [
+                    {"item_id": "external_engineer_approval_record", "status": "manual_required"}
+                ],
+            },
+        }
+
+        package = build_construction_document_support_package({"meta": meta})
+        sections = {section["section_id"]: section for section in package["sections"]}
+
+        site = sections["site_plan"]
+        self.assertEqual(site["status"], "included")
+        self.assertIn("LAYOUT-1", site["canonical_ids"])
+        self.assertIn("SITE-PLAN-1", site["canonical_ids"])
+        self.assertEqual(site["source_evidence_references"][0]["key"], "layout")
+
+        profiles = sections["profiles"]
+        self.assertEqual(profiles["status"], "included")
+        self.assertIn("PROF-1", profiles["canonical_ids"])
+        self.assertIn("ALIGN-1", profiles["canonical_ids"])
+        self.assertEqual(profiles["linked_export_report_artifacts"][0]["linked_record_key"], "profile_packages")
+        self.assertEqual(profiles["linked_export_report_artifacts"][0]["linked_record_count"], 1)
+
+        utilities = sections["utility_plan"]
+        self.assertEqual(utilities["status"], "missing")
+        self.assertTrue(utilities["missing_inputs"])
+        self.assertTrue(utilities["blockers"])
+        self.assertTrue(all(item["severity"] == "missing_input" for item in utilities["blockers"]))
+
+        grading = sections["grading_plan"]
+        self.assertEqual(grading["status"], "blocked")
+        self.assertEqual(grading["confidence"], "stale_or_dirty")
+        self.assertTrue(grading["stale_dirty_status"]["dirty"])
+        self.assertIn("stale_dirty_evidence_requires_rerun_or_engineer_review", grading["review_reasons"])
+
+        assumptions = sections["assumptions"]
+        self.assertEqual(assumptions["status"], "review_required")
+        self.assertIn("assumptions_require_engineer_acceptance", assumptions["review_required_reason"])
+
+        checklist = sections["engineer_review_checklist"]
+        self.assertEqual(checklist["status"], "review_required")
+        self.assertIn("external_engineer_approval_record", checklist["review_required_reason"])
+
+        self.assertFalse(package["construction_approval"])
+        self.assertFalse(package["construction_release_allowed"])
+        self.assertFalse(package["construction_export_allowed"])
+        self.assertFalse(package["civora_approval_authority"])
+        self.assertFalse(package["civora_engineer_of_record"])
+        self.assertNotIn("ready_for_construction", package)
+
 
 if __name__ == "__main__":
     unittest.main()
