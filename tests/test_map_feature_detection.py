@@ -81,6 +81,8 @@ class MapFeatureDetectionTests(unittest.TestCase):
         self.assertTrue(candidate["review_required"])
         self.assertIn("candidate evidence", candidate["blockers"][0])
         self.assertFalse(report["construction_release_allowed"])
+        self.assertIn("I found 1 building footprint", report["chat_panel_summary"]["message"])
+        self.assertIn("from GIS", report["chat_panel_summary"]["message"])
 
     def test_official_gis_parcel_source_creates_site_boundary_candidate(self) -> None:
         report = build_map_feature_detection_report(
@@ -149,6 +151,7 @@ class MapFeatureDetectionTests(unittest.TestCase):
         blocker_codes = {item["code"] for item in report["blockers"]}
         self.assertIn("missing_building_footprints_source", blocker_codes)
         self.assertIn("missing_roads_row_source", blocker_codes)
+        self.assertEqual(report["chat_panel_summary"]["message"], "No building footprint source is configured.")
 
     def test_confirmed_candidate_becomes_draft_review_required_object_only(self) -> None:
         report = build_map_feature_detection_report(

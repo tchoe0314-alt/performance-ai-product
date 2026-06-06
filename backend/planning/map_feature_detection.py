@@ -94,6 +94,18 @@ DRAFT_OBJECT_TYPES = {
     "utility": "existing_utility",
 }
 
+FEATURE_TYPE_LABELS = {
+    "building_footprint": "building footprint",
+    "road_or_drive": "road/ROW",
+    "parking_area": "parking area",
+    "parcel_or_site_boundary": "parcel/site boundary",
+    "sidewalk_or_path": "sidewalk/path",
+    "water/pond/basin": "water/wetland/floodplain constraint",
+    "vegetation/tree_area": "vegetation/tree area",
+    "constraint_area": "constraint",
+    "utility": "existing utility",
+}
+
 
 def location_context_from_geocode(*, address: str = "", geocode: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     rec = safe_dict(geocode)
@@ -417,16 +429,34 @@ def _chat_panel_summary(candidates: List[Dict[str, Any]], blockers: List[Dict[st
         counts[key] = counts.get(key, 0) + 1
     if candidates:
         first_type = next(iter(counts))
+        first_label = FEATURE_TYPE_LABELS.get(first_type, first_type.replace("_", " "))
+        source_phrase = "from GIS" if any(safe_str(item.get("source_type")) == "official_gis" for item in candidates) else "from uploaded imagery"
+        if len(counts) == 1:
+            noun = first_label if counts[first_type] == 1 else f"{first_label} candidates"
+            message = f"I found {counts[first_type]} {noun} {source_phrase}. Do you want to use them?"
+        else:
+            message = f"I found {len(candidates)} map/GIS feature candidates. Review them before use."
         return {
             "status": "candidates_found",
-            "message": f"I found {len(candidates)} map/GIS feature candidate(s). Review them before use.",
+            "message": message,
             "candidate_counts": counts,
             "primary_feature_type": first_type,
         }
-    blocker = safe_dict(blockers[0]) if blockers else {}
+    blocker = next(
+        (
+            safe_dict(item)
+            for item in blockers
+            if safe_str(safe_dict(item).get("code")) == "missing_building_footprints_source"
+        ),
+        safe_dict(blockers[0]) if blockers else {},
+    )
+    if safe_str(blocker.get("code")) == "missing_building_footprints_source":
+        message = "No building footprint source is configured."
+    else:
+        message = safe_str(blocker.get("message"), "I cannot detect features because no supported source is configured.")
     return {
         "status": "blocked",
-        "message": safe_str(blocker.get("message"), "I cannot detect features because no supported source is configured."),
+        "message": message,
         "candidate_counts": {},
     }
 
