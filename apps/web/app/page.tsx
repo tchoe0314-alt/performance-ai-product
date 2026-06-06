@@ -10492,32 +10492,6 @@ function PerformanceAIDashboardView({
                   ))}
                 </div>
               </div>
-              <div className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
-                {sidebarTruthItems.map((item) => (
-                  <button
-                    key={item.label}
-                    type="button"
-                    onClick={() => handleOpenSidePanel("reports")}
-                    className="flex w-full items-center justify-between gap-2 rounded-md px-1.5 py-1 text-left text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50"
-                  >
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span
-                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                          item.status === "ok"
-                            ? "bg-slate-600"
-                            : item.status === "block"
-                              ? "bg-red-500"
-                              : item.status === "review"
-                                ? "bg-amber-500"
-                                : "bg-slate-300"
-                        }`}
-                      />
-                      <span className="truncate">{item.label}</span>
-                    </span>
-                    <span className="max-w-[7.75rem] truncate text-right text-slate-400">{item.value}</span>
-                  </button>
-                ))}
-              </div>
               <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                 {sidebarHasTruthEvidence
                   ? "Engineer review required | Construction blocked until external approval"
