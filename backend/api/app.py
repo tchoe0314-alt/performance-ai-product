@@ -106,6 +106,7 @@ from backend.services.auth_store import AuthStore
 from backend.services.database import Database
 from backend.services.job_queue import JobQueueService
 from backend.services.project_store import ProjectStore
+from backend.planning.map_feature_detection import build_map_feature_detection_report
 
 try:
     from core.config import ALPHA_REVIEW_ONLY, APP_NAME, APP_VERSION, CONSTRUCTION_RELEASES_ENABLED, PRODUCT_MODE
@@ -1229,21 +1230,24 @@ def detect_image_features(
     engine = FeatureDetectionEngine()
     result = engine.detect(payload.image_path)
     try:
+        detections = [
+            {
+                "kind": det.kind,
+                "bbox": det.bbox,
+                "confidence": det.confidence,
+                "geometry_type": det.geometry_type,
+                "geometry": det.geometry,
+                "image_path": payload.image_path,
+            }
+            for det in result.detections
+        ]
         return {
             "success": result.success,
             "message": result.message,
             "image_width": result.image_width,
             "image_height": result.image_height,
-            "detections": [
-                {
-                    "kind": det.kind,
-                    "bbox": det.bbox,
-                    "confidence": det.confidence,
-                    "geometry_type": det.geometry_type,
-                    "geometry": det.geometry,
-                }
-                for det in result.detections
-            ],
+            "detections": detections,
+            "map_feature_detection_report_v1": build_map_feature_detection_report(image_detections=detections),
             "warnings": result.warnings,
             "meta": result.meta,
         }

@@ -7,6 +7,7 @@ import requests
 
 from .common import safe_dict, safe_float, safe_list, safe_str
 from .existing_conditions import REQUIRED_GIS_LAYERS
+from .map_feature_detection import build_map_feature_detection_report, location_context_from_geocode
 
 
 CENSUS_GEOCODER_URL = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
@@ -247,15 +248,23 @@ def fetch_online_existing_conditions(
         "warnings": ["No address supplied; geocoding skipped."],
     }
     source_results["geocode"] = geocode
+    location_context = location_context_from_geocode(address=address, geocode=geocode)
     if not working_bbox and geocode.get("success"):
         working_bbox = bbox_around_point(safe_float(geocode.get("lat")), safe_float(geocode.get("lng")))
     if not working_bbox:
         warnings.append("Online existing-condition fetch needs either an address that geocodes or a lat/lng bbox.")
+        feature_report = build_map_feature_detection_report(
+            location_context=location_context,
+            gis_layers={layer: [] for layer in REQUIRED_GIS_LAYERS},
+            source_results=source_results,
+        )
         return {
             "success": False,
             "source_type": "online_existing_conditions_fetch",
             "status": "blocked",
             "source_results": source_results,
+            "location_context": location_context,
+            "map_feature_detection_report_v1": feature_report,
             "canonical_existing_conditions": {
                 "survey": {"source": "missing", "point_count": 0, "points": []},
                 "gis_layers": {layer: [] for layer in REQUIRED_GIS_LAYERS},
@@ -319,12 +328,19 @@ def fetch_online_existing_conditions(
             for key, result in source_results.items()
         ],
     }
+    feature_report = build_map_feature_detection_report(
+        location_context=location_context,
+        gis_layers=online_layers.get("gis_layers"),
+        source_results=source_results,
+    )
     return {
         "success": any(bool(result.get("success")) for result in source_results.values()),
         "source_type": "online_existing_conditions_fetch",
         "status": "ready_with_context" if any(bool(result.get("success")) for result in source_results.values()) else "no_sources_ready",
         "bbox": working_bbox,
         "source_results": source_results,
+        "location_context": location_context,
+        "map_feature_detection_report_v1": feature_report,
         "canonical_existing_conditions": canonical,
         "warnings": warnings,
         "truth_label": "Fetched online public context. This does not replace boundary/topo survey, utility locates, record drawings, or jurisdiction confirmation.",
