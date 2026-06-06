@@ -387,12 +387,12 @@ def _grading_surface_source_expected_actual(grading: Dict[str, Any], surface_tra
 
 def _grading_cut_fill_expected_actual(grading: Dict[str, Any], meta: Dict[str, Any]) -> Dict[str, Any]:
     earthwork = safe_dict(grading.get("earthwork") or meta.get("earthwork") or meta.get("earthwork_summary"))
-    expected_cut = earthwork.get("expected_cut_cf", earthwork.get("design_cut_cf"))
-    actual_cut = earthwork.get("actual_cut_cf", earthwork.get("cut_cf"))
-    expected_fill = earthwork.get("expected_fill_cf", earthwork.get("design_fill_cf"))
-    actual_fill = earthwork.get("actual_fill_cf", earthwork.get("fill_cf"))
-    expected_net = earthwork.get("expected_net_cf", earthwork.get("design_net_cf"))
-    actual_net = earthwork.get("actual_net_cf", earthwork.get("net_cf"))
+    expected_cut = earthwork.get("expected_cut_cf")
+    actual_cut = earthwork.get("actual_cut_cf")
+    expected_fill = earthwork.get("expected_fill_cf")
+    actual_fill = earthwork.get("actual_fill_cf")
+    expected_net = earthwork.get("expected_net_cf")
+    actual_net = earthwork.get("actual_net_cf")
     tolerance = safe_float(earthwork.get("volume_tolerance_cf"), 0.0)
     valid = bool(
         _present(expected_cut)

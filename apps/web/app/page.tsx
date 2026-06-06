@@ -113,7 +113,6 @@ type WorkspaceMode =
   | "data"
   | "settings";
 type SidebarStatus = "ok" | "review" | "block" | "idle";
-type BottomPanelTab = "model_review" | "systems" | "objects" | "properties" | "history";
 type SidebarNavItem = {
   label: string;
   caption: string;
@@ -1308,8 +1307,6 @@ function PerformanceAIDashboardView({
   const [approvalPendingJobId, setApprovalPendingJobId] = useState<string | null>(null);
   const [showMeasurements, setShowMeasurements] = useState(false);
   const [showCalculations, setShowCalculations] = useState(false);
-  const [bottomPanelCollapsed, setBottomPanelCollapsed] = useState(false);
-  const [activeBottomPanelTab, setActiveBottomPanelTab] = useState<BottomPanelTab>("model_review");
   const [previewLayers, setPreviewLayers] = useState({
     buildings: true,
     roads: true,
@@ -1332,6 +1329,7 @@ function PerformanceAIDashboardView({
   const [activePlanTool, setActivePlanTool] = useState<PlanToolMode>("run");
   const [jobClockMs, setJobClockMs] = useState(() => Date.now());
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const siteAddressInputRef = useRef<HTMLInputElement | null>(null);
   const mapSnapshotInputRef = useRef<HTMLInputElement | null>(null);
   const surveyInputRef = useRef<HTMLInputElement | null>(null);
   const runSubmissionRef = useRef(false);
@@ -10319,6 +10317,36 @@ function PerformanceAIDashboardView({
       status: hasHardSystemBlock || previewBlockedReasons.length ? "block" : "idle",
     },
   ] as const;
+  const sidebarTruthCounts = {
+    ready: sidebarTruthItems.filter((item) => item.status === "idle" || item.status === "ok").length,
+    review: sidebarTruthItems.filter((item) => item.status === "review").length,
+    issues: sidebarMissingInputs.length + analysisIssues.length + issues.length,
+    blocked: sidebarTruthItems.filter((item) => item.status === "block").length,
+    notRun: backendResult ? 0 : 1,
+  };
+  const sidebarTruthTotal = Math.max(
+    1,
+    sidebarTruthCounts.ready +
+      sidebarTruthCounts.review +
+      sidebarTruthCounts.issues +
+      sidebarTruthCounts.blocked +
+      sidebarTruthCounts.notRun,
+  );
+  const sidebarTruthScore = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(
+        ((sidebarTruthCounts.ready + sidebarTruthCounts.review * 0.45) /
+          sidebarTruthTotal) *
+          100,
+      ),
+    ),
+  );
+  const truthReadyDeg = (sidebarTruthCounts.ready / sidebarTruthTotal) * 360;
+  const truthReviewDeg = truthReadyDeg + (sidebarTruthCounts.review / sidebarTruthTotal) * 360;
+  const truthIssuesDeg = truthReviewDeg + (sidebarTruthCounts.issues / sidebarTruthTotal) * 360;
+  const truthBlockedDeg = truthIssuesDeg + (sidebarTruthCounts.blocked / sidebarTruthTotal) * 360;
   const reviewGateItems = [
     {
       label: "Standards",
@@ -10387,21 +10415,6 @@ function PerformanceAIDashboardView({
           : placedObjectCount <= 1
             ? "Add or draw buildings, roads, parking, and utilities."
             : "Run systems, then review blockers and gates.";
-  const selectedCanvasObject = activePlacementId
-    ? buildingPlacements.find((item) => item.id === activePlacementId) ?? null
-    : null;
-  const bottomBlockerItems = [
-    ...previewBlockedReasons,
-    ...issues.map((issue) => issue.message),
-    ...analysisIssues.map((issue) => issue.message),
-  ].filter(Boolean);
-  const bottomPanelTabs: Array<{ key: BottomPanelTab; label: string; panel: SidePanelKey }> = [
-    { key: "model_review", label: "Model Review", panel: "reports" },
-    { key: "systems", label: "Systems", panel: "generate" },
-    { key: "objects", label: "Objects", panel: "objects" },
-    { key: "properties", label: "Properties", panel: selectedCanvasObject ? "details" : "site_existing" },
-    { key: "history", label: "History", panel: "dashboard" },
-  ];
   const activePanelTitle =
     previewMode === "3d" && activeSidePanel === "model"
       ? "3D"
@@ -10493,31 +10506,47 @@ function PerformanceAIDashboardView({
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                 Truth Status
               </p>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                {sidebarTruthItems.map((item) => (
-                  <div key={item.label} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2">
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className={`h-1.5 w-1.5 rounded-full ${
-                          item.status === "ok"
-                            ? "bg-slate-700"
-                            : item.status === "block"
-                              ? "bg-red-500"
-                              : item.status === "review"
-                                ? "bg-amber-500"
-                                : "bg-slate-300"
-                        }`}
-                      />
-                      <p className="truncate text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                        {item.label}
-                      </p>
-                    </div>
-                    <p className="mt-1 truncate text-[11px] font-semibold capitalize text-slate-700">
-                      {item.value}
-                    </p>
+              <div className="mt-3 flex items-center gap-4">
+                <div
+                  className="grid h-24 w-24 shrink-0 place-items-center rounded-full"
+                  style={{
+                    background: `conic-gradient(#64748b 0deg ${truthReadyDeg}deg, #f59e0b ${truthReadyDeg}deg ${truthReviewDeg}deg, #ef4444 ${truthReviewDeg}deg ${truthIssuesDeg}deg, #8b5cf6 ${truthIssuesDeg}deg ${truthBlockedDeg}deg, #cbd5e1 ${truthBlockedDeg}deg 360deg)`,
+                  }}
+                  aria-label={`Truth score ${sidebarTruthScore}`}
+                >
+                  <div className="grid h-16 w-16 place-items-center rounded-full bg-white text-center shadow-inner">
+                    <span className="text-xl font-semibold text-slate-950">{sidebarTruthScore}</span>
+                    <span className="-mt-2 text-[9px] font-semibold text-slate-500">Overall</span>
                   </div>
-                ))}
+                </div>
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  {[
+                    ["Ready", sidebarTruthCounts.ready, "bg-slate-500"],
+                    ["Review", sidebarTruthCounts.review, "bg-amber-500"],
+                    ["Issues", sidebarTruthCounts.issues, "bg-red-500"],
+                    ["Blocked", sidebarTruthCounts.blocked, "bg-violet-500"],
+                    ["Not Run", sidebarTruthCounts.notRun, "bg-slate-300"],
+                  ].map(([label, value, dotClass]) => (
+                    <div key={label} className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-600">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className={`h-2 w-2 rounded-full ${dotClass}`} />
+                        <span className="truncate">{label}</span>
+                      </span>
+                      <span className="text-slate-500">{value}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
+              <button
+                type="button"
+                onClick={() => handleOpenSidePanel("reports")}
+                className="mt-3 text-xs font-semibold text-slate-700 hover:text-slate-950"
+              >
+                View all issues
+              </button>
+              <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                Engineer review required | construction_blocked until external engineer review
+              </p>
             </div>
             <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
               <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
@@ -10890,12 +10919,16 @@ function PerformanceAIDashboardView({
                       <div className="mt-4 grid gap-2 sm:grid-cols-2">
                         <button
                           type="button"
-                          onClick={() => mapSnapshotInputRef.current?.click()}
+                          onClick={() => {
+                            setActiveSidePanel("site_existing");
+                            siteAddressInputRef.current?.focus();
+                            setStatusMessage("Enter an address, choose a suggestion if one appears, then apply the address.");
+                          }}
                           className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-white"
                         >
-                          Start from address / map
+                          Start from address
                           <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                            Geocode, map snapshot, and terrain inputs
+                            Geocode first, then add map or terrain
                           </span>
                         </button>
                         <button
@@ -10918,6 +10951,7 @@ function PerformanceAIDashboardView({
                         <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                           Address / location
                           <input
+                            ref={siteAddressInputRef}
                             value={siteAddress}
                             onChange={(event) => {
                               setSiteAddress(event.target.value);
@@ -11036,66 +11070,8 @@ function PerformanceAIDashboardView({
                           ))}
                         </div>
                       </div>
-                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                        <button
-                          type="button"
-                          onClick={() => handleAddObject("site")}
-                          disabled={siteScaleLocked}
-                          className="rounded-xl border border-slate-950 bg-slate-950 px-3 py-3 text-left text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                        >
-                          Draw site boundary
-                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/60">
-                            First-class setup action
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={siteScaleLocked ? handleUnlockSite : () => void handleApplySite()}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
-                        >
-                          {siteScaleLocked ? "Change site boundary" : "Lock site boundary"}
-                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                            {siteScaleLocked ? "Unlock for edits" : "Required before systems"}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenSidePanel("objects")}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
-                        >
-                          Add / draw objects
-                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                            Buildings, roads, parking, utilities
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenSidePanel("reports")}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
-                        >
-                          Review blockers
-                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                            Health, gates, assumptions
-                          </span>
-                        </button>
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Setup checklist</p>
-                      <div className="mt-3 space-y-2">
-                        {setupChecklistItems.map((item) => (
-                          <div key={item.label} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-                            <span className="font-semibold text-slate-700">{item.label}</span>
-                            <span className={`text-right text-xs font-semibold uppercase tracking-[0.12em] ${
-                              item.status === "block" ? "text-red-600" : "text-amber-600"
-                            }`}>
-                              {item.value}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
                       <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700">Next best action</p>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700">Next required step</p>
                         <p className="mt-1 text-sm font-semibold text-amber-900">{nextSetupAction}</p>
                       </div>
                     </div>
@@ -11113,90 +11089,71 @@ function PerformanceAIDashboardView({
                       }}
                     />
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Site summary</p>
-                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                          <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">Width</p>
-                          <p className="mt-1 font-semibold text-slate-900">{lotBounds.w ? `${lotBounds.w.toFixed(0)} ft` : "Not set"}</p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                          <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">Length</p>
-                          <p className="mt-1 font-semibold text-slate-900">{lotBounds.h ? `${lotBounds.h.toFixed(0)} ft` : "Not set"}</p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                          <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">Address</p>
-                          <p className="mt-1 line-clamp-2 font-semibold text-slate-900">{siteAddress || "Not set"}</p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                          <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">Coordinates</p>
-                          <p className="mt-1 font-semibold text-slate-900">
-                            {siteInputs?.geocode?.lat && siteInputs?.geocode?.lng
-                              ? `${siteInputs.geocode.lat.toFixed(4)}, ${siteInputs.geocode.lng.toFixed(4)}`
-                              : "Not set"}
-                          </p>
-                        </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Site tools</p>
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                          Setup only
+                        </span>
                       </div>
-                      <button type="button" onClick={() => handleOpenSidePanel("data")} className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Edit site data</button>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Existing conditions</p>
-                      <div className="mt-3 space-y-2 text-sm font-semibold text-slate-700">
-                        {[
-                          ["Survey / terrain", hasTerrainSource ? "Ready" : "Not imported"],
-                          ["Map snapshot", uploadedImagePreviewUrl || uploadedImageApiUrl ? "Ready" : "Not imported"],
-                          ["Site boundary", siteScaleLocked ? "Locked" : "Not locked"],
-                          ["Constraints", buildingPlacements.some((item) => ["setback_zone", "no_build_zone"].includes(item.type ?? "")) ? "Placed" : "Not placed"],
-                        ].map(([label, value]) => (
-                          <div key={label} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                            <span>{label}</span>
-                            <span className="text-xs uppercase tracking-[0.12em] text-slate-500">{value}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Boundary & constraints</p>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
+                      <div className="mt-3 space-y-2">
                         <button
                           type="button"
-                          onClick={siteScaleLocked ? handleUnlockSite : () => void handleApplySite()}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                          onClick={() => mapSnapshotInputRef.current?.click()}
+                          className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
                         >
-                          {siteScaleLocked ? "Unlock site" : "Lock site"}
+                          <span>Upload site image / map</span>
+                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">{uploadedImagePreviewUrl || uploadedImageApiUrl ? "Uploaded" : "Upload"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={analyzeMapSnapshot}
+                          disabled={!mapSnapshotPath}
+                          className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <span>Analyze map snapshot</span>
+                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">{mapAnalysis?.success ? "Analyzed" : "Analyze"}</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => handleAddObject("site")}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                          disabled={siteScaleLocked}
+                          className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          Add boundary
+                          <span>Draw site boundary</span>
+                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">{siteScaleLocked ? "Locked" : "Draw"}</span>
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleAddObject("setback_zone")}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                          onClick={siteScaleLocked ? handleUnlockSite : () => void handleApplySite()}
+                          className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
                         >
-                          Setback zone
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleAddObject("no_build_zone")}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                        >
-                          No-build zone
+                          <span>{siteScaleLocked ? "Change site boundary" : "Lock site boundary"}</span>
+                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">{siteScaleLocked ? "Unlock" : "Lock"}</span>
                         </button>
                       </div>
                     </div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Next setup actions</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Site status</p>
                       <div className="mt-3 space-y-2">
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+                          <div className="flex items-center justify-between gap-3">
+                            <span>Site</span>
+                            <span className="truncate text-right text-xs uppercase tracking-[0.14em] text-slate-500">
+                              {siteName || "Untitled"}
+                            </span>
+                          </div>
+                          <div className="mt-1 flex items-center justify-between gap-3 text-xs text-slate-500">
+                            <span>Status</span>
+                            <span>{siteScaleLocked ? "Site locked" : "Site not locked"}</span>
+                          </div>
+                        </div>
                         <button
                           type="button"
-                          onClick={() => handleOpenSidePanel("import_survey")}
+                          onClick={() => handleOpenSidePanel("objects")}
                           className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                         >
-                          <span>Import survey or map</span>
-                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">{hasTerrainSource ? "Ready" : "Needed"}</span>
+                          <span>Add / draw objects</span>
+                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">Canvas</span>
                         </button>
                         <button
                           type="button"
@@ -11204,8 +11161,16 @@ function PerformanceAIDashboardView({
                           disabled={confirmedObjectCounts.buildings === 0 || confirmedObjectCounts.access === 0}
                           className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          <span>Check site access</span>
+                          <span>Detect grading issues</span>
                           <span className="text-xs uppercase tracking-[0.14em] text-slate-400">{analysisIssues.length ? "Reviewed" : "Run"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenSidePanel("data")}
+                          className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                        >
+                          <span>Survey, standards, GIS</span>
+                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">Data</span>
                         </button>
                       </div>
                     </div>
@@ -13482,50 +13447,6 @@ function PerformanceAIDashboardView({
                 data-testid="canvas-workflow-toolbar"
                 className="mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 shadow-sm"
               >
-                {!siteScaleLocked ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenSidePanel("site_existing")}
-                      className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:bg-slate-800"
-                    >
-                      Set Site Size
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handleOpenSidePanel("site_existing");
-                        handleAddObject("site");
-                      }}
-                      className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:bg-slate-800"
-                    >
-                      Draw Site Boundary
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleApplySite()}
-                      className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-amber-800 transition hover:bg-amber-100"
-                    >
-                      Lock Site Boundary
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleUnlockSite}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 transition hover:bg-slate-50"
-                  >
-                    Change Site Boundary
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => handleOpenSidePanel("objects")}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 transition hover:bg-slate-50"
-                >
-                  Add Objects
-                </button>
-                <span className="hidden h-6 w-px bg-slate-200 md:inline-block" />
                 {[
                   {
                     label: "Design",
@@ -13916,7 +13837,7 @@ function PerformanceAIDashboardView({
                     <p className="mt-2 text-xs text-slate-500">
                       {siteScaleLocked
                         ? "Locked canonical site boundary. Unlock to change dimensions or redraw."
-                        : "Set dimensions here or use Draw Site Boundary in the canvas toolbar."}
+                        : "Set dimensions here or draw the site boundary from Setup."}
                     </p>
                     <button
                       type="button"
@@ -14815,143 +14736,6 @@ function PerformanceAIDashboardView({
               </div>
             </div>
           </main>
-          <div
-            data-testid="bottom-review-panel"
-            className="fixed bottom-20 left-1/2 z-30 w-[calc(100vw-2rem)] max-w-5xl -translate-x-1/2 rounded-xl border border-slate-200 bg-white/95 shadow-[0_24px_70px_-36px_rgba(15,23,42,0.5)] backdrop-blur-xl"
-          >
-            <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-3 py-2">
-              <div className="flex min-w-0 items-center gap-2">
-                <p className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Review Status
-                </p>
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-                  hasHardSystemBlock || bottomBlockerItems.length
-                    ? "bg-red-50 text-red-600"
-                    : "bg-slate-100 text-slate-600"
-                }`}>
-                  {hasHardSystemBlock || bottomBlockerItems.length ? "Blockers visible" : "Engineer review required"}
-                </span>
-                <span className="hidden truncate text-xs font-semibold text-slate-500 md:inline">
-                  {nextSetupAction}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setBottomPanelCollapsed((value) => !value)}
-                className="shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-              >
-                {bottomPanelCollapsed ? "Open" : "Collapse"}
-              </button>
-            </div>
-            {!bottomPanelCollapsed ? (
-              <div className="grid max-h-[28vh] gap-3 overflow-y-auto px-3 py-3 lg:grid-cols-[auto,1fr]">
-                <div className="flex min-w-0 gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
-                  {bottomPanelTabs.map((tab) => (
-                    <button
-                      key={tab.key}
-                      type="button"
-                      onClick={() => {
-                        setActiveBottomPanelTab(tab.key);
-                        handleOpenSidePanel(tab.panel);
-                      }}
-                      className={`whitespace-nowrap rounded-lg border px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
-                        activeBottomPanelTab === tab.key
-                          ? "border-slate-950 bg-slate-950 text-white"
-                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-                <div className="min-w-0">
-                  {activeBottomPanelTab === "model_review" ? (
-                    <div className="grid gap-2 md:grid-cols-3">
-                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Top blockers</p>
-                        <p className="mt-1 line-clamp-2 text-xs font-semibold text-slate-800">
-                          {bottomBlockerItems[0] || "No blocker text recorded. Engineer review still required."}
-                        </p>
-                      </div>
-                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">System status</p>
-                        <p className="mt-1 text-xs font-semibold text-slate-800">
-                          {Object.entries(systemStatuses).map(([key, value]) => `${key}: ${value.replace("_", " ")}`).join(" · ")}
-                        </p>
-                      </div>
-                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">Next step</p>
-                        <p className="mt-1 line-clamp-2 text-xs font-semibold text-amber-900">{nextSetupAction}</p>
-                      </div>
-                    </div>
-                  ) : null}
-                  {activeBottomPanelTab === "systems" ? (
-                    <div className="flex flex-wrap gap-2">
-                      {(Object.entries(systemStatuses) as Array<[EngineeringSystemKey, SystemStatus]>).map(([system, state]) => (
-                        <button
-                          key={system}
-                          type="button"
-                          onClick={() => handleOpenSidePanel(system === "drainage" ? "system_storm" : system === "roads" ? "system_roadway" : system === "parking" ? "generate" : (`system_${system}` as SidePanelKey))}
-                          className={`rounded-lg border px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.12em] ${
-                            state === "stale"
-                              ? "border-amber-200 bg-amber-50 text-amber-700"
-                              : state === "fresh"
-                                ? "border-slate-200 bg-slate-50 text-slate-700"
-                                : "border-slate-200 bg-white text-slate-500"
-                          }`}
-                        >
-                          {system} · {state.replace("_", " ")}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                  {activeBottomPanelTab === "objects" ? (
-                    <div className="grid gap-2 md:grid-cols-3">
-                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Placed objects</p>
-                        <p className="mt-1 text-lg font-semibold text-slate-900">{placedObjectCount}</p>
-                      </div>
-                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Selected</p>
-                        <p className="mt-1 truncate text-xs font-semibold text-slate-800">{selectedCanvasObject?.label || "None"}</p>
-                      </div>
-                      <button type="button" onClick={() => handleOpenSidePanel("objects")} className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white">
-                        Add / draw objects
-                      </button>
-                    </div>
-                  ) : null}
-                  {activeBottomPanelTab === "properties" ? (
-                    <div className="grid gap-2 md:grid-cols-3">
-                      {[
-                        ["Object type", selectedCanvasObject?.type || "No selection"],
-                        ["Source", selectedCanvasObject?.source || "Not selected"],
-                        ["Confidence", String(selectedCanvasObject?.meta?.confidence || "engineer_review_required")],
-                      ].map(([label, value]) => (
-                        <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
-                          <p className="mt-1 truncate text-xs font-semibold text-slate-800">{value}</p>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                  {activeBottomPanelTab === "history" ? (
-                    <div className="grid gap-2 md:grid-cols-3">
-                      {[
-                        ["Project sync", currentProject?.project_id ? "Saved" : "Draft"],
-                        ["Last action", statusMessage || "No recent action"],
-                        ["Package state", sidebarReleaseStatus === "ready" ? "ready_for_engineer_review" : sidebarReleaseStatus],
-                      ].map(([label, value]) => (
-                        <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
-                          <p className="mt-1 line-clamp-2 text-xs font-semibold text-slate-800">{value}</p>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-          </div>
           <div
             data-testid="floating-command-bar"
             className="fixed bottom-4 left-1/2 z-30 flex w-[calc(100vw-2rem)] max-w-xl -translate-x-1/2 items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white/95 px-3 py-2 shadow-[0_24px_70px_-32px_rgba(15,23,42,0.55)] backdrop-blur-xl"

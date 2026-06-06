@@ -2657,90 +2657,6 @@ export default function PreviewPanel({
     setFocusTransform({ scale: Math.min(Math.max(scale, 1), 3), tx: centerX, ty: centerY });
   }, [analysisHighlight, analysisPaths, buildingPlacements, lotHeight, lotWidth, suggestedPlacements]);
   const showParkingAnalysis = Boolean(analysisPaths && analysisPaths.length);
-  const releaseStatus = String(previewReview?.release_status || "review").toLowerCase();
-  const releaseLabel =
-    releaseStatus === "ready"
-      ? "Review Package Available"
-      : releaseStatus === "blocked"
-        ? "Construction Blocked"
-        : "Engineer Review";
-  const trustScore =
-    typeof previewReview?.trust_score === "number"
-      ? Math.round(previewReview.trust_score)
-      : null;
-  const staleSystems = (Object.entries(systemStatuses) as Array<[keyof EngineeringSystemStatuses, EngineeringSystemStatus]>)
-    .filter(([, status]) => status === "stale")
-    .map(([system]) => system);
-  const blockedExports = Array.isArray(previewReview?.blocked_exports)
-    ? previewReview.blocked_exports.filter(Boolean)
-    : [];
-  const blockedReasons = Array.isArray(previewReview?.blocked_reasons)
-    ? previewReview.blocked_reasons.filter(Boolean)
-    : [];
-  const assumptionCategories = Array.isArray(previewReview?.assumption_categories)
-    ? previewReview.assumption_categories.filter(Boolean)
-    : [];
-  const failedDeliverables = Array.isArray(previewReview?.failed_deliverables)
-    ? previewReview.failed_deliverables.filter(Boolean)
-    : [];
-  const missingInputs = [
-    !lotWidth || !lotHeight ? "site boundary" : null,
-    !hasTerrainSource ? "terrain source" : null,
-    !hasBasinPlaced && systemStatuses.drainage !== "fresh" ? "detention basin" : null,
-  ].filter(Boolean) as string[];
-  const exportBlocked = releaseStatus === "blocked" || hasHardSystemBlock || Boolean(blockedExports.length || failedDeliverables.length);
-  const reviewCards = [
-    {
-      label: "Missing Inputs",
-      value: missingInputs.length ? missingInputs.slice(0, 3).join(", ") : "None flagged",
-      tone: missingInputs.length ? "amber" : "slate",
-    },
-    {
-      label: "Readiness",
-      value: releaseLabel,
-      tone: exportBlocked ? "rose" : "amber",
-    },
-    {
-      label: "Engineer Review",
-      value: "Required",
-      tone: "amber",
-    },
-    {
-      label: "Construction",
-      value: "Blocked",
-      tone: "rose",
-    },
-    {
-      label: "Engine Confidence",
-      value: trustScore === null ? "Not reported" : `${trustScore}%`,
-      tone: trustScore === null ? "slate" : trustScore >= 80 ? "emerald" : trustScore >= 55 ? "amber" : "rose",
-    },
-    {
-      label: "Stale Outputs",
-      value: staleSystems.length ? staleSystems.slice(0, 4).join(", ") : "None",
-      tone: staleSystems.length ? "amber" : "slate",
-    },
-    {
-      label: "Assumptions",
-      value: assumptionCategories.length ? assumptionCategories.slice(0, 3).join(", ") : "Engineer acceptance",
-      tone: "amber",
-    },
-    {
-      label: "Blocked Systems",
-      value: siteTooLargeForGrading
-        ? "grading area too large"
-        : blockedReasons.length
-          ? blockedReasons.slice(0, 2).join(", ")
-          : "None recorded",
-      tone: siteTooLargeForGrading || blockedReasons.length ? "rose" : "slate",
-    },
-  ] as const;
-  const toneClass = {
-    slate: "border-slate-200 bg-white text-slate-700",
-    amber: "border-amber-200 bg-amber-50 text-amber-900",
-    rose: "border-rose-200 bg-rose-50 text-rose-900",
-    emerald: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  } as const;
   return (
     <div className="flex h-full flex-col rounded-xl border border-slate-200 bg-white/92 p-3 shadow-[0_20px_60px_-44px_rgba(15,23,42,0.45)] backdrop-blur">
       <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
@@ -2756,7 +2672,6 @@ export default function PreviewPanel({
               {previewMode.toUpperCase()}
             </span>
           </div>
-          <p className="text-sm font-semibold text-slate-950">Live engineering model</p>
           {previewTotalPhaseCount > 0 && previewCompletedPhaseCount < previewTotalPhaseCount ? (
             <div className="inline-flex max-w-3xl items-start rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               <div>
@@ -2860,19 +2775,6 @@ export default function PreviewPanel({
             Export Report
           </button>
         </div>
-      </div>
-
-      <div className="mb-3 grid grid-cols-2 gap-2 xl:grid-cols-6">
-        {reviewCards.map((item) => (
-          <div key={item.label} className={`min-h-[62px] rounded-lg border px-3 py-2 ${toneClass[item.tone]}`}>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-70">
-              {item.label}
-            </p>
-            <p className="mt-1 text-[11px] font-semibold leading-4 capitalize">
-              {item.value}
-            </p>
-          </div>
-        ))}
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
