@@ -2,6 +2,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import {
   AlertCircle,
   Box,
@@ -1087,6 +1088,8 @@ type PerformanceAIDashboardProps = {
 function PerformanceAIDashboardView({
   forceDemoWorkspace = false,
 }: PerformanceAIDashboardProps = {}) {
+  const pathname = usePathname();
+  const routeDemoWorkspaceEnabled = pathname === "/demo/workspace";
   const [projectType, setProjectType] = useState("");
   const [units, setUnits] = useState("ft");
   const [prompt, setPrompt] = useState("");
@@ -1094,7 +1097,7 @@ function PerformanceAIDashboardView({
     createWelcomeMessage(),
   ]);
   const [demoWorkspaceEnabled, setDemoWorkspaceEnabled] = useState(false);
-  const effectiveDemoWorkspaceEnabled = forceDemoWorkspace || demoWorkspaceEnabled;
+  const effectiveDemoWorkspaceEnabled = forceDemoWorkspace || routeDemoWorkspaceEnabled || demoWorkspaceEnabled;
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [chatCollapsed, setChatCollapsed] = useState(false);
   const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>("dashboard");
@@ -1429,7 +1432,7 @@ function PerformanceAIDashboardView({
 
   useEffect(() => {
     setDemoWorkspaceEnabled(forceDemoWorkspace || isDemoWorkspaceQuery());
-  }, [forceDemoWorkspace]);
+  }, [forceDemoWorkspace, routeDemoWorkspaceEnabled]);
 
   const disciplineToggles: DisciplineToggle[] = [
     {
