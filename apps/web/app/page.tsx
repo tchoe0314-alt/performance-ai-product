@@ -7620,7 +7620,13 @@ function PerformanceAIDashboardView({
   const handleStartBlankSite = useCallback(() => {
     const width = DEFAULT_BLANK_SITE_WIDTH_FT;
     const height = DEFAULT_BLANK_SITE_DEPTH_FT;
+    const blankSiteName = "Blank Site";
+    const blankFileName = "blank-site";
     clearGeneratedPreview();
+    setSiteName(blankSiteName);
+    setFileName(blankFileName);
+    setSiteNameAuto(false);
+    setFileNameAuto(false);
     setSiteAddress("");
     setSelectedAddressSuggestion(null);
     setAddressSuggestions([]);
@@ -7654,26 +7660,46 @@ function PerformanceAIDashboardView({
     delete nextSiteInputs.geocode;
     delete nextSiteInputs.map_analysis;
     delete nextSiteInputs.viewport_bounds;
+    const nextProjectInput: ProjectInput = {
+      ...currentInput,
+      input_mode: "user",
+      strict_mode: false,
+      allow_ai_fill_for_blanks: false,
+      meta: {
+        ...(currentInput?.meta ?? {}),
+        site_inputs: nextSiteInputs,
+      },
+      manual_fields: {
+        ...(currentInput?.manual_fields ?? {}),
+        project_name: blankSiteName,
+        lot: {
+          x: 0,
+          y: 0,
+          w: width,
+          h: height,
+        },
+      },
+    };
+    setCurrentProject((project) =>
+      project
+        ? {
+            ...project,
+            name: blankSiteName,
+            description: "Blank user-defined site.",
+            project_input: nextProjectInput,
+            latest_result: undefined,
+            has_result: false,
+          }
+        : project,
+    );
     void saveProject({
       silent: true,
+      nameOverride: blankSiteName,
+      fileNameOverride: blankFileName,
+      autoNamedOverride: false,
+      autoFileNamedOverride: false,
       projectInputOverride: {
-        ...currentInput,
-        input_mode: "user",
-        strict_mode: false,
-        allow_ai_fill_for_blanks: false,
-        meta: {
-          ...(currentInput?.meta ?? {}),
-          site_inputs: nextSiteInputs,
-        },
-        manual_fields: {
-          ...(currentInput?.manual_fields ?? {}),
-          lot: {
-            x: 0,
-            y: 0,
-            w: width,
-            h: height,
-          },
-        },
+        ...nextProjectInput,
       },
     });
     setStatusMessage("Blank site started. Set dimensions, draw the boundary, then lock it for review.");
@@ -13232,16 +13258,24 @@ function PerformanceAIDashboardView({
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Object list</p>
                       <div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
                         {buildingPlacements.length ? (
-                          buildingPlacements.map((item) => (
-                            <button key={item.id} type="button" onClick={() => setActivePlacementId(item.id)} className={`w-full rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${activePlacementId === item.id ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"}`}>
-                              {item.label}
-                              <span className="mt-1 block text-[10px] uppercase tracking-[0.12em] opacity-70">
-                                {item.type === "custom"
-                                  ? "Canonical geometry · Draft review required"
-                                  : `${item.placed ? "Placed" : "Not placed"} · ${item.locked ? "Locked" : "Editable"}`}
-                              </span>
-                            </button>
-                          ))
+                          buildingPlacements.map((item) => {
+                            const meta = item.meta && typeof item.meta === "object" ? item.meta as Record<string, unknown> : {};
+                            const isDraftReviewGeometry =
+                              item.type === "custom" ||
+                              item.source === "manual_drawn" ||
+                              meta.classification_status === "draft_review_required" ||
+                              meta.engineering_status === "draft_review_required";
+                            return (
+                              <button key={item.id} type="button" onClick={() => setActivePlacementId(item.id)} className={`w-full rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${activePlacementId === item.id ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"}`}>
+                                {item.label}
+                                <span className="mt-1 block text-[10px] uppercase tracking-[0.12em] opacity-70">
+                                  {isDraftReviewGeometry
+                                    ? "Canonical geometry · Draft review required"
+                                    : `${item.placed ? "Placed" : "Not placed"} · ${item.locked ? "Locked" : "Editable"}`}
+                                </span>
+                              </button>
+                            );
+                          })
                         ) : (
                           <p className="text-sm text-slate-500">No objects yet.</p>
                         )}

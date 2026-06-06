@@ -278,7 +278,13 @@ export default function PreviewPanel({
   const [canvasView, setCanvasView] = useState({ scale: 1, offsetX: 0, offsetY: 0 });
   const drawingLotWidth = lotWidth > 0 ? lotWidth : 500;
   const drawingLotHeight = lotHeight > 0 ? lotHeight : 300;
-  const canDrawObjects = Boolean(siteLocked && lotWidth > 0 && lotHeight > 0);
+  const hasDrawableSiteSize = lotWidth > 0 && lotHeight > 0;
+  const canDrawObjects = Boolean(siteLocked && hasDrawableSiteSize);
+  const drawObjectsDisabledLabel = !siteLocked
+    ? "Lock site boundary before drawing objects"
+    : !hasDrawableSiteSize
+      ? "Set site width and depth before drawing objects"
+      : "Drawing tools available";
   const [canvasPanStart, setCanvasPanStart] = useState<{
     x: number;
     y: number;
@@ -1192,13 +1198,14 @@ export default function PreviewPanel({
         return true;
       }
       if (drawMode === "rect") {
-        setDraftPoints((prev) => {
-          if (!prev.length) return [point];
-          onCreateCustomGeometry({ mode: "rect", points: [prev[0], point] });
-          setDrawMode("select");
-          setDraftPreviewPoint(null);
-          return [];
-        });
+        if (!draftPoints.length) {
+          setDraftPoints([point]);
+          return true;
+        }
+        onCreateCustomGeometry({ mode: "rect", points: [draftPoints[0], point] });
+        setDrawMode("select");
+        setDraftPreviewPoint(null);
+        setDraftPoints([]);
         return true;
       }
       setDraftPoints((prev) => [...prev, point]);
@@ -1209,6 +1216,7 @@ export default function PreviewPanel({
       canvasView.offsetY,
       canDrawObjects,
       clearDraftGeometry,
+      draftPoints,
       drawMode,
       onCreateCustomGeometry,
       screenToSitePoint,
@@ -1236,28 +1244,28 @@ export default function PreviewPanel({
       label: "Add Line",
       icon: PencilLine,
       disabled: !canDrawObjects,
-      disabledLabel: "Lock site before drawing objects",
+      disabledLabel: drawObjectsDisabledLabel,
     },
     {
       mode: "polygon",
       label: "Add Area",
       icon: Pentagon,
       disabled: !canDrawObjects,
-      disabledLabel: "Lock site before drawing objects",
+      disabledLabel: drawObjectsDisabledLabel,
     },
     {
       mode: "rect",
       label: "Add Box",
       icon: Square,
       disabled: !canDrawObjects,
-      disabledLabel: "Lock site before drawing objects",
+      disabledLabel: drawObjectsDisabledLabel,
     },
     {
       mode: "point",
       label: "Add Point",
       icon: MapPin,
       disabled: !canDrawObjects,
-      disabledLabel: "Lock site before drawing objects",
+      disabledLabel: drawObjectsDisabledLabel,
     },
   ];
 
@@ -3252,7 +3260,7 @@ export default function PreviewPanel({
                           ? "Draft geometry"
                           : canDrawObjects
                             ? "Canonical project geometry after finish"
-                            : "Lock site before drawing objects"}
+                            : drawObjectsDisabledLabel}
                 </span>
                 <button
                   type="button"
