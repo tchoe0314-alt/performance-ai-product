@@ -137,20 +137,30 @@ CRON_SECRET = str(os.getenv("CIVORA_CRON_SECRET") or "").strip()
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
 
+DEPLOYED_FRONTEND_ORIGINS = ("https://www.civoraai.com", "https://civoraai.com")
+LOCAL_PILOT_CORS_ORIGINS = ("http://localhost:3000", "http://127.0.0.1:3000")
 
-def _cors_allow_origins() -> list[str]:
-    default_origins = "https://www.civoraai.com,https://civoraai.com,http://localhost:3000,http://127.0.0.1:3000"
-    raw = str(os.getenv("CORS_ALLOW_ORIGINS") or default_origins).strip()
-    if not raw or raw == "*":
-        if PRODUCT_MODE in {"development", "local"}:
-            return ["*"]
-        return [origin.strip() for origin in default_origins.split(",")]
+
+def _clean_origin_list(values: List[str]) -> list[str]:
     cleaned: list[str] = []
-    for item in raw.split(","):
-        value = item.strip().rstrip("/")
+    for item in values:
+        value = str(item or "").strip().rstrip("/")
         if value and value not in cleaned:
             cleaned.append(value)
     return cleaned
+
+
+def _cors_allow_origins() -> list[str]:
+    raw = str(os.getenv("CORS_ALLOW_ORIGINS") or "").strip()
+    if raw == "*":
+        if PRODUCT_MODE in {"development", "local"}:
+            return ["*"]
+        raw = ""
+    origins = raw.split(",") if raw else list(DEPLOYED_FRONTEND_ORIGINS)
+    if _env_flag("CIVORA_ALLOW_LOCAL_PILOT_CORS", False):
+        local_raw = str(os.getenv("CIVORA_LOCAL_PILOT_CORS_ORIGINS") or ",".join(LOCAL_PILOT_CORS_ORIGINS))
+        origins.extend(local_raw.split(","))
+    return _clean_origin_list(origins)
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -253,15 +263,21 @@ class GeocodePayload(BaseModel):
 
 
 class GeocodeResponse(BaseModel):
-    lat: float
-    lng: float
-    display_name: str
-    provider: str
+    success: bool = True
+    status: str = "ready"
+    blocked: bool = False
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    display_name: str = ""
+    provider: str = ""
     confidence: Optional[float] = None
     name: str = ""
     formatted_address: str = ""
     place_name: str = ""
     normalized_address: str = ""
+    message: str = ""
+    warnings: List[str] = Field(default_factory=list)
+    blockers: List[Dict[str, Any]] = Field(default_factory=list)
     crs: Dict[str, Any] = Field(default_factory=dict)
     location_context: Dict[str, Any] = Field(default_factory=dict)
 
@@ -1258,6 +1274,41 @@ def detect_image_features(
         log_memory("image_detect_end", image_path=payload.image_path)
 
 
+def _blocked_geocode_response(
+    *,
+    address: str,
+    provider: str,
+    status: str,
+    message: str,
+    blocker_code: str,
+) -> GeocodeResponse:
+    geocode_record = {
+        "success": False,
+        "status": status,
+        "display_name": address,
+        "formatted_address": address,
+        "matched_address": "",
+        "normalized_address": "",
+        "provider": provider,
+        "source_type": "mapbox_geocoder",
+        "crs": {"epsg": "EPSG:4326", "name": "WGS 84 geographic coordinates", "units": "degrees", "source": "mapbox_geocoder"},
+        "warnings": [message],
+        "blockers": [{"area": "geocode", "code": blocker_code, "message": message}],
+    }
+    return GeocodeResponse(
+        success=False,
+        status=status,
+        blocked=True,
+        display_name=address,
+        provider=provider,
+        message=message,
+        warnings=[message],
+        blockers=geocode_record["blockers"],
+        crs=geocode_record["crs"],
+        location_context=location_context_from_geocode(address=address, geocode=geocode_record),
+    )
+
+
 @app.post("/api/geocode", response_model=GeocodeResponse)
 def geocode_address(
     payload: GeocodePayload,
@@ -1269,7 +1320,13 @@ def geocode_address(
         raise HTTPException(status_code=400, detail="Address is required.")
     _, token = _mapbox_token()
     if not token:
-        raise HTTPException(status_code=500, detail="Mapbox token is not configured.")
+        return _blocked_geocode_response(
+            address=address,
+            provider="mapbox",
+            status="provider_not_configured",
+            message="Geocode provider is not configured for this environment.",
+            blocker_code="provider_config_missing",
+        )
     try:
         with httpx.Client(timeout=8.0) as client:
             resp = client.get(
@@ -1282,21 +1339,35 @@ def geocode_address(
     except httpx.HTTPStatusError as exc:
         status_code = exc.response.status_code if exc.response is not None else "unknown"
         if status_code == 403:
-            detail = (
-                "Mapbox geocoding returned 403 Forbidden. "
-                "Configure backend MAPBOX_TOKEN with Geocoding access."
-            )
+            message = "Geocode provider rejected the configured credentials for this environment."
+            blocker_code = "provider_credentials_rejected"
         else:
-            detail = f"Mapbox geocoding returned HTTP {status_code}."
-        raise HTTPException(status_code=502, detail=detail) from exc
-    except Exception as exc:
-        raise HTTPException(
-            status_code=502,
-            detail="Geocoding failed before a valid Mapbox response was parsed.",
-        ) from exc
+            message = "Geocode provider returned an unavailable response."
+            blocker_code = "provider_unavailable"
+        return _blocked_geocode_response(
+            address=address,
+            provider="mapbox",
+            status="provider_unavailable",
+            message=message,
+            blocker_code=blocker_code,
+        )
+    except Exception:
+        return _blocked_geocode_response(
+            address=address,
+            provider="mapbox",
+            status="provider_failed",
+            message="Geocode provider request failed before a valid response was parsed.",
+            blocker_code="provider_request_failed",
+        )
     features = data.get("features") if isinstance(data, dict) else None
     if not features:
-        raise HTTPException(status_code=404, detail="Address could not be geocoded.")
+        return _blocked_geocode_response(
+            address=address,
+            provider="mapbox",
+            status="not_found",
+            message="Address could not be geocoded by the configured provider.",
+            blocker_code="address_not_found",
+        )
     first = features[0] if isinstance(features, list) else None
     try:
         center = first.get("center") if isinstance(first, dict) else None
@@ -1304,8 +1375,14 @@ def geocode_address(
             raise ValueError("Missing center")
         lng = float(center[0])
         lat = float(center[1])
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Invalid geocode response: {exc}") from exc
+    except Exception:
+        return _blocked_geocode_response(
+            address=address,
+            provider="mapbox",
+            status="provider_invalid_response",
+            message="Geocode provider returned an incomplete coordinate response.",
+            blocker_code="provider_invalid_response",
+        )
     display_name = str(first.get("place_name") or address) if isinstance(first, dict) else address
     geocode_record = {
         "success": True,

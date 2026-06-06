@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from backend.api.app import (
     ChatLearningCronPayload,
+    GeocodePayload,
     ProfessionalReleasePayload,
     RegisterPayload,
     _RATE_LIMIT_DEFAULTS,
@@ -16,6 +17,7 @@ from backend.api.app import (
     _runtime_debug_payload,
     app,
     chat_learning_cron,
+    geocode_address,
     register,
 )
 
@@ -47,12 +49,128 @@ class ApiReleaseSafetyTest(unittest.TestCase):
         self.assertIn("CIVORA_CRON_SECRET", str(ctx.exception.detail))
 
     def test_cors_default_is_not_wildcard_for_private_alpha(self) -> None:
-        with patch.dict(os.environ, {"CORS_ALLOW_ORIGINS": "*"}):
+        with patch.dict(os.environ, {"CORS_ALLOW_ORIGINS": "*", "CIVORA_ALLOW_LOCAL_PILOT_CORS": ""}):
             origins = _cors_allow_origins()
 
         self.assertNotEqual(origins, ["*"])
         self.assertIn("https://www.civoraai.com", origins)
+        self.assertIn("https://civoraai.com", origins)
+        self.assertNotIn("http://localhost:3000", origins)
+
+    def test_cors_allows_deployed_frontend_origin(self) -> None:
+        client = TestClient(app)
+        response = client.options(
+            "/api/health",
+            headers={
+                "Origin": "https://civoraai.com",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("access-control-allow-origin"), "https://civoraai.com")
+
+    def test_cors_blocks_unlisted_origin(self) -> None:
+        client = TestClient(app)
+        response = client.options(
+            "/api/health",
+            headers={
+                "Origin": "https://example.invalid",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIsNone(response.headers.get("access-control-allow-origin"))
+
+    def test_local_pilot_cors_origins_require_explicit_flag(self) -> None:
+        with patch.dict(os.environ, {"CIVORA_ALLOW_LOCAL_PILOT_CORS": ""}, clear=False):
+            self.assertNotIn("http://localhost:3000", _cors_allow_origins())
+
+        with patch.dict(os.environ, {"CIVORA_ALLOW_LOCAL_PILOT_CORS": "true"}, clear=False):
+            origins = _cors_allow_origins()
+
         self.assertIn("http://localhost:3000", origins)
+        self.assertIn("http://127.0.0.1:3000", origins)
+
+    def test_geocode_returns_ready_response_for_provider_success(self) -> None:
+        testcase = self
+
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict:
+                return {"features": [{"center": [-96.8, 32.78], "place_name": "Dallas, Texas"}]}
+
+        class FakeClient:
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+            def __enter__(self) -> "FakeClient":
+                return self
+
+            def __exit__(self, *args) -> None:
+                return None
+
+            def get(self, *args, **kwargs) -> FakeResponse:
+                testcase.assertNotIn("access_token", args[0])
+                return FakeResponse()
+
+        with patch.object(api_app_module, "_mapbox_token", return_value=("MAPBOX_TOKEN", "token-value")):
+            with patch.object(api_app_module.httpx, "Client", FakeClient):
+                response = geocode_address(GeocodePayload(address="Dallas, TX"), current_user={"id": "user-1"})
+
+        self.assertTrue(response.success)
+        self.assertFalse(response.blocked)
+        self.assertEqual(response.status, "ready")
+        self.assertEqual(response.provider, "mapbox")
+        self.assertEqual(response.lat, 32.78)
+        self.assertEqual(response.lng, -96.8)
+
+    def test_geocode_returns_blocked_response_when_provider_is_missing(self) -> None:
+        with patch.object(api_app_module, "_mapbox_token", return_value=(None, "")):
+            response = geocode_address(GeocodePayload(address="Dallas, TX"), current_user={"id": "user-1"})
+
+        self.assertFalse(response.success)
+        self.assertTrue(response.blocked)
+        self.assertEqual(response.status, "provider_not_configured")
+        self.assertIsNone(response.lat)
+        self.assertIsNone(response.lng)
+        self.assertIn("not configured", response.message)
+        self.assertNotIn("token", str(response.blockers).lower())
+
+    def test_geocode_returns_blocked_response_for_provider_failure(self) -> None:
+        request = api_app_module.httpx.Request("GET", "https://api.mapbox.com/geocoding/v5/mapbox.places/test.json")
+        failed_response = api_app_module.httpx.Response(403, request=request)
+
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                raise api_app_module.httpx.HTTPStatusError("forbidden", request=request, response=failed_response)
+
+        class FakeClient:
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+            def __enter__(self) -> "FakeClient":
+                return self
+
+            def __exit__(self, *args) -> None:
+                return None
+
+            def get(self, *args, **kwargs) -> FakeResponse:
+                return FakeResponse()
+
+        with patch.object(api_app_module, "_mapbox_token", return_value=("MAPBOX_TOKEN", "token-value")):
+            with patch.object(api_app_module.httpx, "Client", FakeClient):
+                response = geocode_address(GeocodePayload(address="Dallas, TX"), current_user={"id": "user-1"})
+
+        self.assertFalse(response.success)
+        self.assertTrue(response.blocked)
+        self.assertEqual(response.status, "provider_unavailable")
+        self.assertIsNone(response.lat)
+        self.assertIsNone(response.lng)
+        self.assertNotIn("token-value", response.message)
 
     def test_professional_release_payload_defaults_do_not_claim_release(self) -> None:
         payload = ProfessionalReleasePayload()
