@@ -308,6 +308,11 @@ def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
         },
         "has_plan": bool(context.get("has_plan")),
         "has_preview": bool(context.get("has_preview")),
+        "selected_object_ids": list(context.get("selected_object_ids") or []),
+        "selected_geometry_ids": list(context.get("selected_geometry_ids") or []),
+        "referenced_object_ids": list(context.get("referenced_object_ids") or []),
+        "referenced_geometry_ids": list(context.get("referenced_geometry_ids") or []),
+        "activePlacementId": context.get("activePlacementId") or context.get("active_placement_id"),
         "current_project_name": current_project.get("name"),
         "current_project": {
             "project_id": current_project.get("project_id"),
@@ -440,6 +445,26 @@ def _ctx_has_utility_tie_ins(context: Dict[str, Any]) -> bool:
             continue
         text = json.dumps(source, default=str).lower()[:20000]
         if any(token in text for token in ["water", "sanitary", "sewer", "tie", "connection", "utility"]):
+            return True
+    return False
+
+
+def _ctx_has_referenced_geometry(context: Dict[str, Any]) -> bool:
+    if context.get("selected_geometry_ids") or context.get("referenced_geometry_ids"):
+        return True
+    if context.get("selected_object_ids") or context.get("referenced_object_ids"):
+        return True
+    if context.get("activePlacementId") or context.get("active_placement_id"):
+        return True
+    current_project = context.get("current_project") or {}
+    sources = [context]
+    if isinstance(current_project, dict):
+        sources.extend([current_project, current_project.get("project_input") or {}])
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        text = json.dumps(source, default=str).lower()[:20000]
+        if "canonical_geometry_handoff_v1" in text and any(token in text for token in ["selected", "activeplacementid", "referenced_geometry"]):
             return True
     return False
 
@@ -2096,7 +2121,7 @@ def _command_family(message: str) -> str:
         return "utility_command"
     if any(phrase in lowered for phrase in ["generate systems", "generate the systems", "generate everything", "run the engines", "run all systems"]):
         return "generate_command"
-    if any(target in lowered for target in ["building", "basin", "detention", "parking", "road"]) and any(
+    if any(target in lowered for target in ["building", "basin", "detention", "parking", "road", "protected zone", "protected_zone", "wetland", "buffer"]) and any(
         verb in lowered for verb in ["add", "put", "place", "make", "change", "move", "fit"]
     ):
         if "site" in lowered and _extract_site_area_acres(message):
@@ -2162,7 +2187,13 @@ def _missing_inputs_for_command(command_intent: str, message: str, context: Dict
         ):
             missing.append("object location")
         if "basin" in lowered or "detention" in lowered:
-            if not (_ctx_has_low_point(context) or "low corner" in lowered or any(corner in lowered for corner in ["northwest", "northeast", "southwest", "southeast"])):
+            if not (
+                _ctx_has_low_point(context)
+                or _ctx_has_referenced_geometry(context)
+                or any(token in lowered for token in ["this", "that", "selected", "drawn", "polygon", "shape", "geometry"])
+                or "low corner" in lowered
+                or any(corner in lowered for corner in ["northwest", "northeast", "southwest", "southeast"])
+            ):
                 missing.append("basin location or low point")
         if "change the road" in lowered or lowered in {"change road", "change the roads"}:
             missing.append("what road change you want")
@@ -2224,10 +2255,12 @@ def _metadata_for_decision(
 def _extract_object_command_payload(message: str, context: Dict[str, Any]) -> Dict[str, Any]:
     lowered = _normalized_chat_text(message)
     payload: Dict[str, Any] = {}
-    if "building" in lowered:
+    if "protected zone" in lowered or "protected_zone" in lowered or "wetland" in lowered or "buffer" in lowered:
+        payload["object_type"] = "protected_zone"
+    elif "building" in lowered:
         payload["object_type"] = "building"
     elif "basin" in lowered or "detention" in lowered:
-        payload["object_type"] = "detention_basin"
+        payload["object_type"] = "basin"
     elif "parking" in lowered:
         payload["object_type"] = "parking"
     elif "road" in lowered:

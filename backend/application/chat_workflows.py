@@ -33,6 +33,10 @@ def _truthful_decision_update(
     assumptions: Optional[List[str]] = None,
     next_best_action: str = "",
     command_payload_updates: Optional[Dict[str, Any]] = None,
+    outcome: str = "",
+    state_changed: Optional[bool] = None,
+    referenced_object_ids: Optional[List[str]] = None,
+    referenced_geometry_ids: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     updated = dict(decision)
     metadata = dict(updated.get("response_metadata") or {})
@@ -59,6 +63,19 @@ def _truthful_decision_update(
     metadata["action_taken"] = action_taken
     metadata["action_blocked_reason"] = action_blocked_reason
     metadata["next_best_action"] = next_best_action
+    metadata["outcome"] = outcome or ("blocked" if action_blocked_reason else "completed")
+    if state_changed is not None:
+        metadata["state_changed"] = bool(state_changed)
+    else:
+        metadata.setdefault("state_changed", False)
+    if referenced_object_ids is not None:
+        metadata["referenced_object_ids"] = list(referenced_object_ids)
+    else:
+        metadata.setdefault("referenced_object_ids", [])
+    if referenced_geometry_ids is not None:
+        metadata["referenced_geometry_ids"] = list(referenced_geometry_ids)
+    else:
+        metadata.setdefault("referenced_geometry_ids", [])
     updated["response_metadata"] = metadata
     updated["required_missing_inputs"] = list(metadata.get("required_missing_inputs") or [])
     updated["action_taken"] = action_taken
@@ -86,6 +103,117 @@ def _save_project_record(project_store: Any, record: Dict[str, Any], *, project_
 
 def _next_draft_id(items: List[Any], prefix: str) -> str:
     return f"{prefix}-{len(items) + 1}"
+
+
+def _normalized_text(value: str) -> str:
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def _classification_type_from_message(message: str) -> str:
+    lowered = _normalized_text(message)
+    if "protected zone" in lowered or "protected_zone" in lowered or "wetland" in lowered or "buffer" in lowered:
+        return "protected_zone"
+    if "parking" in lowered:
+        return "parking"
+    if "building" in lowered:
+        return "building"
+    if "road" in lowered:
+        return "road"
+    if "basin" in lowered or "detention" in lowered or "pond" in lowered:
+        return "basin"
+    return ""
+
+
+def _looks_like_geometry_reference(message: str) -> bool:
+    lowered = _normalized_text(message)
+    return any(token in lowered for token in ["this", "that", "selected", "drawn", "polygon", "shape", "geometry"])
+
+
+def _collect_selected_ids(context: Dict[str, Any]) -> tuple[List[str], List[str]]:
+    object_ids: List[str] = []
+    geometry_ids: List[str] = []
+
+    def _extend(target: List[str], value: Any) -> None:
+        if isinstance(value, list):
+            for item in value:
+                text = str(item or "").strip()
+                if text and text not in target:
+                    target.append(text)
+        else:
+            text = str(value or "").strip()
+            if text and text not in target:
+                target.append(text)
+
+    for key in ("referenced_object_ids", "selected_object_ids"):
+        _extend(object_ids, context.get(key))
+    for key in ("referenced_geometry_ids", "selected_geometry_ids"):
+        _extend(geometry_ids, context.get(key))
+    for key in ("activePlacementId", "active_placement_id", "selected_object_id", "selected_geometry_id"):
+        value = context.get(key)
+        if key.endswith("geometry_id"):
+            _extend(geometry_ids, value)
+        else:
+            _extend(object_ids, value)
+    return object_ids, geometry_ids
+
+
+def _canonical_geometry_handoffs(project_input: Dict[str, Any], latest_result: Dict[str, Any]) -> List[Dict[str, Any]]:
+    handoffs: List[Dict[str, Any]] = []
+    manual_fields = _safe_dict(project_input.get("manual_fields"))
+    for item in _safe_list(manual_fields.get("canonical_geometry_handoff_v1")):
+        rec = _safe_dict(item)
+        if rec:
+            handoffs.append(rec)
+    for item in _safe_list(project_input.get("canonical_geometry_handoff_v1")):
+        rec = _safe_dict(item)
+        if rec:
+            handoffs.append(rec)
+    for source in [manual_fields, project_input, _safe_dict(_safe_dict(latest_result.get("final_plan")).get("meta"))]:
+        for item in _safe_list(source.get("site_objects")):
+            rec = _safe_dict(item)
+            handoff = _safe_dict(rec.get("canonical_geometry_handoff_v1"))
+            if handoff:
+                handoffs.append(handoff)
+    seen = set()
+    unique: List[Dict[str, Any]] = []
+    for item in handoffs:
+        key = (str(item.get("object_id") or ""), str(item.get("geometry_id") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+    return unique
+
+
+def _matching_handoffs(handoffs: List[Dict[str, Any]], object_ids: List[str], geometry_ids: List[str]) -> List[Dict[str, Any]]:
+    if not object_ids and not geometry_ids:
+        return []
+    matches: List[Dict[str, Any]] = []
+    object_set = set(object_ids)
+    geometry_set = set(geometry_ids)
+    for item in handoffs:
+        object_id = str(item.get("object_id") or "").strip()
+        geometry_id = str(item.get("geometry_id") or "").strip()
+        if object_id in object_set or geometry_id in geometry_set:
+            matches.append(item)
+    return matches
+
+
+def _handoff_blockers(handoff: Dict[str, Any]) -> List[str]:
+    blockers = [str(item) for item in _safe_list(handoff.get("blockers")) if str(item)]
+    if handoff.get("valid") is not True:
+        blockers.append("canonical_geometry_handoff_v1 is not valid")
+    if handoff.get("source") != "manual_drawn":
+        blockers.append("source must be manual_drawn")
+    if handoff.get("confidence") != "user_drawn_review_required":
+        blockers.append("confidence must be user_drawn_review_required")
+    if handoff.get("engineering_status") != "draft_review_required":
+        blockers.append("engineering_status must remain draft_review_required")
+    if not str(handoff.get("object_id") or "").strip():
+        blockers.append("object_id is required")
+    if not str(handoff.get("geometry_id") or "").strip():
+        blockers.append("geometry_id is required")
+    return list(dict.fromkeys(blockers))
 
 
 def _apply_chat_command_execution(
@@ -211,6 +339,129 @@ def _apply_chat_command_execution(
     if command_intent == "object_or_layout_command":
         object_type = str(command_payload.get("object_type") or "")
         operation = str(command_payload.get("operation") or "")
+        classification_type = _classification_type_from_message(message)
+        if classification_type and _looks_like_geometry_reference(message):
+            handoffs = _canonical_geometry_handoffs(project_input, latest_result)
+            selected_object_ids, selected_geometry_ids = _collect_selected_ids(context)
+            matches = _matching_handoffs(handoffs, selected_object_ids, selected_geometry_ids)
+            if not selected_object_ids and not selected_geometry_ids:
+                ask = "Which drawn geometry should I classify? Select one polygon or shape, then ask again."
+                return _truthful_decision_update(
+                    decision,
+                    assistant_message=ask,
+                    intent="conversation",
+                    run_mode="none",
+                    design_prompt="",
+                    needs_clarification=True,
+                    action_taken="asked_targeted_geometry_selection_question",
+                    action_blocked_reason="No selected or referenced drawn geometry was provided.",
+                    required_missing_inputs=["selected drawn geometry"],
+                    next_best_action=ask,
+                    outcome="needs_geometry_selection",
+                    state_changed=False,
+                    referenced_object_ids=[],
+                    referenced_geometry_ids=[],
+                )
+            if len(matches) != 1:
+                ask = "I need exactly one selected drawn geometry to classify. Please select one shape and try again."
+                return _truthful_decision_update(
+                    decision,
+                    assistant_message=ask,
+                    intent="conversation",
+                    run_mode="none",
+                    design_prompt="",
+                    needs_clarification=True,
+                    action_taken="asked_targeted_geometry_selection_question",
+                    action_blocked_reason=f"Referenced geometry was ambiguous: {len(matches)} matching handoffs found.",
+                    required_missing_inputs=["one unambiguous selected drawn geometry"],
+                    next_best_action=ask,
+                    outcome="ambiguous_geometry_reference",
+                    state_changed=False,
+                    referenced_object_ids=selected_object_ids,
+                    referenced_geometry_ids=selected_geometry_ids,
+                )
+            handoff = matches[0]
+            blockers = _handoff_blockers(handoff)
+            referenced_object_ids = [str(handoff.get("object_id") or "").strip()]
+            referenced_geometry_ids = [str(handoff.get("geometry_id") or "").strip()]
+            if blockers:
+                reason = "; ".join(blockers)
+                return _truthful_decision_update(
+                    decision,
+                    assistant_message=f"I found the drawn geometry, but I cannot classify it yet: {reason}.",
+                    intent="conversation",
+                    run_mode="none",
+                    design_prompt="",
+                    needs_clarification=True,
+                    action_taken="blocked_invalid_geometry_handoff",
+                    action_blocked_reason=reason,
+                    required_missing_inputs=["valid canonical_geometry_handoff_v1"],
+                    next_best_action="Fix the drawn geometry handoff blockers, then classify it again.",
+                    outcome="invalid_geometry_handoff_blocked",
+                    state_changed=False,
+                    referenced_object_ids=referenced_object_ids,
+                    referenced_geometry_ids=referenced_geometry_ids,
+                )
+            updates = _safe_list(meta.get("canonical_geometry_classification_updates"))
+            update_id = _next_draft_id(updates, f"draft-{classification_type.replace('_', '-')}-classification")
+            classification_update = {
+                "id": update_id,
+                "object_id": referenced_object_ids[0],
+                "geometry_id": referenced_geometry_ids[0],
+                "object_type": classification_type,
+                "source": "manual_drawn",
+                "confidence": "user_drawn_review_required",
+                "engineering_status": "draft_review_required",
+                "status": "draft_review_required",
+                "ready_language": "ready_for_engineer_review",
+                "engineer_review_required": True,
+                "civora_signoff_allowed": False,
+                "construction_release_allowed": False,
+                "canonical_geometry_handoff_v1": deepcopy(handoff),
+            }
+            updates.append(classification_update)
+            edits = _safe_list(meta.get("chat_command_edits"))
+            edits.append(
+                {
+                    "message": message,
+                    "action_taken": "classified_drawn_geometry",
+                    "classification_id": update_id,
+                    "object_type": classification_type,
+                    "object_id": referenced_object_ids[0],
+                    "geometry_id": referenced_geometry_ids[0],
+                }
+            )
+            meta["canonical_geometry_classification_updates"] = updates
+            meta["chat_command_edits"] = edits
+            final_plan["meta"] = meta
+            latest_result["final_plan"] = final_plan
+            _save_project_record(project_store, record, project_input=project_input, latest_result=latest_result)
+            return _truthful_decision_update(
+                decision,
+                assistant_message=(
+                    f"I classified the selected manual drawn geometry as draft {classification_type.replace('_', ' ')} "
+                    "for engineer review. I did not run engineering generation."
+                ),
+                intent="conversation",
+                run_mode="none",
+                design_prompt="",
+                needs_clarification=False,
+                action_taken="classified_drawn_geometry",
+                action_blocked_reason="",
+                affected_systems=["layout"],
+                assumptions=list(metadata.get("assumptions") or []),
+                next_best_action="Review the draft classification, then run affected systems only when you are ready.",
+                command_payload_updates={
+                    "persisted": True,
+                    "classification_id": update_id,
+                    "object_type": classification_type,
+                    "ready_language": "ready_for_engineer_review",
+                },
+                outcome="draft_canonical_classification_created",
+                state_changed=True,
+                referenced_object_ids=referenced_object_ids,
+                referenced_geometry_ids=referenced_geometry_ids,
+            )
         if operation != "create":
             ask = f"I understood the {object_type or 'object'} update, but canonical edit support for that change is not implemented yet."
             return _truthful_decision_update(
@@ -224,8 +475,10 @@ def _apply_chat_command_execution(
                 action_blocked_reason=f"Canonical {object_type or 'object'} {operation or 'update'} edits are not supported by chat execution yet.",
                 required_missing_inputs=[f"supported canonical {object_type or 'object'} edit workflow"],
                 next_best_action="Tell Civora the exact new geometry in a full design prompt or use a supported create command.",
+                outcome="unsupported_canonical_edit_blocked",
+                state_changed=False,
             )
-        supported_create = object_type in {"building", "detention_basin", "parking"}
+        supported_create = object_type in {"building", "basin", "detention_basin", "parking"}
         if not supported_create:
             ask = f"I understood the {object_type or 'object'} create command, but chat cannot create that canonical object type yet."
             return _truthful_decision_update(
