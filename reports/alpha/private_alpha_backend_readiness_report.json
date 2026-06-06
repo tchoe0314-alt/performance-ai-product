@@ -4,15 +4,17 @@
       "job_queue": {},
       "job_queue_monitoring_evidence": {
         "alpha_ready": false,
+        "applicability": "required",
+        "async_jobs_enabled": true,
         "blockers": [
           {
             "area": "monitoring",
             "field": "job_queue",
-            "message": "Alpha monitoring needs queue monitoring evidence.",
-            "reason": "Alpha monitoring needs queue monitoring evidence.",
+            "message": "private_alpha_review monitoring needs queue monitoring evidence.",
+            "reason": "private_alpha_review monitoring needs queue monitoring evidence.",
             "severity": "blocker",
             "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
-            "why_needed": "Alpha monitoring needs queue monitoring evidence."
+            "why_needed": "private_alpha_review monitoring needs queue monitoring evidence."
           },
           {
             "area": "monitoring",
@@ -44,11 +46,16 @@
         ],
         "confidence": "missing",
         "failed_count": null,
-        "last_check_at": "2026-06-06T03:51:42Z",
+        "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
+        "last_check_at": "2026-06-06T04:00:05Z",
+        "mode_ready": false,
         "monitored_job_types": [],
         "monitoring_source": "alpha_smoke_soak.aggregate_runtime",
+        "not_applicable_reason": "",
         "pending_count": null,
+        "queue_monitoring_ready": false,
         "queue_system_present": false,
+        "readiness_mode": "private_alpha_review",
         "status": "blocked",
         "timeout_count": null,
         "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
@@ -61,6 +68,7 @@
         "sample_count": 3,
         "status": "healthy"
       },
+      "readiness_mode": "private_alpha_review",
       "rss_mb": 25.4,
       "status": "healthy",
       "truth_label": "Aggregated alpha smoke/soak runtime sample. Missing queue or process evidence keeps alpha monitoring blocked.",
@@ -78,8 +86,8 @@
           ],
           "next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
           "severity": "blocker",
-          "what_failed": "Alpha monitoring needs queue monitoring evidence.",
-          "why_it_matters": "Alpha monitoring needs queue monitoring evidence."
+          "what_failed": "private_alpha_review monitoring needs queue monitoring evidence.",
+          "why_it_matters": "private_alpha_review monitoring needs queue monitoring evidence."
         },
         {
           "area": "monitoring",
@@ -125,11 +133,11 @@
         {
           "area": "monitoring",
           "field": "job_queue",
-          "message": "Alpha monitoring needs queue monitoring evidence.",
-          "reason": "Alpha monitoring needs queue monitoring evidence.",
+          "message": "private_alpha_review monitoring needs queue monitoring evidence.",
+          "reason": "private_alpha_review monitoring needs queue monitoring evidence.",
           "severity": "blocker",
           "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
-          "why_needed": "Alpha monitoring needs queue monitoring evidence."
+          "why_needed": "private_alpha_review monitoring needs queue monitoring evidence."
         },
         {
           "area": "monitoring",
@@ -159,17 +167,21 @@
           "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
         }
       ],
+      "construction_release_allowed": false,
+      "construction_release_blocked": true,
       "job_queue_monitoring_evidence": {
         "alpha_ready": false,
+        "applicability": "required",
+        "async_jobs_enabled": true,
         "blockers": [
           {
             "area": "monitoring",
             "field": "job_queue",
-            "message": "Alpha monitoring needs queue monitoring evidence.",
-            "reason": "Alpha monitoring needs queue monitoring evidence.",
+            "message": "private_alpha_review monitoring needs queue monitoring evidence.",
+            "reason": "private_alpha_review monitoring needs queue monitoring evidence.",
             "severity": "blocker",
             "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
-            "why_needed": "Alpha monitoring needs queue monitoring evidence."
+            "why_needed": "private_alpha_review monitoring needs queue monitoring evidence."
           },
           {
             "area": "monitoring",
@@ -201,30 +213,55 @@
         ],
         "confidence": "missing",
         "failed_count": null,
-        "last_check_at": "2026-06-06T03:51:42Z",
+        "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
+        "last_check_at": "2026-06-06T04:00:05Z",
+        "mode_ready": false,
         "monitored_job_types": [],
         "monitoring_source": "alpha_smoke_soak.aggregate_runtime",
+        "not_applicable_reason": "",
         "pending_count": null,
+        "queue_monitoring_ready": false,
         "queue_system_present": false,
+        "readiness_mode": "private_alpha_review",
         "status": "blocked",
         "timeout_count": null,
         "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
         "version": "job_queue_monitoring_evidence_v1"
       },
       "readiness": "blocked",
+      "readiness_mode": "private_alpha_review",
+      "readiness_mode_policy": {
+        "modes": {
+          "local_dev": {
+            "construction_release_allowed": false,
+            "queue_monitoring_requirement": "Queue evidence may be unavailable_local when no live queue is configured; this does not clear private-alpha readiness."
+          },
+          "private_alpha_review": {
+            "construction_release_allowed": false,
+            "queue_monitoring_requirement": "Async jobs require real queue monitoring evidence with job types and pending/failed/timeout counts."
+          },
+          "production": {
+            "construction_release_allowed": false,
+            "queue_monitoring_requirement": "Async jobs require live runtime queue monitoring evidence with job types, counts, and worker/runtime source confidence."
+          }
+        },
+        "version": "readiness_mode_policy_v1"
+      },
       "runtime_monitoring": {
         "job_queue": {},
         "job_queue_monitoring_evidence": {
           "alpha_ready": false,
+          "applicability": "required",
+          "async_jobs_enabled": true,
           "blockers": [
             {
               "area": "monitoring",
               "field": "job_queue",
-              "message": "Alpha monitoring needs queue monitoring evidence.",
-              "reason": "Alpha monitoring needs queue monitoring evidence.",
+              "message": "private_alpha_review monitoring needs queue monitoring evidence.",
+              "reason": "private_alpha_review monitoring needs queue monitoring evidence.",
               "severity": "blocker",
               "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
-              "why_needed": "Alpha monitoring needs queue monitoring evidence."
+              "why_needed": "private_alpha_review monitoring needs queue monitoring evidence."
             },
             {
               "area": "monitoring",
@@ -256,11 +293,16 @@
           ],
           "confidence": "missing",
           "failed_count": null,
-          "last_check_at": "2026-06-06T03:51:42Z",
+          "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
+          "last_check_at": "2026-06-06T04:00:05Z",
+          "mode_ready": false,
           "monitored_job_types": [],
           "monitoring_source": "alpha_smoke_soak.aggregate_runtime",
+          "not_applicable_reason": "",
           "pending_count": null,
+          "queue_monitoring_ready": false,
           "queue_system_present": false,
+          "readiness_mode": "private_alpha_review",
           "status": "blocked",
           "timeout_count": null,
           "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
@@ -273,6 +315,7 @@
           "sample_count": 3,
           "status": "healthy"
         },
+        "readiness_mode": "private_alpha_review",
         "rss_mb": 25.4,
         "status": "healthy",
         "truth_label": "Aggregated alpha smoke/soak runtime sample. Missing queue or process evidence keeps alpha monitoring blocked.",
@@ -293,6 +336,7 @@
       "warnings": []
     },
     "duration_seconds": 0.001,
+    "readiness_mode": "private_alpha_review",
     "requested_iterations": 3,
     "sample_count": 3,
     "sample_failure_count": 0,
@@ -311,8 +355,8 @@
               ],
               "next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
               "severity": "blocker",
-              "what_failed": "Alpha monitoring needs queue monitoring evidence.",
-              "why_it_matters": "Alpha monitoring needs queue monitoring evidence."
+              "what_failed": "private_alpha_review monitoring needs queue monitoring evidence.",
+              "why_it_matters": "private_alpha_review monitoring needs queue monitoring evidence."
             },
             {
               "area": "monitoring",
@@ -358,11 +402,11 @@
             {
               "area": "monitoring",
               "field": "job_queue",
-              "message": "Alpha monitoring needs queue monitoring evidence.",
-              "reason": "Alpha monitoring needs queue monitoring evidence.",
+              "message": "private_alpha_review monitoring needs queue monitoring evidence.",
+              "reason": "private_alpha_review monitoring needs queue monitoring evidence.",
               "severity": "blocker",
               "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
-              "why_needed": "Alpha monitoring needs queue monitoring evidence."
+              "why_needed": "private_alpha_review monitoring needs queue monitoring evidence."
             },
             {
               "area": "monitoring",
@@ -392,17 +436,21 @@
               "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
             }
           ],
+          "construction_release_allowed": false,
+          "construction_release_blocked": true,
           "job_queue_monitoring_evidence": {
             "alpha_ready": false,
+            "applicability": "required",
+            "async_jobs_enabled": true,
             "blockers": [
               {
                 "area": "monitoring",
                 "field": "job_queue",
-                "message": "Alpha monitoring needs queue monitoring evidence.",
-                "reason": "Alpha monitoring needs queue monitoring evidence.",
+                "message": "private_alpha_review monitoring needs queue monitoring evidence.",
+                "reason": "private_alpha_review monitoring needs queue monitoring evidence.",
                 "severity": "blocker",
                 "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
-                "why_needed": "Alpha monitoring needs queue monitoring evidence."
+                "why_needed": "private_alpha_review monitoring needs queue monitoring evidence."
               },
               {
                 "area": "monitoring",
@@ -434,30 +482,55 @@
             ],
             "confidence": "missing",
             "failed_count": null,
-            "last_check_at": "2026-06-06T03:51:42Z",
+            "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
+            "last_check_at": "2026-06-06T04:00:05Z",
+            "mode_ready": false,
             "monitored_job_types": [],
             "monitoring_source": "runtime_monitoring_snapshot.job_queue",
+            "not_applicable_reason": "",
             "pending_count": null,
+            "queue_monitoring_ready": false,
             "queue_system_present": false,
+            "readiness_mode": "private_alpha_review",
             "status": "blocked",
             "timeout_count": null,
             "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
             "version": "job_queue_monitoring_evidence_v1"
           },
           "readiness": "blocked",
+          "readiness_mode": "private_alpha_review",
+          "readiness_mode_policy": {
+            "modes": {
+              "local_dev": {
+                "construction_release_allowed": false,
+                "queue_monitoring_requirement": "Queue evidence may be unavailable_local when no live queue is configured; this does not clear private-alpha readiness."
+              },
+              "private_alpha_review": {
+                "construction_release_allowed": false,
+                "queue_monitoring_requirement": "Async jobs require real queue monitoring evidence with job types and pending/failed/timeout counts."
+              },
+              "production": {
+                "construction_release_allowed": false,
+                "queue_monitoring_requirement": "Async jobs require live runtime queue monitoring evidence with job types, counts, and worker/runtime source confidence."
+              }
+            },
+            "version": "readiness_mode_policy_v1"
+          },
           "runtime_monitoring": {
             "job_queue": {},
             "job_queue_monitoring_evidence": {
               "alpha_ready": false,
+              "applicability": "required",
+              "async_jobs_enabled": true,
               "blockers": [
                 {
                   "area": "monitoring",
                   "field": "job_queue",
-                  "message": "Alpha monitoring needs queue monitoring evidence.",
-                  "reason": "Alpha monitoring needs queue monitoring evidence.",
+                  "message": "private_alpha_review monitoring needs queue monitoring evidence.",
+                  "reason": "private_alpha_review monitoring needs queue monitoring evidence.",
                   "severity": "blocker",
                   "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
-                  "why_needed": "Alpha monitoring needs queue monitoring evidence."
+                  "why_needed": "private_alpha_review monitoring needs queue monitoring evidence."
                 },
                 {
                   "area": "monitoring",
@@ -489,11 +562,16 @@
               ],
               "confidence": "missing",
               "failed_count": null,
-              "last_check_at": "2026-06-06T03:51:42Z",
+              "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
+              "last_check_at": "2026-06-06T04:00:05Z",
+              "mode_ready": false,
               "monitored_job_types": [],
               "monitoring_source": "runtime_monitoring_snapshot.job_queue",
+              "not_applicable_reason": "",
               "pending_count": null,
+              "queue_monitoring_ready": false,
               "queue_system_present": false,
+              "readiness_mode": "private_alpha_review",
               "status": "blocked",
               "timeout_count": null,
               "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
@@ -540,15 +618,17 @@
           "job_queue": {},
           "job_queue_monitoring_evidence": {
             "alpha_ready": false,
+            "applicability": "required",
+            "async_jobs_enabled": true,
             "blockers": [
               {
                 "area": "monitoring",
                 "field": "job_queue",
-                "message": "Alpha monitoring needs queue monitoring evidence.",
-                "reason": "Alpha monitoring needs queue monitoring evidence.",
+                "message": "private_alpha_review monitoring needs queue monitoring evidence.",
+                "reason": "private_alpha_review monitoring needs queue monitoring evidence.",
                 "severity": "blocker",
                 "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
-                "why_needed": "Alpha monitoring needs queue monitoring evidence."
+                "why_needed": "private_alpha_review monitoring needs queue monitoring evidence."
               },
               {
                 "area": "monitoring",
@@ -580,11 +660,16 @@
             ],
             "confidence": "missing",
             "failed_count": null,
-            "last_check_at": "2026-06-06T03:51:42Z",
+            "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
+            "last_check_at": "2026-06-06T04:00:05Z",
+            "mode_ready": false,
             "monitored_job_types": [],
             "monitoring_source": "runtime_monitoring_snapshot.job_queue",
+            "not_applicable_reason": "",
             "pending_count": null,
+            "queue_monitoring_ready": false,
             "queue_system_present": false,
+            "readiness_mode": "private_alpha_review",
             "status": "blocked",
             "timeout_count": null,
             "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
@@ -630,8 +715,8 @@
               ],
               "next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
               "severity": "blocker",
-              "what_failed": "Alpha monitoring needs queue monitoring evidence.",
-              "why_it_matters": "Alpha monitoring needs queue monitoring evidence."
+              "what_failed": "private_alpha_review monitoring needs queue monitoring evidence.",
+              "why_it_matters": "private_alpha_review monitoring needs queue monitoring evidence."
             },
             {
               "area": "monitoring",
@@ -677,11 +762,11 @@
             {
               "area": "monitoring",
               "field": "job_queue",
-              "message": "Alpha monitoring needs queue monitoring evidence.",
-              "reason": "Alpha monitoring needs queue monitoring evidence.",
+              "message": "private_alpha_review monitoring needs queue monitoring evidence.",
+              "reason": "private_alpha_review monitoring needs queue monitoring evidence.",
               "severity": "blocker",
               "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
-              "why_needed": "Alpha monitoring needs queue monitoring evidence."
+              "why_needed": "private_alpha_review monitoring needs queue monitoring evidence."
             },
             {
               "area": "monitoring",
@@ -711,17 +796,21 @@
               "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
             }
           ],
+          "construction_release_allowed": false,
+          "construction_release_blocked": true,
           "job_queue_monitoring_evidence": {
             "alpha_ready": false,
+            "applicability": "required",
+            "async_jobs_enabled": true,
             "blockers": [
               {
                 "area": "monitoring",
                 "field": "job_queue",
-                "message": "Alpha monitoring needs queue monitoring evidence.",
-                "reason": "Alpha monitoring needs queue monitoring evidence.",
+                "message": "private_alpha_review monitoring needs queue monitoring evidence.",
+                "reason": "private_alpha_review monitoring needs queue monitoring evidence.",
                 "severity": "blocker",
                 "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
-                "why_needed": "Alpha monitoring needs queue monitoring evidence."
+                "why_needed": "private_alpha_review monitoring needs queue monitoring evidence."
               },
               {
                 "area": "monitoring",
@@ -753,30 +842,55 @@
             ],
             "confidence": "missing",
             "failed_count": null,
-            "last_check_at": "2026-06-06T03:51:42Z",
+            "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
+            "last_check_at": "2026-06-06T04:00:05Z",
+            "mode_ready": false,
             "monitored_job_types": [],
             "monitoring_source": "runtime_monitoring_snapshot.job_queue",
+            "not_applicable_reason": "",
             "pending_count": null,
+            "queue_monitoring_ready": false,
             "queue_system_present": false,
+            "readiness_mode": "private_alpha_review",
             "status": "blocked",
             "timeout_count": null,
             "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
             "version": "job_queue_monitoring_evidence_v1"
           },
           "readiness": "blocked",
+          "readiness_mode": "private_alpha_review",
+          "readiness_mode_policy": {
+            "modes": {
+              "local_dev": {
+                "construction_release_allowed": false,
+                "queue_monitoring_requirement": "Queue evidence may be unavailable_local when no live queue is configured; this does not clear private-alpha readiness."
+              },
+              "private_alpha_review": {
+                "construction_release_allowed": false,
+                "queue_monitoring_requirement": "Async jobs require real queue monitoring evidence with job types and pending/failed/timeout counts."
+              },
+              "production": {
+                "construction_release_allowed": false,
+                "queue_monitoring_requirement": "Async jobs require live runtime queue monitoring evidence with job types, counts, and worker/runtime source confidence."
+              }
+            },
+            "version": "readiness_mode_policy_v1"
+          },
           "runtime_monitoring": {
             "job_queue": {},
             "job_queue_monitoring_evidence": {
               "alpha_ready": false,
+              "applicability": "required",
+              "async_jobs_enabled": true,
               "blockers": [
                 {
                   "area": "monitoring",
                   "field": "job_queue",
-                  "message": "Alpha monitoring needs queue monitoring evidence.",
-                  "reason": "Alpha monitoring needs queue monitoring evidence.",
+                  "message": "private_alpha_review monitoring needs queue monitoring evidence.",
+                  "reason": "private_alpha_review monitoring needs queue monitoring evidence.",
                   "severity": "blocker",
                   "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
-                  "why_needed": "Alpha monitoring needs queue monitoring evidence."
+                  "why_needed": "private_alpha_review monitoring needs queue monitoring evidence."
                 },
                 {
                   "area": "monitoring",
@@ -808,11 +922,16 @@
               ],
               "confidence": "missing",
               "failed_count": null,
-              "last_check_at": "2026-06-06T03:51:42Z",
+              "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
+              "last_check_at": "2026-06-06T04:00:05Z",
+              "mode_ready": false,
               "monitored_job_types": [],
               "monitoring_source": "runtime_monitoring_snapshot.job_queue",
+              "not_applicable_reason": "",
               "pending_count": null,
+              "queue_monitoring_ready": false,
               "queue_system_present": false,
+              "readiness_mode": "private_alpha_review",
               "status": "blocked",
               "timeout_count": null,
               "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
@@ -859,15 +978,17 @@
           "job_queue": {},
           "job_queue_monitoring_evidence": {
             "alpha_ready": false,
+            "applicability": "required",
+            "async_jobs_enabled": true,
             "blockers": [
               {
                 "area": "monitoring",
                 "field": "job_queue",
-                "message": "Alpha monitoring needs queue monitoring evidence.",
-                "reason": "Alpha monitoring needs queue monitoring evidence.",
+                "message": "private_alpha_review monitoring needs queue monitoring evidence.",
+                "reason": "private_alpha_review monitoring needs queue monitoring evidence.",
                 "severity": "blocker",
                 "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
-                "why_needed": "Alpha monitoring needs queue monitoring evidence."
+                "why_needed": "private_alpha_review monitoring needs queue monitoring evidence."
               },
               {
                 "area": "monitoring",
@@ -899,11 +1020,16 @@
             ],
             "confidence": "missing",
             "failed_count": null,
-            "last_check_at": "2026-06-06T03:51:42Z",
+            "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
+            "last_check_at": "2026-06-06T04:00:05Z",
+            "mode_ready": false,
             "monitored_job_types": [],
             "monitoring_source": "runtime_monitoring_snapshot.job_queue",
+            "not_applicable_reason": "",
             "pending_count": null,
+            "queue_monitoring_ready": false,
             "queue_system_present": false,
+            "readiness_mode": "private_alpha_review",
             "status": "blocked",
             "timeout_count": null,
             "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
@@ -949,8 +1075,8 @@
               ],
               "next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
               "severity": "blocker",
-              "what_failed": "Alpha monitoring needs queue monitoring evidence.",
-              "why_it_matters": "Alpha monitoring needs queue monitoring evidence."
+              "what_failed": "private_alpha_review monitoring needs queue monitoring evidence.",
+              "why_it_matters": "private_alpha_review monitoring needs queue monitoring evidence."
             },
             {
               "area": "monitoring",
@@ -996,11 +1122,11 @@
             {
               "area": "monitoring",
               "field": "job_queue",
-              "message": "Alpha monitoring needs queue monitoring evidence.",
-              "reason": "Alpha monitoring needs queue monitoring evidence.",
+              "message": "private_alpha_review monitoring needs queue monitoring evidence.",
+              "reason": "private_alpha_review monitoring needs queue monitoring evidence.",
               "severity": "blocker",
               "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
-              "why_needed": "Alpha monitoring needs queue monitoring evidence."
+              "why_needed": "private_alpha_review monitoring needs queue monitoring evidence."
             },
             {
               "area": "monitoring",
@@ -1030,17 +1156,21 @@
               "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
             }
           ],
+          "construction_release_allowed": false,
+          "construction_release_blocked": true,
           "job_queue_monitoring_evidence": {
             "alpha_ready": false,
+            "applicability": "required",
+            "async_jobs_enabled": true,
             "blockers": [
               {
                 "area": "monitoring",
                 "field": "job_queue",
-                "message": "Alpha monitoring needs queue monitoring evidence.",
-                "reason": "Alpha monitoring needs queue monitoring evidence.",
+                "message": "private_alpha_review monitoring needs queue monitoring evidence.",
+                "reason": "private_alpha_review monitoring needs queue monitoring evidence.",
                 "severity": "blocker",
                 "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
-                "why_needed": "Alpha monitoring needs queue monitoring evidence."
+                "why_needed": "private_alpha_review monitoring needs queue monitoring evidence."
               },
               {
                 "area": "monitoring",
@@ -1072,30 +1202,55 @@
             ],
             "confidence": "missing",
             "failed_count": null,
-            "last_check_at": "2026-06-06T03:51:42Z",
+            "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
+            "last_check_at": "2026-06-06T04:00:05Z",
+            "mode_ready": false,
             "monitored_job_types": [],
             "monitoring_source": "runtime_monitoring_snapshot.job_queue",
+            "not_applicable_reason": "",
             "pending_count": null,
+            "queue_monitoring_ready": false,
             "queue_system_present": false,
+            "readiness_mode": "private_alpha_review",
             "status": "blocked",
             "timeout_count": null,
             "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
             "version": "job_queue_monitoring_evidence_v1"
           },
           "readiness": "blocked",
+          "readiness_mode": "private_alpha_review",
+          "readiness_mode_policy": {
+            "modes": {
+              "local_dev": {
+                "construction_release_allowed": false,
+                "queue_monitoring_requirement": "Queue evidence may be unavailable_local when no live queue is configured; this does not clear private-alpha readiness."
+              },
+              "private_alpha_review": {
+                "construction_release_allowed": false,
+                "queue_monitoring_requirement": "Async jobs require real queue monitoring evidence with job types and pending/failed/timeout counts."
+              },
+              "production": {
+                "construction_release_allowed": false,
+                "queue_monitoring_requirement": "Async jobs require live runtime queue monitoring evidence with job types, counts, and worker/runtime source confidence."
+              }
+            },
+            "version": "readiness_mode_policy_v1"
+          },
           "runtime_monitoring": {
             "job_queue": {},
             "job_queue_monitoring_evidence": {
               "alpha_ready": false,
+              "applicability": "required",
+              "async_jobs_enabled": true,
               "blockers": [
                 {
                   "area": "monitoring",
                   "field": "job_queue",
-                  "message": "Alpha monitoring needs queue monitoring evidence.",
-                  "reason": "Alpha monitoring needs queue monitoring evidence.",
+                  "message": "private_alpha_review monitoring needs queue monitoring evidence.",
+                  "reason": "private_alpha_review monitoring needs queue monitoring evidence.",
                   "severity": "blocker",
                   "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
-                  "why_needed": "Alpha monitoring needs queue monitoring evidence."
+                  "why_needed": "private_alpha_review monitoring needs queue monitoring evidence."
                 },
                 {
                   "area": "monitoring",
@@ -1127,11 +1282,16 @@
               ],
               "confidence": "missing",
               "failed_count": null,
-              "last_check_at": "2026-06-06T03:51:42Z",
+              "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
+              "last_check_at": "2026-06-06T04:00:05Z",
+              "mode_ready": false,
               "monitored_job_types": [],
               "monitoring_source": "runtime_monitoring_snapshot.job_queue",
+              "not_applicable_reason": "",
               "pending_count": null,
+              "queue_monitoring_ready": false,
               "queue_system_present": false,
+              "readiness_mode": "private_alpha_review",
               "status": "blocked",
               "timeout_count": null,
               "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
@@ -1178,15 +1338,17 @@
           "job_queue": {},
           "job_queue_monitoring_evidence": {
             "alpha_ready": false,
+            "applicability": "required",
+            "async_jobs_enabled": true,
             "blockers": [
               {
                 "area": "monitoring",
                 "field": "job_queue",
-                "message": "Alpha monitoring needs queue monitoring evidence.",
-                "reason": "Alpha monitoring needs queue monitoring evidence.",
+                "message": "private_alpha_review monitoring needs queue monitoring evidence.",
+                "reason": "private_alpha_review monitoring needs queue monitoring evidence.",
                 "severity": "blocker",
                 "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
-                "why_needed": "Alpha monitoring needs queue monitoring evidence."
+                "why_needed": "private_alpha_review monitoring needs queue monitoring evidence."
               },
               {
                 "area": "monitoring",
@@ -1218,11 +1380,16 @@
             ],
             "confidence": "missing",
             "failed_count": null,
-            "last_check_at": "2026-06-06T03:51:42Z",
+            "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
+            "last_check_at": "2026-06-06T04:00:05Z",
+            "mode_ready": false,
             "monitored_job_types": [],
             "monitoring_source": "runtime_monitoring_snapshot.job_queue",
+            "not_applicable_reason": "",
             "pending_count": null,
+            "queue_monitoring_ready": false,
             "queue_system_present": false,
+            "readiness_mode": "private_alpha_review",
             "status": "blocked",
             "timeout_count": null,
             "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
@@ -1273,8 +1440,8 @@
       ],
       "next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
       "severity": "blocker",
-      "what_failed": "Alpha monitoring needs queue monitoring evidence.",
-      "why_it_matters": "Alpha monitoring needs queue monitoring evidence."
+      "what_failed": "private_alpha_review monitoring needs queue monitoring evidence.",
+      "why_it_matters": "private_alpha_review monitoring needs queue monitoring evidence."
     },
     {
       "area": "monitoring",
@@ -1320,11 +1487,11 @@
     {
       "area": "monitoring",
       "field": "job_queue",
-      "message": "Alpha monitoring needs queue monitoring evidence.",
-      "reason": "Alpha monitoring needs queue monitoring evidence.",
+      "message": "private_alpha_review monitoring needs queue monitoring evidence.",
+      "reason": "private_alpha_review monitoring needs queue monitoring evidence.",
       "severity": "blocker",
       "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
-      "why_needed": "Alpha monitoring needs queue monitoring evidence."
+      "why_needed": "private_alpha_review monitoring needs queue monitoring evidence."
     },
     {
       "area": "monitoring",
@@ -1555,21 +1722,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 13491.272
+            "value": 13863.851
           },
           {
             "max": 1024.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 125.875
+            "value": 135.422
           },
           {
             "max": 1536.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 125.875
+            "value": 135.422
           }
         ],
         "load_thresholds": {
@@ -2373,21 +2540,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 8847.759
+            "value": 11698.027
           },
           {
             "max": 1024.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 165.484
+            "value": 151.734
           },
           {
             "max": 1536.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 165.484
+            "value": 151.734
           }
         ],
         "load_thresholds": {
@@ -3358,21 +3525,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 21776.333
+            "value": 24177.75
           },
           {
             "max": 1280.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 306.469
+            "value": 274.062
           },
           {
             "max": 1792.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 306.469
+            "value": 274.062
           }
         ],
         "load_thresholds": {
@@ -4289,21 +4456,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 17042.384
+            "value": 18583.585
           },
           {
             "max": 1024.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 306.469
+            "value": 274.062
           },
           {
             "max": 1536.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 306.469
+            "value": 274.062
           }
         ],
         "load_thresholds": {
@@ -5240,21 +5407,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 13415.643
+            "value": 15094.44
           },
           {
             "max": 1280.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 306.469
+            "value": 274.062
           },
           {
             "max": 1792.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 306.469
+            "value": 274.062
           }
         ],
         "load_thresholds": {
@@ -6192,21 +6359,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 10457.069
+            "value": 12941.609
           },
           {
             "max": 1280.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 306.469
+            "value": 274.062
           },
           {
             "max": 1792.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 306.469
+            "value": 274.062
           }
         ],
         "load_thresholds": {
@@ -7106,21 +7273,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 3318.867
+            "value": 3645.096
           },
           {
             "max": 1024.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 306.469
+            "value": 274.062
           },
           {
             "max": 1536.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 306.469
+            "value": 274.062
           }
         ],
         "load_thresholds": {
@@ -8014,21 +8181,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 17338.066
+            "value": 17335.626
           },
           {
             "max": 1024.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 306.469
+            "value": 274.062
           },
           {
             "max": 1536.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 306.469
+            "value": 274.062
           }
         ],
         "load_thresholds": {
@@ -8913,21 +9080,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 8691.718
+            "value": 8412.497
           },
           {
             "max": 768.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 306.469
+            "value": 274.062
           },
           {
             "max": 1024.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 306.469
+            "value": 274.062
           }
         ],
         "load_thresholds": {
@@ -10093,21 +10260,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 1644.595
+            "value": 1024.068
           },
           {
             "max": 768.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 306.469
+            "value": 274.062
           },
           {
             "max": 1024.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 306.469
+            "value": 274.062
           }
         ],
         "load_thresholds": {
@@ -11053,6 +11220,7 @@
     "synthetic_scenario_count": 2,
     "truth_label": "Golden scenarios are executable regression cases with explicit blockers and production-readiness expectations."
   },
+  "how_to_clear_queue_monitoring_blocker": "For private_alpha_review, run this audit with --base-url pointing at a live backend whose /api/debug/runtime includes JobQueueService.runtime_stats() with monitored job types and pending/failed/timeout counts. For local_dev, missing queue evidence is recorded as unavailable_local and does not prove alpha readiness. For production, live runtime queue evidence is required when async jobs are enabled.",
   "next_actions": [
     "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
     "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
@@ -11060,6 +11228,7 @@
     "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report."
   ],
   "private_alpha_backend_ready": false,
+  "readiness_mode": "private_alpha_review",
   "sections": {
     "golden_scenarios": {
       "blockers": [],
@@ -11075,11 +11244,11 @@
         {
           "area": "monitoring",
           "field": "job_queue",
-          "message": "Alpha monitoring needs queue monitoring evidence.",
-          "reason": "Alpha monitoring needs queue monitoring evidence.",
+          "message": "private_alpha_review monitoring needs queue monitoring evidence.",
+          "reason": "private_alpha_review monitoring needs queue monitoring evidence.",
           "severity": "blocker",
           "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
-          "why_needed": "Alpha monitoring needs queue monitoring evidence."
+          "why_needed": "private_alpha_review monitoring needs queue monitoring evidence."
         },
         {
           "area": "monitoring",
@@ -11109,6 +11278,66 @@
           "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
         }
       ],
+      "job_queue_monitoring_evidence": {
+        "alpha_ready": false,
+        "applicability": "required",
+        "async_jobs_enabled": true,
+        "blockers": [
+          {
+            "area": "monitoring",
+            "field": "job_queue",
+            "message": "private_alpha_review monitoring needs queue monitoring evidence.",
+            "reason": "private_alpha_review monitoring needs queue monitoring evidence.",
+            "severity": "blocker",
+            "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+            "why_needed": "private_alpha_review monitoring needs queue monitoring evidence."
+          },
+          {
+            "area": "monitoring",
+            "field": "pending_count",
+            "message": "Job queue monitoring needs pending job count evidence.",
+            "reason": "Job queue monitoring needs pending job count evidence.",
+            "severity": "blocker",
+            "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+            "why_needed": "Job queue monitoring needs pending job count evidence."
+          },
+          {
+            "area": "monitoring",
+            "field": "failed_count",
+            "message": "Job queue monitoring needs failed job count evidence.",
+            "reason": "Job queue monitoring needs failed job count evidence.",
+            "severity": "blocker",
+            "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+            "why_needed": "Job queue monitoring needs failed job count evidence."
+          },
+          {
+            "area": "monitoring",
+            "field": "timeout_count",
+            "message": "Job queue monitoring needs timeout or stale job count evidence.",
+            "reason": "Job queue monitoring needs timeout or stale job count evidence.",
+            "severity": "blocker",
+            "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+            "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
+          }
+        ],
+        "confidence": "missing",
+        "failed_count": null,
+        "how_to_clear_blocker": "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable.",
+        "last_check_at": "2026-06-06T04:00:05Z",
+        "mode_ready": false,
+        "monitored_job_types": [],
+        "monitoring_source": "alpha_smoke_soak.aggregate_runtime",
+        "not_applicable_reason": "",
+        "pending_count": null,
+        "queue_monitoring_ready": false,
+        "queue_system_present": false,
+        "readiness_mode": "private_alpha_review",
+        "status": "blocked",
+        "timeout_count": null,
+        "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
+        "version": "job_queue_monitoring_evidence_v1"
+      },
+      "readiness_mode": "private_alpha_review",
       "sample_count": 3,
       "sample_failure_count": 0,
       "status": "blocked"

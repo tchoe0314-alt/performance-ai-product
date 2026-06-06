@@ -85,6 +85,8 @@ def run_private_alpha_backend_readiness_audit(
     build_plan_fn: Optional[BuildPlanFn] = None,
     output_path: Optional[Path] = None,
     thresholds: Optional[Dict[str, Any]] = None,
+    readiness_mode: str = "private_alpha_review",
+    async_jobs_enabled: bool = True,
 ) -> Dict[str, Any]:
     """Run the backend-only private-alpha evidence audit.
 
@@ -98,6 +100,8 @@ def run_private_alpha_backend_readiness_audit(
         sample_runtime=sample_runtime,
         base_url=base_url,
         thresholds=thresholds,
+        readiness_mode=readiness_mode,
+        async_jobs_enabled=async_jobs_enabled,
     )
     golden = run_golden_scenarios(scenario_ids=scenario_ids, build_plan_fn=build_plan_fn)
     blockers = [
@@ -107,6 +111,7 @@ def run_private_alpha_backend_readiness_audit(
     status = "ready" if not blockers else "blocked"
     report = {
         "version": "private_alpha_backend_readiness_report_v1",
+        "readiness_mode": readiness_mode,
         "status": status,
         "success": status == "ready",
         "private_alpha_backend_ready": status == "ready",
@@ -115,10 +120,12 @@ def run_private_alpha_backend_readiness_audit(
         "construction_release_blocked": True,
         "sections": {
             "monitoring": {
+                "readiness_mode": readiness_mode,
                 "status": "ready" if bool(smoke.get("success")) else "blocked",
                 "sample_count": smoke.get("sample_count"),
                 "sample_failure_count": smoke.get("sample_failure_count"),
                 "alpha_monitoring_readiness": safe_dict(smoke.get("alpha_monitoring_report")).get("readiness"),
+                "job_queue_monitoring_evidence": safe_dict(safe_dict(smoke.get("alpha_monitoring_report")).get("job_queue_monitoring_evidence")),
                 "blockers": _monitoring_blockers(smoke),
             },
             "golden_scenarios": {
@@ -140,6 +147,12 @@ def run_private_alpha_backend_readiness_audit(
             for item in blockers
             if safe_str(item.get("suggested_next_action"))
         ][:8],
+        "how_to_clear_queue_monitoring_blocker": (
+            "For private_alpha_review, run this audit with --base-url pointing at a live backend whose /api/debug/runtime "
+            "includes JobQueueService.runtime_stats() with monitored job types and pending/failed/timeout counts. "
+            "For local_dev, missing queue evidence is recorded as unavailable_local and does not prove alpha readiness. "
+            "For production, live runtime queue evidence is required when async jobs are enabled."
+        ),
         "truth_label": (
             "This backend evidence report proves private-alpha operational and golden-regression readiness only. "
             "It does not make Civora construction-ready or authorize construction release."

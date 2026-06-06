@@ -34,7 +34,12 @@ def _max_from_samples(samples: List[Dict[str, Any]], key: str) -> float:
     return max([safe_float(safe_dict(item.get("monitoring")).get(key), 0.0) for item in samples] or [0.0])
 
 
-def _aggregate_runtime(samples: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _aggregate_runtime(
+    samples: List[Dict[str, Any]],
+    *,
+    readiness_mode: str = "private_alpha_review",
+    async_jobs_enabled: bool = True,
+) -> Dict[str, Any]:
     monitorings = [safe_dict(item.get("monitoring")) for item in samples]
     queues = [safe_dict(item.get("job_queue") or safe_dict(item.get("monitoring")).get("job_queue")) for item in samples]
     queue_monitorings = [safe_dict(queue.get("monitoring")) or queue for queue in queues]
@@ -73,8 +78,11 @@ def _aggregate_runtime(samples: List[Dict[str, Any]]) -> Dict[str, Any]:
     queue_evidence = build_job_queue_monitoring_evidence(
         queue_monitoring,
         monitoring_source="alpha_smoke_soak.aggregate_runtime",
+        readiness_mode=readiness_mode,
+        async_jobs_enabled=async_jobs_enabled,
     )
     return {
+        "readiness_mode": readiness_mode,
         "status": _worst_status(monitoring.get("status") for monitoring in monitorings if monitoring),
         "rss_mb": _max_from_samples(samples, "rss_mb"),
         "peak_rss_mb": _max_from_samples(samples, "peak_rss_mb"),
@@ -154,6 +162,8 @@ def run_alpha_smoke_soak(
     output_path: Optional[Path] = None,
     state_dir: Optional[Path] = None,
     thresholds: Optional[Dict[str, Any]] = None,
+    readiness_mode: str = "private_alpha_review",
+    async_jobs_enabled: bool = True,
 ) -> Dict[str, Any]:
     count = max(1, int(iterations))
     start = time.time()
@@ -174,8 +184,17 @@ def run_alpha_smoke_soak(
         if index < count - 1 and interval_seconds > 0:
             time.sleep(interval_seconds)
 
-    aggregate_runtime = _aggregate_runtime(samples)
-    alpha_report = build_alpha_monitoring_report(aggregate_runtime, thresholds=thresholds)
+    aggregate_runtime = _aggregate_runtime(
+        samples,
+        readiness_mode=readiness_mode,
+        async_jobs_enabled=async_jobs_enabled,
+    )
+    alpha_report = build_alpha_monitoring_report(
+        aggregate_runtime,
+        thresholds=thresholds,
+        readiness_mode=readiness_mode,
+        async_jobs_enabled=async_jobs_enabled,
+    )
     if sample_failures:
         alpha_report = deepcopy(alpha_report)
         alpha_report.setdefault("blockers", []).append(
@@ -197,6 +216,7 @@ def run_alpha_smoke_soak(
 
     report = {
         "version": "alpha_smoke_soak_report_v1",
+        "readiness_mode": readiness_mode,
         "status": "ready" if bool(alpha_report.get("success")) else "blocked",
         "success": bool(alpha_report.get("success")),
         "sample_count": len(samples),

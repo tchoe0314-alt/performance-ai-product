@@ -49,11 +49,64 @@ class AlphaMonitoringTests(unittest.TestCase):
         evidence = build_job_queue_monitoring_evidence({})
 
         self.assertEqual(evidence["version"], "job_queue_monitoring_evidence_v1")
+        self.assertEqual(evidence["readiness_mode"], "private_alpha_review")
         self.assertFalse(evidence["queue_system_present"])
         self.assertFalse(evidence["alpha_ready"])
         fields = {item["field"] for item in evidence["blockers"]}
         self.assertIn("job_queue", fields)
         self.assertIn("pending_count", fields)
+
+    def test_local_dev_queue_unavailable_is_truthful_not_alpha_ready(self) -> None:
+        runtime = {
+            "status": "healthy",
+            "rss_mb": 128.0,
+            "peak_rss_mb": 180.0,
+            "process": {"status": "healthy", "recent_start_count": 1},
+        }
+
+        report = build_alpha_monitoring_report(runtime, readiness_mode="local_dev")
+        evidence = report["job_queue_monitoring_evidence"]
+
+        self.assertEqual(report["readiness_mode"], "local_dev")
+        self.assertEqual(report["readiness"], "ready")
+        self.assertEqual(evidence["status"], "unavailable_local")
+        self.assertEqual(evidence["applicability"], "unavailable_local")
+        self.assertFalse(evidence["queue_system_present"])
+        self.assertFalse(evidence["alpha_ready"])
+        self.assertIn("live job queue", evidence["not_applicable_reason"])
+
+    def test_private_alpha_missing_queue_evidence_blocks(self) -> None:
+        report = build_alpha_monitoring_report(
+            {
+                "status": "healthy",
+                "rss_mb": 128.0,
+                "peak_rss_mb": 180.0,
+                "process": {"status": "healthy", "recent_start_count": 1},
+            },
+            readiness_mode="private_alpha_review",
+        )
+
+        self.assertEqual(report["readiness"], "blocked")
+        fields = {item["field"] for item in report["blockers"]}
+        self.assertIn("job_queue", fields)
+        self.assertIn("pending_count", fields)
+
+    def test_private_alpha_real_queue_evidence_clears_queue_blocker(self) -> None:
+        report = build_alpha_monitoring_report(_healthy_runtime(), readiness_mode="private_alpha_review")
+
+        self.assertEqual(report["readiness"], "ready")
+        evidence = report["job_queue_monitoring_evidence"]
+        self.assertTrue(evidence["alpha_ready"])
+        self.assertFalse([item for item in report["blockers"] if item["field"] in {"job_queue", "pending_count"}])
+
+    def test_production_requires_live_queue_monitoring_confidence(self) -> None:
+        report = build_alpha_monitoring_report(_healthy_runtime(), readiness_mode="production")
+
+        self.assertEqual(report["readiness"], "blocked")
+        fields = {item["field"] for item in report["blockers"]}
+        self.assertIn("monitoring_confidence", fields)
+        self.assertFalse(report["construction_release_allowed"])
+        self.assertTrue(report["construction_release_blocked"])
 
     def test_partial_runtime_snapshot_is_blocked(self) -> None:
         report = build_alpha_monitoring_report({"status": "healthy", "rss_mb": 128.0, "peak_rss_mb": 180.0})

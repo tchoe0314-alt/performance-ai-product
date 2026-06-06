@@ -27,6 +27,40 @@ def _thresholds(overrides: Dict[str, Any] | None = None) -> Dict[str, float]:
     }
 
 
+def _readiness_mode(value: Any = "") -> str:
+    text = safe_str(value or "private_alpha_review").lower().replace("-", "_")
+    aliases = {
+        "dev": "local_dev",
+        "local": "local_dev",
+        "alpha": "private_alpha_review",
+        "private_alpha": "private_alpha_review",
+        "review": "private_alpha_review",
+        "review_only": "private_alpha_review",
+        "prod": "production",
+    }
+    return aliases.get(text, text if text in {"local_dev", "private_alpha_review", "production"} else "private_alpha_review")
+
+
+def readiness_mode_policy() -> Dict[str, Any]:
+    return {
+        "version": "readiness_mode_policy_v1",
+        "modes": {
+            "local_dev": {
+                "queue_monitoring_requirement": "Queue evidence may be unavailable_local when no live queue is configured; this does not clear private-alpha readiness.",
+                "construction_release_allowed": False,
+            },
+            "private_alpha_review": {
+                "queue_monitoring_requirement": "Async jobs require real queue monitoring evidence with job types and pending/failed/timeout counts.",
+                "construction_release_allowed": False,
+            },
+            "production": {
+                "queue_monitoring_requirement": "Async jobs require live runtime queue monitoring evidence with job types, counts, and worker/runtime source confidence.",
+                "construction_release_allowed": False,
+            },
+        },
+    }
+
+
 def _blocker(field: str, reason: str, *, value: Any = None, limit: Any = None) -> Dict[str, Any]:
     rec = {
         "area": "monitoring",
@@ -64,9 +98,12 @@ def build_job_queue_monitoring_evidence(
     *,
     monitoring_source: str = "",
     last_check_at: str = "",
+    readiness_mode: str = "private_alpha_review",
+    async_jobs_enabled: bool = True,
 ) -> Dict[str, Any]:
     queue = safe_dict(job_queue)
     monitoring = safe_dict(queue.get("monitoring")) or queue
+    mode = _readiness_mode(readiness_mode)
     monitored_job_types = [
         safe_str(item)
         for item in safe_list(
@@ -89,27 +126,48 @@ def build_job_queue_monitoring_evidence(
         source = "runtime_monitoring.job_queue" if queue_system_present else "missing"
     status = safe_str(monitoring.get("status"), "missing" if not queue_system_present else "healthy").lower()
     blockers: List[Dict[str, Any]] = []
-    if not queue_system_present:
-        blockers.append(_blocker("job_queue", "Alpha monitoring needs queue monitoring evidence."))
-    if queue_system_present and status not in {"healthy", "ok"}:
+    applicability = "required" if async_jobs_enabled else "not_applicable"
+    not_applicable_reason = ""
+    if not async_jobs_enabled:
+        not_applicable_reason = "Async jobs are disabled or not configured for this readiness sample."
+    elif mode == "local_dev" and not queue_system_present:
+        applicability = "unavailable_local"
+        not_applicable_reason = "Local dev sampling did not connect to a live job queue or runtime endpoint."
+    if async_jobs_enabled and not queue_system_present and applicability != "unavailable_local":
+        blockers.append(_blocker("job_queue", f"{mode} monitoring needs queue monitoring evidence."))
+    if async_jobs_enabled and queue_system_present and status not in {"healthy", "ok"}:
         blockers.append(_blocker("job_queue_status", "Job queue monitoring is not healthy.", value=status))
-    if queue_system_present and not monitored_job_types:
+    if async_jobs_enabled and queue_system_present and not monitored_job_types:
         blockers.append(_blocker("monitored_job_types", "Job queue monitoring needs explicit monitored job types."))
-    if pending_count is None:
+    if async_jobs_enabled and applicability == "required" and pending_count is None:
         blockers.append(_blocker("pending_count", "Job queue monitoring needs pending job count evidence."))
-    if failed_count is None:
+    if async_jobs_enabled and applicability == "required" and failed_count is None:
         blockers.append(_blocker("failed_count", "Job queue monitoring needs failed job count evidence."))
-    if timeout_count is None:
+    if async_jobs_enabled and applicability == "required" and timeout_count is None:
         blockers.append(_blocker("timeout_count", "Job queue monitoring needs timeout or stale job count evidence."))
 
     live_runtime = bool(queue.get("registered_handlers") or queue.get("alive_workers") is not None)
     confidence = "missing"
     if queue_system_present:
         confidence = "live_runtime" if live_runtime else "runtime_snapshot"
-    alpha_ready = bool(queue_system_present and not blockers)
+    if mode == "production" and async_jobs_enabled and confidence != "live_runtime":
+        blockers.append(
+            _blocker(
+                "monitoring_confidence",
+                "Production queue monitoring needs live runtime evidence, not only an aggregated snapshot.",
+                value=confidence,
+            )
+        )
+    queue_monitoring_ready = bool(not blockers and (queue_system_present or applicability == "not_applicable"))
+    alpha_ready = bool(mode == "private_alpha_review" and queue_system_present and not blockers)
+    mode_ready = bool(queue_monitoring_ready and mode != "local_dev")
     return {
         "version": "job_queue_monitoring_evidence_v1",
+        "readiness_mode": mode,
         "queue_system_present": queue_system_present,
+        "async_jobs_enabled": bool(async_jobs_enabled),
+        "applicability": applicability,
+        "not_applicable_reason": not_applicable_reason,
         "monitored_job_types": monitored_job_types,
         "pending_count": pending_count,
         "failed_count": failed_count,
@@ -117,9 +175,15 @@ def build_job_queue_monitoring_evidence(
         "last_check_at": safe_str(last_check_at) or _utc_now(),
         "monitoring_source": source,
         "confidence": confidence,
-        "status": "ready" if alpha_ready else "blocked",
+        "status": "ready" if mode_ready else ("unavailable_local" if applicability == "unavailable_local" else "blocked"),
         "blockers": blockers,
+        "queue_monitoring_ready": queue_monitoring_ready,
+        "mode_ready": mode_ready,
         "alpha_ready": alpha_ready,
+        "how_to_clear_blocker": (
+            "Run the readiness audit against a live runtime endpoint with JobQueueService.runtime_stats() exposed at /api/debug/runtime, "
+            "or disable async jobs explicitly for the target mode and document why queue monitoring is not applicable."
+        ),
         "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
     }
 
@@ -128,8 +192,11 @@ def build_alpha_monitoring_report(
     runtime_monitoring: Dict[str, Any] | None = None,
     *,
     thresholds: Dict[str, Any] | None = None,
+    readiness_mode: str = "private_alpha_review",
+    async_jobs_enabled: bool = True,
 ) -> Dict[str, Any]:
     runtime = safe_dict(runtime_monitoring)
+    mode = _readiness_mode(readiness_mode or runtime.get("readiness_mode") or runtime.get("deployment_mode"))
     limits = _thresholds(thresholds)
     blockers: List[Dict[str, Any]] = []
     warnings = [safe_str(item) for item in safe_list(runtime.get("warnings")) if safe_str(item)]
@@ -149,8 +216,21 @@ def build_alpha_monitoring_report(
     queue = safe_dict(runtime.get("job_queue"))
     queue_evidence = safe_dict(runtime.get("job_queue_monitoring_evidence"))
     if not queue_evidence:
-        queue_evidence = build_job_queue_monitoring_evidence(queue)
-    blockers.extend([safe_dict(item) for item in safe_list(queue_evidence.get("blockers")) if safe_dict(item)])
+        queue_evidence = build_job_queue_monitoring_evidence(
+            queue,
+            readiness_mode=mode,
+            async_jobs_enabled=async_jobs_enabled,
+        )
+    elif safe_str(queue_evidence.get("readiness_mode")) != mode:
+        queue_evidence = build_job_queue_monitoring_evidence(
+            queue or queue_evidence,
+            monitoring_source=queue_evidence.get("monitoring_source"),
+            last_check_at=queue_evidence.get("last_check_at"),
+            readiness_mode=mode,
+            async_jobs_enabled=async_jobs_enabled,
+        )
+    if not (mode == "local_dev" and queue_evidence.get("applicability") == "unavailable_local"):
+        blockers.extend([safe_dict(item) for item in safe_list(queue_evidence.get("blockers")) if safe_dict(item)])
     if queue:
         failed_recent = safe_int(queue.get("failed_recent_count"), safe_int(queue_evidence.get("failed_count"), 0))
         stale_count = safe_int(queue.get("stale_job_count"), safe_int(queue_evidence.get("timeout_count"), 0))
@@ -175,6 +255,8 @@ def build_alpha_monitoring_report(
     report_status = "blocked" if blockers else "ready"
     return {
         "version": "alpha_monitoring_report_v1",
+        "readiness_mode": mode,
+        "readiness_mode_policy": readiness_mode_policy(),
         "status": "healthy" if report_status == "ready" else "blocked",
         "readiness": report_status,
         "success": report_status == "ready",
@@ -184,8 +266,10 @@ def build_alpha_monitoring_report(
         "blockers": blockers,
         "blocker_details": readiness_issue_explanations(blockers),
         "warnings": warnings,
+        "construction_release_allowed": False,
+        "construction_release_blocked": True,
         "truth_label": "Alpha monitoring proves operational threshold status only; it does not prove engineering or construction readiness.",
     }
 
 
-__all__ = ["build_alpha_monitoring_report", "build_job_queue_monitoring_evidence"]
+__all__ = ["build_alpha_monitoring_report", "build_job_queue_monitoring_evidence", "readiness_mode_policy"]

@@ -116,6 +116,45 @@ class PrivateAlphaReadinessAuditTests(unittest.TestCase):
         self.assertIn("monitoring", {item["area"] for item in report["blockers"]})
         self.assertTrue(report["blocker_details"])
 
+    def test_local_dev_missing_queue_is_reported_unavailable_without_alpha_claim(self) -> None:
+        report = run_private_alpha_backend_readiness_audit(
+            iterations=1,
+            readiness_mode="local_dev",
+            sample_runtime=lambda: {
+                "status": "ok",
+                "monitoring": {
+                    "status": "healthy",
+                    "rss_mb": 10.0,
+                    "peak_rss_mb": 12.0,
+                    "process": {"status": "healthy", "recent_start_count": 1},
+                },
+            },
+            scenario_ids=["small_commercial_pad"],
+            build_plan_fn=_fake_plan,
+        )
+
+        evidence = report["sections"]["monitoring"]["job_queue_monitoring_evidence"]
+        self.assertEqual(report["readiness_mode"], "local_dev")
+        self.assertEqual(evidence["applicability"], "unavailable_local")
+        self.assertFalse(evidence["alpha_ready"])
+        self.assertFalse(report["construction_release_allowed"])
+        self.assertTrue(report["construction_release_blocked"])
+
+    def test_production_blocks_snapshot_only_queue_evidence(self) -> None:
+        report = run_private_alpha_backend_readiness_audit(
+            iterations=1,
+            readiness_mode="production",
+            sample_runtime=_healthy_sample,
+            scenario_ids=["small_commercial_pad"],
+            build_plan_fn=_fake_plan,
+        )
+
+        self.assertFalse(report["success"])
+        fields = {item["field"] for item in report["blockers"]}
+        self.assertIn("monitoring_confidence", fields)
+        self.assertFalse(report["construction_release_allowed"])
+        self.assertTrue(report["construction_release_blocked"])
+
     def test_audit_writes_sanitized_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "private_alpha_backend_readiness.json"
