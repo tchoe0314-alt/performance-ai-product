@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Clock3, Eye, EyeOff, FolderOpen, Map, Sparkles } from "lucide-react";
+import { AlertCircle, Clock3, Eye, EyeOff, FolderOpen, LifeBuoy, Map, Sparkles } from "lucide-react";
 
 import type { AuthStatus } from "../types";
 import {
@@ -69,6 +69,44 @@ export default function AuthScreen({
               Sign in to run civil site concepts, review traceable outcomes,
               and export engineer-review packages from one clean workflow.
             </p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+              <div className="space-y-2 text-sm leading-6 text-slate-600">
+                <p>
+                  Civora is a private-pilot planning and review workspace for
+                  civil site concepts, assumptions, blockers, and review-package
+                  materials.
+                </p>
+                <p className="font-semibold text-slate-800">
+                  Every output requires user or licensed engineer review. Civora
+                  does not replace professional responsibility or construction
+                  release.
+                </p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <a
+                    href="/pilot#limitations"
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Pilot limits
+                  </a>
+                  <a
+                    href="/pilot#responsibility"
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Responsibility
+                  </a>
+                  <a
+                    href="mailto:support@civora.ai?subject=Civora%20pilot%20support"
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition hover:bg-slate-50"
+                  >
+                    <LifeBuoy className="h-3.5 w-3.5" />
+                    Support
+                  </a>
+                </div>
+              </div>
+            </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
             <Card className="rounded-2xl">
