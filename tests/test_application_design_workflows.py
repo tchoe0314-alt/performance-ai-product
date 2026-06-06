@@ -158,6 +158,198 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertTrue(result["metadata"]["full_design_mode_seen"])
 
+    def test_run_orchestration_chat_site_update_updates_manual_fields(self):
+        seen = {}
+
+        @dataclass
+        class FakeRequest:
+            input_mode: str
+            strict_mode: bool
+            full_design_mode: bool = False
+            prompt_text: Optional[str] = None
+            image_path: Optional[str] = None
+            manual_fields: dict = field(default_factory=dict)
+            image_width_px: Optional[int] = None
+            image_height_px: Optional[int] = None
+            pixels_per_unit: Optional[float] = None
+            plan_type_hint: Optional[str] = None
+            units: str = "ft"
+            allow_ai_fill_for_blanks: bool = True
+            persist_trace_metadata: bool = True
+            meta: dict = field(default_factory=dict)
+            progress_callback: Optional[object] = None
+
+        class FakeResult:
+            success = True
+            message = "ok"
+            parsed_payload = {"project_type": "mixed_use"}
+            final_plan = {"actions": [], "meta": {}}
+            warnings = []
+            errors = []
+            issues = []
+            assumptions = []
+            metadata = {}
+
+        def fake_load_orchestrator():
+            def fake_orchestrate(req):
+                seen["manual_fields"] = req.manual_fields
+                seen["meta"] = req.meta
+                return FakeResult()
+
+            return FakeRequest, fake_orchestrate
+
+        result = run_orchestration(
+            {
+                "input_mode": "assisted",
+                "allow_ai_fill_for_blanks": True,
+                "prompt_text": "make the site 14 acres",
+                "manual_fields": {},
+                "meta": {
+                    "chat_command": {
+                        "intent": "site_update",
+                        "affected_systems": ["site", "layout"],
+                        "command_payload": {
+                            "site_area_acres": 14,
+                            "lot_width": 781.1,
+                            "lot_height": 781.1,
+                        },
+                    }
+                },
+            },
+            load_orchestrator=fake_load_orchestrator,
+            assess_design_readiness=lambda *_args, **_kwargs: None,
+        )
+        self.assertTrue(result["success"])
+        self.assertEqual(seen["manual_fields"]["acreage"], 14)
+        self.assertEqual(seen["manual_fields"]["lot"]["area_sf"], 609840.0)
+        self.assertEqual(result["metadata"]["chat_command_execution"]["action_taken"], "updated_manual_fields")
+
+    def test_run_orchestration_chat_building_command_updates_manual_fields_with_assumption(self):
+        seen = {}
+
+        @dataclass
+        class FakeRequest:
+            input_mode: str
+            strict_mode: bool
+            full_design_mode: bool = False
+            prompt_text: Optional[str] = None
+            image_path: Optional[str] = None
+            manual_fields: dict = field(default_factory=dict)
+            image_width_px: Optional[int] = None
+            image_height_px: Optional[int] = None
+            pixels_per_unit: Optional[float] = None
+            plan_type_hint: Optional[str] = None
+            units: str = "ft"
+            allow_ai_fill_for_blanks: bool = True
+            persist_trace_metadata: bool = True
+            meta: dict = field(default_factory=dict)
+            progress_callback: Optional[object] = None
+
+        class FakeResult:
+            success = True
+            message = "ok"
+            parsed_payload = {"project_type": "mixed_use"}
+            final_plan = {"actions": [], "meta": {}}
+            warnings = []
+            errors = []
+            issues = []
+            assumptions = []
+            metadata = {}
+
+        def fake_load_orchestrator():
+            def fake_orchestrate(req):
+                seen["manual_fields"] = req.manual_fields
+                seen["meta"] = req.meta
+                return FakeResult()
+
+            return FakeRequest, fake_orchestrate
+
+        result = run_orchestration(
+            {
+                "input_mode": "assisted",
+                "allow_ai_fill_for_blanks": True,
+                "prompt_text": "add a 100 by 60 building",
+                "manual_fields": {},
+                "meta": {
+                    "chat_command": {
+                        "intent": "object_or_layout_command",
+                        "affected_systems": ["layout"],
+                        "assumptions": ["Object will be added as draft geometry at a planner-selected feasible location."],
+                        "command_payload": {
+                            "object_type": "building",
+                            "operation": "create",
+                            "width": 100,
+                            "depth": 60,
+                            "assumption_policy": "assisted",
+                        },
+                    }
+                },
+            },
+            load_orchestrator=fake_load_orchestrator,
+            assess_design_readiness=lambda *_args, **_kwargs: None,
+        )
+        self.assertTrue(result["success"])
+        self.assertEqual(seen["manual_fields"]["buildings"][0]["w"], 100)
+        self.assertEqual(seen["manual_fields"]["site_plan"]["building_depth"], 60)
+        execution = result["metadata"]["chat_command_execution"]
+        self.assertEqual(execution["action_taken"], "updated_manual_fields")
+        self.assertIn("draft", " ".join(execution["assumptions"]).lower())
+
+    def test_run_orchestration_strict_chat_building_blocks_missing_location(self):
+        result = run_orchestration(
+            {
+                "input_mode": "user",
+                "allow_ai_fill_for_blanks": False,
+                "prompt_text": "add a 100 by 60 building",
+                "manual_fields": {},
+                "meta": {
+                    "chat_command": {
+                        "intent": "object_or_layout_command",
+                        "affected_systems": ["layout"],
+                        "command_payload": {
+                            "object_type": "building",
+                            "operation": "create",
+                            "width": 100,
+                            "depth": 60,
+                            "assumption_policy": "strict",
+                        },
+                    }
+                },
+            },
+            load_orchestrator=lambda: (object, lambda _req: None),
+            assess_design_readiness=lambda *_args, **_kwargs: None,
+        )
+        self.assertFalse(result["success"])
+        self.assertEqual(result["metadata"]["chat_command_execution"]["action_taken"], "blocked_before_orchestration")
+        self.assertIn("object_location", result["missing_requirements"]["missing_fields"])
+
+    def test_run_orchestration_parsed_command_blocks_without_canonical_edit_support(self):
+        result = run_orchestration(
+            {
+                "input_mode": "assisted",
+                "allow_ai_fill_for_blanks": True,
+                "prompt_text": "change the road",
+                "manual_fields": {},
+                "meta": {
+                    "chat_command": {
+                        "intent": "object_or_layout_command",
+                        "affected_systems": ["layout"],
+                        "command_payload": {
+                            "object_type": "road",
+                            "operation": "update",
+                            "assumption_policy": "assisted",
+                        },
+                    }
+                },
+            },
+            load_orchestrator=lambda: (object, lambda _req: None),
+            assess_design_readiness=lambda *_args, **_kwargs: None,
+        )
+        self.assertFalse(result["success"])
+        execution = result["metadata"]["chat_command_execution"]
+        self.assertEqual(execution["action_taken"], "blocked_before_orchestration")
+        self.assertIn("canonical edit support", execution["action_blocked_reason"])
+
     def test_build_run_summary_reads_engineering_meta(self):
         summary = build_run_summary(
             {

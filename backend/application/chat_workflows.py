@@ -44,7 +44,24 @@ def _canonical_chat_context(context: Dict[str, Any], record: Optional[Dict[str, 
         or merged.get("current_truth_audit")
     )
     merged["engineering_status"] = _safe_dict(meta.get("engineering_status") or merged.get("engineering_status"))
-    merged["convergence_summary"] = _safe_dict(meta.get("convergence_summary") or merged.get("convergence_summary"))
+    convergence = _safe_dict(meta.get("convergence_summary") or merged.get("convergence_summary"))
+    export_audit = _safe_dict(meta.get("export_audit"))
+    if export_audit:
+        blocked_reasons = list(convergence.get("blocked_reasons") or [])
+        for reason in list(export_audit.get("blocked_reasons") or []):
+            if reason not in blocked_reasons:
+                blocked_reasons.append(reason)
+        if export_audit.get("export_blocked") is True and "export_audit_blocked" not in blocked_reasons:
+            blocked_reasons.append("export_audit_blocked")
+        if blocked_reasons:
+            convergence["blocked_reasons"] = blocked_reasons
+        if export_audit.get("export_blocked") is True:
+            blocked_exports = list(convergence.get("blocked_exports") or [])
+            if "export" not in blocked_exports:
+                blocked_exports.append("export")
+            convergence["blocked_exports"] = blocked_exports
+        merged["current_export_audit"] = export_audit
+    merged["convergence_summary"] = convergence
     merged["assumptions"] = list(meta.get("assumptions") or latest_result.get("assumptions") or merged.get("assumptions") or [])
     merged["issues"] = list(latest_result.get("issues") or meta.get("issues") or merged.get("issues") or [])
     merged["manual_failures"] = list(

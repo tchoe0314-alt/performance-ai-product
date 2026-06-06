@@ -868,6 +868,7 @@ export type ChatDecisionResponse = {
     affected_systems?: string[];
     assumptions?: string[];
     next_best_action?: string;
+    command_payload?: Record<string, unknown>;
   };
   required_missing_inputs?: string[];
   action_taken?: string;

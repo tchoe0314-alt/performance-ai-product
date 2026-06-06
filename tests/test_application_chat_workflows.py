@@ -73,6 +73,53 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertEqual(called["context"]["current_project"]["name"], "Saved Project")
         self.assertEqual(called["context"]["convergence_summary"]["blocked_reasons"], ["storm_graph_invalid"])
 
+    def test_decide_chat_hydrates_export_audit_blockers(self):
+        called = {}
+
+        class FakeProjectStore:
+            def get_project(self, *, user_id, project_id):
+                return {
+                    "project_id": project_id,
+                    "name": "Saved Project",
+                    "description": "",
+                    "session_id": None,
+                    "tags": [],
+                    "project_input": {},
+                    "latest_result": {
+                        "success": True,
+                        "final_plan": {
+                            "meta": {
+                                "export_audit": {
+                                    "export_blocked": True,
+                                    "blocked_reasons": ["canonical_id_traceability_missing"],
+                                },
+                            }
+                        },
+                    },
+                    "session_state": {},
+                    "metadata": {},
+                }
+
+            def save_project(self, **_kwargs):
+                return {}
+
+        def fake_decider(payload):
+            called["context"] = dict(payload["context"])
+            return {"success": True, "intent": "conversation"}
+
+        decide_chat(
+            {
+                "message": "what do I need before export",
+                "context": {"current_project": {"project_id": "project_123"}},
+            },
+            decide_chat_message=fake_decider,
+            project_store=FakeProjectStore(),
+            user_id="user_1",
+        )
+        self.assertEqual(called["context"]["current_export_audit"]["blocked_reasons"], ["canonical_id_traceability_missing"])
+        self.assertIn("canonical_id_traceability_missing", called["context"]["convergence_summary"]["blocked_reasons"])
+        self.assertIn("export", called["context"]["convergence_summary"]["blocked_exports"])
+
 
 if __name__ == "__main__":
     unittest.main()

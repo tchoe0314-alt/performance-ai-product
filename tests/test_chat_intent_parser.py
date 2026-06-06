@@ -721,8 +721,9 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertEqual(result["run_mode"], "run")
         self.assertIn("14 acres", result["design_prompt"])
         self.assertEqual(result["response_metadata"]["intent"], "site_update")
-        self.assertEqual(result["action_taken"], "queued_design_run")
+        self.assertEqual(result["action_taken"], "prepared_canonical_edit")
         self.assertIn("site", result["affected_systems"])
+        self.assertEqual(result["response_metadata"]["command_payload"]["site_area_acres"], 14.0)
 
     def test_building_command_asks_for_site_when_no_plan(self):
         result = _decide("add a 100 by 60 building")
@@ -734,11 +735,21 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertEqual(result["action_taken"], "asked_clarifying_question")
 
     def test_building_command_runs_against_existing_plan(self):
-        result = _decide("add a 100 by 60 building", {"has_plan": True, "lot_width": "500", "lot_height": "400"})
+        result = _decide("add a 100 by 60 building", {"strategy_mode": "assisted", "has_plan": True, "lot_width": "500", "lot_height": "400"})
         self.assertEqual(result["intent"], "design")
         self.assertEqual(result["run_mode"], "run")
         self.assertEqual(result["response_metadata"]["intent"], "object_or_layout_command")
         self.assertIn("layout", result["affected_systems"])
+        self.assertEqual(result["action_taken"], "prepared_canonical_edit")
+        self.assertIn("draft", " ".join(result["assumptions"]).lower())
+
+    def test_strict_object_creation_blocks_missing_location(self):
+        result = _decide("add a 100 by 60 building", {"strategy_mode": "user", "has_plan": True, "lot_width": "500", "lot_height": "400"})
+        self.assertEqual(result["intent"], "conversation")
+        self.assertTrue(result["needs_clarification"])
+        self.assertIn("location", result["assistant_message"])
+        self.assertIn("object location", result["required_missing_inputs"])
+        self.assertEqual(result["action_taken"], "asked_clarifying_question")
 
     def test_detention_basin_low_corner_runs_drainage_layout_command(self):
         result = _decide(
@@ -828,6 +839,21 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertIn("Before export", result["assistant_message"])
         self.assertEqual(result["response_metadata"]["intent"], "export_readiness")
         self.assertIn("export", result["affected_systems"])
+
+    def test_before_export_question_reads_export_audit_blockers(self):
+        result = _decide(
+            "what do I need before export",
+            {
+                "has_plan": True,
+                "current_export_audit": {
+                    "export_blocked": True,
+                    "blocked_reasons": ["canonical_id_traceability_missing"],
+                },
+            },
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("canonical_id_traceability_missing", result["assistant_message"])
+        self.assertEqual(result["response_metadata"]["intent"], "export_readiness")
 
     def test_use_assisted_mode_is_mode_command(self):
         result = _decide("use assisted mode")

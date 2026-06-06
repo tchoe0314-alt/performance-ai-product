@@ -282,6 +282,7 @@ def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
     current_project = context.get("current_project") or {}
     current_truth = context.get("current_truth_audit") or {}
     current_explanation = context.get("current_explanation") or {}
+    current_export_audit = context.get("current_export_audit") or {}
     engineering_status = context.get("engineering_status") or {}
     convergence_summary = context.get("convergence_summary") or {}
     issues = context.get("issues") or []
@@ -319,6 +320,7 @@ def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
             "engineering_trust_score", context.get("engineering_trust_score")
         ),
         "engineering_status": engineering_status.get("status", context.get("engineering_status")),
+        "export_audit": dict(current_export_audit or {}),
         "convergence_summary": {
             "converged": bool(convergence_summary.get("converged")),
             "passes_run": convergence_summary.get("passes_run"),
@@ -1139,8 +1141,17 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
     deliverables = context.get("produced_deliverables") or []
     convergence = context.get("convergence_summary") or {}
     fix_summary = convergence.get("fix_summary") or {}
-    blocked_exports = convergence.get("blocked_exports") or []
-    blocked_reasons = convergence.get("blocked_reasons") or []
+    export_audit = context.get("export_audit") or {}
+    blocked_exports = list(convergence.get("blocked_exports") or [])
+    blocked_reasons = list(convergence.get("blocked_reasons") or [])
+    if isinstance(export_audit, dict) and export_audit:
+        for reason in list(export_audit.get("blocked_reasons") or []):
+            if reason not in blocked_reasons:
+                blocked_reasons.append(reason)
+        if export_audit.get("export_blocked") is True and "export_audit_blocked" not in blocked_reasons:
+            blocked_reasons.append("export_audit_blocked")
+        if export_audit.get("export_blocked") is True and "export" not in blocked_exports:
+            blocked_exports.append("export")
     unresolved_categories = convergence.get("unresolved_issue_categories") or []
     rerun_summary = convergence.get("rerun_summary") or {}
     memory_summary = context.get("memory_summary") or {}
@@ -2135,12 +2146,21 @@ def _missing_inputs_for_command(command_intent: str, message: str, context: Dict
         if not _ctx_has_site_size(context) and not explicit_site_size:
             missing.append("site size or boundary")
     if command_intent == "object_or_layout_command":
+        object_payload = _extract_object_command_payload(message, context)
+        strict_policy = object_payload.get("assumption_policy") == "strict"
         if (
             "building" in lowered
             and any(phrase in lowered for phrase in ["add a", "add one", "place a", "put a", "create a", "new building"])
             and not re.search(r"\b\d+(?:\.\d+)?\s*(?:ft|feet|m|meters)?\s*(?:x|by)\s*\d+(?:\.\d+)?", lowered)
         ):
             missing.append("building dimensions")
+        if (
+            strict_policy
+            and object_payload.get("operation") == "create"
+            and object_payload.get("object_type") in {"building", "detention_basin", "parking"}
+            and not object_payload.get("location_hint")
+        ):
+            missing.append("object location")
         if "basin" in lowered or "detention" in lowered:
             if not (_ctx_has_low_point(context) or "low corner" in lowered or any(corner in lowered for corner in ["northwest", "northeast", "southwest", "southeast"])):
                 missing.append("basin location or low point")
@@ -2170,6 +2190,8 @@ def _specific_missing_question(command_intent: str, missing: List[str], context:
         return "I can generate utilities, but I need tie-in assumptions first. Where should water and sanitary connect?"
     if command_intent == "object_or_layout_command" and "building dimensions" in missing:
         return "I can add the building, but I need its footprint dimensions first, for example 100 ft by 60 ft."
+    if command_intent == "object_or_layout_command" and "object location" in missing:
+        return "I can create that object in strict mode, but I need its location first, for example north side, southeast corner, or x/y coordinates."
     if command_intent == "object_or_layout_command" and "what road change you want" in missing:
         return "I can change the road, but I need the target change: move it, widen it, reroute it, add an entrance, or reduce its footprint?"
     return "I can do that, but I need " + _format_missing_requirements(missing[:2]) + " first."
@@ -2184,6 +2206,7 @@ def _metadata_for_decision(
     affected_systems: Optional[List[str]] = None,
     assumptions: Optional[List[str]] = None,
     next_best_action: str = "",
+    command_payload: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     required_missing = list(missing or [])
     return {
@@ -2194,7 +2217,58 @@ def _metadata_for_decision(
         "affected_systems": list(affected_systems or []),
         "assumptions": list(assumptions or []),
         "next_best_action": next_best_action,
+        "command_payload": dict(command_payload or {}),
     }
+
+
+def _extract_object_command_payload(message: str, context: Dict[str, Any]) -> Dict[str, Any]:
+    lowered = _normalized_chat_text(message)
+    payload: Dict[str, Any] = {}
+    if "building" in lowered:
+        payload["object_type"] = "building"
+    elif "basin" in lowered or "detention" in lowered:
+        payload["object_type"] = "detention_basin"
+    elif "parking" in lowered:
+        payload["object_type"] = "parking"
+    elif "road" in lowered:
+        payload["object_type"] = "road"
+
+    dims = re.search(
+        r"\b(\d+(?:\.\d+)?)\s*(?:ft|feet|m|meters)?\s*(?:x|by)\s*(\d+(?:\.\d+)?)",
+        lowered,
+    )
+    if dims:
+        payload["width"] = float(dims.group(1))
+        payload["depth"] = float(dims.group(2))
+
+    if "low corner" in lowered:
+        payload["location_hint"] = "low_corner"
+    for corner in ["northwest", "northeast", "southwest", "southeast"]:
+        if corner in lowered:
+            payload["location_hint"] = f"{corner}_corner"
+    if "north" in lowered and not payload.get("location_hint"):
+        payload["location_hint"] = "north"
+    if "south" in lowered and not payload.get("location_hint"):
+        payload["location_hint"] = "south"
+    if "east" in lowered and not payload.get("location_hint"):
+        payload["location_hint"] = "east"
+    if "west" in lowered and not payload.get("location_hint"):
+        payload["location_hint"] = "west"
+
+    if payload.get("object_type") == "parking" and "fit" in lowered:
+        payload["operation"] = "fit_to_buildings"
+    elif any(verb in lowered for verb in ["add", "put", "place", "create"]):
+        payload["operation"] = "create"
+    elif any(verb in lowered for verb in ["change", "move", "reroute", "widen", "narrow"]):
+        payload["operation"] = "update"
+    else:
+        payload["operation"] = "update"
+
+    if str(context.get("strategy_mode") or "").lower() in {"user", "manual"}:
+        payload["assumption_policy"] = "strict"
+    else:
+        payload["assumption_policy"] = "assisted"
+    return payload
 
 
 def _build_design_readiness_reply(
@@ -2463,6 +2537,23 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         "utility_command",
         "generate_command",
     }:
+        command_payload: Dict[str, Any] = {}
+        command_assumptions: List[str] = []
+        if command_intent == "site_update" and _extract_site_area_acres(message):
+            area = float(_extract_site_area_acres(message) or 0.0)
+            side = round((area * 43560.0) ** 0.5, 1) if area > 0 else 0.0
+            command_payload = {"site_area_acres": area, "lot_width": side, "lot_height": side}
+            if side > 0:
+                command_assumptions.append("Site area command uses a square draft boundary until exact boundary dimensions are provided.")
+        elif command_intent == "object_or_layout_command":
+            command_payload = _extract_object_command_payload(message, context)
+            if (
+                command_payload.get("assumption_policy") == "assisted"
+                and command_payload.get("operation") == "create"
+                and command_payload.get("object_type") in {"building", "detention_basin", "parking"}
+                and not command_payload.get("location_hint")
+            ):
+                command_assumptions.append("Object will be added as draft geometry at a planner-selected feasible location.")
         missing_inputs = _missing_inputs_for_command(command_intent, message, context)
         if missing_inputs:
             ask = _specific_missing_question(command_intent, missing_inputs, context)
@@ -2480,6 +2571,7 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
                     action_blocked_reason="Required command inputs are missing.",
                     affected_systems=affected_systems,
                     next_best_action=ask,
+                    command_payload=command_payload,
                 ),
             )
 
@@ -2496,10 +2588,11 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
                 control_overrides=overrides,
                 response_metadata=_metadata_for_decision(
                     command_intent=command_intent,
-                    action_taken="queued_design_run",
+                    action_taken="prepared_canonical_edit",
                     affected_systems=affected_systems or ["site", "layout", "grading", "drainage", "utilities"],
-                    assumptions=[],
+                    assumptions=command_assumptions,
                     next_best_action="Review the updated site extents and downstream system status.",
+                    command_payload=command_payload,
                 ),
             )
 
@@ -2522,10 +2615,11 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             control_overrides=overrides,
             response_metadata=_metadata_for_decision(
                 command_intent=command_intent,
-                action_taken="queued_design_run",
+                action_taken="prepared_canonical_edit" if command_intent == "object_or_layout_command" else "prepared_engineering_run",
                 affected_systems=affected_systems,
-                assumptions=[],
+                assumptions=command_assumptions,
                 next_best_action="Review the generated systems and any blockers returned by the planner.",
+                command_payload=command_payload,
             ),
         )
 

@@ -470,6 +470,221 @@ def _build_phase_checkpoints(
     }
 
 
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        parsed = float(value)
+        return parsed if parsed == parsed else default
+    except Exception:
+        return default
+
+
+def _chat_command_block_response(
+    payload_data: Dict[str, Any],
+    *,
+    command: Dict[str, Any],
+    missing_fields: list[str],
+    reason: str,
+) -> Dict[str, Any]:
+    structured_missing = {
+        "missing_fields": list(missing_fields),
+        "why_needed": {field: "Required before this chat command can change canonical project state." for field in missing_fields},
+        "suggested_next_actions": ["Provide the missing command detail, or turn on Assisted to allow labeled draft assumptions."],
+        "can_assist_if_enabled": True,
+    }
+    execution = {
+        "intent": str(command.get("intent") or ""),
+        "action_taken": "blocked_before_orchestration",
+        "action_blocked_reason": reason,
+        "required_missing_inputs": list(missing_fields),
+        "affected_systems": list(command.get("affected_systems") or []),
+        "assumptions": [],
+    }
+    return {
+        "success": False,
+        "message": reason,
+        "parsed_payload": dict(payload_data),
+        "final_plan": {},
+        "warnings": [],
+        "errors": [reason],
+        "issues": [],
+        "assumptions": [],
+        "missing_requirements": structured_missing,
+        "metadata": {
+            "_workflow_run_id": new_workflow_id("run"),
+            "input_mode": payload_data.get("input_mode", "user"),
+            "needs_clarification": True,
+            "clarification_reason": reason,
+            "missing_requirements": structured_missing,
+            "chat_command_execution": execution,
+        },
+    }
+
+
+def _apply_chat_command_execution(payload_data: Dict[str, Any]) -> tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
+    payload = deepcopy(dict(payload_data))
+    meta = dict(payload.get("meta") or {})
+    command = dict(meta.get("chat_command") or {})
+    intent = str(command.get("intent") or "").strip()
+    if not intent:
+        return payload, None
+
+    command_payload = dict(command.get("command_payload") or {})
+    manual_fields = dict(payload.get("manual_fields") or {})
+    assumptions = list(command.get("assumptions") or [])
+    execution = {
+        "intent": intent,
+        "action_taken": "no_state_change",
+        "action_blocked_reason": "",
+        "required_missing_inputs": [],
+        "affected_systems": list(command.get("affected_systems") or []),
+        "assumptions": list(assumptions),
+        "changed_fields": [],
+    }
+    strict = (
+        str(command_payload.get("assumption_policy") or "").lower() == "strict"
+        or str(payload.get("input_mode") or "").lower() in {"user", "manual"}
+        or not bool(payload.get("allow_ai_fill_for_blanks", True))
+    )
+
+    if intent == "site_update":
+        area = _safe_float(command_payload.get("site_area_acres"))
+        width = _safe_float(command_payload.get("lot_width"))
+        height = _safe_float(command_payload.get("lot_height"))
+        missing = []
+        if area <= 0:
+            missing.append("site_area_acres")
+        if width <= 0 or height <= 0:
+            missing.append("lot_width_and_height")
+        if missing:
+            return payload, _chat_command_block_response(
+                payload,
+                command=command,
+                missing_fields=missing,
+                reason="Site update is blocked because the command did not include a usable site area or boundary dimensions.",
+            )
+        manual_fields["lot"] = {"x": 0.0, "y": 0.0, "w": width, "h": height, "area_sf": round(area * 43560.0, 3)}
+        manual_fields["acreage"] = area
+        subdivision = dict(manual_fields.get("subdivision") or {})
+        subdivision["acreage"] = area
+        manual_fields["subdivision"] = subdivision
+        execution["action_taken"] = "updated_manual_fields"
+        execution["changed_fields"] = ["manual_fields.lot", "manual_fields.acreage", "manual_fields.subdivision.acreage"]
+
+    elif intent == "object_or_layout_command":
+        object_type = str(command_payload.get("object_type") or "").strip()
+        operation = str(command_payload.get("operation") or "").strip()
+        width = _safe_float(command_payload.get("width"))
+        depth = _safe_float(command_payload.get("depth"))
+        location_hint = str(command_payload.get("location_hint") or "").strip()
+        if operation == "create" and object_type == "building":
+            missing = []
+            if width <= 0 or depth <= 0:
+                missing.append("building_width_and_depth")
+            if strict and not location_hint:
+                missing.append("object_location")
+            if missing:
+                return payload, _chat_command_block_response(
+                    payload,
+                    command=command,
+                    missing_fields=missing,
+                    reason="Building creation is blocked because strict command execution needs explicit size and location.",
+                )
+            buildings = list(manual_fields.get("buildings") or [])
+            index = len([item for item in buildings if isinstance(item, dict)]) + 1
+            building = {
+                "name": f"Chat Building {index}",
+                "label": f"Chat Building {index}",
+                "type": "building",
+                "w": width,
+                "d": depth,
+                "source": "chat_command",
+                "generated": False,
+                "meta": {"chat_command": True, "location_hint": location_hint or "assisted_draft"},
+            }
+            if location_hint:
+                building["location_hint"] = location_hint
+            buildings.append(building)
+            manual_fields["buildings"] = buildings
+            site_plan = dict(manual_fields.get("site_plan") or {})
+            site_plan["building_width"] = width
+            site_plan["building_depth"] = depth
+            manual_fields["site_plan"] = site_plan
+            execution["action_taken"] = "updated_manual_fields"
+            execution["changed_fields"] = ["manual_fields.buildings", "manual_fields.site_plan.building_width", "manual_fields.site_plan.building_depth"]
+            if not location_hint:
+                execution["assumptions"] = list(dict.fromkeys(execution["assumptions"] + ["Building location is an assisted draft placement."]))
+        elif operation == "create" and object_type == "detention_basin":
+            missing = []
+            if strict and not location_hint:
+                missing.append("basin_location")
+            if missing:
+                return payload, _chat_command_block_response(
+                    payload,
+                    command=command,
+                    missing_fields=missing,
+                    reason="Detention basin creation is blocked because strict command execution needs an explicit basin location.",
+                )
+            ponds = list(manual_fields.get("ponds") or [])
+            index = len([item for item in ponds if isinstance(item, dict)]) + 1
+            ponds.append(
+                {
+                    "id": f"CHAT-BASIN-{index}",
+                    "name": f"Chat Detention Basin {index}",
+                    "label": f"Chat Detention Basin {index}",
+                    "type": "basin",
+                    "w": width if width > 0 else 80.0,
+                    "d": depth if depth > 0 else 60.0,
+                    "source": "chat_command",
+                    "generated": False,
+                    "location_hint": location_hint or "assisted_low_point",
+                    "meta": {"chat_command": True},
+                }
+            )
+            manual_fields["ponds"] = ponds
+            execution["action_taken"] = "updated_manual_fields"
+            execution["changed_fields"] = ["manual_fields.ponds"]
+            if width <= 0 or depth <= 0:
+                execution["assumptions"] = list(dict.fromkeys(execution["assumptions"] + ["Detention basin uses a draft 80 ft by 60 ft footprint until sized by drainage design."]))
+        elif object_type == "parking" and operation == "fit_to_buildings":
+            site_plan = dict(manual_fields.get("site_plan") or {})
+            site_plan["fit_parking_to_buildings"] = True
+            manual_fields["site_plan"] = site_plan
+            execution["action_taken"] = "updated_manual_fields"
+            execution["changed_fields"] = ["manual_fields.site_plan.fit_parking_to_buildings"]
+        else:
+            return payload, _chat_command_block_response(
+                payload,
+                command=command,
+                missing_fields=["supported_canonical_edit"],
+                reason=f"Command parsed as {intent}, but canonical edit support for {object_type or 'this object'} is not implemented yet.",
+            )
+
+    elif intent in {"drainage_command", "grading_command", "utility_command", "generate_command"}:
+        requested = {
+            "drainage_command": "drainage",
+            "grading_command": "grading",
+            "utility_command": "utilities",
+            "generate_command": "full",
+        }[intent]
+        meta["requested_system"] = requested
+        execution["action_taken"] = "prepared_engineering_run"
+        execution["changed_fields"] = ["meta.requested_system"]
+
+    if execution["action_taken"] == "no_state_change":
+        return payload, _chat_command_block_response(
+            payload,
+            command=command,
+            missing_fields=["executable_command"],
+            reason="Command was parsed, but no executable state change or backend workflow was available for it.",
+        )
+
+    meta["chat_command"] = command
+    meta["chat_command_execution"] = execution
+    payload["meta"] = meta
+    payload["manual_fields"] = manual_fields
+    return payload, None
+
+
 def run_orchestration(
     payload_data: Dict[str, Any],
     *,
@@ -478,6 +693,9 @@ def run_orchestration(
     progress_callback: Optional[Callable[..., None]] = None,
 ) -> Dict[str, Any]:
     PlannerOrchestratorRequest, orchestrate_plan = load_orchestrator()
+    payload_data, command_block = _apply_chat_command_execution(payload_data)
+    if command_block:
+        return command_block
     prompt_text = payload_data.get("prompt_text")
     if prompt_text is None:
         prompt_text = payload_data.get("prompt")
@@ -590,6 +808,8 @@ def run_orchestration(
     }
     result_payload["metadata"].setdefault("_workflow_run_id", new_workflow_id("run"))
     result_payload["metadata"].setdefault("input_mode", payload_data.get("input_mode", "assisted"))
+    if isinstance((payload_data.get("meta") or {}).get("chat_command_execution"), dict):
+        result_payload["metadata"]["chat_command_execution"] = dict(payload_data["meta"]["chat_command_execution"])
     if isinstance(result_payload["metadata"].get("missing_requirements"), dict):
         result_payload["missing_requirements"] = dict(result_payload["metadata"]["missing_requirements"])
     return result_payload
