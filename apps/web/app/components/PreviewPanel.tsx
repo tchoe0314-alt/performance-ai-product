@@ -23,6 +23,20 @@ type EngineeringSystemStatuses = Record<
 >;
 type DrawMode = "select" | "pan" | "site" | "polyline" | "polygon" | "rect" | "point";
 
+type ParkingParams = {
+  stallWidth?: number;
+  stallDepth?: number;
+  aisleWidth?: number;
+  adaAisleWidth?: number;
+  adaCount?: number;
+  compactCount?: number;
+  compactWidth?: number;
+  angleDeg?: number;
+  loading?: "single" | "double";
+  useMixedAngles?: boolean;
+  compactZone?: boolean;
+};
+
 type PreviewPanelProps = {
   previewReview: PreviewReview | null;
   previewTotalPhaseCount: number;
@@ -146,7 +160,6 @@ type PreviewPanelProps = {
 };
 
 export default function PreviewPanel({
-  previewReview,
   previewTotalPhaseCount,
   previewCompletedPhaseCount,
   previewRunningPhase,
@@ -159,20 +172,11 @@ export default function PreviewPanel({
   previewMode,
   previewInteraction,
   previewQuality,
-  previewLabelDensity,
-  systemStatuses,
-  hasTerrainSource,
-  hasBasinPlaced,
-  siteTooLargeForGrading,
-  hasHardSystemBlock,
   hasGeneratedPlan,
   onSetPreviewMode,
   onSetPreviewInteraction,
   onSetPreviewQuality,
-  onSetPreviewLabelDensity,
   onQueuePreviewRefresh,
-  previewRefreshing,
-  previewRefreshNote,
   preview3DEffectiveItems,
   usingAnnotation3D,
   hasGradingSurface,
@@ -413,7 +417,10 @@ export default function PreviewPanel({
       return;
     }
     if ([...buildingPlacements, ...suggestedPlacements].some((item) => item.id === entityId)) {
-      setHoveredObjectId((current) => (current === entityId ? current : entityId));
+      const handle = window.requestAnimationFrame(() => {
+        setHoveredObjectId((current) => (current === entityId ? current : entityId));
+      });
+      return () => window.cancelAnimationFrame(handle);
     }
   }, [activeAnnotation, buildingPlacements, suggestedPlacements]);
   const activeHighlightBounds = activeAnnotation?.bounds ?? null;
@@ -600,7 +607,7 @@ export default function PreviewPanel({
   const clampValue = (value: number, min: number, max: number) =>
     Math.min(Math.max(value, min), max);
 
-  const getEditCapabilities = (item: BuildingPlacement) => {
+  const getEditCapabilities = useCallback((item: BuildingPlacement) => {
     const type = item.type ?? "building";
     const editableTypes = new Set([
       "site",
@@ -665,12 +672,12 @@ export default function PreviewPanel({
     const rotatable = rotatableTypes.has(type) && !effectiveLocked;
     const deletable = deletableTypes.has(type) && !effectiveLocked;
     return { movable, resizable, rotatable, deletable };
-  };
+  }, [siteLocked]);
 
-  const snapValue = (value: number, step: number) => {
+  const snapValue = useCallback((value: number, step: number) => {
     if (!step) return value;
     return Math.round(value / step) * step;
-  };
+  }, []);
 
   const updateDraggedBuilding = useCallback(
     (event: React.MouseEvent<HTMLDivElement>, bounds: { left: number; top: number; width: number; height: number }) => {
@@ -808,9 +815,10 @@ export default function PreviewPanel({
       canvasView.scale,
       lotHeight,
       lotWidth,
+      getEditCapabilities,
       onUpdateBuilding,
       onUpdateSuggested,
-      placementMode,
+      snapValue,
     ],
   );
 
@@ -974,9 +982,12 @@ export default function PreviewPanel({
     if (siteDrawRequest === lastSiteDrawRequestRef.current) return;
     lastSiteDrawRequestRef.current = siteDrawRequest;
     if (siteLocked) return;
-    clearDraftGeometry();
-    setDrawMode("site");
-    onSetPreviewInteraction("edit");
+    const handle = window.requestAnimationFrame(() => {
+      clearDraftGeometry();
+      setDrawMode("site");
+      onSetPreviewInteraction("edit");
+    });
+    return () => window.cancelAnimationFrame(handle);
   }, [clearDraftGeometry, onSetPreviewInteraction, siteDrawRequest, siteLocked]);
 
   const finishDraftGeometry = useCallback(() => {
@@ -1111,7 +1122,10 @@ export default function PreviewPanel({
 
   useEffect(() => {
     if (!externalRectUndo) return;
-    setLastRectEdit(externalRectUndo);
+    const handle = window.requestAnimationFrame(() => {
+      setLastRectEdit(externalRectUndo);
+    });
+    return () => window.cancelAnimationFrame(handle);
   }, [externalRectUndo]);
 
   useEffect(() => {
@@ -1231,10 +1245,10 @@ export default function PreviewPanel({
     [allowEdits, canvasView.scale, getEditCapabilities, onSelectBuilding, selectedBuildingId],
   );
 
-  const formatHoverValue = (value: number | null | undefined, suffix: string) => {
+  const formatHoverValue = useCallback((value: number | null | undefined, suffix: string) => {
     if (value === null || value === undefined || Number.isNaN(value)) return null;
     return `${value.toFixed(2)}${suffix}`;
-  };
+  }, []);
   const hoverDetails = useMemo(() => {
     if (!activeAnnotation?.meta) return [];
     const meta = activeAnnotation.meta;
@@ -1306,7 +1320,7 @@ export default function PreviewPanel({
       { label: "Source", value: source },
       ...(confidence ? [{ label: "Confidence", value: confidence }] : []),
     ];
-  }, [hoveredObject]);
+  }, [hoveredObject, lotHeight, lotWidth]);
   const overlayBounds = useMemo(() => {
     if (!previewContainerBounds) return null;
     return {
@@ -1333,20 +1347,26 @@ export default function PreviewPanel({
 
   useEffect(() => {
     if (showHover) return;
-    setHoveredObjectId(null);
-    setHoveredAnnotation(null);
-    setHoverPoint(null);
-    setHoveredVertex(null);
-    setHoveredSegment(null);
+    const handle = window.requestAnimationFrame(() => {
+      setHoveredObjectId(null);
+      setHoveredAnnotation(null);
+      setHoverPoint(null);
+      setHoveredVertex(null);
+      setHoveredSegment(null);
+    });
+    return () => window.cancelAnimationFrame(handle);
   }, [showHover]);
 
   useEffect(() => {
     if (previewInteraction !== "static") return;
-    setDraggingBuildingId(null);
-    setDraggingMode(null);
-    setDraggingVertex(null);
-    setRotateDragActive(false);
-    setRotateDragStart(null);
+    const handle = window.requestAnimationFrame(() => {
+      setDraggingBuildingId(null);
+      setDraggingMode(null);
+      setDraggingVertex(null);
+      setRotateDragActive(false);
+      setRotateDragStart(null);
+    });
+    return () => window.cancelAnimationFrame(handle);
   }, [previewInteraction]);
 
   useEffect(() => {
@@ -1368,11 +1388,14 @@ export default function PreviewPanel({
     }
   }, [debugStats?.enabled, lotHeight, lotWidth, overlayBoundsResolved, renderedCanonicalCount]);
 
+  const geocodeLat = geocode?.lat;
+  const geocodeLng = geocode?.lng;
+
   const siteToLatLng = useCallback(
     (xFt: number, yFt: number) => {
-      if (!geocode?.lat || !geocode?.lng) return null;
+      if (!geocodeLat || !geocodeLng) return null;
       const metersPerDegLat = 111320;
-      const metersPerDegLng = 111320 * Math.cos((geocode.lat * Math.PI) / 180);
+      const metersPerDegLng = 111320 * Math.cos((geocodeLat * Math.PI) / 180);
       const dxFt = xFt - lotWidth / 2;
       const dyFt = lotHeight / 2 - yFt;
       const rotationDeg = typeof siteRotationDeg === "number" ? siteRotationDeg : 0;
@@ -1381,20 +1404,20 @@ export default function PreviewPanel({
       const dyRot = dxFt * Math.sin(theta) + dyFt * Math.cos(theta);
       const dxM = dxRot * 0.3048;
       const dyM = dyRot * 0.3048;
-      const lng = geocode.lng + dxM / metersPerDegLng;
-      const lat = geocode.lat + dyM / metersPerDegLat;
+      const lng = geocodeLng + dxM / metersPerDegLng;
+      const lat = geocodeLat + dyM / metersPerDegLat;
       return [lng, lat] as [number, number];
     },
-    [geocode?.lat, geocode?.lng, lotHeight, lotWidth, siteRotationDeg],
+    [geocodeLat, geocodeLng, lotHeight, lotWidth, siteRotationDeg],
   );
 
   const latLngToSite = useCallback(
     (lat: number, lng: number) => {
-      if (!geocode?.lat || !geocode?.lng) return null;
+      if (!geocodeLat || !geocodeLng) return null;
       const metersPerDegLat = 111320;
-      const metersPerDegLng = 111320 * Math.cos((geocode.lat * Math.PI) / 180);
-      const dxM = (lng - geocode.lng) * metersPerDegLng;
-      const dyM = (lat - geocode.lat) * metersPerDegLat;
+      const metersPerDegLng = 111320 * Math.cos((geocodeLat * Math.PI) / 180);
+      const dxM = (lng - geocodeLng) * metersPerDegLng;
+      const dyM = (lat - geocodeLat) * metersPerDegLat;
       const dxFt = dxM / 0.3048;
       const dyFt = dyM / 0.3048;
       const rotationDeg = typeof siteRotationDeg === "number" ? siteRotationDeg : 0;
@@ -1405,7 +1428,7 @@ export default function PreviewPanel({
       const y = lotHeight / 2 - invDy;
       return { x, y };
     },
-    [geocode?.lat, geocode?.lng, lotHeight, lotWidth, siteRotationDeg],
+    [geocodeLat, geocodeLng, lotHeight, lotWidth, siteRotationDeg],
   );
 
   useEffect(() => {
@@ -1665,7 +1688,7 @@ export default function PreviewPanel({
       map.off("moveend", reportCenter);
       map.off("zoomend", reportCenter);
     };
-  }, [latLngToSite, lotHeight, lotWidth, mapAvailable, mapLoaded, onMapScaleUpdate, onPlaceBuilding, onPlaceObject, placementMode, selectedBuildingId, onSelectBuilding, showHover, onViewportCenter, onViewportFootprint]);
+  }, [latLngToSite, lotHeight, lotWidth, mapAvailable, mapLoaded, onMapScaleUpdate, onPlaceBuilding, onPlaceObject, placementMode, selectedBuildingId, onSelectBuilding, showHover, onViewportCenter, onViewportFootprint, siteLocked]);
 
   useEffect(() => {
     if (!mapAvailable || !mapLoaded || !mapRef.current) return;
@@ -1709,12 +1732,15 @@ export default function PreviewPanel({
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, []);
+  }, [previewInteraction, siteLocked]);
 
   useEffect(() => {
     if (previewInteraction !== "edit" || siteLocked) {
-      setRotateDragActive(false);
-      setRotateDragStart(null);
+      const handle = window.requestAnimationFrame(() => {
+        setRotateDragActive(false);
+        setRotateDragStart(null);
+      });
+      return () => window.cancelAnimationFrame(handle);
     }
   }, [previewInteraction, siteLocked]);
 
@@ -1824,7 +1850,7 @@ export default function PreviewPanel({
   const buildParkingModules = useCallback((item: BuildingPlacement, accessPoints: Array<{ x: number; y: number }>) => {
     const x = item.x ?? 0;
     const y = item.y ?? 0;
-    const params = (item.meta as { parkingParams?: any })?.parkingParams ?? {};
+    const params = (item.meta as { parkingParams?: ParkingParams })?.parkingParams ?? {};
     const stallWidth = Number.isFinite(params.stallWidth) ? Number(params.stallWidth) : 9;
     const stallDepth = Number.isFinite(params.stallDepth) ? Number(params.stallDepth) : 18;
     const aisleWidth = Number.isFinite(params.aisleWidth) ? Number(params.aisleWidth) : 24;
@@ -1845,7 +1871,6 @@ export default function PreviewPanel({
     const rows = loading === "double" ? 2 : 1;
     const desiredStalls = Math.max(item.stallCount ?? 0, adaCount + compactCount);
     const shift = Math.tan(angleRad || 0.0001) * scaledStall;
-    const effectiveWidth = Math.max(item.w - Math.abs(shift), stallWidth);
     let moduleCount = 1;
     if (desiredStalls > 0) {
       for (let candidate = 1; candidate <= 6; candidate += 1) {
@@ -2000,27 +2025,22 @@ export default function PreviewPanel({
         return [p0, p1, p2, p3, p0];
       };
       for (let i = 0; i < stallsPerRow; i += 1) {
-        let currentWidth = stallW;
         let useAda = false;
         let useCompact = false;
         let includeAdaAisle = false;
         if (remainingAda > 0 && isAdaModule) {
           useAda = true;
           includeAdaAisle = true;
-          currentWidth = stallW;
           remainingAda -= 1;
         } else if (remainingCompact > 0 && isCompactModule) {
           useCompact = true;
-          currentWidth = stallW;
           remainingCompact -= 1;
         } else if (remainingAda > 0 && !adaPreferredModules.size) {
           useAda = true;
           includeAdaAisle = true;
-          currentWidth = stallW;
           remainingAda -= 1;
         } else if (remainingCompact > 0 && !compactZone) {
           useCompact = true;
-          currentWidth = stallW;
           remainingCompact -= 1;
         }
         const rowOffsetTop = depthVecTop.x > 0 ? 0 : Math.abs(depthVecTop.x);
@@ -2094,7 +2114,7 @@ export default function PreviewPanel({
 
   useEffect(() => {
     if (!showMap || !mapLoaded || !mapRef.current) return;
-    if (!geocode?.lat || !geocode?.lng || !lotWidth || !lotHeight) return;
+    if (!geocodeLat || !geocodeLng || !lotWidth || !lotHeight) return;
 
     const placedObjects = buildingPlacements.filter(
       (item) => item.type !== "site" && item.placed && Number.isFinite(item.x) && Number.isFinite(item.y),
@@ -2251,11 +2271,12 @@ export default function PreviewPanel({
 
     const updateMap = (map: mapboxgl.Map | null) => {
       if (!map || !map.isStyleLoaded()) return;
-      const ensureSource = (id: string, data: any) => {
+      const ensureSource = (id: string, data: unknown) => {
+        const sourceData = data as Parameters<mapboxgl.GeoJSONSource["setData"]>[0];
         if (!map.getSource(id)) {
-          map.addSource(id, { type: "geojson", data });
+          map.addSource(id, { type: "geojson", data: sourceData });
         } else {
-          (map.getSource(id) as mapboxgl.GeoJSONSource).setData(data);
+          (map.getSource(id) as mapboxgl.GeoJSONSource).setData(sourceData);
         }
       };
 
@@ -2387,13 +2408,13 @@ export default function PreviewPanel({
           ],
         });
       }
-      if (geocode?.lat && geocode?.lng) {
+      if (geocodeLat && geocodeLng) {
         ensureSource("civora-center", {
           type: "FeatureCollection",
           features: [
             {
               type: "Feature",
-              geometry: { type: "Point", coordinates: [geocode.lng, geocode.lat] },
+              geometry: { type: "Point", coordinates: [geocodeLng, geocodeLat] },
               properties: { id: "site-center" },
             },
           ],
@@ -2501,7 +2522,7 @@ export default function PreviewPanel({
       } else if (map.getLayer("civora-site-line")) {
         map.removeLayer("civora-site-line");
       }
-      if (geocode?.lat && geocode?.lng) {
+      if (geocodeLat && geocodeLng) {
         ensureLayer("civora-center-crosshair", "civora-center", "circle", {
           "circle-color": "#f97316",
           "circle-radius": 4,
@@ -2525,15 +2546,19 @@ export default function PreviewPanel({
   }, [
     buildingPlacements,
     analysisPaths,
+    buildParkingModules,
+    debugStats?.enabled,
     siteToLatLng,
-    geocode?.lat,
-    geocode?.lng,
+    geocodeLat,
+    geocodeLng,
     lotHeight,
     lotWidth,
     mapLoaded,
     mapRevision,
+    planPreviewUrl,
     showMap,
     showSiteBounds,
+    suggestedPlacements.length,
     surveyPoints,
   ]);
 
@@ -2631,18 +2656,37 @@ export default function PreviewPanel({
     };
   }, [planPreviewUrl, previewFullscreenOpen, showMap, updateImageBounds]);
   const [focusTransform, setFocusTransform] = useState<{ scale: number; tx: number; ty: number } | null>(null);
+  const updateFocusTransform = useCallback((nextTransform: { scale: number; tx: number; ty: number }) => {
+    setFocusTransform((current) =>
+      current &&
+      Math.abs(current.scale - nextTransform.scale) < 0.001 &&
+      Math.abs(current.tx - nextTransform.tx) < 0.001 &&
+      Math.abs(current.ty - nextTransform.ty) < 0.001
+        ? current
+        : nextTransform,
+    );
+  }, []);
 
   useEffect(() => {
     if (!focusDetectedId) return;
     const target = suggestedPlacements.find((item) => item.id === focusDetectedId);
+    let frame: number | null = null;
     if (target) {
-      setHoveredObjectId((current) => (current === target.id ? current : target.id));
-      onSelectBuilding(target.id);
+      frame = window.requestAnimationFrame(() => {
+        setHoveredObjectId((current) => (current === target.id ? current : target.id));
+        onSelectBuilding(target.id);
+      });
     }
     if (onClearFocusDetected) {
       const timer = window.setTimeout(() => onClearFocusDetected(), 400);
-      return () => window.clearTimeout(timer);
+      return () => {
+        if (frame !== null) window.cancelAnimationFrame(frame);
+        window.clearTimeout(timer);
+      };
     }
+    return () => {
+      if (frame !== null) window.cancelAnimationFrame(frame);
+    };
   }, [focusDetectedId, onClearFocusDetected, onSelectBuilding, suggestedPlacements]);
 
   useEffect(() => {
@@ -2660,19 +2704,16 @@ export default function PreviewPanel({
     const centerX = (minX + maxX) / 2 / lotWidth;
     const centerY = (minY + maxY) / 2 / lotHeight;
     const nextTransform = { scale: Math.min(Math.max(scale, 1), 3), tx: centerX, ty: centerY };
-    setFocusTransform((current) =>
-      current &&
-      Math.abs(current.scale - nextTransform.scale) < 0.001 &&
-      Math.abs(current.tx - nextTransform.tx) < 0.001 &&
-      Math.abs(current.ty - nextTransform.ty) < 0.001
-        ? current
-        : nextTransform,
-    );
+    const handle = window.requestAnimationFrame(() => updateFocusTransform(nextTransform));
     if (onClearFocusObject) {
       const timer = window.setTimeout(() => onClearFocusObject(), 500);
-      return () => window.clearTimeout(timer);
+      return () => {
+        window.cancelAnimationFrame(handle);
+        window.clearTimeout(timer);
+      };
     }
-  }, [focusObjectId, buildingPlacements, lotHeight, lotWidth, onClearFocusObject]);
+    return () => window.cancelAnimationFrame(handle);
+  }, [focusObjectId, buildingPlacements, lotHeight, lotWidth, onClearFocusObject, updateFocusTransform]);
 
   useEffect(() => {
     if (!analysisHighlight || !lotWidth || !lotHeight) return;
@@ -2707,15 +2748,9 @@ export default function PreviewPanel({
     const centerX = (minX + maxX) / 2 / lotWidth;
     const centerY = (minY + maxY) / 2 / lotHeight;
     const nextTransform = { scale: Math.min(Math.max(scale, 1), 3), tx: centerX, ty: centerY };
-    setFocusTransform((current) =>
-      current &&
-      Math.abs(current.scale - nextTransform.scale) < 0.001 &&
-      Math.abs(current.tx - nextTransform.tx) < 0.001 &&
-      Math.abs(current.ty - nextTransform.ty) < 0.001
-        ? current
-        : nextTransform,
-    );
-  }, [analysisHighlight, analysisPaths, buildingPlacements, lotHeight, lotWidth, suggestedPlacements]);
+    const handle = window.requestAnimationFrame(() => updateFocusTransform(nextTransform));
+    return () => window.cancelAnimationFrame(handle);
+  }, [analysisHighlight, analysisPaths, buildingPlacements, lotHeight, lotWidth, suggestedPlacements, updateFocusTransform]);
   const showParkingAnalysis = Boolean(analysisPaths && analysisPaths.length);
   return (
     <div className="flex h-full flex-col rounded-xl border border-slate-200 bg-white/92 p-3 shadow-[0_20px_60px_-44px_rgba(15,23,42,0.45)] backdrop-blur">

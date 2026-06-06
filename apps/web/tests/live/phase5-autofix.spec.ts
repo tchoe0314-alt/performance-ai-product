@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
 
 const APP_BASE_URL = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000";
 const API_BASE_URL =
@@ -17,6 +18,11 @@ type DrainageCounts = {
   runs: number;
   issues: string[];
 };
+type IssueLike = {
+  code?: string;
+  message?: string;
+  context?: unknown;
+};
 
 async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -32,7 +38,7 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
   }
 }
 
-async function loginAndSeedToken(request: any, page: any) {
+async function loginAndSeedToken(request: APIRequestContext, page: Page) {
   await request.post(`${API_BASE_URL}/api/auth/register`, {
     data: { email, password, name: "Autofix Runner" },
   }).catch(() => null);
@@ -54,7 +60,7 @@ async function loginAndSeedToken(request: any, page: any) {
   return token;
 }
 
-async function preflightDrainageEndpoint(request: any, token: string) {
+async function preflightDrainageEndpoint(request: APIRequestContext, token: string) {
   const response = await request.post(`${API_BASE_URL}/api/jobs/drainage`, {
     headers: { Authorization: `Bearer ${token}` },
     data: {},
@@ -66,7 +72,7 @@ async function preflightDrainageEndpoint(request: any, token: string) {
 }
 
 async function queueOrchestrateScenario(
-  request: any,
+  request: APIRequestContext,
   token: string,
   projectId: string,
   payload: Record<string, unknown>,
@@ -83,7 +89,7 @@ async function queueOrchestrateScenario(
   return jobId;
 }
 
-async function waitForJobCompletion(request: any, token: string, jobId: string) {
+async function waitForJobCompletion(request: APIRequestContext, token: string, jobId: string) {
   const deadline = Date.now() + 420_000;
   let lastStatus = "";
   let lastProgress = -1;
@@ -118,28 +124,8 @@ async function waitForJobCompletion(request: any, token: string, jobId: string) 
   throw new Error(`Job ${jobId} timed out waiting for completion.`);
 }
 
-async function saveProject(
-  request: any,
-  token: string,
-  name: string,
-  project_input: Record<string, unknown>,
-  latest_result: Record<string, unknown>,
-) {
-  const response = await request.post(`${API_BASE_URL}/api/projects`, {
-    headers: { Authorization: `Bearer ${token}` },
-    data: {
-      name,
-      description: "Autofix validation",
-      project_input,
-      latest_result,
-    },
-  });
-  expect(response.ok()).toBeTruthy();
-  return (await response.json()) as { project_id?: string };
-}
-
 async function createProject(
-  request: any,
+  request: APIRequestContext,
   token: string,
   name: string,
   project_input: Record<string, unknown>,
@@ -156,7 +142,7 @@ async function createProject(
   return (await response.json()) as { project?: { project_id?: string } };
 }
 
-async function fetchProjectResult(request: any, token: string, projectId: string) {
+async function fetchProjectResult(request: APIRequestContext, token: string, projectId: string) {
   const response = await request.get(`${API_BASE_URL}/api/projects/${projectId}/result`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -182,17 +168,17 @@ function parseDrainageCounts(result: Record<string, unknown>): DrainageCounts {
       ? drainage.runs.length
       : 0;
   const topIssues = Array.isArray(result.issues)
-    ? result.issues.map((item: any) => String(item?.code || item?.message || "unknown"))
+    ? result.issues.map((item: IssueLike) => String(item?.code || item?.message || "unknown"))
     : [];
   const drainageIssuesRaw = Array.isArray(drainage.issues) ? drainage.issues : [];
-  const drainageIssues = drainageIssuesRaw.map((item: any) =>
+  const drainageIssues = drainageIssuesRaw.map((item: IssueLike) =>
     String(item?.code || item?.message || "unknown"),
   );
   const issues = topIssues.length ? topIssues : drainageIssues;
   return { basins, inlets, runs, issues };
 }
 
-async function openProject(page: any, name: string) {
+async function openProject(page: Page, name: string) {
   const projectsButton = page.getByRole("button", { name: "Projects" });
   for (let attempt = 0; attempt < 2; attempt += 1) {
     await projectsButton.click();
@@ -213,7 +199,7 @@ async function openProject(page: any, name: string) {
   }
 }
 
-async function applyIssue(page: any, actionLabel: string) {
+async function applyIssue(page: Page, actionLabel: string) {
   await page.getByText("Engineering Issues").waitFor({ timeout: 12_000 });
   const applyButton = page.getByRole("button", { name: new RegExp(actionLabel, "i") }).first();
   await expect(applyButton).toBeVisible({ timeout: 20_000 });
@@ -431,9 +417,9 @@ test.describe("Phase 5 drainage autofix matrix", () => {
             const meta = (drainagePayload.meta ?? {}) as Record<string, unknown>;
             const canonical = (meta.drainage_canonical ?? meta.drainage ?? {}) as Record<string, unknown>;
             const canonicalIssues = Array.isArray(canonical.issues) ? canonical.issues : [];
-            const canonicalCodes = canonicalIssues.map((item: any) => String(item?.code || item?.message || "unknown"));
+            const canonicalCodes = canonicalIssues.map((item: IssueLike) => String(item?.code || item?.message || "unknown"));
             const topIssues = Array.isArray(afterResultPayload.issues)
-              ? afterResultPayload.issues.map((item: any) => String(item?.code || item?.message || "unknown"))
+              ? afterResultPayload.issues.map((item: IssueLike) => String(item?.code || item?.message || "unknown"))
               : [];
             console.info(`${entry.name} ISSUE TRACE`, {
               topIssues,
@@ -454,7 +440,7 @@ test.describe("Phase 5 drainage autofix matrix", () => {
             const meta = (finalPlan.meta ?? {}) as Record<string, unknown>;
             const drainage = (meta.drainage_canonical ?? meta.drainage ?? {}) as Record<string, unknown>;
             const drainageIssues = Array.isArray(drainage.issues) ? drainage.issues : [];
-            const reducedIssue = drainageIssues.find((issue: any) => String(issue?.code || "") === "UNDER_COLLECTION_REDUCED");
+            const reducedIssue = drainageIssues.find((issue: IssueLike) => String(issue?.code || "") === "UNDER_COLLECTION_REDUCED");
             console.info("UNDER_COLLECTION_REDUCED_CONTEXT", reducedIssue?.context ?? null);
 
             // Apply a second time to verify deduplication/guardrails.

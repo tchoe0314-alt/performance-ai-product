@@ -121,6 +121,20 @@ type SidebarNavItem = {
   icon: typeof Gauge;
   status: SidebarStatus;
 };
+type ParkingParams = {
+  stallWidth?: number;
+  stallDepth?: number;
+  aisleWidth?: number;
+  adaAisleWidth?: number;
+  adaCount?: number;
+  compactCount?: number;
+  compactWidth?: number;
+  angleDeg?: number;
+  loading?: "single" | "double";
+  autoResizeToFitCount?: boolean;
+  useMixedAngles?: boolean;
+  compactZone?: boolean;
+};
 
 const SQFT_PER_ACRE = 43_560;
 const SITE_WARNING_ACRES = 250;
@@ -876,9 +890,7 @@ const createDemoPlanResponse = (): PlanResponse => ({
 import {
   defaultAssumptions,
   toReadableLabel,
-  joinNatural,
   toArray,
-  readPositiveNumber,
   parsePositiveNumber,
   readMetricValue,
   formatMetric,
@@ -1096,7 +1108,7 @@ function PerformanceAIDashboardView({
   const [demoWorkspaceEnabled, setDemoWorkspaceEnabled] = useState(false);
   const effectiveDemoWorkspaceEnabled = forceDemoWorkspace || routeDemoWorkspaceEnabled || demoWorkspaceEnabled;
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
-  const [chatCollapsed, setChatCollapsed] = useState(false);
+  const [, setChatCollapsed] = useState(false);
   const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>(null);
   const [activeWorkspaceMode, setActiveWorkspaceMode] = useState<WorkspaceMode>("setup");
   const [imageName, setImageName] = useState("");
@@ -1139,12 +1151,9 @@ function PerformanceAIDashboardView({
   const [buildingPlacements, setBuildingPlacements] = useState<BuildingPlacement[]>([]);
   const [placementModeEnabled, setPlacementModeEnabled] = useState(false);
   const [activePlacementId, setActivePlacementId] = useState<string | null>(null);
-  const [placementSuggestions, setPlacementSuggestions] = useState<BuildingPlacement[][]>([]);
-  const [advancedAddOpen, setAdvancedAddOpen] = useState(false);
   const [objectPrompt, setObjectPrompt] = useState("");
   const [systemStatuses, setSystemStatuses] = useState(DEFAULT_SYSTEM_STATUS);
   const [reactiveValidation, setReactiveValidation] = useState<ReactiveValidationState>(EMPTY_REACTIVE_VALIDATION);
-  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
 
   const [assumptions, setAssumptions] =
     useState<Assumption[]>(defaultAssumptions);
@@ -1154,8 +1163,8 @@ function PerformanceAIDashboardView({
   const [uploadedImageApiUrl, setUploadedImageApiUrl] = useState("");
   const [surveyFileName, setSurveyFileName] = useState("");
   const [surveySlopeEstimate, setSurveySlopeEstimate] = useState<SurveySlopeResponse | null>(null);
-  const [surveyPoints, setSurveyPoints] = useState<number[][]>([]);
-  const [surveyDiagnostics, setSurveyDiagnostics] = useState<{
+  const [, setSurveyPoints] = useState<number[][]>([]);
+  const [, setSurveyDiagnostics] = useState<{
     fileType?: string;
     parseSuccess?: boolean;
     pointCount?: number;
@@ -1172,9 +1181,8 @@ function PerformanceAIDashboardView({
   const [detectionScaleFeet, setDetectionScaleFeet] = useState("");
   const [detectionScalePixels, setDetectionScalePixels] = useState("");
   const [detectionScaleFtPerPx, setDetectionScaleFtPerPx] = useState<number | null>(null);
-  const [detectionScaleSource, setDetectionScaleSource] = useState<"mapbox" | "manual" | "approximate">("approximate");
+  const [, setDetectionScaleSource] = useState<"mapbox" | "manual" | "approximate">("approximate");
   const [siteScaleLocked, setSiteScaleLocked] = useState(false);
-  const [showAdvancedCalibration, setShowAdvancedCalibration] = useState(false);
   const [drainageSourceOverride, setDrainageSourceOverride] = useState<"civora" | "user">(
     "civora",
   );
@@ -1319,10 +1327,9 @@ function PerformanceAIDashboardView({
     structures: true,
     lots: false,
   });
-  const [quantityRollupsEnabled, setQuantityRollupsEnabled] = useState(true);
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
   const [previewFullscreenOpen, setPreviewFullscreenOpen] = useState(false);
-  const [activeWorkflowStep, setActiveWorkflowStep] = useState<CivoraWorkflowStep>("Concept");
+  const [, setActiveWorkflowStep] = useState<CivoraWorkflowStep>("Concept");
   const [projectId, setProjectId] = useState("");
   const [currentProject, setCurrentProject] = useState<ProjectRecord | null>(null);
   const [selectedRunId, setSelectedRunId] = useState("");
@@ -1907,7 +1914,6 @@ function PerformanceAIDashboardView({
     }
     return projectId ? currentProjectActiveJob : activeJob;
   }, [activeJob, activeJobId, currentProjectActiveJob, projectId]);
-  const hasDirectRunInFlight = busy && !visibleActiveJob && Boolean(directRunAbortRef.current);
   const visibleActiveJobStale = useMemo(
     () => isLikelyStaleJob(visibleActiveJob, jobClockMs),
     [visibleActiveJob, jobClockMs],
@@ -3065,8 +3071,8 @@ function PerformanceAIDashboardView({
       useMixedAngles: boolean;
       compactZone: boolean;
     } => {
-      const currentMeta = (target.meta as { parkingParams?: any })?.parkingParams ?? {};
-      const nextMeta = (overrides?.meta as { parkingParams?: any })?.parkingParams ?? {};
+      const currentMeta = (target.meta as { parkingParams?: ParkingParams })?.parkingParams ?? {};
+      const nextMeta = (overrides?.meta as { parkingParams?: ParkingParams })?.parkingParams ?? {};
       const loading =
         nextMeta.loading === "single"
           ? "single"
@@ -3553,8 +3559,8 @@ function PerformanceAIDashboardView({
         ...(target.meta ?? {}),
         ...(updates.meta ?? {}),
         parkingParams: {
-          ...(target.meta as { parkingParams?: any })?.parkingParams,
-          ...(updates.meta as { parkingParams?: any })?.parkingParams,
+          ...(target.meta as { parkingParams?: ParkingParams })?.parkingParams,
+          ...(updates.meta as { parkingParams?: ParkingParams })?.parkingParams,
           ...params,
         },
         parkingCapacity: footprint.maxStalls,
@@ -4147,26 +4153,6 @@ function PerformanceAIDashboardView({
     ],
   );
 
-  const handleTogglePlacementMode = useCallback(() => {
-    setPlacementModeEnabled((prev) => {
-      const next = !prev;
-      if (next && !activePlacementId) {
-        const firstUnplaced = buildingPlacements.find((item) => !item.placed);
-        if (firstUnplaced) {
-          setActivePlacementId(firstUnplaced.id);
-        }
-      }
-      if (!next) {
-        setActivePlacementId(null);
-      }
-      if (next) {
-        setPreviewMode("2d");
-        setPreviewInteraction("edit");
-      }
-      return next;
-    });
-  }, [activePlacementId, buildingPlacements]);
-
   const handleSelectPlacementTarget = useCallback((id: string) => {
     const lot = resolveLotBounds();
     if (!lot.w || !lot.h) {
@@ -4247,122 +4233,6 @@ function PerformanceAIDashboardView({
       ids: placed.map((item) => item.id),
     });
   }, [buildingPlacements]);
-
-  const handleAutoPlaceBuildings = useCallback(() => {
-    const lot = resolveLotBounds();
-    if (!lot.w || !lot.h) {
-      setStatusMessage("Set the site width and height before auto-placing objects.");
-      return;
-    }
-    const placed = buildingPlacements.filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y));
-    const unplaced = buildingPlacements.filter((item) => !item.placed);
-    if (!unplaced.length) return;
-
-    const spacing = 20;
-    let cursorX = lot.x + spacing;
-    let cursorY = lot.y + spacing;
-    let rowHeight = 0;
-    const placedRects = placed.map((item) => ({
-      x: item.x ?? 0,
-      y: item.y ?? 0,
-      w: item.w,
-      d: item.d,
-    }));
-
-    const next = buildingPlacements.map((item) => ({ ...item }));
-    const overlaps = (rect: { x: number; y: number; w: number; d: number }) =>
-      placedRects.some(
-        (existing) =>
-          !(
-            rect.x + rect.w + spacing <= existing.x ||
-            existing.x + existing.w + spacing <= rect.x ||
-            rect.y + rect.d + spacing <= existing.y ||
-            existing.y + existing.d + spacing <= rect.y
-          ),
-      );
-
-    for (const item of next) {
-      if (item.placed) continue;
-      let candidate = {
-        x: cursorX,
-        y: cursorY,
-        w: item.w,
-        d: item.d,
-      };
-      let attempts = 0;
-      while (overlaps(candidate) && attempts < 5) {
-        candidate.x += item.w + spacing;
-        attempts += 1;
-      }
-      if (candidate.x + item.w > lot.x + lot.w - spacing) {
-        cursorX = lot.x + spacing;
-        cursorY += rowHeight + spacing;
-        rowHeight = 0;
-        candidate = { x: cursorX, y: cursorY, w: item.w, d: item.d };
-      }
-      item.x = candidate.x;
-      item.y = candidate.y;
-      item.placed = true;
-      placedRects.push({ ...candidate });
-      cursorX += item.w + spacing;
-      rowHeight = Math.max(rowHeight, item.d);
-    }
-
-    setBuildingPlacements(next);
-    setActivePlacementId(null);
-  }, [buildingPlacements, resolveLotBounds]);
-
-  const buildLayoutSuggestions = useCallback(() => {
-    const lot = resolveLotBounds();
-    const movable = buildingPlacements.filter((item) => !(item.locked && item.placed));
-    if (!movable.length) return [];
-
-    const spacing = 24;
-    const makeSuggestion = (strategy: "grid" | "top" | "left") => {
-      let cursorX = lot.x + spacing;
-      let cursorY = lot.y + spacing;
-      let rowHeight = 0;
-      return buildingPlacements.map((item) => {
-        if (item.locked && item.placed) return { ...item };
-        if (strategy === "top") {
-          const next = { ...item, placed: true, x: cursorX, y: lot.y + spacing };
-          cursorX += item.w + spacing;
-          return next;
-        }
-        if (strategy === "left") {
-          const next = { ...item, placed: true, x: lot.x + spacing, y: cursorY };
-          cursorY += item.d + spacing;
-          return next;
-        }
-        const next = { ...item, placed: true, x: cursorX, y: cursorY };
-        cursorX += item.w + spacing;
-        rowHeight = Math.max(rowHeight, item.d);
-        if (cursorX + item.w > lot.x + lot.w - spacing) {
-          cursorX = lot.x + spacing;
-          cursorY += rowHeight + spacing;
-          rowHeight = 0;
-        }
-        return next;
-      });
-    };
-
-    return [makeSuggestion("grid"), makeSuggestion("top"), makeSuggestion("left")];
-  }, [buildingPlacements, resolveLotBounds]);
-
-  const handleSuggestLayouts = useCallback(() => {
-    const suggestions = buildLayoutSuggestions();
-    if (!suggestions.length) return;
-    setPlacementSuggestions(suggestions);
-    setActiveSuggestionIndex(0);
-    setBuildingPlacements(suggestions[0]);
-  }, [buildLayoutSuggestions]);
-
-  const handleNextSuggestion = useCallback(() => {
-    if (!placementSuggestions.length) return;
-    const nextIndex = (activeSuggestionIndex + 1) % placementSuggestions.length;
-    setActiveSuggestionIndex(nextIndex);
-    setBuildingPlacements(placementSuggestions[nextIndex]);
-  }, [activeSuggestionIndex, placementSuggestions]);
 
   useEffect(() => {
     if (buildingPlacements.length > 0) {
@@ -4848,32 +4718,6 @@ function PerformanceAIDashboardView({
       setActivePlanTool("run");
       directRunAbortRef.current = null;
     }
-  };
-
-  const handleRefreshWorkspace = async () => {
-    if (!token) return;
-    const results = await Promise.allSettled([
-      refreshProjects(token),
-      refreshJobs(token, { suppressError: true, force: true }),
-    ]);
-    const projectsFailed = results[0].status === "rejected";
-    const jobsFailed = results[1].status === "rejected";
-    if (!projectsFailed && !jobsFailed) {
-      setStatusMessage("Workspace refreshed.");
-      return;
-    }
-    if (!projectsFailed && jobsFailed) {
-      setStatusMessage("Projects refreshed. Jobs could not be refreshed right now.");
-      return;
-    }
-    if (projectsFailed && !jobsFailed) {
-      const reason = results[0].status === "rejected" ? results[0].reason : null;
-      setStatusMessage(
-        reason instanceof Error ? reason.message : "Project refresh failed.",
-      );
-      return;
-    }
-    setStatusMessage("Workspace refresh failed.");
   };
 
   const runOrchestrator = async (mode: PlanToolMode = "run") => {
@@ -5494,7 +5338,6 @@ function PerformanceAIDashboardView({
   const tryHandleActionIntent = (message: string): boolean => {
     const normalized = message.toLowerCase();
     const tokens = normalized.split(/\s+/);
-    const placed = buildingPlacements.filter((item) => item.placed);
     const allObjects = buildingPlacements;
 
     const findByLabel = (label: string) =>
@@ -7144,7 +6987,7 @@ function PerformanceAIDashboardView({
       const y = item.y ?? 0;
       const isHorizontal = item.w >= item.d;
       if (item.type === "parking") {
-        const params = (item.meta as { parkingParams?: any })?.parkingParams ?? {};
+        const params = (item.meta as { parkingParams?: ParkingParams })?.parkingParams ?? {};
         const stallDepth = Number.isFinite(params.stallDepth) ? Number(params.stallDepth) : 18;
         const aisleWidth = Number.isFinite(params.aisleWidth) ? Number(params.aisleWidth) : 24;
         const angleDeg = Number.isFinite(params.angleDeg) ? Number(params.angleDeg) : 90;
@@ -7379,44 +7222,6 @@ function PerformanceAIDashboardView({
     }
   }, [analysisSelectedIssueId]);
 
-  const applyDetectionScale = useCallback(async () => {
-    const distanceFt = parsePositiveNumber(detectionScaleFeet);
-    const pixelDistance = parsePositiveNumber(detectionScalePixels);
-    if (!distanceFt || !pixelDistance) {
-      setStatusMessage("Provide both known distance and pixel distance to calibrate.");
-      return;
-    }
-    const scale = distanceFt / pixelDistance;
-    setDetectionScaleFtPerPx(scale);
-    setDetectionScaleSource("manual");
-    const currentInput = currentProject?.project_input ?? payloadPreview;
-    const nextSiteInputs: SiteInputs = {
-      ...(currentInput?.meta?.site_inputs ?? {}),
-      detection_scale: {
-        distance_ft: distanceFt,
-        pixel_distance: pixelDistance,
-        scale_ft_per_px: scale,
-        calibrated: true,
-        scale_source: "manual" as const,
-      },
-      site_alignment_locked: siteScaleLocked,
-    };
-    await saveProject({
-      silent: true,
-      projectInputOverride: {
-        ...currentInput,
-        input_mode: "user",
-        strict_mode: false,
-        allow_ai_fill_for_blanks: false,
-        meta: {
-          ...(currentInput?.meta ?? {}),
-          site_inputs: nextSiteInputs,
-        },
-      },
-    });
-    setStatusMessage("Detection scale calibrated.");
-  }, [currentProject, detectionScaleFeet, detectionScalePixels, payloadPreview, saveProject]);
-
   const persistSiteRotation = useCallback(
     async (nextValue: number) => {
       const currentInput = currentProject?.project_input ?? payloadPreview;
@@ -7461,64 +7266,6 @@ function PerformanceAIDashboardView({
       setActivePlacementId(pending.id);
     }
   }, [activePlacementId, buildingPlacements]);
-
-  const estimateSurveySlope = async () => {
-    if (!token || !surveyFileName) return;
-    try {
-      const pointsData = await postJson<SurveyPointsResponse>(
-        "/api/survey/points",
-        { filename: surveyFileName },
-        { token },
-      );
-      const data = await postJson<SurveySlopeResponse>(
-        "/api/survey/estimate-slope",
-        { filename: surveyFileName },
-        { token },
-      );
-      setSurveySlopeEstimate(data);
-      if (data.slope_percent) {
-        setMinSlopePct(String(data.slope_percent.toFixed(2)));
-      }
-      const currentInput = currentProject?.project_input ?? payloadPreview;
-      const nextSiteInputs = {
-        ...(currentInput?.meta?.site_inputs ?? {}),
-        slope_estimate: data,
-        survey_points: Array.isArray(pointsData.points) ? pointsData.points : [],
-        survey_point_count: pointsData.point_count ?? (Array.isArray(pointsData.points) ? pointsData.points.length : 0),
-        survey_point_warnings: pointsData.warnings ?? [],
-        survey_point_columns: pointsData.recognized_columns ?? {},
-        survey_invalid_rows: pointsData.invalid_rows ?? 0,
-      };
-      await saveProject({
-        silent: true,
-        projectInputOverride: {
-          ...currentInput,
-          input_mode: "user",
-          strict_mode: false,
-          allow_ai_fill_for_blanks: false,
-          manual_fields: {
-            ...(currentInput?.manual_fields ?? {}),
-            grading: {
-              ...(currentInput?.manual_fields?.grading ?? {}),
-              min_slope_pct: data.slope_percent ?? currentInput?.manual_fields?.grading?.min_slope_pct,
-            },
-            terrain: data.direction && data.slope_percent
-              ? `Estimated ${data.slope_percent.toFixed(2)}% slope toward ${data.direction}`
-              : currentInput?.manual_fields?.terrain,
-          },
-          meta: {
-            ...(currentInput?.meta ?? {}),
-            site_inputs: nextSiteInputs,
-          },
-        },
-      });
-      setStatusMessage("Slope estimated from survey.");
-    } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : "Slope estimation failed.",
-      );
-    }
-  };
 
   const analyzeMapSnapshot = async () => {
     if (!token || !mapSnapshotPath) return;
@@ -9167,7 +8914,6 @@ function PerformanceAIDashboardView({
     setDetectionScaleFtPerPx(null);
     setDetectionScaleSource("approximate");
     setSiteScaleLocked(false);
-    setShowAdvancedCalibration(false);
     setSiteRotationDeg(0);
     setSiteRotationInput("0");
     setShowSiteBounds(true);
@@ -10178,18 +9924,6 @@ function PerformanceAIDashboardView({
     system_utilities: { title: "Utilities Health", desc: "Review what utility coordination needs before it can be trusted." },
     system_landscape: { title: "Landscape Health", desc: "Review what landscape needs before it can be trusted." },
   };
-  const handleWorkflowStepChange = useCallback((step: CivoraWorkflowStep) => {
-    setActiveWorkflowStep(step);
-    const target: Record<CivoraWorkflowStep, SidePanelKey> = {
-      Concept: "model",
-      Grading: "grading",
-      Drainage: "drainage",
-      Utilities: "utilities",
-      Review: "analysis",
-      Deliverables: "deliverables",
-    };
-    setActiveSidePanel(target[step]);
-  }, []);
   const workspaceModeByPanel: Record<SidePanelKey, WorkspaceMode> = {
     projects: "dashboard",
     dashboard: "dashboard",
@@ -14394,7 +14128,7 @@ function PerformanceAIDashboardView({
                                         <input
                                           type="number"
                                           value={String(
-                                            (item.meta as { parkingParams?: any })?.parkingParams?.stallWidth ??
+                                            (item.meta as { parkingParams?: ParkingParams })?.parkingParams?.stallWidth ??
                                               parkingStallWidth,
                                           )}
                                           onChange={(event) =>
@@ -14402,7 +14136,7 @@ function PerformanceAIDashboardView({
                                               meta: {
                                                 ...(item.meta ?? {}),
                                                 parkingParams: {
-                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  ...(item.meta as { parkingParams?: ParkingParams })?.parkingParams,
                                                   stallWidth:
                                                     parsePositiveNumber(event.target.value) ??
                                                     parsePositiveNumber(parkingStallWidth) ??
@@ -14419,7 +14153,7 @@ function PerformanceAIDashboardView({
                                         <input
                                           type="number"
                                           value={String(
-                                            (item.meta as { parkingParams?: any })?.parkingParams?.stallDepth ??
+                                            (item.meta as { parkingParams?: ParkingParams })?.parkingParams?.stallDepth ??
                                               parkingStallDepth,
                                           )}
                                           onChange={(event) =>
@@ -14427,7 +14161,7 @@ function PerformanceAIDashboardView({
                                               meta: {
                                                 ...(item.meta ?? {}),
                                                 parkingParams: {
-                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  ...(item.meta as { parkingParams?: ParkingParams })?.parkingParams,
                                                   stallDepth:
                                                     parsePositiveNumber(event.target.value) ??
                                                     parsePositiveNumber(parkingStallDepth) ??
@@ -14444,7 +14178,7 @@ function PerformanceAIDashboardView({
                                         <input
                                           type="number"
                                           value={String(
-                                            (item.meta as { parkingParams?: any })?.parkingParams?.aisleWidth ??
+                                            (item.meta as { parkingParams?: ParkingParams })?.parkingParams?.aisleWidth ??
                                               parkingAisleWidth,
                                           )}
                                           onChange={(event) =>
@@ -14452,7 +14186,7 @@ function PerformanceAIDashboardView({
                                               meta: {
                                                 ...(item.meta ?? {}),
                                                 parkingParams: {
-                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  ...(item.meta as { parkingParams?: ParkingParams })?.parkingParams,
                                                   aisleWidth:
                                                     parsePositiveNumber(event.target.value) ??
                                                     parsePositiveNumber(parkingAisleWidth) ??
@@ -14469,7 +14203,7 @@ function PerformanceAIDashboardView({
                                         <input
                                           type="number"
                                           value={String(
-                                            (item.meta as { parkingParams?: any })?.parkingParams?.adaCount ??
+                                            (item.meta as { parkingParams?: ParkingParams })?.parkingParams?.adaCount ??
                                               parkingAdaCount,
                                           )}
                                           onChange={(event) =>
@@ -14477,7 +14211,7 @@ function PerformanceAIDashboardView({
                                               meta: {
                                                 ...(item.meta ?? {}),
                                                 parkingParams: {
-                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  ...(item.meta as { parkingParams?: ParkingParams })?.parkingParams,
                                                   adaCount:
                                                     parsePositiveNumber(event.target.value) ??
                                                     parsePositiveNumber(parkingAdaCount) ??
@@ -14494,7 +14228,7 @@ function PerformanceAIDashboardView({
                                         <input
                                           type="number"
                                           value={String(
-                                            (item.meta as { parkingParams?: any })?.parkingParams?.adaAisleWidth ??
+                                            (item.meta as { parkingParams?: ParkingParams })?.parkingParams?.adaAisleWidth ??
                                               parkingAdaAisleWidth,
                                           )}
                                           onChange={(event) =>
@@ -14502,7 +14236,7 @@ function PerformanceAIDashboardView({
                                               meta: {
                                                 ...(item.meta ?? {}),
                                                 parkingParams: {
-                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  ...(item.meta as { parkingParams?: ParkingParams })?.parkingParams,
                                                   adaAisleWidth:
                                                     parsePositiveNumber(event.target.value) ??
                                                     parsePositiveNumber(parkingAdaAisleWidth) ??
@@ -14519,7 +14253,7 @@ function PerformanceAIDashboardView({
                                         <input
                                           type="number"
                                           value={String(
-                                            (item.meta as { parkingParams?: any })?.parkingParams?.compactCount ??
+                                            (item.meta as { parkingParams?: ParkingParams })?.parkingParams?.compactCount ??
                                               parkingCompactCount,
                                           )}
                                           onChange={(event) =>
@@ -14527,7 +14261,7 @@ function PerformanceAIDashboardView({
                                               meta: {
                                                 ...(item.meta ?? {}),
                                                 parkingParams: {
-                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  ...(item.meta as { parkingParams?: ParkingParams })?.parkingParams,
                                                   compactCount:
                                                     parsePositiveNumber(event.target.value) ??
                                                     parsePositiveNumber(parkingCompactCount) ??
@@ -14544,7 +14278,7 @@ function PerformanceAIDashboardView({
                                         <input
                                           type="number"
                                           value={String(
-                                            (item.meta as { parkingParams?: any })?.parkingParams?.compactWidth ??
+                                            (item.meta as { parkingParams?: ParkingParams })?.parkingParams?.compactWidth ??
                                               parkingCompactWidth,
                                           )}
                                           onChange={(event) =>
@@ -14552,7 +14286,7 @@ function PerformanceAIDashboardView({
                                               meta: {
                                                 ...(item.meta ?? {}),
                                                 parkingParams: {
-                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  ...(item.meta as { parkingParams?: ParkingParams })?.parkingParams,
                                                   compactWidth:
                                                     parsePositiveNumber(event.target.value) ??
                                                     parsePositiveNumber(parkingCompactWidth) ??
@@ -14568,7 +14302,7 @@ function PerformanceAIDashboardView({
                                         Angle
                                         <select
                                           value={String(
-                                            (item.meta as { parkingParams?: any })?.parkingParams?.angleDeg ??
+                                            (item.meta as { parkingParams?: ParkingParams })?.parkingParams?.angleDeg ??
                                               parkingAngle,
                                           )}
                                           onChange={(event) =>
@@ -14576,7 +14310,7 @@ function PerformanceAIDashboardView({
                                               meta: {
                                                 ...(item.meta ?? {}),
                                                 parkingParams: {
-                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  ...(item.meta as { parkingParams?: ParkingParams })?.parkingParams,
                                                   angleDeg: parsePositiveNumber(event.target.value) ?? 90,
                                                 },
                                               },
@@ -14593,7 +14327,7 @@ function PerformanceAIDashboardView({
                                         Loading
                                         <select
                                           value={String(
-                                            (item.meta as { parkingParams?: any })?.parkingParams?.loading ??
+                                            (item.meta as { parkingParams?: ParkingParams })?.parkingParams?.loading ??
                                               parkingLoading,
                                           )}
                                           onChange={(event) =>
@@ -14601,7 +14335,7 @@ function PerformanceAIDashboardView({
                                               meta: {
                                                 ...(item.meta ?? {}),
                                                 parkingParams: {
-                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  ...(item.meta as { parkingParams?: ParkingParams })?.parkingParams,
                                                   loading: event.target.value === "single" ? "single" : "double",
                                                 },
                                               },
@@ -14618,14 +14352,14 @@ function PerformanceAIDashboardView({
                                         <input
                                           type="checkbox"
                                           checked={Boolean(
-                                            (item.meta as { parkingParams?: any })?.parkingParams?.useMixedAngles,
+                                            (item.meta as { parkingParams?: ParkingParams })?.parkingParams?.useMixedAngles,
                                           )}
                                           onChange={(event) =>
                                             handleUpdateBuilding(item.id, {
                                               meta: {
                                                 ...(item.meta ?? {}),
                                                 parkingParams: {
-                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  ...(item.meta as { parkingParams?: ParkingParams })?.parkingParams,
                                                   useMixedAngles: event.target.checked,
                                                 },
                                               },
@@ -14638,14 +14372,14 @@ function PerformanceAIDashboardView({
                                         <input
                                           type="checkbox"
                                           checked={Boolean(
-                                            (item.meta as { parkingParams?: any })?.parkingParams?.compactZone ?? true,
+                                            (item.meta as { parkingParams?: ParkingParams })?.parkingParams?.compactZone ?? true,
                                           )}
                                           onChange={(event) =>
                                             handleUpdateBuilding(item.id, {
                                               meta: {
                                                 ...(item.meta ?? {}),
                                                 parkingParams: {
-                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  ...(item.meta as { parkingParams?: ParkingParams })?.parkingParams,
                                                   compactZone: event.target.checked,
                                                 },
                                               },
@@ -14658,14 +14392,14 @@ function PerformanceAIDashboardView({
                                         <input
                                           type="checkbox"
                                           checked={Boolean(
-                                            (item.meta as { parkingParams?: any })?.parkingParams?.autoResizeToFitCount,
+                                            (item.meta as { parkingParams?: ParkingParams })?.parkingParams?.autoResizeToFitCount,
                                           )}
                                           onChange={(event) =>
                                             handleUpdateBuilding(item.id, {
                                               meta: {
                                                 ...(item.meta ?? {}),
                                                 parkingParams: {
-                                                  ...(item.meta as { parkingParams?: any })?.parkingParams,
+                                                  ...(item.meta as { parkingParams?: ParkingParams })?.parkingParams,
                                                   autoResizeToFitCount: event.target.checked,
                                                 },
                                               },
@@ -14673,7 +14407,7 @@ function PerformanceAIDashboardView({
                                           }
                                         />
                                       </label>
-                                      {!(item.meta as { parkingParams?: any })?.parkingParams?.autoResizeToFitCount &&
+                                      {!(item.meta as { parkingParams?: ParkingParams })?.parkingParams?.autoResizeToFitCount &&
                                       typeof item.stallCount === "number" &&
                                       typeof (item.meta as { parkingCapacity?: number })?.parkingCapacity === "number" &&
                                       item.stallCount >
