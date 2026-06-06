@@ -943,6 +943,14 @@ export type ChatDecisionResponse = {
     intent?: string;
     outcome?: string;
     state_changed?: boolean;
+    selected_action?: string;
+    missing_inputs?: string[];
+    blockers?: string[];
+    ui_navigation_target?: string;
+    requested_ui_mode?: string;
+    requested_preview_mode?: string;
+    requested_preview_quality?: string;
+    requested_site_lock_state?: string;
     required_missing_inputs?: string[];
     action_taken?: string;
     action_blocked_reason?: string;

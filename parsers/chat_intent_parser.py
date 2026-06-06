@@ -2350,6 +2350,111 @@ def _site_setup_geocode_blocker(context: Dict[str, Any], address: str) -> str:
     return ""
 
 
+def _ui_navigation_payload(message: str, context: Dict[str, Any], selected_action_id: str) -> Dict[str, Any]:
+    lowered = _normalized_chat_text(message)
+    payload: Dict[str, Any] = {"selected_action_id": selected_action_id}
+    panel_map = {
+        "setup": ("setup", "site_existing"),
+        "site": ("setup", "site_existing"),
+        "canvas": ("canvas", "model"),
+        "objects": ("canvas", "objects"),
+        "object": ("canvas", "objects"),
+        "generate": ("canvas", "generate"),
+        "systems": ("canvas", "generate"),
+        "layers": ("layers", "layers"),
+        "review": ("review", "reports"),
+        "blockers": ("review", "reports"),
+        "deliver": ("deliver", "deliverables"),
+        "deliverables": ("deliver", "deliverables"),
+        "export": ("deliver", "deliverables"),
+        "data": ("data", "data"),
+        "import": ("data", "import_survey"),
+        "source": ("data", "data"),
+        "sources": ("data", "data"),
+        "settings": ("settings", "settings"),
+    }
+    if selected_action_id == "open_ui_panel":
+        for token, (mode, panel) in panel_map.items():
+            if token in lowered:
+                payload.update({"requested_ui_mode": mode, "ui_navigation_target": panel})
+                break
+    elif selected_action_id == "set_preview_mode":
+        payload.update({"requested_ui_mode": "canvas", "ui_navigation_target": "model"})
+        if "3d" in lowered:
+            payload["requested_preview_mode"] = "3d"
+        elif "2d" in lowered:
+            payload["requested_preview_mode"] = "2d"
+        if "high" in lowered:
+            payload["requested_preview_quality"] = "high"
+        elif "standard" in lowered:
+            payload["requested_preview_quality"] = "standard"
+    elif selected_action_id == "request_site_lock_state":
+        payload.update({"requested_ui_mode": "setup", "ui_navigation_target": "site_existing"})
+        if "unlock" in lowered or "change" in lowered or "redraw" in lowered:
+            payload["requested_site_lock_state"] = "unlock"
+        elif "lock" in lowered:
+            payload["requested_site_lock_state"] = "lock"
+        elif "draw" in lowered:
+            payload["requested_site_lock_state"] = "draw"
+    elif selected_action_id == "request_detect_grading":
+        payload.update({"requested_ui_mode": "data", "ui_navigation_target": "data", "requested_backend_workflow": "grading_detection"})
+    elif selected_action_id == "request_review_export_package":
+        payload.update({"requested_ui_mode": "deliver", "ui_navigation_target": "deliverables", "requested_backend_workflow": "review_export_package"})
+    elif selected_action_id == "unsupported_ui_action":
+        payload.update({"requested_ui_mode": "", "ui_navigation_target": ""})
+    return payload
+
+
+def _ui_action_blocker(selected_action_id: str, payload: Dict[str, Any], context: Dict[str, Any]) -> str:
+    if selected_action_id == "open_ui_panel" and not payload.get("ui_navigation_target"):
+        return "Requested UI panel is not recognized."
+    if selected_action_id == "set_preview_mode" and payload.get("requested_preview_mode") == "3d" and not context.get("has_preview"):
+        return "3D preview needs a generated preview/model before the UI can switch to 3D."
+    if selected_action_id == "request_site_lock_state" and payload.get("requested_site_lock_state") == "lock":
+        if not (_safe_positive_number(context.get("lot_width")) and _safe_positive_number(context.get("lot_height"))):
+            return "Locking the site boundary needs confirmed site dimensions or a drawn boundary."
+    if selected_action_id == "request_detect_grading":
+        text = json.dumps(context, default=str).lower()[:20000]
+        if not any(token in text for token in ["terrain", "survey", "contour", "slope", "geocode", "map"]):
+            return "Detect grading needs terrain, survey, contour, map, or geocode source evidence first."
+    if selected_action_id == "request_review_export_package":
+        if not context.get("has_plan"):
+            return "Review package export needs a planner result or loaded project first."
+        blockers = _context_blockers(context)
+        if blockers:
+            return "Review package export is blocked: " + "; ".join(blockers[:3])
+    if selected_action_id == "unsupported_ui_action":
+        return "That UI action is not safely chat-routable yet."
+    return ""
+
+
+def _ui_action_reply(selected_action_id: str, payload: Dict[str, Any]) -> str:
+    target = str(payload.get("ui_navigation_target") or "").replace("_", " ")
+    if selected_action_id == "open_ui_panel":
+        return f"I’ll open the {target or 'requested'} panel."
+    if selected_action_id == "set_preview_mode":
+        parts = []
+        if payload.get("requested_preview_mode"):
+            parts.append(str(payload["requested_preview_mode"]).upper())
+        if payload.get("requested_preview_quality"):
+            parts.append(str(payload["requested_preview_quality"]).title() + " quality")
+        return "I’ll switch the canvas " + ("to " + " and ".join(parts) if parts else "view") + "."
+    if selected_action_id == "request_site_lock_state":
+        state = str(payload.get("requested_site_lock_state") or "review")
+        if state == "lock":
+            return "I can help lock the site boundary after you confirm the drawn or dimensioned boundary in Setup."
+        if state == "unlock":
+            return "I’ll open Setup so you can unlock or change the site boundary for review."
+        if state == "draw":
+            return "I’ll open Setup/Canvas so you can draw the site boundary."
+        return "I’ll open Setup so you can review the site boundary state."
+    if selected_action_id == "request_detect_grading":
+        return "I’ll open Data/Grading so you can confirm terrain or source evidence before grading detection."
+    if selected_action_id == "request_review_export_package":
+        return "I’ll open Deliver so you can export the engineer-review package. Construction release still requires external licensed engineer approval."
+    return "I can’t route that UI action safely from chat yet."
+
+
 def _looks_like_site_setup(message: str) -> bool:
     lowered = _normalized_chat_text(message)
     if _extract_address_text(message):
@@ -2616,6 +2721,13 @@ def _attach_action_planning_metadata(decision: Dict[str, Any], action_plan: Dict
         "next_best_question": str(action_plan.get("next_best_question") or ""),
     }
     metadata["action_registry"] = list(action_plan.get("action_registry") or [])
+    metadata.setdefault("selected_action", str(action_plan.get("selected_action_id") or ""))
+    metadata.setdefault("missing_inputs", list(action_plan.get("missing_inputs") or []))
+    if "blockers" not in metadata:
+        blockers = [str(item) for item in list(action_plan.get("safety_blockers") or []) if str(item)]
+        if metadata.get("blocker"):
+            blockers.append(str(metadata["blocker"]))
+        metadata["blockers"] = list(dict.fromkeys(blockers))
     updated["response_metadata"] = metadata
     return updated
 
@@ -2970,6 +3082,7 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
     command_intent = _command_family(message)
     if command_intent == "conversation" and planned_intent in {
         "site_setup",
+        "ui_navigation",
         "workspace_state",
         "fix",
         "object_or_layout_command",
@@ -3043,6 +3156,81 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
                 state_changed=False,
                 blocker=blocker,
             ),
+        )
+
+    if command_intent == "ui_navigation":
+        selected_action_id = str(action_plan.get("selected_action_id") or "")
+        ui_payload = _ui_navigation_payload(message, context, selected_action_id)
+        blocker = _ui_action_blocker(selected_action_id, ui_payload, context)
+        if blocker:
+            metadata = _metadata_for_decision(
+                command_intent="ui_navigation",
+                action_taken="blocked_ui_action",
+                action_blocked_reason=blocker,
+                affected_systems=["ui"],
+                next_best_action=(
+                    "Open the relevant panel manually and provide the missing source, selection, or project state."
+                    if not ui_payload.get("ui_navigation_target")
+                    else "Open " + str(ui_payload.get("ui_navigation_target")).replace("_", " ") + " and resolve: " + blocker
+                ),
+                command_payload=ui_payload,
+                outcome="understood_but_blocked",
+                confidence=0.9,
+                state_changed=False,
+                blocker=blocker,
+            )
+            metadata.update(
+                {
+                    "selected_action": selected_action_id,
+                    "missing_inputs": list(action_plan.get("missing_inputs") or []),
+                    "blockers": [blocker],
+                    "ui_navigation_target": ui_payload.get("ui_navigation_target", ""),
+                    "requested_ui_mode": ui_payload.get("requested_ui_mode", ""),
+                }
+            )
+            return _base_decision(
+                intent="conversation",
+                assistant_message=blocker,
+                run_mode="none",
+                design_prompt="",
+                needs_clarification=False,
+                reason="UI action blocked",
+                confidence=0.9,
+                control_overrides=overrides,
+                response_metadata=metadata,
+            )
+        metadata = _metadata_for_decision(
+            command_intent="ui_navigation",
+            action_taken="routed_ui_action",
+            affected_systems=["ui"],
+            next_best_action="Use the opened panel to complete any visual selection or confirmation required.",
+            command_payload=ui_payload,
+            outcome="understood_and_answered",
+            confidence=0.92,
+            state_changed=False,
+        )
+        metadata.update(
+            {
+                "selected_action": selected_action_id,
+                "missing_inputs": list(action_plan.get("missing_inputs") or []),
+                "blockers": [],
+                "ui_navigation_target": ui_payload.get("ui_navigation_target", ""),
+                "requested_ui_mode": ui_payload.get("requested_ui_mode", ""),
+                "requested_preview_mode": ui_payload.get("requested_preview_mode", ""),
+                "requested_preview_quality": ui_payload.get("requested_preview_quality", ""),
+                "requested_site_lock_state": ui_payload.get("requested_site_lock_state", ""),
+            }
+        )
+        return _base_decision(
+            intent="conversation",
+            assistant_message=_ui_action_reply(selected_action_id, ui_payload),
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=False,
+            reason="UI action routed",
+            confidence=0.92,
+            control_overrides=overrides,
+            response_metadata=metadata,
         )
 
     if command_intent == "site_setup":
@@ -3570,6 +3758,7 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
     local_metadata = dict(local.get("response_metadata") or {})
     if str(local_metadata.get("intent") or "") in {
         "site_setup",
+        "ui_navigation",
         "site_update",
         "object_or_layout_command",
         "grading_command",

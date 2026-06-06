@@ -10,6 +10,78 @@ CONFIDENCE_EXECUTION_THRESHOLD = 0.76
 
 ACTION_REGISTRY: List[Dict[str, Any]] = [
     {
+        "action_id": "open_ui_panel",
+        "description": "Open a Civora workspace panel such as Setup, Canvas, Review, Deliver, Data, Layers, or Settings.",
+        "required_inputs": ["target panel or workspace"],
+        "supported_object_types": ["ui_panel", "workspace_mode"],
+        "side_effects": ["opens UI panel when frontend applies metadata"],
+        "blocked_if": ["target panel is not recognized"],
+        "engineer_review_required": False,
+        "intent": "ui_navigation",
+        "patterns": ["open setup", "open canvas", "open review", "open deliver", "open data"],
+        "confidence": 0.93,
+    },
+    {
+        "action_id": "set_preview_mode",
+        "description": "Switch the canvas preview between 2D/3D and Standard/High quality when the UI supports it.",
+        "required_inputs": ["preview mode or quality"],
+        "supported_object_types": ["canvas", "preview"],
+        "side_effects": ["updates frontend preview mode/quality when applied by UI"],
+        "blocked_if": ["3D requested before a preview/model exists"],
+        "engineer_review_required": False,
+        "intent": "ui_navigation",
+        "patterns": ["2d", "3d", "standard", "high quality"],
+        "confidence": 0.9,
+    },
+    {
+        "action_id": "request_site_lock_state",
+        "description": "Guide the user to lock, unlock, draw, or change the site boundary from the Setup/Canvas UI.",
+        "required_inputs": ["site boundary/dimensions for locking", "user confirmation"],
+        "supported_object_types": ["site", "boundary"],
+        "side_effects": [],
+        "blocked_if": ["site boundary is missing", "visual confirmation is required"],
+        "engineer_review_required": True,
+        "intent": "ui_navigation",
+        "patterns": ["lock site", "unlock site", "change site", "draw site"],
+        "confidence": 0.9,
+    },
+    {
+        "action_id": "request_detect_grading",
+        "description": "Route grading detection requests to the data/grading UI or supported grading generation workflow.",
+        "required_inputs": ["terrain/source data or confirmed site context"],
+        "supported_object_types": ["grading", "terrain", "survey", "map"],
+        "side_effects": [],
+        "blocked_if": ["terrain/source data is missing", "UI selection is required"],
+        "engineer_review_required": True,
+        "intent": "ui_navigation",
+        "patterns": ["detect grading", "detect slope", "find contours"],
+        "confidence": 0.89,
+    },
+    {
+        "action_id": "request_review_export_package",
+        "description": "Route review package/export requests to the Deliver panel or report export blockers truthfully.",
+        "required_inputs": ["current planner result", "export gates passing"],
+        "supported_object_types": ["review_package", "report", "dxf", "deliverables"],
+        "side_effects": [],
+        "blocked_if": ["planner result is missing", "export gates are blocked"],
+        "engineer_review_required": True,
+        "intent": "ui_navigation",
+        "patterns": ["export review package", "deliver package", "export report", "download dxf"],
+        "confidence": 0.9,
+    },
+    {
+        "action_id": "unsupported_ui_action",
+        "description": "A UI action was requested but is not safely chat-routable yet.",
+        "required_inputs": ["supported UI action"],
+        "supported_object_types": ["ui_action"],
+        "side_effects": [],
+        "blocked_if": ["unsupported UI action"],
+        "engineer_review_required": False,
+        "intent": "ui_navigation",
+        "patterns": ["unsupported ui action"],
+        "confidence": 0.8,
+    },
+    {
         "action_id": "site_setup",
         "description": "Set draft site dimensions, acreage, or address/location evidence without generating a design.",
         "required_inputs": ["site dimensions, acreage, or address"],
@@ -268,6 +340,18 @@ def _next_question(action_id: str, missing: List[str]) -> str:
 
 def _candidate_actions(text: str) -> List[Dict[str, Any]]:
     candidates: List[Dict[str, Any]] = []
+    if re.search(r"\b(open|show|go to|take me to)\b.*\b(setup|canvas|review|deliver|data|layers|settings|objects|generate)\b", text):
+        candidates.append(_candidate("open_ui_panel", 0.94, ["UI navigation wording"]))
+    if re.search(r"\b(2d|3d|standard|high quality|high-quality|quality)\b", text) and any(token in text for token in ["canvas", "preview", "view", "mode", "quality", "3d", "2d"]):
+        candidates.append(_candidate("set_preview_mode", 0.9, ["preview mode/quality wording"]))
+    if re.search(r"\b(lock|unlock|draw|change|redraw)\b.*\b(site|boundary)\b|\b(site|boundary)\b.*\b(lock|unlock|draw|change|redraw)\b", text):
+        candidates.append(_candidate("request_site_lock_state", 0.9, ["site boundary lock/draw wording"]))
+    if re.search(r"\b(detect|find|derive)\b.*\b(grading|slope|contour|terrain)\b", text):
+        candidates.append(_candidate("request_detect_grading", 0.89, ["grading detection wording"]))
+    if re.search(r"\b(export|deliver|download|prepare)\b.*\b(review package|package|report|dxf|deliverable|deliverables)\b", text):
+        candidates.append(_candidate("request_review_export_package", 0.9, ["review/export package wording"]))
+    if re.search(r"\b(undo|redo|search)\b", text):
+        candidates.append(_candidate("unsupported_ui_action", 0.82, ["unsupported UI action wording"]))
     if re.search(r"\b(?:site|lot|boundary|size)\b.*\b\d+(?:\.\d+)?\s*(?:ft|feet|')?\s*(?:x|by)\s*\d+(?:\.\d+)?\b", text) or "address is" in text or re.search(r"\b\d+(?:\.\d+)?\s*(?:ac|acre|acres)\b.*\bblank site\b", text):
         candidates.append(_candidate("site_setup", 0.94, ["site setup dimensions/address wording"]))
     if any(phrase in text for phrase in ["why is this broken", "why broken", "broken", "not working", "what's wrong", "whats wrong"]):

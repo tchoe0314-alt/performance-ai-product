@@ -4814,6 +4814,29 @@ function PerformanceAIDashboardView({
         (decision.run_mode === "none" && !decision.design_prompt);
 
       if (isChatOnlyDecision) {
+        const chatMetadata = decision.response_metadata ?? {};
+        const uiPanel = chatMetadata.ui_navigation_target;
+        const uiMode = chatMetadata.requested_ui_mode;
+        const validPanels: SidePanelKey[] = [
+          "projects", "dashboard", "model", "site_existing", "import_survey", "objects", "generate", "grading", "drainage", "sanitary", "water", "utilities", "roadway", "landscape", "details", "layers", "analysis", "reports", "quantities", "deliverables", "files", "standards", "libraries", "data", "settings", "chat", "system_grading", "system_storm", "system_sanitary", "system_water", "system_roadway", "system_utilities", "system_landscape",
+        ];
+        const validModes: WorkspaceMode[] = ["dashboard", "setup", "canvas", "layers", "review", "deliver", "data", "settings"];
+        if (uiMode && validModes.includes(uiMode as WorkspaceMode)) {
+          setActiveWorkspaceMode(uiMode as WorkspaceMode);
+        }
+        if (uiPanel && validPanels.includes(uiPanel as SidePanelKey)) {
+          setActiveSidePanel(uiPanel as SidePanelKey);
+        }
+        if (chatMetadata.requested_preview_mode === "2d" || chatMetadata.requested_preview_mode === "3d") {
+          setPreviewMode(chatMetadata.requested_preview_mode);
+        }
+        if (chatMetadata.requested_preview_quality === "standard" || chatMetadata.requested_preview_quality === "high") {
+          setPreviewQuality(chatMetadata.requested_preview_quality);
+        }
+        if (chatMetadata.requested_site_lock_state) {
+          setActiveWorkspaceMode("setup");
+          setActiveSidePanel("site_existing");
+        }
         appendChatMessage(
           "assistant",
           decision.intent === "explain" && !decision.assistant_message

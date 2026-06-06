@@ -821,6 +821,11 @@ class ChatIntentParserTest(unittest.TestCase):
     def test_action_registry_exposes_supported_safe_actions(self):
         registry = build_action_registry()
         action_ids = {action["action_id"] for action in registry}
+        self.assertIn("open_ui_panel", action_ids)
+        self.assertIn("set_preview_mode", action_ids)
+        self.assertIn("request_site_lock_state", action_ids)
+        self.assertIn("request_detect_grading", action_ids)
+        self.assertIn("request_review_export_package", action_ids)
         self.assertIn("revise_drainage", action_ids)
         self.assertIn("classify_geometry_as_parking", action_ids)
         self.assertIn("update_road_geometry", action_ids)
@@ -868,6 +873,86 @@ class ChatIntentParserTest(unittest.TestCase):
         planning = result["response_metadata"]["action_planning"]
         self.assertEqual(result["action_taken"], "unsupported_or_not_understood")
         self.assertTrue(planning["low_confidence"])
+
+    def test_chat_can_open_common_ui_panels(self):
+        cases = [
+            ("open setup", "site_existing", "setup"),
+            ("open canvas", "model", "canvas"),
+            ("open review", "reports", "review"),
+            ("open deliver", "deliverables", "deliver"),
+            ("open data", "data", "data"),
+        ]
+        for message, panel, mode in cases:
+            with self.subTest(message=message):
+                result = _decide(message)
+                metadata = result["response_metadata"]
+                self.assertEqual(result["intent"], "conversation")
+                self.assertEqual(result["run_mode"], "none")
+                self.assertEqual(result["action_taken"], "routed_ui_action")
+                self.assertEqual(metadata["intent"], "ui_navigation")
+                self.assertEqual(metadata["ui_navigation_target"], panel)
+                self.assertEqual(metadata["requested_ui_mode"], mode)
+                self.assertFalse(metadata["state_changed"])
+
+    def test_chat_can_request_canvas_mode_and_quality(self):
+        result = _decide("switch the canvas to 3D high quality", {"has_preview": True})
+        metadata = result["response_metadata"]
+        self.assertEqual(result["action_taken"], "routed_ui_action")
+        self.assertEqual(metadata["ui_navigation_target"], "model")
+        self.assertEqual(metadata["requested_ui_mode"], "canvas")
+        self.assertEqual(metadata["requested_preview_mode"], "3d")
+        self.assertEqual(metadata["requested_preview_quality"], "high")
+
+    def test_chat_blocks_3d_without_preview(self):
+        result = _decide("switch to 3D view", {"has_preview": False})
+        self.assertEqual(result["action_taken"], "blocked_ui_action")
+        self.assertIn("3D preview needs", result["assistant_message"])
+
+    def test_chat_can_request_lock_and_unlock_site(self):
+        lock_result = _decide("lock site boundary", {"lot_width": "500", "lot_height": "800"})
+        lock_meta = lock_result["response_metadata"]
+        self.assertEqual(lock_result["action_taken"], "routed_ui_action")
+        self.assertEqual(lock_meta["ui_navigation_target"], "site_existing")
+        self.assertEqual(lock_meta["requested_site_lock_state"], "lock")
+        unlock_result = _decide("unlock site")
+        unlock_meta = unlock_result["response_metadata"]
+        self.assertEqual(unlock_result["action_taken"], "routed_ui_action")
+        self.assertEqual(unlock_meta["requested_site_lock_state"], "unlock")
+
+    def test_chat_blocks_lock_site_without_boundary(self):
+        result = _decide("lock site boundary")
+        self.assertEqual(result["action_taken"], "blocked_ui_action")
+        self.assertIn("needs confirmed site dimensions", result["assistant_message"])
+
+    def test_detect_grading_blocks_without_source_evidence(self):
+        result = _decide("detect grading")
+        self.assertEqual(result["action_taken"], "blocked_ui_action")
+        self.assertIn("Detect grading needs terrain", result["assistant_message"])
+
+    def test_detect_grading_routes_when_source_evidence_exists(self):
+        result = _decide("detect grading", {"current_project": {"project_input": {"meta": {"site_inputs": {"geocode": {"lat": 41.1, "lng": -96.1}}}}}})
+        metadata = result["response_metadata"]
+        self.assertEqual(result["action_taken"], "routed_ui_action")
+        self.assertEqual(metadata["ui_navigation_target"], "data")
+        self.assertEqual(metadata["requested_ui_mode"], "data")
+
+    def test_export_review_package_blocks_without_plan(self):
+        result = _decide("export review package")
+        self.assertEqual(result["action_taken"], "blocked_ui_action")
+        self.assertIn("needs a planner result", result["assistant_message"])
+
+    def test_export_review_package_routes_when_available(self):
+        result = _decide("export review package", {"has_plan": True})
+        metadata = result["response_metadata"]
+        self.assertEqual(result["action_taken"], "routed_ui_action")
+        self.assertEqual(metadata["ui_navigation_target"], "deliverables")
+        self.assertEqual(metadata["requested_ui_mode"], "deliver")
+        self.assertIn("engineer-review package", result["assistant_message"])
+
+    def test_unsupported_ui_action_blocks_clearly(self):
+        result = _decide("undo the last canvas action")
+        self.assertEqual(result["action_taken"], "blocked_ui_action")
+        self.assertIn("not safely chat-routable", result["assistant_message"])
 
     def test_generate_drainage_asks_for_outfall_without_target(self):
         result = _decide("generate drainage", {"has_plan": True, "lot_width": "500", "lot_height": "400"})
