@@ -84,14 +84,30 @@ class ApiReleaseSafetyTest(unittest.TestCase):
         self.assertIsNone(response.headers.get("access-control-allow-origin"))
 
     def test_local_pilot_cors_origins_require_explicit_flag(self) -> None:
-        with patch.dict(os.environ, {"CIVORA_ALLOW_LOCAL_PILOT_CORS": ""}, clear=False):
+        with patch.dict(os.environ, {"CORS_ALLOW_ORIGINS": "", "CIVORA_ALLOW_LOCAL_PILOT_CORS": ""}, clear=False):
             self.assertNotIn("http://localhost:3000", _cors_allow_origins())
 
-        with patch.dict(os.environ, {"CIVORA_ALLOW_LOCAL_PILOT_CORS": "true"}, clear=False):
+        with patch.dict(os.environ, {"CORS_ALLOW_ORIGINS": "", "CIVORA_ALLOW_LOCAL_PILOT_CORS": "true"}, clear=False):
             origins = _cors_allow_origins()
 
         self.assertIn("http://localhost:3000", origins)
         self.assertIn("http://127.0.0.1:3000", origins)
+
+    def test_local_pilot_cors_can_be_limited_to_explicit_origin(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "CORS_ALLOW_ORIGINS": "",
+                "CIVORA_ALLOW_LOCAL_PILOT_CORS": "true",
+                "CIVORA_LOCAL_PILOT_CORS_ORIGINS": "http://localhost:4173",
+            },
+            clear=False,
+        ):
+            origins = _cors_allow_origins()
+
+        self.assertIn("https://civoraai.com", origins)
+        self.assertIn("http://localhost:4173", origins)
+        self.assertNotIn("http://localhost:3000", origins)
 
     def test_geocode_returns_ready_response_for_provider_success(self) -> None:
         testcase = self
