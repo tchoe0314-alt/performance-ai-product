@@ -10545,7 +10545,7 @@ function PerformanceAIDashboardView({
                 View all issues
               </button>
               <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                Engineer review required | Construction blocked until external approval
+                Engineer review required | construction_blocked until external engineer review
               </p>
             </div>
             <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">

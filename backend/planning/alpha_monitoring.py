@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from copy import deepcopy
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from .common import readiness_issue_explanations, safe_dict, safe_float, safe_int, safe_list, safe_str
@@ -43,6 +44,86 @@ def _blocker(field: str, reason: str, *, value: Any = None, limit: Any = None) -
     return rec
 
 
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _queue_count(queue: Dict[str, Any], key: str, fallback_key: str = "") -> int | None:
+    if key in queue:
+        return safe_int(queue.get(key), 0)
+    if fallback_key and fallback_key in queue:
+        return safe_int(queue.get(fallback_key), 0)
+    counts = safe_dict(queue.get("counts"))
+    if fallback_key and fallback_key in counts:
+        return safe_int(counts.get(fallback_key), 0)
+    return None
+
+
+def build_job_queue_monitoring_evidence(
+    job_queue: Dict[str, Any] | None = None,
+    *,
+    monitoring_source: str = "",
+    last_check_at: str = "",
+) -> Dict[str, Any]:
+    queue = safe_dict(job_queue)
+    monitoring = safe_dict(queue.get("monitoring")) or queue
+    monitored_job_types = [
+        safe_str(item)
+        for item in safe_list(
+            queue.get("registered_handlers")
+            or queue.get("monitored_job_types")
+            or monitoring.get("monitored_job_types")
+        )
+        if safe_str(item)
+    ]
+    pending_count = _queue_count(monitoring, "pending_count", "queued")
+    if pending_count is None:
+        pending_count = _queue_count(monitoring, "queued_count")
+    failed_count = _queue_count(monitoring, "failed_count", "failed")
+    if failed_count is None:
+        failed_count = _queue_count(monitoring, "failed_recent_count")
+    timeout_count = _queue_count(monitoring, "timeout_count", "stale_job_count")
+    queue_system_present = bool(queue or monitoring)
+    source = safe_str(monitoring_source or queue.get("monitoring_source") or monitoring.get("monitoring_source"))
+    if not source:
+        source = "runtime_monitoring.job_queue" if queue_system_present else "missing"
+    status = safe_str(monitoring.get("status"), "missing" if not queue_system_present else "healthy").lower()
+    blockers: List[Dict[str, Any]] = []
+    if not queue_system_present:
+        blockers.append(_blocker("job_queue", "Alpha monitoring needs queue monitoring evidence."))
+    if queue_system_present and status not in {"healthy", "ok"}:
+        blockers.append(_blocker("job_queue_status", "Job queue monitoring is not healthy.", value=status))
+    if queue_system_present and not monitored_job_types:
+        blockers.append(_blocker("monitored_job_types", "Job queue monitoring needs explicit monitored job types."))
+    if pending_count is None:
+        blockers.append(_blocker("pending_count", "Job queue monitoring needs pending job count evidence."))
+    if failed_count is None:
+        blockers.append(_blocker("failed_count", "Job queue monitoring needs failed job count evidence."))
+    if timeout_count is None:
+        blockers.append(_blocker("timeout_count", "Job queue monitoring needs timeout or stale job count evidence."))
+
+    live_runtime = bool(queue.get("registered_handlers") or queue.get("alive_workers") is not None)
+    confidence = "missing"
+    if queue_system_present:
+        confidence = "live_runtime" if live_runtime else "runtime_snapshot"
+    alpha_ready = bool(queue_system_present and not blockers)
+    return {
+        "version": "job_queue_monitoring_evidence_v1",
+        "queue_system_present": queue_system_present,
+        "monitored_job_types": monitored_job_types,
+        "pending_count": pending_count,
+        "failed_count": failed_count,
+        "timeout_count": timeout_count,
+        "last_check_at": safe_str(last_check_at) or _utc_now(),
+        "monitoring_source": source,
+        "confidence": confidence,
+        "status": "ready" if alpha_ready else "blocked",
+        "blockers": blockers,
+        "alpha_ready": alpha_ready,
+        "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
+    }
+
+
 def build_alpha_monitoring_report(
     runtime_monitoring: Dict[str, Any] | None = None,
     *,
@@ -66,11 +147,13 @@ def build_alpha_monitoring_report(
         blockers.append(_blocker("peak_rss_mb", "Peak memory exceeds the alpha threshold.", value=peak, limit=limits["max_peak_rss_mb"]))
 
     queue = safe_dict(runtime.get("job_queue"))
+    queue_evidence = safe_dict(runtime.get("job_queue_monitoring_evidence"))
+    if not queue_evidence:
+        queue_evidence = build_job_queue_monitoring_evidence(queue)
+    blockers.extend([safe_dict(item) for item in safe_list(queue_evidence.get("blockers")) if safe_dict(item)])
     if queue:
-        if safe_str(queue.get("status"), "healthy").lower() not in {"healthy", "ok"}:
-            blockers.append(_blocker("job_queue_status", "Job queue monitoring is not healthy.", value=queue.get("status")))
-        failed_recent = safe_int(queue.get("failed_recent_count"), 0)
-        stale_count = safe_int(queue.get("stale_job_count"), 0)
+        failed_recent = safe_int(queue.get("failed_recent_count"), safe_int(queue_evidence.get("failed_count"), 0))
+        stale_count = safe_int(queue.get("stale_job_count"), safe_int(queue_evidence.get("timeout_count"), 0))
         oldest_age = safe_float(queue.get("oldest_active_age_sec"), 0.0)
         if failed_recent > limits["max_failed_recent_count"]:
             blockers.append(_blocker("failed_recent_count", "Recent failed jobs exceed the alpha threshold.", value=failed_recent, limit=limits["max_failed_recent_count"]))
@@ -78,8 +161,6 @@ def build_alpha_monitoring_report(
             blockers.append(_blocker("stale_job_count", "Stale/timed-out jobs exceed the alpha threshold.", value=stale_count, limit=limits["max_stale_job_count"]))
         if oldest_age > limits["max_oldest_active_age_sec"]:
             blockers.append(_blocker("oldest_active_age_sec", "Oldest active job age exceeds the alpha threshold.", value=oldest_age, limit=limits["max_oldest_active_age_sec"]))
-    else:
-        blockers.append(_blocker("job_queue", "Alpha monitoring needs queue monitoring evidence."))
 
     process = safe_dict(runtime.get("process"))
     if process:
@@ -99,6 +180,7 @@ def build_alpha_monitoring_report(
         "success": report_status == "ready",
         "thresholds": limits,
         "runtime_monitoring": deepcopy(runtime),
+        "job_queue_monitoring_evidence": deepcopy(queue_evidence),
         "blockers": blockers,
         "blocker_details": readiness_issue_explanations(blockers),
         "warnings": warnings,
@@ -106,4 +188,4 @@ def build_alpha_monitoring_report(
     }
 
 
-__all__ = ["build_alpha_monitoring_report"]
+__all__ = ["build_alpha_monitoring_report", "build_job_queue_monitoring_evidence"]

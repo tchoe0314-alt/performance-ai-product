@@ -62,7 +62,14 @@ class ApplicationAuthHealthWorkflowsTest(unittest.TestCase):
                 "status": "healthy",
                 "rss_mb": 128.0,
                 "peak_rss_mb": 180.0,
-                "job_queue": {"status": "healthy", "failed_recent_count": 0, "stale_job_count": 0, "oldest_active_age_sec": 0.0},
+                "job_queue": {
+                    "status": "healthy",
+                    "monitored_job_types": ["orchestrate", "drainage_only"],
+                    "queued_count": 0,
+                    "failed_recent_count": 0,
+                    "stale_job_count": 0,
+                    "oldest_active_age_sec": 0.0,
+                },
                 "process": {"status": "healthy", "recent_start_count": 1},
             },
             release_guard={"construction_release_enabled": False, "construction_release_blocked": True},
@@ -95,7 +102,15 @@ class ApplicationAuthHealthWorkflowsTest(unittest.TestCase):
                 record_process_start(state_dir=tmpdir, start_time=1010.0, instance_id="two")
                 process = record_process_start(state_dir=tmpdir, start_time=1020.0, instance_id="three")
                 combined = runtime_monitoring_snapshot(
-                    job_queue={"monitoring": {"status": "healthy"}},
+                    job_queue={
+                        "registered_handlers": ["orchestrate"],
+                        "monitoring": {
+                            "status": "healthy",
+                            "queued_count": 0,
+                            "failed_recent_count": 0,
+                            "stale_job_count": 0,
+                        },
+                    },
                     process=process,
                 )
 

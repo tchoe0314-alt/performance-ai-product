@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict
 
+from backend.planning.alpha_monitoring import build_job_queue_monitoring_evidence
+
 
 LOGGER = logging.getLogger("uvicorn.error")
 
@@ -239,6 +241,16 @@ def runtime_monitoring_snapshot(
 
     queue = dict(job_queue or {})
     queue_monitoring = dict(queue.get("monitoring") or {})
+    if queue_monitoring and queue.get("registered_handlers"):
+        queue_monitoring["monitored_job_types"] = [
+            str(item)
+            for item in queue.get("registered_handlers", [])
+            if str(item)
+        ]
+    queue_evidence = build_job_queue_monitoring_evidence(
+        queue,
+        monitoring_source="runtime_monitoring_snapshot.job_queue",
+    )
     if str(queue_monitoring.get("status") or "").lower() in {"warning", "critical", "degraded"}:
         status = _merge_monitoring_status(status, str(queue_monitoring.get("status")))
         warnings.append("job_queue_monitoring_not_healthy")
@@ -256,6 +268,7 @@ def runtime_monitoring_snapshot(
         "memory_critical_mb": critical_mb,
         "warnings": warnings,
         "job_queue": queue_monitoring,
+        "job_queue_monitoring_evidence": queue_evidence,
         "process": process_monitoring,
         "truth_label": "Runtime monitoring reports operational risk only; it does not prove construction readiness.",
     }

@@ -2,14 +2,66 @@
   "alpha_smoke_soak_report": {
     "aggregate_runtime_monitoring": {
       "job_queue": {},
-      "peak_rss_mb": 25.3,
+      "job_queue_monitoring_evidence": {
+        "alpha_ready": false,
+        "blockers": [
+          {
+            "area": "monitoring",
+            "field": "job_queue",
+            "message": "Alpha monitoring needs queue monitoring evidence.",
+            "reason": "Alpha monitoring needs queue monitoring evidence.",
+            "severity": "blocker",
+            "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+            "why_needed": "Alpha monitoring needs queue monitoring evidence."
+          },
+          {
+            "area": "monitoring",
+            "field": "pending_count",
+            "message": "Job queue monitoring needs pending job count evidence.",
+            "reason": "Job queue monitoring needs pending job count evidence.",
+            "severity": "blocker",
+            "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+            "why_needed": "Job queue monitoring needs pending job count evidence."
+          },
+          {
+            "area": "monitoring",
+            "field": "failed_count",
+            "message": "Job queue monitoring needs failed job count evidence.",
+            "reason": "Job queue monitoring needs failed job count evidence.",
+            "severity": "blocker",
+            "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+            "why_needed": "Job queue monitoring needs failed job count evidence."
+          },
+          {
+            "area": "monitoring",
+            "field": "timeout_count",
+            "message": "Job queue monitoring needs timeout or stale job count evidence.",
+            "reason": "Job queue monitoring needs timeout or stale job count evidence.",
+            "severity": "blocker",
+            "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+            "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
+          }
+        ],
+        "confidence": "missing",
+        "failed_count": null,
+        "last_check_at": "2026-06-06T03:51:42Z",
+        "monitored_job_types": [],
+        "monitoring_source": "alpha_smoke_soak.aggregate_runtime",
+        "pending_count": null,
+        "queue_system_present": false,
+        "status": "blocked",
+        "timeout_count": null,
+        "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
+        "version": "job_queue_monitoring_evidence_v1"
+      },
+      "peak_rss_mb": 25.4,
       "process": {
         "previous_shutdown_clean": true,
         "recent_start_count": 0,
         "sample_count": 3,
         "status": "healthy"
       },
-      "rss_mb": 25.3,
+      "rss_mb": 25.4,
       "status": "healthy",
       "truth_label": "Aggregated alpha smoke/soak runtime sample. Missing queue or process evidence keeps alpha monitoring blocked.",
       "warnings": []
@@ -28,6 +80,45 @@
           "severity": "blocker",
           "what_failed": "Alpha monitoring needs queue monitoring evidence.",
           "why_it_matters": "Alpha monitoring needs queue monitoring evidence."
+        },
+        {
+          "area": "monitoring",
+          "code": "monitoring_pending_count",
+          "engineer_review_required": true,
+          "field": "pending_count",
+          "missing_data": [
+            "pending count"
+          ],
+          "next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+          "severity": "blocker",
+          "what_failed": "Job queue monitoring needs pending job count evidence.",
+          "why_it_matters": "Job queue monitoring needs pending job count evidence."
+        },
+        {
+          "area": "monitoring",
+          "code": "monitoring_failed_count",
+          "engineer_review_required": true,
+          "field": "failed_count",
+          "missing_data": [
+            "failed count"
+          ],
+          "next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+          "severity": "blocker",
+          "what_failed": "Job queue monitoring needs failed job count evidence.",
+          "why_it_matters": "Job queue monitoring needs failed job count evidence."
+        },
+        {
+          "area": "monitoring",
+          "code": "monitoring_timeout_count",
+          "engineer_review_required": true,
+          "field": "timeout_count",
+          "missing_data": [
+            "timeout count"
+          ],
+          "next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+          "severity": "blocker",
+          "what_failed": "Job queue monitoring needs timeout or stale job count evidence.",
+          "why_it_matters": "Job queue monitoring needs timeout or stale job count evidence."
         }
       ],
       "blockers": [
@@ -39,19 +130,150 @@
           "severity": "blocker",
           "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
           "why_needed": "Alpha monitoring needs queue monitoring evidence."
+        },
+        {
+          "area": "monitoring",
+          "field": "pending_count",
+          "message": "Job queue monitoring needs pending job count evidence.",
+          "reason": "Job queue monitoring needs pending job count evidence.",
+          "severity": "blocker",
+          "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+          "why_needed": "Job queue monitoring needs pending job count evidence."
+        },
+        {
+          "area": "monitoring",
+          "field": "failed_count",
+          "message": "Job queue monitoring needs failed job count evidence.",
+          "reason": "Job queue monitoring needs failed job count evidence.",
+          "severity": "blocker",
+          "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+          "why_needed": "Job queue monitoring needs failed job count evidence."
+        },
+        {
+          "area": "monitoring",
+          "field": "timeout_count",
+          "message": "Job queue monitoring needs timeout or stale job count evidence.",
+          "reason": "Job queue monitoring needs timeout or stale job count evidence.",
+          "severity": "blocker",
+          "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+          "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
         }
       ],
+      "job_queue_monitoring_evidence": {
+        "alpha_ready": false,
+        "blockers": [
+          {
+            "area": "monitoring",
+            "field": "job_queue",
+            "message": "Alpha monitoring needs queue monitoring evidence.",
+            "reason": "Alpha monitoring needs queue monitoring evidence.",
+            "severity": "blocker",
+            "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+            "why_needed": "Alpha monitoring needs queue monitoring evidence."
+          },
+          {
+            "area": "monitoring",
+            "field": "pending_count",
+            "message": "Job queue monitoring needs pending job count evidence.",
+            "reason": "Job queue monitoring needs pending job count evidence.",
+            "severity": "blocker",
+            "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+            "why_needed": "Job queue monitoring needs pending job count evidence."
+          },
+          {
+            "area": "monitoring",
+            "field": "failed_count",
+            "message": "Job queue monitoring needs failed job count evidence.",
+            "reason": "Job queue monitoring needs failed job count evidence.",
+            "severity": "blocker",
+            "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+            "why_needed": "Job queue monitoring needs failed job count evidence."
+          },
+          {
+            "area": "monitoring",
+            "field": "timeout_count",
+            "message": "Job queue monitoring needs timeout or stale job count evidence.",
+            "reason": "Job queue monitoring needs timeout or stale job count evidence.",
+            "severity": "blocker",
+            "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+            "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
+          }
+        ],
+        "confidence": "missing",
+        "failed_count": null,
+        "last_check_at": "2026-06-06T03:51:42Z",
+        "monitored_job_types": [],
+        "monitoring_source": "alpha_smoke_soak.aggregate_runtime",
+        "pending_count": null,
+        "queue_system_present": false,
+        "status": "blocked",
+        "timeout_count": null,
+        "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
+        "version": "job_queue_monitoring_evidence_v1"
+      },
       "readiness": "blocked",
       "runtime_monitoring": {
         "job_queue": {},
-        "peak_rss_mb": 25.3,
+        "job_queue_monitoring_evidence": {
+          "alpha_ready": false,
+          "blockers": [
+            {
+              "area": "monitoring",
+              "field": "job_queue",
+              "message": "Alpha monitoring needs queue monitoring evidence.",
+              "reason": "Alpha monitoring needs queue monitoring evidence.",
+              "severity": "blocker",
+              "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+              "why_needed": "Alpha monitoring needs queue monitoring evidence."
+            },
+            {
+              "area": "monitoring",
+              "field": "pending_count",
+              "message": "Job queue monitoring needs pending job count evidence.",
+              "reason": "Job queue monitoring needs pending job count evidence.",
+              "severity": "blocker",
+              "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+              "why_needed": "Job queue monitoring needs pending job count evidence."
+            },
+            {
+              "area": "monitoring",
+              "field": "failed_count",
+              "message": "Job queue monitoring needs failed job count evidence.",
+              "reason": "Job queue monitoring needs failed job count evidence.",
+              "severity": "blocker",
+              "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+              "why_needed": "Job queue monitoring needs failed job count evidence."
+            },
+            {
+              "area": "monitoring",
+              "field": "timeout_count",
+              "message": "Job queue monitoring needs timeout or stale job count evidence.",
+              "reason": "Job queue monitoring needs timeout or stale job count evidence.",
+              "severity": "blocker",
+              "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+              "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
+            }
+          ],
+          "confidence": "missing",
+          "failed_count": null,
+          "last_check_at": "2026-06-06T03:51:42Z",
+          "monitored_job_types": [],
+          "monitoring_source": "alpha_smoke_soak.aggregate_runtime",
+          "pending_count": null,
+          "queue_system_present": false,
+          "status": "blocked",
+          "timeout_count": null,
+          "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
+          "version": "job_queue_monitoring_evidence_v1"
+        },
+        "peak_rss_mb": 25.4,
         "process": {
           "previous_shutdown_clean": true,
           "recent_start_count": 0,
           "sample_count": 3,
           "status": "healthy"
         },
-        "rss_mb": 25.3,
+        "rss_mb": 25.4,
         "status": "healthy",
         "truth_label": "Aggregated alpha smoke/soak runtime sample. Missing queue or process evidence keeps alpha monitoring blocked.",
         "warnings": []
@@ -70,7 +292,7 @@
       "version": "alpha_monitoring_report_v1",
       "warnings": []
     },
-    "duration_seconds": 0.0,
+    "duration_seconds": 0.001,
     "requested_iterations": 3,
     "sample_count": 3,
     "sample_failure_count": 0,
@@ -91,6 +313,45 @@
               "severity": "blocker",
               "what_failed": "Alpha monitoring needs queue monitoring evidence.",
               "why_it_matters": "Alpha monitoring needs queue monitoring evidence."
+            },
+            {
+              "area": "monitoring",
+              "code": "monitoring_pending_count",
+              "engineer_review_required": true,
+              "field": "pending_count",
+              "missing_data": [
+                "pending count"
+              ],
+              "next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+              "severity": "blocker",
+              "what_failed": "Job queue monitoring needs pending job count evidence.",
+              "why_it_matters": "Job queue monitoring needs pending job count evidence."
+            },
+            {
+              "area": "monitoring",
+              "code": "monitoring_failed_count",
+              "engineer_review_required": true,
+              "field": "failed_count",
+              "missing_data": [
+                "failed count"
+              ],
+              "next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+              "severity": "blocker",
+              "what_failed": "Job queue monitoring needs failed job count evidence.",
+              "why_it_matters": "Job queue monitoring needs failed job count evidence."
+            },
+            {
+              "area": "monitoring",
+              "code": "monitoring_timeout_count",
+              "engineer_review_required": true,
+              "field": "timeout_count",
+              "missing_data": [
+                "timeout count"
+              ],
+              "next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+              "severity": "blocker",
+              "what_failed": "Job queue monitoring needs timeout or stale job count evidence.",
+              "why_it_matters": "Job queue monitoring needs timeout or stale job count evidence."
             }
           ],
           "blockers": [
@@ -102,14 +363,145 @@
               "severity": "blocker",
               "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
               "why_needed": "Alpha monitoring needs queue monitoring evidence."
+            },
+            {
+              "area": "monitoring",
+              "field": "pending_count",
+              "message": "Job queue monitoring needs pending job count evidence.",
+              "reason": "Job queue monitoring needs pending job count evidence.",
+              "severity": "blocker",
+              "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+              "why_needed": "Job queue monitoring needs pending job count evidence."
+            },
+            {
+              "area": "monitoring",
+              "field": "failed_count",
+              "message": "Job queue monitoring needs failed job count evidence.",
+              "reason": "Job queue monitoring needs failed job count evidence.",
+              "severity": "blocker",
+              "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+              "why_needed": "Job queue monitoring needs failed job count evidence."
+            },
+            {
+              "area": "monitoring",
+              "field": "timeout_count",
+              "message": "Job queue monitoring needs timeout or stale job count evidence.",
+              "reason": "Job queue monitoring needs timeout or stale job count evidence.",
+              "severity": "blocker",
+              "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+              "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
             }
           ],
+          "job_queue_monitoring_evidence": {
+            "alpha_ready": false,
+            "blockers": [
+              {
+                "area": "monitoring",
+                "field": "job_queue",
+                "message": "Alpha monitoring needs queue monitoring evidence.",
+                "reason": "Alpha monitoring needs queue monitoring evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Alpha monitoring needs queue monitoring evidence."
+              },
+              {
+                "area": "monitoring",
+                "field": "pending_count",
+                "message": "Job queue monitoring needs pending job count evidence.",
+                "reason": "Job queue monitoring needs pending job count evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Job queue monitoring needs pending job count evidence."
+              },
+              {
+                "area": "monitoring",
+                "field": "failed_count",
+                "message": "Job queue monitoring needs failed job count evidence.",
+                "reason": "Job queue monitoring needs failed job count evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Job queue monitoring needs failed job count evidence."
+              },
+              {
+                "area": "monitoring",
+                "field": "timeout_count",
+                "message": "Job queue monitoring needs timeout or stale job count evidence.",
+                "reason": "Job queue monitoring needs timeout or stale job count evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
+              }
+            ],
+            "confidence": "missing",
+            "failed_count": null,
+            "last_check_at": "2026-06-06T03:51:42Z",
+            "monitored_job_types": [],
+            "monitoring_source": "runtime_monitoring_snapshot.job_queue",
+            "pending_count": null,
+            "queue_system_present": false,
+            "status": "blocked",
+            "timeout_count": null,
+            "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
+            "version": "job_queue_monitoring_evidence_v1"
+          },
           "readiness": "blocked",
           "runtime_monitoring": {
             "job_queue": {},
+            "job_queue_monitoring_evidence": {
+              "alpha_ready": false,
+              "blockers": [
+                {
+                  "area": "monitoring",
+                  "field": "job_queue",
+                  "message": "Alpha monitoring needs queue monitoring evidence.",
+                  "reason": "Alpha monitoring needs queue monitoring evidence.",
+                  "severity": "blocker",
+                  "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                  "why_needed": "Alpha monitoring needs queue monitoring evidence."
+                },
+                {
+                  "area": "monitoring",
+                  "field": "pending_count",
+                  "message": "Job queue monitoring needs pending job count evidence.",
+                  "reason": "Job queue monitoring needs pending job count evidence.",
+                  "severity": "blocker",
+                  "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                  "why_needed": "Job queue monitoring needs pending job count evidence."
+                },
+                {
+                  "area": "monitoring",
+                  "field": "failed_count",
+                  "message": "Job queue monitoring needs failed job count evidence.",
+                  "reason": "Job queue monitoring needs failed job count evidence.",
+                  "severity": "blocker",
+                  "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                  "why_needed": "Job queue monitoring needs failed job count evidence."
+                },
+                {
+                  "area": "monitoring",
+                  "field": "timeout_count",
+                  "message": "Job queue monitoring needs timeout or stale job count evidence.",
+                  "reason": "Job queue monitoring needs timeout or stale job count evidence.",
+                  "severity": "blocker",
+                  "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                  "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
+                }
+              ],
+              "confidence": "missing",
+              "failed_count": null,
+              "last_check_at": "2026-06-06T03:51:42Z",
+              "monitored_job_types": [],
+              "monitoring_source": "runtime_monitoring_snapshot.job_queue",
+              "pending_count": null,
+              "queue_system_present": false,
+              "status": "blocked",
+              "timeout_count": null,
+              "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
+              "version": "job_queue_monitoring_evidence_v1"
+            },
             "memory_critical_mb": 1024.0,
             "memory_warn_mb": 512.0,
-            "peak_rss_mb": 25.3,
+            "peak_rss_mb": 25.4,
             "process": {
               "instance_id": "",
               "last_shutdown_at": null,
@@ -125,7 +517,7 @@
               "uptime_seconds": 0.0,
               "warnings": []
             },
-            "rss_mb": 25.3,
+            "rss_mb": 25.4,
             "status": "healthy",
             "truth_label": "Runtime monitoring reports operational risk only; it does not prove construction readiness.",
             "warnings": []
@@ -146,9 +538,61 @@
         },
         "monitoring": {
           "job_queue": {},
+          "job_queue_monitoring_evidence": {
+            "alpha_ready": false,
+            "blockers": [
+              {
+                "area": "monitoring",
+                "field": "job_queue",
+                "message": "Alpha monitoring needs queue monitoring evidence.",
+                "reason": "Alpha monitoring needs queue monitoring evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Alpha monitoring needs queue monitoring evidence."
+              },
+              {
+                "area": "monitoring",
+                "field": "pending_count",
+                "message": "Job queue monitoring needs pending job count evidence.",
+                "reason": "Job queue monitoring needs pending job count evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Job queue monitoring needs pending job count evidence."
+              },
+              {
+                "area": "monitoring",
+                "field": "failed_count",
+                "message": "Job queue monitoring needs failed job count evidence.",
+                "reason": "Job queue monitoring needs failed job count evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Job queue monitoring needs failed job count evidence."
+              },
+              {
+                "area": "monitoring",
+                "field": "timeout_count",
+                "message": "Job queue monitoring needs timeout or stale job count evidence.",
+                "reason": "Job queue monitoring needs timeout or stale job count evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
+              }
+            ],
+            "confidence": "missing",
+            "failed_count": null,
+            "last_check_at": "2026-06-06T03:51:42Z",
+            "monitored_job_types": [],
+            "monitoring_source": "runtime_monitoring_snapshot.job_queue",
+            "pending_count": null,
+            "queue_system_present": false,
+            "status": "blocked",
+            "timeout_count": null,
+            "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
+            "version": "job_queue_monitoring_evidence_v1"
+          },
           "memory_critical_mb": 1024.0,
           "memory_warn_mb": 512.0,
-          "peak_rss_mb": 25.3,
+          "peak_rss_mb": 25.4,
           "process": {
             "instance_id": "",
             "last_shutdown_at": null,
@@ -164,7 +608,7 @@
             "uptime_seconds": 0.0,
             "warnings": []
           },
-          "rss_mb": 25.3,
+          "rss_mb": 25.4,
           "status": "healthy",
           "truth_label": "Runtime monitoring reports operational risk only; it does not prove construction readiness.",
           "warnings": []
@@ -188,6 +632,45 @@
               "severity": "blocker",
               "what_failed": "Alpha monitoring needs queue monitoring evidence.",
               "why_it_matters": "Alpha monitoring needs queue monitoring evidence."
+            },
+            {
+              "area": "monitoring",
+              "code": "monitoring_pending_count",
+              "engineer_review_required": true,
+              "field": "pending_count",
+              "missing_data": [
+                "pending count"
+              ],
+              "next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+              "severity": "blocker",
+              "what_failed": "Job queue monitoring needs pending job count evidence.",
+              "why_it_matters": "Job queue monitoring needs pending job count evidence."
+            },
+            {
+              "area": "monitoring",
+              "code": "monitoring_failed_count",
+              "engineer_review_required": true,
+              "field": "failed_count",
+              "missing_data": [
+                "failed count"
+              ],
+              "next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+              "severity": "blocker",
+              "what_failed": "Job queue monitoring needs failed job count evidence.",
+              "why_it_matters": "Job queue monitoring needs failed job count evidence."
+            },
+            {
+              "area": "monitoring",
+              "code": "monitoring_timeout_count",
+              "engineer_review_required": true,
+              "field": "timeout_count",
+              "missing_data": [
+                "timeout count"
+              ],
+              "next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+              "severity": "blocker",
+              "what_failed": "Job queue monitoring needs timeout or stale job count evidence.",
+              "why_it_matters": "Job queue monitoring needs timeout or stale job count evidence."
             }
           ],
           "blockers": [
@@ -199,14 +682,145 @@
               "severity": "blocker",
               "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
               "why_needed": "Alpha monitoring needs queue monitoring evidence."
+            },
+            {
+              "area": "monitoring",
+              "field": "pending_count",
+              "message": "Job queue monitoring needs pending job count evidence.",
+              "reason": "Job queue monitoring needs pending job count evidence.",
+              "severity": "blocker",
+              "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+              "why_needed": "Job queue monitoring needs pending job count evidence."
+            },
+            {
+              "area": "monitoring",
+              "field": "failed_count",
+              "message": "Job queue monitoring needs failed job count evidence.",
+              "reason": "Job queue monitoring needs failed job count evidence.",
+              "severity": "blocker",
+              "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+              "why_needed": "Job queue monitoring needs failed job count evidence."
+            },
+            {
+              "area": "monitoring",
+              "field": "timeout_count",
+              "message": "Job queue monitoring needs timeout or stale job count evidence.",
+              "reason": "Job queue monitoring needs timeout or stale job count evidence.",
+              "severity": "blocker",
+              "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+              "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
             }
           ],
+          "job_queue_monitoring_evidence": {
+            "alpha_ready": false,
+            "blockers": [
+              {
+                "area": "monitoring",
+                "field": "job_queue",
+                "message": "Alpha monitoring needs queue monitoring evidence.",
+                "reason": "Alpha monitoring needs queue monitoring evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Alpha monitoring needs queue monitoring evidence."
+              },
+              {
+                "area": "monitoring",
+                "field": "pending_count",
+                "message": "Job queue monitoring needs pending job count evidence.",
+                "reason": "Job queue monitoring needs pending job count evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Job queue monitoring needs pending job count evidence."
+              },
+              {
+                "area": "monitoring",
+                "field": "failed_count",
+                "message": "Job queue monitoring needs failed job count evidence.",
+                "reason": "Job queue monitoring needs failed job count evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Job queue monitoring needs failed job count evidence."
+              },
+              {
+                "area": "monitoring",
+                "field": "timeout_count",
+                "message": "Job queue monitoring needs timeout or stale job count evidence.",
+                "reason": "Job queue monitoring needs timeout or stale job count evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
+              }
+            ],
+            "confidence": "missing",
+            "failed_count": null,
+            "last_check_at": "2026-06-06T03:51:42Z",
+            "monitored_job_types": [],
+            "monitoring_source": "runtime_monitoring_snapshot.job_queue",
+            "pending_count": null,
+            "queue_system_present": false,
+            "status": "blocked",
+            "timeout_count": null,
+            "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
+            "version": "job_queue_monitoring_evidence_v1"
+          },
           "readiness": "blocked",
           "runtime_monitoring": {
             "job_queue": {},
+            "job_queue_monitoring_evidence": {
+              "alpha_ready": false,
+              "blockers": [
+                {
+                  "area": "monitoring",
+                  "field": "job_queue",
+                  "message": "Alpha monitoring needs queue monitoring evidence.",
+                  "reason": "Alpha monitoring needs queue monitoring evidence.",
+                  "severity": "blocker",
+                  "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                  "why_needed": "Alpha monitoring needs queue monitoring evidence."
+                },
+                {
+                  "area": "monitoring",
+                  "field": "pending_count",
+                  "message": "Job queue monitoring needs pending job count evidence.",
+                  "reason": "Job queue monitoring needs pending job count evidence.",
+                  "severity": "blocker",
+                  "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                  "why_needed": "Job queue monitoring needs pending job count evidence."
+                },
+                {
+                  "area": "monitoring",
+                  "field": "failed_count",
+                  "message": "Job queue monitoring needs failed job count evidence.",
+                  "reason": "Job queue monitoring needs failed job count evidence.",
+                  "severity": "blocker",
+                  "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                  "why_needed": "Job queue monitoring needs failed job count evidence."
+                },
+                {
+                  "area": "monitoring",
+                  "field": "timeout_count",
+                  "message": "Job queue monitoring needs timeout or stale job count evidence.",
+                  "reason": "Job queue monitoring needs timeout or stale job count evidence.",
+                  "severity": "blocker",
+                  "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                  "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
+                }
+              ],
+              "confidence": "missing",
+              "failed_count": null,
+              "last_check_at": "2026-06-06T03:51:42Z",
+              "monitored_job_types": [],
+              "monitoring_source": "runtime_monitoring_snapshot.job_queue",
+              "pending_count": null,
+              "queue_system_present": false,
+              "status": "blocked",
+              "timeout_count": null,
+              "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
+              "version": "job_queue_monitoring_evidence_v1"
+            },
             "memory_critical_mb": 1024.0,
             "memory_warn_mb": 512.0,
-            "peak_rss_mb": 25.3,
+            "peak_rss_mb": 25.4,
             "process": {
               "instance_id": "",
               "last_shutdown_at": null,
@@ -222,7 +836,7 @@
               "uptime_seconds": 0.0,
               "warnings": []
             },
-            "rss_mb": 25.3,
+            "rss_mb": 25.4,
             "status": "healthy",
             "truth_label": "Runtime monitoring reports operational risk only; it does not prove construction readiness.",
             "warnings": []
@@ -243,9 +857,61 @@
         },
         "monitoring": {
           "job_queue": {},
+          "job_queue_monitoring_evidence": {
+            "alpha_ready": false,
+            "blockers": [
+              {
+                "area": "monitoring",
+                "field": "job_queue",
+                "message": "Alpha monitoring needs queue monitoring evidence.",
+                "reason": "Alpha monitoring needs queue monitoring evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Alpha monitoring needs queue monitoring evidence."
+              },
+              {
+                "area": "monitoring",
+                "field": "pending_count",
+                "message": "Job queue monitoring needs pending job count evidence.",
+                "reason": "Job queue monitoring needs pending job count evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Job queue monitoring needs pending job count evidence."
+              },
+              {
+                "area": "monitoring",
+                "field": "failed_count",
+                "message": "Job queue monitoring needs failed job count evidence.",
+                "reason": "Job queue monitoring needs failed job count evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Job queue monitoring needs failed job count evidence."
+              },
+              {
+                "area": "monitoring",
+                "field": "timeout_count",
+                "message": "Job queue monitoring needs timeout or stale job count evidence.",
+                "reason": "Job queue monitoring needs timeout or stale job count evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
+              }
+            ],
+            "confidence": "missing",
+            "failed_count": null,
+            "last_check_at": "2026-06-06T03:51:42Z",
+            "monitored_job_types": [],
+            "monitoring_source": "runtime_monitoring_snapshot.job_queue",
+            "pending_count": null,
+            "queue_system_present": false,
+            "status": "blocked",
+            "timeout_count": null,
+            "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
+            "version": "job_queue_monitoring_evidence_v1"
+          },
           "memory_critical_mb": 1024.0,
           "memory_warn_mb": 512.0,
-          "peak_rss_mb": 25.3,
+          "peak_rss_mb": 25.4,
           "process": {
             "instance_id": "",
             "last_shutdown_at": null,
@@ -261,7 +927,7 @@
             "uptime_seconds": 0.0,
             "warnings": []
           },
-          "rss_mb": 25.3,
+          "rss_mb": 25.4,
           "status": "healthy",
           "truth_label": "Runtime monitoring reports operational risk only; it does not prove construction readiness.",
           "warnings": []
@@ -285,6 +951,45 @@
               "severity": "blocker",
               "what_failed": "Alpha monitoring needs queue monitoring evidence.",
               "why_it_matters": "Alpha monitoring needs queue monitoring evidence."
+            },
+            {
+              "area": "monitoring",
+              "code": "monitoring_pending_count",
+              "engineer_review_required": true,
+              "field": "pending_count",
+              "missing_data": [
+                "pending count"
+              ],
+              "next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+              "severity": "blocker",
+              "what_failed": "Job queue monitoring needs pending job count evidence.",
+              "why_it_matters": "Job queue monitoring needs pending job count evidence."
+            },
+            {
+              "area": "monitoring",
+              "code": "monitoring_failed_count",
+              "engineer_review_required": true,
+              "field": "failed_count",
+              "missing_data": [
+                "failed count"
+              ],
+              "next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+              "severity": "blocker",
+              "what_failed": "Job queue monitoring needs failed job count evidence.",
+              "why_it_matters": "Job queue monitoring needs failed job count evidence."
+            },
+            {
+              "area": "monitoring",
+              "code": "monitoring_timeout_count",
+              "engineer_review_required": true,
+              "field": "timeout_count",
+              "missing_data": [
+                "timeout count"
+              ],
+              "next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+              "severity": "blocker",
+              "what_failed": "Job queue monitoring needs timeout or stale job count evidence.",
+              "why_it_matters": "Job queue monitoring needs timeout or stale job count evidence."
             }
           ],
           "blockers": [
@@ -296,14 +1001,145 @@
               "severity": "blocker",
               "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
               "why_needed": "Alpha monitoring needs queue monitoring evidence."
+            },
+            {
+              "area": "monitoring",
+              "field": "pending_count",
+              "message": "Job queue monitoring needs pending job count evidence.",
+              "reason": "Job queue monitoring needs pending job count evidence.",
+              "severity": "blocker",
+              "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+              "why_needed": "Job queue monitoring needs pending job count evidence."
+            },
+            {
+              "area": "monitoring",
+              "field": "failed_count",
+              "message": "Job queue monitoring needs failed job count evidence.",
+              "reason": "Job queue monitoring needs failed job count evidence.",
+              "severity": "blocker",
+              "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+              "why_needed": "Job queue monitoring needs failed job count evidence."
+            },
+            {
+              "area": "monitoring",
+              "field": "timeout_count",
+              "message": "Job queue monitoring needs timeout or stale job count evidence.",
+              "reason": "Job queue monitoring needs timeout or stale job count evidence.",
+              "severity": "blocker",
+              "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+              "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
             }
           ],
+          "job_queue_monitoring_evidence": {
+            "alpha_ready": false,
+            "blockers": [
+              {
+                "area": "monitoring",
+                "field": "job_queue",
+                "message": "Alpha monitoring needs queue monitoring evidence.",
+                "reason": "Alpha monitoring needs queue monitoring evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Alpha monitoring needs queue monitoring evidence."
+              },
+              {
+                "area": "monitoring",
+                "field": "pending_count",
+                "message": "Job queue monitoring needs pending job count evidence.",
+                "reason": "Job queue monitoring needs pending job count evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Job queue monitoring needs pending job count evidence."
+              },
+              {
+                "area": "monitoring",
+                "field": "failed_count",
+                "message": "Job queue monitoring needs failed job count evidence.",
+                "reason": "Job queue monitoring needs failed job count evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Job queue monitoring needs failed job count evidence."
+              },
+              {
+                "area": "monitoring",
+                "field": "timeout_count",
+                "message": "Job queue monitoring needs timeout or stale job count evidence.",
+                "reason": "Job queue monitoring needs timeout or stale job count evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
+              }
+            ],
+            "confidence": "missing",
+            "failed_count": null,
+            "last_check_at": "2026-06-06T03:51:42Z",
+            "monitored_job_types": [],
+            "monitoring_source": "runtime_monitoring_snapshot.job_queue",
+            "pending_count": null,
+            "queue_system_present": false,
+            "status": "blocked",
+            "timeout_count": null,
+            "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
+            "version": "job_queue_monitoring_evidence_v1"
+          },
           "readiness": "blocked",
           "runtime_monitoring": {
             "job_queue": {},
+            "job_queue_monitoring_evidence": {
+              "alpha_ready": false,
+              "blockers": [
+                {
+                  "area": "monitoring",
+                  "field": "job_queue",
+                  "message": "Alpha monitoring needs queue monitoring evidence.",
+                  "reason": "Alpha monitoring needs queue monitoring evidence.",
+                  "severity": "blocker",
+                  "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                  "why_needed": "Alpha monitoring needs queue monitoring evidence."
+                },
+                {
+                  "area": "monitoring",
+                  "field": "pending_count",
+                  "message": "Job queue monitoring needs pending job count evidence.",
+                  "reason": "Job queue monitoring needs pending job count evidence.",
+                  "severity": "blocker",
+                  "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                  "why_needed": "Job queue monitoring needs pending job count evidence."
+                },
+                {
+                  "area": "monitoring",
+                  "field": "failed_count",
+                  "message": "Job queue monitoring needs failed job count evidence.",
+                  "reason": "Job queue monitoring needs failed job count evidence.",
+                  "severity": "blocker",
+                  "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                  "why_needed": "Job queue monitoring needs failed job count evidence."
+                },
+                {
+                  "area": "monitoring",
+                  "field": "timeout_count",
+                  "message": "Job queue monitoring needs timeout or stale job count evidence.",
+                  "reason": "Job queue monitoring needs timeout or stale job count evidence.",
+                  "severity": "blocker",
+                  "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                  "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
+                }
+              ],
+              "confidence": "missing",
+              "failed_count": null,
+              "last_check_at": "2026-06-06T03:51:42Z",
+              "monitored_job_types": [],
+              "monitoring_source": "runtime_monitoring_snapshot.job_queue",
+              "pending_count": null,
+              "queue_system_present": false,
+              "status": "blocked",
+              "timeout_count": null,
+              "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
+              "version": "job_queue_monitoring_evidence_v1"
+            },
             "memory_critical_mb": 1024.0,
             "memory_warn_mb": 512.0,
-            "peak_rss_mb": 25.3,
+            "peak_rss_mb": 25.4,
             "process": {
               "instance_id": "",
               "last_shutdown_at": null,
@@ -316,10 +1152,10 @@
               "state_file": "",
               "status": "healthy",
               "truth_label": "Process monitoring flags crash/restart risk; it must be paired with deploy logs for root cause.",
-              "uptime_seconds": 0.0,
+              "uptime_seconds": 0.001,
               "warnings": []
             },
-            "rss_mb": 25.3,
+            "rss_mb": 25.4,
             "status": "healthy",
             "truth_label": "Runtime monitoring reports operational risk only; it does not prove construction readiness.",
             "warnings": []
@@ -340,9 +1176,61 @@
         },
         "monitoring": {
           "job_queue": {},
+          "job_queue_monitoring_evidence": {
+            "alpha_ready": false,
+            "blockers": [
+              {
+                "area": "monitoring",
+                "field": "job_queue",
+                "message": "Alpha monitoring needs queue monitoring evidence.",
+                "reason": "Alpha monitoring needs queue monitoring evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Alpha monitoring needs queue monitoring evidence."
+              },
+              {
+                "area": "monitoring",
+                "field": "pending_count",
+                "message": "Job queue monitoring needs pending job count evidence.",
+                "reason": "Job queue monitoring needs pending job count evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Job queue monitoring needs pending job count evidence."
+              },
+              {
+                "area": "monitoring",
+                "field": "failed_count",
+                "message": "Job queue monitoring needs failed job count evidence.",
+                "reason": "Job queue monitoring needs failed job count evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Job queue monitoring needs failed job count evidence."
+              },
+              {
+                "area": "monitoring",
+                "field": "timeout_count",
+                "message": "Job queue monitoring needs timeout or stale job count evidence.",
+                "reason": "Job queue monitoring needs timeout or stale job count evidence.",
+                "severity": "blocker",
+                "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+                "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
+              }
+            ],
+            "confidence": "missing",
+            "failed_count": null,
+            "last_check_at": "2026-06-06T03:51:42Z",
+            "monitored_job_types": [],
+            "monitoring_source": "runtime_monitoring_snapshot.job_queue",
+            "pending_count": null,
+            "queue_system_present": false,
+            "status": "blocked",
+            "timeout_count": null,
+            "truth_label": "Job queue monitoring evidence reports operational queue health only; it does not prove engineering or construction readiness.",
+            "version": "job_queue_monitoring_evidence_v1"
+          },
           "memory_critical_mb": 1024.0,
           "memory_warn_mb": 512.0,
-          "peak_rss_mb": 25.3,
+          "peak_rss_mb": 25.4,
           "process": {
             "instance_id": "",
             "last_shutdown_at": null,
@@ -355,10 +1243,10 @@
             "state_file": "",
             "status": "healthy",
             "truth_label": "Process monitoring flags crash/restart risk; it must be paired with deploy logs for root cause.",
-            "uptime_seconds": 0.0,
+            "uptime_seconds": 0.001,
             "warnings": []
           },
-          "rss_mb": 25.3,
+          "rss_mb": 25.4,
           "status": "healthy",
           "truth_label": "Runtime monitoring reports operational risk only; it does not prove construction readiness.",
           "warnings": []
@@ -373,7 +1261,7 @@
     "truth_label": "Alpha smoke/soak reports operational readiness only. It does not make Civora construction-ready.",
     "version": "alpha_smoke_soak_report_v1"
   },
-  "blocker_count": 1,
+  "blocker_count": 4,
   "blocker_details": [
     {
       "area": "monitoring",
@@ -387,6 +1275,45 @@
       "severity": "blocker",
       "what_failed": "Alpha monitoring needs queue monitoring evidence.",
       "why_it_matters": "Alpha monitoring needs queue monitoring evidence."
+    },
+    {
+      "area": "monitoring",
+      "code": "monitoring_pending_count",
+      "engineer_review_required": true,
+      "field": "pending_count",
+      "missing_data": [
+        "pending count"
+      ],
+      "next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+      "severity": "blocker",
+      "what_failed": "Job queue monitoring needs pending job count evidence.",
+      "why_it_matters": "Job queue monitoring needs pending job count evidence."
+    },
+    {
+      "area": "monitoring",
+      "code": "monitoring_failed_count",
+      "engineer_review_required": true,
+      "field": "failed_count",
+      "missing_data": [
+        "failed count"
+      ],
+      "next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+      "severity": "blocker",
+      "what_failed": "Job queue monitoring needs failed job count evidence.",
+      "why_it_matters": "Job queue monitoring needs failed job count evidence."
+    },
+    {
+      "area": "monitoring",
+      "code": "monitoring_timeout_count",
+      "engineer_review_required": true,
+      "field": "timeout_count",
+      "missing_data": [
+        "timeout count"
+      ],
+      "next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+      "severity": "blocker",
+      "what_failed": "Job queue monitoring needs timeout or stale job count evidence.",
+      "why_it_matters": "Job queue monitoring needs timeout or stale job count evidence."
     }
   ],
   "blockers": [
@@ -398,6 +1325,33 @@
       "severity": "blocker",
       "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
       "why_needed": "Alpha monitoring needs queue monitoring evidence."
+    },
+    {
+      "area": "monitoring",
+      "field": "pending_count",
+      "message": "Job queue monitoring needs pending job count evidence.",
+      "reason": "Job queue monitoring needs pending job count evidence.",
+      "severity": "blocker",
+      "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+      "why_needed": "Job queue monitoring needs pending job count evidence."
+    },
+    {
+      "area": "monitoring",
+      "field": "failed_count",
+      "message": "Job queue monitoring needs failed job count evidence.",
+      "reason": "Job queue monitoring needs failed job count evidence.",
+      "severity": "blocker",
+      "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+      "why_needed": "Job queue monitoring needs failed job count evidence."
+    },
+    {
+      "area": "monitoring",
+      "field": "timeout_count",
+      "message": "Job queue monitoring needs timeout or stale job count evidence.",
+      "reason": "Job queue monitoring needs timeout or stale job count evidence.",
+      "severity": "blocker",
+      "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+      "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
     }
   ],
   "construction_ready": false,
@@ -601,21 +1555,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 14382.387
+            "value": 13491.272
           },
           {
             "max": 1024.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 126.078
+            "value": 125.875
           },
           {
             "max": 1536.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 126.078
+            "value": 125.875
           }
         ],
         "load_thresholds": {
@@ -1419,21 +2373,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 9975.008
+            "value": 8847.759
           },
           {
             "max": 1024.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 133.922
+            "value": 165.484
           },
           {
             "max": 1536.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 133.922
+            "value": 165.484
           }
         ],
         "load_thresholds": {
@@ -2404,21 +3358,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 23502.577
+            "value": 21776.333
           },
           {
             "max": 1280.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 270.812
+            "value": 306.469
           },
           {
             "max": 1792.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 270.812
+            "value": 306.469
           }
         ],
         "load_thresholds": {
@@ -3335,21 +4289,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 16598.259
+            "value": 17042.384
           },
           {
             "max": 1024.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 270.812
+            "value": 306.469
           },
           {
             "max": 1536.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 270.812
+            "value": 306.469
           }
         ],
         "load_thresholds": {
@@ -4286,21 +5240,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 13372.371
+            "value": 13415.643
           },
           {
             "max": 1280.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 270.812
+            "value": 306.469
           },
           {
             "max": 1792.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 270.812
+            "value": 306.469
           }
         ],
         "load_thresholds": {
@@ -5238,21 +6192,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 10042.638
+            "value": 10457.069
           },
           {
             "max": 1280.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 270.812
+            "value": 306.469
           },
           {
             "max": 1792.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 270.812
+            "value": 306.469
           }
         ],
         "load_thresholds": {
@@ -6152,21 +7106,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 3239.54
+            "value": 3318.867
           },
           {
             "max": 1024.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 270.812
+            "value": 306.469
           },
           {
             "max": 1536.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 270.812
+            "value": 306.469
           }
         ],
         "load_thresholds": {
@@ -7060,21 +8014,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 16092.779
+            "value": 17338.066
           },
           {
             "max": 1024.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 270.812
+            "value": 306.469
           },
           {
             "max": 1536.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 270.812
+            "value": 306.469
           }
         ],
         "load_thresholds": {
@@ -7959,21 +8913,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 6396.874
+            "value": 8691.718
           },
           {
             "max": 768.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 270.812
+            "value": 306.469
           },
           {
             "max": 1024.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 270.812
+            "value": 306.469
           }
         ],
         "load_thresholds": {
@@ -9139,21 +10093,21 @@
             "metric": "elapsed_ms",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 965.527
+            "value": 1644.595
           },
           {
             "max": 768.0,
             "metric": "rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 270.812
+            "value": 306.469
           },
           {
             "max": 1024.0,
             "metric": "peak_rss_mb",
             "passed": true,
             "truth_label": "Golden load threshold checks runtime/memory regression risk only; it is not public-scale load proof.",
-            "value": 270.812
+            "value": 306.469
           }
         ],
         "load_thresholds": {
@@ -10100,6 +11054,9 @@
     "truth_label": "Golden scenarios are executable regression cases with explicit blockers and production-readiness expectations."
   },
   "next_actions": [
+    "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+    "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+    "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
     "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report."
   ],
   "private_alpha_backend_ready": false,
@@ -10123,6 +11080,33 @@
           "severity": "blocker",
           "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
           "why_needed": "Alpha monitoring needs queue monitoring evidence."
+        },
+        {
+          "area": "monitoring",
+          "field": "pending_count",
+          "message": "Job queue monitoring needs pending job count evidence.",
+          "reason": "Job queue monitoring needs pending job count evidence.",
+          "severity": "blocker",
+          "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+          "why_needed": "Job queue monitoring needs pending job count evidence."
+        },
+        {
+          "area": "monitoring",
+          "field": "failed_count",
+          "message": "Job queue monitoring needs failed job count evidence.",
+          "reason": "Job queue monitoring needs failed job count evidence.",
+          "severity": "blocker",
+          "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+          "why_needed": "Job queue monitoring needs failed job count evidence."
+        },
+        {
+          "area": "monitoring",
+          "field": "timeout_count",
+          "message": "Job queue monitoring needs timeout or stale job count evidence.",
+          "reason": "Job queue monitoring needs timeout or stale job count evidence.",
+          "severity": "blocker",
+          "suggested_next_action": "Fix the operational issue, rerun the backend smoke/soak check, and attach a fresh alpha monitoring report.",
+          "why_needed": "Job queue monitoring needs timeout or stale job count evidence."
         }
       ],
       "sample_count": 3,

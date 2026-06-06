@@ -16,6 +16,8 @@ def _healthy_sample() -> dict:
             "warnings": [],
             "job_queue": {
                 "status": "healthy",
+                "monitored_job_types": ["orchestrate", "drainage_only"],
+                "queued_count": 0,
                 "failed_recent_count": 0,
                 "stale_job_count": 0,
                 "oldest_active_age_sec": 0.0,
@@ -45,6 +47,7 @@ class AlphaSmokeSoakTests(unittest.TestCase):
         self.assertEqual(report["sample_count"], 2)
         self.assertEqual(report["alpha_monitoring_report"]["readiness"], "ready")
         self.assertEqual(report["aggregate_runtime_monitoring"]["job_queue"]["sample_count"], 2)
+        self.assertTrue(report["aggregate_runtime_monitoring"]["job_queue_monitoring_evidence"]["alpha_ready"])
         self.assertIn("does not make Civora construction-ready", report["truth_label"])
 
     def test_smoke_soak_blocks_without_queue_evidence(self) -> None:
@@ -64,6 +67,7 @@ class AlphaSmokeSoakTests(unittest.TestCase):
         self.assertFalse(report["success"])
         fields = {item["field"] for item in report["alpha_monitoring_report"]["blockers"]}
         self.assertIn("job_queue", fields)
+        self.assertIn("pending_count", fields)
 
     def test_smoke_soak_blocks_sample_failures(self) -> None:
         calls = {"count": 0}

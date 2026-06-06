@@ -16,6 +16,8 @@ def _healthy_sample() -> dict:
             "warnings": [],
             "job_queue": {
                 "status": "healthy",
+                "monitored_job_types": ["orchestrate", "drainage_only"],
+                "queued_count": 0,
                 "failed_recent_count": 0,
                 "stale_job_count": 0,
                 "oldest_active_age_sec": 0.0,

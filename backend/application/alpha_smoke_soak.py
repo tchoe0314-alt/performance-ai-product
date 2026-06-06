@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 from urllib.request import Request, urlopen
 
 from backend.application.memory_logging import runtime_monitoring_snapshot, runtime_process_monitoring_snapshot
-from backend.planning.alpha_monitoring import build_alpha_monitoring_report
+from backend.planning.alpha_monitoring import build_alpha_monitoring_report, build_job_queue_monitoring_evidence
 from backend.planning.common import readiness_issue_explanations, safe_dict, safe_float, safe_int, safe_list, safe_str
 
 
@@ -37,12 +37,27 @@ def _max_from_samples(samples: List[Dict[str, Any]], key: str) -> float:
 def _aggregate_runtime(samples: List[Dict[str, Any]]) -> Dict[str, Any]:
     monitorings = [safe_dict(item.get("monitoring")) for item in samples]
     queues = [safe_dict(item.get("job_queue") or safe_dict(item.get("monitoring")).get("job_queue")) for item in samples]
+    queue_monitorings = [safe_dict(queue.get("monitoring")) or queue for queue in queues]
     processes = [safe_dict(safe_dict(item.get("monitoring")).get("process")) for item in samples]
+    monitored_job_types = sorted(
+        {
+            safe_str(job_type)
+            for queue in queues
+            for job_type in safe_list(
+                queue.get("registered_handlers")
+                or queue.get("monitored_job_types")
+                or safe_dict(queue.get("monitoring")).get("monitored_job_types")
+            )
+            if safe_str(job_type)
+        }
+    )
     queue_monitoring = {
-        "status": _worst_status(queue.get("status") for queue in queues if queue),
-        "failed_recent_count": max([safe_int(queue.get("failed_recent_count"), 0) for queue in queues if queue] or [0]),
-        "stale_job_count": max([safe_int(queue.get("stale_job_count"), 0) for queue in queues if queue] or [0]),
-        "oldest_active_age_sec": max([safe_float(queue.get("oldest_active_age_sec"), 0.0) for queue in queues if queue] or [0.0]),
+        "status": _worst_status(queue.get("status") for queue in queue_monitorings if queue),
+        "failed_recent_count": max([safe_int(queue.get("failed_recent_count"), 0) for queue in queue_monitorings if queue] or [0]),
+        "stale_job_count": max([safe_int(queue.get("stale_job_count"), 0) for queue in queue_monitorings if queue] or [0]),
+        "oldest_active_age_sec": max([safe_float(queue.get("oldest_active_age_sec"), 0.0) for queue in queue_monitorings if queue] or [0.0]),
+        "queued_count": max([safe_int(queue.get("queued_count"), 0) for queue in queue_monitorings if queue] or [0]),
+        "monitored_job_types": monitored_job_types,
         "sample_count": len([queue for queue in queues if queue]),
     }
     process_monitoring = {
@@ -55,6 +70,10 @@ def _aggregate_runtime(samples: List[Dict[str, Any]]) -> Dict[str, Any]:
         queue_monitoring = {}
     if process_monitoring["sample_count"] <= 0:
         process_monitoring = {}
+    queue_evidence = build_job_queue_monitoring_evidence(
+        queue_monitoring,
+        monitoring_source="alpha_smoke_soak.aggregate_runtime",
+    )
     return {
         "status": _worst_status(monitoring.get("status") for monitoring in monitorings if monitoring),
         "rss_mb": _max_from_samples(samples, "rss_mb"),
@@ -68,6 +87,7 @@ def _aggregate_runtime(samples: List[Dict[str, Any]]) -> Dict[str, Any]:
             }
         ),
         "job_queue": queue_monitoring,
+        "job_queue_monitoring_evidence": queue_evidence,
         "process": process_monitoring,
         "truth_label": "Aggregated alpha smoke/soak runtime sample. Missing queue or process evidence keeps alpha monitoring blocked.",
     }

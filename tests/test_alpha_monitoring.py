@@ -1,6 +1,6 @@
 import unittest
 
-from backend.planning.alpha_monitoring import build_alpha_monitoring_report
+from backend.planning.alpha_monitoring import build_alpha_monitoring_report, build_job_queue_monitoring_evidence
 
 
 def _healthy_runtime() -> dict:
@@ -10,6 +10,8 @@ def _healthy_runtime() -> dict:
         "peak_rss_mb": 180.0,
         "job_queue": {
             "status": "healthy",
+            "monitored_job_types": ["orchestrate", "drainage_only"],
+            "queued_count": 0,
             "failed_recent_count": 0,
             "stale_job_count": 0,
             "oldest_active_age_sec": 0.0,
@@ -34,6 +36,24 @@ class AlphaMonitoringTests(unittest.TestCase):
         self.assertEqual(report["status"], "healthy")
         self.assertTrue(report["success"])
         self.assertFalse(report["blockers"])
+        evidence = report["job_queue_monitoring_evidence"]
+        self.assertEqual(evidence["version"], "job_queue_monitoring_evidence_v1")
+        self.assertTrue(evidence["queue_system_present"])
+        self.assertEqual(evidence["monitored_job_types"], ["orchestrate", "drainage_only"])
+        self.assertEqual(evidence["pending_count"], 0)
+        self.assertEqual(evidence["failed_count"], 0)
+        self.assertEqual(evidence["timeout_count"], 0)
+        self.assertTrue(evidence["alpha_ready"])
+
+    def test_job_queue_evidence_blocks_when_queue_missing(self) -> None:
+        evidence = build_job_queue_monitoring_evidence({})
+
+        self.assertEqual(evidence["version"], "job_queue_monitoring_evidence_v1")
+        self.assertFalse(evidence["queue_system_present"])
+        self.assertFalse(evidence["alpha_ready"])
+        fields = {item["field"] for item in evidence["blockers"]}
+        self.assertIn("job_queue", fields)
+        self.assertIn("pending_count", fields)
 
     def test_partial_runtime_snapshot_is_blocked(self) -> None:
         report = build_alpha_monitoring_report({"status": "healthy", "rss_mb": 128.0, "peak_rss_mb": 180.0})
@@ -41,6 +61,7 @@ class AlphaMonitoringTests(unittest.TestCase):
         self.assertEqual(report["readiness"], "blocked")
         fields = {item["field"] for item in report["blockers"]}
         self.assertIn("job_queue", fields)
+        self.assertIn("pending_count", fields)
         self.assertIn("process", fields)
 
     def test_memory_and_queue_thresholds_block_alpha_monitoring(self) -> None:
