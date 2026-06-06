@@ -58,6 +58,15 @@ def _plan() -> dict:
                 }
             ],
             "quantities": {
+                "line_items": [
+                    {
+                        "id": "qty-pipe-1",
+                        "metric": "pipe_length_ft",
+                        "quantity": 100.0,
+                        "unit": "lf",
+                        "source_object_ids": ["storm-1"],
+                    }
+                ],
                 "quantity_audit": {
                     "pipe_length_ft": {"source_object_ids": ["storm-1"]},
                     "profile_length_ft": {"source_object_ids": ["profile-canon-1"]},
@@ -103,6 +112,7 @@ class ExportPackageReportTests(unittest.TestCase):
         self.assertTrue(report["construction_release_blocked"])
         self.assertEqual(report["deliverable_confidence"], "construction_blocked")
         self.assertIn("construction_package_manifest_missing", report["construction_release_blockers"])
+        self.assertEqual(report["quantity_line_items"][0]["canonical_ids"], ["storm-1"])
         self.assertEqual(report["profile_packages"][0]["canonical_ids"], ["profile-canon-1", "align-1", "profile-1"])
         self.assertEqual(report["section_packages"][0]["canonical_ids"], ["section-canon-1", "align-1", "section-1"])
 
@@ -154,11 +164,19 @@ class ExportPackageReportTests(unittest.TestCase):
         self.assertEqual(report_node.attrib["civora_signoff_allowed"], "false")
         self.assertEqual(report_node.attrib["construction_release_allowed"], "false")
         self.assertEqual(report_node.attrib["construction_release_blocked"], "true")
+        self.assertEqual(report_node.attrib["landxml_external_verification_status"], "not_verified")
+        self.assertEqual(report_node.attrib["civil3d_external_verification_status"], "not_verified")
+        pipe_node = root.find(".//Pipe")
+        self.assertIsNotNone(pipe_node)
+        self.assertEqual(pipe_node.attrib["civoraCanonicalId"], "storm-1")
+        self.assertEqual(pipe_node.attrib["civoraExternalVerificationStatus"], "not_verified")
 
         report = build_export_package_report_v1(plan, export_type="report", generated_at="2026-06-06T00:00:00Z")
         self.assertEqual(report["export_type"], "report")
         self.assertEqual(report["source"], "export_package_report_v1")
         self.assertIn("supported_deliverables", report)
+        self.assertEqual(report["external_verification"]["landxml"]["status"], "not_verified")
+        self.assertEqual(report["external_verification"]["civil3d"]["status"], "not_verified")
         self.assertTrue(report["profile_packages"])
         self.assertTrue(report["section_packages"])
 

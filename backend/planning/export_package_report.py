@@ -179,6 +179,8 @@ def _canonical_ids(meta: Dict[str, Any]) -> List[str]:
     for key in ("quantity_audit", "trace", "explain"):
         for row in safe_dict(quantities.get(key)).values():
             ids.extend(_ids_from_record(safe_dict(row)))
+    for row in safe_list(quantities.get("line_items") or quantities.get("items") or quantities.get("rows")):
+        ids.extend(_ids_from_record(safe_dict(row)))
     for key in ("profiles", "cross_sections", "alignments"):
         for row in safe_list(meta.get(key)):
             ids.extend(_ids_from_record(safe_dict(row)))
@@ -235,6 +237,90 @@ def _deliverable_records(meta: Dict[str, Any], key: str, export_type: str) -> Li
             }
         )
     return records
+
+
+def _quantity_line_items(meta: Dict[str, Any], export_type: str) -> List[Dict[str, Any]]:
+    quantities = safe_dict(meta.get("quantities"))
+    audit_by_metric: Dict[str, Dict[str, Any]] = {}
+    for source in (
+        safe_dict(quantities.get("quantity_audit")),
+        safe_dict(quantities.get("trace")),
+        safe_dict(quantities.get("explain")),
+        safe_dict(safe_dict(quantities.get("meta_summary")).get("quantity_audit")),
+    ):
+        for metric, row in source.items():
+            audit_by_metric[safe_str(metric)] = safe_dict(row)
+
+    rows: List[Dict[str, Any]] = []
+    line_items = safe_list(quantities.get("line_items") or quantities.get("items") or quantities.get("rows"))
+    for index, row in enumerate(line_items, start=1):
+        rec = safe_dict(row)
+        if not rec:
+            continue
+        metric = safe_str(rec.get("metric") or rec.get("name") or rec.get("item") or rec.get("description"), f"quantity-{index}")
+        source_rec = {key: value for key, value in rec.items() if key not in {"id", "line_item_id"}}
+        ids = _ids_from_record(source_rec) + _ids_from_record(audit_by_metric.get(metric, {}))
+        rows.append(
+            {
+                "package_type": safe_str(export_type),
+                "record_type": "quantity_line_item",
+                "record_id": safe_str(rec.get("id") or rec.get("line_item_id"), metric),
+                "metric": metric,
+                "quantity": rec.get("quantity", rec.get("value")),
+                "unit": safe_str(rec.get("unit") or rec.get("units")),
+                "canonical_ids": _unique(ids),
+                "engineer_review_required": True,
+                "civora_signoff_allowed": False,
+                "construction_release_allowed": False,
+                "review_package_only": True,
+            }
+        )
+
+    if rows:
+        return rows
+
+    for index, (metric, audit) in enumerate(audit_by_metric.items(), start=1):
+        if not metric:
+            continue
+        rows.append(
+            {
+                "package_type": safe_str(export_type),
+                "record_type": "quantity_line_item",
+                "record_id": safe_str(audit.get("id") or audit.get("line_item_id"), metric or f"quantity-{index}"),
+                "metric": metric,
+                "quantity": audit.get("quantity", audit.get("value")),
+                "unit": safe_str(audit.get("unit") or audit.get("units")),
+                "canonical_ids": _ids_from_record(audit),
+                "engineer_review_required": True,
+                "civora_signoff_allowed": False,
+                "construction_release_allowed": False,
+                "review_package_only": True,
+            }
+        )
+    return rows
+
+
+def _external_verification_hooks() -> Dict[str, Dict[str, Any]]:
+    return {
+        "landxml": {
+            "status": "not_verified",
+            "verified": False,
+            "requires_external_verification": True,
+            "verification_record_id": "",
+        },
+        "civil3d": {
+            "status": "not_verified",
+            "verified": False,
+            "requires_external_verification": True,
+            "verification_record_id": "",
+        },
+        "dwg": {
+            "status": "unsupported_no_writer",
+            "verified": False,
+            "requires_external_verification": True,
+            "verification_record_id": "",
+        },
+    }
 
 
 def _layer_contract_status(meta: Dict[str, Any], cad_interop: Dict[str, Any]) -> str:
@@ -343,8 +429,10 @@ def build_export_package_report_v1(
         "canonical_ids_included": canonical_ids,
         "layer_contract_status": _layer_contract_status(meta, cad_interop),
         "deliverable_confidence": deliverable_confidence,
+        "quantity_line_items": _quantity_line_items(meta, safe_str(export_type)),
         "profile_packages": _deliverable_records(meta, "profiles", safe_str(export_type)),
         "section_packages": _deliverable_records(meta, "cross_sections", safe_str(export_type)),
+        "external_verification": _external_verification_hooks(),
         "supported_deliverables": deepcopy(formats),
         "civil3d_compatibility": "unsupported_limited_not_verified",
         "dwg_compatibility": "unsupported_no_writer",

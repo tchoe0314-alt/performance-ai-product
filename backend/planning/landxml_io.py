@@ -29,6 +29,15 @@ def _point_id(elem: ET.Element, fallback: str) -> str:
     return safe_str(elem.attrib.get("name") or elem.attrib.get("oID") or elem.attrib.get("pntRef") or elem.attrib.get("id"), fallback)
 
 
+def _canonical_id(rec: Dict[str, Any], fallback: str) -> str:
+    for key in ("canonical_id", "canonical_source_id", "source_object_id", "id", "name", "pipe"):
+        value = safe_str(rec.get(key))
+        if value:
+            return value
+    ids = safe_list(rec.get("canonical_ids") or rec.get("canonical_source_ids") or rec.get("source_object_ids"))
+    return safe_str(ids[0] if ids else "", fallback)
+
+
 def import_landxml(path: Path) -> Dict[str, Any]:
     try:
         root = ET.parse(path).getroot()
@@ -152,7 +161,17 @@ def build_landxml_pipe_network(plan: Dict[str, Any], *, network_name: str = "Civ
     sanitary = safe_dict(meta.get("sanitary") or meta.get("sanitary_summary"))
     root = ET.Element("LandXML", {"version": "1.2", "date": "generated"})
     networks = ET.SubElement(root, "PipeNetworks")
-    network = ET.SubElement(networks, "PipeNetwork", {"name": network_name})
+    network = ET.SubElement(
+        networks,
+        "PipeNetwork",
+        {
+            "name": network_name,
+            "civoraLandxmlVerificationStatus": "not_verified",
+            "civoraCivil3dVerificationStatus": "not_verified",
+            "civoraExternalVerificationRequired": "true",
+            "civoraReviewOnly": "true",
+        },
+    )
     pipes = ET.SubElement(network, "Pipes")
     structures = ET.SubElement(network, "Structs")
 
@@ -164,6 +183,11 @@ def build_landxml_pipe_network(plan: Dict[str, Any], *, network_name: str = "Civ
             "length": f"{safe_float(rec.get('length_ft'), 0.0):.3f}",
             "diameter": f"{safe_float(rec.get('diameter_ft'), safe_float(rec.get('diameter_in'), 0.0) / 12.0):.3f}",
             "slope": f"{safe_float(rec.get('slope') or rec.get('slope_ft_ft'), 0.0):.6f}",
+            "civoraCanonicalId": _canonical_id(rec, name),
+            "civoraReviewOnly": "true",
+            "civoraSignoffAllowed": "false",
+            "civoraConstructionReleaseAllowed": "false",
+            "civoraExternalVerificationStatus": "not_verified",
         }
         pipe_elem = ET.SubElement(pipes, "Pipe", attrs)
         path = safe_list(rec.get("path") or rec.get("route_points") or rec.get("points"))
@@ -191,6 +215,11 @@ def build_landxml_pipe_network(plan: Dict[str, Any], *, network_name: str = "Civ
                 "name": safe_str(row.get("name") or row.get("id"), f"STRUCT-{idx}"),
                 "x": f"{safe_float(row.get('x'), 0.0):.3f}",
                 "y": f"{safe_float(row.get('y'), 0.0):.3f}",
+                "civoraCanonicalId": _canonical_id(row, f"STRUCT-{idx}"),
+                "civoraReviewOnly": "true",
+                "civoraSignoffAllowed": "false",
+                "civoraConstructionReleaseAllowed": "false",
+                "civoraExternalVerificationStatus": "not_verified",
             },
         )
     report = build_export_package_report_v1(plan, export_type="landxml")
@@ -215,6 +244,8 @@ def build_landxml_pipe_network(plan: Dict[str, Any], *, network_name: str = "Civ
             "deliverable_confidence": safe_str(report.get("deliverable_confidence")),
             "civil3d_compatibility": safe_str(report.get("civil3d_compatibility")),
             "dwg_compatibility": safe_str(report.get("dwg_compatibility")),
+            "landxml_external_verification_status": safe_str(safe_dict(safe_dict(report.get("external_verification")).get("landxml")).get("status"), "not_verified"),
+            "civil3d_external_verification_status": safe_str(safe_dict(safe_dict(report.get("external_verification")).get("civil3d")).get("status"), "not_verified"),
         },
     )
     for key in ("included_systems", "excluded_systems", "stale_outputs_detected", "missing_inputs", "canonical_ids_included"):

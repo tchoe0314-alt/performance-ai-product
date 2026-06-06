@@ -56,6 +56,7 @@ class LandXmlIoTests(unittest.TestCase):
                 "storm_pipes": {
                     "segments": [
                         {
+                            "id": "storm-pipe-1",
                             "name": "STM-1",
                             "length_ft": 100.0,
                             "diameter_in": 18.0,
@@ -63,11 +64,11 @@ class LandXmlIoTests(unittest.TestCase):
                             "path": [{"x": 0, "y": 0}, {"x": 100, "y": 0}],
                         }
                     ],
-                    "structures": [{"name": "CB-1", "x": 0, "y": 0}],
+                    "structures": [{"id": "storm-struct-1", "name": "CB-1", "x": 0, "y": 0}],
                 },
                 "sanitary": {
-                    "segments": [{"name": "SAN-1", "length_ft": 80.0, "diameter_in": 8.0, "path": [[0, 5], [80, 5]]}],
-                    "manholes": [{"name": "MH-1", "x": 0, "y": 5}],
+                    "segments": [{"id": "san-pipe-1", "name": "SAN-1", "length_ft": 80.0, "diameter_in": 8.0, "path": [[0, 5], [80, 5]]}],
+                    "manholes": [{"id": "san-struct-1", "name": "MH-1", "x": 0, "y": 5}],
                 },
             }
         }
@@ -80,3 +81,10 @@ class LandXmlIoTests(unittest.TestCase):
         self.assertEqual(len(pipes), 2)
         self.assertEqual(len(structs), 2)
         self.assertEqual(pipes[0].attrib["system"], "storm")
+        self.assertEqual(pipes[0].attrib["civoraCanonicalId"], "storm-pipe-1")
+        self.assertEqual(pipes[0].attrib["civoraExternalVerificationStatus"], "not_verified")
+        self.assertEqual(structs[0].attrib["civoraCanonicalId"], "storm-struct-1")
+        network = root.find(".//PipeNetwork")
+        self.assertIsNotNone(network)
+        self.assertEqual(network.attrib["civoraLandxmlVerificationStatus"], "not_verified")
+        self.assertEqual(network.attrib["civoraCivil3dVerificationStatus"], "not_verified")

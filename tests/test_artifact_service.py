@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -47,6 +48,107 @@ class ArtifactServiceTest(unittest.TestCase):
             self.assertEqual(first, b"preview-v1")
             self.assertEqual(second, b"preview-v2")
             self.assertEqual(render_mock.call_count, 2)
+
+    def test_export_dxf_writes_sidecar_metadata(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = ArtifactService(Path(tmpdir))
+            final_plan = {
+                "project_id": "sidecar-project",
+                "project_name": "Sidecar Demo",
+                "units": "ft",
+                "actions": [
+                    {
+                        "task": "polyline",
+                        "layer": "PIPE",
+                        "points": [[0.0, 0.0], [25.0, 0.0]],
+                        "canonical_source_id": "storm-line-1",
+                    }
+                ],
+                "meta": {
+                    "project_id": "sidecar-project",
+                    "canonical_revision": "rev-sidecar-1",
+                    "canonical_model_hash": "hash-sidecar-1",
+                    "quantities": {
+                        "line_items": [
+                            {
+                                "metric": "pipe_length_ft",
+                                "quantity": 25.0,
+                                "unit": "lf",
+                                "source_object_ids": ["storm-line-1"],
+                            }
+                        ]
+                    },
+                },
+            }
+
+            artifact_path = service.export_dxf(user_id="user-1", final_plan=final_plan, stem="sidecar")
+            sidecar_path = artifact_path.with_suffix(f"{artifact_path.suffix}.metadata.json")
+            sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+
+            self.assertTrue(artifact_path.exists())
+            self.assertTrue(sidecar_path.exists())
+            self.assertEqual(sidecar["source"], "export_artifact_sidecar_v1")
+            self.assertEqual(sidecar["export_type"], "dxf")
+            self.assertEqual(sidecar["export_package_report_v1"]["source_project_id"], "sidecar-project")
+            self.assertEqual(sidecar["export_package_report_v1"]["source_canonical_revision"], "rev-sidecar-1")
+            self.assertTrue(sidecar["engineer_review_required"])
+            self.assertFalse(sidecar["civora_signoff_allowed"])
+            self.assertFalse(sidecar["construction_release_allowed"])
+            self.assertTrue(sidecar["construction_release_blocked"])
+            self.assertEqual(sidecar["quantity_line_items"][0]["canonical_ids"], ["storm-line-1"])
+            self.assertEqual(final_plan["meta"]["artifact_sidecars"][0]["sidecar_metadata_path"], str(sidecar_path))
+
+    def test_export_report_json_writes_sidecar_and_report_references(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = ArtifactService(Path(tmpdir))
+            final_plan = {
+                "project_id": "report-project",
+                "project_name": "Report Sidecar Demo",
+                "units": "ft",
+                "actions": [
+                    {
+                        "task": "polyline",
+                        "layer": "PIPE",
+                        "points": [[0.0, 0.0], [50.0, 0.0]],
+                        "canonical_source_id": "report-storm-1",
+                    }
+                ],
+                "meta": {
+                    "project_id": "report-project",
+                    "canonical_revision": "rev-report-1",
+                    "canonical_model_hash": "hash-report-1",
+                    "quantities": {
+                        "line_items": [
+                            {
+                                "metric": "pipe_length_ft",
+                                "quantity": 50.0,
+                                "unit": "lf",
+                                "source_object_ids": ["report-storm-1"],
+                            }
+                        ]
+                    },
+                },
+            }
+
+            artifact_path = service.export_report_json(
+                user_id="user-1",
+                result_data={"final_plan": final_plan, "metadata": {}, "assumptions": [], "warnings": [], "errors": []},
+                stem="report-sidecar",
+            )
+            report = json.loads(artifact_path.read_text(encoding="utf-8"))
+            sidecar_path = artifact_path.with_suffix(f"{artifact_path.suffix}.metadata.json")
+            sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+
+            self.assertEqual(report["artifact_metadata"]["sidecar_metadata_path"], str(sidecar_path))
+            self.assertEqual(report["export_package_report_v1"]["export_type"], "report")
+            self.assertEqual(sidecar["export_type"], "report")
+            self.assertEqual(
+                sidecar["export_package_report_ref"]["source_canonical_hash"],
+                report["export_package_report_v1"]["source_canonical_hash"],
+            )
+            self.assertTrue(sidecar["report_line_items"])
+            self.assertIn("report-storm-1", sidecar["report_line_items"][0]["canonical_ids"])
+            self.assertEqual(sidecar["quantity_line_items"][0]["canonical_ids"], ["report-storm-1"])
 
 
 if __name__ == "__main__":

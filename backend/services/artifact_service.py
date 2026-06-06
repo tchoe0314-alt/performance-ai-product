@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Optional
 import hashlib
@@ -42,6 +43,116 @@ class ArtifactService:
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         suffix = uuid.uuid4().hex[:8]
         return f"{prefix}-{timestamp}-{suffix}.{ext}"
+
+    def _sidecar_path(self, artifact_path: Path) -> Path:
+        return artifact_path.with_suffix(f"{artifact_path.suffix}.metadata.json")
+
+    def _ensure_export_package_report(self, final_plan: Dict[str, Any], *, export_type: str) -> Dict[str, Any]:
+        from backend.planning.export_package_report import build_export_package_report_v1
+
+        meta = final_plan.setdefault("meta", {})
+        report = build_export_package_report_v1(final_plan, export_type=export_type)
+        meta["export_package_report_v1"] = report
+        return report
+
+    def _ids_from_payload(self, value: Any) -> list[str]:
+        ids: list[str] = []
+        if isinstance(value, dict):
+            for key in (
+                "canonical_id",
+                "canonical_source_id",
+                "canonical_model_id",
+                "source_object_id",
+                "quantity_source_id",
+                "alignment_id",
+                "alignment_owner",
+            ):
+                raw = value.get(key)
+                text = str(raw).strip() if raw is not None else ""
+                if text:
+                    ids.append(text)
+            for key in ("canonical_ids", "canonical_source_ids", "source_object_ids", "quantity_source_ids"):
+                raw_list = value.get(key)
+                if isinstance(raw_list, list):
+                    ids.extend(str(item).strip() for item in raw_list if str(item).strip())
+            for child in value.values():
+                ids.extend(self._ids_from_payload(child))
+        elif isinstance(value, list):
+            for child in value:
+                ids.extend(self._ids_from_payload(child))
+        out: list[str] = []
+        seen = set()
+        for item in ids:
+            if item and item not in seen:
+                seen.add(item)
+                out.append(item)
+        return out
+
+    def _report_line_items(self, report_payload: Dict[str, Any], package_report: Dict[str, Any]) -> list[Dict[str, Any]]:
+        rows: list[Dict[str, Any]] = []
+        package_ids = list(package_report.get("canonical_ids_included") or [])
+        for index, section in enumerate(report_payload.get("sections") or [], start=1):
+            if not isinstance(section, dict):
+                continue
+            ids = self._ids_from_payload(section)
+            if not ids:
+                ids = package_ids
+            rows.append(
+                {
+                    "record_type": "report_section",
+                    "record_id": str(section.get("section_id") or f"section-{index}"),
+                    "title": str(section.get("title") or ""),
+                    "canonical_ids": ids,
+                    "engineer_review_required": True,
+                    "civora_signoff_allowed": False,
+                    "construction_release_allowed": False,
+                    "review_package_only": True,
+                }
+            )
+        return rows
+
+    def _write_export_sidecar(
+        self,
+        *,
+        artifact_path: Path,
+        export_type: str,
+        final_plan: Dict[str, Any],
+        report_payload: Optional[Dict[str, Any]] = None,
+    ) -> Path:
+        package_report = self._ensure_export_package_report(final_plan, export_type=export_type)
+        sidecar_path = self._sidecar_path(artifact_path)
+        payload: Dict[str, Any] = {
+            "source": "export_artifact_sidecar_v1",
+            "artifact_path": str(artifact_path),
+            "artifact_filename": artifact_path.name,
+            "export_type": export_type,
+            "export_package_report_ref": {
+                "source": package_report.get("source"),
+                "export_type": package_report.get("export_type"),
+                "source_project_id": package_report.get("source_project_id"),
+                "source_canonical_revision": package_report.get("source_canonical_revision"),
+                "source_canonical_hash": package_report.get("source_canonical_hash"),
+                "generated_at": package_report.get("generated_at"),
+            },
+            "export_package_report_v1": deepcopy(package_report),
+            "quantity_line_items": deepcopy(package_report.get("quantity_line_items") or []),
+            "engineer_review_required": True,
+            "civora_signoff_allowed": False,
+            "construction_release_allowed": False,
+            "construction_release_blocked": True,
+        }
+        if report_payload is not None:
+            payload["report_line_items"] = self._report_line_items(report_payload, package_report)
+        sidecar_path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str), encoding="utf-8")
+        final_plan.setdefault("meta", {}).setdefault("artifact_sidecars", []).append(
+            {
+                "artifact_path": str(artifact_path),
+                "sidecar_metadata_path": str(sidecar_path),
+                "export_type": export_type,
+                "export_package_report_ref": deepcopy(payload["export_package_report_ref"]),
+            }
+        )
+        return sidecar_path
 
     def _preview_cache_key(
         self,
@@ -134,6 +245,7 @@ class ArtifactService:
 
         path = self._user_dir(user_id) / self._artifact_name(stem, "dxf")
         save_dxf(final_plan, filename=str(path))
+        self._write_export_sidecar(artifact_path=path, export_type="dxf", final_plan=final_plan)
         return path
 
     def export_report_json(
@@ -146,6 +258,7 @@ class ArtifactService:
         import report_builder
 
         final_plan = dict(result_data.get("final_plan") or {})
+        package_report = self._ensure_export_package_report(final_plan, export_type="report")
         report = report_builder.build_report(
             final_plan=final_plan,
             orchestrator_metadata=dict(result_data.get("metadata") or {}),
@@ -157,7 +270,19 @@ class ArtifactService:
                 **dict(result_data.get("request_metadata") or {}),
             },
         )
+        report["export_package_report_v1"] = deepcopy(package_report)
 
         path = self._user_dir(user_id) / self._artifact_name(stem, "json")
+        sidecar_path = self._write_export_sidecar(
+            artifact_path=path,
+            export_type="report",
+            final_plan=final_plan,
+            report_payload=report,
+        )
+        report["export_package_report_v1"] = deepcopy(final_plan["meta"]["export_package_report_v1"])
+        report["artifact_metadata"] = {
+            "sidecar_metadata_path": str(sidecar_path),
+            "export_package_report_ref": deepcopy(report["export_package_report_v1"]),
+        }
         path.write_text(json.dumps(report, indent=2), encoding="utf-8")
         return path
