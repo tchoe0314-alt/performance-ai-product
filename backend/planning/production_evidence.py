@@ -236,6 +236,8 @@ def _quantity_cost_evidence(meta: Dict[str, Any]) -> Dict[str, Any]:
     package = safe_dict(meta.get("cost_package_status"))
     cost_explain = safe_dict(cost.get("explain"))
     pricing = safe_dict(cost_explain.get("pricing"))
+    pricing_validation = safe_dict(pricing.get("production_validation"))
+    price_source = safe_dict(package.get("price_source"))
     totals = safe_dict(quantities.get("totals"))
     line_items = safe_list(cost.get("line_items")) or safe_list(quantities.get("line_items") or quantities.get("items") or quantities.get("rows"))
     quantity_scope_exists = bool(line_items) or any(safe_float(value, 0.0) > 0.0 for value in totals.values())
@@ -253,6 +255,8 @@ def _quantity_cost_evidence(meta: Dict[str, Any]) -> Dict[str, Any]:
         blockers.append(_blocker("quantity", "quantity_success", "Quantity engine reported failure."))
     if safe_dict(safe_dict(quantities.get("explain")).get("trace_gaps")):
         blockers.append(_blocker("quantity", "trace_gaps", "Quantity line items have unresolved canonical trace gaps."))
+    if pricing_validation.get("stale") is True or price_source.get("stale") is True:
+        blockers.append(_blocker("cost", "stale_pricing", "Approved unit-price source is stale and must be refreshed or reaccepted before production cost readiness."))
     if quantities and quantity_scope_exists and not approved_cost_source:
         blockers.append(
             _blocker(
@@ -276,10 +280,21 @@ def _quantity_cost_evidence(meta: Dict[str, Any]) -> Dict[str, Any]:
         "cost_success": cost.get("success"),
         "approved_cost_source": approved_cost_source,
         "pricing_source": safe_str(pricing.get("source")),
-        "pricing_confidence": safe_str(pricing.get("confidence") or package.get("confidence"), "blocked" if blockers else "unknown"),
+        "pricing_source_metadata": {
+            "source_name": safe_str(price_source.get("source_name") or pricing.get("source_name") or pricing.get("source")),
+            "source_type": safe_str(price_source.get("source_type") or pricing.get("source_type")),
+            "effective_date": safe_str(price_source.get("effective_date") or pricing.get("effective_date")),
+            "accepted_by": safe_str(price_source.get("accepted_by") or pricing.get("accepted_by") or pricing.get("approved_by")),
+            "confidence": safe_str(price_source.get("confidence") or pricing.get("confidence"), "blocked" if blockers else "unknown"),
+            "item_count": len(safe_list(price_source.get("items") or pricing.get("items"))),
+            "stale": bool(price_source.get("stale") or pricing_validation.get("stale")),
+            "age_days": price_source.get("age_days") if price_source.get("age_days") is not None else pricing_validation.get("age_days"),
+            "stale_after_days": price_source.get("stale_after_days") if price_source.get("stale_after_days") is not None else pricing_validation.get("stale_after_days"),
+        },
+        "pricing_confidence": safe_str(price_source.get("confidence") or pricing.get("confidence") or package.get("confidence"), "blocked" if blockers else "unknown"),
         "cost_package_status": deepcopy(package),
         "blockers": blockers,
-        "truth_label": "Quantity/cost evidence is production-usable only with traceable quantities and an approved production unit-price source.",
+        "truth_label": "Quantity/cost evidence is review evidence only; production cost readiness requires traceable quantities and a current approved unit-price source, and Civora never certifies bid or construction readiness.",
     }
 
 

@@ -5,7 +5,12 @@ import hashlib
 import io
 import json
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from typing import Any, Dict, Iterable, List, Tuple
+
+
+COST_BOOK_VERSION = "cost_book_v1"
+STALE_PRICE_BOOK_DAYS = 365
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -42,6 +47,23 @@ def _dedupe(values: Iterable[str]) -> List[str]:
         seen.add(text)
         out.append(text)
     return out
+
+
+def _parse_iso_date(value: Any) -> date | None:
+    text = _safe_str(value)
+    if not text:
+        return None
+    try:
+        return datetime.strptime(text[:10], "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def _pricing_age_days(effective_date: Any) -> int | None:
+    parsed = _parse_iso_date(effective_date)
+    if not parsed:
+        return None
+    return max(0, (date.today() - parsed).days)
 
 
 def _validation_details(issues: Iterable[Dict[str, Any]], *, area: str) -> List[Dict[str, Any]]:
@@ -103,10 +125,12 @@ DEFAULT_UNIT_PRICES: Dict[str, Dict[str, Any]] = {
 
 
 def normalize_unit_price_book(raw: Dict[str, Any]) -> Dict[str, Any]:
-    source = _safe_str(raw.get("source") or raw.get("source_id"))
+    source = _safe_str(raw.get("source_name") or raw.get("source") or raw.get("source_id"))
+    source_type = _safe_str(raw.get("source_type"), "approved_cost_book" if source else "")
     location = _safe_str(raw.get("location") or raw.get("region") or raw.get("jurisdiction"))
     effective_date = _safe_str(raw.get("effective_date") or raw.get("date"))
-    approved_by = _safe_str(raw.get("approved_by") or raw.get("reviewed_by"))
+    accepted_by = _safe_str(raw.get("accepted_by") or raw.get("approved_by") or raw.get("reviewed_by"))
+    approved_by = _safe_str(raw.get("approved_by") or raw.get("reviewed_by") or accepted_by)
     approval_date = _safe_str(raw.get("approval_date") or raw.get("review_date"))
     currency = _safe_str(raw.get("currency"), "USD").upper()
     contingency_pct = _safe_float(raw.get("contingency_pct"), 15.0)
@@ -134,24 +158,43 @@ def normalize_unit_price_book(raw: Dict[str, Any]) -> Dict[str, Any]:
             "unit": _safe_str(rec.get("unit") or rec.get("units")),
             "unit_cost": _safe_float(rec.get("unit_cost") or rec.get("price") or rec.get("cost")),
             "source_item_id": _safe_str(rec.get("source_item_id") or rec.get("bid_item_id") or rec.get("item_id")),
+            "source_name": source,
+            "source_type": source_type,
             "notes": _safe_str(rec.get("notes")),
         }
         unit_prices[metric] = normalized
     normalized = {
-        "version": "unit_price_book_v1",
+        "version": COST_BOOK_VERSION,
         "source": source,
+        "source_name": source,
+        "source_type": source_type,
         "location": location,
         "effective_date": effective_date,
+        "accepted_by": accepted_by,
         "approved_by": approved_by,
         "approval_date": approval_date,
         "currency": currency,
         "contingency_pct": max(0.0, contingency_pct),
         "unit_prices": unit_prices,
     }
+    normalized["items"] = [
+        {
+            "metric": metric,
+            "item": rec["item"],
+            "category": rec["category"],
+            "unit": rec["unit"],
+            "unit_cost": rec["unit_cost"],
+            "source_item_id": rec["source_item_id"],
+            "source_name": source,
+            "source_type": source_type,
+        }
+        for metric, rec in sorted(unit_prices.items())
+    ]
     stable_payload = json.dumps(normalized, sort_keys=True, separators=(",", ":"))
     normalized["price_book_hash"] = hashlib.sha256(stable_payload.encode("utf-8")).hexdigest()
     validation = validate_unit_price_book_for_production(normalized, attach_validation=False)
     normalized["production_usable"] = bool(validation.get("production_usable"))
+    normalized["confidence"] = "approved" if normalized["production_usable"] else "blocked"
     normalized["production_validation"] = validation
     normalized["truth_label"] = (
         "Unit price books are production-usable only when source, location, effective date, approval, "
@@ -171,6 +214,7 @@ def validate_unit_price_book_for_production(
     warnings: List[Dict[str, Any]] = []
     for field_name, reason in (
         ("source", "Production cost estimates require a traceable source such as a company bid book, DOT schedule, or approved estimator file."),
+        ("source_type", "Production cost estimates require the approved price source type, such as company_bid_book, dot_schedule, estimator_quote, or approved_cost_book."),
         ("location", "Production cost estimates require a region/jurisdiction because unit prices are location-sensitive."),
         ("effective_date", "Production cost estimates require the price book effective date."),
         ("approved_by", "Production cost estimates require reviewer/estimator approval evidence."),
@@ -178,6 +222,18 @@ def validate_unit_price_book_for_production(
     ):
         if not _safe_str(book.get(field_name)):
             blockers.append({"field": field_name, "reason": reason, "severity": "blocker"})
+    age_days = _pricing_age_days(book.get("effective_date"))
+    stale = bool(age_days is not None and age_days > STALE_PRICE_BOOK_DAYS)
+    if stale:
+        blockers.append(
+            {
+                "field": "effective_date",
+                "reason": f"Unit-price book is stale ({age_days} days old); pricing older than {STALE_PRICE_BOOK_DAYS} days must be refreshed or explicitly reaccepted.",
+                "severity": "blocker",
+                "age_days": age_days,
+                "stale_after_days": STALE_PRICE_BOOK_DAYS,
+            }
+        )
     if not unit_prices:
         blockers.append(
             {
@@ -232,11 +288,14 @@ def validate_unit_price_book_for_production(
     validation = {
         "success": not blockers,
         "production_usable": not blockers,
+        "age_days": age_days,
+        "stale_after_days": STALE_PRICE_BOOK_DAYS,
+        "stale": stale,
         "blockers": blockers,
         "blocker_details": _validation_details(blockers, area="unit_price_book"),
         "warnings": warnings,
         "warning_details": _validation_details(warnings, area="unit_price_book"),
-        "required_fields": ["source", "location", "effective_date", "approved_by", "approval_date", "unit_prices"],
+        "required_fields": ["source", "source_type", "location", "effective_date", "approved_by", "approval_date", "unit_prices"],
         "truth_label": "Civora blocks bid-ready cost output unless the unit-price book has traceable source and approval metadata.",
     }
     if attach_validation and isinstance(price_book, dict):
@@ -249,8 +308,10 @@ def unit_price_book_from_csv(
     csv_text: str,
     *,
     source: str = "",
+    source_type: str = "approved_cost_book",
     location: str = "",
     effective_date: str = "",
+    accepted_by: str = "",
     approved_by: str = "",
     approval_date: str = "",
     currency: str = "USD",
@@ -274,8 +335,10 @@ def unit_price_book_from_csv(
     return normalize_unit_price_book(
         {
             "source": source,
+            "source_type": source_type,
             "location": location,
             "effective_date": effective_date,
+            "accepted_by": accepted_by or approved_by,
             "approved_by": approved_by,
             "approval_date": approval_date,
             "currency": currency,
@@ -300,14 +363,19 @@ def _unit_price_book(meta: Dict[str, Any]) -> Tuple[Dict[str, Dict[str, Any]], D
     validation = _safe_dict(normalized.get("production_validation"))
     pricing_meta = {
         "source": _safe_str(normalized.get("source") if normalized else "", "civora_concept_default_unit_prices" if not raw else "user_unit_price_book"),
+        "source_name": _safe_str(normalized.get("source_name") if normalized else "", "Civora concept defaults" if not raw else "user_unit_price_book"),
+        "source_type": _safe_str(normalized.get("source_type") if normalized else "", "concept_default" if not raw else ""),
         "production_usable": bool(validation.get("production_usable")) if raw else False,
         "currency": _safe_str(normalized.get("currency") if normalized else "", "USD"),
         "location": _safe_str(normalized.get("location") if normalized else ""),
         "effective_date": _safe_str(normalized.get("effective_date") if normalized else ""),
+        "accepted_by": _safe_str(normalized.get("accepted_by") if normalized else ""),
         "approved_by": _safe_str(normalized.get("approved_by") if normalized else ""),
         "approval_date": _safe_str(normalized.get("approval_date") if normalized else ""),
         "price_book_hash": _safe_str(normalized.get("price_book_hash") if normalized else ""),
         "contingency_pct": _safe_float(normalized.get("contingency_pct") if normalized else None, 15.0),
+        "confidence": _safe_str(normalized.get("confidence") if normalized else "", "concept_default" if not raw else "blocked"),
+        "items": _safe_list(normalized.get("items") if normalized else []),
         "production_validation": validation,
         "production_metric_keys": sorted(user_prices.keys()),
     }
@@ -504,7 +572,7 @@ def build_cost_package_status(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
 
     source_complete = all(
         _safe_str(pricing.get(field))
-        for field in ("source", "location", "effective_date", "approved_by", "approval_date")
+        for field in ("source", "source_type", "location", "effective_date", "approved_by", "approval_date")
     )
     production_usable = bool(cost.get("success") is True and totals.get("production_usable") is True and not blockers)
     if production_usable:
@@ -524,12 +592,20 @@ def build_cost_package_status(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
         "price_book_hash": price_hash,
         "price_source": {
             "source": _safe_str(pricing.get("source")),
+            "source_name": _safe_str(pricing.get("source_name") or pricing.get("source")),
+            "source_type": _safe_str(pricing.get("source_type")),
             "location": _safe_str(pricing.get("location")),
             "effective_date": _safe_str(pricing.get("effective_date")),
+            "accepted_by": _safe_str(pricing.get("accepted_by") or pricing.get("approved_by")),
             "approved_by": _safe_str(pricing.get("approved_by")),
             "approval_date": _safe_str(pricing.get("approval_date")),
             "currency": _safe_str(pricing.get("currency"), "USD"),
             "contingency_pct": _safe_float(pricing.get("contingency_pct"), 0.0),
+            "confidence": _safe_str(pricing.get("confidence"), "blocked"),
+            "items": _safe_list(pricing.get("items")),
+            "stale": bool(pricing_validation.get("stale")),
+            "age_days": pricing_validation.get("age_days"),
+            "stale_after_days": pricing_validation.get("stale_after_days"),
             "approved_source_complete": source_complete,
             "production_usable": bool(pricing.get("production_usable")),
         },
@@ -602,6 +678,15 @@ def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
             "source_object_ids": source_ids,
             "trace_complete": bool(source_ids),
             "pricing_source": pricing_meta["source"],
+            "unit_price_source": {
+                "source_name": _safe_str(price.get("source_name") or pricing_meta.get("source_name") or pricing_meta.get("source")),
+                "source_type": _safe_str(price.get("source_type") or pricing_meta.get("source_type")),
+                "source_item_id": _safe_str(price.get("source_item_id")),
+                "effective_date": _safe_str(pricing_meta.get("effective_date")),
+                "accepted_by": _safe_str(pricing_meta.get("accepted_by") or pricing_meta.get("approved_by")),
+                "confidence": _safe_str(pricing_meta.get("confidence"), "blocked"),
+            },
+            "unit_price_source_item_id": _safe_str(price.get("source_item_id")),
             "production_price": metric in production_metric_keys,
         }
         line_items.append(line)

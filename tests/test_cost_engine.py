@@ -256,17 +256,109 @@ class CostEngineTests(unittest.TestCase):
         price_book = unit_price_book_from_csv(
             "metric,item,category,unit,unit_cost,bid_item_id\npipe_length_ft,RCP storm pipe,storm,ft,125,ST-01\n",
             source="company_bid_book",
+            source_type="company_bid_book",
             location="Austin, TX",
             effective_date="2026-05-01",
+            accepted_by="Estimator",
             approved_by="Estimator",
             approval_date="2026-05-02",
             contingency_pct=8,
         )
 
         self.assertTrue(price_book["production_usable"])
+        self.assertEqual(price_book["version"], "cost_book_v1")
+        self.assertEqual(price_book["source_name"], "company_bid_book")
+        self.assertEqual(price_book["source_type"], "company_bid_book")
+        self.assertEqual(price_book["accepted_by"], "Estimator")
+        self.assertEqual(price_book["confidence"], "approved")
+        self.assertEqual(price_book["items"][0]["source_item_id"], "ST-01")
         self.assertTrue(price_book["production_validation"]["success"])
         self.assertEqual(price_book["unit_prices"]["pipe_length_ft"]["source_item_id"], "ST-01")
         self.assertEqual(price_book["contingency_pct"], 8.0)
+
+    def test_cost_line_items_map_quantities_to_approved_cost_book_items(self) -> None:
+        result = compute_cost_estimate(
+            {
+                "meta": {
+                    "cost_pricing": {
+                        "source_name": "company_2026_bid_book",
+                        "source_type": "company_bid_book",
+                        "location": "Austin, TX",
+                        "effective_date": "2026-05-01",
+                        "accepted_by": "Alpha Estimator",
+                        "approval_date": "2026-05-02",
+                        "unit_prices": {
+                            "pipe_length_ft": {
+                                "item": "RCP storm pipe",
+                                "category": "storm",
+                                "unit": "ft",
+                                "unit_cost": 100.0,
+                                "source_item_id": "ST-100",
+                            }
+                        },
+                    },
+                    "quantities": {
+                        "success": True,
+                        "totals": {"pipe_length_ft": 50.0},
+                        "explain": {"quantity_audit": {"pipe_length_ft": {"source_object_ids": ["P-1"]}}},
+                    },
+                }
+            }
+        )
+
+        self.assertTrue(result.success)
+        line = result.line_items[0]
+        self.assertEqual(line["metric"], "pipe_length_ft")
+        self.assertEqual(line["source_object_ids"], ["P-1"])
+        self.assertEqual(line["unit_price_source_item_id"], "ST-100")
+        self.assertEqual(line["unit_price_source"]["source_name"], "company_2026_bid_book")
+        self.assertEqual(line["unit_price_source"]["source_type"], "company_bid_book")
+        self.assertEqual(line["unit_price_source"]["accepted_by"], "Alpha Estimator")
+
+    def test_stale_approved_cost_book_blocks_package_readiness(self) -> None:
+        meta = {
+            "cost_pricing": {
+                "source_name": "old_company_bid_book",
+                "source_type": "company_bid_book",
+                "location": "Austin, TX",
+                "effective_date": "2000-01-01",
+                "accepted_by": "Alpha Estimator",
+                "approval_date": "2000-01-02",
+                "unit_prices": {
+                    "pipe_length_ft": {
+                        "item": "RCP storm pipe",
+                        "category": "storm",
+                        "unit": "ft",
+                        "unit_cost": 100.0,
+                        "source_item_id": "ST-100",
+                    }
+                },
+            },
+            "quantities": {
+                "success": True,
+                "totals": {"pipe_length_ft": 50.0},
+                "explain": {"quantity_audit": {"pipe_length_ft": {"source_object_ids": ["P-1"]}}},
+            },
+        }
+        result = compute_cost_estimate({"meta": meta})
+        meta["cost_estimate"] = {
+            "success": result.success,
+            "message": result.message,
+            "totals": result.totals,
+            "line_items": result.line_items,
+            "category_subtotals": result.category_subtotals,
+            "warnings": result.warnings,
+            "assumptions": result.assumptions,
+            "explain": result.explain,
+        }
+
+        package = build_cost_package_status({"meta": meta})
+
+        self.assertFalse(result.success)
+        self.assertFalse(package["production_usable"])
+        self.assertEqual(package["status"], "needs_review")
+        self.assertTrue(package["price_source"]["stale"])
+        self.assertIn("effective_date", {item["field"] for item in package["blockers"]})
 
     def test_unit_price_book_validation_blocks_missing_required_metadata(self) -> None:
         price_book = normalize_unit_price_book(

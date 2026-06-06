@@ -12,6 +12,7 @@ from backend.planning.engineer_review_package import build_engineer_review_packa
 from backend.planning.export_package_report import build_export_package_report_v1
 from backend.planning.production_evidence import build_production_evidence
 from core.civil_design import civil_design_readiness
+from engines.cost_engine import build_cost_package_status, compute_cost_estimate
 from backend.planning.production_depth import enrich_storm_production_depth
 from tests.test_engine_depth_audit import (
     _complete_storm_hgl_fixture,
@@ -355,6 +356,54 @@ class NormalScenarioEvidenceWiringTests(unittest.TestCase):
         quantity = readiness["engines"]["quantity"]
         self.assertEqual(quantity["status"], "concept_ready_needs_production_depth")
         self.assertIn("approved_cost_source", {item["field"] for item in quantity["production_blockers"]})
+
+    def test_stale_cost_book_blocks_quantity_cost_production_evidence(self) -> None:
+        meta = {
+            "cost_pricing": {
+                "source_name": "old_company_bid_book",
+                "source_type": "company_bid_book",
+                "location": "Austin, TX",
+                "effective_date": "2000-01-01",
+                "accepted_by": "Alpha Estimator",
+                "approval_date": "2000-01-02",
+                "unit_prices": {
+                    "pipe_length_ft": {
+                        "item": "RCP storm pipe",
+                        "category": "storm",
+                        "unit": "ft",
+                        "unit_cost": 100.0,
+                        "source_item_id": "ST-100",
+                    }
+                },
+            },
+            "quantities": {
+                "success": True,
+                "totals": {"pipe_length_ft": 50.0},
+                "explain": {"quantity_audit": {"pipe_length_ft": {"source_object_ids": ["P-1"]}}},
+            },
+        }
+        cost = compute_cost_estimate({"meta": meta})
+        meta["cost_estimate"] = {
+            "success": cost.success,
+            "message": cost.message,
+            "totals": cost.totals,
+            "line_items": cost.line_items,
+            "category_subtotals": cost.category_subtotals,
+            "warnings": cost.warnings,
+            "assumptions": cost.assumptions,
+            "explain": cost.explain,
+        }
+        meta["cost_package_status"] = build_cost_package_status({"meta": meta})
+
+        evidence = build_production_evidence({"meta": meta})
+
+        self.assertFalse(evidence["quantity_cost"]["approved_cost_source"])
+        self.assertIn("stale_pricing", {item["field"] for item in evidence["quantity_cost"]["blockers"]})
+        metadata = evidence["quantity_cost"]["pricing_source_metadata"]
+        self.assertEqual(metadata["source_name"], "old_company_bid_book")
+        self.assertEqual(metadata["source_type"], "company_bid_book")
+        self.assertEqual(metadata["accepted_by"], "Alpha Estimator")
+        self.assertTrue(metadata["stale"])
 
     def test_reactive_dirty_evidence_flows_to_audit_and_readiness(self) -> None:
         def dirty_plan(payload: dict) -> dict:
