@@ -121,6 +121,23 @@ class ArtifactService:
     ) -> Path:
         package_report = self._ensure_export_package_report(final_plan, export_type=export_type)
         sidecar_path = self._sidecar_path(artifact_path)
+        external_verification: Dict[str, Any] = {
+            "source": "export_external_verification_v1",
+            "format": export_type,
+            "externally_verified": False,
+            "civil3d_external_verification_status": "not_verified",
+            "dwg_support_status": "unsupported_no_writer",
+            "construction_release_allowed": False,
+            "construction_release_blocked": True,
+        }
+        if export_type == "dxf":
+            from backend.planning.export_external_verification import verify_dxf_export
+
+            external_verification = verify_dxf_export(
+                artifact_path,
+                plan=final_plan,
+                sidecar_path=None,
+            )
         payload: Dict[str, Any] = {
             "source": "export_artifact_sidecar_v1",
             "artifact_path": str(artifact_path),
@@ -140,6 +157,7 @@ class ArtifactService:
             "civora_signoff_allowed": False,
             "construction_release_allowed": False,
             "construction_release_blocked": True,
+            "external_artifact_verification": external_verification,
         }
         if report_payload is not None:
             payload["report_line_items"] = self._report_line_items(report_payload, package_report)
