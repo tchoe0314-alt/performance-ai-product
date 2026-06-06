@@ -42,6 +42,10 @@ def _complete_roadway_corridor_meta() -> dict:
                     "crown_tolerance_ft": 0.0,
                     "expected_cross_slope": 0.02,
                     "actual_cross_slope": 0.02,
+                    "expected_left_cross_slope": 0.02,
+                    "actual_left_cross_slope": 0.02,
+                    "expected_right_cross_slope": 0.02,
+                    "actual_right_cross_slope": 0.02,
                     "cross_slope_tolerance": 0.0,
                     "standard_id": "CITY-ROAD-2026",
                     "standard_status": "adopted",
@@ -80,6 +84,9 @@ def _complete_roadway_corridor_meta() -> dict:
                     "pad_elev_ft": 101.2,
                     "positive_drainage": True,
                     "proposed_surface_id": "FG-ACCEPTED-1",
+                    "expected_max_tie_slope": 0.05,
+                    "actual_tie_slope": 0.03,
+                    "tie_in_elevations_ft": [101.2, 101.0],
                     "control_source": "accepted_proposed_surface",
                 }
             ],
@@ -88,6 +95,9 @@ def _complete_roadway_corridor_meta() -> dict:
                     "contour_id": "FG-100",
                     "interval_ft": 2.0,
                     "proposed_surface_id": "FG-ACCEPTED-1",
+                    "expected_min_contour_count": 1,
+                    "contour_count": 2,
+                    "sample_elevations_ft": [100.0, 102.0],
                     "source": "accepted_proposed_surface",
                 }
             ],
@@ -629,6 +639,10 @@ class DepthValidatorTests(unittest.TestCase):
         self.assertEqual(result["road_crown_trace"][0]["actual_crown_elev_ft"], 100.25)
         self.assertEqual(result["road_crown_trace"][0]["expected_cross_slope"], 0.02)
         self.assertEqual(result["road_crown_trace"][0]["actual_cross_slope"], 0.02)
+        self.assertEqual(result["road_crown_trace"][0]["expected_left_cross_slope"], 0.02)
+        self.assertEqual(result["road_crown_trace"][0]["actual_left_cross_slope"], 0.02)
+        self.assertEqual(result["road_crown_trace"][0]["expected_right_cross_slope"], 0.02)
+        self.assertEqual(result["road_crown_trace"][0]["actual_right_cross_slope"], 0.02)
         self.assertEqual(result["curb_gutter_trace"][0]["road_id"], "ALG-ROAD-A")
         self.assertEqual(result["curb_gutter_trace"][0]["expected_min_gutter_slope"], 0.005)
         self.assertEqual(result["curb_gutter_trace"][0]["actual_gutter_slope"], 0.006)
@@ -638,8 +652,13 @@ class DepthValidatorTests(unittest.TestCase):
         self.assertEqual(result["ada_path_trace"][0]["actual_cross_slope"], 0.015)
         self.assertEqual(result["pad_tie_in_trace"][0]["expected_proposed_surface_id"], "FG-ACCEPTED-1")
         self.assertEqual(result["pad_tie_in_trace"][0]["actual_proposed_surface_id"], "FG-ACCEPTED-1")
+        self.assertEqual(result["pad_tie_in_trace"][0]["expected_max_tie_slope"], 0.05)
+        self.assertEqual(result["pad_tie_in_trace"][0]["actual_tie_slope"], 0.03)
         self.assertEqual(result["contour_trace"][0]["expected_proposed_surface_id"], "FG-ACCEPTED-1")
         self.assertEqual(result["contour_trace"][0]["actual_proposed_surface_id"], "FG-ACCEPTED-1")
+        self.assertEqual(result["contour_trace"][0]["expected_min_contour_count"], 1)
+        self.assertEqual(result["contour_trace"][0]["actual_contour_count"], 2)
+        self.assertEqual(result["contour_trace"][0]["sample_elevations_ft"], [100.0, 102.0])
         self.assertTrue(result["expected_actual_checks"])
 
     def test_roadway_depth_blocks_missing_expected_actual_and_surface_trace(self) -> None:

@@ -194,6 +194,10 @@ def _roadway_crown_expected_actual(row: Dict[str, Any]) -> Dict[str, Any]:
     actual_crown = rec.get("actual_crown_elev_ft", rec.get("crown_elev_ft"))
     expected_cross = rec.get("expected_cross_slope", rec.get("design_cross_slope", rec.get("standard_cross_slope")))
     actual_cross = rec.get("actual_cross_slope", rec.get("cross_slope"))
+    expected_left_cross = rec.get("expected_left_cross_slope", expected_cross)
+    actual_left_cross = rec.get("actual_left_cross_slope", rec.get("left_cross_slope", actual_cross))
+    expected_right_cross = rec.get("expected_right_cross_slope", expected_cross)
+    actual_right_cross = rec.get("actual_right_cross_slope", rec.get("right_cross_slope", actual_cross))
     crown_tolerance = safe_float(rec.get("crown_tolerance_ft"), 0.0)
     slope_tolerance = safe_float(rec.get("cross_slope_tolerance"), 0.0)
     valid = bool(
@@ -202,8 +206,14 @@ def _roadway_crown_expected_actual(row: Dict[str, Any]) -> Dict[str, Any]:
         and _present(actual_crown)
         and _present(expected_cross)
         and _present(actual_cross)
+        and _present(expected_left_cross)
+        and _present(actual_left_cross)
+        and _present(expected_right_cross)
+        and _present(actual_right_cross)
         and abs(safe_float(actual_crown, 0.0) - safe_float(expected_crown, 0.0)) <= crown_tolerance
         and abs(safe_float(actual_cross, 0.0) - safe_float(expected_cross, 0.0)) <= slope_tolerance
+        and abs(safe_float(actual_left_cross, 0.0) - safe_float(expected_left_cross, 0.0)) <= slope_tolerance
+        and abs(safe_float(actual_right_cross, 0.0) - safe_float(expected_right_cross, 0.0)) <= slope_tolerance
         and _has_accepted_standard(rec)
         and _row_is_production_evidence(rec)
     )
@@ -214,6 +224,10 @@ def _roadway_crown_expected_actual(row: Dict[str, Any]) -> Dict[str, Any]:
         "actual_crown_elev_ft": actual_crown,
         "expected_cross_slope": expected_cross,
         "actual_cross_slope": actual_cross,
+        "expected_left_cross_slope": expected_left_cross,
+        "actual_left_cross_slope": actual_left_cross,
+        "expected_right_cross_slope": expected_right_cross,
+        "actual_right_cross_slope": actual_right_cross,
         "crown_tolerance_ft": crown_tolerance,
         "cross_slope_tolerance": slope_tolerance,
         "standard_id": safe_str(rec.get("standard_id") or rec.get("standard")),
@@ -281,11 +295,21 @@ def _roadway_pad_tie_expected_actual(row: Dict[str, Any], surface_trace: Dict[st
     rec = safe_dict(row)
     expected_surface = safe_str(surface_trace.get("proposed_surface_id"))
     actual_surface = safe_str(rec.get("proposed_surface_id") or rec.get("surface_id") or rec.get("accepted_surface_id"))
+    expected_max_tie_slope = rec.get("expected_max_tie_slope", rec.get("max_tie_slope"))
+    actual_tie_slope = rec.get("actual_tie_slope", rec.get("tie_slope"))
+    slope_ok = True
+    if _present(expected_max_tie_slope) or _present(actual_tie_slope):
+        slope_ok = bool(
+            _present(expected_max_tie_slope)
+            and _present(actual_tie_slope)
+            and safe_float(actual_tie_slope, 1.0) <= safe_float(expected_max_tie_slope, 0.0)
+        )
     valid = bool(
         rec.get("valid") is True
         and safe_str(rec.get("building") or rec.get("building_id"))
         and _present(rec.get("pad_elev_ft") or rec.get("actual_pad_elev_ft"))
         and rec.get("positive_drainage") is not False
+        and slope_ok
         and surface_trace.get("valid") is True
         and actual_surface
         and actual_surface == expected_surface
@@ -297,6 +321,9 @@ def _roadway_pad_tie_expected_actual(row: Dict[str, Any], surface_trace: Dict[st
         "actual_proposed_surface_id": actual_surface,
         "pad_elev_ft": rec.get("pad_elev_ft", rec.get("actual_pad_elev_ft")),
         "positive_drainage": rec.get("positive_drainage"),
+        "expected_max_tie_slope": expected_max_tie_slope,
+        "actual_tie_slope": actual_tie_slope,
+        "tie_in_elevations_ft": safe_list(rec.get("tie_in_elevations_ft") or rec.get("tie_elevations_ft")),
         "valid": valid,
     }
 
@@ -306,11 +333,18 @@ def _roadway_contour_expected_actual(row: Dict[str, Any], surface_trace: Dict[st
     expected_surface = safe_str(surface_trace.get("proposed_surface_id"))
     actual_surface = safe_str(rec.get("proposed_surface_id") or rec.get("surface_id") or rec.get("accepted_surface_id"))
     interval = rec.get("interval_ft")
+    sample_values = safe_list(rec.get("sample_elevations_ft") or rec.get("sample_values") or rec.get("contour_values_ft"))
+    actual_count = rec.get("actual_contour_count", rec.get("contour_count", len(sample_values)))
+    expected_min_count = rec.get("expected_min_contour_count", rec.get("expected_min_sample_count"))
+    count_ok = True
+    if _present(expected_min_count):
+        count_ok = safe_float(actual_count, 0.0) >= safe_float(expected_min_count, 0.0)
     valid = bool(
         surface_trace.get("valid") is True
         and actual_surface
         and actual_surface == expected_surface
         and safe_float(interval, 0.0) > 0.0
+        and count_ok
         and _row_is_production_evidence(rec)
     )
     return {
@@ -319,6 +353,9 @@ def _roadway_contour_expected_actual(row: Dict[str, Any], surface_trace: Dict[st
         "actual_proposed_surface_id": actual_surface,
         "expected_interval_ft": surface_trace.get("contour_interval_ft", rec.get("expected_interval_ft")),
         "actual_interval_ft": interval,
+        "expected_min_contour_count": expected_min_count,
+        "actual_contour_count": actual_count,
+        "sample_elevations_ft": sample_values,
         "valid": valid,
     }
 

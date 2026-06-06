@@ -1,3 +1,4 @@
+from copy import deepcopy
 import json
 import tempfile
 import unittest
@@ -14,10 +15,12 @@ from backend.planning.engine_depth_audit import (
 )
 from backend.planning.engine_readiness import evaluate_engine_readiness
 from backend.planning.engine_contracts import engine_contracts
+from backend.planning.depth_validators import validate_roadway_corridor_depth
 from backend.planning.golden_runner import run_golden_scenario
 from backend.planning.production_depth import enrich_storm_production_depth
 from core.civil_design import civil_design_readiness
 from tests.test_civil_design_readiness import _complete_meta
+from tests.test_depth_validators import _complete_roadway_corridor_meta
 
 
 def _review_depth_meta() -> dict:
@@ -178,6 +181,56 @@ def _hgl_egl_depth_plan(payload: dict) -> dict:
     return plan
 
 
+def _complete_roadway_grading_fixture_meta() -> dict:
+    meta = deepcopy(_complete_roadway_corridor_meta())
+    grading = meta["grading"]
+    grading["source"] = "roadway_grading_depth_fixture"
+    grading["accepted_existing_surface_id"] = "EG-ACCEPTED-1"
+    grading["accepted_proposed_surface_id"] = "FG-ACCEPTED-1"
+    grading["grading_source"] = {
+        "accepted_existing_surface_id": "EG-ACCEPTED-1",
+        "accepted_proposed_surface_id": "FG-ACCEPTED-1",
+        "source_status": "accepted_for_engine_depth_fixture",
+    }
+    grading["surface_traceability"]["contour_interval_ft"] = 2.0
+    grading["pad_tie_ins"][0]["pad_id"] = "PAD-BLDG-1"
+    grading["contours"][0]["contour_values_ft"] = [100.0, 102.0]
+    grading["contours"][0]["actual_contour_count"] = 2
+    return meta
+
+
+def _roadway_grading_depth_plan(payload: dict) -> dict:
+    meta = _review_depth_meta()
+    fixture = _complete_roadway_grading_fixture_meta()
+    meta.update(fixture)
+    meta["lot"] = payload.get("lot") or meta["lot"]
+    meta["quantities"]["explain"]["quantity_audit"]["roadway_area_sf"] = {"source_object_ids": ["ALG-ROAD-A"]}
+    plan = {
+        "project_name": payload.get("project_name"),
+        "actions": [
+            {
+                "task": "polyline",
+                "layer": "ROAD",
+                "canonical_source_type": "road_alignment",
+                "canonical_source_id": "ALG-ROAD-A",
+                "points": [[0.0, 0.0], [100.0, 0.0]],
+            },
+            {
+                "task": "rectangle",
+                "layer": "BUILDING",
+                "canonical_source_type": "building_pad",
+                "canonical_source_id": "PAD-BLDG-1",
+                "width": 50.0,
+                "height": 40.0,
+            },
+        ],
+        "meta": meta,
+    }
+    meta["civil_design_readiness"] = civil_design_readiness(plan)
+    meta["engine_readiness"] = evaluate_engine_readiness(plan)
+    return plan
+
+
 def _concept_plan(payload: dict) -> dict:
     return {
         "project_name": payload.get("project_name"),
@@ -319,6 +372,67 @@ class EngineDepthAuditTests(unittest.TestCase):
         messages = {item["message"] for item in storm_row["production_blockers"] if item.get("area") == "storm_depth"}
         self.assertIn("Storm depth needs HGL and EGL profiles from production hydraulic evidence.", messages)
         self.assertIn("Storm depth needs tailwater/backwater evidence.", messages)
+
+    def test_complete_roadway_grading_fixture_proves_roadway_depth(self) -> None:
+        report = run_engine_depth_audit(scenario_ids=["roadway_corridor"], build_plan_fn=_roadway_grading_depth_plan)
+
+        roadway = report["engine_results"]["roadway_corridor"]
+        self.assertEqual(roadway["actual_depth_classification"], CLASS_PRODUCTION_DEPTH)
+        self.assertEqual(roadway["score"], 100.0)
+        self.assertEqual(roadway["first_failing_layer"], "")
+        self.assertFalse(report["construction_release_allowed"])
+        self.assertEqual(report["summary"]["construction_gate_recommendation"], "block_construction_not_production_depth")
+
+        plan = _roadway_grading_depth_plan({"project_name": "roadway grading depth fixture"})
+        depth = validate_roadway_corridor_depth(plan)
+        self.assertEqual(depth["road_crown_trace"][0]["road_id"], "ALG-ROAD-A")
+        self.assertEqual(depth["road_crown_trace"][0]["expected_left_cross_slope"], 0.02)
+        self.assertEqual(depth["road_crown_trace"][0]["actual_left_cross_slope"], 0.02)
+        self.assertEqual(depth["road_crown_trace"][0]["expected_right_cross_slope"], 0.02)
+        self.assertEqual(depth["road_crown_trace"][0]["actual_right_cross_slope"], 0.02)
+        self.assertEqual(depth["curb_gutter_trace"][0]["alignment_id"], "ALG-ROAD-A")
+        self.assertEqual(depth["curb_gutter_trace"][0]["expected_min_gutter_slope"], 0.005)
+        self.assertEqual(depth["curb_gutter_trace"][0]["actual_gutter_slope"], 0.006)
+        self.assertEqual(depth["ada_path_trace"][0]["expected_max_running_slope"], 0.05)
+        self.assertEqual(depth["ada_path_trace"][0]["actual_running_slope"], 0.04)
+        self.assertEqual(depth["ada_path_trace"][0]["expected_max_cross_slope"], 0.02)
+        self.assertEqual(depth["ada_path_trace"][0]["actual_cross_slope"], 0.015)
+        self.assertEqual(depth["pad_tie_in_trace"][0]["building_id"], "BLDG-1")
+        self.assertEqual(depth["pad_tie_in_trace"][0]["expected_proposed_surface_id"], "FG-ACCEPTED-1")
+        self.assertEqual(depth["pad_tie_in_trace"][0]["actual_proposed_surface_id"], "FG-ACCEPTED-1")
+        self.assertEqual(depth["pad_tie_in_trace"][0]["expected_max_tie_slope"], 0.05)
+        self.assertEqual(depth["pad_tie_in_trace"][0]["actual_tie_slope"], 0.03)
+        self.assertEqual(depth["contour_trace"][0]["expected_proposed_surface_id"], "FG-ACCEPTED-1")
+        self.assertEqual(depth["contour_trace"][0]["actual_proposed_surface_id"], "FG-ACCEPTED-1")
+        self.assertEqual(depth["contour_trace"][0]["expected_min_contour_count"], 1)
+        self.assertEqual(depth["contour_trace"][0]["actual_contour_count"], 2)
+        self.assertEqual(depth["surface_traceability"]["existing_surface_id"], "EG-ACCEPTED-1")
+        self.assertEqual(depth["surface_traceability"]["proposed_surface_id"], "FG-ACCEPTED-1")
+
+    def test_roadway_grading_fixture_missing_evidence_remains_blocked(self) -> None:
+        meta = _complete_roadway_grading_fixture_meta()
+        meta["grading"]["road_crown_controls"][0].pop("actual_left_cross_slope")
+        meta["grading"]["road_crown_controls"][0].pop("actual_cross_slope")
+        meta["grading"]["curb_gutter_controls"][0].pop("alignment_id")
+        meta["grading"]["surface_traceability"].pop("proposed_surface_id")
+        meta["grading"]["pad_tie_ins"][0].pop("proposed_surface_id")
+        meta["grading"]["contours"][0]["actual_contour_count"] = 0
+        plan = {"meta": meta}
+
+        readiness = evaluate_engine_readiness(plan)
+        roadway = readiness["engines"]["roadway_corridor"]
+        depth = validate_roadway_corridor_depth(plan)
+
+        self.assertNotEqual(roadway["status"], "production_ready")
+        self.assertFalse(depth["production_ready"])
+        self.assertFalse(depth["road_crown_trace"][0]["valid"])
+        self.assertFalse(depth["pad_tie_in_trace"][0]["valid"])
+        self.assertFalse(depth["contour_trace"][0]["valid"])
+        blockers = set(depth["blockers"])
+        self.assertIn("Roadway depth needs verified road crown controls with expected/actual crown and cross-slope values.", blockers)
+        self.assertIn("Roadway depth needs accepted grading surface traceability.", blockers)
+        self.assertIn("Roadway depth needs pad tie-ins tied to accepted proposed surface IDs.", blockers)
+        self.assertIn("Roadway depth needs contours tied to accepted proposed surface evidence.", blockers)
 
     def test_audit_writes_report_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
