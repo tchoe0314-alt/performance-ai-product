@@ -10297,15 +10297,6 @@ function PerformanceAIDashboardView({
     : [];
   const sidebarTruthItems: Array<{ label: string; value: string; status: SidebarStatus }> = [
     {
-      label: "Missing inputs",
-      value: !sidebarHasTruthEvidence
-        ? "not evaluated"
-        : sidebarMissingInputs.length
-          ? sidebarMissingInputs.slice(0, 2).join(", ")
-          : "none flagged",
-      status: !sidebarHasTruthEvidence ? "idle" : sidebarMissingInputs.length ? "review" : "ok",
-    },
-    {
       label: "Engineer review",
       value: !sidebarHasTruthEvidence
         ? "not evaluated"
