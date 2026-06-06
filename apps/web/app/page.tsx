@@ -13,7 +13,6 @@ import {
   Gauge,
   Layers,
   MapPinned,
-  Route,
   Settings,
   SquareStack,
 } from "lucide-react";
@@ -107,6 +106,7 @@ type SidePanelKey =
   | "system_landscape";
 type WorkspaceMode =
   | "dashboard"
+  | "setup"
   | "canvas"
   | "layers"
   | "sections"
@@ -1100,8 +1100,8 @@ function PerformanceAIDashboardView({
   const effectiveDemoWorkspaceEnabled = forceDemoWorkspace || routeDemoWorkspaceEnabled || demoWorkspaceEnabled;
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [chatCollapsed, setChatCollapsed] = useState(false);
-  const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>("dashboard");
-  const [activeWorkspaceMode, setActiveWorkspaceMode] = useState<WorkspaceMode>("dashboard");
+  const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>("site_existing");
+  const [activeWorkspaceMode, setActiveWorkspaceMode] = useState<WorkspaceMode>("setup");
   const [imageName, setImageName] = useState("");
   const [siteName, setSiteName] = useState("");
   const [fileName, setFileName] = useState("");
@@ -3682,6 +3682,10 @@ function PerformanceAIDashboardView({
   const handlePlaceBuilding = useCallback(
     (position: { x: number; y: number }) => {
       clearGeneratedPreview();
+      if (!siteScaleLocked) {
+        setStatusMessage("Lock the site boundary before placing buildings.");
+        return;
+      }
       const lot = resolveLotBounds();
       if (!lot.w || !lot.h) {
         setStatusMessage("Set the site width and height before placing buildings.");
@@ -3778,6 +3782,7 @@ function PerformanceAIDashboardView({
       markSystemsStale,
       resolveDefaultBuildingDims,
       resolveLotBounds,
+      siteScaleLocked,
       systemsImpactedByPlacement,
     ],
   );
@@ -3785,6 +3790,10 @@ function PerformanceAIDashboardView({
   const handlePlaceObject = useCallback(
     (id: string, position: { x: number; y: number }) => {
       clearGeneratedPreview();
+      if (!siteScaleLocked) {
+        setStatusMessage("Lock the site boundary before placing objects.");
+        return;
+      }
       const lot = resolveLotBounds();
       if (!lot.w || !lot.h) {
         const ok = ensureSiteBoundary(
@@ -3845,7 +3854,178 @@ function PerformanceAIDashboardView({
         .then(() => saveProjectRef.current({ silent: true }))
         .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object placement...", track: true });
     },
-    [buildDefaultPolyline, buildingPlacements, clearGeneratedPreview, ensureSiteBoundary, markSystemsStale, resolveLotBounds, systemsImpactedByPlacement],
+    [
+      buildDefaultPolyline,
+      buildingPlacements,
+      clearGeneratedPreview,
+      ensureSiteBoundary,
+      markSystemsStale,
+      resolveLotBounds,
+      siteScaleLocked,
+      systemsImpactedByPlacement,
+    ],
+  );
+
+  const handleCreateSiteBoundary = useCallback(
+    (payload: { points: Array<[number, number]> }) => {
+      clearGeneratedPreview();
+      const validPoints = payload.points.filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y));
+      if (validPoints.length < 3) {
+        setStatusMessage("Draw at least three points before locking a site boundary.");
+        return;
+      }
+      const xs = validPoints.map((pt) => pt[0]);
+      const ys = validPoints.map((pt) => pt[1]);
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
+      const width = Math.max(1, maxX - minX);
+      const height = Math.max(1, maxY - minY);
+      if (width < 10 || height < 10) {
+        setStatusMessage("Drawn site boundary is too small. Add a wider boundary or set dimensions manually.");
+        return;
+      }
+      const normalizedGeometry = validPoints.map(([x, y]) => [x - minX, y - minY] as [number, number]);
+      const acres = (width * height) / SQFT_PER_ACRE;
+      const siteId = `site-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const nextSite: BuildingPlacement = {
+        id: siteId,
+        label: "Site Boundary",
+        type: "site",
+        x: 0,
+        y: 0,
+        w: Number(width.toFixed(0)),
+        d: Number(height.toFixed(0)),
+        rotation: 0,
+        locked: true,
+        placed: true,
+        source: "manual_drawn",
+        generated: false,
+        geometryType: "polygon",
+        geometry: normalizedGeometry,
+        capabilities: {
+          movable: false,
+          resizable: false,
+          rotatable: false,
+          deletable: false,
+        },
+        systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+        meta: {
+          category: "site",
+          site_boundary_state: "locked_canonical",
+          source: "manual_drawn",
+          source_ui_mode: "canvas_draw",
+          confidence: "user_drawn_review_required",
+          engineering_status: "review_required",
+          construction_release_allowed: false,
+          units: units || "ft",
+          acres: Number(acres.toFixed(3)),
+          boundary_vertices: normalizedGeometry.map(([x, y], idx) => ({
+            id: `${siteId}-v-${idx + 1}`,
+            x,
+            y,
+            units: units || "ft",
+          })),
+        },
+      };
+      const nextPlacements = [
+        nextSite,
+        ...buildingPlacements.filter((item) => item.type !== "site"),
+      ];
+      const nextLotWidth = String(nextSite.w);
+      const nextLotHeight = String(nextSite.d);
+      setLotWidth(nextLotWidth);
+      setLotHeight(nextLotHeight);
+      setSiteScaleLocked(true);
+      setShowSiteBounds(false);
+      setSiteSelectionMode(false);
+      setFitToSiteRequest((value) => value + 1);
+      setBuildingPlacements(nextPlacements);
+      markSystemsStale(["roads", "parking", "grading", "drainage", "utilities"]);
+      setStatusMessage(`Site boundary locked at ${nextSite.w.toFixed(0)} ft x ${nextSite.d.toFixed(0)} ft (${acres.toFixed(2)} acres).`);
+
+      const currentInput = currentProject?.project_input ?? payloadPreview;
+      const nextManualFields = buildManualFields({
+        nextSiteName: siteName,
+        nextFileName: fileName,
+        nextUnits: units,
+        nextProjectType: projectType,
+        nextLotWidth,
+        nextLotHeight,
+        nextSetback: setback,
+        nextBuildingWidth: buildingWidth,
+        nextBuildingDepth: buildingDepth,
+        nextBuildingCount: buildingCount,
+        nextParkingCount: parkingCount,
+        nextMinSlopePct: minSlopePct,
+        nextPipeMinSlopePct: pipeMinSlopePct,
+        nextMaxParkingSlopePct: maxParkingSlopePct,
+        nextMaxRoadGradePct: maxRoadGradePct,
+        nextMaxAdaCrossSlopePct: maxAdaCrossSlopePct,
+        nextRoads: roads,
+        nextGrading: grading,
+        nextDrainage: drainage,
+        nextUtilities: utilities,
+        placementsOverride: nextPlacements,
+      });
+      void ensureProjectDraftRef.current()
+        .then(() =>
+          saveProjectRef.current({
+            silent: true,
+            projectInputOverride: {
+              ...currentInput,
+              input_mode: "user",
+              strict_mode: false,
+              allow_ai_fill_for_blanks: false,
+              manual_fields: nextManualFields,
+              meta: {
+                ...(currentInput?.meta ?? {}),
+                site_inputs: {
+                  ...(currentInput?.meta?.site_inputs ?? {}),
+                  site_alignment_locked: true,
+                  site_boundary_source: "manual_drawn",
+                  site_boundary_state: "locked_canonical",
+                  site_boundary_acres: Number(acres.toFixed(3)),
+                },
+              },
+            },
+          }),
+        )
+        .then(() => {
+          previewRefreshIntentRef.current = {
+            reason: "Refreshing preview after site boundary draw...",
+            track: true,
+          };
+        });
+    },
+    [
+      buildManualFields,
+      buildingCount,
+      buildingDepth,
+      buildingPlacements,
+      buildingWidth,
+      clearGeneratedPreview,
+      currentProject,
+      drainage,
+      ensureProjectDraftRef,
+      fileName,
+      grading,
+      markSystemsStale,
+      maxAdaCrossSlopePct,
+      maxParkingSlopePct,
+      maxRoadGradePct,
+      minSlopePct,
+      parkingCount,
+      payloadPreview,
+      pipeMinSlopePct,
+      projectType,
+      roads,
+      setback,
+      siteName,
+      units,
+      utilities,
+    ],
   );
 
   const handleCreateCustomGeometry = useCallback(
@@ -3855,6 +4035,10 @@ function PerformanceAIDashboardView({
       label?: string;
     }) => {
       clearGeneratedPreview();
+      if (!siteScaleLocked) {
+        setStatusMessage("Lock the site boundary before drawing objects.");
+        return;
+      }
       const lot = resolveLotBounds();
       if (!lot.w || !lot.h) {
         const ok = ensureSiteBoundary("Draw the geometry again after confirming the site boundary.");
@@ -3952,7 +4136,15 @@ function PerformanceAIDashboardView({
           };
         });
     },
-    [buildingPlacements, clearGeneratedPreview, ensureSiteBoundary, markSystemsStale, resolveLotBounds, units],
+    [
+      buildingPlacements,
+      clearGeneratedPreview,
+      ensureSiteBoundary,
+      markSystemsStale,
+      resolveLotBounds,
+      siteScaleLocked,
+      units,
+    ],
   );
 
   const handleTogglePlacementMode = useCallback(() => {
@@ -7410,7 +7602,14 @@ function PerformanceAIDashboardView({
               deletable: false,
             },
             systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
-            meta: { category: "site" },
+            meta: {
+              category: "site",
+              site_boundary_state: lockSite ? "locked_canonical" : "draft_editable",
+              source_ui_mode: "site_setup",
+              engineering_status: "review_required",
+              construction_release_allowed: false,
+              acres: Number(((clampedW * clampedH) / SQFT_PER_ACRE).toFixed(3)),
+            },
           },
           ...filtered,
         ];
@@ -7454,6 +7653,12 @@ function PerformanceAIDashboardView({
           ? {
               ...item,
               locked: true,
+              meta: {
+                ...(item.meta ?? {}),
+                site_boundary_state: "locked_canonical",
+                engineering_status: "review_required",
+                construction_release_allowed: false,
+              },
               capabilities: {
                 ...item.capabilities,
                 movable: false,
@@ -7496,6 +7701,12 @@ function PerformanceAIDashboardView({
           ? {
               ...item,
               locked: false,
+              meta: {
+                ...(item.meta ?? {}),
+                site_boundary_state: "draft_editable",
+                engineering_status: "review_required",
+                construction_release_allowed: false,
+              },
               capabilities: {
                 ...item.capabilities,
                 movable: true,
@@ -9855,7 +10066,7 @@ function PerformanceAIDashboardView({
     projects: { title: "Projects", desc: "Open, create, and manage project records." },
     dashboard: { title: "Dashboard", desc: "Review project readiness, health, and active work." },
     model: { title: "Canvas", desc: "Design, prompt-create, generate systems, and open contextual discipline controls." },
-    site_existing: { title: "Site & Existing", desc: "Review site boundary, existing conditions, and constraints." },
+    site_existing: { title: "Project Setup", desc: "Start from address, blank site, site size, boundary drawing, and first objects." },
     import_survey: { title: "Import & Survey", desc: "Bring in survey, map snapshots, and terrain sources." },
     objects: { title: "Objects", desc: "Add, size, and place model objects." },
     generate: { title: "Generate Systems", desc: "Run focused engines from one control panel." },
@@ -9902,8 +10113,8 @@ function PerformanceAIDashboardView({
     projects: "dashboard",
     dashboard: "dashboard",
     model: "canvas",
-    site_existing: "data",
-    import_survey: "data",
+    site_existing: "setup",
+    import_survey: "setup",
     objects: "canvas",
     generate: "canvas",
     grading: "canvas",
@@ -9935,6 +10146,7 @@ function PerformanceAIDashboardView({
   };
   const workspacePanelByMode: Record<WorkspaceMode, SidePanelKey> = {
     dashboard: "dashboard",
+    setup: "site_existing",
     canvas: "model",
     layers: "layers",
     sections: "details",
@@ -10044,6 +10256,7 @@ function PerformanceAIDashboardView({
   };
   const sidebarModeStatus = (mode: WorkspaceMode): SidebarStatus => {
     if (mode === "dashboard") return panelStatus("dashboard");
+    if (mode === "setup") return siteScaleLocked ? "ok" : "review";
     if (mode === "canvas" || mode === "three_d") return panelStatus("model");
     if (mode === "layers") return panelStatus("layers");
     if (mode === "sections") return placedObjectCount > 0 || roads || utilities ? "review" : "idle";
@@ -10056,10 +10269,9 @@ function PerformanceAIDashboardView({
   };
   const sidebarModes: SidebarNavItem[] = [
     { label: "Dashboard", caption: "Project status", target: "dashboard", icon: Gauge, status: sidebarModeStatus("dashboard") },
+    { label: "Setup", caption: "Site and boundary", target: "setup", icon: MapPinned, status: sidebarModeStatus("setup") },
     { label: "Canvas", caption: "Design workspace", target: "canvas", icon: Box, status: sidebarModeStatus("canvas") },
     { label: "Layers", caption: "Visibility presets", target: "layers", icon: Layers, status: sidebarModeStatus("layers") },
-    { label: "Sections", caption: "Profiles and cuts", target: "sections", icon: Route, status: sidebarModeStatus("sections") },
-    { label: "3D", caption: "Engineering review", target: "three_d", icon: Box, status: sidebarModeStatus("three_d") },
     { label: "Reports", caption: "Health and QA", target: "reports", icon: ClipboardCheck, status: sidebarModeStatus("reports") },
     { label: "Quantities", caption: "Live takeoffs", target: "quantities", icon: Database, status: sidebarModeStatus("quantities") },
     { label: "Sheets", caption: "Plans and exports", target: "sheets", icon: SquareStack, status: sidebarModeStatus("sheets") },
@@ -10144,6 +10356,47 @@ function PerformanceAIDashboardView({
       status: "review",
     },
   ] as const;
+  const siteSizeSet = Boolean(parsePositiveNumber(lotWidth) && parsePositiveNumber(lotHeight));
+  const setupChecklistItems = [
+    {
+      label: "Address / map",
+      value: siteAddress.trim() || uploadedImageApiUrl || uploadedImagePreviewUrl ? "Set" : "Missing",
+      status: siteAddress.trim() || uploadedImageApiUrl || uploadedImagePreviewUrl ? "review" : "block",
+    },
+    {
+      label: "Site size",
+      value: siteSizeSet
+        ? `${parsePositiveNumber(lotWidth)?.toFixed(0)} ft x ${parsePositiveNumber(lotHeight)?.toFixed(0)} ft`
+        : "Missing",
+      status: siteSizeSet ? "review" : "block",
+    },
+    {
+      label: "Site boundary",
+      value: siteScaleLocked ? "Locked" : buildingPlacements.some((item) => item.type === "site") ? "Drawn / unlocked" : "Unlocked",
+      status: siteScaleLocked ? "review" : "block",
+    },
+    {
+      label: "Existing conditions",
+      value: hasTerrainSource || uploadedImageApiUrl || uploadedImagePreviewUrl ? "Imported" : "Missing",
+      status: hasTerrainSource || uploadedImageApiUrl || uploadedImagePreviewUrl ? "review" : "block",
+    },
+    {
+      label: "Standards",
+      value: panelStatus("standards") === "ok" ? "Selected / needs acceptance" : "Missing",
+      status: panelStatus("standards") === "ok" ? "review" : "block",
+    },
+  ] as const;
+  const nextSetupAction = !siteAddress.trim() && !uploadedImageApiUrl && !uploadedImagePreviewUrl
+    ? "Start from address/map or choose blank site."
+    : !siteSizeSet
+      ? "Set site width and length, or enter acreage through chat."
+      : !buildingPlacements.some((item) => item.type === "site")
+        ? "Draw or add the site boundary."
+        : !siteScaleLocked
+          ? "Lock the site boundary before generating systems."
+          : placedObjectCount <= 1
+            ? "Add or draw buildings, roads, parking, and utilities."
+            : "Run systems, then review blockers and gates.";
   const activePanelTitle =
     activeWorkspaceMode === "three_d" && activeSidePanel === "model"
       ? "3D"
@@ -10599,6 +10852,244 @@ function PerformanceAIDashboardView({
 
                 {activeSidePanel === "site_existing" ? (
                   <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Project setup</p>
+                          <p className="mt-1 text-lg font-semibold text-slate-950">Start the site</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            Set the address or blank site, define size, draw the boundary, then lock it before generating systems.
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">
+                          Engineer review required
+                        </span>
+                      </div>
+                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          onClick={() => mapSnapshotInputRef.current?.click()}
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-white"
+                        >
+                          Start from address / map
+                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                            Geocode, map snapshot, and terrain inputs
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!parsePositiveNumber(lotWidth)) setLotWidth("300");
+                            if (!parsePositiveNumber(lotHeight)) setLotHeight("300");
+                            setSiteSelectionMode(true);
+                            setStatusMessage("Blank site started. Set dimensions, then draw or lock the boundary.");
+                          }}
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-white"
+                        >
+                          Start from blank site
+                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                            Begin with editable width and length
+                          </span>
+                        </button>
+                      </div>
+                      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          Address / location
+                          <input
+                            value={siteAddress}
+                            onChange={(event) => {
+                              setSiteAddress(event.target.value);
+                              setSelectedAddressSuggestion(null);
+                            }}
+                            placeholder="123 Main St, City, State"
+                            className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-700 focus:border-slate-400 focus:outline-none"
+                          />
+                        </label>
+                        {addressSuggestions.length && !siteScaleLocked ? (
+                          <div className="mt-2 rounded-xl border border-slate-200 bg-white p-2 text-xs text-slate-600">
+                            {addressSuggestions.map((suggestion) => (
+                              <button
+                                key={`${suggestion.lat}-${suggestion.lng}`}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedAddressSuggestion(suggestion);
+                                  setSiteAddress(suggestion.display_name);
+                                  setAddressSuggestions([]);
+                                }}
+                                className={`w-full rounded-lg px-3 py-2 text-left text-[12px] transition ${
+                                  selectedAddressSuggestion?.display_name === suggestion.display_name
+                                    ? "bg-slate-900 text-white"
+                                    : "hover:bg-slate-50"
+                                }`}
+                              >
+                                {suggestion.display_name}
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
+                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                          <button
+                            type="button"
+                            onClick={() => void saveSiteAddress()}
+                            disabled={!siteAddress.trim()}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Apply address
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => mapSnapshotInputRef.current?.click()}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                          >
+                            Upload map
+                          </button>
+                        </div>
+                      </div>
+                      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Site size</p>
+                        <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-slate-600">
+                          <label className="flex flex-col gap-1 font-semibold">
+                            Width / length (ft)
+                            <input
+                              type="number"
+                              value={lotWidth}
+                              disabled={siteScaleLocked}
+                              onChange={(event) => {
+                                const nextValue = event.target.value;
+                                setLotWidth(nextValue);
+                                setBuildingPlacements((prev) =>
+                                  prev.map((item) =>
+                                    item.type === "site"
+                                      ? { ...item, w: parsePositiveNumber(nextValue) ?? item.w }
+                                      : item,
+                                  ),
+                                );
+                              }}
+                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 disabled:cursor-not-allowed disabled:opacity-60"
+                            />
+                          </label>
+                          <label className="flex flex-col gap-1 font-semibold">
+                            Depth / length (ft)
+                            <input
+                              type="number"
+                              value={lotHeight}
+                              disabled={siteScaleLocked}
+                              onChange={(event) => {
+                                const nextValue = event.target.value;
+                                setLotHeight(nextValue);
+                                setBuildingPlacements((prev) =>
+                                  prev.map((item) =>
+                                    item.type === "site"
+                                      ? { ...item, d: parsePositiveNumber(nextValue) ?? item.d }
+                                      : item,
+                                  ),
+                                );
+                              }}
+                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 disabled:cursor-not-allowed disabled:opacity-60"
+                            />
+                          </label>
+                        </div>
+                        <p className="mt-2 text-xs font-semibold text-slate-500">
+                          {siteSizeSet
+                            ? `${(((parsePositiveNumber(lotWidth) ?? 0) * (parsePositiveNumber(lotHeight) ?? 0)) / SQFT_PER_ACRE).toFixed(2)} acres`
+                            : "Set both dimensions, or ask chat to create an acreage-based blank site."}
+                        </p>
+                        <div className="mt-3 grid grid-cols-3 gap-2">
+                          {[1, 5, 10].map((acres) => (
+                            <button
+                              key={acres}
+                              type="button"
+                              disabled={siteScaleLocked}
+                              onClick={() => {
+                                const side = Math.round(Math.sqrt(acres * SQFT_PER_ACRE));
+                                setLotWidth(String(side));
+                                setLotHeight(String(side));
+                                setSiteSelectionMode(true);
+                                setStatusMessage(`Set a blank ${acres}-acre site. Review dimensions, then draw or lock the boundary.`);
+                              }}
+                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {acres} acre{acres === 1 ? "" : "s"}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          onClick={() => handleAddObject("site")}
+                          disabled={siteScaleLocked}
+                          className="rounded-xl border border-slate-950 bg-slate-950 px-3 py-3 text-left text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                        >
+                          Draw site boundary
+                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/60">
+                            First-class setup action
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={siteScaleLocked ? handleUnlockSite : () => void handleApplySite()}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                        >
+                          {siteScaleLocked ? "Change site boundary" : "Lock site boundary"}
+                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                            {siteScaleLocked ? "Unlock for edits" : "Required before systems"}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenSidePanel("objects")}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                        >
+                          Add / draw objects
+                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                            Buildings, roads, parking, utilities
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenSidePanel("reports")}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                        >
+                          Review blockers
+                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                            Health, gates, assumptions
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Setup checklist</p>
+                      <div className="mt-3 space-y-2">
+                        {setupChecklistItems.map((item) => (
+                          <div key={item.label} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                            <span className="font-semibold text-slate-700">{item.label}</span>
+                            <span className={`text-right text-xs font-semibold uppercase tracking-[0.12em] ${
+                              item.status === "block" ? "text-red-600" : "text-amber-600"
+                            }`}>
+                              {item.value}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700">Next best action</p>
+                        <p className="mt-1 text-sm font-semibold text-amber-900">{nextSetupAction}</p>
+                      </div>
+                    </div>
+                    <input
+                      ref={mapSnapshotInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (event) => {
+                        const file = event.currentTarget.files?.[0];
+                        if (file) {
+                          await uploadImage(file);
+                        }
+                        event.currentTarget.value = "";
+                      }}
+                    />
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Site summary</p>
                       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
@@ -11203,6 +11694,40 @@ function PerformanceAIDashboardView({
 
                 {activeSidePanel === "model" ? (
                   <div className="space-y-4">
+                    {!siteScaleLocked ? (
+                      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Setup required</p>
+                        <p className="mt-1 text-sm font-semibold text-amber-950">{nextSetupAction}</p>
+                        <div className="mt-3 space-y-2">
+                          {setupChecklistItems.map((item) => (
+                            <div key={item.label} className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-white/80 px-3 py-2 text-sm">
+                              <span className="font-semibold text-slate-700">{item.label}</span>
+                              <span className={`text-right text-xs font-semibold uppercase tracking-[0.12em] ${
+                                item.status === "block" ? "text-red-600" : "text-amber-700"
+                              }`}>
+                                {item.value}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSidePanel("site_existing")}
+                            className="rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800"
+                          >
+                            Open setup
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAddObject("site")}
+                            className="rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-amber-800 hover:bg-amber-100"
+                          >
+                            Draw boundary
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                     {activeWorkspaceMode === "three_d" ? (
                       <div className="rounded-2xl border border-slate-200 bg-white p-4">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">3D engineering review</p>
@@ -12935,6 +13460,50 @@ function PerformanceAIDashboardView({
                 data-testid="canvas-workflow-toolbar"
                 className="mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 shadow-sm"
               >
+                {!siteScaleLocked ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenSidePanel("site_existing")}
+                      className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:bg-slate-800"
+                    >
+                      Set Site Size
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleOpenSidePanel("site_existing");
+                        handleAddObject("site");
+                      }}
+                      className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:bg-slate-800"
+                    >
+                      Draw Site Boundary
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleApplySite()}
+                      className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-amber-800 transition hover:bg-amber-100"
+                    >
+                      Lock Site Boundary
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleUnlockSite}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 transition hover:bg-slate-50"
+                  >
+                    Change Site Boundary
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleOpenSidePanel("objects")}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 transition hover:bg-slate-50"
+                >
+                  Add Objects
+                </button>
+                <span className="hidden h-6 w-px bg-slate-200 md:inline-block" />
                 {[
                   {
                     label: "Select",
@@ -13038,6 +13607,7 @@ function PerformanceAIDashboardView({
               onPlaceBuilding={handlePlaceBuilding}
               onPlaceObject={handlePlaceObject}
               onCreateCustomGeometry={handleCreateCustomGeometry}
+              onCreateSiteBoundary={handleCreateSiteBoundary}
               buildingPlacements={buildingPlacements}
               suggestedPlacements={filteredDetectedPlacements}
               selectedBuildingId={activePlacementId}
@@ -13271,6 +13841,7 @@ function PerformanceAIDashboardView({
                         <input
                           type="number"
                           value={lotWidth}
+                          disabled={siteScaleLocked}
                           onChange={(event) => {
                             const nextValue = event.target.value;
                             setLotWidth(nextValue);
@@ -13287,7 +13858,7 @@ function PerformanceAIDashboardView({
                               ),
                             );
                           }}
-                          className="rounded-lg border border-slate-200 px-2 py-1"
+                          className="rounded-lg border border-slate-200 px-2 py-1 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                         />
                       </label>
                       <label className="flex flex-col gap-1">
@@ -13295,6 +13866,7 @@ function PerformanceAIDashboardView({
                         <input
                           type="number"
                           value={lotHeight}
+                          disabled={siteScaleLocked}
                           onChange={(event) => {
                             const nextValue = event.target.value;
                             setLotHeight(nextValue);
@@ -13311,7 +13883,7 @@ function PerformanceAIDashboardView({
                               ),
                             );
                           }}
-                          className="rounded-lg border border-slate-200 px-2 py-1"
+                          className="rounded-lg border border-slate-200 px-2 py-1 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                         />
                       </label>
                     </div>
@@ -13324,12 +13896,17 @@ function PerformanceAIDashboardView({
                         return acres ? `${acres.toFixed(2)} acres` : "Set dimensions to compute acreage";
                       })()}
                     </div>
+                    <p className="mt-2 text-xs text-slate-500">
+                      {siteScaleLocked
+                        ? "Locked canonical site boundary. Unlock to change dimensions or redraw."
+                        : "Set dimensions here or use Draw Site Boundary in the canvas toolbar."}
+                    </p>
                     <button
                       type="button"
-                      onClick={() => void handleApplySite()}
+                      onClick={siteScaleLocked ? handleUnlockSite : () => void handleApplySite()}
                       className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
                     >
-                      Apply Site
+                      {siteScaleLocked ? "Change Site / Unlock" : "Lock Site From Dimensions"}
                     </button>
                   </div>
                   <div>

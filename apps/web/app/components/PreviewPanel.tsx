@@ -21,7 +21,7 @@ type EngineeringSystemStatuses = Record<
   "roads" | "parking" | "grading" | "drainage" | "utilities",
   EngineeringSystemStatus
 >;
-type DrawMode = "select" | "pan" | "polyline" | "polygon" | "rect" | "point";
+type DrawMode = "select" | "pan" | "site" | "polyline" | "polygon" | "rect" | "point";
 
 type PreviewPanelProps = {
   previewReview: PreviewReview | null;
@@ -62,6 +62,7 @@ type PreviewPanelProps = {
     points: Array<[number, number]>;
     label?: string;
   }) => void;
+  onCreateSiteBoundary?: (payload: { points: Array<[number, number]> }) => void;
   buildingPlacements: BuildingPlacement[];
   suggestedPlacements: BuildingPlacement[];
   selectedBuildingId: string | null;
@@ -178,6 +179,7 @@ export default function PreviewPanel({
   onPlaceBuilding,
   onPlaceObject,
   onCreateCustomGeometry,
+  onCreateSiteBoundary,
   buildingPlacements,
   suggestedPlacements,
   selectedBuildingId,
@@ -252,6 +254,9 @@ export default function PreviewPanel({
   const [draftPoints, setDraftPoints] = useState<Array<[number, number]>>([]);
   const [draftPreviewPoint, setDraftPreviewPoint] = useState<[number, number] | null>(null);
   const [canvasView, setCanvasView] = useState({ scale: 1, offsetX: 0, offsetY: 0 });
+  const drawingLotWidth = lotWidth > 0 ? lotWidth : 500;
+  const drawingLotHeight = lotHeight > 0 ? lotHeight : 300;
+  const canDrawObjects = Boolean(siteLocked && lotWidth > 0 && lotHeight > 0);
   const [canvasPanStart, setCanvasPanStart] = useState<{
     x: number;
     y: number;
@@ -434,7 +439,9 @@ export default function PreviewPanel({
       containerRef: React.RefObject<HTMLDivElement | null>,
       bounds: { left: number; top: number; width: number; height: number } | null,
     ) => {
-      if (!containerRef.current || !bounds || !lotWidth || !lotHeight) return null;
+      const effectiveLotWidth = drawMode === "site" ? drawingLotWidth : lotWidth;
+      const effectiveLotHeight = drawMode === "site" ? drawingLotHeight : lotHeight;
+      if (!containerRef.current || !bounds || !effectiveLotWidth || !effectiveLotHeight) return null;
       const rect = containerRef.current.getBoundingClientRect();
       const localX = clientX - rect.left - bounds.left;
       const localY = clientY - rect.top - bounds.top;
@@ -444,15 +451,24 @@ export default function PreviewPanel({
       const relY = unscaledY / Math.max(bounds.height, 1);
       if (!Number.isFinite(relX) || !Number.isFinite(relY)) return null;
       if (relX < 0 || relX > 1 || relY < 0 || relY > 1) return null;
-      const snapStep = drawMode === "point" ? 1 : 2;
+      const snapStep = drawMode === "point" ? 1 : drawMode === "site" ? 5 : 2;
       return {
-        x: Math.round((relX * lotWidth) / snapStep) * snapStep,
-        y: Math.round((relY * lotHeight) / snapStep) * snapStep,
+        x: Math.round((relX * effectiveLotWidth) / snapStep) * snapStep,
+        y: Math.round((relY * effectiveLotHeight) / snapStep) * snapStep,
         relX,
         relY,
       };
     },
-    [canvasView.offsetX, canvasView.offsetY, canvasView.scale, drawMode, lotHeight, lotWidth],
+    [
+      canvasView.offsetX,
+      canvasView.offsetY,
+      canvasView.scale,
+      drawMode,
+      drawingLotHeight,
+      drawingLotWidth,
+      lotHeight,
+      lotWidth,
+    ],
   );
   const updateImageBounds = useCallback(
     (
@@ -934,7 +950,7 @@ export default function PreviewPanel({
   }, []);
 
   const finishDraftGeometry = useCallback(() => {
-    if (drawMode !== "polyline" && drawMode !== "polygon") return;
+    if (drawMode !== "site" && drawMode !== "polyline" && drawMode !== "polygon") return;
     const effectivePoints =
       draftPreviewPoint &&
       !draftPoints.some(
@@ -942,12 +958,23 @@ export default function PreviewPanel({
       )
         ? [...draftPoints, draftPreviewPoint]
         : draftPoints;
-    const minPoints = drawMode === "polygon" ? 3 : 2;
+    const minPoints = drawMode === "site" || drawMode === "polygon" ? 3 : 2;
     if (effectivePoints.length < minPoints) return;
-    onCreateCustomGeometry({ mode: drawMode, points: effectivePoints });
+    if (drawMode === "site") {
+      onCreateSiteBoundary?.({ points: effectivePoints });
+    } else {
+      onCreateCustomGeometry({ mode: drawMode, points: effectivePoints });
+    }
     clearDraftGeometry();
     setDrawMode("select");
-  }, [clearDraftGeometry, draftPoints, draftPreviewPoint, drawMode, onCreateCustomGeometry]);
+  }, [
+    clearDraftGeometry,
+    draftPoints,
+    draftPreviewPoint,
+    drawMode,
+    onCreateCustomGeometry,
+    onCreateSiteBoundary,
+  ]);
 
   const handleDrawPointer = useCallback(
     (
@@ -964,6 +991,11 @@ export default function PreviewPanel({
           offsetX: canvasView.offsetX,
           offsetY: canvasView.offsetY,
         });
+        return true;
+      }
+      if (drawMode !== "site" && !canDrawObjects) {
+        event.preventDefault();
+        event.stopPropagation();
         return true;
       }
       const sitePoint = screenToSitePoint(event.clientX, event.clientY, previewRef, bounds);
@@ -993,6 +1025,7 @@ export default function PreviewPanel({
     [
       canvasView.offsetX,
       canvasView.offsetY,
+      canDrawObjects,
       clearDraftGeometry,
       drawMode,
       onCreateCustomGeometry,
@@ -1004,13 +1037,46 @@ export default function PreviewPanel({
     mode: DrawMode;
     label: string;
     icon: ComponentType<{ className?: string }>;
+    disabled?: boolean;
+    disabledLabel?: string;
   }> = [
     { mode: "select", label: "Select", icon: MousePointer2 },
     { mode: "pan", label: "Pan", icon: Hand },
-    { mode: "polyline", label: "Line", icon: PencilLine },
-    { mode: "polygon", label: "Area", icon: Pentagon },
-    { mode: "rect", label: "Rectangle", icon: Square },
-    { mode: "point", label: "Point", icon: MapPin },
+    {
+      mode: "site",
+      label: siteLocked ? "Site Locked" : "Draw Site Boundary",
+      icon: Pentagon,
+      disabled: Boolean(siteLocked),
+      disabledLabel: "Unlock site to change boundary",
+    },
+    {
+      mode: "polyline",
+      label: "Line",
+      icon: PencilLine,
+      disabled: !canDrawObjects,
+      disabledLabel: "Lock site before drawing objects",
+    },
+    {
+      mode: "polygon",
+      label: "Area",
+      icon: Pentagon,
+      disabled: !canDrawObjects,
+      disabledLabel: "Lock site before drawing objects",
+    },
+    {
+      mode: "rect",
+      label: "Rectangle",
+      icon: Square,
+      disabled: !canDrawObjects,
+      disabledLabel: "Lock site before drawing objects",
+    },
+    {
+      mode: "point",
+      label: "Point",
+      icon: MapPin,
+      disabled: !canDrawObjects,
+      disabledLabel: "Lock site before drawing objects",
+    },
   ];
 
   useEffect(() => {
@@ -2944,35 +3010,51 @@ export default function PreviewPanel({
                 {drawModeButtons.map((item) => {
                   const Icon = item.icon;
                   const active = drawMode === item.mode;
+                  const disabled = Boolean(item.disabled);
                   return (
                     <button
                       key={item.mode}
                       type="button"
-                      title={item.label}
+                      title={disabled ? item.disabledLabel ?? item.label : item.label}
                       aria-label={item.label}
+                      disabled={disabled}
                       onClick={() => {
+                        if (disabled) return;
                         setDrawMode(item.mode);
                         clearDraftGeometry();
                         if (item.mode !== "select") {
                           onSetPreviewInteraction("edit");
                         }
                       }}
-                      className={`inline-flex h-8 w-8 items-center justify-center rounded-md border transition ${
+                      className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-md border transition ${
+                        item.mode === "site" ? "w-auto px-2" : "w-8"
+                      } ${
                         active
                           ? "border-slate-900 bg-slate-950 text-white"
+                          : disabled
+                            ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-300"
                           : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                       }`}
                     >
                       <Icon className="h-4 w-4" />
+                      {item.mode === "site" ? <span className="text-[10px]">{item.label}</span> : null}
                     </button>
                   );
                 })}
               </div>
               <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                 <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-600">
-                  {draftPoints.length
-                    ? "Draft geometry"
-                    : "Canonical project geometry after finish"}
+                  {drawMode === "site" && draftPoints.length
+                    ? "Draft site boundary"
+                    : siteLocked
+                      ? "Locked canonical site"
+                      : drawMode === "site"
+                        ? "Draft site boundary mode"
+                        : draftPoints.length
+                          ? "Draft geometry"
+                          : canDrawObjects
+                            ? "Canonical project geometry after finish"
+                            : "Lock site before drawing objects"}
                 </span>
                 <button
                   type="button"
@@ -2990,6 +3072,8 @@ export default function PreviewPanel({
                       onClick={finishDraftGeometry}
                       disabled={
                         drawMode === "polygon"
+                          ? draftPoints.length + (draftPreviewPoint ? 1 : 0) < 3
+                          : drawMode === "site"
                           ? draftPoints.length + (draftPreviewPoint ? 1 : 0) < 3
                           : draftPoints.length + (draftPreviewPoint ? 1 : 0) < 2
                       }
@@ -3277,7 +3361,7 @@ export default function PreviewPanel({
                       height: overlayBoundsResolved.height,
                     }}
                   >
-                    {!siteLocked && showSiteBounds && lotWidth > 0 && lotHeight > 0 ? (
+                    {!siteLocked && (showSiteBounds || drawMode === "site") ? (
                       <div
                         className={`absolute inset-0 rounded-[16px] border border-dashed ${legendPalette.siteBorder} ${legendPalette.siteFill}`}
                         style={viewportTransformStyle}
@@ -3536,28 +3620,31 @@ export default function PreviewPanel({
                                 ? [...draftPoints, draftPreviewPoint]
                                 : draftPoints;
                             if (!points.length) return null;
+                            const effectiveLotWidth = drawMode === "site" ? drawingLotWidth : lotWidth;
+                            const effectiveLotHeight = drawMode === "site" ? drawingLotHeight : lotHeight;
                             const pct = points.map((pt) => {
-                              const x = (pt[0] / Math.max(lotWidth, 1)) * 100;
-                              const y = (pt[1] / Math.max(lotHeight, 1)) * 100;
+                              const x = (pt[0] / Math.max(effectiveLotWidth, 1)) * 100;
+                              const y = (pt[1] / Math.max(effectiveLotHeight, 1)) * 100;
                               return `${x},${y}`;
                             });
-                            if (drawMode === "polygon" && pct.length >= 3) {
+                            if ((drawMode === "polygon" || drawMode === "site") && pct.length >= 3) {
+                              const draftColor = drawMode === "site" ? "#f59e0b" : "#0284c7";
                               return (
                                 <g>
                                   <polygon
                                     points={pct.join(" ")}
-                                    fill="rgba(14,165,233,0.08)"
-                                    stroke="#0284c7"
+                                    fill={drawMode === "site" ? "rgba(245,158,11,0.1)" : "rgba(14,165,233,0.08)"}
+                                    stroke={draftColor}
                                     strokeWidth={0.55}
                                     strokeDasharray="1.5 1"
                                   />
                                   {points.map((pt, idx) => (
                                     <circle
                                       key={`draft-poly-${idx}`}
-                                      cx={(pt[0] / Math.max(lotWidth, 1)) * 100}
-                                      cy={(pt[1] / Math.max(lotHeight, 1)) * 100}
+                                      cx={(pt[0] / Math.max(effectiveLotWidth, 1)) * 100}
+                                      cy={(pt[1] / Math.max(effectiveLotHeight, 1)) * 100}
                                       r={0.55}
-                                      fill="#0284c7"
+                                      fill={draftColor}
                                     />
                                   ))}
                                 </g>
@@ -3565,10 +3652,10 @@ export default function PreviewPanel({
                             }
                             if (drawMode === "rect" && points.length >= 2) {
                               const [a, b] = points;
-                              const x = (Math.min(a[0], b[0]) / Math.max(lotWidth, 1)) * 100;
-                              const y = (Math.min(a[1], b[1]) / Math.max(lotHeight, 1)) * 100;
-                              const w = (Math.abs(a[0] - b[0]) / Math.max(lotWidth, 1)) * 100;
-                              const h = (Math.abs(a[1] - b[1]) / Math.max(lotHeight, 1)) * 100;
+                              const x = (Math.min(a[0], b[0]) / Math.max(effectiveLotWidth, 1)) * 100;
+                              const y = (Math.min(a[1], b[1]) / Math.max(effectiveLotHeight, 1)) * 100;
+                              const w = (Math.abs(a[0] - b[0]) / Math.max(effectiveLotWidth, 1)) * 100;
+                              const h = (Math.abs(a[1] - b[1]) / Math.max(effectiveLotHeight, 1)) * 100;
                               return (
                                 <rect
                                   x={x}
@@ -3597,8 +3684,8 @@ export default function PreviewPanel({
                                   {points.map((pt, idx) => (
                                     <circle
                                       key={`draft-line-${idx}`}
-                                      cx={(pt[0] / Math.max(lotWidth, 1)) * 100}
-                                      cy={(pt[1] / Math.max(lotHeight, 1)) * 100}
+                                      cx={(pt[0] / Math.max(effectiveLotWidth, 1)) * 100}
+                                      cy={(pt[1] / Math.max(effectiveLotHeight, 1)) * 100}
                                       r={0.55}
                                       fill="#0284c7"
                                     />
@@ -3609,8 +3696,8 @@ export default function PreviewPanel({
                             const [pt] = points;
                             return (
                               <circle
-                                cx={(pt[0] / Math.max(lotWidth, 1)) * 100}
-                                cy={(pt[1] / Math.max(lotHeight, 1)) * 100}
+                                cx={(pt[0] / Math.max(effectiveLotWidth, 1)) * 100}
+                                cy={(pt[1] / Math.max(effectiveLotHeight, 1)) * 100}
                                 r={0.65}
                                 fill="#0284c7"
                               />

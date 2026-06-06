@@ -426,6 +426,9 @@ export type SiteInputs = {
     scale_source?: "mapbox" | "manual" | "approximate";
   };
   site_alignment_locked?: boolean;
+  site_boundary_source?: "manual_drawn" | "dimensions" | "map_viewport" | "imported";
+  site_boundary_state?: "draft_editable" | "locked_canonical";
+  site_boundary_acres?: number;
   site_rotation_deg?: number;
   drainage_source_override?: "civora" | "user";
 };
