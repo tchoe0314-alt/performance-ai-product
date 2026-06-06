@@ -108,6 +108,7 @@ type WorkspaceMode =
   | "setup"
   | "canvas"
   | "layers"
+  | "issues"
   | "review"
   | "deliver"
   | "data"
@@ -10079,8 +10080,8 @@ function PerformanceAIDashboardView({
     landscape: { title: "Landscape Controls", desc: "Place open space and landscape-related site objects." },
     details: { title: "Sections", desc: "Review profiles, cross sections, selected objects, locks, and engineering metadata." },
     layers: { title: "Layers", desc: "Choose visible model layers and labels." },
-    analysis: { title: "Review & QA", desc: "Review model issues, access checks, blockers, and QA signals." },
-    reports: { title: "Review", desc: "Review engineering health, QA, assumptions, conflicts, standards, and system readiness." },
+    analysis: { title: "Issues", desc: "Track active model issues, access findings, blockers, and QA signals." },
+    reports: { title: "Review", desc: "Review engineer gates, assumptions, standards, conflicts, and system readiness." },
     quantities: { title: "Quantities", desc: "Review takeoff totals, stale labels, source confidence, and cost inputs." },
     deliverables: { title: "Deliver", desc: "Review sheets, reports, quantities, profiles, sections, exports, and package gates." },
     files: { title: "Files", desc: "Manage imported inputs and generated outputs." },
@@ -10126,7 +10127,7 @@ function PerformanceAIDashboardView({
     landscape: "canvas",
     details: "review",
     layers: "layers",
-    analysis: "review",
+    analysis: "issues",
     reports: "review",
     quantities: "deliver",
     deliverables: "deliver",
@@ -10149,6 +10150,7 @@ function PerformanceAIDashboardView({
     setup: "site_existing",
     canvas: "model",
     layers: "layers",
+    issues: "analysis",
     review: "reports",
     deliver: "deliverables",
     data: "data",
@@ -10253,7 +10255,8 @@ function PerformanceAIDashboardView({
     if (mode === "setup") return siteScaleLocked ? "ok" : "review";
     if (mode === "canvas") return panelStatus("model");
     if (mode === "layers") return panelStatus("layers");
-    if (mode === "review") return hasHardSystemBlock ? "block" : issues.length || analysisIssues.length ? "review" : panelStatus("reports");
+    if (mode === "issues") return hasHardSystemBlock ? "block" : issues.length || analysisIssues.length ? "review" : "idle";
+    if (mode === "review") return hasHardSystemBlock ? "block" : panelStatus("reports");
     if (mode === "deliver") return String(previewReview?.release_status || "review").toLowerCase() === "blocked" ? "block" : panelStatus("deliverables");
     if (mode === "data") return panelStatus("data");
     if (mode === "settings") return panelStatus("settings");
@@ -10264,6 +10267,7 @@ function PerformanceAIDashboardView({
     { label: "Setup", caption: "Site and boundary", target: "setup", icon: MapPinned, status: sidebarModeStatus("setup") },
     { label: "Canvas", caption: "Design workspace", target: "canvas", icon: Box, status: sidebarModeStatus("canvas") },
     { label: "Layers", caption: "Visibility presets", target: "layers", icon: Layers, status: sidebarModeStatus("layers") },
+    { label: "Issues", caption: "Problems to fix", target: "issues", icon: AlertCircle, status: sidebarModeStatus("issues") },
     { label: "Review", caption: "Gates and health", target: "review", icon: ClipboardCheck, status: sidebarModeStatus("review") },
     { label: "Deliver", caption: "Sheets and exports", target: "deliver", icon: FileText, status: sidebarModeStatus("deliver") },
     { label: "Data", caption: "Survey and sources", target: "data", icon: MapPinned, status: sidebarModeStatus("data") },
