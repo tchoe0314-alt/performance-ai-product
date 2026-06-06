@@ -821,6 +821,8 @@ def _has_any(mapping: Dict[str, Any], keys: Iterable[str]) -> bool:
 def check_standards_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
     warnings: List[str] = []
     gaps: List[Dict[str, Any]] = []
+    standards_package = _safe_dict(meta.get("standards_package"))
+    standards_report = _safe_dict(standards_package.get("standards_acceptance_report"))
     acceptance = _safe_dict(meta.get("standards_acceptance"))
     accepted_rules = [_safe_dict(item) for item in _safe_list(acceptance.get("accepted_rules")) if _safe_dict(item)]
     standards = _safe_dict(meta.get("design_standards") or meta.get("standards"))
@@ -834,6 +836,34 @@ def check_standards_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
         }
     jurisdiction = _safe_dict(meta.get("jurisdiction_standards"))
     company = _safe_dict(meta.get("company_standards"))
+    if not standards_package:
+        gaps.append(
+            _production_gap(
+                "standards",
+                "standards_package",
+                "Production standards QA requires the Standards + Requirements Gate report; legacy design_standards flags are review-only evidence.",
+                "Build standards_package with standards_acceptance_report before marking standards QA production-ready.",
+            )
+        )
+    else:
+        package_status = _safe_str(standards_package.get("status")).lower()
+        if package_status != "ready" or standards_package.get("production_usable") is not True:
+            for blocker in _safe_list(standards_package.get("blockers")) or [
+                {
+                    "field": "standards_package",
+                    "reason": "Standards + Requirements Gate is not ready.",
+                    "suggested_next_action": "Resolve standards_package blockers and rerun standards validation.",
+                }
+            ]:
+                rec = _safe_dict(blocker)
+                gaps.append(
+                    _production_gap(
+                        "standards",
+                        _safe_str(rec.get("field"), "standards_package"),
+                        _safe_str(rec.get("reason") or rec.get("message"), "Standards + Requirements Gate is not ready."),
+                        _safe_str(rec.get("suggested_next_action"), "Resolve standards_package blockers and rerun standards validation."),
+                    )
+                )
     if not standards:
         gaps.append(
             _production_gap(
@@ -919,7 +949,13 @@ def check_standards_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
                 "Attach approved company CAD/layer/sheet/detail standards or mark the current profile production-usable with review evidence.",
             )
         )
-    acceptance_state = "ready" if not gaps else "blocked" if not standards or not accepted_rules else "needs_review"
+    package_qa_status = _safe_str(_safe_dict(standards_package.get("qa")).get("status") or standards_report.get("qa_status"))
+    if package_qa_status == "blocked":
+        acceptance_state = "blocked"
+    elif gaps:
+        acceptance_state = "blocked" if not standards or not accepted_rules else "needs_review"
+    else:
+        acceptance_state = package_qa_status or "ready"
     if _safe_dict(meta.get("standards_review_packet")) and not accepted_rules:
         warnings.append("Standards candidates exist, but no rules have been accepted for production QA.")
     if standards and bool(standards.get("needs_source_review")):
@@ -936,6 +972,8 @@ def check_standards_truth(meta: Dict[str, Any]) -> Dict[str, Any]:
             "has_company_standards": bool(company),
             "production_gaps": gaps,
             "acceptance_state": acceptance_state,
+            "standards_gate_qa_status": acceptance_state,
+            "has_standards_acceptance_report": bool(standards_report),
         },
     )
 
@@ -2025,8 +2063,17 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
             )
 
     standards_package = _safe_dict(meta.get("standards_package"))
-    standards_pack = _safe_dict(meta.get("design_standards"))
-    if standards_package:
+    standards_pack = standards_package or _safe_dict(meta.get("design_standards"))
+    if not standards_package:
+        blockers.append(
+            _construction_gap(
+                "standards",
+                "standards_package",
+                "Construction release requires the Standards + Requirements Gate report; legacy design_standards flags are review-only evidence.",
+                "Build standards_package with standards_acceptance_report before construction release.",
+            )
+        )
+    else:
         package_status = _safe_str(standards_package.get("status")).lower()
         if package_status != "ready" or standards_package.get("production_usable") is not True:
             blockers.append(
@@ -2834,7 +2881,7 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
         "evidence": {
             "civil_production_ready": civil.get("production_ready") is True,
             "existing_conditions_production_ready": existing.get("production_ready") is True if existing else False,
-            "standards_production_usable": standards_pack.get("production_usable") is True,
+            "standards_production_usable": standards_package.get("production_usable") is True if standards_package else False,
             "export_production_ready": export.get("production_export_ready") is True if export else False,
             "cost_production_usable": cost_totals.get("production_usable") is True if cost else False,
             "professional_release": professionally_released,

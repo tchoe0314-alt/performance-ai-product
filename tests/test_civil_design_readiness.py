@@ -138,6 +138,7 @@ def _production_ready_meta() -> dict:
         "approval_date": "2026-05-01",
         "production_usable": True,
     }
+    meta["standards_package"] = build_standards_package(meta)
     meta["survey"] = {
         "point_count": 18,
         "source": "survey_points",
@@ -677,6 +678,20 @@ class CivilDesignReadinessTests(unittest.TestCase):
         self.assertTrue(meta["standards_package"]["construction_release_blocked"])
         self.assertIn(("standards", "standards_package"), blockers)
         self.assertIn(("standards", "jurisdiction_selection"), blockers)
+
+    def test_construction_readiness_blocks_legacy_design_standards_without_gate_report(self) -> None:
+        meta = _production_ready_meta()
+        meta.pop("standards_package", None)
+        meta["design_standards"]["production_usable"] = True
+        meta["jurisdiction_standards"]["production_usable"] = True
+        meta["company_standards"]["production_usable"] = True
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertFalse(readiness["evidence"]["standards_production_usable"])
+        self.assertIn(("standards", "standards_package"), blockers)
 
     def test_construction_readiness_requires_qa_and_reactive_reports_to_exist(self) -> None:
         meta = _production_ready_meta()

@@ -68,6 +68,7 @@ def _jurisdiction(meta: Dict[str, Any]) -> Dict[str, Any]:
     explicit = bool(jurisdiction)
     source = safe_str(jurisdiction.get("source") or ("jurisdiction_standards" if explicit else "standards_review_packet_inferred"))
     return {
+        "agency": safe_str(jurisdiction.get("agency") or discovered.get("agency")),
         "city": safe_str(jurisdiction.get("city") or discovered.get("city")),
         "county": safe_str(jurisdiction.get("county") or discovered.get("county")),
         "state": safe_str(jurisdiction.get("state") or discovered.get("state")),
@@ -406,7 +407,7 @@ def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
                 next_action="Select the official standards source used for accepted rules before production QA.",
             )
         )
-    jurisdiction_identity_present = any(safe_str(jurisdiction.get(key)) for key in ("city", "county", "state", "utility_provider"))
+    jurisdiction_identity_present = any(safe_str(jurisdiction.get(key)) for key in ("agency", "city", "county", "state", "utility_provider"))
     if not jurisdiction_identity_present:
         missing_inputs.append(
             _missing_input(
