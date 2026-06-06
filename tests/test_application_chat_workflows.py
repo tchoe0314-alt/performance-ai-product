@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from backend.application.chat_workflows import decide_chat
 from parsers.chat_intent_parser import decide_chat_message
@@ -565,6 +566,68 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertEqual(result["action_taken"], "unsupported_or_not_understood")
         self.assertTaxonomyMetadata(result, "unsupported_or_not_understood")
         self.assertIn("does not match a supported Civora chat command", result["response_metadata"]["unsupported_reason"])
+
+    def test_natural_language_pond_low_spot_creates_draft_geometry(self):
+        store = RecordingProjectStore(_record())
+
+        with patch("parsers.chat_intent_parser._load_chat_client", side_effect=RuntimeError("AI disabled")):
+            result = decide_chat(
+                {
+                    "message": "put that pond in the low spot",
+                    "context": {"current_project": {"project_id": "project_123"}},
+                },
+                decide_chat_message=decide_chat_message,
+                project_store=store,
+                user_id="user_1",
+            )
+
+        self.assertEqual(result["action_taken"], "created_draft_geometry")
+        self.assertTaxonomyMetadata(result, "understood_and_executed")
+        planning = result["response_metadata"]["action_planning"]
+        self.assertEqual(planning["selected_action_id"], "place_basin")
+        drafts = store.saved[-1]["latest_result"]["final_plan"]["meta"]["canonical_draft_geometry"]
+        self.assertEqual(drafts[-1]["object_type"], "basin")
+        self.assertEqual(drafts[-1]["location_hint"], "low_corner")
+        self.assertTrue(drafts[-1]["engineer_review_required"])
+
+    def test_natural_language_polygon_parking_asks_for_selection(self):
+        store = RecordingProjectStore(_record_with_handoffs([_handoff()]))
+
+        with patch("parsers.chat_intent_parser._load_chat_client", side_effect=RuntimeError("AI disabled")):
+            result = decide_chat(
+                {
+                    "message": "turn this polygon into parking",
+                    "context": {"current_project": {"project_id": "project_123"}},
+                },
+                decide_chat_message=decide_chat_message,
+                project_store=store,
+                user_id="user_1",
+            )
+
+        self.assertEqual(result["action_taken"], "asked_targeted_geometry_selection_question")
+        self.assertTaxonomyMetadata(result, "understood_needs_more_info")
+        planning = result["response_metadata"]["action_planning"]
+        self.assertEqual(planning["selected_action_id"], "classify_geometry_as_parking")
+        self.assertIn("selected drawn geometry", planning["missing_inputs"])
+
+    def test_natural_language_fix_drainage_queues_existing_workflow(self):
+        store = RecordingProjectStore(_record())
+
+        with patch("parsers.chat_intent_parser._load_chat_client", side_effect=RuntimeError("AI disabled")):
+            result = decide_chat(
+                {
+                    "message": "fix the drainage",
+                    "context": {"current_project": {"project_id": "project_123"}},
+                },
+                decide_chat_message=decide_chat_message,
+                project_store=store,
+                user_id="user_1",
+            )
+
+        self.assertEqual(result["action_taken"], "queued_engineering_workflow")
+        self.assertTaxonomyMetadata(result, "understood_and_executed")
+        self.assertEqual(result["response_metadata"]["command_payload"]["workflow"], "drainage")
+        self.assertEqual(result["response_metadata"]["action_planning"]["selected_action_id"], "revise_drainage")
 
     def test_approve_this_blocks_responsibility_request(self):
         result = decide_chat(

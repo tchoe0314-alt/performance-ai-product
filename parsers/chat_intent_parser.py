@@ -4,6 +4,8 @@ import json
 import re
 from typing import Any, Dict, List, Optional
 
+from parsers.chat_action_registry import command_intent_from_action_plan, plan_chat_action
+
 
 CHAT_DECISION_SCHEMA: Dict[str, Any] = {
     "type": "object",
@@ -137,6 +139,7 @@ def _trim_chat_history(value: Any, limit: int = 6) -> List[Dict[str, str]]:
 
 def _normalized_chat_text(text: str) -> str:
     normalized = text.strip().lower()
+    normalized = normalized.replace("’", "'").replace("`", "'").replace("“", '"').replace("”", '"')
     replacements = {
         "pls": "please",
         "pls.": "please",
@@ -2485,6 +2488,25 @@ def _metadata_for_decision(
     }
 
 
+def _attach_action_planning_metadata(decision: Dict[str, Any], action_plan: Dict[str, Any]) -> Dict[str, Any]:
+    updated = dict(decision)
+    metadata = dict(updated.get("response_metadata") or {})
+    metadata["action_planning"] = {
+        "user_goal": str(action_plan.get("user_goal") or ""),
+        "candidate_actions": list(action_plan.get("candidate_actions") or []),
+        "selected_action": action_plan.get("selected_action"),
+        "selected_action_id": str(action_plan.get("selected_action_id") or ""),
+        "confidence": float(action_plan.get("confidence") or 0.0),
+        "low_confidence": bool(action_plan.get("low_confidence")),
+        "missing_inputs": list(action_plan.get("missing_inputs") or []),
+        "safety_blockers": list(action_plan.get("safety_blockers") or []),
+        "next_best_question": str(action_plan.get("next_best_question") or ""),
+    }
+    metadata["action_registry"] = list(action_plan.get("action_registry") or [])
+    updated["response_metadata"] = metadata
+    return updated
+
+
 def _context_blockers(context: Dict[str, Any]) -> List[str]:
     blockers: List[str] = []
     for item in list(context.get("blockers") or []):
@@ -2545,7 +2567,7 @@ def _extract_object_command_payload(message: str, context: Dict[str, Any]) -> Di
         payload["object_type"] = "protected_zone"
     elif "building" in lowered:
         payload["object_type"] = "building"
-    elif "basin" in lowered or "detention" in lowered:
+    elif "basin" in lowered or "detention" in lowered or "pond" in lowered:
         payload["object_type"] = "basin"
     elif "parking" in lowered:
         payload["object_type"] = "parking"
@@ -2560,7 +2582,7 @@ def _extract_object_command_payload(message: str, context: Dict[str, Any]) -> Di
         payload["width"] = float(dims.group(1))
         payload["depth"] = float(dims.group(2))
 
-    if "low corner" in lowered:
+    if "low corner" in lowered or "low spot" in lowered or "low point" in lowered:
         payload["location_hint"] = "low_corner"
     for corner in ["northwest", "northeast", "southwest", "southeast"]:
         if corner in lowered:
@@ -2578,7 +2600,7 @@ def _extract_object_command_payload(message: str, context: Dict[str, Any]) -> Di
         payload["operation"] = "fit_to_buildings"
     elif any(verb in lowered for verb in ["add", "put", "place", "create"]):
         payload["operation"] = "create"
-    elif any(verb in lowered for verb in ["change", "move", "reroute", "widen", "narrow"]):
+    elif any(verb in lowered for verb in ["change", "move", "reroute", "widen", "narrow", "turn"]):
         payload["operation"] = "update"
     else:
         payload["operation"] = "update"
@@ -2830,7 +2852,21 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
     context = _chat_context_summary(dict(payload_data.get("context") or {}))
     strategy_mode = str(context.get("strategy_mode") or "assisted").strip().lower()
     overrides = _extract_control_overrides(message, context)
+    action_plan = plan_chat_action(message, context)
+    planned_intent = command_intent_from_action_plan(action_plan)
     command_intent = _command_family(message)
+    if command_intent == "conversation" and planned_intent in {
+        "workspace_state",
+        "fix",
+        "object_or_layout_command",
+        "grading_command",
+        "drainage_command",
+        "utility_command",
+        "generate_command",
+        "mode_command",
+        "unsupported_or_not_understood",
+    }:
+        command_intent = planned_intent
     affected_systems = _affected_systems_for_command(command_intent, message)
     if not message:
         return _base_decision(
@@ -2845,6 +2881,28 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
                 action_taken="asked_clarifying_question",
                 action_blocked_reason="No chat message was provided.",
                 next_best_action="Tell Civora what to design, revise, or explain.",
+            ),
+        )
+
+    if command_intent != "responsibility_guard" and action_plan.get("safety_blockers"):
+        blocker = "; ".join(str(item) for item in list(action_plan.get("safety_blockers") or []) if str(item))
+        return _base_decision(
+            intent="conversation",
+            assistant_message=blocker,
+            needs_clarification=False,
+            reason="Deterministic safety gate blocked unsafe chat action",
+            confidence=0.98,
+            control_overrides=overrides,
+            response_metadata=_metadata_for_decision(
+                command_intent=command_intent if command_intent != "conversation" else "safety_gate",
+                action_taken="blocked_safety_gate",
+                action_blocked_reason=blocker,
+                affected_systems=["review"],
+                next_best_action="Use Civora to prepare engineer-review-required evidence, blockers, calculations, reports, exports, assumptions, or traceability instead.",
+                outcome="understood_but_blocked",
+                confidence=0.98,
+                state_changed=False,
+                blocker=blocker,
             ),
         )
 
@@ -3083,6 +3141,29 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             control_overrides=overrides,
         )
 
+    if command_intent == "fix":
+        return _base_decision(
+            intent="fix",
+            assistant_message=_revision_mode_acknowledgement(
+                message,
+                context,
+                "I’ll run a focused fix pass on the current design" if bool(context.get("has_plan")) else "I’ll run a focused fix pass on the design",
+            ),
+            run_mode="fix",
+            reason="Natural language fix request detected",
+            confidence=0.86,
+            control_overrides=overrides,
+            response_metadata=_metadata_for_decision(
+                command_intent="fix",
+                action_taken="prepared_engineering_run",
+                affected_systems=affected_systems or ["layout", "grading", "drainage", "utilities"],
+                next_best_action="Review the fix pass result and any returned blockers.",
+                outcome="understood_and_executed",
+                confidence=0.86,
+                state_changed=False,
+            ),
+        )
+
     if _is_ambiguous_request(message, context):
         ask = _clarifying_ambiguous_reply(context)
         return _base_decision(
@@ -3130,7 +3211,7 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             confidence=0.82,
             control_overrides=overrides,
         )
-    if _is_explicit_plan_tool_request(message, "fix"):
+    if command_intent == "fix" or _is_explicit_plan_tool_request(message, "fix"):
         return _base_decision(
             intent="fix",
             assistant_message=_revision_mode_acknowledgement(
@@ -3294,6 +3375,8 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError("Chat message is required.")
     context = _chat_context_summary(dict(payload_data.get("context") or {}))
     local = _local_chat_decision(payload_data)
+    action_plan = plan_chat_action(message, context)
+    local = _attach_action_planning_metadata(local, action_plan)
     local_metadata = dict(local.get("response_metadata") or {})
     if str(local_metadata.get("intent") or "") in {
         "site_update",
@@ -3458,7 +3541,7 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             data["assumptions"] = metadata["assumptions"]
             data["next_best_action"] = metadata["next_best_action"]
         data["success"] = True
-        return data
+        return _attach_action_planning_metadata(data, action_plan)
     except Exception:
         return local
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import re
 from typing import Any, Callable, Dict, List, Optional
 
 from backend.services.chat_learning_store import (
@@ -173,6 +174,13 @@ def _classification_type_from_message(message: str) -> str:
 def _looks_like_geometry_reference(message: str) -> bool:
     lowered = _normalized_text(message)
     return any(token in lowered for token in ["this", "that", "selected", "drawn", "polygon", "shape", "geometry"])
+
+
+def _looks_like_geometry_classification_request(message: str) -> bool:
+    lowered = _normalized_text(message)
+    if any(token in lowered for token in ["polygon", "shape", "geometry", "drawn", "selected"]):
+        return True
+    return bool(re.search(r"\b(turn|make|classify)\s+(this|that)\b", lowered))
 
 
 def _collect_selected_ids(context: Dict[str, Any]) -> tuple[List[str], List[str]]:
@@ -397,7 +405,7 @@ def _apply_chat_command_execution(
         object_type = str(command_payload.get("object_type") or "")
         operation = str(command_payload.get("operation") or "")
         classification_type = _classification_type_from_message(message)
-        if classification_type and _looks_like_geometry_reference(message):
+        if classification_type and _looks_like_geometry_reference(message) and _looks_like_geometry_classification_request(message):
             handoffs = _canonical_geometry_handoffs(project_input, latest_result)
             selected_object_ids, selected_geometry_ids = _collect_selected_ids(context)
             matches = _matching_handoffs(handoffs, selected_object_ids, selected_geometry_ids)

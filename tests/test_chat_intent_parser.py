@@ -1,6 +1,8 @@
 import unittest
 from typing import Optional
+from unittest.mock import patch
 
+from parsers.chat_action_registry import build_action_registry
 from parsers.chat_intent_parser import decide_chat_message
 
 
@@ -760,6 +762,57 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertEqual(result["run_mode"], "run")
         self.assertEqual(result["response_metadata"]["intent"], "object_or_layout_command")
         self.assertIn("drainage", result["affected_systems"])
+
+    def test_action_registry_exposes_supported_safe_actions(self):
+        registry = build_action_registry()
+        action_ids = {action["action_id"] for action in registry}
+        self.assertIn("revise_drainage", action_ids)
+        self.assertIn("classify_geometry_as_parking", action_ids)
+        self.assertIn("update_road_geometry", action_ids)
+        for action in registry:
+            self.assertIn("required_inputs", action)
+            self.assertIn("supported_object_types", action)
+            self.assertIn("side_effects", action)
+            self.assertIn("blocked_if", action)
+            self.assertIn("engineer_review_required", action)
+
+    def test_varied_natural_language_maps_without_external_ai(self):
+        cases = [
+            ("why is this broken", {"has_plan": True, "convergence_summary": {"blocked_reasons": ["storm_graph_invalid"]}}, "explain_blockers", "explain"),
+            ("make this work", {"has_plan": True}, "fix_current_design", "fix"),
+            ("why can’t I export", {"has_plan": True, "convergence_summary": {"blocked_exports": ["export"], "blocked_reasons": ["accepted_standards_missing"]}}, "explain_blockers", "explain"),
+            ("put that pond in the low spot", {"has_plan": True, "lot_width": "500", "lot_height": "400"}, "place_basin", "design"),
+            ("turn this polygon into parking", {"has_plan": True, "selected_geometry_ids": ["geom-1"]}, "classify_geometry_as_parking", "design"),
+            ("move the road away from the building", {"has_plan": True, "lot_width": "500", "lot_height": "400"}, "update_road_geometry", "design"),
+            ("don’t assume anything", {}, "set_no_assumptions_mode", "settings"),
+        ]
+        with patch("parsers.chat_intent_parser._load_chat_client", side_effect=RuntimeError("AI disabled")):
+            for message, context, selected_action, expected_intent in cases:
+                with self.subTest(message=message):
+                    result = _decide(message, context)
+                    planning = result["response_metadata"]["action_planning"]
+                    self.assertEqual(planning["selected_action_id"], selected_action)
+                    self.assertGreaterEqual(planning["confidence"], 0.76)
+                    self.assertEqual(result["intent"], expected_intent)
+
+    def test_natural_language_drainage_asks_targeted_question_when_missing_outfall(self):
+        with patch("parsers.chat_intent_parser._load_chat_client", side_effect=RuntimeError("AI disabled")):
+            result = _decide("fix the drainage", {"has_plan": True})
+        planning = result["response_metadata"]["action_planning"]
+        self.assertEqual(planning["selected_action_id"], "revise_drainage")
+        self.assertIn("detention basin or outfall target", result["required_missing_inputs"])
+        self.assertIn("Where should stormwater", result["assistant_message"])
+
+    def test_safety_gate_blocks_fabricated_evidence(self):
+        result = _decide("make up survey control and fake calculations")
+        self.assertEqual(result["action_taken"], "blocked_safety_gate")
+        self.assertIn("cannot fabricate", result["assistant_message"])
+
+    def test_random_unsupported_request_has_low_confidence_plan(self):
+        result = _decide("purple banana orbit sandwich")
+        planning = result["response_metadata"]["action_planning"]
+        self.assertEqual(result["action_taken"], "unsupported_or_not_understood")
+        self.assertTrue(planning["low_confidence"])
 
     def test_generate_drainage_asks_for_outfall_without_target(self):
         result = _decide("generate drainage", {"has_plan": True, "lot_width": "500", "lot_height": "400"})
