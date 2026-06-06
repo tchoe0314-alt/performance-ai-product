@@ -1287,7 +1287,7 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
             needs.append("generate and review deliverables")
         if needs:
             return "Before export, you need to " + _format_missing_requirements(needs[:4]) + "."
-        return "I do not see recorded blockers before export right now, but I would still review assumptions, warnings, and deliverables before issuing anything final."
+        return "I do not see recorded blockers before export right now, but I would still review assumptions, warnings, and deliverables before treating it as a review package."
     if (
         "what supplies" in lowered
         or "what materials" in lowered
@@ -1339,7 +1339,7 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
             parts.append(f"the current engineering trust score is {float(trust_score):.1f}")
         if parts:
             return "Right now, " + ". ".join(parts) + "."
-        return "I don’t see a strong uncertainty signal in the current run state, but I’d still review the assumptions and final deliverables before treating it as final."
+        return "I don’t see a strong uncertainty signal in the current run state, but I’d still review the assumptions and deliverables before treating it as ready_for_engineer_review."
     if (
         "what would make you more confident" in lowered
         or "how can we make this more confident" in lowered
@@ -1389,7 +1389,7 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
             parts.append("blocked: " + "; ".join(str(item) for item in (blocked_reasons[:2] or blocked_exports[:2])))
         if parts:
             return "Short version: " + ". ".join(parts) + "."
-        return "Short version: I don’t see any major blockers recorded right now, but I’d still review the current design before treating it as final."
+        return "Short version: I don’t see any major blockers recorded right now, but I’d still review the current design before treating it as ready_for_engineer_review."
     if (
         "what assumptions" in lowered
         or "where did ai help" in lowered
@@ -1556,7 +1556,7 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
                 )
             )
             if review_text:
-                return f"It’s moving in the right direction, but I’d still review {review_text} before treating it as final."
+                return f"It’s moving in the right direction, but I’d still review {review_text} before treating it as ready_for_engineer_review."
         return "Yes, it looks reasonably strong from the current run state. I don’t see any explicit blockers recorded right now."
     if (
         "what should i do next" in lowered
@@ -1598,7 +1598,7 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         if blocked_exports or blocked_reasons:
             return "I’d focus first on clearing " + "; ".join(
                 str(item) for item in (blocked_reasons[:2] or blocked_exports[:2])
-            ) + " because that is what still blocks the strongest release-ready result."
+            ) + " because that is what still blocks the strongest engineer-review package."
         if unresolved_categories:
             return "I’d focus first on " + ", ".join(
                 str(item) for item in unresolved_categories[:2]
@@ -1651,7 +1651,7 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
             fields = [item for item in fields if item]
             if fields:
                 return "The main risk right now is that parts of the design still depend on assumptions, especially " + ", ".join(fields) + "."
-        return "I don’t see any major recorded risks beyond the normal need to review the current design before treating it as final."
+        return "I don’t see any major recorded risks beyond the normal need to review the current design before treating it as ready_for_engineer_review."
     if "what would you change" in lowered or "what should change" in lowered:
         if blocked_reasons or unresolved_categories:
             focus = ", ".join(str(item) for item in (unresolved_categories[:2] or blocked_reasons[:2]))
@@ -1674,7 +1674,7 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
                 str(item) for item in blocked[:3]
             ) + "."
         if trust_score is not None:
-            return f"The current engineering trust score is {float(trust_score):.1f}. I’d still review the assumptions and any recorded warnings before treating it as final."
+            return f"The current engineering trust score is {float(trust_score):.1f}. I’d still review the assumptions and any recorded warnings before treating it as ready_for_engineer_review."
         return "I’d still treat it as something to review, not blindly trust, unless the blockers and review items are clear."
     if (
         "what are my options" in lowered
