@@ -97,6 +97,17 @@ class RecordingProjectStore:
 
 
 class ApplicationChatWorkflowsTest(unittest.TestCase):
+    def assertTaxonomyMetadata(self, result, outcome):
+        metadata = result["response_metadata"]
+        self.assertEqual(metadata["outcome"], outcome)
+        self.assertIn("confidence", metadata)
+        self.assertIn("state_changed", metadata)
+        self.assertIn("next_best_action", metadata)
+        if outcome == "unsupported_or_not_understood":
+            self.assertTrue(metadata["unsupported_reason"])
+        if outcome == "understood_but_blocked":
+            self.assertTrue(metadata["blocker"])
+
     def test_decide_chat_requires_message(self):
         with self.assertRaises(ValueError):
             decide_chat({}, decide_chat_message=lambda payload: payload)
@@ -227,6 +238,8 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         )
 
         self.assertEqual(result["action_taken"], "updated_canonical_site_state")
+        self.assertTaxonomyMetadata(result, "understood_and_executed")
+        self.assertTrue(result["response_metadata"]["state_changed"])
         self.assertEqual(result["response_metadata"]["intent"], "site_update")
         self.assertTrue(store.saved)
         saved_input = store.saved[-1]["project_input"]
@@ -251,6 +264,8 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         )
 
         self.assertEqual(result["action_taken"], "created_draft_geometry")
+        self.assertTaxonomyMetadata(result, "understood_and_executed")
+        self.assertTrue(result["response_metadata"]["state_changed"])
         self.assertEqual(result["response_metadata"]["intent"], "object_or_layout_command")
         self.assertEqual(result["response_metadata"]["command_payload"]["draft_id"], "draft-building-1")
         self.assertIn("draft", result["assistant_message"])
@@ -277,6 +292,8 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertEqual(result["intent"], "conversation")
         self.assertEqual(result["run_mode"], "none")
         self.assertEqual(result["action_taken"], "blocked_missing_canonical_edit_support")
+        self.assertTaxonomyMetadata(result, "understood_but_blocked")
+        self.assertFalse(result["response_metadata"]["state_changed"])
         self.assertIn("Canonical road update edits are not supported", result["action_blocked_reason"])
         self.assertEqual(store.saved, [])
 
@@ -324,6 +341,8 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
 
         self.assertEqual(result["intent"], "conversation")
         self.assertEqual(result["action_taken"], "asked_clarifying_question")
+        self.assertTaxonomyMetadata(result, "understood_needs_more_info")
+        self.assertFalse(result["response_metadata"]["state_changed"])
         self.assertIn("Strict/no-assumption mode", result["action_blocked_reason"])
         self.assertEqual(result["assumptions"], [])
         self.assertEqual(store.saved, [])
@@ -342,6 +361,7 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         )
 
         self.assertEqual(result["action_taken"], "created_draft_geometry")
+        self.assertTaxonomyMetadata(result, "understood_and_executed")
         self.assertTrue(result["assumptions"])
         self.assertIn("planner-selected", " ".join(result["assumptions"]).replace(" ", "-").lower())
 
@@ -359,6 +379,8 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         )
 
         self.assertEqual(result["action_taken"], "queued_engineering_workflow")
+        self.assertTaxonomyMetadata(result, "understood_and_executed")
+        self.assertTrue(result["response_metadata"]["state_changed"])
         self.assertEqual(result["response_metadata"]["command_payload"]["workflow"], "drainage")
         workflows = store.saved[-1]["latest_result"]["final_plan"]["meta"]["chat_command_workflows"]
         self.assertEqual(workflows[-1]["workflow"], "drainage")
@@ -393,6 +415,8 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         )
 
         self.assertEqual(result["action_taken"], "answered_from_project_context")
+        self.assertTaxonomyMetadata(result, "understood_and_executed")
+        self.assertFalse(result["response_metadata"]["state_changed"])
         self.assertEqual(result["response_metadata"]["intent"], "export_readiness")
         self.assertIn("canonical_id_traceability_missing", result["assistant_message"])
         self.assertEqual(store.saved, [])
@@ -416,7 +440,7 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
 
         metadata = result["response_metadata"]
         self.assertEqual(result["action_taken"], "classified_drawn_geometry")
-        self.assertEqual(metadata["outcome"], "draft_canonical_classification_created")
+        self.assertTaxonomyMetadata(result, "understood_and_executed")
         self.assertTrue(metadata["state_changed"])
         self.assertEqual(metadata["referenced_object_ids"], ["drawn-basin"])
         self.assertEqual(metadata["referenced_geometry_ids"], ["geom-basin"])
@@ -449,6 +473,7 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
 
         metadata = result["response_metadata"]
         self.assertEqual(result["action_taken"], "classified_drawn_geometry")
+        self.assertTaxonomyMetadata(result, "understood_and_executed")
         self.assertTrue(metadata["state_changed"])
         update = store.saved[-1]["latest_result"]["final_plan"]["meta"]["canonical_geometry_classification_updates"][0]
         self.assertEqual(update["object_type"], "parking")
@@ -472,8 +497,8 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         metadata = result["response_metadata"]
         self.assertEqual(result["intent"], "conversation")
         self.assertEqual(result["action_taken"], "asked_targeted_geometry_selection_question")
+        self.assertTaxonomyMetadata(result, "understood_needs_more_info")
         self.assertFalse(metadata["state_changed"])
-        self.assertEqual(metadata["outcome"], "needs_geometry_selection")
         self.assertIn("Which drawn geometry", result["assistant_message"])
         self.assertEqual(store.saved, [])
 
@@ -500,8 +525,8 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
 
         metadata = result["response_metadata"]
         self.assertEqual(result["action_taken"], "blocked_invalid_geometry_handoff")
+        self.assertTaxonomyMetadata(result, "understood_but_blocked")
         self.assertFalse(metadata["state_changed"])
-        self.assertEqual(metadata["outcome"], "invalid_geometry_handoff_blocked")
         self.assertIn("vertices must include at least 4 points for polygon", result["action_blocked_reason"])
         self.assertEqual(metadata["referenced_object_ids"], ["drawn-invalid"])
         self.assertEqual(metadata["referenced_geometry_ids"], ["geom-invalid"])
@@ -526,10 +551,120 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
 
         metadata = result["response_metadata"]
         self.assertEqual(result["action_taken"], "blocked_missing_canonical_edit_support")
-        self.assertEqual(metadata["outcome"], "unsupported_canonical_edit_blocked")
+        self.assertTaxonomyMetadata(result, "understood_but_blocked")
         self.assertFalse(metadata["state_changed"])
         self.assertIn("Canonical road update edits are not supported", result["action_blocked_reason"])
         self.assertEqual(store.saved, [])
+
+    def test_unsupported_random_command_returns_unsupported_taxonomy(self):
+        result = decide_chat(
+            {"message": "purple banana orbit sandwich", "context": {}},
+            decide_chat_message=decide_chat_message,
+        )
+
+        self.assertEqual(result["action_taken"], "unsupported_or_not_understood")
+        self.assertTaxonomyMetadata(result, "unsupported_or_not_understood")
+        self.assertIn("does not match a supported Civora chat command", result["response_metadata"]["unsupported_reason"])
+
+    def test_approve_this_blocks_responsibility_request(self):
+        result = decide_chat(
+            {"message": "approve this", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+        )
+
+        self.assertEqual(result["action_taken"], "blocked_responsibility_request")
+        self.assertTaxonomyMetadata(result, "understood_but_blocked")
+        self.assertIn("cannot approve", result["assistant_message"])
+        self.assertNotIn("approved", result["assistant_message"].lower())
+
+    def test_stamp_it_blocks_responsibility_request(self):
+        result = decide_chat(
+            {"message": "stamp it", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+        )
+
+        self.assertEqual(result["action_taken"], "blocked_responsibility_request")
+        self.assertTaxonomyMetadata(result, "understood_but_blocked")
+        self.assertIn("cannot approve, stamp, seal", result["assistant_message"])
+
+    def test_full_construction_set_blocks_responsibility_request(self):
+        result = decide_chat(
+            {"message": "do full construction set", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+        )
+
+        self.assertEqual(result["action_taken"], "blocked_responsibility_request")
+        self.assertTaxonomyMetadata(result, "understood_but_blocked")
+        self.assertIn("cannot approve, stamp, seal", result["assistant_message"])
+        self.assertNotIn("construction-ready", result["assistant_message"])
+
+    def test_missing_standards_export_requirements_report_real_blockers(self):
+        store = RecordingProjectStore(
+            _record()
+            | {
+                "latest_result": {
+                    "success": True,
+                    "final_plan": {
+                        "meta": {
+                            "export_audit": {
+                                "export_blocked": True,
+                                "blocked_reasons": ["accepted_standards_missing", "survey_control_missing"],
+                            },
+                        }
+                    },
+                }
+            }
+        )
+
+        result = decide_chat(
+            {
+                "message": "what do I need before export",
+                "context": {"current_project": {"project_id": "project_123"}},
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertTaxonomyMetadata(result, "understood_and_executed")
+        self.assertIn("accepted_standards_missing", result["assistant_message"])
+        self.assertIn("survey_control_missing", result["assistant_message"])
+
+    def test_no_assumption_mode_asks_one_targeted_question(self):
+        result = decide_chat(
+            {
+                "message": "add a building",
+                "context": {
+                    "strategy_mode": "user",
+                    "has_plan": True,
+                    "lot_width": "500",
+                    "lot_height": "400",
+                    "current_project": {"project_id": "project_123"},
+                },
+            },
+            decide_chat_message=decide_chat_message,
+        )
+
+        self.assertEqual(result["action_taken"], "asked_clarifying_question")
+        self.assertTaxonomyMetadata(result, "understood_needs_more_info")
+        self.assertIn("footprint dimensions", result["assistant_message"])
+
+    def test_assisted_mode_assumption_labels_are_explicit(self):
+        store = RecordingProjectStore()
+
+        result = decide_chat(
+            {
+                "message": "add a 100 by 60 building",
+                "context": {"strategy_mode": "assisted", "current_project": {"project_id": "project_123"}},
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertTaxonomyMetadata(result, "understood_and_executed")
+        self.assertTrue(result["assumptions"])
+        self.assertIn("draft geometry", " ".join(result["assumptions"]).lower())
 
 
 if __name__ == "__main__":

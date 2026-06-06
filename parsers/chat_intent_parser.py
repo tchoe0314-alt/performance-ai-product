@@ -2107,6 +2107,8 @@ def _extract_site_area_acres(message: str) -> Optional[str]:
 
 def _command_family(message: str) -> str:
     lowered = _normalized_chat_text(message)
+    if _is_responsibility_blocked_request(message):
+        return "responsibility_guard"
     if any(phrase in lowered for phrase in ["what do i need before export", "before export", "export ready", "ready to export"]):
         return "export_readiness"
     if re.search(r"\bwhy\b.*\b(storm|drainage|export|utility|utilities|grading)\b.*\b(blocked|failed|stuck)\b", lowered):
@@ -2130,6 +2132,62 @@ def _command_family(message: str) -> str:
     if any(phrase in lowered for phrase in ["make the site", "site area", "lot area"]) and _extract_site_area_acres(message):
         return "site_update"
     return "conversation"
+
+
+def _is_responsibility_blocked_request(message: str) -> bool:
+    lowered = _normalized_chat_text(message)
+    return any(
+        phrase in lowered
+        for phrase in [
+            "approve this",
+            "approve it",
+            "stamp it",
+            "seal it",
+            "sign off",
+            "signoff",
+            "certify",
+            "do full construction set",
+            "full construction set",
+            "issue for construction",
+            "ifc set",
+            "construction approved",
+        ]
+    )
+
+
+def _looks_unsupported_or_random(message: str) -> bool:
+    lowered = _normalized_chat_text(message)
+    if not lowered:
+        return False
+    if _is_question(message) or _is_casual_chat_message(message):
+        return False
+    if _has_edit_intent(message) or _looks_like_explicit_design_request(message):
+        return False
+    tokens = re.findall(r"[a-z0-9']+", lowered)
+    if len(tokens) <= 2:
+        return True
+    civil_tokens = {
+        "site",
+        "building",
+        "road",
+        "parking",
+        "grading",
+        "drainage",
+        "storm",
+        "utility",
+        "utilities",
+        "water",
+        "sanitary",
+        "basin",
+        "export",
+        "standards",
+        "survey",
+        "plan",
+        "geometry",
+        "polygon",
+    }
+    action_tokens = {"make", "add", "change", "move", "generate", "run", "use", "turn", "set", "explain", "fix", "improve"}
+    return not any(token in civil_tokens or token in action_tokens for token in tokens)
 
 
 def _affected_systems_for_command(command_intent: str, message: str) -> List[str]:
@@ -2238,10 +2296,30 @@ def _metadata_for_decision(
     assumptions: Optional[List[str]] = None,
     next_best_action: str = "",
     command_payload: Optional[Dict[str, Any]] = None,
+    outcome: str = "",
+    confidence: Optional[float] = None,
+    state_changed: bool = False,
+    unsupported_reason: str = "",
+    blocker: str = "",
 ) -> Dict[str, Any]:
     required_missing = list(missing or [])
+    resolved_outcome = outcome
+    if not resolved_outcome:
+        if unsupported_reason:
+            resolved_outcome = "unsupported_or_not_understood"
+        elif required_missing:
+            resolved_outcome = "understood_needs_more_info"
+        elif action_blocked_reason:
+            resolved_outcome = "understood_but_blocked"
+        else:
+            resolved_outcome = "understood_and_executed" if state_changed else "understood_needs_more_info"
     return {
         "intent": command_intent,
+        "outcome": resolved_outcome,
+        "confidence": confidence,
+        "state_changed": state_changed,
+        "unsupported_reason": unsupported_reason,
+        "blocker": blocker or action_blocked_reason,
         "required_missing_inputs": required_missing,
         "action_taken": action_taken,
         "action_blocked_reason": action_blocked_reason,
@@ -2503,6 +2581,21 @@ def _base_decision(
     response_metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     metadata = dict(response_metadata or _metadata_for_decision(command_intent=intent))
+    metadata.setdefault("confidence", confidence)
+    metadata.setdefault("state_changed", False)
+    metadata.setdefault("unsupported_reason", "")
+    metadata.setdefault("blocker", metadata.get("action_blocked_reason") or "")
+    if not metadata.get("outcome"):
+        if metadata.get("unsupported_reason"):
+            metadata["outcome"] = "unsupported_or_not_understood"
+        elif metadata.get("required_missing_inputs"):
+            metadata["outcome"] = "understood_needs_more_info"
+        elif metadata.get("action_blocked_reason"):
+            metadata["outcome"] = "understood_but_blocked"
+        elif metadata.get("state_changed"):
+            metadata["outcome"] = "understood_and_executed"
+        else:
+            metadata["outcome"] = "understood_needs_more_info" if needs_clarification else "understood_and_executed"
     return {
         "success": True,
         "intent": intent,
@@ -2547,6 +2640,31 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             ),
         )
 
+    if command_intent == "responsibility_guard":
+        blocker = (
+            "Civora cannot approve, stamp, seal, certify, sign off, or issue construction sets. "
+            "A responsible external licensed engineer/user must provide any approval record."
+        )
+        return _base_decision(
+            intent="conversation",
+            assistant_message=blocker,
+            needs_clarification=False,
+            reason="Responsibility guard blocked approval/signoff request",
+            confidence=0.98,
+            control_overrides=overrides,
+            response_metadata=_metadata_for_decision(
+                command_intent="responsibility_guard",
+                action_taken="blocked_responsibility_request",
+                action_blocked_reason=blocker,
+                affected_systems=["review"],
+                next_best_action="Prepare or review an engineer-review-required package, then attach an external licensed engineer approval record outside Civora if one exists.",
+                outcome="understood_but_blocked",
+                confidence=0.98,
+                state_changed=False,
+                blocker=blocker,
+            ),
+        )
+
     if _is_settings_only_message(message, overrides):
         return _base_decision(
             intent="settings",
@@ -2559,6 +2677,9 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
                 action_taken="updated_chat_controls",
                 affected_systems=affected_systems,
                 next_best_action="Give a design command when you want Civora to run the planner.",
+                outcome="understood_and_executed",
+                confidence=0.95,
+                state_changed=True,
             ),
         )
 
@@ -2605,6 +2726,10 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
                     affected_systems=affected_systems,
                     next_best_action=ask,
                     command_payload=command_payload,
+                    outcome="understood_needs_more_info",
+                    confidence=0.91,
+                    state_changed=False,
+                    blocker="Required command inputs are missing.",
                 ),
             )
 
@@ -2626,6 +2751,9 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
                     assumptions=command_assumptions,
                     next_best_action="Review the updated site extents and downstream system status.",
                     command_payload=command_payload,
+                    outcome="understood_and_executed",
+                    confidence=0.9,
+                    state_changed=False,
                 ),
             )
 
@@ -2653,6 +2781,9 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
                 assumptions=command_assumptions,
                 next_best_action="Review the generated systems and any blockers returned by the planner.",
                 command_payload=command_payload,
+                outcome="understood_and_executed",
+                confidence=0.9,
+                state_changed=False,
             ),
         )
 
@@ -2696,6 +2827,9 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
                 action_taken="answered_from_project_context",
                 affected_systems=affected_systems,
                 next_best_action="Use a targeted command if you want Civora to change the design.",
+                outcome="understood_and_executed",
+                confidence=0.9,
+                state_changed=False,
             ),
         )
 
@@ -2729,13 +2863,25 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     if _is_ambiguous_request(message, context):
+        ask = _clarifying_ambiguous_reply(context)
         return _base_decision(
             intent="conversation",
-            assistant_message=_clarifying_ambiguous_reply(context),
+            assistant_message=ask,
             needs_clarification=True,
             reason="Ambiguous request needs clarification",
             confidence=0.9,
             control_overrides=overrides,
+            response_metadata=_metadata_for_decision(
+                command_intent="conversation",
+                missing=["specific command or target"],
+                action_taken="asked_clarifying_question",
+                action_blocked_reason="The request was ambiguous.",
+                next_best_action=ask,
+                outcome="understood_needs_more_info",
+                confidence=0.9,
+                state_changed=False,
+                blocker="The request was ambiguous.",
+            ),
         )
 
     if _is_casual_chat_message(message):
@@ -2745,6 +2891,14 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             reason="Casual conversation detected",
             confidence=0.95,
             control_overrides=overrides,
+            response_metadata=_metadata_for_decision(
+                command_intent="conversation",
+                action_taken="answered",
+                next_best_action="Ask about the current project or give a supported design command.",
+                outcome="understood_and_executed",
+                confidence=0.95,
+                state_changed=False,
+            ),
         )
 
     if "explain" in lowered or ("why" in lowered and bool(context.get("has_plan"))):
@@ -2848,15 +3002,26 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             manual_missing.append("which systems to include")
         return _base_decision(
             intent="conversation",
-            assistant_message=_structured_clarification_reply(
+            assistant_message=(ask := _structured_clarification_reply(
                 context=context,
                 missing=manual_missing,
                 inferred_project_type=inferred_project_type,
-            ),
+            )),
             needs_clarification=True,
             reason="Assisted off conservative fallback",
             confidence=0.72,
             control_overrides=overrides,
+            response_metadata=_metadata_for_decision(
+                command_intent="conversation",
+                missing=manual_missing or ["explicit command details"],
+                action_taken="asked_clarifying_question",
+                action_blocked_reason="No-assumption mode requires explicit inputs before Civora fills gaps.",
+                next_best_action=ask,
+                outcome="understood_needs_more_info",
+                confidence=0.72,
+                state_changed=False,
+                blocker="No-assumption mode requires explicit inputs before Civora fills gaps.",
+            ),
         )
 
     if _is_question(message):
@@ -2868,15 +3033,37 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             reason="General question without enough specific context",
             confidence=0.68,
             control_overrides=overrides,
+            response_metadata=_metadata_for_decision(
+                command_intent="conversation",
+                missing=["more specific project context or command"],
+                action_taken="asked_clarifying_question",
+                action_blocked_reason="General question did not include enough project-specific context.",
+                next_best_action=fallback_reply,
+                outcome="understood_needs_more_info",
+                confidence=0.68,
+                state_changed=False,
+                blocker="General question did not include enough project-specific context.",
+            ),
         )
 
+    unsupported_reason = "The message does not match a supported Civora chat command or project question."
     return _base_decision(
         intent="conversation",
-        assistant_message=_clarifying_design_reply(context),
-        needs_clarification=True,
-        reason="Fallback clarification for ambiguous request",
+        assistant_message="I do not recognize that as a supported Civora command. Ask a specific project question or give a supported site, object, grading, drainage, utility, or review command.",
+        needs_clarification=False,
+        reason="Unsupported fallback",
         confidence=0.62,
         control_overrides=overrides,
+        response_metadata=_metadata_for_decision(
+            command_intent="unsupported_or_not_understood",
+            action_taken="unsupported_or_not_understood",
+            action_blocked_reason=unsupported_reason,
+            next_best_action="Ask a specific project question or give a supported design command.",
+            outcome="unsupported_or_not_understood",
+            confidence=0.62,
+            state_changed=False,
+            unsupported_reason=unsupported_reason,
+        ),
     )
 
 
@@ -2897,6 +3084,8 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         "blocker_explanation",
         "export_readiness",
         "mode_command",
+        "responsibility_guard",
+        "unsupported_or_not_understood",
     }:
         return local
 

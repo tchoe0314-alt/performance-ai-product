@@ -37,6 +37,9 @@ def _truthful_decision_update(
     state_changed: Optional[bool] = None,
     referenced_object_ids: Optional[List[str]] = None,
     referenced_geometry_ids: Optional[List[str]] = None,
+    confidence: Optional[float] = None,
+    unsupported_reason: str = "",
+    blocker: str = "",
 ) -> Dict[str, Any]:
     updated = dict(decision)
     metadata = dict(updated.get("response_metadata") or {})
@@ -63,7 +66,18 @@ def _truthful_decision_update(
     metadata["action_taken"] = action_taken
     metadata["action_blocked_reason"] = action_blocked_reason
     metadata["next_best_action"] = next_best_action
-    metadata["outcome"] = outcome or ("blocked" if action_blocked_reason else "completed")
+    if confidence is not None:
+        metadata["confidence"] = confidence
+    metadata.setdefault("confidence", updated.get("confidence"))
+    metadata["unsupported_reason"] = unsupported_reason or str(metadata.get("unsupported_reason") or "")
+    metadata["blocker"] = blocker or action_blocked_reason or str(metadata.get("blocker") or "")
+    metadata["outcome"] = outcome or (
+        "unsupported_or_not_understood"
+        if metadata["unsupported_reason"]
+        else "understood_but_blocked"
+        if action_blocked_reason
+        else "understood_and_executed"
+    )
     if state_changed is not None:
         metadata["state_changed"] = bool(state_changed)
     else:
@@ -246,6 +260,9 @@ def _apply_chat_command_execution(
             required_missing_inputs=["explicit user-provided command inputs"],
             assumptions=[],
             next_best_action=question,
+            outcome="understood_needs_more_info",
+            state_changed=False,
+            blocker="Strict/no-assumption mode blocks inferred command inputs.",
         )
 
     if command_intent not in {
@@ -275,6 +292,9 @@ def _apply_chat_command_execution(
                 action_blocked_reason="No saved canonical project record is available for this command.",
                 required_missing_inputs=["saved canonical project record"],
                 next_best_action="Save or load a project, then retry the command.",
+                outcome="understood_but_blocked",
+                state_changed=False,
+                blocker="No saved canonical project record is available for this command.",
             )
 
     if not record:
@@ -305,6 +325,9 @@ def _apply_chat_command_execution(
                 action_blocked_reason="Site area value is missing from the parsed command.",
                 required_missing_inputs=["site area"],
                 next_best_action=ask,
+                outcome="understood_needs_more_info",
+                state_changed=False,
+                blocker="Site area value is missing from the parsed command.",
             )
         manual_fields = _safe_dict(project_input.get("manual_fields"))
         lot = _safe_dict(manual_fields.get("lot"))
@@ -334,6 +357,8 @@ def _apply_chat_command_execution(
             assumptions=list(metadata.get("assumptions") or []),
             next_best_action="Rerun affected systems and review downstream blockers.",
             command_payload_updates={"persisted": True, "ready_language": "ready_for_engineer_review"},
+            outcome="understood_and_executed",
+            state_changed=True,
         )
 
     if command_intent == "object_or_layout_command":
@@ -357,7 +382,7 @@ def _apply_chat_command_execution(
                     action_blocked_reason="No selected or referenced drawn geometry was provided.",
                     required_missing_inputs=["selected drawn geometry"],
                     next_best_action=ask,
-                    outcome="needs_geometry_selection",
+                    outcome="understood_needs_more_info",
                     state_changed=False,
                     referenced_object_ids=[],
                     referenced_geometry_ids=[],
@@ -375,7 +400,7 @@ def _apply_chat_command_execution(
                     action_blocked_reason=f"Referenced geometry was ambiguous: {len(matches)} matching handoffs found.",
                     required_missing_inputs=["one unambiguous selected drawn geometry"],
                     next_best_action=ask,
-                    outcome="ambiguous_geometry_reference",
+                    outcome="understood_needs_more_info",
                     state_changed=False,
                     referenced_object_ids=selected_object_ids,
                     referenced_geometry_ids=selected_geometry_ids,
@@ -397,8 +422,9 @@ def _apply_chat_command_execution(
                     action_blocked_reason=reason,
                     required_missing_inputs=["valid canonical_geometry_handoff_v1"],
                     next_best_action="Fix the drawn geometry handoff blockers, then classify it again.",
-                    outcome="invalid_geometry_handoff_blocked",
+                    outcome="understood_but_blocked",
                     state_changed=False,
+                    blocker=reason,
                     referenced_object_ids=referenced_object_ids,
                     referenced_geometry_ids=referenced_geometry_ids,
                 )
@@ -457,7 +483,7 @@ def _apply_chat_command_execution(
                     "object_type": classification_type,
                     "ready_language": "ready_for_engineer_review",
                 },
-                outcome="draft_canonical_classification_created",
+                outcome="understood_and_executed",
                 state_changed=True,
                 referenced_object_ids=referenced_object_ids,
                 referenced_geometry_ids=referenced_geometry_ids,
@@ -475,8 +501,9 @@ def _apply_chat_command_execution(
                 action_blocked_reason=f"Canonical {object_type or 'object'} {operation or 'update'} edits are not supported by chat execution yet.",
                 required_missing_inputs=[f"supported canonical {object_type or 'object'} edit workflow"],
                 next_best_action="Tell Civora the exact new geometry in a full design prompt or use a supported create command.",
-                outcome="unsupported_canonical_edit_blocked",
+                outcome="understood_but_blocked",
                 state_changed=False,
+                blocker=f"Canonical {object_type or 'object'} {operation or 'update'} edits are not supported by chat execution yet.",
             )
         supported_create = object_type in {"building", "basin", "detention_basin", "parking"}
         if not supported_create:
@@ -492,6 +519,9 @@ def _apply_chat_command_execution(
                 action_blocked_reason=f"Canonical create support is missing for object type: {object_type or 'unknown'}.",
                 required_missing_inputs=[f"supported canonical {object_type or 'object'} creation workflow"],
                 next_best_action="Use a full design prompt or provide a supported building, parking, or detention basin create command.",
+                outcome="understood_but_blocked",
+                state_changed=False,
+                blocker=f"Canonical create support is missing for object type: {object_type or 'unknown'}.",
             )
         if object_type == "building" and not (command_payload.get("width") and command_payload.get("depth")):
             ask = "I can create draft building geometry, but I need the building footprint size first."
@@ -506,6 +536,9 @@ def _apply_chat_command_execution(
                 action_blocked_reason="Building creation needs width and depth.",
                 required_missing_inputs=["building dimensions"],
                 next_best_action=ask,
+                outcome="understood_needs_more_info",
+                state_changed=False,
+                blocker="Building creation needs width and depth.",
             )
         drafts = _safe_list(meta.get("canonical_draft_geometry"))
         draft_id = _next_draft_id(drafts, f"draft-{object_type.replace('_', '-')}")
@@ -542,6 +575,8 @@ def _apply_chat_command_execution(
             assumptions=list(metadata.get("assumptions") or []),
             next_best_action="Review the draft geometry location and rerun affected systems.",
             command_payload_updates={"persisted": True, "draft_id": draft_id, "ready_language": "ready_for_engineer_review"},
+            outcome="understood_and_executed",
+            state_changed=True,
         )
 
     workflow_by_intent = {
@@ -575,6 +610,8 @@ def _apply_chat_command_execution(
             assumptions=list(metadata.get("assumptions") or []),
             next_best_action="Run the planner and review returned blockers before using the result as an engineer-review package.",
             command_payload_updates={"workflow": workflow, "persisted": changed, "ready_language": "ready_for_engineer_review"},
+            outcome="understood_and_executed",
+            state_changed=changed,
         )
 
     return decision
