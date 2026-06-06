@@ -2024,7 +2024,34 @@ def construction_readiness(plan_or_meta: Dict[str, Any], *, standards: CivilDesi
                 )
             )
 
+    standards_package = _safe_dict(meta.get("standards_package"))
     standards_pack = _safe_dict(meta.get("design_standards"))
+    if standards_package:
+        package_status = _safe_str(standards_package.get("status")).lower()
+        if package_status != "ready" or standards_package.get("production_usable") is not True:
+            blockers.append(
+                _construction_gap(
+                    "standards",
+                    "standards_package",
+                    "Construction release requires the Standards + Requirements Gate to be ready, not blocked, stale, inferred, or review-only.",
+                    "Resolve standards_package blockers and rerun standards validation before construction release.",
+                )
+            )
+        for gap in _safe_list(standards_package.get("construction_release_blockers")):
+            rec = _safe_dict(gap)
+            if not rec:
+                continue
+            blockers.append(
+                _construction_gap(
+                    "standards",
+                    _safe_str(rec.get("field"), "standards_package"),
+                    _safe_str(
+                        rec.get("why_needed") or rec.get("reason") or rec.get("message"),
+                        "Standards gate blocks construction release.",
+                    ),
+                    _safe_str(rec.get("suggested_next_action"), "Resolve Standards + Requirements Gate blockers."),
+                )
+            )
     if standards_pack.get("production_usable") is not True:
         blockers.append(
             _construction_gap(

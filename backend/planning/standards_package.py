@@ -9,6 +9,24 @@ from .standards_discovery import validate_standards_acceptance_for_production
 
 STANDARDS_STALE_DAYS = 365
 
+REQUIRED_STANDARDS_RULE_TOPICS = (
+    {
+        "rule_key": "jurisdiction_selection",
+        "label": "Selected jurisdiction/provider",
+        "matches": ("jurisdiction",),
+    },
+    {
+        "rule_key": "official_source_selection",
+        "label": "Selected official standards source",
+        "matches": ("official source", "source url", "manual", "standards"),
+    },
+    {
+        "rule_key": "company_cad_standards",
+        "label": "Company CAD/sheet/detail standards",
+        "matches": ("company", "cad", "sheet", "detail"),
+    },
+)
+
 
 def _blocker(field: str, reason: str, *, next_action: str = "", severity: str = "blocker") -> Dict[str, Any]:
     return {
@@ -32,18 +50,32 @@ def _source_urls(*values: Iterable[Any]) -> List[str]:
     return urls
 
 
+def _is_official_source_url(url: str) -> bool:
+    lowered = safe_str(url).lower()
+    return (
+        lowered.startswith("https://")
+        and "google.com/search" not in lowered
+        and "bing.com/search" not in lowered
+        and not lowered.startswith("internal://")
+    )
+
+
 def _jurisdiction(meta: Dict[str, Any]) -> Dict[str, Any]:
     jurisdiction = safe_dict(meta.get("jurisdiction_standards"))
     packet = safe_dict(meta.get("standards_review_packet"))
     discovery = safe_dict(packet.get("discovery"))
     discovered = safe_dict(discovery.get("jurisdiction"))
+    explicit = bool(jurisdiction)
+    source = safe_str(jurisdiction.get("source") or ("jurisdiction_standards" if explicit else "standards_review_packet_inferred"))
     return {
         "city": safe_str(jurisdiction.get("city") or discovered.get("city")),
         "county": safe_str(jurisdiction.get("county") or discovered.get("county")),
         "state": safe_str(jurisdiction.get("state") or discovered.get("state")),
         "utility_provider": safe_str(jurisdiction.get("utility_provider") or discovered.get("utility_provider")),
-        "source": safe_str(jurisdiction.get("source") or "standards_package"),
+        "source": source,
         "source_urls": _source_urls(jurisdiction.get("source_urls")),
+        "explicitly_selected": explicit,
+        "selection_status": "selected" if explicit else "inferred_from_review_packet",
         "production_usable": bool(jurisdiction.get("production_usable")),
     }
 
@@ -144,6 +176,160 @@ def _validation(meta: Dict[str, Any], accepted_rules: List[Dict[str, Any]]) -> D
     )
 
 
+def _missing_input(field: str, reason: str, next_action: str) -> Dict[str, Any]:
+    return {
+        "field": field,
+        "reason": reason,
+        "next_action": next_action,
+    }
+
+
+def _source_selection(
+    meta: Dict[str, Any],
+    *,
+    source_urls: List[str],
+    official_source_urls: List[str],
+    accepted_rule_count: int,
+) -> Dict[str, Any]:
+    explicit = safe_dict(
+        meta.get("selected_standards_source")
+        or meta.get("standards_source_selection")
+        or safe_dict(meta.get("standards_acceptance")).get("selected_source")
+    )
+    explicit_url = safe_str(explicit.get("url") or explicit.get("source_url") or explicit.get("official_source_url"))
+    selected_urls = _source_urls([explicit_url], explicit.get("source_urls"), official_source_urls)
+    has_explicit_record = bool(explicit)
+    has_official_selection = bool(selected_urls and any(_is_official_source_url(url) for url in selected_urls))
+    explicit_selection = has_explicit_record or (accepted_rule_count > 0 and bool(official_source_urls))
+    return {
+        "explicitly_selected": explicit_selection and has_official_selection,
+        "selection_status": "selected" if explicit_selection and has_official_selection else "missing",
+        "source_id": safe_str(explicit.get("source_id") or explicit.get("id") or ("accepted_official_source" if official_source_urls else "")),
+        "name": safe_str(explicit.get("name") or explicit.get("label")),
+        "source_urls": selected_urls or source_urls,
+        "official_source_urls": official_source_urls,
+        "source_record": deepcopy(explicit),
+        "truth_label": "A standards source is selected only when it traces to an accepted official source; search and baseline sources remain inferred.",
+    }
+
+
+def _missing_rule_inputs(
+    *,
+    accepted_rules: List[Dict[str, Any]],
+    inferred_rule_ids: List[str],
+    jurisdiction: Dict[str, Any],
+    source_selection: Dict[str, Any],
+    company: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    missing: List[Dict[str, Any]] = []
+    for topic in REQUIRED_STANDARDS_RULE_TOPICS:
+        rule_key = safe_str(topic.get("rule_key"))
+        label = safe_str(topic.get("label"))
+        if rule_key == "jurisdiction_selection":
+            if jurisdiction.get("explicitly_selected") is True and jurisdiction.get("production_usable") is True:
+                continue
+            missing.append(
+                {
+                    "rule_key": rule_key,
+                    "label": label,
+                    "reason": "Jurisdiction/provider selection is missing, inferred, or not production-usable.",
+                }
+            )
+            continue
+        if rule_key == "official_source_selection":
+            if source_selection.get("explicitly_selected") is True:
+                continue
+            missing.append(
+                {
+                    "rule_key": rule_key,
+                    "label": label,
+                    "reason": "No explicit accepted official standards source is selected.",
+                }
+            )
+            continue
+        if rule_key == "company_cad_standards":
+            if company and company.get("production_usable") is True:
+                continue
+            missing.append(
+                {
+                    "rule_key": rule_key,
+                    "label": label,
+                    "reason": "Company CAD/sheet/detail standards are missing or not production-usable.",
+                }
+            )
+            continue
+    if not accepted_rules:
+        missing.append(
+            {
+                "rule_key": "accepted_rules",
+                "label": "Accepted official standards rules",
+                "reason": "No accepted official standards rules are visible.",
+            }
+        )
+    return missing
+
+
+def _reviewer_comments(
+    *,
+    blockers: List[Dict[str, Any]],
+    warnings: List[Dict[str, Any]],
+    missing_inputs: List[Dict[str, Any]],
+    missing_rules: List[Dict[str, Any]],
+    inferred_rule_ids: List[str],
+) -> List[Dict[str, Any]]:
+    comments: List[Dict[str, Any]] = []
+    for item in missing_inputs:
+        rec = safe_dict(item)
+        comments.append(
+            {
+                "severity": "blocker",
+                "field": safe_str(rec.get("field"), "standards_input"),
+                "comment": safe_str(rec.get("reason"), "A required standards input is missing."),
+                "next_action": safe_str(rec.get("next_action"), "Provide this standards input and rerun the standards gate."),
+            }
+        )
+    for item in missing_rules:
+        rec = safe_dict(item)
+        comments.append(
+            {
+                "severity": "blocker",
+                "field": safe_str(rec.get("rule_key"), "missing_rule"),
+                "comment": safe_str(rec.get("reason"), "A required standards rule input is missing."),
+                "next_action": f"Accept an official-source rule for {safe_str(rec.get('label'), 'this standards topic')} or document it as not applicable.",
+            }
+        )
+    if inferred_rule_ids:
+        comments.append(
+            {
+                "severity": "blocker",
+                "field": "inferred_rules",
+                "comment": "The following rule IDs are inferred/search/baseline and cannot be treated as accepted compliance standards: "
+                + ", ".join(inferred_rule_ids),
+                "next_action": "Replace inferred/search/baseline rules with accepted rules from selected official sources.",
+            }
+        )
+    for collection, severity in ((blockers, "blocker"), (warnings, "warning")):
+        for item in collection:
+            rec = safe_dict(item)
+            comments.append(
+                {
+                    "severity": safe_str(rec.get("severity"), severity),
+                    "field": safe_str(rec.get("field"), "standards_gate"),
+                    "comment": safe_str(rec.get("reason") or rec.get("message"), "Standards gate issue remains."),
+                    "next_action": safe_str(rec.get("suggested_next_action"), "Resolve this standards gate issue and rerun validation."),
+                }
+            )
+    deduped: List[Dict[str, Any]] = []
+    seen = set()
+    for comment in comments:
+        key = (comment["severity"], comment["field"], comment["comment"])
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(comment)
+    return deduped
+
+
 def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     meta = safe_dict(plan_or_meta.get("meta")) if isinstance(plan_or_meta, dict) and "meta" in plan_or_meta else safe_dict(plan_or_meta)
     acceptance = safe_dict(meta.get("standards_acceptance"))
@@ -161,10 +347,26 @@ def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
         jurisdiction.get("source_urls"),
         [rule.get("source_url") for rule in accepted_rules],
     )
+    official_source_urls = deepcopy(validation.get("official_source_urls") or [url for url in source_urls if _is_official_source_url(url)])
+    inferred_rule_ids = deepcopy(validation.get("inferred_rule_ids") or [])
+    source_selection = _source_selection(
+        meta,
+        source_urls=source_urls,
+        official_source_urls=official_source_urls,
+        accepted_rule_count=len(accepted_rules),
+    )
     blockers: List[Dict[str, Any]] = []
     warnings: List[Dict[str, Any]] = []
+    missing_inputs: List[Dict[str, Any]] = []
 
     if not accepted_rules:
+        missing_inputs.append(
+            _missing_input(
+                "accepted_rules",
+                "No user-accepted standards rules are recorded.",
+                "Accept or edit standards rules from official sources before standards QA.",
+            )
+        )
         blockers.append(
             _blocker(
                 "accepted_rules",
@@ -181,7 +383,14 @@ def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
                 next_action="Fix standards acceptance metadata and rerun validation.",
             )
         )
-    if not any(source_url.startswith("https://") for source_url in source_urls):
+    if not official_source_urls:
+        missing_inputs.append(
+            _missing_input(
+                "official_sources",
+                "No accepted official HTTPS standards source is attached.",
+                "Attach the official city/county/DOT/utility source URL or uploaded official source file.",
+            )
+        )
         blockers.append(
             _blocker(
                 "official_sources",
@@ -189,7 +398,23 @@ def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
                 next_action="Attach the official city/county/DOT/utility standards source URL or uploaded official source file.",
             )
         )
-    if not any(safe_str(jurisdiction.get(key)) for key in ("city", "county", "state", "utility_provider")):
+    if source_selection.get("explicitly_selected") is not True:
+        blockers.append(
+            _blocker(
+                "standards_source_selection",
+                "Selected standards source is missing or not tied to an accepted official source.",
+                next_action="Select the official standards source used for accepted rules before production QA.",
+            )
+        )
+    jurisdiction_identity_present = any(safe_str(jurisdiction.get(key)) for key in ("city", "county", "state", "utility_provider"))
+    if not jurisdiction_identity_present:
+        missing_inputs.append(
+            _missing_input(
+                "jurisdiction",
+                "No city/county/state/DOT/utility jurisdiction context is selected.",
+                "Select the governing jurisdiction/provider before standards QA.",
+            )
+        )
         blockers.append(
             _blocker(
                 "jurisdiction",
@@ -197,7 +422,30 @@ def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
                 next_action="Select city, county, state, DOT, or utility-provider context before standards QA.",
             )
         )
+    elif jurisdiction.get("explicitly_selected") is not True:
+        blockers.append(
+            _blocker(
+                "jurisdiction_selection",
+                "Jurisdiction context is inferred from the review packet and has not been explicitly selected for the project.",
+                next_action="Persist jurisdiction_standards with selected city/county/state/utility provider and production_usable status.",
+            )
+        )
+    elif jurisdiction.get("production_usable") is not True:
+        blockers.append(
+            _blocker(
+                "jurisdiction_selection",
+                "Selected jurisdiction standards are not marked production-usable.",
+                next_action="Accept official jurisdiction rules and mark jurisdiction_standards.production_usable true, or keep output review-only.",
+            )
+        )
     if not company:
+        missing_inputs.append(
+            _missing_input(
+                "company_standards",
+                "No company CAD/design/detail standards are attached.",
+                "Attach company standards or keep deliverables in review-only mode.",
+            )
+        )
         blockers.append(
             _blocker(
                 "company_standards",
@@ -250,12 +498,79 @@ def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     status = "blocked" if blockers else "needs_review" if warnings else "ready"
+    missing_rules = _missing_rule_inputs(
+        accepted_rules=accepted_rules,
+        inferred_rule_ids=inferred_rule_ids,
+        jurisdiction=jurisdiction,
+        source_selection=source_selection,
+        company=company,
+    )
+    if missing_rules and status == "ready":
+        status = "needs_review"
+    production_usable = status == "ready" and bool(validation.get("production_usable")) and company.get("production_usable") is True
+    construction_blockers = blockers + ([] if production_usable else [
+        _blocker(
+            "construction_release",
+            "Construction release is blocked until standards are selected, accepted, official-source traceable, current, and company-approved.",
+            next_action="Resolve standards blockers or issue the package as review-only.",
+        )
+    ])
+    qa_status = "ready" if production_usable else "blocked" if blockers else "needs_review"
+    reviewer_comments = _reviewer_comments(
+        blockers=blockers,
+        warnings=warnings,
+        missing_inputs=missing_inputs,
+        missing_rules=missing_rules,
+        inferred_rule_ids=inferred_rule_ids,
+    )
+    acceptance_report = {
+        "version": "standards_acceptance_report_v1",
+        "status": qa_status,
+        "qa_status": qa_status,
+        "selected_jurisdiction": jurisdiction,
+        "selected_standards_source": source_selection,
+        "rules": {
+            "accepted": deepcopy(accepted_rules),
+            "accepted_rule_ids": deepcopy(validation.get("accepted_rule_ids") or [safe_str(rule.get("rule_id")) for rule in accepted_rules if safe_str(rule.get("rule_id"))]),
+            "inferred_rule_ids": inferred_rule_ids,
+            "missing_rules": missing_rules,
+        },
+        "reviewer_comments": reviewer_comments,
+        "construction_release_blocked": not production_usable,
+        "review_only": not production_usable,
+        "compliance_statement": "This report records standards acceptance evidence only. It is not a code-compliance certification and does not treat inferred/search/baseline standards as accepted.",
+    }
     return {
         "version": "standards_package_v1",
         "status": status,
-        "production_usable": status == "ready" and bool(validation.get("production_usable")) and company.get("production_usable") is True,
+        "production_usable": production_usable,
+        "review_only": not production_usable,
+        "construction_release_blocked": not production_usable,
+        "construction_release_blockers": construction_blockers,
+        "requirements_gate": {
+            "status": "construction_ready" if production_usable else "construction_blocked",
+            "qa_status": qa_status,
+            "review_allowed": bool(accepted_rules),
+            "construction_allowed": production_usable,
+            "missing_inputs": deepcopy(missing_inputs),
+            "accepted_rule_ids": deepcopy(validation.get("accepted_rule_ids") or [safe_str(rule.get("rule_id")) for rule in accepted_rules if safe_str(rule.get("rule_id"))]),
+            "inferred_rule_ids": inferred_rule_ids,
+            "missing_rules": deepcopy(missing_rules),
+            "official_source_urls": official_source_urls,
+            "reviewer_comments": deepcopy(reviewer_comments),
+            "truth_label": "Review may use accepted rules, but construction is blocked unless every accepted rule is official-source traceable and jurisdiction/company standards are explicit.",
+        },
+        "standards_acceptance_report": acceptance_report,
+        "qa": {
+            "status": qa_status,
+            "ready": qa_status == "ready",
+            "blocked": qa_status == "blocked",
+            "needs_review": qa_status == "needs_review",
+            "reviewer_comments": deepcopy(reviewer_comments),
+        },
         "accepted_for_qa": bool(accepted_rules),
         "selected_jurisdiction": jurisdiction,
+        "selected_standards_source": source_selection,
         "source_urls": source_urls,
         "official_source_count": validation.get("official_source_count", 0),
         "accepted_rule_count": len(accepted_rules),

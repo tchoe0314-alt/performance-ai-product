@@ -332,6 +332,21 @@ def _source_url_is_official(url: str) -> bool:
     )
 
 
+def _rule_is_inferred(rule: Dict[str, Any]) -> bool:
+    source_url = safe_str(rule.get("source_url")).lower()
+    source_id = safe_str(rule.get("source_id")).lower()
+    confidence = safe_str(rule.get("confidence")).lower()
+    source_status = safe_str(rule.get("source_status") or rule.get("authority_status")).lower()
+    return (
+        source_url.startswith("internal://")
+        or "google.com/search" in source_url
+        or "bing.com/search" in source_url
+        or confidence in {"baseline", "inferred", "candidate", "assumed"}
+        or source_status in {"candidate", "candidate_source", "inferred", "assumed"}
+        or source_id in {"civora_us_baseline", "municipal_code_search", "public_works_search", "state_dot_search", "utility_provider_search"}
+    )
+
+
 def validate_standards_acceptance_for_production(standards: Dict[str, Any]) -> Dict[str, Any]:
     """Validate accepted standards before production QA is allowed to rely on them."""
 
@@ -352,6 +367,11 @@ def validate_standards_acceptance_for_production(standards: Dict[str, Any]) -> D
         or safe_str(rule.get("confidence")).lower() == "baseline"
         or safe_str(rule.get("source_id")) == "civora_us_baseline"
     ]
+    inferred_rules = [
+        safe_str(rule.get("rule_id"), f"rule_{index}")
+        for index, rule in enumerate(rules, start=1)
+        if _rule_is_inferred(rule)
+    ]
     if rules and not official_urls:
         blockers.append(
             {
@@ -366,6 +386,15 @@ def validate_standards_acceptance_for_production(standards: Dict[str, Any]) -> D
                 "field": "baseline_rules",
                 "reason": "Baseline concept rules cannot be production authority without an official source.",
                 "rule_ids": baseline_rules,
+            }
+        )
+    non_baseline_inferred = [rule_id for rule_id in inferred_rules if rule_id not in set(baseline_rules)]
+    if non_baseline_inferred:
+        blockers.append(
+            {
+                "field": "inferred_rules",
+                "reason": "Accepted rules still trace to inferred/search/candidate sources, not selected official standards.",
+                "rule_ids": non_baseline_inferred,
             }
         )
     incomplete_rules = []
@@ -394,7 +423,11 @@ def validate_standards_acceptance_for_production(standards: Dict[str, Any]) -> D
         "blocker_details": readiness_issue_explanations(blockers),
         "warnings": warnings,
         "accepted_rule_count": len(rules),
+        "accepted_rule_ids": [safe_str(rule.get("rule_id"), f"rule_{index}") for index, rule in enumerate(rules, start=1)],
+        "inferred_rule_count": len(set(inferred_rules)),
+        "inferred_rule_ids": sorted(set(inferred_rules)),
         "official_source_count": len(set(official_urls)),
+        "official_source_urls": sorted(set(official_urls)),
         "truth_label": "Standards are production-usable only after user acceptance plus official-source traceability.",
     }
 

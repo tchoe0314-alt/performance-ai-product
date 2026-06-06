@@ -5,6 +5,7 @@ from backend.planning.standards_discovery import (
     build_standards_review_packet,
     standards_pack_from_acceptance,
 )
+from backend.planning.standards_package import build_standards_package
 import planner
 from core.civil_design import (
     civil_design_readiness,
@@ -657,6 +658,25 @@ class CivilDesignReadinessTests(unittest.TestCase):
 
         self.assertFalse(readiness["ready"])
         self.assertIn(("standards", "company_standards_approval"), blockers)
+
+    def test_construction_readiness_honors_blocked_standards_package(self) -> None:
+        meta = _production_ready_meta()
+        meta["standards_package"] = build_standards_package(
+            {
+                "standards_acceptance": meta["standards_acceptance"],
+                "design_standards": meta["design_standards"],
+                "standards_review_packet": build_standards_review_packet(city="Austin", state="Texas"),
+                "company_standards": meta["company_standards"],
+            }
+        )
+
+        readiness = construction_readiness({"meta": meta})
+        blockers = {(item["area"], item["field"]) for item in readiness["blockers"]}
+
+        self.assertFalse(readiness["ready"])
+        self.assertTrue(meta["standards_package"]["construction_release_blocked"])
+        self.assertIn(("standards", "standards_package"), blockers)
+        self.assertIn(("standards", "jurisdiction_selection"), blockers)
 
     def test_construction_readiness_requires_qa_and_reactive_reports_to_exist(self) -> None:
         meta = _production_ready_meta()

@@ -255,6 +255,34 @@ class StandardsDiscoveryTests(unittest.TestCase):
         fields = {item["field"] for item in validation["blockers"]}
         self.assertIn("official_sources", fields)
         self.assertIn("baseline_rules", fields)
+        self.assertEqual(validation["inferred_rule_ids"], [baseline])
+
+    def test_inferred_search_candidates_remain_blocked_after_acceptance(self) -> None:
+        validation = validate_standards_acceptance_for_production(
+            {
+                "accepted_rules": [
+                    {
+                        "rule_id": "search_result_rule",
+                        "discipline": "storm",
+                        "topic": "Stormwater manual",
+                        "candidate_value": "Use the city stormwater manual.",
+                        "source_id": "municipal_code_search",
+                        "source_url": "https://www.google.com/search?q=city+stormwater+manual",
+                        "source_section": "Search result",
+                        "accepted_by": "u1",
+                        "accepted_date": "2026-06-05",
+                        "confidence": "candidate",
+                    }
+                ]
+            }
+        )
+
+        fields = {item["field"] for item in validation["blockers"]}
+        self.assertFalse(validation["production_usable"])
+        self.assertIn("inferred_rules", fields)
+        self.assertIn("official_sources", fields)
+        self.assertEqual(validation["accepted_rule_ids"], ["search_result_rule"])
+        self.assertEqual(validation["inferred_rule_ids"], ["search_result_rule"])
 
 
 if __name__ == "__main__":
