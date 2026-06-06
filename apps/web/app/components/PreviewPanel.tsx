@@ -3571,11 +3571,23 @@ export default function PreviewPanel({
             >
               {previewMode === "2d" ? (
                 <div className="absolute inset-x-2 bottom-2 z-[70] rounded-xl border border-slate-200 bg-white/95 p-2 shadow-[0_20px_50px_-28px_rgba(15,23,42,0.55)] backdrop-blur md:hidden">
-                  <div className="flex gap-1.5 overflow-x-auto pb-1">
+                  <div className="grid grid-cols-4 gap-1.5 pb-1">
                     {drawModeButtons.map((item) => {
                       const Icon = item.icon;
                       const active = drawMode === item.mode;
                       const disabled = Boolean(item.disabled);
+                      const mobileLabel =
+                        item.mode === "site"
+                          ? "Site"
+                          : item.mode === "polyline"
+                            ? "Line"
+                            : item.mode === "polygon"
+                              ? "Area"
+                              : item.mode === "rect"
+                                ? "Box"
+                                : item.mode === "point"
+                                  ? "Point"
+                                  : item.label;
                       return (
                         <button
                           key={`mobile-${item.mode}`}
@@ -3591,7 +3603,7 @@ export default function PreviewPanel({
                               onSetPreviewInteraction("edit");
                             }
                           }}
-                          className={`inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-[11px] font-semibold transition ${
+                          className={`inline-flex min-h-10 min-w-0 items-center justify-center gap-1 rounded-lg border px-1.5 py-2 text-[11px] font-semibold transition ${
                             active
                               ? "border-slate-900 bg-slate-950 text-white"
                               : disabled
@@ -3600,7 +3612,7 @@ export default function PreviewPanel({
                           }`}
                         >
                           <Icon className="h-4 w-4" />
-                          <span>{item.label.replace("Draw Site Boundary", "Site")}</span>
+                          <span className="truncate">{mobileLabel}</span>
                         </button>
                       );
                     })}

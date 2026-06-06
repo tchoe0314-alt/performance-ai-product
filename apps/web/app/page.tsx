@@ -1425,6 +1425,12 @@ function PerformanceAIDashboardView({
   const sidePanelCloseTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      setLeftSidebarOpen(false);
+    }
+  }, []);
+
+  useEffect(() => {
     let timeout: number | undefined;
     let frame: number | undefined;
 
@@ -10725,15 +10731,23 @@ function PerformanceAIDashboardView({
       sidePanelCloseTimeoutRef.current = null;
     }, 180);
   }, []);
+  const handleOpenPanelFromDrawer = useCallback((panel: SidePanelKey) => {
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      setLeftSidebarOpen(false);
+      window.requestAnimationFrame(() => handleOpenSidePanel(panel));
+      return;
+    }
+    handleOpenSidePanel(panel);
+  }, [handleOpenSidePanel]);
   const handleOpenWorkspaceMode = useCallback((mode: WorkspaceMode) => {
     const nextPanel = workspacePanelByMode[mode];
-    handleOpenSidePanel(nextPanel);
     setActiveWorkspaceMode(mode);
     if (typeof window !== "undefined" && window.innerWidth < 1024) {
-      setRenderedSidePanel(nextPanel);
-      setSidePanelVisible(true);
       setLeftSidebarOpen(false);
+      window.requestAnimationFrame(() => handleOpenSidePanel(nextPanel));
+      return;
     }
+    handleOpenSidePanel(nextPanel);
   }, [handleOpenSidePanel]);
   const controlsHealthStatus = Object.values(systemStatuses).some((value) => value === "fresh") ? "ok" : "review";
   const panelStatus = (target: SidePanelKey): SidebarStatus => {
@@ -11260,13 +11274,16 @@ function PerformanceAIDashboardView({
             <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-3 text-left text-slate-900">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Command</p>
               <div className="mt-2 grid grid-cols-2 gap-2">
-                <button type="button" aria-label="Open chat from sidebar command" onClick={() => handleOpenSidePanel("chat")} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-white">
+                <button type="button" aria-label="Open setup from sidebar command" onClick={() => handleOpenPanelFromDrawer("site_existing")} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-white">
+                  Setup
+                </button>
+                <button type="button" aria-label="Open chat from sidebar command" onClick={() => handleOpenPanelFromDrawer("chat")} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-white">
                   Chat
                 </button>
-                <button type="button" onClick={() => handleOpenSidePanel("generate")} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-white">
+                <button type="button" onClick={() => handleOpenPanelFromDrawer("generate")} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-white">
                   Generate
                 </button>
-                <button type="button" onClick={() => handleOpenSidePanel("dashboard")} className="col-span-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-white">
+                <button type="button" onClick={() => handleOpenPanelFromDrawer("dashboard")} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-white">
                   Report issue
                 </button>
               </div>
@@ -15871,29 +15888,44 @@ function PerformanceAIDashboardView({
           </main>
           <div
             data-testid="floating-command-bar"
-            className="civora-motion-command-bar fixed bottom-4 left-1/2 z-30 flex w-[calc(100vw-2rem)] max-w-xl items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white/95 px-3 py-2 shadow-[0_24px_70px_-32px_rgba(15,23,42,0.55)] backdrop-blur-xl lg:hidden"
+            className="civora-motion-command-bar fixed bottom-4 left-1/2 z-30 grid w-[calc(100vw-2rem)] max-w-xl grid-cols-5 items-center gap-1.5 rounded-2xl border border-slate-200 bg-white/95 px-2 py-2 shadow-[0_24px_70px_-32px_rgba(15,23,42,0.55)] backdrop-blur-xl lg:hidden"
           >
+            <button
+              type="button"
+              aria-label="Open setup from floating command bar"
+              onClick={() => handleOpenSidePanel("site_existing")}
+              className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-1.5 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-700 transition hover:bg-white"
+            >
+              Setup
+            </button>
             <button
               type="button"
               aria-label="Open chat from floating command bar"
               onClick={() => handleOpenSidePanel("chat")}
-              className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition hover:bg-white"
+              className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-1.5 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-700 transition hover:bg-white"
             >
               Chat
             </button>
             <button
               type="button"
               onClick={() => handleOpenSidePanel("objects")}
-              className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition hover:bg-white"
+              className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-1.5 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-700 transition hover:bg-white"
             >
-              Prompt Create
+              Create
+            </button>
+            <button
+              type="button"
+              onClick={() => handleOpenSidePanel("details")}
+              className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-1.5 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-700 transition hover:bg-white"
+            >
+              Details
             </button>
             <button
               type="button"
               onClick={() => handleOpenSidePanel("generate")}
-              className="flex-1 rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:bg-slate-800"
+              className="min-w-0 rounded-xl border border-slate-950 bg-slate-950 px-1.5 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-white transition hover:bg-slate-800"
             >
-              Generate
+              Run
             </button>
           </div>
         </div>
