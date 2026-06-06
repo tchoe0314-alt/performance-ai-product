@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import heapq
 from typing import Any, Dict, List, Optional, Sequence
 
 
@@ -365,3 +366,143 @@ def analyze_water_pressure_graph(
         "warnings": warnings,
         "truth_label": "Hazen-Williams steady pressure graph; does not replace calibrated fire-flow modeling.",
     }
+
+
+def analyze_fire_flow_residual(
+    segments: Sequence[Dict[str, Any]],
+    *,
+    source_node: str,
+    hydrant_node: str,
+    source_pressure_psi: float,
+    required_fire_flow_gpm: float,
+    min_residual_pressure_psi: float = 20.0,
+    hazen_williams_c: float = 130.0,
+    static_loss_per_ft_psi: float = 0.433,
+    max_search_gpm: float = 5000.0,
+    tolerance_gpm: float = 1.0,
+) -> Dict[str, Any]:
+    """Estimate available fire flow using residual pressure at a hydrant node.
+
+    The calculation routes added fire demand over the shortest available path
+    from source to hydrant and applies Hazen-Williams losses to the increased
+    path flows. This is intentionally conservative for looped systems because
+    it does not split fire demand across parallel paths.
+    """
+
+    engine = WaterSizingEngine()
+    clean_segments = [dict(seg) for seg in segments]
+    path_names, path_warnings = _shortest_water_path(clean_segments, source_node, hydrant_node)
+    warnings: List[str] = list(path_warnings)
+    if not path_names:
+        return {
+            "valid": False,
+            "source": "water_fire_flow_residual_calculation",
+            "calculation_method": "hazen_williams_binary_search_shortest_path",
+            "source_node": source_node,
+            "hydrant_node": hydrant_node,
+            "required_fire_flow_gpm": round(max(0.0, required_fire_flow_gpm), 3),
+            "available_fire_flow_gpm": 0.0,
+            "residual_pressure_psi": None,
+            "min_required_residual_pressure_psi": round(max(0.0, min_residual_pressure_psi), 3),
+            "fire_flow_path": [],
+            "warnings": warnings or ["No connected source-to-hydrant path was found."],
+            "truth_label": "Fire-flow residual could not be calculated without a connected water path.",
+        }
+
+    path_name_set = set(path_names)
+
+    def solve(trial_fire_gpm: float) -> Dict[str, Any]:
+        trial_rows: List[Dict[str, Any]] = []
+        for seg in clean_segments:
+            name = str(seg.get("name") or seg.get("id") or "")
+            base_flow = float(seg.get("flow_gpm") or seg.get("assigned_flow_gpm") or 0.0)
+            trial_rows.append(
+                {
+                    **seg,
+                    "flow_gpm": base_flow + trial_fire_gpm if name in path_name_set else base_flow,
+                }
+            )
+        return analyze_water_pressure_graph(
+            trial_rows,
+            source_node=source_node,
+            source_pressure_psi=source_pressure_psi,
+            hazen_williams_c=hazen_williams_c,
+            static_loss_per_ft_psi=static_loss_per_ft_psi,
+        )
+
+    high = max(required_fire_flow_gpm * 2.0, max_search_gpm, 1.0)
+    high = min(high, max(max_search_gpm, required_fire_flow_gpm, 1.0))
+    low = 0.0
+    best_graph = solve(0.0)
+    best_residual = float(best_graph.get("node_pressures_psi", {}).get(hydrant_node, -1.0))
+    if best_residual < min_residual_pressure_psi:
+        available = 0.0
+    else:
+        for _ in range(40):
+            mid = (low + high) / 2.0
+            graph = solve(mid)
+            residual = float(graph.get("node_pressures_psi", {}).get(hydrant_node, -1.0))
+            if graph.get("success") and residual >= min_residual_pressure_psi:
+                low = mid
+                best_graph = graph
+                best_residual = residual
+            else:
+                high = mid
+            if high - low <= tolerance_gpm:
+                break
+        available = low
+
+    return {
+        "valid": available >= required_fire_flow_gpm > 0.0 and best_residual >= min_residual_pressure_psi,
+        "source": "water_fire_flow_residual_calculation",
+        "calculation_method": "hazen_williams_binary_search_shortest_path",
+        "source_node": source_node,
+        "hydrant_node": hydrant_node,
+        "required_fire_flow_gpm": round(max(0.0, required_fire_flow_gpm), 3),
+        "available_fire_flow_gpm": round(available, 3),
+        "fire_flow_margin_gpm": round(available - required_fire_flow_gpm, 3) if required_fire_flow_gpm > 0.0 else None,
+        "residual_pressure_psi": round(best_residual, 3) if best_residual >= 0.0 else None,
+        "min_required_residual_pressure_psi": round(max(0.0, min_residual_pressure_psi), 3),
+        "residual_pressure_margin_psi": round(best_residual - min_residual_pressure_psi, 3) if best_residual >= 0.0 else None,
+        "fire_flow_path": path_names,
+        "pressure_graph_at_available_flow": best_graph,
+        "warnings": warnings,
+        "truth_label": "Hazen-Williams residual-pressure fire-flow estimate; confirm with calibrated hydrant flow testing or jurisdiction model.",
+    }
+
+
+def _shortest_water_path(
+    segments: Sequence[Dict[str, Any]],
+    source_node: str,
+    hydrant_node: str,
+) -> tuple[List[str], List[str]]:
+    graph: Dict[str, List[tuple[float, str, str]]] = {}
+    warnings: List[str] = []
+    for index, seg in enumerate(segments, start=1):
+        start = str(seg.get("start_node") or seg.get("from_node") or "")
+        end = str(seg.get("end_node") or seg.get("to_node") or "")
+        if not start or not end:
+            continue
+        name = str(seg.get("name") or seg.get("id") or f"W-{index}")
+        length = float(seg.get("length_ft") or seg.get("length") or 1.0)
+        weight = max(length, 1.0)
+        graph.setdefault(start, []).append((weight, end, name))
+        graph.setdefault(end, []).append((weight, start, name))
+    if source_node not in graph or hydrant_node not in graph:
+        warnings.append("Fire-flow source or hydrant node is not present in the water graph.")
+        return [], warnings
+    queue: List[tuple[float, str, List[str]]] = [(0.0, source_node, [])]
+    best: Dict[str, float] = {source_node: 0.0}
+    while queue:
+        distance, node, path = heapq.heappop(queue)
+        if node == hydrant_node:
+            return path, warnings
+        if distance > best.get(node, float("inf")):
+            continue
+        for weight, nxt, seg_name in graph.get(node, []):
+            candidate = distance + weight
+            if candidate < best.get(nxt, float("inf")):
+                best[nxt] = candidate
+                heapq.heappush(queue, (candidate, nxt, path + [seg_name]))
+    warnings.append("No source-to-hydrant path was found in the water graph.")
+    return [], warnings

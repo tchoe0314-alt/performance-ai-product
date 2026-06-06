@@ -474,6 +474,49 @@ def _build_cell_statistics(
     }
 
 
+def _build_mass_balance_validation(summary: Dict[str, Any], *, tolerance_cf: float) -> Dict[str, Any]:
+    adjusted_cut = float(summary.get("adjusted_cut_available_cf", 0.0))
+    adjusted_fill = float(summary.get("adjusted_fill_required_cf", 0.0))
+    adjusted_net = float(summary.get("adjusted_net_cf", 0.0))
+    denominator = max(adjusted_cut, adjusted_fill, 1.0)
+    imbalance_ratio = abs(adjusted_net) / denominator
+    return {
+        "valid": abs(adjusted_net) <= max(0.0, tolerance_cf),
+        "status": summary.get("balance_status", "unknown"),
+        "adjusted_net_cf": adjusted_net,
+        "adjusted_net_cy": float(summary.get("adjusted_net_cy", 0.0)),
+        "imbalance_ratio": imbalance_ratio,
+        "tolerance_cf": max(0.0, tolerance_cf),
+        "requires_import_cf": float(summary.get("import_required_cf", 0.0)),
+        "requires_export_cf": float(summary.get("export_surplus_cf", 0.0)),
+        "truth_label": "Mass balance uses shrink/swell adjusted cut availability and compacted fill demand.",
+    }
+
+
+def _build_haul_balance(summary: Dict[str, Any], *, average_haul_distance_ft: float) -> Dict[str, Any]:
+    adjusted_cut_cf = float(summary.get("adjusted_cut_available_cf", 0.0))
+    adjusted_fill_cf = float(summary.get("adjusted_fill_required_cf", 0.0))
+    onsite_reuse_cf = min(adjusted_cut_cf, adjusted_fill_cf)
+    import_required_cf = float(summary.get("import_required_cf", 0.0))
+    export_surplus_cf = float(summary.get("export_surplus_cf", 0.0))
+    haul_distance = max(0.0, average_haul_distance_ft)
+    return {
+        "balance_status": summary.get("balance_status", "unknown"),
+        "onsite_reuse_cf": onsite_reuse_cf,
+        "onsite_reuse_cy": onsite_reuse_cf / 27.0,
+        "import_required_cf": import_required_cf,
+        "import_required_cy": import_required_cf / 27.0,
+        "export_surplus_cf": export_surplus_cf,
+        "export_surplus_cy": export_surplus_cf / 27.0,
+        "adjusted_net_cf": float(summary.get("adjusted_net_cf", 0.0)),
+        "adjusted_net_cy": float(summary.get("adjusted_net_cy", 0.0)),
+        "average_haul_distance_ft": haul_distance,
+        "onsite_haul_cy_ft": (onsite_reuse_cf / 27.0) * haul_distance,
+        "requires_offsite_haul": import_required_cf > 0.0 or export_surplus_cf > 0.0,
+        "truth_label": "Haul balance is derived from shrink/swell adjusted onsite reuse, import, and export volumes.",
+    }
+
+
 def compute_earthwork(
     existing: GridSurface,
     proposed: GridSurface,
@@ -484,6 +527,7 @@ def compute_earthwork(
     strip_depth_ft: Optional[float] = 0.0,
     topsoil_shrink_factor: Optional[float] = 1.0,
     neutral_tolerance_ft: Optional[float] = 0.000001,
+    average_haul_distance_ft: Optional[float] = None,
     include_cell_maps: bool = True,
     include_cell_details: bool = False,
     use_surface_model: Optional[bool] = None,
@@ -589,6 +633,14 @@ def compute_earthwork(
         default=0.000001,
         minimum=0.0,
     )
+    average_haul_distance_value = _sanitize_optional_numeric(
+        average_haul_distance_ft,
+        field_name="average_haul_distance_ft",
+        mode=normalized_mode,
+        result=result,
+        default=0.0,
+        minimum=0.0,
+    )
 
     if result.errors:
         result.message = "Earthwork computation failed during validation."
@@ -599,6 +651,7 @@ def compute_earthwork(
     assert strip_depth_value is not None
     assert topsoil_shrink_factor_value is not None
     assert neutral_tolerance_value is not None
+    assert average_haul_distance_value is not None
 
     if shrink_factor_value == 0.0:
         result.issues.append(
@@ -648,6 +701,12 @@ def compute_earthwork(
         topsoil_shrink_factor=topsoil_shrink_factor_value,
         strip_depth_ft=strip_depth_value,
     )
+    mass_balance_tolerance_cf = max(float(existing.cell_size) * float(existing.cell_size), 100.0)
+    mass_balance_validation = _build_mass_balance_validation(
+        summary,
+        tolerance_cf=mass_balance_tolerance_cf,
+    )
+    haul_balance = _build_haul_balance(summary, average_haul_distance_ft=average_haul_distance_value)
 
     stats = _build_cell_statistics(cells)
 
@@ -672,6 +731,10 @@ def compute_earthwork(
     if summary["cut_cells"] > 0 and summary["fill_cells"] == 0:
         result.issues.append(
             "Site is cut-dominant with no fill cells detected."
+        )
+    if haul_balance["balance_status"] in {"borrow_required", "export_required"}:
+        result.warnings.append(
+            f"Earthwork haul balance is {haul_balance['balance_status']} with adjusted net {haul_balance['adjusted_net_cy']:.3f} cy."
         )
 
     cell_details: List[Dict[str, Any]] = []
@@ -713,6 +776,7 @@ def compute_earthwork(
             "strip_depth_ft": strip_depth_value,
             "topsoil_shrink_factor": topsoil_shrink_factor_value,
             "neutral_tolerance_ft": neutral_tolerance_value,
+            "average_haul_distance_ft": average_haul_distance_value,
             "include_cell_maps": include_cell_maps,
             "include_cell_details": include_cell_details,
             "use_surface_model": normalized_use_surface_model,
@@ -735,11 +799,16 @@ def compute_earthwork(
             "adjusted_cut_available_cy": summary["adjusted_cut_available_cy"],
             "adjusted_fill_required_cf": summary["adjusted_fill_required_cf"],
             "adjusted_fill_required_cy": summary["adjusted_fill_required_cy"],
+            "adjusted_net_cf": summary["adjusted_net_cf"],
+            "adjusted_net_cy": summary["adjusted_net_cy"],
             "import_required_cf": summary["import_required_cf"],
             "import_required_cy": summary["import_required_cy"],
             "export_surplus_cf": summary["export_surplus_cf"],
             "export_surplus_cy": summary["export_surplus_cy"],
+            "imbalance_ratio": mass_balance_validation["imbalance_ratio"],
         },
+        "mass_balance_validation": mass_balance_validation,
+        "haul_balance": haul_balance,
         "volume_maps": volume_maps,
         "cell_details": cell_details,
     }
@@ -802,6 +871,7 @@ def compute_cut_fill_detailed(
     strip_depth_ft: Optional[float] = 0.0,
     topsoil_shrink_factor: Optional[float] = 1.0,
     neutral_tolerance_ft: Optional[float] = 0.000001,
+    average_haul_distance_ft: Optional[float] = None,
     include_cell_maps: bool = True,
     include_cell_details: bool = False,
     use_surface_model: Optional[bool] = None,
@@ -819,6 +889,7 @@ def compute_cut_fill_detailed(
         strip_depth_ft=strip_depth_ft,
         topsoil_shrink_factor=topsoil_shrink_factor,
         neutral_tolerance_ft=neutral_tolerance_ft,
+        average_haul_distance_ft=average_haul_distance_ft,
         include_cell_maps=include_cell_maps,
         include_cell_details=include_cell_details,
         use_surface_model=use_surface_model,

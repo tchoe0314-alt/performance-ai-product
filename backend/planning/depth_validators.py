@@ -47,6 +47,17 @@ def _has_verified_crown(row: Dict[str, Any]) -> bool:
     )
 
 
+def _has_accepted_standard(row: Dict[str, Any]) -> bool:
+    rec = safe_dict(row)
+    status = safe_str(rec.get("standard_status") or rec.get("acceptance_status") or rec.get("jurisdiction_status")).lower()
+    return bool(
+        rec.get("standard_accepted") is True
+        or rec.get("accepted_standard") is True
+        or rec.get("jurisdiction_standard_accepted") is True
+        or status in {"accepted", "adopted", "approved"}
+    )
+
+
 def _has_valid_velocity(row: Dict[str, Any]) -> bool:
     if row.get("valid") is False:
         return False
@@ -65,7 +76,7 @@ def _has_valid_hydrant_spacing(row: Dict[str, Any]) -> bool:
     hydrant_count = safe_float(rec.get("hydrant_count"), 0.0)
     max_spacing = safe_float(rec.get("max_spacing_ft"), -1.0)
     limit = safe_float(rec.get("limit_ft"), 0.0)
-    return hydrant_count >= 2 and max_spacing >= 0.0 and limit > 0.0 and max_spacing <= limit
+    return hydrant_count >= 2 and max_spacing >= 0.0 and limit > 0.0 and max_spacing <= limit and _has_accepted_standard(rec)
 
 
 def _has_valid_pressure_validation(row: Dict[str, Any]) -> bool:
@@ -79,7 +90,7 @@ def _has_valid_pressure_validation(row: Dict[str, Any]) -> bool:
     if graph:
         if graph.get("success") is not True or not safe_dict(graph.get("node_pressures_psi")):
             return False
-    return source_pressure > 0.0 and required > 0.0 and min_pressure >= required
+    return source_pressure > 0.0 and required > 0.0 and min_pressure >= required and _has_accepted_standard(rec)
 
 
 def _has_valid_fire_flow_validation(row: Dict[str, Any], pressure: Dict[str, Any]) -> bool:
@@ -93,7 +104,14 @@ def _has_valid_fire_flow_validation(row: Dict[str, Any], pressure: Dict[str, Any
         rec.get("min_required_residual_pressure_psi"),
         safe_float(pressure.get("min_required_pressure_psi"), 0.0),
     )
-    return required > 0.0 and available >= required and residual >= min_required > 0.0
+    method = safe_str(rec.get("calculation_method") or rec.get("source")).lower()
+    graph = safe_dict(rec.get("fire_flow_graph"))
+    has_residual_evidence = (
+        "residual" in method
+        or bool(safe_list(rec.get("fire_flow_path")))
+        or bool(safe_dict(graph.get("pressure_graph_at_available_flow")))
+    )
+    return required > 0.0 and available >= required and residual >= min_required > 0.0 and has_residual_evidence and _has_accepted_standard(rec)
 
 
 def _has_valid_sizing_optimization(value: Any) -> bool:
@@ -119,20 +137,32 @@ def _has_valid_profile(row: Dict[str, Any]) -> bool:
 def _has_valid_intersection(row: Dict[str, Any]) -> bool:
     rec = safe_dict(row)
     connected = safe_list(rec.get("connected_alignments") or rec.get("legs"))
-    return bool(_present(rec.get("point") or rec.get("geometry") or rec.get("x")) and len(connected) >= 2)
+    leg_geometry = safe_list(rec.get("leg_geometry") or rec.get("approach_points"))
+    return bool(
+        _present(rec.get("point") or rec.get("geometry") or rec.get("x"))
+        and len(connected) >= 2
+        and (_present(rec.get("angle_deg") or rec.get("deflection_angle_deg")) or len(leg_geometry) >= 2 or _present(rec.get("geometry")))
+    )
 
 
 def _has_valid_curb_return(row: Dict[str, Any]) -> bool:
     rec = safe_dict(row)
     radius = safe_float(rec.get("radius_ft") or rec.get("design_radius_ft"), 0.0)
-    return bool(radius > 0.0 and _present(rec.get("intersection_id") or rec.get("intersection") or rec.get("geometry")))
+    geometry = safe_list(rec.get("geometry") or rec.get("arc_points") or rec.get("points"))
+    tangent_points = safe_list(rec.get("tangent_points"))
+    has_arc_geometry = len(geometry) >= 3 or len(tangent_points) >= 2 or (
+        _present(rec.get("center")) and _present(rec.get("start_point")) and _present(rec.get("end_point"))
+    )
+    return bool(radius > 0.0 and _present(rec.get("intersection_id") or rec.get("intersection")) and has_arc_geometry)
 
 
 def _has_valid_sidewalk(row: Dict[str, Any]) -> bool:
     rec = safe_dict(row)
     path = safe_list(rec.get("path") or rec.get("points") or rec.get("geometry"))
     width = safe_float(rec.get("width_ft") or rec.get("sidewalk_width_ft"), 0.0)
-    return bool(len(path) >= 2 and width > 0.0)
+    continuity = safe_dict(rec.get("continuity_validation") or rec.get("continuity_check"))
+    continuity_ok = continuity.get("valid") is not False and rec.get("continuous") is not False
+    return bool(len(path) >= 2 and width > 0.0 and continuity_ok)
 
 
 def _has_valid_ada_check(row: Dict[str, Any]) -> bool:
@@ -140,7 +170,9 @@ def _has_valid_ada_check(row: Dict[str, Any]) -> bool:
     if rec.get("valid") is not True:
         return False
     has_slope_evidence = _present(rec.get("max_running_slope")) or _present(rec.get("running_slope")) or _present(rec.get("max_cross_slope"))
-    return bool(has_slope_evidence and _present(rec.get("standard") or rec.get("standard_id") or rec.get("source")))
+    continuity = safe_dict(rec.get("continuity_validation") or rec.get("continuity_check"))
+    continuity_ok = continuity.get("valid") is not False and rec.get("continuous") is not False
+    return bool(has_slope_evidence and _present(rec.get("standard") or rec.get("standard_id") or rec.get("source")) and _has_accepted_standard(rec) and continuity_ok)
 
 
 def _has_valid_section(row: Dict[str, Any]) -> bool:
@@ -175,6 +207,12 @@ def _has_valid_detention_routing(row: Dict[str, Any]) -> bool:
     status = safe_str(rec.get("status")).lower()
     if status in {"deficient", "concept_only", "blocked", "invalid"}:
         return False
+    required_storage = safe_float(rec.get("required_storage_cf"), 0.0)
+    max_drawdown = safe_float(rec.get("max_drawdown_hours"), 0.0)
+    if required_storage > 0.0 and provided_storage < required_storage:
+        return False
+    if max_drawdown > 0.0 and drawdown > max_drawdown:
+        return False
     return (has_stage_storage or provided_storage > 0.0) and has_outlet and release > 0.0 and drawdown > 0.0
 
 
@@ -192,7 +230,13 @@ def _has_valid_overflow_routing(drainage: Dict[str, Any], storm: Dict[str, Any])
             return False
         if "production_valid" in overflow_analysis or safe_str(overflow_analysis.get("capacity_status")):
             return False
-    return bool(paths)
+    return any(
+        safe_dict(path).get("capacity_valid") is True
+        and safe_float(safe_dict(path).get("capacity_cfs") or safe_dict(path).get("spillway_capacity_cfs"), 0.0)
+        >= safe_float(safe_dict(path).get("required_capacity_cfs"), 0.0)
+        and _row_is_production_evidence(safe_dict(path))
+        for path in paths
+    )
 
 
 def _all_rows_valid(rows: Iterable[Dict[str, Any]]) -> bool:
@@ -252,6 +296,17 @@ def _has_cycle(segments: Iterable[Dict[str, Any]]) -> bool:
         return False
 
     return any(visit(node, "") for node in graph if node not in visited)
+
+
+def _dead_end_nodes(segments: Iterable[Dict[str, Any]]) -> List[str]:
+    degree: Dict[str, int] = defaultdict(int)
+    for segment in segments:
+        start, end = _segment_endpoints(segment)
+        if not start or not end:
+            continue
+        degree[start] += 1
+        degree[end] += 1
+    return sorted(node for node, count in degree.items() if count <= 1)
 
 
 def _finalize(system: str, checks: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -323,11 +378,15 @@ def validate_water_system_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     pressure = safe_dict(source.get("pressure_validation"))
     velocity_checks = safe_list(source.get("velocity_checks"))
     looped = bool(source.get("looped") or source.get("is_looped")) or _has_cycle(segments)
+    dead_end_validation = safe_dict(source.get("dead_end_validation"))
+    dead_ends = safe_list(dead_end_validation.get("dead_end_nodes")) if dead_end_validation else _dead_end_nodes(segments)
+    no_dead_ends = dead_end_validation.get("valid") is True if dead_end_validation else not dead_ends
     checks = [
         _check("pressure_zones", bool(safe_list(source.get("pressure_zones")) or safe_dict(source.get("pressure_zone"))), evidence="pressure zones", blocker="Water depth needs pressure zones."),
         _check("hydrant_spacing", bool(hydrants and _has_valid_hydrant_spacing(source.get("hydrant_spacing_validation"))), evidence="hydrant spacing evidence", blocker="Water depth needs passing hydrant spacing coverage."),
         _check("fire_flow", _has_valid_fire_flow_validation(source.get("fire_flow_validation"), pressure), evidence="fire flow validation", blocker="Water depth needs passing fire-flow validation."),
         _check("looping", looped, evidence="looped network graph", blocker="Water depth needs looping/redundancy evidence."),
+        _check("dead_ends", no_dead_ends, evidence="no dead-end water nodes", blocker="Water depth needs no unresolved dead-end mains."),
         _check("pressure_validation", _has_valid_pressure_validation(pressure), evidence="pressure validation", blocker="Water depth needs passing pressure validation."),
         _check("velocity_checks", bool(velocity_checks) and all(_has_valid_velocity(safe_dict(item)) for item in velocity_checks), evidence="velocity checks", blocker="Water depth needs passing velocity checks."),
         _check("sizing_optimization", _has_valid_sizing_optimization(source.get("sizing_optimization")) or bool(safe_list(source.get("sizing_alternatives"))), evidence="sizing optimization", blocker="Water depth needs sizing optimization evidence."),

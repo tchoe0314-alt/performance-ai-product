@@ -887,3 +887,77 @@ def generate_utility_network(
     obstacles: Optional[Sequence[Obstacle]] = None,
 ) -> UtilityResult:
     return UtilityEngine().generate(project, request, obstacles=obstacles)
+
+
+def validate_utility_coordination(
+    segments: Sequence[Dict[str, Any]],
+    *,
+    clearance_checks: Optional[Sequence[Dict[str, Any]]] = None,
+    min_cover_ft: float = 3.0,
+    min_horizontal_separation_ft: float = 3.0,
+    min_vertical_separation_ft: float = 1.0,
+    min_gravity_slope: float = 0.004,
+    max_gravity_slope: float = 0.15,
+) -> Dict[str, Any]:
+    segment_rows: List[Dict[str, Any]] = []
+    for index, raw in enumerate(segments, start=1):
+        rec = dict(raw)
+        name = str(rec.get("name") or rec.get("id") or f"U-{index}")
+        cover_values = [
+            float(value)
+            for value in (rec.get("cover_start_ft"), rec.get("cover_end_ft"), rec.get("cover_ft"))
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+        ]
+        min_cover = min(cover_values) if cover_values else 0.0
+        hydraulic_mode = str(rec.get("hydraulic_mode") or "").lower()
+        slope = rec.get("slope_ft_ft")
+        slope_valid = True
+        if hydraulic_mode == "gravity":
+            slope_value = float(slope) if isinstance(slope, (int, float)) and not isinstance(slope, bool) else -1.0
+            slope_valid = min_gravity_slope <= slope_value <= max_gravity_slope
+        segment_rows.append(
+            {
+                "segment": name,
+                "min_cover_ft": round(min_cover, 3),
+                "cover_valid": min_cover >= min_cover_ft,
+                "hydraulic_mode": hydraulic_mode or "pressure",
+                "slope_ft_ft": slope,
+                "slope_valid": slope_valid,
+                "valid": min_cover >= min_cover_ft and slope_valid,
+            }
+        )
+
+    clearance_rows: List[Dict[str, Any]] = []
+    for index, raw in enumerate(clearance_checks or [], start=1):
+        rec = dict(raw)
+        horizontal = rec.get("horizontal_clearance_ft")
+        vertical = rec.get("vertical_clearance_ft")
+        horizontal_value = float(horizontal) if isinstance(horizontal, (int, float)) and not isinstance(horizontal, bool) else None
+        vertical_value = float(vertical) if isinstance(vertical, (int, float)) and not isinstance(vertical, bool) else None
+        horizontal_valid = horizontal_value is None or horizontal_value >= min_horizontal_separation_ft
+        vertical_valid = vertical_value is None or vertical_value >= min_vertical_separation_ft
+        clearance_rows.append(
+            {
+                "check": str(rec.get("id") or rec.get("name") or f"CLR-{index}"),
+                "horizontal_clearance_ft": horizontal_value,
+                "vertical_clearance_ft": vertical_value,
+                "horizontal_valid": horizontal_valid,
+                "vertical_valid": vertical_valid,
+                "valid": horizontal_valid and vertical_valid,
+            }
+        )
+
+    return {
+        "valid": bool(segment_rows) and all(row["valid"] for row in segment_rows) and all(row["valid"] for row in clearance_rows),
+        "segment_checks": segment_rows,
+        "clearance_checks": clearance_rows,
+        "minimums": {
+            "cover_ft": min_cover_ft,
+            "horizontal_separation_ft": min_horizontal_separation_ft,
+            "vertical_separation_ft": min_vertical_separation_ft,
+            "gravity_slope_min": min_gravity_slope,
+            "gravity_slope_max": max_gravity_slope,
+        },
+        "source": "utility_coordination_validator",
+        "truth_label": "Utility coordination validates cover, gravity slopes, and supplied clearance records.",
+    }

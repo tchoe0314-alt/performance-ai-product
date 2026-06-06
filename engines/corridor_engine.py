@@ -531,6 +531,84 @@ class CorridorEngine:
             RoadCrossSectionPoint(round(half_pavement + sidewalk_width, 3), round(sidewalk_outer_elev, 3), "right_sidewalk_outer"),
         ]
 
+    def validate_profile_grades(
+        self,
+        profile: Sequence[RoadProfilePoint],
+        *,
+        min_grade: float = 0.003,
+        max_grade: float = 0.08,
+    ) -> Dict[str, Any]:
+        rows: List[Dict[str, Any]] = []
+        for index, point in enumerate(profile):
+            if index == 0:
+                continue
+            grade = abs(point.grade)
+            rows.append(
+                {
+                    "station_ft": point.station_ft,
+                    "grade": point.grade,
+                    "abs_grade": round(grade, 5),
+                    "valid": min_grade <= grade <= max_grade,
+                }
+            )
+        return {
+            "valid": bool(rows) and all(row["valid"] for row in rows),
+            "min_grade": round(min_grade, 5),
+            "max_grade": round(max_grade, 5),
+            "max_observed_grade": max((row["abs_grade"] for row in rows), default=0.0),
+            "segments": rows,
+            "source": "corridor_profile_grade_check",
+            "truth_label": "Profile grade check computed from station/elevation samples.",
+        }
+
+    def validate_crowned_section(
+        self,
+        section: Sequence[RoadCrossSectionPoint],
+        *,
+        target_pavement_cross_slope: float = 0.02,
+        max_sidewalk_cross_slope: float = 0.02,
+        tolerance: float = 0.005,
+    ) -> Dict[str, Any]:
+        by_role = {point.role: point for point in section}
+        crown = by_role.get("crown")
+        left_curb = by_role.get("left_back_of_curb")
+        right_curb = by_role.get("right_back_of_curb")
+        left_walk = by_role.get("left_sidewalk_outer")
+        right_walk = by_role.get("right_sidewalk_outer")
+
+        checks: List[Dict[str, Any]] = []
+
+        def add_check(name: str, a: Optional[RoadCrossSectionPoint], b: Optional[RoadCrossSectionPoint], limit: float, target: Optional[float] = None) -> None:
+            if a is None or b is None:
+                checks.append({"name": name, "valid": False, "missing": True})
+                return
+            run = abs(a.offset_ft - b.offset_ft)
+            slope = abs(a.elevation_ft - b.elevation_ft) / max(run, 1e-9)
+            if target is None:
+                valid = slope <= limit
+            else:
+                valid = abs(slope - target) <= tolerance
+            checks.append(
+                {
+                    "name": name,
+                    "slope": round(slope, 5),
+                    "target": round(target, 5) if target is not None else None,
+                    "limit": round(limit, 5),
+                    "valid": valid,
+                }
+            )
+
+        add_check("left_pavement_cross_slope", crown, left_curb, target_pavement_cross_slope + tolerance, target_pavement_cross_slope)
+        add_check("right_pavement_cross_slope", crown, right_curb, target_pavement_cross_slope + tolerance, target_pavement_cross_slope)
+        add_check("left_sidewalk_cross_slope", left_curb, left_walk, max_sidewalk_cross_slope)
+        add_check("right_sidewalk_cross_slope", right_curb, right_walk, max_sidewalk_cross_slope)
+        return {
+            "valid": bool(checks) and all(check.get("valid") is True for check in checks),
+            "checks": checks,
+            "source": "corridor_cross_section_slope_check",
+            "truth_label": "Cross-section slopes computed from section offset/elevation points.",
+        }
+
     def _dedupe_points(self, pts: Sequence[Point2D], tol: float = 1e-6) -> List[Point2D]:
         out: List[Point2D] = []
         for p in pts:

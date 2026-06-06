@@ -189,6 +189,8 @@ class ProductionDepthArtifactTests(unittest.TestCase):
         utilities = {
             "source_pressure_psi": 72.0,
             "source_node": "SRC",
+            "standard_id": "CITY-WATER-2026",
+            "standard_status": "adopted",
             "available_fire_flow_gpm": 1600.0,
             "fire_flow_demand_gpm": 1250.0,
             "hydrants": [
@@ -230,8 +232,160 @@ class ProductionDepthArtifactTests(unittest.TestCase):
         self.assertEqual(enriched["velocity_checks"][0]["segment"], "W-1")
         self.assertEqual(enriched["pressure_validation"]["source"], "water_pressure_graph")
         self.assertGreater(enriched["pressure_validation"]["residual_pressure_margin_psi"], 0.0)
-        self.assertEqual(enriched["fire_flow_validation"]["source"], "water_fire_flow_check")
+        self.assertEqual(enriched["fire_flow_validation"]["source"], "water_fire_flow_residual_calculation")
         self.assertEqual(enriched["fire_flow_validation"]["fire_flow_margin_gpm"], 350.0)
+        self.assertTrue(enriched["dead_end_validation"]["valid"])
+        self.assertEqual(enriched["dead_end_validation"]["dead_end_nodes"], [])
+
+    def test_water_depth_calculates_available_fire_flow_from_residual_pressure(self) -> None:
+        utilities = {
+            "source_pressure_psi": 72.0,
+            "source_node": "SRC",
+            "fire_flow_node": "H-1",
+            "standard_id": "CITY-WATER-2026",
+            "standard_status": "adopted",
+            "fire_flow_demand_gpm": 1000.0,
+            "hydrants": [
+                {"name": "H-1", "x": 0.0, "y": 0.0},
+                {"name": "H-2", "x": 250.0, "y": 0.0},
+            ],
+            "conflict_hooks": {
+                "utility_system_type": "water",
+                "utility_segments": [
+                    {
+                        "name": "W-1",
+                        "system_type": "water",
+                        "start_node": "SRC",
+                        "end_node": "H-1",
+                        "route_points": [[0.0, 0.0], [300.0, 0.0]],
+                        "diameter_in": 8.0,
+                        "flow_gpm": 300.0,
+                    },
+                    {
+                        "name": "W-2",
+                        "system_type": "water",
+                        "start_node": "H-1",
+                        "end_node": "SRC",
+                        "route_points": [[300.0, 0.0], [0.0, 0.0]],
+                        "diameter_in": 8.0,
+                        "flow_gpm": 300.0,
+                    },
+                ],
+            },
+        }
+
+        enriched = enrich_water_production_depth(utilities)
+
+        self.assertTrue(enriched["fire_flow_validation"]["valid"])
+        self.assertGreaterEqual(enriched["fire_flow_validation"]["available_fire_flow_gpm"], 1000.0)
+        self.assertEqual(enriched["fire_flow_validation"]["fire_flow_path"], ["W-1"])
+
+    def test_water_depth_reports_dead_end_nodes_and_blocks_ready_status(self) -> None:
+        utilities = {
+            "source_pressure_psi": 72.0,
+            "source_node": "SRC",
+            "fire_flow_node": "H-1",
+            "standard_id": "CITY-WATER-2026",
+            "standard_status": "adopted",
+            "fire_flow_demand_gpm": 750.0,
+            "hydrants": [
+                {"name": "H-1", "x": 300.0, "y": 0.0},
+                {"name": "H-2", "x": 450.0, "y": 0.0},
+            ],
+            "conflict_hooks": {
+                "utility_system_type": "water",
+                "utility_segments": [
+                    {
+                        "name": "W-DEAD",
+                        "system_type": "water",
+                        "start_node": "SRC",
+                        "end_node": "H-1",
+                        "route_points": [[0.0, 0.0], [300.0, 0.0]],
+                        "diameter_in": 8.0,
+                        "flow_gpm": 250.0,
+                    }
+                ],
+            },
+        }
+
+        enriched = enrich_water_production_depth(utilities)
+
+        self.assertFalse(enriched["looped"])
+        self.assertEqual(enriched["dead_end_validation"]["dead_end_nodes"], ["H-1", "SRC"])
+        self.assertEqual(enriched["dead_end_validation"]["unresolved_dead_end_nodes"], ["H-1", "SRC"])
+        self.assertIn("water_dead_ends_present", enriched["water_depth_blockers"])
+        self.assertEqual(enriched["water_depth_status"], "blocked_missing_inputs")
+
+    def test_water_fire_flow_blocks_without_source_pressure_and_accepted_standard(self) -> None:
+        utilities = {
+            "source_node": "SRC",
+            "fire_flow_node": "H-1",
+            "available_fire_flow_gpm": 1500.0,
+            "fire_flow_demand_gpm": 1000.0,
+            "hydrants": [
+                {"name": "H-1", "x": 0.0, "y": 0.0},
+                {"name": "H-2", "x": 250.0, "y": 0.0},
+            ],
+            "conflict_hooks": {
+                "utility_system_type": "water",
+                "utility_segments": [
+                    {
+                        "name": "W-1",
+                        "system_type": "water",
+                        "start_node": "SRC",
+                        "end_node": "H-1",
+                        "route_points": [[0.0, 0.0], [300.0, 0.0]],
+                        "diameter_in": 8.0,
+                        "flow_gpm": 300.0,
+                    }
+                ],
+            },
+        }
+
+        enriched = enrich_water_production_depth(utilities)
+
+        self.assertFalse(enriched["fire_flow_validation"]["valid"])
+        self.assertIn("source_pressure_psi", enriched["fire_flow_validation"]["missing_inputs"])
+        self.assertIn("accepted_standard", enriched["fire_flow_validation"]["missing_inputs"])
+        self.assertIn("accepted_water_standard_missing", enriched["water_depth_blockers"])
+
+    def test_water_hydrant_spacing_reports_expected_max_spacing_and_standard_limit(self) -> None:
+        utilities = {
+            "source_pressure_psi": 72.0,
+            "source_node": "SRC",
+            "standard_id": "CITY-WATER-2026",
+            "standard_status": "adopted",
+            "max_hydrant_spacing_ft": 300.0,
+            "available_fire_flow_gpm": 1500.0,
+            "fire_flow_demand_gpm": 1000.0,
+            "hydrants": [
+                {"name": "H-1", "x": 0.0, "y": 0.0},
+                {"name": "H-2", "x": 180.0, "y": 0.0},
+                {"name": "H-3", "x": 420.0, "y": 0.0},
+            ],
+            "conflict_hooks": {
+                "utility_system_type": "water",
+                "utility_segments": [
+                    {"name": "W-1", "system_type": "water", "start_node": "SRC", "end_node": "A", "route_points": [[0.0, 0.0], [200.0, 0.0]], "diameter_in": 8.0, "flow_gpm": 300.0},
+                    {"name": "W-2", "system_type": "water", "start_node": "A", "end_node": "SRC", "route_points": [[200.0, 0.0], [0.0, 0.0]], "diameter_in": 8.0, "flow_gpm": 300.0},
+                ],
+            },
+        }
+
+        enriched = enrich_water_production_depth(utilities)
+        spacing = enriched["hydrant_spacing_validation"]
+
+        self.assertTrue(spacing["valid"])
+        self.assertEqual(spacing["hydrant_count"], 3)
+        self.assertEqual(spacing["max_spacing_ft"], 240.0)
+        self.assertEqual(spacing["limit_ft"], 300.0)
+        self.assertEqual(
+            spacing["spacing_rows"],
+            [
+                {"from": "H-1", "to": "H-2", "spacing_ft": 180.0},
+                {"from": "H-2", "to": "H-3", "spacing_ft": 240.0},
+            ],
+        )
 
     def test_water_depth_blocks_missing_pressure_and_fire_flow_inputs(self) -> None:
         utilities = {

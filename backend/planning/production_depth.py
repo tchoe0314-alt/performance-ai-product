@@ -8,7 +8,7 @@ from engines.detention_engine import compute_required_storage_cf, estimate_drawd
 from engines.storm.hydraulic_engine import analyze_storm_hydraulics
 from engines.storm.inlet_engine import estimate_inlet_capture
 from engines.storm.storm_types import HydraulicAnalysisRequest, StormNode, StormPipe, StormPoint
-from engines.water_sizing_engine import WaterSizingEngine, analyze_water_pressure_graph
+from engines.water_sizing_engine import WaterSizingEngine, analyze_fire_flow_residual, analyze_water_pressure_graph
 
 from .common import blocker_explanations, polyline_length, safe_dict, safe_float, safe_int, safe_list, safe_str
 
@@ -757,6 +757,48 @@ def _water_has_cycle(segments: Sequence[Dict[str, Any]]) -> bool:
     return any(visit(node, "") for node in adjacency if node not in visited)
 
 
+def _water_dead_end_nodes(segments: Sequence[Dict[str, Any]]) -> List[str]:
+    degree: Dict[str, int] = {}
+    for rec in segments:
+        start = safe_str(rec.get("start_node") or rec.get("from_node"))
+        end = safe_str(rec.get("end_node") or rec.get("to_node"))
+        if not start or not end:
+            continue
+        degree[start] = degree.get(start, 0) + 1
+        degree[end] = degree.get(end, 0) + 1
+    return sorted(node for node, count in degree.items() if count <= 1)
+
+
+def _accepted_standard_evidence(*records: Dict[str, Any]) -> Dict[str, Any]:
+    for rec in records:
+        clean = safe_dict(rec)
+        status = safe_str(clean.get("standard_status") or clean.get("acceptance_status") or clean.get("jurisdiction_status")).lower()
+        if (
+            clean.get("standard_accepted") is True
+            or clean.get("accepted_standard") is True
+            or clean.get("jurisdiction_standard_accepted") is True
+            or status in {"accepted", "adopted", "approved"}
+        ):
+            return {
+                "standard_accepted": True,
+                "standard_id": safe_str(clean.get("standard_id") or clean.get("standard") or clean.get("jurisdiction_standard_id"), "accepted_standard"),
+                "standard_status": status or "accepted",
+            }
+    return {"standard_accepted": False, "missing_inputs": ["accepted_standard"]}
+
+
+def _critical_water_node(pressure_result: Dict[str, Any], fallback: str = "") -> str:
+    pressures = safe_dict(pressure_result.get("node_pressures_psi"))
+    best_node = ""
+    best_pressure = float("inf")
+    for node, value in pressures.items():
+        pressure = safe_float(value, float("inf"))
+        if pressure < best_pressure:
+            best_node = safe_str(node)
+            best_pressure = pressure
+    return best_node or fallback
+
+
 def _hydrant_spacing_validation(hydrants: Sequence[Any], *, default_limit_ft: float = 500.0) -> Dict[str, Any]:
     points: List[Tuple[str, float, float]] = []
     for index, item in enumerate(hydrants, start=1):
@@ -901,6 +943,7 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
         enriched["conflict_hooks"] = hooks
 
     source = safe_dict(enriched.get("water_source") or enriched.get("source"))
+    standard_evidence = _accepted_standard_evidence(enriched, source)
     source_pressure = (
         _finite_or_none(enriched.get("source_pressure_psi"))
         or _finite_or_none(enriched.get("available_pressure_psi"))
@@ -918,6 +961,8 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
         pressure_missing.append("source_node")
     if not graph_rows:
         pressure_missing.append("water_segments_with_flow_diameter_length_nodes")
+    if standard_evidence.get("standard_accepted") is not True:
+        pressure_missing.append("accepted_standard")
     pressure_result: Dict[str, Any] = {}
     if source_pressure is not None and source_node and graph_rows:
         pressure_result = analyze_water_pressure_graph(
@@ -927,10 +972,12 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
             hazen_williams_c=safe_float(enriched.get("hazen_williams_c"), 130.0),
         )
     min_pressure = safe_float(pressure_result.get("min_pressure_psi"), 0.0)
-    pressure_valid = bool(pressure_result.get("success")) and min_pressure >= min_required_pressure and not missing_inputs
+    standard_accepted = standard_evidence.get("standard_accepted") is True
+    pressure_valid = bool(pressure_result.get("success")) and min_pressure >= min_required_pressure and not missing_inputs and standard_accepted
     enriched["pressure_validation"] = {
         "valid": pressure_valid,
         "source": "water_pressure_graph",
+        **standard_evidence,
         "source_node": source_node,
         "source_pressure_psi": round(source_pressure, 3) if source_pressure is not None else None,
         "min_pressure_psi": round(min_pressure, 3) if pressure_result else None,
@@ -969,6 +1016,7 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
         hydrants,
         default_limit_ft=safe_float(enriched.get("max_hydrant_spacing_ft"), 500.0),
     )
+    enriched["hydrant_spacing_validation"].update(standard_evidence)
     fire_demand = max(
         0.0,
         safe_float(enriched.get("fire_flow_demand_gpm"), 0.0),
@@ -979,27 +1027,84 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
         safe_float(enriched.get("available_fire_flow_gpm"), 0.0),
         safe_float(source.get("available_fire_flow_gpm"), 0.0),
     )
+    fire_flow_node = (
+        safe_str(enriched.get("fire_flow_node") or enriched.get("hydrant_node") or source.get("fire_flow_node") or source.get("hydrant_node"))
+        or _critical_water_node(pressure_result, source_node)
+    )
+    calculated_fire: Dict[str, Any] = {}
+    if source_pressure is not None and source_node and fire_flow_node and graph_rows and fire_demand > 0.0:
+        calculated_fire = analyze_fire_flow_residual(
+            graph_rows,
+            source_node=source_node,
+            hydrant_node=fire_flow_node,
+            source_pressure_psi=source_pressure,
+            required_fire_flow_gpm=fire_demand,
+            min_residual_pressure_psi=min_required_pressure,
+            hazen_williams_c=safe_float(enriched.get("hazen_williams_c"), 130.0),
+            max_search_gpm=max(
+                1000.0,
+                safe_float(enriched.get("max_fire_flow_search_gpm"), 5000.0),
+                available_fire,
+                fire_demand * 1.5,
+            ),
+        )
+    calculated_available = safe_float(calculated_fire.get("available_fire_flow_gpm"), 0.0)
+    governing_available = available_fire
+    if calculated_available > 0.0:
+        governing_available = min(available_fire, calculated_available) if available_fire > 0.0 else calculated_available
     fire_missing = []
     if fire_demand <= 0.0:
         fire_missing.append("fire_flow_demand_gpm")
-    if available_fire <= 0.0:
-        fire_missing.append("available_fire_flow_gpm")
+    if source_pressure is None:
+        fire_missing.append("source_pressure_psi")
+    if standard_evidence.get("standard_accepted") is not True:
+        fire_missing.append("accepted_standard")
+    if governing_available <= 0.0:
+        fire_missing.append("available_fire_flow_gpm_or_calculable_fire_flow_path")
+    residual_for_fire = safe_float(
+        calculated_fire.get("residual_pressure_psi"),
+        min_pressure if pressure_result else 0.0,
+    )
     enriched["fire_flow_validation"] = {
-        "valid": bool(fire_demand > 0.0 and available_fire >= fire_demand and (not pressure_result or min_pressure >= min_required_pressure)),
-        "source": "water_fire_flow_check",
+        "valid": bool(
+            fire_demand > 0.0
+            and governing_available >= fire_demand
+            and residual_for_fire >= min_required_pressure
+            and (not calculated_fire or calculated_fire.get("valid") is True)
+            and standard_accepted
+        ),
+        "source": "water_fire_flow_residual_calculation" if calculated_fire else "water_fire_flow_check",
+        **standard_evidence,
+        "calculation_method": calculated_fire.get("calculation_method") or "declared_available_flow_with_pressure_graph_residual",
+        "fire_flow_node": fire_flow_node,
         "required_fire_flow_gpm": round(fire_demand, 3),
-        "available_fire_flow_gpm": round(available_fire, 3),
-        "fire_flow_margin_gpm": round(available_fire - fire_demand, 3) if fire_demand > 0.0 and available_fire > 0.0 else None,
-        "residual_pressure_psi": round(min_pressure, 3) if pressure_result else None,
+        "available_fire_flow_gpm": round(governing_available, 3),
+        "declared_available_fire_flow_gpm": round(available_fire, 3) if available_fire > 0.0 else None,
+        "calculated_available_fire_flow_gpm": round(calculated_available, 3) if calculated_available > 0.0 else None,
+        "fire_flow_margin_gpm": round(governing_available - fire_demand, 3) if fire_demand > 0.0 and governing_available > 0.0 else None,
+        "residual_pressure_psi": round(residual_for_fire, 3) if pressure_result or calculated_fire else None,
         "min_required_residual_pressure_psi": round(min_required_pressure, 3),
-        "residual_pressure_margin_psi": round(min_pressure - min_required_pressure, 3) if pressure_result else None,
+        "residual_pressure_margin_psi": round(residual_for_fire - min_required_pressure, 3) if pressure_result or calculated_fire else None,
+        "fire_flow_path": safe_list(calculated_fire.get("fire_flow_path")),
+        "fire_flow_graph": calculated_fire,
         "missing_inputs": fire_missing,
-        "truth_label": "Fire-flow check uses supplied required/available flow and residual pressure evidence; local fire-authority review remains required.",
+        "truth_label": "Fire-flow check uses Hazen-Williams residual pressure when a graph is available; local fire-authority review remains required.",
     }
-    if available_fire > 0.0:
-        enriched["available_fire_flow_gpm"] = round(available_fire, 3)
+    if governing_available > 0.0:
+        enriched["available_fire_flow_gpm"] = round(governing_available, 3)
     graph_looped = _water_has_cycle(graph_rows)
     enriched["looped"] = bool(enriched.get("looped") or enriched.get("is_looped") or graph_looped)
+    dead_ends = _water_dead_end_nodes(graph_rows)
+    accepted_dead_ends = [safe_str(item) for item in safe_list(enriched.get("accepted_dead_end_nodes"))]
+    unresolved_dead_ends = [node for node in dead_ends if node not in accepted_dead_ends]
+    enriched["dead_end_validation"] = {
+        "valid": not unresolved_dead_ends,
+        "dead_end_nodes": dead_ends,
+        "unresolved_dead_end_nodes": unresolved_dead_ends,
+        "accepted_dead_end_nodes": accepted_dead_ends,
+        "source": "water_graph_degree_check",
+        "truth_label": "Dead-end validation is based on graph node degree; accepted dead ends must be explicitly listed.",
+    }
     enriched["looping_validation"] = {
         "valid": bool(enriched["looped"]),
         "method": "graph_cycle_detection",
@@ -1029,6 +1134,10 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
         blockers.append("fire_flow_not_validated")
     if not enriched["looped"]:
         blockers.append("looping_not_validated")
+    if unresolved_dead_ends:
+        blockers.append("water_dead_ends_present")
+    if standard_evidence.get("standard_accepted") is not True:
+        blockers.append("accepted_water_standard_missing")
     enriched["water_depth_status"] = "ready" if not blockers else "blocked_missing_inputs"
     enriched["water_depth_blockers"] = blockers
     enriched["water_depth_blocker_details"] = blocker_explanations(blockers)
