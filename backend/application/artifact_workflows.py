@@ -1149,8 +1149,16 @@ def export_report_artifact(
         project_id=project_id,
     )
     final_plan = dict(result_data.get("final_plan") or {})
+    final_plan.setdefault("meta", {})
+    if project_id and isinstance(final_plan["meta"], dict):
+        final_plan["meta"]["project_id"] = project_id
+    if isinstance(final_plan.get("meta"), dict) and "export_package_report_v1" not in final_plan["meta"]:
+        from backend.planning.export_package_report import build_export_package_report_v1
+
+        final_plan["meta"]["export_package_report_v1"] = build_export_package_report_v1(final_plan, export_type="report")
     stem = filename_stem or str(final_plan.get("project_name") or "civora-ai-report")
     enriched_result_data = dict(result_data)
+    enriched_result_data["final_plan"] = final_plan
     request_metadata = dict(enriched_result_data.get("request_metadata") or {})
     request_metadata["release_review"] = _preview_review_summary(result_data, final_plan)
     enriched_result_data["request_metadata"] = request_metadata

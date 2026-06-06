@@ -10,6 +10,7 @@ import ezdxf
 
 from backend.planning.common import blocker_explanations, construction_package_record
 from backend.planning.production_depth import build_cad_interop_metadata
+from backend.planning.export_package_report import build_export_package_report_v1
 from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
     final_plan_requires_construction_release,
@@ -4166,10 +4167,12 @@ def finalize_export_metadata(plan: Dict[str, Any]) -> Dict[str, Any]:
     modelspace_actions = _prepare_modelspace_actions(plan, actions)
     meta["export_audit"] = _build_export_audit(doc, plan, modelspace_actions, profiles, section_groups, sheet_registry)
     meta["cad_interop"] = build_cad_interop_metadata(plan)
+    meta["export_package_report_v1"] = build_export_package_report_v1(plan, export_type="dxf")
     return {
         "sheet_registry": deepcopy(meta["sheet_registry"]),
         "export_audit": deepcopy(meta["export_audit"]),
         "cad_interop": deepcopy(meta["cad_interop"]),
+        "export_package_report_v1": deepcopy(meta["export_package_report_v1"]),
     }
 
 
@@ -4212,6 +4215,8 @@ def save_dxf(plan: Dict[str, Any], filename: str | None = None) -> str:
     _add_cross_section_layouts(doc, plan, section_groups, sheet_registry)
     _prune_default_layouts(doc)
     plan["meta"]["export_audit"] = _build_export_audit(doc, plan, modelspace_actions, profiles, section_groups, sheet_registry)
+    plan["meta"]["cad_interop"] = build_cad_interop_metadata(plan)
+    plan["meta"]["export_package_report_v1"] = build_export_package_report_v1(plan, export_type="dxf")
     _remap_doc_layers(doc)
 
     doc.saveas(filename)

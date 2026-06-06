@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .common import safe_dict, safe_float, safe_list, safe_str
+from .export_package_report import build_export_package_report_v1
 
 
 def _tag_name(elem: ET.Element) -> str:
@@ -192,6 +193,31 @@ def build_landxml_pipe_network(plan: Dict[str, Any], *, network_name: str = "Civ
                 "y": f"{safe_float(row.get('y'), 0.0):.3f}",
             },
         )
+    report = build_export_package_report_v1(plan, export_type="landxml")
+    meta_node = ET.SubElement(
+        root,
+        "CivoraExportPackageReport",
+        {
+            "source": safe_str(report.get("source")),
+            "export_type": safe_str(report.get("export_type")),
+            "source_project_id": safe_str(report.get("source_project_id")),
+            "source_canonical_revision": safe_str(report.get("source_canonical_revision")),
+            "source_canonical_hash": safe_str(report.get("source_canonical_hash")),
+            "generated_at": safe_str(report.get("generated_at")),
+            "standards_status": safe_str(report.get("standards_status")),
+            "existing_conditions_status": safe_str(report.get("existing_conditions_status")),
+            "engine_depth_status": safe_str(report.get("engine_depth_status")),
+            "construction_release_blocked": str(bool(report.get("construction_release_blocked"))).lower(),
+            "layer_contract_status": safe_str(report.get("layer_contract_status")),
+            "deliverable_confidence": safe_str(report.get("deliverable_confidence")),
+            "civil3d_compatibility": safe_str(report.get("civil3d_compatibility")),
+            "dwg_compatibility": safe_str(report.get("dwg_compatibility")),
+        },
+    )
+    for key in ("included_systems", "excluded_systems", "stale_outputs_detected", "missing_inputs", "canonical_ids_included"):
+        values_node = ET.SubElement(meta_node, key)
+        for value in safe_list(report.get(key)):
+            ET.SubElement(values_node, "Item").text = safe_str(value)
     return ET.tostring(root, encoding="unicode")
 
 

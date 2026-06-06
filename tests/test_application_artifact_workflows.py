@@ -1871,8 +1871,12 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertEqual(path.name, "unit-report.json")
         self.assertEqual(service.report_export["stem"], "demo-report")
         release_review = service.report_export["result_data"]["request_metadata"]["release_review"]
+        report_package = service.report_export["result_data"]["final_plan"]["meta"]["export_package_report_v1"]
         self.assertEqual(release_review["release_status"], "ready")
         self.assertEqual(release_review["reliability"]["operational_state"], "ready")
+        self.assertEqual(report_package["source"], "export_package_report_v1")
+        self.assertEqual(report_package["export_type"], "report")
+        self.assertEqual(report_package["source_project_id"], "p1")
         self.assertEqual(release_review["requested_deliverables"], ["site_plan", "report"])
         self.assertEqual(
             store.saved_payload["metadata"]["workflow"]["artifacts"][0]["kind"],
