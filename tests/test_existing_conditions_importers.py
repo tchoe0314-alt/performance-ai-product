@@ -6,6 +6,7 @@ from pathlib import Path
 from backend.planning.existing_conditions import summarize_existing_conditions
 from backend.planning.existing_conditions_package import build_existing_conditions_package
 from backend.planning.existing_conditions_importers import (
+    build_canonical_existing_conditions_model,
     classify_existing_conditions_file,
     dependency_blocked_existing_conditions_import,
     import_dxf_existing_conditions,
@@ -595,6 +596,16 @@ class ExistingConditionsImporterTests(unittest.TestCase):
             self.assertIn("terrain_surface", imported["canonical_import"]["canonical_targets"])
             self.assertEqual(model["terrain"]["surface_count"], 1)
             self.assertFalse(model["terrain"]["surfaces"][0]["metadata_only"])
+            self.assertEqual(model["terrain"]["source_confidence"], "DEM-unverified")
+            terrain_requirement = next(
+                item for item in merged["import_validation"]["production_requirements"] if item["field"] == "terrain_source_confidence"
+            )
+            self.assertFalse(terrain_requirement["ready"])
+            self.assertEqual(merged["import_validation"]["import_matrix"][0]["status"], "review_required")
+            self.assertIn(
+                "Survey import needs benchmark evidence before it is production-usable.",
+                merged["import_validation"]["import_matrix"][0]["blocker_messages"],
+            )
 
     def test_las_import_samples_point_cloud(self) -> None:
         import laspy
@@ -617,10 +628,56 @@ class ExistingConditionsImporterTests(unittest.TestCase):
             self.assertEqual(imported["point_count"], 4)
             self.assertEqual(imported["bounds"]["max_x"], 10.0)
             self.assertIn("lidar_point_cloud", imported["canonical_import"]["canonical_targets"])
-            self.assertEqual(model["survey"]["point_count"], 4)
-            self.assertFalse(model["survey"]["metadata_only"])
-            self.assertEqual(model["terrain"]["source_confidence"], "DEM-backed")
-            self.assertEqual(merged["import_validation"]["terrain_source_confidence"]["label"], "DEM-backed")
+            self.assertEqual(model["survey"]["point_count"], 0)
+            self.assertTrue(model["survey"]["metadata_only"])
+            self.assertEqual(model["terrain"]["point_cloud_count"], 1)
+            self.assertEqual(model["terrain"]["source_confidence"], "LiDAR-unverified")
+            self.assertEqual(merged["import_validation"]["terrain_source_confidence"]["label"], "LiDAR-unverified")
+            self.assertEqual(merged["import_validation"]["import_matrix"][0]["status"], "review_required")
+
+    def test_las_import_with_control_is_lidar_backed_not_survey_backed(self) -> None:
+        import laspy
+        import numpy as np
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "verified_cloud.las"
+            header = laspy.LasHeader(point_format=3, version="1.2")
+            las = laspy.LasData(header)
+            las.x = np.array([0.0, 10.0, 0.0, 10.0])
+            las.y = np.array([0.0, 0.0, 10.0, 10.0])
+            las.z = np.array([100.0, 101.0, 99.0, 100.0])
+            las.write(path)
+
+            imported = import_las_point_cloud(
+                path,
+                coordinate_system={
+                    "epsg": "EPSG:2276",
+                    "units": "ft",
+                    "source": "control_sheet",
+                    "horizontal_datum": "NAD83",
+                },
+            )
+            merged = merge_imported_existing_conditions(imported)
+            merged["survey"].update(
+                {
+                    "benchmark": "BM-1",
+                    "benchmark_elevation": 100.0,
+                    "horizontal_datum": "NAD83",
+                    "datum": "NAVD88",
+                    "control_verified": True,
+                }
+            )
+            merged["gis_layers"] = {
+                layer: [{"id": layer, "source": f"{layer}_source"}]
+                for layer in ("parcels", "easements", "row", "floodplain", "wetlands", "existing_utilities")
+            }
+            merged["import_validation"] = validate_imported_existing_conditions_package(merged)
+            model = build_canonical_existing_conditions_model(merged)
+
+            self.assertEqual(model["terrain"]["source_confidence"], "LiDAR-backed")
+            self.assertEqual(model["survey"]["point_count"], 0)
+            self.assertTrue(merged["import_validation"]["production_usable"])
+            self.assertEqual(merged["import_validation"]["import_matrix"][0]["status"], "canonical")
 
 
 if __name__ == "__main__":

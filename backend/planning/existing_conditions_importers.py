@@ -221,8 +221,10 @@ def _canonical_status_from_import(rec: Dict[str, Any]) -> Dict[str, Any]:
             reason=safe_str(rec.get("truth_label"), "Import was not canonicalized."),
         )
     source_type = safe_str(rec.get("source_type"))
-    if source_type in {"survey_csv", "las_point_cloud"}:
+    if source_type == "survey_csv":
         return _canonical_import_record(canonicalized=True, targets=("survey_points", "terrain_evidence"))
+    if source_type == "las_point_cloud":
+        return _canonical_import_record(canonicalized=True, targets=("lidar_point_cloud", "terrain_evidence"))
     if source_type == "surface_xyz_csv":
         return _canonical_import_record(canonicalized=True, targets=("terrain_surface",))
     if source_type == "geotiff_surface":
@@ -302,15 +304,23 @@ def _terrain_source_confidence(rec: Dict[str, Any]) -> Dict[str, Any]:
         if safe_str(item.get("source_type")) and not bool(item.get("metadata_only"))
     }
     has_points = safe_int(survey.get("point_count"), len(safe_list(survey.get("points")))) >= 3
+    point_clouds = [safe_dict(item) for item in safe_list(rec.get("point_clouds"))]
     has_survey_surface = any(item in source_types for item in {"survey_csv", "surface_xyz_csv", "dxf_existing_conditions", "landxml"})
-    has_dem_surface = any(item in source_types for item in {"geotiff_surface", "las_point_cloud"})
+    has_dem_surface = any(item in source_types for item in {"geotiff_surface"})
+    has_lidar_surface = any(item in source_types for item in {"las_point_cloud"}) or bool(point_clouds)
     control_verified = bool(control_package.get("production_usable"))
     if (has_survey_surface or (has_points and not has_dem_surface)) and control_verified:
         label = "survey-backed"
     elif has_survey_surface or (has_points and not has_dem_surface):
         label = "survey-unverified"
-    elif has_dem_surface:
+    elif has_lidar_surface and control_verified:
+        label = "LiDAR-backed"
+    elif has_lidar_surface:
+        label = "LiDAR-unverified"
+    elif has_dem_surface and control_verified:
         label = "DEM-backed"
+    elif has_dem_surface:
+        label = "DEM-unverified"
     elif surfaces or any(bool(item.get("canonicalized")) for item in sources):
         label = "inferred"
     else:
@@ -320,6 +330,9 @@ def _terrain_source_confidence(rec: Dict[str, Any]) -> Dict[str, Any]:
         "survey_backed": label == "survey-backed",
         "survey_unverified": label == "survey-unverified",
         "dem_backed": label == "DEM-backed",
+        "dem_unverified": label == "DEM-unverified",
+        "lidar_backed": label == "LiDAR-backed",
+        "lidar_unverified": label == "LiDAR-unverified",
         "inferred": label == "inferred",
         "missing": label == "missing",
         "source_types": sorted(source_types),
@@ -1089,11 +1102,20 @@ def import_las_point_cloud(path: Path, *, coordinate_system: Optional[Dict[str, 
         "source_point_count": int(total),
         "points": points,
         "bounds": _bounds(points),
+        "point_cloud": {
+            "source": str(path),
+            "source_type": "las_point_cloud",
+            "point_count": len(points),
+            "source_point_count": int(total),
+            "bounds": _bounds(points),
+            "metadata_only": False,
+            "canonicalized": len(points) >= 3,
+        },
         "coordinate_system": safe_dict(coordinate_system),
         "warnings": warnings,
         "canonical_import": _canonical_import_record(
             canonicalized=len(points) >= 3,
-            targets=("survey_points", "terrain_evidence", "lidar_point_cloud"),
+            targets=("lidar_point_cloud", "terrain_evidence"),
             metadata_only=len(points) < 3,
             reason="" if len(points) >= 3 else "Point cloud sample did not contain enough points to canonicalize terrain evidence.",
         ),
@@ -1127,6 +1149,7 @@ def merge_imported_existing_conditions(*imports: Dict[str, Any]) -> Dict[str, An
     breaklines: List[Dict[str, Any]] = []
     gis_layers: Dict[str, List[Dict[str, Any]]] = {layer: [] for layer in REQUIRED_GIS_LAYERS}
     surfaces: List[Dict[str, Any]] = []
+    point_clouds: List[Dict[str, Any]] = []
     warnings: List[str] = []
     coordinate_system: Dict[str, Any] = {}
     coordinate_systems: List[Dict[str, Any]] = []
@@ -1161,8 +1184,20 @@ def merge_imported_existing_conditions(*imports: Dict[str, Any]) -> Dict[str, An
             coordinate_systems.append(rec_coordinate)
         if not coordinate_system:
             coordinate_system = rec_coordinate
-        if rec.get("source_type") in {"survey_csv", "las_point_cloud", "dxf_existing_conditions"}:
+        if rec.get("source_type") in {"survey_csv", "dxf_existing_conditions"}:
             survey_points.extend(safe_list(rec.get("points")))
+        if rec.get("source_type") == "las_point_cloud":
+            cloud = safe_dict(rec.get("point_cloud")) or {
+                "source": rec.get("source"),
+                "source_type": rec.get("source_type"),
+                "point_count": rec.get("point_count"),
+                "source_point_count": rec.get("source_point_count"),
+                "bounds": rec.get("bounds"),
+                "metadata_only": False,
+                "canonicalized": bool(rec.get("success")),
+            }
+            cloud["coordinate_system"] = safe_dict(rec.get("coordinate_system"))
+            point_clouds.append(cloud)
         if rec.get("source_type") in {"dxf_existing_conditions", "landxml"}:
             breaklines.extend(safe_list(rec.get("breaklines")))
         if rec.get("source_type") in {"surface_xyz_csv", "geotiff_surface"} and rec.get("surface") is not None:
@@ -1214,6 +1249,7 @@ def merge_imported_existing_conditions(*imports: Dict[str, Any]) -> Dict[str, An
         "coordinate_system": _normalize_coordinate_system(coordinate_system),
         "coordinate_systems": coordinate_systems,
         "surfaces": surfaces,
+        "point_clouds": point_clouds,
         "metadata_only_sources": metadata_only_sources,
         "canonical_targets": dedupe_keep_order(canonical_targets),
         "warnings": warnings,
@@ -1246,6 +1282,7 @@ def build_canonical_existing_conditions_model(merged: Dict[str, Any]) -> Dict[st
     )
     gis_layers = safe_dict(rec.get("gis_layers") or rec.get("existing_conditions"))
     surfaces = [safe_dict(item) for item in safe_list(rec.get("surfaces"))]
+    point_clouds = [safe_dict(item) for item in safe_list(rec.get("point_clouds"))]
     validation = safe_dict(rec.get("import_validation"))
     canonical_sources = [source for source in sources if bool(source.get("canonicalized"))]
     metadata_only_sources = [source for source in sources if bool(source.get("metadata_only"))]
@@ -1278,7 +1315,9 @@ def build_canonical_existing_conditions_model(merged: Dict[str, Any]) -> Dict[st
             "confidence": terrain_confidence,
             "surface_count": len(terrain_surfaces),
             "surfaces": terrain_surfaces,
-            "metadata_only": not bool(terrain_surfaces),
+            "point_cloud_count": len(point_clouds),
+            "point_clouds": deepcopy(point_clouds),
+            "metadata_only": not bool(terrain_surfaces or point_clouds),
         },
         "gis_layers": deepcopy(gis_layers),
         "gis_layer_counts": layer_counts,
@@ -1373,6 +1412,8 @@ def validate_imported_existing_conditions_package(
     survey_points = [safe_dict(item) for item in safe_list(survey.get("points"))]
     point_quality = _point_quality(survey_points)
     surface_count = len(safe_list(rec.get("surfaces")))
+    point_cloud_count = len(safe_list(rec.get("point_clouds")))
+    terrain_evidence_count = surface_count + point_cloud_count
     terrain_confidence = _terrain_source_confidence(rec)
     survey_control_package = build_survey_control_package(
         rec.get("survey_control_package") or survey.get("survey_control_package") or rec.get("survey_control"),
@@ -1388,14 +1429,14 @@ def validate_imported_existing_conditions_package(
                 "reason": "Survey evidence requires traceable source metadata before production-grade use.",
             }
         )
-    if require_surface and point_count < 3 and surface_count <= 0:
+    if require_surface and point_count < 3 and terrain_evidence_count <= 0:
         blockers.append(
             {
                 "field": "survey_surface",
                 "reason": "No usable survey surface, DEM/LiDAR surface, or at least 3 survey points were imported.",
             }
         )
-    elif require_surface and surface_count <= 0 and safe_int(point_quality.get("unique_xy_count"), 0) < 3:
+    elif require_surface and terrain_evidence_count <= 0 and safe_int(point_quality.get("unique_xy_count"), 0) < 3:
         blockers.append(
             {
                 "field": "survey_surface",
@@ -1403,7 +1444,7 @@ def validate_imported_existing_conditions_package(
                 "unique_xy_count": safe_int(point_quality.get("unique_xy_count"), 0),
             }
         )
-    elif require_surface and surface_count <= 0 and not bool(point_quality.get("has_surface_span")):
+    elif require_surface and terrain_evidence_count <= 0 and not bool(point_quality.get("has_surface_span")):
         blockers.append(
             {
                 "field": "survey_surface",
@@ -1414,7 +1455,7 @@ def validate_imported_existing_conditions_package(
         )
     elif point_count >= 3 and breakline_count <= 0:
         warnings.append("Survey points are present, but no breaklines were imported.")
-    if point_count > 0 or surface_count > 0:
+    if point_count > 0 or terrain_evidence_count > 0:
         if not safe_str(survey_control_package.get("benchmark_id")):
             blockers.append(
                 {
@@ -1496,8 +1537,8 @@ def validate_imported_existing_conditions_package(
         ),
         _production_requirement(
             "terrain_source_confidence",
-            terrain_confidence["label"] in {"survey-backed", "DEM-backed"},
-            "Terrain source confidence must be survey-backed with verified control or DEM-backed for production-grade existing conditions.",
+            terrain_confidence["label"] in {"survey-backed", "DEM-backed", "LiDAR-backed"},
+            "Terrain source confidence must be survey-backed, DEM-backed, or LiDAR-backed with required datum/control evidence for production-grade existing conditions.",
             evidence=terrain_confidence,
         ),
         _production_requirement(
@@ -1507,8 +1548,20 @@ def validate_imported_existing_conditions_package(
             evidence={"canonical_source_count": len(canonical_sources), "metadata_only_source_count": len(metadata_only_sources)},
         ),
     ]
+    package_blocker_messages = dedupe_keep_order([safe_str(item.get("reason")) for item in blockers if safe_str(item.get("reason"))])
     importer_matrix = []
     for source in sources:
+        base_ready = bool(source.get("success")) and bool(source.get("canonicalized")) and not bool(source.get("metadata_only")) and not bool(source.get("dependency_blocked"))
+        if bool(source.get("dependency_blocked")) or not bool(source.get("success")):
+            status = "blocked"
+        elif bool(source.get("metadata_only")):
+            status = "metadata_only"
+        elif base_ready and blockers:
+            status = "review_required"
+        elif base_ready:
+            status = "canonical"
+        else:
+            status = "blocked"
         importer_matrix.append(
             {
                 "source": safe_str(source.get("source")),
@@ -1516,10 +1569,13 @@ def validate_imported_existing_conditions_package(
                 "success": bool(source.get("success")),
                 "canonicalized": bool(source.get("canonicalized")),
                 "metadata_only": bool(source.get("metadata_only")),
-                "production_usable": bool(source.get("success")) and bool(source.get("canonicalized")) and not bool(source.get("metadata_only")) and not bool(source.get("dependency_blocked")),
+                "status": status,
+                "review_required": status == "review_required",
+                "production_usable": base_ready and not blockers,
                 "canonical_targets": safe_list(source.get("canonical_targets")),
                 "dependency_blocked": bool(source.get("dependency_blocked")),
                 "required_dependency": safe_str(source.get("required_dependency")),
+                "blocker_messages": package_blocker_messages if status in {"review_required", "blocked"} else [],
             }
         )
 
@@ -1531,6 +1587,7 @@ def validate_imported_existing_conditions_package(
         "warnings": dedupe_keep_order(warnings),
         "source_count": len(sources),
         "surface_count": surface_count,
+        "point_cloud_count": point_cloud_count,
         "survey_point_count": point_count,
         "survey_point_quality": point_quality,
         "breakline_count": breakline_count,
@@ -1540,6 +1597,13 @@ def validate_imported_existing_conditions_package(
         "terrain_source_confidence": terrain_confidence,
         "survey_control_package": survey_control_package,
         "production_requirements": production_requirements,
+        "canonical_vs_metadata_only": {
+            "canonical_source_count": len(canonical_sources),
+            "metadata_only_source_count": len(metadata_only_sources),
+            "canonical_sources": canonical_sources,
+            "metadata_only_sources": metadata_only_sources,
+        },
+        "import_matrix": importer_matrix,
         "importer_production_matrix": importer_matrix,
         "coordinate_system_validation": coordinate_validation,
         "truth_label": "Successful import is not production approval; CRS, surface evidence, and required GIS layers must validate first.",

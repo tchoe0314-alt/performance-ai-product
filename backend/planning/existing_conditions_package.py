@@ -150,6 +150,7 @@ def build_existing_conditions_package(plan_or_meta: Dict[str, Any], *, accepted_
                     "gis_layers": meta.get("gis_layers") or meta.get("existing_conditions"),
                     "coordinate_system": meta.get("coordinate_system"),
                     "surfaces": meta.get("surfaces"),
+                    "point_clouds": meta.get("point_clouds"),
                     "sources": meta.get("sources") or safe_dict(meta.get("existing_conditions_import")).get("sources"),
                     "metadata_only_sources": meta.get("metadata_only_sources")
                     or safe_dict(meta.get("existing_conditions_import")).get("metadata_only_sources"),
@@ -166,7 +167,7 @@ def build_existing_conditions_package(plan_or_meta: Dict[str, Any], *, accepted_
         or safe_dict(meta.get("existing_conditions_import")).get("metadata_only_sources")
     )
     production_requirements = safe_list(validation.get("production_requirements"))
-    importer_matrix = safe_list(validation.get("importer_production_matrix"))
+    importer_matrix = safe_list(validation.get("import_matrix") or validation.get("importer_production_matrix"))
     terrain_confidence = safe_dict(validation.get("terrain_source_confidence")) or safe_dict(safe_dict(canonical_model.get("terrain")).get("confidence"))
     survey_control_package = (
         safe_dict(validation.get("survey_control_package"))
@@ -202,6 +203,7 @@ def build_existing_conditions_package(plan_or_meta: Dict[str, Any], *, accepted_
             "gis_layers": deepcopy(meta.get("gis_layers") or meta.get("existing_conditions")),
             "coordinate_system": deepcopy(meta.get("coordinate_system")),
             "surfaces": deepcopy(meta.get("surfaces")),
+            "point_clouds": deepcopy(meta.get("point_clouds")),
             "sources": deepcopy(meta.get("sources") or safe_dict(meta.get("existing_conditions_import")).get("sources")),
             "model": deepcopy(canonical_model),
             "metadata_only_sources": deepcopy(metadata_only_sources),
@@ -211,7 +213,9 @@ def build_existing_conditions_package(plan_or_meta: Dict[str, Any], *, accepted_
         "summary": deepcopy(summary),
         "import_validation": deepcopy(validation),
         "production_requirements": deepcopy(production_requirements),
+        "import_matrix": deepcopy(importer_matrix),
         "importer_production_matrix": deepcopy(importer_matrix),
+        "canonical_vs_metadata_only": deepcopy(validation.get("canonical_vs_metadata_only")),
         "terrain_source_confidence": deepcopy(terrain_confidence),
         "survey_control_package": deepcopy(survey_control_package),
         "survey_ready": bool(survey.get("ready")),
