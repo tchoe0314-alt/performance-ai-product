@@ -1297,7 +1297,6 @@ function PerformanceAIDashboardView({
   const [previewLabelDensity, setPreviewLabelDensity] = useState<"low" | "standard" | "high">("standard");
   const [previewLabelDensityTouched, setPreviewLabelDensityTouched] = useState(false);
   const [previewHeightPx, setPreviewHeightPx] = useState(900);
-  const [snapAssistEnabled, setSnapAssistEnabled] = useState(true);
   const [objectOutlineColor, setObjectOutlineColor] = useState("#1f2937");
   const [previewRefreshing, setPreviewRefreshing] = useState(false);
   const [previewRefreshNote, setPreviewRefreshNote] = useState<string | null>(null);
@@ -10470,38 +10469,6 @@ function PerformanceAIDashboardView({
             data-testid="left-sidebar"
             className="fixed inset-x-3 top-20 z-40 flex max-h-[calc(100vh-6rem)] shrink-0 flex-col rounded-xl border border-slate-200 bg-white/98 px-4 py-5 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.65)] backdrop-blur-xl lg:static lg:inset-auto lg:z-auto lg:h-full lg:max-h-none lg:w-[276px] lg:rounded-none lg:border-y-0 lg:border-l-0 lg:shadow-[18px_0_40px_-36px_rgba(15,23,42,0.5)]"
           >
-            <button
-              type="button"
-              onClick={() => handleOpenWorkspaceMode("dashboard")}
-              className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-left transition hover:bg-white"
-            >
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Project</p>
-              <p className="mt-1 truncate text-sm font-semibold text-slate-950">
-                {siteName || "Untitled Project"}
-              </p>
-              <div className="mt-2 grid gap-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                <span className="flex items-center justify-between gap-2">
-                  <span>Site</span>
-                  <span className={siteScaleLocked ? "text-slate-900" : "text-amber-700"}>
-                    {siteScaleLocked ? "Locked" : "Unlocked"}
-                  </span>
-                </span>
-                <span className="flex items-center justify-between gap-2">
-                  <span>Size</span>
-                  <span className="normal-case tracking-normal text-slate-600">
-                    {lotBounds.w && lotBounds.h
-                      ? `${lotBounds.w.toFixed(0)} x ${lotBounds.h.toFixed(0)} ft`
-                      : "Not set"}
-                  </span>
-                </span>
-                <span className="flex items-center justify-between gap-2">
-                  <span>Sync</span>
-                  <span className={currentProject?.project_id ? "text-slate-900" : "text-amber-700"}>
-                    {currentProject?.project_id ? "Saved" : "Draft"}
-                  </span>
-                </span>
-              </div>
-            </button>
             <div className="mb-4 rounded-lg border border-slate-200 bg-white px-3 py-3">
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                 Truth Status
@@ -10545,7 +10512,7 @@ function PerformanceAIDashboardView({
                 View all issues
               </button>
               <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                Engineer review required | construction_blocked until external engineer review
+                Engineer review required | Construction blocked until external approval
               </p>
             </div>
             <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
@@ -13443,71 +13410,6 @@ function PerformanceAIDashboardView({
           ) : null}
           <main className="order-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
             <div className="flex w-full flex-1 flex-col gap-4 px-4 py-4 md:px-5">
-              <div
-                data-testid="canvas-workflow-toolbar"
-                className="mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 shadow-sm"
-              >
-                {[
-                  {
-                    label: "Design",
-                    active: activeSidePanel === "model",
-                    action: () => handleOpenSidePanel("model"),
-                  },
-                  {
-                    label: "Draw",
-                    active: placementModeEnabled,
-                    action: () => handleOpenSidePanel("objects"),
-                  },
-                  {
-                    label: "Modify",
-                    active: activeSidePanel === "details" || activeSidePanel === "objects",
-                    action: () => handleOpenSidePanel(activePlacementId ? "details" : "objects"),
-                  },
-                  {
-                    label: "Measure",
-                    active: showMeasurements,
-                    action: () => setShowMeasurements((value) => !value),
-                  },
-                  {
-                    label: "Snaps",
-                    active: snapAssistEnabled,
-                    action: () => setSnapAssistEnabled((value) => !value),
-                  },
-                  {
-                    label: "Analyze",
-                    active: activeSidePanel === "reports" || activeSidePanel === "analysis",
-                    action: () => handleOpenSidePanel("reports"),
-                  },
-                  {
-                    label: "Export",
-                    active: activeSidePanel === "deliverables",
-                    action: () => handleOpenSidePanel("deliverables"),
-                  },
-                ].map((item) => (
-                  <button
-                    key={item.label}
-                    type="button"
-                    onClick={item.action}
-                    className={`rounded-lg border px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition ${
-                      item.active
-                        ? "border-slate-950 bg-slate-950 text-white"
-                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-                <div className="ml-auto flex min-w-0 flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    data-testid="toolbar-generate-systems"
-                    onClick={() => handleOpenSidePanel("generate")}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                  >
-                    Generate Systems
-                  </button>
-                </div>
-              </div>
               <div className="flex w-full flex-col">
                 <div
                   data-testid="workspace-canvas-shell"
