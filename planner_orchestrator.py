@@ -36,6 +36,11 @@ import math
 import re
 import uuid
 
+from backend.planning.ai_orchestration_evidence import (
+    attach_ai_orchestration_evidence_to_plan,
+    build_ai_orchestration_evidence,
+)
+
 
 # =============================================================================
 # OPTION 2 / FIELD-INTENT HELPERS
@@ -388,6 +393,67 @@ def _safe_str(value: Any, default: str = "") -> str:
         return default
     text = str(value).strip()
     return text if text else default
+
+
+def _assumption_strings(assumptions: Sequence[Any]) -> List[str]:
+    values: List[str] = []
+    for item in assumptions:
+        if hasattr(item, "field_name"):
+            field = _safe_str(getattr(item, "field_name", ""))
+            assumed = _safe_str(getattr(item, "assumed_value", ""))
+            reason = _safe_str(getattr(item, "reason", ""))
+            text = ": ".join(part for part in [field, assumed, reason] if part)
+        else:
+            text = _safe_str(item)
+        if text and text not in values:
+            values.append(text)
+    return values
+
+
+def _attach_orchestration_evidence_to_result(
+    result: PlannerOrchestratorResult,
+    req: PlannerOrchestratorRequest,
+    parsed_payload: Dict[str, Any],
+) -> PlannerOrchestratorResult:
+    missing_requirements = _safe_dict(result.metadata.get("missing_requirements"))
+    missing_inputs = [
+        _safe_str(key)
+        for key, value in missing_requirements.items()
+        if value not in (None, "", [], {}, False)
+    ]
+    workflow = _safe_str(result.metadata.get("workflow"), "single_plan")
+    blocked = list(result.errors)
+    if missing_inputs:
+        blocked.extend([f"missing_{item}" for item in missing_inputs])
+    actions_executed = [workflow] if result.success and not blocked else []
+    actions_planned = [workflow]
+    affected_systems = _safe_list(_safe_dict(result.metadata.get("route")).get("affected_systems"))
+    if not affected_systems:
+        affected_systems = _safe_list(_safe_dict(_safe_dict(result.final_plan.get("meta")).get("routing")).get("affected_systems"))
+    evidence = build_ai_orchestration_evidence(
+        user_intent=_safe_str(req.prompt_text or req.input_mode),
+        parsed_intent=_safe_str(_safe_dict(parsed_payload.get("meta")).get("intent_summary") or parsed_payload.get("project_type") or req.plan_type_hint or req.input_mode),
+        selected_workflow=workflow,
+        required_inputs=["site type", "site geometry", "requested systems"],
+        missing_inputs=missing_inputs,
+        assumptions=_assumption_strings(result.assumptions),
+        actions_planned=actions_planned,
+        actions_executed=actions_executed,
+        actions_blocked=blocked,
+        affected_systems=affected_systems,
+        next_best_action=(
+            "Resolve missing inputs and rerun orchestration."
+            if blocked
+            else "Engineer review is required before any construction use."
+        ),
+        confidence=_safe_float(result.metadata.get("recommended_score"), 70.0) / 100.0,
+        unsupported_actions=[],
+        state_changed=bool(actions_executed),
+    )
+    result.metadata["ai_orchestration_evidence_v1"] = evidence
+    if result.final_plan:
+        result.final_plan = attach_ai_orchestration_evidence_to_plan(result.final_plan, evidence)
+    return result
 
 
 def _safe_int(value: Any, default: int = 0) -> int:
@@ -1529,6 +1595,7 @@ def orchestrate_plan(req: PlannerOrchestratorRequest) -> PlannerOrchestratorResu
     else:
         wants_multi = _should_use_multi_option(parsed_payload, req)
         result = _multi_option_flow(parsed_payload, req) if wants_multi else _single_plan_flow(parsed_payload, progress_callback=req.progress_callback)
+    result = _attach_orchestration_evidence_to_result(result, req, parsed_payload)
 
     result.metadata.setdefault("input_mode", req.input_mode)
     result.metadata.setdefault("manual_mode", _lower(req.input_mode) == "manual")

@@ -8,6 +8,7 @@ from core.civil_design import civil_design_readiness
 from .common import readiness_issue_explanations
 from .depth_validators import validate_grading_depth, validate_profile_section_depth, validate_roadway_corridor_depth, validate_stormwater_depth
 from .engine_contracts import EngineContract, engine_contracts
+from .ai_orchestration_evidence import validate_ai_orchestration_evidence
 from .production_evidence import build_production_evidence
 from .reactive_model import validate_reactive_model_depth
 
@@ -169,6 +170,8 @@ def _engine_evidence(engine_id: str, meta: Dict[str, Any]) -> List[str]:
         if _safe_dict(existing.get("coordinate_system")).get("ready"):
             evidence.append("coordinate_system")
     elif engine_id == "ai_orchestration":
+        if _safe_dict(meta.get("ai_orchestration_evidence_v1")):
+            evidence.append("ai_orchestration_evidence_v1")
         if _has_any(meta, ("routing", "planner_workflow", "assumption_summary")):
             evidence.append("workflow_metadata")
         if _has_any(meta, ("optimization_summary", "explanations", "workflow_guidance")):
@@ -441,6 +444,18 @@ def _explicit_blockers_for_engine(engine_id: str, meta: Dict[str, Any]) -> List[
                     "severity": "blocker",
                 }
             )
+    elif engine_id == "ai_orchestration":
+        evidence = _safe_dict(meta.get("ai_orchestration_evidence_v1"))
+        validation = validate_ai_orchestration_evidence(evidence) if evidence else {"valid": True, "blockers": []}
+        for blocker in _safe_list(validation.get("blockers")):
+            blockers.append(
+                {
+                    "area": "ai_orchestration",
+                    "field": _safe_str(blocker, "ai_orchestration_evidence_v1"),
+                    "message": f"AI orchestration readiness is blocked because {blocker}.",
+                    "severity": "blocker",
+                }
+            )
     elif engine_id == "structure":
         structures = _safe_dict(meta.get("structures") or meta.get("structure_summary"))
         conflicts = _safe_list(meta.get("structure_conflicts")) or _safe_list(structures.get("structure_conflicts"))
@@ -580,8 +595,21 @@ def evaluate_engine_readiness(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
             evidence.append("depth_validation")
         production_gaps.extend(_depth_blockers_for_engine(contract.engine_id, meta))
         production_gaps.extend(_explicit_blockers_for_engine(contract.engine_id, meta))
+        has_orchestration_evidence = contract.engine_id == "ai_orchestration" and bool(_safe_dict(meta.get("ai_orchestration_evidence_v1")))
+        orchestration_validation = (
+            validate_ai_orchestration_evidence(_safe_dict(meta.get("ai_orchestration_evidence_v1")))
+            if has_orchestration_evidence
+            else {}
+        )
 
-        if missing:
+        if has_orchestration_evidence and not orchestration_validation.get("valid"):
+            status = "blocked"
+            blocked.append(contract.engine_id)
+        elif has_orchestration_evidence and orchestration_validation.get("review_level"):
+            status = "needs_engineering_review"
+            review.append(contract.engine_id)
+            concept_ready.append(contract.engine_id)
+        elif missing:
             status = "blocked"
             blocked.append(contract.engine_id)
         elif production_gaps:

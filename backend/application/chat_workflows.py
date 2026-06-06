@@ -7,6 +7,10 @@ from backend.services.chat_learning_store import (
     append_chat_interaction_event,
     append_chat_learning_event,
 )
+from backend.planning.ai_orchestration_evidence import (
+    attach_ai_orchestration_evidence_to_decision,
+    attach_ai_orchestration_evidence_to_plan,
+)
 from parsers.chat_intent_parser import build_chat_memory_summary
 
 
@@ -113,6 +117,34 @@ def _save_project_record(project_store: Any, record: Dict[str, Any], *, project_
         session_state=record.get("session_state") or {},
         metadata=record.get("metadata") or {},
     )
+
+
+def _persist_orchestration_evidence(
+    *,
+    decision: Dict[str, Any],
+    project_store: Optional[Any],
+    user_id: Optional[str],
+    project_id: Optional[str],
+) -> None:
+    evidence = _safe_dict(decision.get("ai_orchestration_evidence_v1"))
+    metadata = _safe_dict(decision.get("response_metadata"))
+    if not evidence or metadata.get("state_changed") is not True or not (project_store and user_id and project_id):
+        return
+    try:
+        record = project_store.get_project(user_id=user_id, project_id=project_id)
+        latest_result = deepcopy(_safe_dict(record.get("latest_result")))
+        final_plan = _safe_dict(latest_result.get("final_plan"))
+        if not final_plan:
+            return
+        latest_result["final_plan"] = attach_ai_orchestration_evidence_to_plan(final_plan, evidence)
+        _save_project_record(
+            project_store,
+            record,
+            project_input=deepcopy(_safe_dict(record.get("project_input"))),
+            latest_result=latest_result,
+        )
+    except Exception:
+        return
 
 
 def _next_draft_id(items: List[Any], prefix: str) -> str:
@@ -747,6 +779,13 @@ def decide_chat(
         project_store=project_store,
         user_id=user_id,
         message=message,
+    )
+    decision = attach_ai_orchestration_evidence_to_decision(message, decision)
+    _persist_orchestration_evidence(
+        decision=decision,
+        project_store=project_store,
+        user_id=user_id,
+        project_id=project_id,
     )
     memory_summary = None
     if chat_thread:
