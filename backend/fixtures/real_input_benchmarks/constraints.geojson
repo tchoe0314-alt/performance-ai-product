@@ -1,0 +1,36 @@
+{
+  "type": "FeatureCollection",
+  "crs": {"type": "name", "properties": {"name": "EPSG:2276"}},
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {"layer": "parcel", "source": "benchmark county parcel extract"},
+      "geometry": {"type": "Polygon", "coordinates": [[[5000,10000],[5200,10000],[5200,10200],[5000,10200],[5000,10000]]]}
+    },
+    {
+      "type": "Feature",
+      "properties": {"layer": "easement", "source": "benchmark title exception extract"},
+      "geometry": {"type": "Polygon", "coordinates": [[[5040,10000],[5060,10000],[5060,10200],[5040,10200],[5040,10000]]]}
+    },
+    {
+      "type": "Feature",
+      "properties": {"layer": "row", "source": "benchmark right-of-way record"},
+      "geometry": {"type": "Polygon", "coordinates": [[[5000,9970],[5200,9970],[5200,10000],[5000,10000],[5000,9970]]]}
+    },
+    {
+      "type": "Feature",
+      "properties": {"layer": "floodplain", "source": "benchmark FEMA screen"},
+      "geometry": {"type": "Polygon", "coordinates": [[[5160,10120],[5200,10120],[5200,10200],[5160,10200],[5160,10120]]]}
+    },
+    {
+      "type": "Feature",
+      "properties": {"layer": "wetland", "source": "benchmark NWI screen"},
+      "geometry": {"type": "Polygon", "coordinates": [[[5000,10160],[5040,10160],[5040,10200],[5000,10200],[5000,10160]]]}
+    },
+    {
+      "type": "Feature",
+      "properties": {"layer": "existing water utility", "source": "benchmark utility atlas"},
+      "geometry": {"type": "LineString", "coordinates": [[5000,9990],[5200,9990]]}
+    }
+  ]
+}

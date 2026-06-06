@@ -1,0 +1,6 @@
+point_id,easting,northing,elevation,description
+BM-1,5000.00,10000.00,612.42,benchmark observed in fixture metadata only
+TP-101,5125.00,10000.00,611.95,ground shot
+TP-102,5000.00,10150.00,610.88,ground shot
+TP-103,5125.00,10150.00,610.41,ground shot
+TP-104,5060.00,10075.00,611.31,ground shot
