@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:live": "playwright test --config=playwright.config.ts",
+    "test:live:chat34": "node tests/live/chat34-controlled-pilot-readiness.js",
     "test:live:staged": "playwright test --config=playwright.config.ts tests/live/staged-regression.spec.ts",
     "test:live:headed": "playwright test --config=playwright.config.ts --headed"
   },
