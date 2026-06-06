@@ -63,11 +63,11 @@ export default function AuthScreen({
           <div className="space-y-4">
             <Pill>Beta Control Room</Pill>
             <h1 className="max-w-2xl text-5xl font-semibold tracking-tight text-slate-950">
-              Civora AI — Autonomous Civil Engineering Design
+              Civora AI — Civil Site Planning Review
             </h1>
             <p className="max-w-2xl text-lg leading-8 text-slate-600">
-              Sign in to run civil site concepts, review clear engineering
-              outcomes, and export readable plans from one clean workflow.
+              Sign in to run civil site concepts, review traceable outcomes,
+              and export engineer-review packages from one clean workflow.
             </p>
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
@@ -94,7 +94,7 @@ export default function AuthScreen({
                 <Map className="h-5 w-5 text-slate-900" />
                 <p className="mt-3 text-sm font-medium text-slate-900">Deliverables</p>
                 <p className="mt-1 text-sm text-slate-500">
-                  Preview, download, and share readable civil outputs.
+                  Preview, download, and share review-only civil outputs.
                 </p>
               </CardContent>
             </Card>

@@ -3,9 +3,9 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Civora AI — Autonomous Civil Engineering Design",
+  title: "Civora AI — Civil Site Planning Review",
   description:
-    "Engineering-grade civil site planning with coordinated layouts, grading, drainage, utilities, profiles, and deliverables.",
+    "Civil site planning workspace for traceable concepts, review-required engineering signals, and engineer-review packages.",
 };
 
 export default function RootLayout({

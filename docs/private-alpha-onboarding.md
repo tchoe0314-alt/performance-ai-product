@@ -1,6 +1,12 @@
 # Private Alpha Onboarding
 
-## What Civora Can Do In Private Alpha
+## What Civora Is
+
+Civora is a private-pilot civil site planning copilot. It helps users organize site intent, candidate geometry, engineering signals, assumptions, blockers, and review-package materials so a licensed engineer or qualified reviewer can evaluate the work faster.
+
+Civora is not a construction release system. Civora never stamps, seals, signs, certifies, approves construction, submits construction documents, or acts as engineer of record. Only the licensed engineer or user can review, approve, stamp, seal, sign, submit, and take legal responsibility.
+
+## What Civora Can Do Today
 
 Civora can help prepare engineer-review-ready civil site planning evidence. In private alpha it may:
 
@@ -13,19 +19,30 @@ Civora can help prepare engineer-review-ready civil site planning evidence. In p
 
 ## What Civora Cannot Do Yet
 
-Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.
-
 Civora is not construction-ready in private alpha. Every output remains engineer-review-required unless an external licensed engineer reviews and approves it outside Civora.
 
 Civora also cannot yet:
 
+- stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record
 - verify Civil3D production compatibility
 - export DWG files
 - treat inferred or unaccepted standards as compliance evidence
 - replace survey/control, datum, benchmark, or source documentation
 - replace external engineer approval
+- automatically turn an address into trusted site objects unless those objects are backed by accepted source evidence
 
-## First-Use Workflow
+## Engineer-Review Responsibility Boundary
+
+Civora can prepare review packages, trace assumptions, identify blockers, and show candidate plans. Civora cannot decide that work is legally approved or ready for construction.
+
+The licensed engineer or user is responsible for:
+
+- confirming source data, survey/control, datum, benchmarks, standards, constraints, and jurisdictional requirements
+- reviewing calculations, geometry, conflicts, quantities, assumptions, and exports
+- approving, stamping, sealing, signing, submitting, or releasing any documents outside Civora
+- taking professional and legal responsibility for project decisions
+
+## First Project Workflow
 
 1. Create a project.
 2. Add an address or start from a blank site.
@@ -37,23 +54,41 @@ Civora also cannot yet:
 
 ## Status Terms
 
-`ready_for_engineer_review`
-: The output has enough traceable evidence to be reviewed by an engineer. It is not approved, sealed, stamped, submitted, or construction-ready.
+`Ready`
+: Civora has enough current, traceable evidence for the item to be reviewed. Ready does not mean approved, stamped, sealed, submitted, certified, or construction-ready.
 
-`construction_blocked`
-: Civora found missing evidence, stale outputs, unsupported exports, unaccepted standards, unresolved blockers, or another condition that prevents construction release.
+`Needs review`
+: Civora produced an output, assumption, source candidate, or recommendation that a user or licensed engineer must check before relying on it.
 
-`missing inputs`
-: Required information is absent, such as a locked site, survey/control, outlet, tie-in, datum, accepted standards, dimensions, or source evidence.
+`Blocked`
+: Civora found missing evidence, stale outputs, unsupported exports, unaccepted standards, unresolved conflicts, or another condition that prevents the next review step.
 
-`assumptions`
-: Values Civora inferred or used as placeholders so work can continue in review-only mode. Assumptions must be checked by the user or engineer.
+`Missing input`
+: Required information is absent, such as a locked site, survey/control, outlet, tie-in, datum, accepted standards, dimensions, jurisdiction, or source evidence.
 
-`stale outputs`
-: Outputs no longer match the current project state because geometry, inputs, standards, or upstream systems changed after they were generated.
+`Draft/review-required`
+: Civora is carrying a draft value, geometry item, status, or package forward so review can continue. The user or engineer must verify it before reliance.
 
-`low confidence`
-: Civora produced a result but does not have enough evidence or validation depth to treat it as reliable without closer review.
+`Visual preview only`
+: The screen is showing a visual aid or candidate view. It does not change canonical geometry or create construction-ready output by itself.
+
+## How To Report Issues
+
+Pilot users should report issues in the shared pilot support channel or directly to the Civora team contact. If the issue affects safety, source trust, exports, or engineer-review boundaries, mark it as urgent and stop using the affected output until we respond.
+
+## What To Include In Bug Reports
+
+Please include:
+
+- project name or project ID
+- time and date of the issue
+- browser, device, and operating system
+- the exact prompt, action, upload, or button sequence that triggered the issue
+- expected result and actual result
+- screenshots or screen recording when available
+- uploaded file names and source type, without sending confidential files into public channels
+- whether the issue involved address lookup, GIS or imagery candidates, geometry edits, generated systems, exports, or review status
+- any blocker, missing-input, stale-output, or error text shown by Civora
 
 ## Known Limitations
 
@@ -61,4 +96,22 @@ Civora also cannot yet:
 - DWG export is unsupported.
 - Standards require user/company acceptance before they can be used as review evidence.
 - Survey/control, datum, benchmark, and source evidence are required for production-grade review.
-- External licensed engineer approval is required before construction use, stamping, sealing, signing, or submission.
+- Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.
+- Address lookup does not automatically create trusted site objects unless those objects are backed by accepted source evidence.
+- GIS and imagery detections are candidates that require review.
+- Exports are review packages unless externally approved by a licensed engineer outside Civora.
+- Construction release remains outside Civora.
+
+## Internal Pilot Support Checklist
+
+Use this checklist before onboarding or responding to a pilot issue:
+
+- Confirm the user understands Civora outputs are review-required and not construction-ready.
+- Confirm the project has a known owner, pilot contact, and support channel.
+- Confirm the issue includes project ID, steps to reproduce, source inputs, screenshots, and visible status/error text.
+- Check whether the issue touches source trust, address lookup, GIS/imagery candidates, exports, or professional responsibility language.
+- Reproduce the issue in a non-production or test-safe context when possible.
+- Preserve uploaded/source evidence names and timestamps; do not move confidential files into public channels.
+- Triage as blocked if the issue could cause reliance on stale, missing, unsupported, or unreviewed output.
+- Respond with the current status, next action, owner, and whether the user should pause reliance on the affected output.
+- Keep all support responses aligned with the permanent engineer responsibility rule.

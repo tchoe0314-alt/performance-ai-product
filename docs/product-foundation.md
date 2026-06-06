@@ -1,8 +1,10 @@
 # Product Foundation
 
-## What this product is
+## What Civora Is
 
-Civora AI helps civil engineers and site designers go from rough intent to a structured concept plan faster. The product combines prompt input, sketch or image input, and editable fields so users can guide the system instead of surrendering control to it.
+Civora AI helps civil engineers and site designers go from rough intent to a structured concept plan faster. The product combines prompt input, sketch or image input, map context, editable fields, and review-package output so users can guide the system instead of surrendering control to it.
+
+Civora is a review workspace and planning copilot. It is not an engineer of record, approval authority, permitting agent, or construction release system.
 
 ## Ideal first customer
 
@@ -10,7 +12,7 @@ Civora AI helps civil engineers and site designers go from rough intent to a str
 - Land development consultants
 - Internal design teams producing early feasibility studies
 
-## Core product promise
+## What Civora Can Do Today
 
 Users should be able to describe a site, upload a rough sketch, leave unknowns blank, and receive:
 
@@ -21,6 +23,12 @@ Users should be able to describe a site, upload a rough sketch, leave unknowns b
 - an engineer-review-required evidence package when exports are available
 
 Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record. The product can prepare review-ready evidence, but only the licensed engineer or user can review, approve, stamp, seal, sign, submit, and take legal responsibility.
+
+## What Civora Cannot Do Yet
+
+Civora cannot replace licensed engineering judgment, source verification, accepted standards, jurisdictional review, external approval, or construction release. It also cannot treat an address, GIS/imagery candidate, inferred object, or unaccepted standard as trusted project evidence unless the user provides or accepts source-backed support.
+
+Exports are review packages unless externally approved. Construction release remains outside Civora.
 
 ## MVP scope
 
