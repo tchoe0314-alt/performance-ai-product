@@ -5274,6 +5274,39 @@ function PerformanceAIDashboardView({
       return true;
     }
 
+    if (/(what should i do next|what next|next step|where should i start|what do i do next)/i.test(normalized)) {
+      appendChatMessage(
+        "assistant",
+        `${nextSetupAction} Everything remains engineer-review-required; Civora does not stamp, seal, sign, submit, approve construction, or act as engineer of record.`,
+        "status",
+      );
+      return true;
+    }
+
+    if (/(why.*export|can(?:not|'t) export|export.*blocked|why.*download)/i.test(normalized)) {
+      const reason = getExportBlockReason();
+      const blockerText = previewBlockedReasons.length
+        ? ` Current export/review blockers: ${previewBlockedReasons.slice(0, 3).join("; ")}.`
+        : "";
+      appendChatMessage(
+        "assistant",
+        reason
+          ? `Export is blocked: ${reason}.${blockerText}`
+          : `Exports are available only as engineer-review packages. Construction release remains blocked unless an external licensed engineer approves it.${blockerText}`,
+        "status",
+      );
+      return true;
+    }
+
+    if (/(stamp|seal|sign|submit|construction[- ]ready|approve.*construction|engineer of record)/i.test(normalized)) {
+      appendChatMessage(
+        "assistant",
+        "Civora cannot stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record. I can prepare engineer-review-ready evidence packages, calculations, reports, exports, assumptions, blockers, and traceability for a licensed engineer or the user to review.",
+        "status",
+      );
+      return true;
+    }
+
     if (/(issues|conflicts|problems)/i.test(normalized)) {
       if (!issues.length) {
         appendChatMessage("assistant", "No issues are reported on the latest run.", "status");
@@ -5395,6 +5428,53 @@ function PerformanceAIDashboardView({
         return true;
       }
       appendChatMessage("assistant", "Which object should I remove? You can say 'remove Building 1'.", "status");
+      return true;
+    }
+
+    if (/(make|classify|change|convert).*\b(building|road|parking|basin|detention|pond|line|area|rectangle)\b/.test(normalized)) {
+      const target = resolveTarget();
+      const requestedType: SiteObjectType | null = /basin|detention|pond/.test(normalized)
+        ? "basin"
+        : /parking/.test(normalized)
+          ? "parking"
+          : /road|line/.test(normalized)
+            ? "road"
+            : /building|rectangle/.test(normalized)
+              ? "building"
+              : null;
+      if (!requestedType) return false;
+      if (!target) {
+        appendChatMessage(
+          "assistant",
+          `Select a drawn object first, then say "make this a ${SITE_OBJECT_CATALOG[requestedType].label.toLowerCase()}."`,
+          "status",
+        );
+        return true;
+      }
+      if (target.type === "site") {
+        appendChatMessage("assistant", "The site boundary cannot be reclassified. Draw or select a separate object first.", "status");
+        return true;
+      }
+      const nextLabel = formatObjectLabel(
+        requestedType,
+        buildingPlacements.filter((item) => item.type === requestedType).length + 1,
+      );
+      handleUpdateBuilding(target.id, {
+        type: requestedType,
+        label: nextLabel,
+        use: SITE_OBJECT_CATALOG[requestedType].use,
+        source: target.source ?? "user",
+        meta: {
+          ...(target.meta ?? {}),
+          category: SITE_OBJECT_CATALOG[requestedType].category,
+          classification_status: "draft_review_required",
+        },
+      });
+      appendChatMessage(
+        "assistant",
+        `Reclassified ${target.label} as ${SITE_OBJECT_CATALOG[requestedType].label}. This is draft geometry and still requires engineer review.`,
+        "status",
+      );
       return true;
     }
 
@@ -9089,9 +9169,9 @@ function PerformanceAIDashboardView({
   };
 
   const handleExportDxf = async () => {
-    if (!token) return;
-    if (!backendResult && !projectId) {
-      setStatusMessage("Run the planner first so there is something to export.");
+    const blockReason = getExportBlockReason();
+    if (blockReason) {
+      setStatusMessage(`Export blocked: ${blockReason}`);
       return;
     }
     setBusy(true);
@@ -9102,7 +9182,7 @@ function PerformanceAIDashboardView({
         { token },
       );
       downloadBlob(blob, filename ?? "civora-ai-plan.dxf");
-      setStatusMessage("DXF export downloaded.");
+      setStatusMessage("DXF review export downloaded. Engineer review required; construction release remains blocked.");
     } catch (error) {
       setStatusMessage(
         error instanceof Error ? error.message : "DXF export failed.",
@@ -9113,9 +9193,9 @@ function PerformanceAIDashboardView({
   };
 
   const handleExportReport = async () => {
-    if (!token) return;
-    if (!backendResult && !projectId) {
-      setStatusMessage("Run the planner first so there is something to export.");
+    const blockReason = getExportBlockReason();
+    if (blockReason) {
+      setStatusMessage(`Export blocked: ${blockReason}`);
       return;
     }
     setBusy(true);
@@ -9126,7 +9206,7 @@ function PerformanceAIDashboardView({
         { token },
       );
       downloadBlob(blob, filename ?? "civora-ai-report.json");
-      setStatusMessage("Report export downloaded.");
+      setStatusMessage("Engineer-review report downloaded. Construction release remains blocked.");
     } catch (error) {
       setStatusMessage(
         error instanceof Error ? error.message : "Report export failed.",
@@ -9175,6 +9255,18 @@ function PerformanceAIDashboardView({
     previewRunningPhase,
     previewNextPendingPhase,
   } = usePreviewReview({ currentPlanMeta, planPreviewSummary });
+  const getExportBlockReason = useCallback(() => {
+    if (!token) {
+      return "sign in with a backend session before exporting review packages";
+    }
+    if (busy) {
+      return "wait for the current operation to finish";
+    }
+    if (!backendResult && !projectId) {
+      return "run the planner or load a saved project before exporting";
+    }
+    return "";
+  }, [backendResult, busy, projectId, token]);
   const gatingPhaseKey =
     String(visibleActiveJob?.status || "").toLowerCase() === "awaiting_approval"
       ? previewRunningPhase?.key || previewNextPendingPhase?.key
@@ -12759,7 +12851,7 @@ function PerformanceAIDashboardView({
                         {[
                           ["Preview", planPreviewUrl ? "Review ready" : "Not generated"],
                           ["Report", backendResult ? "Review package" : "Not generated"],
-                          ["DXF", backendResult ? "Review export" : "Needs run"],
+                          ["DXF", getExportBlockReason() || (backendResult ? "Review export" : "Needs run")],
                         ].map(([label, value]) => (
                           <div key={label} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
                             <span className="font-semibold text-slate-700">{label}</span>
@@ -12768,8 +12860,8 @@ function PerformanceAIDashboardView({
                         ))}
                       </div>
                       <div className="mt-3 grid grid-cols-2 gap-2">
-                        <button type="button" onClick={handleExportDxf} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">DXF</button>
-                        <button type="button" onClick={handleExportReport} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Report</button>
+                        <button type="button" onClick={handleExportDxf} disabled={Boolean(getExportBlockReason())} title={getExportBlockReason() || "Download DXF review export"} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400">DXF</button>
+                        <button type="button" onClick={handleExportReport} disabled={Boolean(getExportBlockReason())} title={getExportBlockReason() || "Download engineer-review report"} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400">Report</button>
                       </div>
                     </div>
                   </div>
@@ -13252,8 +13344,8 @@ function PerformanceAIDashboardView({
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-2">
-                          <button type="button" onClick={handleExportDxf} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Export DXF</button>
-                          <button type="button" onClick={handleExportReport} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Export Report</button>
+                          <button type="button" onClick={handleExportDxf} disabled={Boolean(getExportBlockReason())} title={getExportBlockReason() || "Download DXF review export"} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400">Export DXF</button>
+                          <button type="button" onClick={handleExportReport} disabled={Boolean(getExportBlockReason())} title={getExportBlockReason() || "Download engineer-review report"} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400">Export Report</button>
                         </div>
                       </>
                     ) : null}
@@ -13431,6 +13523,7 @@ function PerformanceAIDashboardView({
                 onCloseFullscreen={() => setPreviewFullscreenOpen(false)}
                 onExportDxf={handleExportDxf}
                 onExportReport={handleExportReport}
+                exportBlockReason={getExportBlockReason()}
                 planPreviewAnnotations={planPreviewAnnotations}
                 selectedIssueLabel={selectedIssueLabel}
                 showMeasurements={showMeasurements}
@@ -13498,7 +13591,7 @@ function PerformanceAIDashboardView({
                 </div>
                 {!bottomPanelCollapsed ? (
                   <div className="grid gap-3 px-3 py-3 lg:grid-cols-[auto,1fr]">
-                    <div className="flex min-w-0 gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
+                    <div className="grid min-w-0 grid-cols-2 gap-1 sm:flex sm:overflow-x-auto lg:flex-col lg:overflow-visible">
                       {bottomPanelTabs.map((tab) => (
                         <button
                           key={tab.key}
@@ -13507,7 +13600,7 @@ function PerformanceAIDashboardView({
                             setActiveBottomPanelTab(tab.key);
                             handleOpenSidePanel(tab.panel);
                           }}
-                          className={`whitespace-nowrap rounded-lg border px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
+                          className={`min-w-0 whitespace-normal rounded-lg border px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.12em] transition sm:whitespace-nowrap ${
                             activeBottomPanelTab === tab.key
                               ? "border-slate-950 bg-slate-950 text-white"
                               : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"

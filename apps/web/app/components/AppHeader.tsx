@@ -21,6 +21,9 @@ export default function AppHeader({
   onToggleSidebar,
   onLogout,
 }: AppHeaderProps) {
+  const inactiveToolbarButtonClass =
+    "hidden h-9 w-9 cursor-not-allowed items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-slate-400 opacity-70 md:inline-flex";
+
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-200 bg-white/95 shadow-[0_14px_40px_-36px_rgba(15,23,42,0.5)] backdrop-blur-xl">
       <div className="flex h-16 w-full items-center justify-between gap-4 px-5">
@@ -59,16 +62,16 @@ export default function AppHeader({
         </div>
 
         <div className="flex items-center gap-2">
-          <button type="button" className="hidden h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 md:inline-flex" aria-label="Search">
+          <button type="button" className={inactiveToolbarButtonClass} aria-label="Search unavailable" title="Search is not available in this review workspace yet." disabled>
             <Search className="h-4 w-4" />
           </button>
-          <button type="button" className="hidden h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 md:inline-flex" aria-label="Undo">
+          <button type="button" className={inactiveToolbarButtonClass} aria-label="Undo unavailable" title="Undo is available from individual canvas edit controls only." disabled>
             <Undo2 className="h-4 w-4" />
           </button>
-          <button type="button" className="hidden h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 md:inline-flex" aria-label="Redo">
+          <button type="button" className={inactiveToolbarButtonClass} aria-label="Redo unavailable" title="Redo is not available for this review workspace yet." disabled>
             <RotateCcw className="h-4 w-4" />
           </button>
-          <button type="button" className="hidden h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 md:inline-flex" aria-label="Notifications">
+          <button type="button" className={inactiveToolbarButtonClass} aria-label="Notifications unavailable" title="Notifications are not connected in this workspace." disabled>
             <Bell className="h-4 w-4" />
           </button>
           <button type="button" onClick={onOpenDocs} className="hidden h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 md:inline-flex" aria-label="Help">

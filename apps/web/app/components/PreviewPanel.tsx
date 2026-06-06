@@ -110,6 +110,7 @@ type PreviewPanelProps = {
   onCloseFullscreen: () => void;
   onExportDxf: () => void;
   onExportReport: () => void;
+  exportBlockReason?: string;
   planPreviewAnnotations: PreviewResponse["preview_annotations"] | null;
   selectedIssueLabel: string;
   showMeasurements: boolean;
@@ -210,6 +211,7 @@ export default function PreviewPanel({
   onCloseFullscreen,
   onExportDxf,
   onExportReport,
+  exportBlockReason,
   planPreviewAnnotations,
   selectedIssueLabel,
   showMeasurements,
@@ -2854,7 +2856,8 @@ export default function PreviewPanel({
           <button
             type="button"
             onClick={onExportDxf}
-            disabled={busy}
+            disabled={busy || Boolean(exportBlockReason)}
+            title={exportBlockReason || "Download a DXF review export"}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Download className="h-4 w-4" />
@@ -2863,12 +2866,18 @@ export default function PreviewPanel({
           <button
             type="button"
             onClick={onExportReport}
-            disabled={busy}
+            disabled={busy || Boolean(exportBlockReason)}
+            title={exportBlockReason || "Download an engineer-review package report"}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <FileText className="h-4 w-4" />
             Export Report
           </button>
+          {exportBlockReason ? (
+            <p className="w-full text-right text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+              Export blocked: {exportBlockReason}
+            </p>
+          ) : null}
         </div>
       </div>
 
