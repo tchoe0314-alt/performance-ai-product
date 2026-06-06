@@ -2,6 +2,7 @@ import unittest
 
 from backend.planning.standards_discovery import (
     accept_standards_rules,
+    build_standards_source_registry,
     build_standards_review_packet,
     discover_standards_sources,
     extract_rule_candidates_from_text,
@@ -19,7 +20,11 @@ class StandardsDiscoveryTests(unittest.TestCase):
 
         self.assertTrue(result["success"])
         self.assertTrue(result["sources"])
+        self.assertIn("source_registry", result)
+        self.assertEqual(result["source_registry"]["accepted_source_count"], 0)
+        self.assertGreaterEqual(result["source_registry"]["candidate_source_count"], 1)
         self.assertIn("candidate", {item["status"].split("_")[0] for item in result["sources"] if item["source_id"] != "civora_us_baseline"})
+        self.assertEqual({item["acceptance_status"] for item in result["source_registry"]["sources"]}, {"candidate"})
         self.assertIn("must not apply", result["truth_label"])
 
     def test_review_packet_requires_acceptance(self) -> None:
@@ -27,6 +32,8 @@ class StandardsDiscoveryTests(unittest.TestCase):
 
         self.assertTrue(packet["candidate_rules"])
         self.assertEqual(packet["accepted_rules"], [])
+        self.assertEqual({item["acceptance_status"] for item in packet["candidate_rules"]}, {"candidate"})
+        self.assertEqual(packet["source_registry"]["accepted_source_count"], 0)
         self.assertIn("require user acceptance", packet["truth_label"])
 
     def test_acceptance_builds_concept_pack_until_official_source_is_accepted(self) -> None:
@@ -39,9 +46,37 @@ class StandardsDiscoveryTests(unittest.TestCase):
         self.assertTrue(accepted["accepted_for_qa"])
         self.assertFalse(accepted["production_usable"])
         self.assertEqual(accepted["accepted_rule_count"], 1)
+        self.assertEqual(accepted["accepted_rules"][0]["acceptance_status"], "accepted")
+        self.assertEqual(accepted["rejected_rules"][0]["acceptance_status"], "unaccepted")
         self.assertEqual(pack["rules"][0]["candidate_value"], "Accepted edited value")
         self.assertTrue(pack["needs_source_review"])
         self.assertFalse(pack["production_validation"]["production_usable"])
+
+    def test_source_registry_keeps_official_candidates_unaccepted_by_default(self) -> None:
+        registry = build_standards_source_registry(
+            jurisdiction={"city": "Austin", "state": "Texas"},
+            sources=[
+                {
+                    "source_id": "austin_manual",
+                    "agency": "Austin Public Works",
+                    "discipline": "utilities",
+                    "source_url": "https://www.austintexas.gov/department/engineering-standards",
+                    "document_title": "Engineering Standards",
+                    "version_or_effective_date": "2026-01-01",
+                    "retrieved_at": "2026-06-05",
+                    "source_type": "official_candidate",
+                }
+            ],
+            candidate_rules=[{"rule_id": "austin_cover", "source_id": "austin_manual"}],
+        )
+
+        source = registry["sources"][0]
+
+        self.assertEqual(registry["accepted_source_count"], 0)
+        self.assertEqual(source["acceptance_status"], "candidate")
+        self.assertEqual(source["candidate_rule_ids"], ["austin_cover"])
+        self.assertEqual(source["source_type"], "official_candidate")
+        self.assertFalse(source["stale"])
 
     def test_civil_readiness_can_use_accepted_standards_without_fake_jurisdiction(self) -> None:
         packet = build_standards_review_packet()
@@ -73,6 +108,8 @@ class StandardsDiscoveryTests(unittest.TestCase):
         self.assertIn("residual pressure", topics)
         self.assertIn("manhole spacing", topics)
         self.assertTrue(all(item["needs_human_confirmation"] for item in candidates))
+        self.assertEqual({item["acceptance_status"] for item in candidates}, {"candidate"})
+        self.assertEqual({item["source_type"] for item in candidates}, {"scraped_candidate"})
 
     def test_fetch_and_extract_rule_candidates_from_html(self) -> None:
         class Response:
@@ -90,6 +127,8 @@ class StandardsDiscoveryTests(unittest.TestCase):
 
         self.assertTrue(result["success"])
         self.assertEqual(result["candidate_count"], 1)
+        self.assertEqual(result["source_registry"]["accepted_source_count"], 0)
+        self.assertEqual(result["candidate_rules"][0]["acceptance_status"], "candidate")
         self.assertIn("candidates only", result["truth_label"])
 
     def test_standards_production_validation_requires_official_source(self) -> None:
@@ -283,6 +322,39 @@ class StandardsDiscoveryTests(unittest.TestCase):
         self.assertIn("official_sources", fields)
         self.assertEqual(validation["accepted_rule_ids"], ["search_result_rule"])
         self.assertEqual(validation["inferred_rule_ids"], ["search_result_rule"])
+
+    def test_candidate_rule_cannot_satisfy_production_acceptance_even_with_official_url(self) -> None:
+        validation = validate_standards_acceptance_for_production(
+            {
+                "accepted_rules": [
+                    {
+                        "rule_id": "candidate_city_cover",
+                        "discipline": "utilities",
+                        "topic": "minimum cover",
+                        "candidate_value": "Minimum cover shall be 4 feet.",
+                        "source_id": "city_manual",
+                        "source_url": "https://city.example.gov/manual",
+                        "source_section": "Section 5.1",
+                        "retrieved_date": "2026-06-05",
+                        "retrieved_at": "2026-06-05",
+                        "confidence": "text_pattern_candidate",
+                        "status": "candidate",
+                        "acceptance_status": "candidate",
+                        "source_type": "scraped_candidate",
+                        "accepted_by": "u1",
+                        "accepted_date": "2026-06-05",
+                    }
+                ],
+                "source_urls": ["https://city.example.gov/manual"],
+            }
+        )
+
+        fields = {item["field"] for item in validation["blockers"]}
+
+        self.assertFalse(validation["production_usable"])
+        self.assertIn("rule_acceptance_status", fields)
+        self.assertIn("inferred_rules", fields)
+        self.assertEqual(validation["official_source_count"], 1)
 
 
 if __name__ == "__main__":

@@ -146,6 +146,51 @@ def _staleness(retrieved_date: str, *, today: Optional[date] = None) -> Dict[str
     }
 
 
+def _source_registry(meta: Dict[str, Any]) -> Dict[str, Any]:
+    packet = safe_dict(meta.get("standards_review_packet"))
+    discovery = safe_dict(packet.get("discovery"))
+    acceptance = safe_dict(meta.get("standards_acceptance"))
+    design = safe_dict(meta.get("design_standards"))
+    registry = safe_dict(
+        meta.get("standards_source_registry")
+        or packet.get("source_registry")
+        or discovery.get("source_registry")
+        or acceptance.get("source_registry")
+        or design.get("source_registry")
+    )
+    return deepcopy(registry)
+
+
+def _source_registry_staleness(registry: Dict[str, Any]) -> Dict[str, Any]:
+    sources = [safe_dict(item) for item in safe_list(registry.get("sources")) if safe_dict(item)]
+    stale_sources = [
+        {
+            "source_id": safe_str(source.get("source_id")),
+            "source_url": safe_str(source.get("source_url")),
+            "retrieved_at": safe_str(source.get("retrieved_at")),
+            "age_days": source.get("age_days"),
+        }
+        for source in sources
+        if bool(source.get("stale"))
+    ]
+    unevaluated_sources = [
+        {
+            "source_id": safe_str(source.get("source_id")),
+            "source_url": safe_str(source.get("source_url")),
+            "retrieved_at": safe_str(source.get("retrieved_at")),
+        }
+        for source in sources
+        if source.get("age_days") is None and safe_str(source.get("retrieved_at")) not in {"", "static"}
+    ]
+    return {
+        "source_count": len(sources),
+        "stale_source_count": len(stale_sources),
+        "stale_sources": stale_sources,
+        "unevaluated_source_count": len(unevaluated_sources),
+        "unevaluated_sources": unevaluated_sources,
+    }
+
+
 def _overrides(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
     return [
         safe_dict(item)
@@ -341,6 +386,8 @@ def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     validation = _validation(meta, accepted_rules)
     retrieved_date = _retrieved_date(meta, accepted_rules)
     staleness = _staleness(retrieved_date)
+    source_registry = _source_registry(meta)
+    source_registry_staleness = _source_registry_staleness(source_registry)
     overrides = _overrides(meta)
     source_urls = _source_urls(
         acceptance.get("source_urls"),
@@ -480,6 +527,15 @@ def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
                 severity="warning",
             )
         )
+    if source_registry_staleness.get("stale_source_count"):
+        warnings.append(
+            _blocker(
+                "standards_source_registry_stale",
+                "One or more discovered standards source records are stale and need refresh before selection.",
+                next_action="Refresh the candidate source registry, then review and accept applicable official-source rules.",
+                severity="warning",
+            )
+        )
     incomplete_overrides: List[Dict[str, Any]] = []
     for override in overrides:
         missing = [
@@ -573,6 +629,8 @@ def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
         "selected_jurisdiction": jurisdiction,
         "selected_standards_source": source_selection,
         "source_urls": source_urls,
+        "standards_source_registry": source_registry,
+        "source_registry_staleness": source_registry_staleness,
         "official_source_count": validation.get("official_source_count", 0),
         "accepted_rule_count": len(accepted_rules),
         "accepted_rules": deepcopy(accepted_rules),

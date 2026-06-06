@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 from datetime import date
 from html.parser import HTMLParser
@@ -23,6 +24,25 @@ class StandardsSource:
 
 
 @dataclass(frozen=True)
+class StandardsSourceRegistryEntry:
+    source_id: str
+    jurisdiction: Dict[str, str]
+    agency: str
+    discipline: str
+    source_url: str
+    document_title: str
+    version_or_effective_date: str
+    retrieved_at: str
+    source_type: str
+    confidence: str
+    candidate_rule_ids: Tuple[str, ...]
+    acceptance_status: str
+    stale_after_days: int
+    age_days: Optional[int]
+    stale: bool
+
+
+@dataclass(frozen=True)
 class StandardsRuleCandidate:
     rule_id: str
     discipline: str
@@ -32,8 +52,11 @@ class StandardsRuleCandidate:
     source_url: str
     source_section: str
     retrieved_date: str
+    retrieved_at: str
     confidence: str
     status: str
+    acceptance_status: str
+    source_type: str
     needs_human_confirmation: bool
 
 
@@ -47,8 +70,11 @@ BASELINE_US_CONCEPT_RULES: Tuple[StandardsRuleCandidate, ...] = (
         source_url="internal://civora/us-baseline-concept-standards",
         source_section="ADA concept baseline",
         retrieved_date="static",
+        retrieved_at="static",
         confidence="baseline",
         status="candidate",
+        acceptance_status="candidate",
+        source_type="internal_baseline",
         needs_human_confirmation=True,
     ),
     StandardsRuleCandidate(
@@ -60,8 +86,11 @@ BASELINE_US_CONCEPT_RULES: Tuple[StandardsRuleCandidate, ...] = (
         source_url="internal://civora/us-baseline-concept-standards",
         source_section="Utility concept baseline",
         retrieved_date="static",
+        retrieved_at="static",
         confidence="baseline",
         status="candidate",
+        acceptance_status="candidate",
+        source_type="internal_baseline",
         needs_human_confirmation=True,
     ),
     StandardsRuleCandidate(
@@ -73,15 +102,179 @@ BASELINE_US_CONCEPT_RULES: Tuple[StandardsRuleCandidate, ...] = (
         source_url="internal://civora/us-baseline-concept-standards",
         source_section="Hydraulic concept baseline",
         retrieved_date="static",
+        retrieved_at="static",
         confidence="baseline",
         status="candidate",
+        acceptance_status="candidate",
+        source_type="internal_baseline",
         needs_human_confirmation=True,
     ),
 )
 
+STANDARDS_REGISTRY_STALE_DAYS = 365
+
 
 def _today() -> str:
     return date.today().isoformat()
+
+
+def _parse_date(value: Any) -> Optional[date]:
+    text = safe_str(value)
+    if not text or text == "static":
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except Exception:
+        return None
+
+
+def _staleness_fields(value: Any, *, stale_after_days: int = STANDARDS_REGISTRY_STALE_DAYS) -> Dict[str, Any]:
+    parsed = _parse_date(value)
+    if parsed is None:
+        return {
+            "stale_after_days": stale_after_days,
+            "age_days": None,
+            "stale": False,
+            "staleness_evaluated": False,
+        }
+    age_days = max(0, (date.today() - parsed).days)
+    return {
+        "stale_after_days": stale_after_days,
+        "age_days": age_days,
+        "stale": age_days > stale_after_days,
+        "staleness_evaluated": True,
+    }
+
+
+def _candidate_acceptance_status(raw: Any = "") -> str:
+    status = safe_str(raw).lower()
+    return status if status in {"candidate", "unaccepted"} else "candidate"
+
+
+def _registry_source_type(source: Dict[str, Any]) -> str:
+    explicit = safe_str(source.get("source_type")).lower()
+    if explicit:
+        return explicit
+    source_url = safe_str(source.get("source_url") or source.get("url")).lower()
+    source_id = safe_str(source.get("source_id")).lower()
+    if source_url.startswith("internal://") or source_id == "civora_us_baseline":
+        return "internal_baseline"
+    if "google.com/search" in source_url or "bing.com/search" in source_url or source_id.endswith("_search"):
+        return "search_candidate"
+    return "official_candidate"
+
+
+def _registry_confidence(source: Dict[str, Any], source_type: str) -> str:
+    explicit = safe_str(source.get("confidence")).lower()
+    if explicit:
+        return explicit
+    if source_type == "internal_baseline":
+        return "baseline"
+    if source_type == "search_candidate":
+        return "search"
+    return "candidate"
+
+
+def build_standards_source_registry(
+    *,
+    jurisdiction: Optional[Dict[str, Any]] = None,
+    sources: Optional[Iterable[Dict[str, Any]]] = None,
+    candidate_rules: Optional[Iterable[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Build review-only source metadata for jurisdiction/company standards discovery."""
+
+    jurisdiction_rec = safe_dict(jurisdiction)
+    rules_by_source: Dict[str, List[str]] = {}
+    for raw_rule in candidate_rules or ():
+        rule = safe_dict(raw_rule)
+        source_id = safe_str(rule.get("source_id"), "unknown_source")
+        rule_id = safe_str(rule.get("rule_id"))
+        if rule_id:
+            rules_by_source.setdefault(source_id, []).append(rule_id)
+
+    source_records = [safe_dict(item) for item in (sources or ()) if safe_dict(item)]
+    known_source_ids = {safe_str(source.get("source_id") or source.get("id")) for source in source_records}
+    for raw_rule in candidate_rules or ():
+        rule = safe_dict(raw_rule)
+        source_id = safe_str(rule.get("source_id"))
+        if not source_id or source_id in known_source_ids:
+            continue
+        known_source_ids.add(source_id)
+        source_records.append(
+            {
+                "source_id": source_id,
+                "agency": safe_str(rule.get("agency")),
+                "discipline": safe_str(rule.get("discipline"), "general"),
+                "source_url": safe_str(rule.get("source_url")),
+                "document_title": safe_str(rule.get("document_title") or rule.get("source_section") or source_id),
+                "version_or_effective_date": safe_str(rule.get("version_or_effective_date")),
+                "retrieved_at": safe_str(rule.get("retrieved_at") or rule.get("retrieved_date"), _today()),
+                "source_type": safe_str(rule.get("source_type")) or _registry_source_type(rule),
+                "confidence": safe_str(rule.get("confidence")),
+            }
+        )
+
+    entries: List[Dict[str, Any]] = []
+    for index, raw_source in enumerate(source_records, start=1):
+        source = safe_dict(raw_source)
+        source_id = safe_str(source.get("source_id") or source.get("id"), f"source_{index}")
+        source_url = safe_str(source.get("source_url") or source.get("url"))
+        retrieved_at = safe_str(source.get("retrieved_at") or source.get("retrieved_date"), _today())
+        source_type = _registry_source_type({"source_id": source_id, **source, "source_url": source_url})
+        confidence = _registry_confidence(source, source_type)
+        staleness = _staleness_fields(retrieved_at)
+        entry = StandardsSourceRegistryEntry(
+            source_id=source_id,
+            jurisdiction={
+                "city": safe_str(jurisdiction_rec.get("city")),
+                "county": safe_str(jurisdiction_rec.get("county")),
+                "state": safe_str(jurisdiction_rec.get("state")),
+                "utility_provider": safe_str(jurisdiction_rec.get("utility_provider")),
+            },
+            agency=safe_str(source.get("agency") or source.get("name")),
+            discipline=safe_str(source.get("discipline") or source.get("scope"), "general"),
+            source_url=source_url,
+            document_title=safe_str(source.get("document_title") or source.get("name")),
+            version_or_effective_date=safe_str(source.get("version_or_effective_date")),
+            retrieved_at=retrieved_at,
+            source_type=source_type,
+            confidence=confidence,
+            candidate_rule_ids=tuple(sorted(set(rules_by_source.get(source_id, [])))),
+            acceptance_status=_candidate_acceptance_status(source.get("acceptance_status") or source.get("status")),
+            stale_after_days=int(staleness["stale_after_days"]),
+            age_days=staleness["age_days"],
+            stale=bool(staleness["stale"]),
+        )
+        rec = asdict(entry)
+        rec["candidate_rule_ids"] = list(entry.candidate_rule_ids)
+        rec["staleness"] = staleness
+        entries.append(rec)
+
+    return {
+        "version": "standards_source_registry_v1",
+        "retrieved_at": _today(),
+        "source_count": len(entries),
+        "candidate_source_count": sum(1 for item in entries if item["acceptance_status"] in {"candidate", "unaccepted"}),
+        "accepted_source_count": 0,
+        "sources": entries,
+        "truth_label": "Source registry entries are discovery metadata only; candidate or unaccepted sources cannot satisfy production acceptance.",
+    }
+
+
+def deepcopy_source_registry_for_acceptance(review_packet: Dict[str, Any], accepted_rules: List[Dict[str, Any]]) -> Dict[str, Any]:
+    registry = safe_dict(review_packet.get("source_registry") or safe_dict(review_packet.get("discovery")).get("source_registry"))
+    if not registry:
+        return build_standards_source_registry(
+            jurisdiction=safe_dict(safe_dict(review_packet.get("discovery")).get("jurisdiction")),
+            sources=safe_list(safe_dict(review_packet.get("discovery")).get("sources")),
+            candidate_rules=accepted_rules,
+        )
+    copied = deepcopy(registry)
+    copied["accepted_source_count"] = 0
+    copied["truth_label"] = (
+        "Source registry entries remain discovery metadata. Rule acceptance does not automatically accept a source document."
+    )
+    return copied
 
 
 def discover_standards_sources(
@@ -150,10 +343,11 @@ def discover_standards_sources(
                 notes="Utility provider standards often govern water/sewer cover, separation, materials, and details.",
             )
         )
-    return {
+    discovery = {
         "success": True,
         "source_type": "standards_discovery_registry",
         "retrieved_date": _today(),
+        "retrieved_at": _today(),
         "jurisdiction": {
             "city": city_name,
             "county": county_name,
@@ -163,6 +357,11 @@ def discover_standards_sources(
         "sources": [asdict(source) for source in sources],
         "truth_label": "These are candidate sources. Civora must not apply jurisdiction rules until the user accepts or edits extracted rules.",
     }
+    discovery["source_registry"] = build_standards_source_registry(
+        jurisdiction=discovery["jurisdiction"],
+        sources=discovery["sources"],
+    )
+    return discovery
 
 
 def baseline_us_rule_candidates() -> List[Dict[str, Any]]:
@@ -193,15 +392,24 @@ def build_standards_review_packet(
                 "source_url": safe_str(rec.get("source_url")),
                 "source_section": safe_str(rec.get("source_section")),
                 "retrieved_date": safe_str(rec.get("retrieved_date"), _today()),
+                "retrieved_at": safe_str(rec.get("retrieved_at") or rec.get("retrieved_date"), _today()),
                 "confidence": safe_str(rec.get("confidence"), "extracted"),
                 "status": safe_str(rec.get("status"), "candidate"),
+                "acceptance_status": _candidate_acceptance_status(rec.get("acceptance_status")),
+                "source_type": safe_str(rec.get("source_type")) or _registry_source_type(rec),
                 "needs_human_confirmation": True,
             }
         )
+    source_registry = build_standards_source_registry(
+        jurisdiction=discovery.get("jurisdiction"),
+        sources=safe_list(discovery.get("sources")),
+        candidate_rules=candidates,
+    )
     return {
         "success": True,
         "source_type": "standards_review_packet",
         "discovery": discovery,
+        "source_registry": source_registry,
         "candidate_rules": candidates,
         "accepted_rules": [],
         "rejected_rules": [],
@@ -228,12 +436,14 @@ def accept_standards_rules(
             edited.update(safe_dict(edit_map[rule_id]))
         if rule_id in accepted:
             edited["status"] = "accepted"
+            edited["acceptance_status"] = "accepted"
             edited["accepted_date"] = _today()
             edited["accepted_by"] = safe_str(accepted_by, "user")
             edited["needs_human_confirmation"] = False
             accepted_rules.append(edited)
         else:
             edited["status"] = "not_accepted"
+            edited["acceptance_status"] = "unaccepted"
             rejected_rules.append(edited)
     source_urls = sorted({safe_str(rule.get("source_url")) for rule in accepted_rules if safe_str(rule.get("source_url"))})
     official_source_count = sum(
@@ -251,6 +461,7 @@ def accept_standards_rules(
         "accepted_rules": accepted_rules,
         "rejected_rules": rejected_rules,
         "source_urls": source_urls,
+        "source_registry": deepcopy_source_registry_for_acceptance(review_packet, accepted_rules),
         "official_source_count": official_source_count,
         "needs_source_review": bool(accepted_rules and official_source_count <= 0),
         "accepted_for_qa": bool(accepted_rules),
@@ -271,6 +482,7 @@ def standards_pack_from_acceptance(acceptance: Dict[str, Any]) -> Dict[str, Any]
         "rules": accepted_rules,
         "source_urls": list(safe_list(acceptance.get("source_urls"))),
         "official_source_count": safe_dict(acceptance).get("official_source_count", 0),
+        "source_registry": deepcopy(safe_dict(acceptance.get("source_registry"))),
         "needs_source_review": bool(acceptance.get("needs_source_review")),
         "accepted_for_qa": bool(accepted_rules),
         "truth_label": "User-accepted standards pack. Engineer review is still required for permit use.",
@@ -311,6 +523,7 @@ def standards_project_evidence_from_acceptance(
         "success": bool(acceptance.get("success")),
         "standards_acceptance": acceptance,
         "design_standards": pack,
+        "standards_source_registry": deepcopy(safe_dict(acceptance.get("source_registry"))),
         "jurisdiction_standards": jurisdiction_profile,
         "company_standards": company_profile,
         "production_usable": (
@@ -336,12 +549,14 @@ def _rule_is_inferred(rule: Dict[str, Any]) -> bool:
     source_url = safe_str(rule.get("source_url")).lower()
     source_id = safe_str(rule.get("source_id")).lower()
     confidence = safe_str(rule.get("confidence")).lower()
+    source_type = safe_str(rule.get("source_type")).lower()
     source_status = safe_str(rule.get("source_status") or rule.get("authority_status")).lower()
     return (
         source_url.startswith("internal://")
         or "google.com/search" in source_url
         or "bing.com/search" in source_url
         or confidence in {"baseline", "inferred", "candidate", "assumed"}
+        or source_type in {"internal_baseline", "search_candidate", "scraped_candidate"}
         or source_status in {"candidate", "candidate_source", "inferred", "assumed"}
         or source_id in {"civora_us_baseline", "municipal_code_search", "public_works_search", "state_dot_search", "utility_provider_search"}
     )
@@ -372,6 +587,18 @@ def validate_standards_acceptance_for_production(standards: Dict[str, Any]) -> D
         for index, rule in enumerate(rules, start=1)
         if _rule_is_inferred(rule)
     ]
+    non_accepted_status_rules = []
+    for index, rule in enumerate(rules, start=1):
+        status = safe_str(rule.get("status")).lower()
+        acceptance_status = safe_str(rule.get("acceptance_status")).lower()
+        if status != "accepted" or acceptance_status != "accepted":
+            non_accepted_status_rules.append(
+                {
+                    "rule_id": safe_str(rule.get("rule_id"), f"rule_{index}"),
+                    "status": status,
+                    "acceptance_status": acceptance_status,
+                }
+            )
     if rules and not official_urls:
         blockers.append(
             {
@@ -395,6 +622,14 @@ def validate_standards_acceptance_for_production(standards: Dict[str, Any]) -> D
                 "field": "inferred_rules",
                 "reason": "Accepted rules still trace to inferred/search/candidate sources, not selected official standards.",
                 "rule_ids": non_baseline_inferred,
+            }
+        )
+    if non_accepted_status_rules:
+        blockers.append(
+            {
+                "field": "rule_acceptance_status",
+                "reason": "Candidate or unaccepted rules cannot satisfy standards acceptance.",
+                "rules": non_accepted_status_rules,
             }
         )
     incomplete_rules = []
@@ -499,8 +734,11 @@ def extract_rule_candidates_from_text(
                     "source_url": source_url,
                     "source_section": source_section or topic,
                     "retrieved_date": _today(),
+                    "retrieved_at": _today(),
                     "confidence": "text_pattern_candidate",
                     "status": "candidate",
+                    "acceptance_status": "candidate",
+                    "source_type": "scraped_candidate",
                     "needs_human_confirmation": True,
                 }
             )
@@ -528,13 +766,28 @@ def fetch_and_extract_rule_candidates(
     else:
         text = body
     candidates = extract_rule_candidates_from_text(text, source_id=source_id, source_url=url)
+    source_record = {
+        "source_id": source_id,
+        "source_url": url,
+        "document_title": source_id,
+        "retrieved_at": _today(),
+        "source_type": "scraped_candidate",
+        "confidence": "text_pattern_candidate",
+        "status": "candidate",
+    }
     return {
         "success": True,
         "source_url": url,
         "source_id": source_id,
+        "source_metadata": source_record,
+        "source_registry": build_standards_source_registry(
+            sources=[source_record],
+            candidate_rules=candidates,
+        ),
         "candidate_rules": candidates,
         "candidate_count": len(candidates),
         "retrieved_date": _today(),
+        "retrieved_at": _today(),
         "truth_label": "Extracted rules are candidates only. User acceptance/editing is required before production QA can use them.",
     }
 
@@ -543,6 +796,7 @@ __all__ = [
     "BASELINE_US_CONCEPT_RULES",
     "accept_standards_rules",
     "baseline_us_rule_candidates",
+    "build_standards_source_registry",
     "build_standards_review_packet",
     "discover_standards_sources",
     "extract_rule_candidates_from_text",

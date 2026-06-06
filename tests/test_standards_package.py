@@ -202,6 +202,59 @@ class StandardsPackageTests(unittest.TestCase):
         self.assertIn("No user-accepted standards rules", comments)
         self.assertIn("No accepted official HTTPS standards source", comments)
 
+    def test_candidate_source_registry_is_carried_without_clearing_gate(self) -> None:
+        packet = build_standards_review_packet(
+            city="Austin",
+            state="Texas",
+            extracted_rules=[
+                {
+                    "rule_id": "candidate_cover",
+                    "discipline": "utilities",
+                    "topic": "minimum cover",
+                    "candidate_value": "Minimum cover shall be 4 feet.",
+                    "source_id": "austin_manual",
+                    "source_url": "https://city.example.gov/manual",
+                    "source_section": "Section 5.1",
+                }
+            ],
+        )
+
+        package = build_standards_package({"standards_review_packet": packet})
+
+        self.assertEqual(package["status"], "blocked")
+        self.assertEqual(package["standards_source_registry"]["accepted_source_count"], 0)
+        self.assertIn("candidate_cover", {
+            rule_id
+            for source in package["standards_source_registry"]["sources"]
+            for rule_id in source["candidate_rule_ids"]
+        })
+        self.assertIn("accepted_rules", {item["field"] for item in package["blockers"]})
+        self.assertFalse(package["requirements_gate"]["construction_allowed"])
+
+    def test_stale_source_registry_adds_review_warning(self) -> None:
+        evidence = _official_evidence()
+        evidence["standards_source_registry"] = {
+            "version": "standards_source_registry_v1",
+            "accepted_source_count": 0,
+            "sources": [
+                {
+                    "source_id": "old_manual",
+                    "source_url": "https://city.example.gov/manual",
+                    "retrieved_at": "2000-01-01",
+                    "acceptance_status": "candidate",
+                    "age_days": 9000,
+                    "stale": True,
+                }
+            ],
+        }
+
+        package = build_standards_package(evidence)
+
+        self.assertEqual(package["status"], "needs_review")
+        self.assertFalse(package["production_usable"])
+        self.assertEqual(package["source_registry_staleness"]["stale_source_count"], 1)
+        self.assertIn("standards_source_registry_stale", {item["field"] for item in package["warnings"]})
+
 
 if __name__ == "__main__":
     unittest.main()
