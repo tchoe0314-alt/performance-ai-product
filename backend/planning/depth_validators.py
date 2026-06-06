@@ -181,6 +181,148 @@ def _has_valid_section(row: Dict[str, Any]) -> bool:
     return bool(_present(rec.get("station_ft")) and len(points) >= 3 and _present(rec.get("alignment_owner") or rec.get("alignment_id") or rec.get("alignment")))
 
 
+def _combined_grading_detail(meta: Dict[str, Any]) -> Dict[str, Any]:
+    grading = safe_dict(meta.get("grading") or meta.get("grading_summary"))
+    explicit = safe_dict(meta.get("grading_detail"))
+    return {**grading, **explicit}
+
+
+def _roadway_crown_expected_actual(row: Dict[str, Any]) -> Dict[str, Any]:
+    rec = safe_dict(row)
+    road_id = safe_str(rec.get("road_id") or rec.get("alignment_id") or rec.get("road") or rec.get("alignment"))
+    expected_crown = rec.get("expected_crown_elev_ft", rec.get("design_crown_elev_ft"))
+    actual_crown = rec.get("actual_crown_elev_ft", rec.get("crown_elev_ft"))
+    expected_cross = rec.get("expected_cross_slope", rec.get("design_cross_slope", rec.get("standard_cross_slope")))
+    actual_cross = rec.get("actual_cross_slope", rec.get("cross_slope"))
+    crown_tolerance = safe_float(rec.get("crown_tolerance_ft"), 0.0)
+    slope_tolerance = safe_float(rec.get("cross_slope_tolerance"), 0.0)
+    valid = bool(
+        road_id
+        and _present(expected_crown)
+        and _present(actual_crown)
+        and _present(expected_cross)
+        and _present(actual_cross)
+        and abs(safe_float(actual_crown, 0.0) - safe_float(expected_crown, 0.0)) <= crown_tolerance
+        and abs(safe_float(actual_cross, 0.0) - safe_float(expected_cross, 0.0)) <= slope_tolerance
+        and _has_accepted_standard(rec)
+        and _row_is_production_evidence(rec)
+    )
+    return {
+        "road_id": road_id,
+        "profile_id": safe_str(rec.get("profile_id")),
+        "expected_crown_elev_ft": expected_crown,
+        "actual_crown_elev_ft": actual_crown,
+        "expected_cross_slope": expected_cross,
+        "actual_cross_slope": actual_cross,
+        "crown_tolerance_ft": crown_tolerance,
+        "cross_slope_tolerance": slope_tolerance,
+        "standard_id": safe_str(rec.get("standard_id") or rec.get("standard")),
+        "valid": valid,
+    }
+
+
+def _roadway_gutter_expected_actual(row: Dict[str, Any]) -> Dict[str, Any]:
+    rec = safe_dict(row)
+    road_id = safe_str(rec.get("road_id") or rec.get("alignment_id") or rec.get("road") or rec.get("alignment"))
+    expected_min = rec.get("expected_min_gutter_slope", rec.get("min_gutter_slope"))
+    actual = rec.get("actual_gutter_slope", rec.get("gutter_slope"))
+    valid = bool(
+        road_id
+        and _present(expected_min)
+        and _present(actual)
+        and safe_float(actual, -1.0) >= safe_float(expected_min, 0.0)
+        and _has_accepted_standard(rec)
+        and _row_is_production_evidence(rec)
+    )
+    return {
+        "road_id": road_id,
+        "alignment_id": safe_str(rec.get("alignment_id")),
+        "expected_min_gutter_slope": expected_min,
+        "actual_gutter_slope": actual,
+        "flow_direction": rec.get("flow_direction"),
+        "standard_id": safe_str(rec.get("standard_id") or rec.get("standard")),
+        "valid": valid,
+    }
+
+
+def _roadway_ada_expected_actual(row: Dict[str, Any]) -> Dict[str, Any]:
+    rec = safe_dict(row)
+    expected_running = rec.get("expected_max_running_slope", rec.get("max_running_slope"))
+    actual_running = rec.get("actual_running_slope", rec.get("running_slope"))
+    expected_cross = rec.get("expected_max_cross_slope", rec.get("max_cross_slope"))
+    actual_cross = rec.get("actual_cross_slope", rec.get("cross_slope"))
+    continuity = safe_dict(rec.get("continuity_validation") or rec.get("continuity_check"))
+    continuity_ok = continuity.get("valid") is not False and rec.get("continuous") is not False
+    valid = bool(
+        rec.get("valid") is True
+        and _present(expected_running)
+        and _present(actual_running)
+        and _present(expected_cross)
+        and _present(actual_cross)
+        and safe_float(actual_running, 1.0) <= safe_float(expected_running, 0.0)
+        and safe_float(actual_cross, 1.0) <= safe_float(expected_cross, 0.0)
+        and continuity_ok
+        and _has_accepted_standard(rec)
+        and _row_is_production_evidence(rec)
+    )
+    return {
+        "path_id": safe_str(rec.get("path_id") or rec.get("path") or rec.get("id")),
+        "expected_max_running_slope": expected_running,
+        "actual_running_slope": actual_running,
+        "expected_max_cross_slope": expected_cross,
+        "actual_cross_slope": actual_cross,
+        "continuous": continuity_ok,
+        "standard_id": safe_str(rec.get("standard_id") or rec.get("standard")),
+        "valid": valid,
+    }
+
+
+def _roadway_pad_tie_expected_actual(row: Dict[str, Any], surface_trace: Dict[str, Any]) -> Dict[str, Any]:
+    rec = safe_dict(row)
+    expected_surface = safe_str(surface_trace.get("proposed_surface_id"))
+    actual_surface = safe_str(rec.get("proposed_surface_id") or rec.get("surface_id") or rec.get("accepted_surface_id"))
+    valid = bool(
+        rec.get("valid") is True
+        and safe_str(rec.get("building") or rec.get("building_id"))
+        and _present(rec.get("pad_elev_ft") or rec.get("actual_pad_elev_ft"))
+        and rec.get("positive_drainage") is not False
+        and surface_trace.get("valid") is True
+        and actual_surface
+        and actual_surface == expected_surface
+        and _row_is_production_evidence(rec)
+    )
+    return {
+        "building_id": safe_str(rec.get("building_id") or rec.get("building")),
+        "expected_proposed_surface_id": expected_surface,
+        "actual_proposed_surface_id": actual_surface,
+        "pad_elev_ft": rec.get("pad_elev_ft", rec.get("actual_pad_elev_ft")),
+        "positive_drainage": rec.get("positive_drainage"),
+        "valid": valid,
+    }
+
+
+def _roadway_contour_expected_actual(row: Dict[str, Any], surface_trace: Dict[str, Any]) -> Dict[str, Any]:
+    rec = safe_dict(row)
+    expected_surface = safe_str(surface_trace.get("proposed_surface_id"))
+    actual_surface = safe_str(rec.get("proposed_surface_id") or rec.get("surface_id") or rec.get("accepted_surface_id"))
+    interval = rec.get("interval_ft")
+    valid = bool(
+        surface_trace.get("valid") is True
+        and actual_surface
+        and actual_surface == expected_surface
+        and safe_float(interval, 0.0) > 0.0
+        and _row_is_production_evidence(rec)
+    )
+    return {
+        "contour_id": safe_str(rec.get("contour_id") or rec.get("id") or rec.get("contour_index")),
+        "expected_proposed_surface_id": expected_surface,
+        "actual_proposed_surface_id": actual_surface,
+        "expected_interval_ft": surface_trace.get("contour_interval_ft", rec.get("expected_interval_ft")),
+        "actual_interval_ft": interval,
+        "valid": valid,
+    }
+
+
 def _canonical_alignment_id(row: Dict[str, Any]) -> str:
     rec = safe_dict(row)
     for key in ("canonical_alignment_id", "alignment_id", "canonical_id", "id", "name"):
@@ -775,11 +917,21 @@ def validate_water_system_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
 
 def validate_roadway_corridor_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     meta = safe_dict(plan_or_meta.get("meta")) if "meta" in plan_or_meta else safe_dict(plan_or_meta)
-    grading_detail = safe_dict(meta.get("grading_detail"))
+    grading_detail = _combined_grading_detail(meta)
     crown_rows = [safe_dict(row) for row in safe_list(grading_detail.get("road_crown_controls") or meta.get("road_crowns"))]
+    gutter_rows = [safe_dict(row) for row in safe_list(grading_detail.get("curb_gutter_controls") or meta.get("curb_gutter_controls"))]
     ada_rows = [safe_dict(row) for row in safe_list(grading_detail.get("ada_path_checks"))]
+    pad_rows = [safe_dict(row) for row in safe_list(grading_detail.get("pad_tie_ins") or meta.get("pad_tie_ins"))]
+    contour_rows = [safe_dict(row) for row in safe_list(grading_detail.get("contours") or meta.get("contours"))]
     ada_summary = safe_dict(meta.get("ada_compliance"))
-    ada_ready = any(_has_valid_ada_check(row) for row in ada_rows) or _valid_flag(ada_summary)
+    crown_trace = [_roadway_crown_expected_actual(row) for row in crown_rows]
+    gutter_trace = [_roadway_gutter_expected_actual(row) for row in gutter_rows]
+    ada_trace = [_roadway_ada_expected_actual(row) for row in ada_rows]
+    surface_trace = _surface_traceability(meta)
+    surface_trace["contour_interval_ft"] = grading_detail.get("contour_interval_ft")
+    pad_trace = [_roadway_pad_tie_expected_actual(row, surface_trace) for row in pad_rows]
+    contour_trace = [_roadway_contour_expected_actual(row, surface_trace) for row in contour_rows]
+    ada_ready = any(row["valid"] for row in ada_trace) or _valid_flag(ada_summary)
     alignments = [safe_dict(row) for row in safe_list(meta.get("alignments") or meta.get("road_alignments"))]
     profiles = [safe_dict(row) for row in safe_list(meta.get("profiles") or meta.get("road_profiles"))]
     intersections = [safe_dict(row) for row in safe_list(meta.get("intersections"))]
@@ -791,12 +943,28 @@ def validate_roadway_corridor_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, A
         _check("profiles", any(_has_valid_profile(row) for row in profiles), evidence="road profiles", blocker="Roadway depth needs profiles."),
         _check("intersections", any(_has_valid_intersection(row) for row in intersections), evidence="intersections", blocker="Roadway depth needs intersection geometry."),
         _check("curb_returns", any(_has_valid_curb_return(row) for row in curb_returns), evidence="curb returns", blocker="Roadway depth needs curb-return geometry."),
-        _check("crowns", any(_has_verified_crown(row) for row in crown_rows), evidence="road crown controls", blocker="Roadway depth needs verified road crown controls tied to a profile or standard."),
+        _check("crowns", bool(crown_trace) and all(row["valid"] for row in crown_trace), evidence="road crown expected/actual controls", blocker="Roadway depth needs verified road crown controls with expected/actual crown and cross-slope values."),
+        _check("curb_gutter", bool(gutter_trace) and all(row["valid"] for row in gutter_trace), evidence="curb/gutter expected/actual controls", blocker="Roadway depth needs curb/gutter controls tied to road or alignment IDs."),
         _check("sidewalks", any(_has_valid_sidewalk(row) for row in sidewalks), evidence="sidewalk/pedestrian paths", blocker="Roadway depth needs sidewalk/path geometry."),
         _check("ada", ada_ready, evidence="ADA compliance checks", blocker="Roadway depth needs passing ADA checks."),
         _check("sections", any(_has_valid_section(row) for row in sections), evidence="corridor sections", blocker="Roadway depth needs corridor sections."),
+        _check("accepted_surfaces", surface_trace.get("valid") is True, evidence="accepted grading surface IDs", blocker="Roadway depth needs accepted grading surface traceability."),
+        _check("pad_tie_ins", bool(pad_trace) and all(row["valid"] for row in pad_trace), evidence="pad tie-in expected/actual evidence", blocker="Roadway depth needs pad tie-ins tied to accepted proposed surface IDs."),
+        _check("contours", bool(contour_trace) and all(row["valid"] for row in contour_trace), evidence="contour expected/actual evidence", blocker="Roadway depth needs contours tied to accepted proposed surface evidence."),
     ]
-    return _finalize("roadway_corridor_depth", checks)
+    result = _finalize("roadway_corridor_depth", checks)
+    result.update(
+        {
+            "road_crown_trace": crown_trace,
+            "curb_gutter_trace": gutter_trace,
+            "ada_path_trace": ada_trace,
+            "pad_tie_in_trace": pad_trace,
+            "contour_trace": contour_trace,
+            "surface_traceability": surface_trace,
+            "expected_actual_checks": crown_trace + gutter_trace + ada_trace + pad_trace + contour_trace + [surface_trace],
+        }
+    )
+    return result
 
 
 __all__ = [

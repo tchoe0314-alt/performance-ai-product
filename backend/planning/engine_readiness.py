@@ -6,7 +6,7 @@ from typing import Any, Dict, Iterable, List, Sequence, Set, Tuple
 from core.civil_design import civil_design_readiness
 
 from .common import readiness_issue_explanations
-from .depth_validators import validate_profile_section_depth, validate_stormwater_depth
+from .depth_validators import validate_profile_section_depth, validate_roadway_corridor_depth, validate_stormwater_depth
 from .engine_contracts import EngineContract, engine_contracts
 from .reactive_model import validate_reactive_model_depth
 
@@ -229,12 +229,21 @@ def _depth_validation_for_engine(engine_id: str, meta: Dict[str, Any]) -> Dict[s
         _safe_dict(meta.get("storm_pipes") or meta.get("storm_pipe_summary"))
         or _safe_dict(meta.get("drainage") or meta.get("drainage_canonical"))
     )
+    grading = _safe_dict(meta.get("grading") or meta.get("grading_summary") or meta.get("grading_detail"))
+    has_roadway_or_grading = bool(
+        _safe_list(meta.get("alignments") or meta.get("road_alignments"))
+        or _safe_list(meta.get("profiles") or meta.get("road_profiles"))
+        or _safe_list(meta.get("cross_sections") or meta.get("corridor_sections"))
+        or _safe_list(grading.get("road_crown_controls"))
+        or _safe_list(grading.get("curb_gutter_controls"))
+        or _safe_list(grading.get("ada_path_checks"))
+    )
     if engine_id == "storm_pipe":
         return _safe_dict(validations.get("stormwater")) or (validate_stormwater_depth(meta) if has_storm_or_drainage else {})
     if engine_id == "water":
         return _safe_dict(validations.get("water"))
     if engine_id == "roadway_corridor":
-        return _safe_dict(validations.get("roadway_corridor"))
+        return _safe_dict(validations.get("roadway_corridor")) or (validate_roadway_corridor_depth(meta) if has_roadway_or_grading else {})
     if engine_id == "hydrology":
         return _safe_dict(validations.get("hydrology")) or _safe_dict(validations.get("stormwater")) or (validate_stormwater_depth(meta) if has_storm_or_drainage else {})
     if engine_id == "profile_section":

@@ -1,3 +1,4 @@
+from copy import deepcopy
 import unittest
 
 from backend.planning.production_depth import enrich_drainage_production_depth, enrich_water_production_depth
@@ -7,6 +8,104 @@ from backend.planning.depth_validators import (
     validate_stormwater_depth,
     validate_water_system_depth,
 )
+
+
+def _complete_roadway_corridor_meta() -> dict:
+    return {
+        "alignments": [{"id": "ALG-ROAD-A", "name": "Road A", "points": [[0.0, 0.0], [100.0, 0.0]]}],
+        "profiles": [
+            {
+                "id": "PROF-A",
+                "name": "Road A Profile",
+                "alignment_id": "ALG-ROAD-A",
+                "profile_points": [
+                    {"station_ft": 0.0, "elevation_ft": 100.0},
+                    {"station_ft": 100.0, "elevation_ft": 101.0},
+                ],
+            }
+        ],
+        "intersections": [{"id": "INT-1", "point": {"x": 0.0, "y": 0.0}, "connected_alignments": ["ALG-ROAD-A", "Drive B"], "angle_deg": 90.0}],
+        "curb_returns": [{"id": "CR-1", "intersection_id": "INT-1", "radius_ft": 25.0, "arc_points": [[0.0, 25.0], [7.3, 7.3], [25.0, 0.0]]}],
+        "grading": {
+            "surface_traceability": {
+                "valid": True,
+                "accepted_surfaces": True,
+                "existing_surface_id": "EG-ACCEPTED-1",
+                "proposed_surface_id": "FG-ACCEPTED-1",
+            },
+            "road_crown_controls": [
+                {
+                    "road_id": "ALG-ROAD-A",
+                    "profile_id": "PROF-A",
+                    "expected_crown_elev_ft": 100.25,
+                    "actual_crown_elev_ft": 100.25,
+                    "crown_tolerance_ft": 0.0,
+                    "expected_cross_slope": 0.02,
+                    "actual_cross_slope": 0.02,
+                    "cross_slope_tolerance": 0.0,
+                    "standard_id": "CITY-ROAD-2026",
+                    "standard_status": "adopted",
+                    "control_source": "roadway_profile_engine",
+                }
+            ],
+            "curb_gutter_controls": [
+                {
+                    "road_id": "ALG-ROAD-A",
+                    "alignment_id": "ALG-ROAD-A",
+                    "expected_min_gutter_slope": 0.005,
+                    "actual_gutter_slope": 0.006,
+                    "standard_id": "CITY-ROAD-2026",
+                    "standard_status": "adopted",
+                    "control_source": "roadway_profile_engine",
+                }
+            ],
+            "ada_path_checks": [
+                {
+                    "path_id": "SW-1",
+                    "valid": True,
+                    "expected_max_running_slope": 0.05,
+                    "actual_running_slope": 0.04,
+                    "expected_max_cross_slope": 0.02,
+                    "actual_cross_slope": 0.015,
+                    "standard_id": "ADA-2010",
+                    "standard_status": "adopted",
+                    "continuous": True,
+                    "control_source": "finished_grade_surface",
+                }
+            ],
+            "pad_tie_ins": [
+                {
+                    "building_id": "BLDG-1",
+                    "valid": True,
+                    "pad_elev_ft": 101.2,
+                    "positive_drainage": True,
+                    "proposed_surface_id": "FG-ACCEPTED-1",
+                    "control_source": "accepted_proposed_surface",
+                }
+            ],
+            "contours": [
+                {
+                    "contour_id": "FG-100",
+                    "interval_ft": 2.0,
+                    "proposed_surface_id": "FG-ACCEPTED-1",
+                    "source": "accepted_proposed_surface",
+                }
+            ],
+            "contour_interval_ft": 2.0,
+        },
+        "sidewalks": [{"id": "SW-1", "path": [[0.0, 0.0], [100.0, 0.0]], "width_ft": 5.0, "continuity_validation": {"valid": True}}],
+        "cross_sections": [
+            {
+                "station_ft": 0.0,
+                "alignment_id": "ALG-ROAD-A",
+                "section_points": [
+                    {"offset_ft": -12.0, "elevation_ft": 99.8},
+                    {"offset_ft": 0.0, "elevation_ft": 100.0},
+                    {"offset_ft": 12.0, "elevation_ft": 99.8},
+                ],
+            }
+        ],
+    }
 
 
 class DepthValidatorTests(unittest.TestCase):
@@ -523,43 +622,44 @@ class DepthValidatorTests(unittest.TestCase):
         self.assertIn("Roadway depth needs corridor sections.", result["blockers"])
 
     def test_roadway_depth_passes_with_explicit_corridor_evidence(self) -> None:
-        result = validate_roadway_corridor_depth(
-            {
-                "meta": {
-                    "alignments": [{"name": "Road A", "points": [[0.0, 0.0], [100.0, 0.0]]}],
-                    "profiles": [
-                        {
-                            "name": "Road A Profile",
-                            "alignment_owner": "Road A",
-                            "profile_points": [
-                                {"station_ft": 0.0, "elevation_ft": 100.0},
-                                {"station_ft": 100.0, "elevation_ft": 101.0},
-                            ],
-                        }
-                    ],
-                    "intersections": [{"id": "INT-1", "point": {"x": 0.0, "y": 0.0}, "connected_alignments": ["Road A", "Drive B"], "angle_deg": 90.0}],
-                    "curb_returns": [{"id": "CR-1", "intersection_id": "INT-1", "radius_ft": 25.0, "arc_points": [[0.0, 25.0], [7.3, 7.3], [25.0, 0.0]]}],
-                    "grading_detail": {
-                        "road_crown_controls": [{"road": "Road A", "profile_id": "PROF-A", "standard": "City local street"}],
-                        "ada_path_checks": [{"path": "SW-1", "valid": True, "max_running_slope": 0.04, "max_cross_slope": 0.015, "standard": "ADA", "standard_status": "adopted"}],
-                    },
-                    "sidewalks": [{"id": "SW-1", "path": [[0.0, 0.0], [100.0, 0.0]], "width_ft": 5.0, "continuity_validation": {"valid": True}}],
-                    "cross_sections": [
-                        {
-                            "station_ft": 0.0,
-                            "alignment_owner": "Road A",
-                            "section_points": [
-                                {"offset_ft": -12.0, "elevation_ft": 99.8},
-                                {"offset_ft": 0.0, "elevation_ft": 100.0},
-                                {"offset_ft": 12.0, "elevation_ft": 99.8},
-                            ],
-                        }
-                    ],
-                }
-            }
-        )
+        result = validate_roadway_corridor_depth({"meta": _complete_roadway_corridor_meta()})
 
         self.assertTrue(result["production_ready"])
+        self.assertEqual(result["road_crown_trace"][0]["expected_crown_elev_ft"], 100.25)
+        self.assertEqual(result["road_crown_trace"][0]["actual_crown_elev_ft"], 100.25)
+        self.assertEqual(result["road_crown_trace"][0]["expected_cross_slope"], 0.02)
+        self.assertEqual(result["road_crown_trace"][0]["actual_cross_slope"], 0.02)
+        self.assertEqual(result["curb_gutter_trace"][0]["road_id"], "ALG-ROAD-A")
+        self.assertEqual(result["curb_gutter_trace"][0]["expected_min_gutter_slope"], 0.005)
+        self.assertEqual(result["curb_gutter_trace"][0]["actual_gutter_slope"], 0.006)
+        self.assertEqual(result["ada_path_trace"][0]["expected_max_running_slope"], 0.05)
+        self.assertEqual(result["ada_path_trace"][0]["actual_running_slope"], 0.04)
+        self.assertEqual(result["ada_path_trace"][0]["expected_max_cross_slope"], 0.02)
+        self.assertEqual(result["ada_path_trace"][0]["actual_cross_slope"], 0.015)
+        self.assertEqual(result["pad_tie_in_trace"][0]["expected_proposed_surface_id"], "FG-ACCEPTED-1")
+        self.assertEqual(result["pad_tie_in_trace"][0]["actual_proposed_surface_id"], "FG-ACCEPTED-1")
+        self.assertEqual(result["contour_trace"][0]["expected_proposed_surface_id"], "FG-ACCEPTED-1")
+        self.assertEqual(result["contour_trace"][0]["actual_proposed_surface_id"], "FG-ACCEPTED-1")
+        self.assertTrue(result["expected_actual_checks"])
+
+    def test_roadway_depth_blocks_missing_expected_actual_and_surface_trace(self) -> None:
+        meta = deepcopy(_complete_roadway_corridor_meta())
+        meta["grading"]["road_crown_controls"][0].pop("expected_cross_slope")
+        meta["grading"]["curb_gutter_controls"][0].pop("alignment_id")
+        meta["grading"]["surface_traceability"].pop("proposed_surface_id")
+        meta["grading"]["pad_tie_ins"][0].pop("proposed_surface_id")
+        meta["grading"]["contours"][0].pop("proposed_surface_id")
+
+        result = validate_roadway_corridor_depth({"meta": meta})
+
+        self.assertFalse(result["production_ready"])
+        self.assertFalse(result["road_crown_trace"][0]["valid"])
+        self.assertFalse(result["pad_tie_in_trace"][0]["valid"])
+        self.assertFalse(result["contour_trace"][0]["valid"])
+        self.assertIn("Roadway depth needs verified road crown controls with expected/actual crown and cross-slope values.", result["blockers"])
+        self.assertIn("Roadway depth needs accepted grading surface traceability.", result["blockers"])
+        self.assertIn("Roadway depth needs pad tie-ins tied to accepted proposed surface IDs.", result["blockers"])
+        self.assertIn("Roadway depth needs contours tied to accepted proposed surface evidence.", result["blockers"])
 
     def test_roadway_depth_blocks_thin_corridor_presence(self) -> None:
         result = validate_roadway_corridor_depth(
@@ -612,7 +712,7 @@ class DepthValidatorTests(unittest.TestCase):
         )
 
         self.assertFalse(result["production_ready"])
-        self.assertIn("Roadway depth needs verified road crown controls tied to a profile or standard.", result["blockers"])
+        self.assertIn("Roadway depth needs verified road crown controls with expected/actual crown and cross-slope values.", result["blockers"])
 
     def test_roadway_depth_blocks_failed_ada_checks(self) -> None:
         result = validate_roadway_corridor_depth(
