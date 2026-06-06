@@ -4806,12 +4806,14 @@ function PerformanceAIDashboardView({
       const generatedTitle = siteName.trim();
       const generatedFileName = fileName.trim();
 
-      if (
+      const isChatOnlyDecision =
         decision.needs_clarification ||
         decision.intent === "conversation" ||
         decision.intent === "settings" ||
-        decision.intent === "explain"
-      ) {
+        decision.intent === "explain" ||
+        (decision.run_mode === "none" && !decision.design_prompt);
+
+      if (isChatOnlyDecision) {
         appendChatMessage(
           "assistant",
           decision.intent === "explain" && !decision.assistant_message

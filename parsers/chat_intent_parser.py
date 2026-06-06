@@ -2197,6 +2197,9 @@ def _structured_clarification_reply(
         examples.append("which systems to include")
     if examples:
         prompt_parts.append("Tell me " + _format_missing_requirements(examples[:2]) + ".")
+    remaining_missing = [item for item in missing[2:] if item not in primary_missing]
+    if remaining_missing:
+        prompt_parts.append("I’ll also need " + _format_missing_requirements(remaining_missing[:2]) + ".")
 
     if strategy_mode == "assisted":
         prompt_parts.append(
@@ -2263,10 +2266,120 @@ def _extract_site_area_acres(message: str) -> Optional[str]:
     return match.group(1) if match else None
 
 
+def _extract_site_dimensions(message: str) -> Optional[Dict[str, float]]:
+    lowered = _normalized_chat_text(message)
+    match = re.search(
+        r"\b(?:site|lot|boundary|size)\b(?:\s+size|\s+dimensions?)?\s*(?:to|as|is|=)?\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|')?\s*(?:x|by)\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|')?\b",
+        lowered,
+    )
+    if not match:
+        match = re.search(
+            r"\b(\d+(?:\.\d+)?)\s*(?:ft|feet|')?\s*(?:x|by)\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|')?\s*(?:site|lot|boundary)\b",
+            lowered,
+        )
+    if not match:
+        return None
+    width = float(match.group(1))
+    height = float(match.group(2))
+    if width <= 0 or height <= 0:
+        return None
+    return {"lot_width": width, "lot_height": height}
+
+
+def _extract_address_text(message: str) -> str:
+    normalized = " ".join(str(message or "").strip().split())
+    match = re.search(
+        r"\b(?:the\s+)?address\s*(?:is|=|:)\s*(.+)$",
+        normalized,
+        re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    address = match.group(1).strip(" .")
+    address = re.split(
+        r"\s+\b(?:and\s+)?(?:make|set|site|lot|boundary|generate|design|run)\b",
+        address,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0].strip(" .")
+    return _normalize_address_text(address)
+
+
+def _normalize_address_text(address: str) -> str:
+    clean = " ".join(str(address or "").strip().split())
+    if not clean:
+        return ""
+    tokens = clean.split()
+    if len(tokens) >= 5 and tokens[-1].isalpha() and len(tokens[-1]) == 2:
+        street = " ".join(tokens[:-2])
+        city = tokens[-2]
+        state = tokens[-1]
+        return f"{street.title()}, {city.title()}, {state.upper()}"
+    return clean.title()
+
+
+def _extract_site_setup_payload(message: str) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {}
+    dims = _extract_site_dimensions(message)
+    if dims:
+        payload.update(dims)
+        payload["site_area_acres"] = round((dims["lot_width"] * dims["lot_height"]) / 43560.0, 6)
+    else:
+        area = _extract_site_area_acres(message)
+        if area:
+            area_value = float(area)
+            side = round((area_value * 43560.0) ** 0.5, 1) if area_value > 0 else 0.0
+            payload.update({"site_area_acres": area_value, "lot_width": side, "lot_height": side})
+    address = _extract_address_text(message)
+    if address:
+        payload["address"] = address
+    return payload
+
+
+def _site_setup_geocode_blocker(context: Dict[str, Any], address: str) -> str:
+    if not address:
+        return ""
+    status = _normalized_chat_text(str(context.get("address_status") or context.get("geocode_status") or ""))
+    blockers = [str(item) for item in list(context.get("blockers") or []) if str(item)]
+    if any(token in status for token in ["fail", "failed", "not found", "not_found", "blocked", "error"]):
+        return f"Address/location evidence is blocked: {address} could not be geocoded from the current context."
+    for blocker in blockers:
+        lowered = _normalized_chat_text(blocker)
+        if "geocode" in lowered or "address" in lowered or "location" in lowered:
+            return f"Address/location evidence is blocked: {blocker}"
+    return ""
+
+
+def _looks_like_site_setup(message: str) -> bool:
+    lowered = _normalized_chat_text(message)
+    if _extract_address_text(message):
+        return True
+    if _extract_site_dimensions(message) and any(
+        phrase in lowered
+        for phrase in [
+            "site size",
+            "lot size",
+            "boundary size",
+            "set site",
+            "set the site",
+            "make the site size",
+            "make site size",
+            "set lot",
+            "set the lot",
+        ]
+    ):
+        return True
+    if _extract_site_area_acres(message) and "blank site" in lowered:
+        return True
+    return False
+
+
 def _command_family(message: str) -> str:
     lowered = _normalized_chat_text(message)
     if _is_responsibility_blocked_request(message):
         return "responsibility_guard"
+    if _looks_like_site_setup(message):
+        return "site_setup"
     if any(phrase in lowered for phrase in ["what do i need before export", "before export", "export ready", "ready to export"]):
         return "export_readiness"
     if re.search(r"\bwhy\b.*\b(storm|drainage|export|utility|utilities|grading)\b.*\b(blocked|failed|stuck)\b", lowered):
@@ -2856,6 +2969,7 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
     planned_intent = command_intent_from_action_plan(action_plan)
     command_intent = _command_family(message)
     if command_intent == "conversation" and planned_intent in {
+        "site_setup",
         "workspace_state",
         "fix",
         "object_or_layout_command",
@@ -2931,6 +3045,81 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             ),
         )
 
+    if command_intent == "site_setup":
+        command_payload = _extract_site_setup_payload(message)
+        if command_payload.get("lot_width"):
+            overrides["lotWidth"] = str(int(command_payload["lot_width"]) if float(command_payload["lot_width"]).is_integer() else command_payload["lot_width"])
+        if command_payload.get("lot_height"):
+            overrides["lotHeight"] = str(int(command_payload["lot_height"]) if float(command_payload["lot_height"]).is_integer() else command_payload["lot_height"])
+        width = command_payload.get("lot_width")
+        height = command_payload.get("lot_height")
+        address = str(command_payload.get("address") or "").strip()
+        geocode_blocker = _site_setup_geocode_blocker(context, address)
+        if geocode_blocker:
+            return _base_decision(
+                intent="conversation",
+                assistant_message=geocode_blocker,
+                run_mode="none",
+                design_prompt="",
+                needs_clarification=False,
+                reason="Site setup address geocode failed",
+                confidence=0.94,
+                control_overrides=overrides,
+                response_metadata=_metadata_for_decision(
+                    command_intent="site_setup",
+                    action_taken="blocked_site_setup_geocode_failed",
+                    action_blocked_reason=geocode_blocker,
+                    affected_systems=["site"],
+                    next_best_action="Correct the address, provide coordinates, or draw/confirm the site boundary manually.",
+                    command_payload=command_payload,
+                    outcome="understood_but_blocked",
+                    confidence=0.94,
+                    state_changed=False,
+                    blocker=geocode_blocker,
+                ),
+            )
+        if width and height and address:
+            message_text = (
+                f"I set the draft site size to {width:g} ft x {height:g} ft and recorded {address} as location evidence only. "
+                f"Do you want to lock this {width:g} ft x {height:g} ft site boundary at this address?"
+            )
+            next_best = f"Lock this {width:g} ft x {height:g} ft boundary at the address, or draw/confirm the site boundary."
+        elif width and height:
+            message_text = (
+                f"I set the draft site size to {width:g} ft x {height:g} ft. "
+                f"Do you want to lock this {width:g} ft x {height:g} ft site boundary?"
+            )
+            next_best = f"Lock this {width:g} ft x {height:g} ft boundary or draw/confirm the site boundary."
+        elif address:
+            message_text = (
+                f"I recorded {address} as address/location evidence only. Address evidence is not a trusted site boundary. "
+                "What site size should I use, or do you want to draw the boundary?"
+            )
+            next_best = "Provide site dimensions, draw the boundary, or run address geocoding before locking the site."
+        else:
+            message_text = "I can set up the site, but I need a site size, address, or acreage first."
+            next_best = "Provide site dimensions, acreage, or an address."
+        return _base_decision(
+            intent="conversation",
+            assistant_message=message_text,
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=not bool(width or address),
+            reason="Site setup command detected",
+            confidence=0.94,
+            control_overrides=overrides,
+            response_metadata=_metadata_for_decision(
+                command_intent="site_setup",
+                action_taken="prepared_site_setup_update",
+                affected_systems=["site"],
+                next_best_action=next_best,
+                command_payload=command_payload,
+                outcome="understood_and_answered",
+                confidence=0.94,
+                state_changed=False,
+            ),
+        )
+
     if _is_settings_only_message(message, overrides):
         return _base_decision(
             intent="settings",
@@ -2950,6 +3139,7 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     if command_intent in {
+        "site_setup",
         "site_update",
         "object_or_layout_command",
         "grading_command",
@@ -3379,6 +3569,7 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
     local = _attach_action_planning_metadata(local, action_plan)
     local_metadata = dict(local.get("response_metadata") or {})
     if str(local_metadata.get("intent") or "") in {
+        "site_setup",
         "site_update",
         "object_or_layout_command",
         "grading_command",

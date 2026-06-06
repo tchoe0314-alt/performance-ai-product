@@ -727,6 +727,61 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertIn("site", result["affected_systems"])
         self.assertEqual(result["response_metadata"]["command_payload"]["site_area_acres"], 14.0)
 
+    def test_site_setup_dimensions_and_address_does_not_ask_for_design_program(self):
+        result = _decide("make the site size 1000x1000 and the address is 20525 Margo St gretna ne")
+        self.assertEqual(result["intent"], "conversation")
+        self.assertEqual(result["run_mode"], "none")
+        self.assertFalse(result["needs_clarification"])
+        self.assertEqual(result["response_metadata"]["intent"], "site_setup")
+        self.assertEqual(result["action_taken"], "prepared_site_setup_update")
+        self.assertEqual(result["control_overrides"]["lotWidth"], "1000")
+        self.assertEqual(result["control_overrides"]["lotHeight"], "1000")
+        self.assertEqual(result["response_metadata"]["command_payload"]["address"], "20525 Margo St, Gretna, NE")
+        self.assertNotIn("land use", result["assistant_message"])
+        self.assertNotIn("building", result["assistant_message"].lower())
+        self.assertIn("Do you want to lock this 1000 ft x 1000 ft site boundary", result["assistant_message"])
+
+    def test_site_setup_dimensions_only_does_not_trigger_generation(self):
+        result = _decide("set site to 500 by 800")
+        self.assertEqual(result["intent"], "conversation")
+        self.assertEqual(result["run_mode"], "none")
+        self.assertEqual(result["response_metadata"]["intent"], "site_setup")
+        self.assertEqual(result["control_overrides"]["lotWidth"], "500")
+        self.assertEqual(result["control_overrides"]["lotHeight"], "800")
+        self.assertNotIn("land use", result["assistant_message"])
+
+    def test_address_only_is_location_evidence_not_boundary(self):
+        result = _decide("address is 123 Main St")
+        self.assertEqual(result["intent"], "conversation")
+        self.assertEqual(result["run_mode"], "none")
+        self.assertEqual(result["response_metadata"]["intent"], "site_setup")
+        self.assertEqual(result["response_metadata"]["command_payload"]["address"], "123 Main St")
+        self.assertIn("location evidence only", result["assistant_message"])
+        self.assertIn("not a trusted site boundary", result["assistant_message"])
+
+    def test_blank_acreage_site_setup_does_not_run_planner(self):
+        result = _decide("make a 10 acre blank site")
+        self.assertEqual(result["intent"], "conversation")
+        self.assertEqual(result["run_mode"], "none")
+        self.assertEqual(result["response_metadata"]["intent"], "site_setup")
+        self.assertEqual(result["response_metadata"]["command_payload"]["site_area_acres"], 10.0)
+        self.assertEqual(result["control_overrides"]["lotWidth"], "660")
+        self.assertEqual(result["control_overrides"]["lotHeight"], "660")
+
+    def test_site_setup_geocode_failure_blocks_with_location_blocker(self):
+        result = _decide("address is 123 Main St", {"address_status": "geocode_failed"})
+        self.assertEqual(result["action_taken"], "blocked_site_setup_geocode_failed")
+        self.assertEqual(result["response_metadata"]["intent"], "site_setup")
+        self.assertFalse(result["response_metadata"]["state_changed"])
+        self.assertIn("Address/location evidence is blocked", result["assistant_message"])
+
+    def test_full_design_generation_still_asks_for_program_when_needed(self):
+        result = _decide("design a site with drainage")
+        self.assertEqual(result["intent"], "conversation")
+        self.assertTrue(result["needs_clarification"])
+        self.assertIn("land use", result["assistant_message"])
+        self.assertIn("building or parking program", result["assistant_message"])
+
     def test_building_command_asks_for_site_when_no_plan(self):
         result = _decide("add a 100 by 60 building")
         self.assertEqual(result["intent"], "conversation")

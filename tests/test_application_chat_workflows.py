@@ -251,6 +251,94 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertIn("engineer-review-required", result["assistant_message"])
         self.assertNotIn("construction-approved", result["assistant_message"])
 
+    def test_site_setup_dimensions_and_address_persist_without_planner_queue(self):
+        store = RecordingProjectStore()
+
+        result = decide_chat(
+            {
+                "message": "make the site size 1000x1000 and the address is 20525 Margo St gretna ne",
+                "context": {"current_project": {"project_id": "project_123"}},
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["intent"], "conversation")
+        self.assertEqual(result["run_mode"], "none")
+        self.assertEqual(result["action_taken"], "updated_site_dimensions_and_location_evidence")
+        self.assertTaxonomyMetadata(result, "understood_and_answered")
+        self.assertTrue(result["response_metadata"]["state_changed"])
+        self.assertEqual(result["response_metadata"]["intent"], "site_setup")
+        self.assertNotIn("land use", result["assistant_message"])
+        self.assertNotIn("building", result["assistant_message"].lower())
+        self.assertIn("Do you want to lock this 1000 ft x 1000 ft site boundary", result["assistant_message"])
+        saved_input = store.saved[-1]["project_input"]
+        saved_meta = store.saved[-1]["latest_result"]["final_plan"]["meta"]
+        self.assertEqual(saved_input["manual_fields"]["lot"]["w"], 1000.0)
+        self.assertEqual(saved_input["manual_fields"]["lot"]["h"], 1000.0)
+        self.assertEqual(saved_input["meta"]["site_inputs"]["address"], "20525 Margo St, Gretna, NE")
+        self.assertEqual(saved_meta["location_context"]["address"], "20525 Margo St, Gretna, NE")
+        self.assertIn("not a site boundary", saved_meta["location_context"]["truth_label"])
+        self.assertNotIn("chat_command_workflows", saved_meta)
+
+    def test_site_setup_dimensions_only_changes_site_state(self):
+        store = RecordingProjectStore()
+
+        result = decide_chat(
+            {
+                "message": "set site to 500 by 800",
+                "context": {"current_project": {"project_id": "project_123"}},
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "updated_site_dimensions_and_location_evidence")
+        self.assertTaxonomyMetadata(result, "understood_and_answered")
+        saved_lot = store.saved[-1]["project_input"]["manual_fields"]["lot"]
+        self.assertEqual(saved_lot["w"], 500.0)
+        self.assertEqual(saved_lot["h"], 800.0)
+
+    def test_site_setup_address_only_changes_location_evidence(self):
+        store = RecordingProjectStore()
+
+        result = decide_chat(
+            {
+                "message": "address is 123 Main St",
+                "context": {"current_project": {"project_id": "project_123"}},
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "updated_site_dimensions_and_location_evidence")
+        self.assertTaxonomyMetadata(result, "understood_and_answered")
+        self.assertTrue(result["needs_clarification"])
+        saved_meta = store.saved[-1]["latest_result"]["final_plan"]["meta"]
+        self.assertEqual(saved_meta["location_context"]["address"], "123 Main St")
+        self.assertIn("not a trusted site boundary", result["assistant_message"])
+
+    def test_site_setup_geocode_failure_does_not_change_state(self):
+        store = RecordingProjectStore()
+
+        result = decide_chat(
+            {
+                "message": "address is 123 Main St",
+                "context": {"current_project": {"project_id": "project_123"}, "address_status": "geocode_failed"},
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "blocked_site_setup_geocode_failed")
+        self.assertTaxonomyMetadata(result, "understood_but_blocked")
+        self.assertFalse(result["response_metadata"]["state_changed"])
+        self.assertEqual(store.saved, [])
+
     def test_object_creation_command_creates_draft_geometry_and_truthful_action(self):
         store = RecordingProjectStore()
 

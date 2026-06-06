@@ -10,6 +10,18 @@ CONFIDENCE_EXECUTION_THRESHOLD = 0.76
 
 ACTION_REGISTRY: List[Dict[str, Any]] = [
     {
+        "action_id": "site_setup",
+        "description": "Set draft site dimensions, acreage, or address/location evidence without generating a design.",
+        "required_inputs": ["site dimensions, acreage, or address"],
+        "supported_object_types": ["site", "lot", "address", "location_context"],
+        "side_effects": ["updates draft site setup state when project storage is available"],
+        "blocked_if": ["address geocoding failed", "no site setup field was provided"],
+        "engineer_review_required": True,
+        "intent": "site_setup",
+        "patterns": ["site size", "set site", "blank site", "address is"],
+        "confidence": 0.94,
+    },
+    {
         "action_id": "explain_blockers",
         "description": "Explain current blockers, missing inputs, failed checks, or why export/design is not working.",
         "required_inputs": ["current workspace/project context"],
@@ -256,6 +268,8 @@ def _next_question(action_id: str, missing: List[str]) -> str:
 
 def _candidate_actions(text: str) -> List[Dict[str, Any]]:
     candidates: List[Dict[str, Any]] = []
+    if re.search(r"\b(?:site|lot|boundary|size)\b.*\b\d+(?:\.\d+)?\s*(?:ft|feet|')?\s*(?:x|by)\s*\d+(?:\.\d+)?\b", text) or "address is" in text or re.search(r"\b\d+(?:\.\d+)?\s*(?:ac|acre|acres)\b.*\bblank site\b", text):
+        candidates.append(_candidate("site_setup", 0.94, ["site setup dimensions/address wording"]))
     if any(phrase in text for phrase in ["why is this broken", "why broken", "broken", "not working", "what's wrong", "whats wrong"]):
         candidates.append(_candidate("explain_blockers", 0.88, ["debug/explain wording"]))
     if any(phrase in text for phrase in ["why can't i export", "why cant i export", "why can’t i export", "why can't export", "why cant export"]):

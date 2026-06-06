@@ -936,6 +936,8 @@ export type ChatDecisionResponse = {
   control_overrides: ControlOverrides;
   response_metadata?: {
     intent?: string;
+    outcome?: string;
+    state_changed?: boolean;
     required_missing_inputs?: string[];
     action_taken?: string;
     action_blocked_reason?: string;

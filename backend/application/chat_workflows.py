@@ -306,6 +306,7 @@ def _apply_chat_command_execution(
         )
 
     if command_intent not in {
+        "site_setup",
         "site_update",
         "object_or_layout_command",
         "grading_command",
@@ -316,6 +317,8 @@ def _apply_chat_command_execution(
         return decision
 
     if metadata.get("required_missing_inputs"):
+        return decision
+    if metadata.get("action_blocked_reason"):
         return decision
 
     if command_intent in {"site_update", "object_or_layout_command"}:
@@ -347,6 +350,121 @@ def _apply_chat_command_execution(
     final_plan = _safe_dict(latest_result.get("final_plan"))
     meta = _safe_dict(final_plan.get("meta"))
     changed = False
+
+    if command_intent == "site_setup":
+        width = command_payload.get("lot_width")
+        height = command_payload.get("lot_height")
+        area = command_payload.get("site_area_acres")
+        address = str(command_payload.get("address") or "").strip()
+        if not (width or height or address):
+            ask = "I understood the site setup, but I need a site size, acreage, or address before changing canonical state."
+            return _truthful_decision_update(
+                decision,
+                assistant_message=ask,
+                intent="conversation",
+                run_mode="none",
+                design_prompt="",
+                needs_clarification=True,
+                action_taken="asked_clarifying_question",
+                action_blocked_reason="Site setup command did not include dimensions, acreage, or address.",
+                required_missing_inputs=["site dimensions, acreage, or address"],
+                next_best_action=ask,
+                outcome="understood_needs_more_info",
+                state_changed=False,
+                blocker="Site setup command did not include dimensions, acreage, or address.",
+            )
+        manual_fields = _safe_dict(project_input.get("manual_fields"))
+        lot = _safe_dict(manual_fields.get("lot"))
+        changed_fields: List[str] = []
+        if width and height:
+            lot.update(
+                {
+                    "w": width,
+                    "h": height,
+                    "area_sf": round(float(width) * float(height), 3),
+                    "site_area_acres": area,
+                    "source": "chat_site_setup",
+                    "boundary_status": "draft_unlocked",
+                }
+            )
+            manual_fields["lot"] = lot
+            project_input["site_area_acres"] = area
+            meta["site_area_acres"] = area
+            changed_fields.extend(["manual_fields.lot", "site_area_acres"])
+        site_inputs = _safe_dict(_safe_dict(project_input.get("meta")).get("site_inputs"))
+        location_context = _safe_dict(meta.get("location_context"))
+        if address:
+            site_inputs["address"] = address
+            location_context = {
+                "address": address,
+                "matched_address": "",
+                "geocode": {"lat": None, "lng": None, "provider": "", "source": "", "confidence": None},
+                "evidence_source": "chat_address",
+                "truth_label": "Address text is location context only; it is not a site boundary, survey, control, parcel, or construction approval.",
+                "status": "address_unverified_geocode_required",
+            }
+            meta["location_context"] = location_context
+            changed_fields.extend(["project_input.meta.site_inputs.address", "final_plan.meta.location_context"])
+        project_meta = _safe_dict(project_input.get("meta"))
+        if site_inputs:
+            project_meta["site_inputs"] = site_inputs
+            project_input["meta"] = project_meta
+        if manual_fields:
+            project_input["manual_fields"] = manual_fields
+        meta["canonical_site_state"] = {
+            "site_area_acres": area,
+            "lot_width": width,
+            "lot_height": height,
+            "address": address,
+            "boundary_status": "draft_unlocked",
+            "source": "chat_site_setup",
+            "location_context": location_context,
+            "ready_language": "ready_for_engineer_review",
+            "engineer_review_required": True,
+            "civora_signoff_allowed": False,
+            "construction_release_allowed": False,
+        }
+        meta.setdefault("chat_command_edits", []).append(
+            {
+                "message": message,
+                "action_taken": "updated_site_dimensions_and_location_evidence",
+                "changed_fields": changed_fields,
+            }
+        )
+        final_plan["meta"] = meta
+        latest_result["final_plan"] = final_plan
+        _save_project_record(project_store, record, project_input=project_input, latest_result=latest_result)
+        if width and height and address:
+            assistant = (
+                f"I set the draft site size to {float(width):g} ft x {float(height):g} ft and recorded {address} as location evidence only. "
+                f"Do you want to lock this {float(width):g} ft x {float(height):g} ft site boundary at this address?"
+            )
+        elif width and height:
+            assistant = (
+                f"I set the draft site size to {float(width):g} ft x {float(height):g} ft. "
+                f"Do you want to lock this {float(width):g} ft x {float(height):g} ft site boundary?"
+            )
+        else:
+            assistant = (
+                f"I recorded {address} as address/location evidence only. Address evidence is not a trusted site boundary. "
+                "What site size should I use, or do you want to draw the boundary?"
+            )
+        return _truthful_decision_update(
+            decision,
+            assistant_message=assistant,
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=not bool(width and height),
+            action_taken="updated_site_dimensions_and_location_evidence",
+            action_blocked_reason="",
+            affected_systems=["site"],
+            assumptions=[],
+            next_best_action="Lock the site boundary or draw/confirm the boundary before generation.",
+            command_payload_updates={"persisted": True, "changed_fields": changed_fields, "ready_language": "ready_for_engineer_review"},
+            outcome="understood_and_answered",
+            state_changed=True,
+        )
 
     if command_intent == "site_update":
         area = command_payload.get("site_area_acres")
