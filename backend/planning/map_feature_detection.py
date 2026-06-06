@@ -433,7 +433,8 @@ def _chat_panel_summary(candidates: List[Dict[str, Any]], blockers: List[Dict[st
         source_phrase = "from GIS" if any(safe_str(item.get("source_type")) == "official_gis" for item in candidates) else "from uploaded imagery"
         if len(counts) == 1:
             noun = first_label if counts[first_type] == 1 else f"{first_label} candidates"
-            message = f"I found {counts[first_type]} {noun} {source_phrase}. Do you want to use them?"
+            pronoun = "it" if counts[first_type] == 1 else "them"
+            message = f"I found {counts[first_type]} {noun} {source_phrase}. Do you want to use {pronoun}?"
         else:
             message = f"I found {len(candidates)} map/GIS feature candidates. Review them before use."
         return {

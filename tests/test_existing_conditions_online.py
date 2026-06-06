@@ -53,6 +53,32 @@ class _RoutingSession:
         return _Response({"type": "FeatureCollection", "features": [{"id": "A", "properties": {}, "geometry": {"type": "Polygon", "coordinates": []}}]})
 
 
+class _AddressRoutingSession:
+    def get(self, url, params=None, timeout=None):
+        address = (params or {}).get("address", "")
+        if "geocoder" in url and address == "1 Main St":
+            return _Response(
+                {
+                    "result": {
+                        "addressMatches": [
+                            {"matchedAddress": "1 MAIN ST", "coordinates": {"x": -96.8, "y": 32.8}},
+                        ]
+                    }
+                }
+            )
+        if "geocoder" in url and address == "2 Main St":
+            return _Response(
+                {
+                    "result": {
+                        "addressMatches": [
+                            {"matchedAddress": "2 MAIN ST", "coordinates": {"x": -97.4, "y": 33.1}},
+                        ]
+                    }
+                }
+            )
+        return _Response({})
+
+
 class ExistingConditionsOnlineTests(unittest.TestCase):
     def test_census_geocoder_normalizes_first_match(self) -> None:
         session = _Session(
@@ -70,6 +96,42 @@ class ExistingConditionsOnlineTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["lat"], 32.8)
         self.assertEqual(result["lng"], -96.8)
+
+    def test_different_addresses_produce_different_location_context_coordinates(self) -> None:
+        session = _AddressRoutingSession()
+
+        first = fetch_online_existing_conditions(
+            address="1 Main St",
+            include_elevation=False,
+            include_floodplain=False,
+            include_wetlands=False,
+            include_parcels=False,
+            include_building_footprints=False,
+            include_roads=False,
+            include_easements=False,
+            include_zoning=False,
+            include_utilities=False,
+            session=session,
+        )
+        second = fetch_online_existing_conditions(
+            address="2 Main St",
+            include_elevation=False,
+            include_floodplain=False,
+            include_wetlands=False,
+            include_parcels=False,
+            include_building_footprints=False,
+            include_roads=False,
+            include_easements=False,
+            include_zoning=False,
+            include_utilities=False,
+            session=session,
+        )
+
+        self.assertNotEqual(first["location_context"]["coordinates"], second["location_context"]["coordinates"])
+        self.assertEqual(first["source_results"]["geocode"]["matched_address"], "1 MAIN ST")
+        self.assertEqual(second["source_results"]["geocode"]["matched_address"], "2 MAIN ST")
+        self.assertEqual(first["map_feature_detection_report_v1"]["feature_candidates"], [])
+        self.assertEqual(second["map_feature_detection_report_v1"]["feature_candidates"], [])
 
     def test_usgs_elevation_point_returns_truth_labeled_context(self) -> None:
         session = _Session({"value": {"elevation": 512.25}})

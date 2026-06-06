@@ -81,8 +81,33 @@ class MapFeatureDetectionTests(unittest.TestCase):
         self.assertTrue(candidate["review_required"])
         self.assertIn("candidate evidence", candidate["blockers"][0])
         self.assertFalse(report["construction_release_allowed"])
-        self.assertIn("I found 1 building footprint", report["chat_panel_summary"]["message"])
-        self.assertIn("from GIS", report["chat_panel_summary"]["message"])
+        self.assertEqual(
+            report["chat_panel_summary"]["message"],
+            "I found 1 building footprint from GIS. Do you want to use it?",
+        )
+
+    def test_configured_gis_sources_create_source_backed_feature_candidates(self) -> None:
+        report = build_map_feature_detection_report(
+            gis_layers={
+                "building_footprints": [
+                    {"id": "BLDG-1", "geometry": {"type": "Polygon", "coordinates": []}, "source_name": "county_buildings"},
+                ],
+                "right_of_way": [
+                    {"id": "ROW-1", "geometry": {"type": "LineString", "coordinates": []}, "source_name": "county_row"},
+                ],
+                "easements": [
+                    {"id": "ESMT-1", "geometry": {"type": "Polygon", "coordinates": []}, "source_name": "county_easements"},
+                ],
+            }
+        )
+
+        candidates_by_id = {candidate["source_feature_id"]: candidate for candidate in report["feature_candidates"]}
+
+        self.assertEqual(candidates_by_id["BLDG-1"]["feature_type"], "building_footprint")
+        self.assertEqual(candidates_by_id["ROW-1"]["feature_type"], "road_or_drive")
+        self.assertEqual(candidates_by_id["ESMT-1"]["feature_type"], "constraint_area")
+        self.assertEqual({candidate["source_type"] for candidate in candidates_by_id.values()}, {"official_gis"})
+        self.assertTrue(all(candidate["acceptance_status"] == "pending" for candidate in candidates_by_id.values()))
 
     def test_official_gis_parcel_source_creates_site_boundary_candidate(self) -> None:
         report = build_map_feature_detection_report(
@@ -139,6 +164,18 @@ class MapFeatureDetectionTests(unittest.TestCase):
         self.assertEqual(by_source["image_detected_candidate"]["acceptance_status"], "pending")
         self.assertTrue(by_source["image_detected_candidate"]["needs_user_confirmation"])
         self.assertTrue(by_source["image_detected_candidate"]["review_required"])
+
+    def test_pending_candidate_remains_pending_until_explicit_workflow_action(self) -> None:
+        report = build_map_feature_detection_report(
+            image_detections=[
+                {"kind": "road", "bbox": [10, 20, 40, 50], "confidence": 0.6, "image_path": "/tmp/map.png"},
+            ],
+        )
+
+        candidate = report["feature_candidates"][0]
+
+        self.assertEqual(candidate["acceptance_status"], "pending")
+        self.assertEqual(candidate.get("audit_trail", []), [])
 
     def test_missing_gis_and_imagery_returns_exact_blocker(self) -> None:
         report = build_map_feature_detection_report(
