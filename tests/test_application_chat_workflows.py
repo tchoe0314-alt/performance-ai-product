@@ -666,6 +666,164 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertTrue(result["assumptions"])
         self.assertIn("draft geometry", " ".join(result["assumptions"]).lower())
 
+    def test_next_step_guidance_before_site_is_locked(self):
+        store = RecordingProjectStore(
+            _record()
+            | {
+                "latest_result": {
+                    "success": True,
+                    "final_plan": {
+                        "meta": {
+                            "site_locked": False,
+                            "address_status": "missing",
+                            "site_size_status": "provided",
+                        }
+                    },
+                }
+            }
+        )
+
+        result = decide_chat(
+            {
+                "message": "what should I do next?",
+                "context": {"current_project": {"project_id": "project_123"}},
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "answered_from_project_context")
+        self.assertTaxonomyMetadata(result, "understood_and_executed")
+        self.assertIn("Lock the site boundary", result["assistant_message"])
+        self.assertIn("Lock the site boundary", result["response_metadata"]["next_best_action"])
+
+    def test_why_export_blocked_reads_review_package_blockers(self):
+        store = RecordingProjectStore(
+            _record()
+            | {
+                "latest_result": {
+                    "success": True,
+                    "final_plan": {
+                        "meta": {
+                            "export_audit": {
+                                "export_blocked": True,
+                                "blocked_reasons": [
+                                    "engineer_review_required",
+                                    "accepted_standards_missing",
+                                ],
+                            },
+                            "engineer_review_status": "required",
+                        }
+                    },
+                }
+            }
+        )
+
+        result = decide_chat(
+            {
+                "message": "why can't I export?",
+                "context": {"current_project": {"project_id": "project_123"}},
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "answered_from_project_context")
+        self.assertTaxonomyMetadata(result, "understood_and_executed")
+        self.assertIn("engineer_review_required", result["assistant_message"])
+        self.assertIn("accepted_standards_missing", result["response_metadata"]["blocker"])
+        self.assertIn("next_best_action", result["response_metadata"])
+
+    def test_what_am_i_doing_with_selected_geometry(self):
+        result = decide_chat(
+            {
+                "message": "what am I doing?",
+                "context": {
+                    "active_workspace": "design_canvas",
+                    "active_panel": "geometry",
+                    "active_tool": "select",
+                    "selected_geometry_ids": ["geom-basin"],
+                    "selected_object_ids": ["drawn-basin"],
+                    "site_locked": True,
+                },
+            },
+            decide_chat_message=decide_chat_message,
+        )
+
+        self.assertEqual(result["action_taken"], "answered_from_project_context")
+        self.assertTaxonomyMetadata(result, "understood_and_executed")
+        self.assertIn("tool select", result["assistant_message"])
+        self.assertIn("selected geometry geom-basin", result["assistant_message"])
+
+    def test_why_generate_drainage_blocked_cites_exact_blocker(self):
+        store = RecordingProjectStore(
+            _record()
+            | {
+                "latest_result": {
+                    "success": True,
+                    "final_plan": {
+                        "meta": {
+                            "convergence_summary": {
+                                "blocked_exports": ["drainage"],
+                                "blocked_reasons": ["drainage_outfall_missing"],
+                            },
+                            "next_best_action": "Select or draw an outfall target before rerunning drainage.",
+                        }
+                    },
+                }
+            }
+        )
+
+        result = decide_chat(
+            {
+                "message": "why generate drainage blocked",
+                "context": {"current_project": {"project_id": "project_123"}},
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "answered_from_project_context")
+        self.assertTaxonomyMetadata(result, "understood_and_executed")
+        self.assertIn("drainage_outfall_missing", result["assistant_message"])
+        self.assertEqual(
+            result["response_metadata"]["next_best_action"],
+            "Select or draw an outfall target before rerunning drainage.",
+        )
+
+    def test_current_state_missing_context_says_state_missing(self):
+        result = decide_chat(
+            {"message": "what am I doing?", "context": {}},
+            decide_chat_message=decide_chat_message,
+        )
+
+        self.assertEqual(result["action_taken"], "answered_from_project_context")
+        self.assertTaxonomyMetadata(result, "understood_and_executed")
+        self.assertIn("not have enough workspace state", result["assistant_message"])
+
+    def test_warning_question_uses_current_warning_context(self):
+        result = decide_chat(
+            {
+                "message": "what does this warning mean?",
+                "context": {
+                    "issues": [{"severity": "warning", "message": "accepted_standards_missing"}],
+                    "next_best_action": "Have the engineer/user accept the standards basis.",
+                },
+            },
+            decide_chat_message=decide_chat_message,
+        )
+
+        self.assertEqual(result["action_taken"], "answered_from_project_context")
+        self.assertTaxonomyMetadata(result, "understood_and_executed")
+        self.assertIn("accepted_standards_missing", result["assistant_message"])
+        self.assertEqual(
+            result["response_metadata"]["next_best_action"],
+            "Have the engineer/user accept the standards basis.",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

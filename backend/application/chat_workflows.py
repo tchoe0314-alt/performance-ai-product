@@ -666,6 +666,27 @@ def _canonical_chat_context(context: Dict[str, Any], record: Optional[Dict[str, 
             convergence["blocked_exports"] = blocked_exports
         merged["current_export_audit"] = export_audit
     merged["convergence_summary"] = convergence
+    for source_key, merged_key in [
+        ("missing_inputs", "missing_inputs"),
+        ("required_missing_inputs", "missing_inputs"),
+        ("blockers", "blockers"),
+        ("standards_status", "standards_status"),
+        ("existing_conditions_status", "existing_conditions_status"),
+        ("engine_depth_status", "engine_depth_status"),
+        ("depth_status", "engine_depth_status"),
+        ("engineer_review_status", "engineer_review_status"),
+        ("next_best_action", "next_best_action"),
+        ("site_locked", "site_locked"),
+        ("address_status", "address_status"),
+        ("site_size_status", "site_size_status"),
+    ]:
+        value = meta.get(source_key)
+        if value is None and source_key in latest_result:
+            value = latest_result.get(source_key)
+        if value is None and source_key in project_input:
+            value = project_input.get(source_key)
+        if value is not None and not merged.get(merged_key):
+            merged[merged_key] = value
     merged["assumptions"] = list(meta.get("assumptions") or latest_result.get("assumptions") or merged.get("assumptions") or [])
     merged["issues"] = list(latest_result.get("issues") or meta.get("issues") or merged.get("issues") or [])
     merged["manual_failures"] = list(

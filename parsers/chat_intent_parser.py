@@ -284,20 +284,32 @@ def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
     current_explanation = context.get("current_explanation") or {}
     current_export_audit = context.get("current_export_audit") or {}
     engineering_status = context.get("engineering_status") or {}
+    workspace_state = context.get("workspace_state") or {}
+    active_workspace = context.get("active_workspace") or workspace_state.get("active_workspace")
+    active_panel = context.get("active_panel") or workspace_state.get("active_panel")
+    active_tool = context.get("active_tool") or workspace_state.get("active_tool")
     convergence_summary = context.get("convergence_summary") or {}
     issues = context.get("issues") or []
     manual_failures = context.get("manual_failures") or []
+    missing_inputs = context.get("missing_inputs") or context.get("required_missing_inputs") or []
+    blockers = context.get("blockers") or context.get("blocked_reasons") or []
     assumptions = context.get("assumptions") or []
     produced_deliverables = context.get("produced_deliverables") or []
     memory_summary = _extract_chat_memory(context.get("chat_thread"))
     return {
         "strategy_mode": context.get("strategy_mode") or "assisted",
+        "active_workspace": active_workspace or "",
+        "active_panel": active_panel or "",
+        "active_tool": active_tool or "",
         "site_name": context.get("site_name") or "",
         "file_name": context.get("file_name") or "",
         "project_type": context.get("project_type") or "",
         "units": context.get("units") or "ft",
         "lot_width": context.get("lot_width"),
         "lot_height": context.get("lot_height"),
+        "site_locked": context.get("site_locked"),
+        "address_status": context.get("address_status") or "",
+        "site_size_status": context.get("site_size_status") or "",
         "building_count": context.get("building_count"),
         "parking_count": context.get("parking_count"),
         "disciplines": {
@@ -325,6 +337,12 @@ def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
             "engineering_trust_score", context.get("engineering_trust_score")
         ),
         "engineering_status": engineering_status.get("status", context.get("engineering_status")),
+        "engine_depth_status": context.get("engine_depth_status")
+        or context.get("depth_status")
+        or engineering_status.get("depth_status"),
+        "standards_status": context.get("standards_status") or "",
+        "existing_conditions_status": context.get("existing_conditions_status") or "",
+        "engineer_review_status": context.get("engineer_review_status") or "",
         "export_audit": dict(current_export_audit or {}),
         "convergence_summary": {
             "converged": bool(convergence_summary.get("converged")),
@@ -340,6 +358,9 @@ def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
         "explanation_summary": current_explanation.get("summary")
         or current_explanation.get("overview"),
         "produced_deliverables": [str(item) for item in produced_deliverables[:8]],
+        "missing_inputs": [str(item) for item in missing_inputs[:8]],
+        "blockers": [str(item) for item in blockers[:8]],
+        "next_best_action": str(context.get("next_best_action") or ""),
         "assumptions": [
             {
                 "field_name": item.get("field_name") or item.get("field"),
@@ -1162,6 +1183,8 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         return None
     issues = context.get("issues") or []
     manual_failures = context.get("manual_failures") or []
+    missing_inputs = list(context.get("missing_inputs") or [])
+    explicit_blockers = list(context.get("blockers") or [])
     assumptions = context.get("assumptions") or []
     deliverables = context.get("produced_deliverables") or []
     convergence = context.get("convergence_summary") or {}
@@ -1169,6 +1192,9 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
     export_audit = context.get("export_audit") or {}
     blocked_exports = list(convergence.get("blocked_exports") or [])
     blocked_reasons = list(convergence.get("blocked_reasons") or [])
+    for blocker in explicit_blockers:
+        if blocker not in blocked_reasons:
+            blocked_reasons.append(blocker)
     if isinstance(export_audit, dict) and export_audit:
         for reason in list(export_audit.get("blocked_reasons") or []):
             if reason not in blocked_reasons:
@@ -1188,6 +1214,19 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
     lot_width = context.get("lot_width")
     lot_height = context.get("lot_height")
     disciplines = context.get("disciplines") or {}
+    active_workspace = str(context.get("active_workspace") or "").strip()
+    active_panel = str(context.get("active_panel") or "").strip()
+    active_tool = str(context.get("active_tool") or "").strip()
+    selected_object_ids = [str(item) for item in list(context.get("selected_object_ids") or []) if str(item)]
+    selected_geometry_ids = [str(item) for item in list(context.get("selected_geometry_ids") or []) if str(item)]
+    site_locked = context.get("site_locked")
+    address_status = str(context.get("address_status") or "").strip()
+    site_size_status = str(context.get("site_size_status") or "").strip()
+    standards_status = str(context.get("standards_status") or "").strip()
+    existing_conditions_status = str(context.get("existing_conditions_status") or "").strip()
+    engine_depth_status = str(context.get("engine_depth_status") or "").strip()
+    engineer_review_status = str(context.get("engineer_review_status") or "").strip()
+    recorded_next_best_action = str(context.get("next_best_action") or "").strip()
 
     def _format_requested_systems() -> str:
         enabled = [
@@ -1229,6 +1268,142 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         if bool(disciplines.get("utilities")):
             support.append("utility maps or known connection points")
         return support
+
+    def _workspace_state_missing() -> bool:
+        return not any(
+            [
+                active_workspace,
+                active_panel,
+                active_tool,
+                selected_object_ids,
+                selected_geometry_ids,
+                context.get("has_plan"),
+                site_locked is not None,
+                missing_inputs,
+                blocked_reasons,
+                standards_status,
+                existing_conditions_status,
+                engine_depth_status,
+                engineer_review_status,
+                recorded_next_best_action,
+            ]
+        )
+
+    def _primary_next_action() -> str:
+        if recorded_next_best_action:
+            return recorded_next_best_action
+        if site_locked is False:
+            return "Lock the site boundary after confirming the address or site size."
+        if missing_inputs:
+            return "Provide " + _format_missing_requirements([str(item) for item in missing_inputs[:3]]) + "."
+        if blocked_reasons:
+            return "Clear " + "; ".join(str(item) for item in blocked_reasons[:3]) + "."
+        if standards_status and standards_status not in {"accepted", "engineer_user_accepted", "complete"}:
+            return "Have the engineer/user accept the applicable standards before export review."
+        if existing_conditions_status and existing_conditions_status not in {"accepted", "complete", "verified"}:
+            return "Provide or verify existing conditions, survey, and control evidence."
+        if engine_depth_status and engine_depth_status not in {"complete", "passed", "accepted"}:
+            return "Review the engine depth status and address the listed depth blockers."
+        if engineer_review_status and engineer_review_status not in {"approved_external", "ready_for_engineer_review"}:
+            return "Prepare the review package for engineer/user review."
+        if context.get("has_plan"):
+            return "Review the current design assumptions, warnings, and engineer-review blockers."
+        return "Load a project or provide the site inputs needed to start."
+
+    def _blocked_text(system_hint: str = "") -> Optional[str]:
+        focused = []
+        if system_hint:
+            for reason in blocked_reasons:
+                text = str(reason)
+                if system_hint in text.lower():
+                    focused.append(text)
+        reasons = focused or [str(item) for item in blocked_reasons[:3] if str(item)]
+        if reasons:
+            return "The exact blocker is " + "; ".join(reasons[:3]) + "."
+        if missing_inputs:
+            return "This is blocked because Civora still needs " + _format_missing_requirements(
+                [str(item) for item in missing_inputs[:3]]
+            ) + "."
+        return None
+
+    if (
+        "what am i doing" in lowered
+        or "where am i" in lowered
+        or "what is selected" in lowered
+        or "what do i have selected" in lowered
+        or "current workspace" in lowered
+    ):
+        if _workspace_state_missing():
+            return "I do not have enough workspace state to know what panel, tool, or selection is active."
+        parts: List[str] = []
+        if active_workspace:
+            parts.append(f"workspace {active_workspace}")
+        if active_panel:
+            parts.append(f"panel {active_panel}")
+        if active_tool:
+            parts.append(f"tool {active_tool}")
+        if selected_geometry_ids:
+            parts.append("selected geometry " + ", ".join(selected_geometry_ids[:3]))
+        if selected_object_ids:
+            parts.append("selected object " + ", ".join(selected_object_ids[:3]))
+        if site_locked is not None:
+            parts.append("site is locked" if site_locked else "site is not locked")
+        if not parts:
+            return "I can see the project, but I do not have active panel, tool, or selection metadata."
+        return "Right now you are in " + "; ".join(parts) + "."
+
+    if (
+        "what should i do next" in lowered
+        or "what next" in lowered
+        or "what would you do next" in lowered
+        or "what do you recommend next" in lowered
+        or "what would you recommend here" in lowered
+        or "what's the smartest next move" in lowered
+        or "whats the smartest next move" in lowered
+        or "what is the smartest next move" in lowered
+        or "if you were me" in lowered
+    ):
+        action = _primary_next_action()
+        if blocked_reasons or blocked_exports:
+            return "I’d address the blockers first. Next best action: " + action
+        return "Next best action: " + action
+
+    if (
+        "what is missing" in lowered
+        or "what's missing" in lowered
+        or "whats missing" in lowered
+        or "what state is missing" in lowered
+    ):
+        if missing_inputs:
+            return "The missing inputs are " + _format_missing_requirements([str(item) for item in missing_inputs[:5]]) + "."
+        inferred = _current_input_needs()
+        if inferred:
+            return "From the current context, the likely missing inputs are " + _format_missing_requirements(inferred[:5]) + "."
+        return "I do not see explicit missing inputs recorded in the current workspace state."
+
+    if "what does this warning mean" in lowered or "what does this mean" in lowered:
+        messages = [str(item.get("message") or item.get("code") or "").strip() for item in manual_failures[:1] if isinstance(item, dict)]
+        messages += [str(item.get("message") or "").strip() for item in issues[:1] if isinstance(item, dict)]
+        messages = [item for item in messages if item]
+        if messages:
+            return "The warning means this needs review before the package can be treated as ready_for_engineer_review: " + messages[0] + "."
+        if blocked_reasons:
+            return "The warning is tied to this blocker: " + str(blocked_reasons[0]) + "."
+        return "I do not have a warning message in the current workspace state. Select the warning or include its text and I can explain it."
+
+    if "why isn't this working" in lowered or "why isnt this working" in lowered or "why is this not working" in lowered:
+        blocked = _blocked_text()
+        if blocked:
+            return blocked + " Next best action: " + _primary_next_action()
+        if _workspace_state_missing():
+            return "I cannot tell why this is not working because the current workspace state is missing blockers, warnings, selection, and run status."
+        return "I do not see an exact blocker recorded. Next best action: " + _primary_next_action()
+
+    if "can you fix this" in lowered or "can you fix it" in lowered:
+        blocked = _blocked_text()
+        if blocked:
+            return blocked + " I can help with supported chat actions, but I will not pretend unsupported edits worked."
+        return "I can help if the fix is a supported site, object, grading, drainage, utility, or review command. Next best action: " + _primary_next_action()
 
     if "what mode" in lowered or "which mode" in lowered:
         return f"You’re currently in {str(context.get('strategy_mode') or 'assisted').strip().lower()} mode."
@@ -1293,6 +1468,9 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         or "what is needed before export" in lowered
         or "ready for export" in lowered
         or "export ready" in lowered
+        or "why can't i export" in lowered
+        or "why cant i export" in lowered
+        or "why can’t i export" in lowered
     ):
         needs: List[str] = []
         if blocked_exports or blocked_reasons:
@@ -1529,8 +1707,13 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         or "why is it blocked" in lowered
         or "why did it block" in lowered
         or "why is export blocked" in lowered
+        or "why can't i export" in lowered
+        or "why cant i export" in lowered
+        or "why can’t i export" in lowered
         or "why is storm blocked" in lowered
         or "why is drainage blocked" in lowered
+        or "why generate drainage blocked" in lowered
+        or "why drainage blocked" in lowered
         or "why is utility blocked" in lowered
         or "why are utilities blocked" in lowered
         or "why is grading blocked" in lowered
@@ -1583,34 +1766,6 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
             if review_text:
                 return f"It’s moving in the right direction, but I’d still review {review_text} before treating it as ready_for_engineer_review."
         return "Yes, it looks reasonably strong from the current run state. I don’t see any explicit blockers recorded right now."
-    if (
-        "what should i do next" in lowered
-        or "what next" in lowered
-        or "what would you do next" in lowered
-        or "what do you recommend next" in lowered
-        or "what would you recommend here" in lowered
-        or "what's the smartest next move" in lowered
-        or "whats the smartest next move" in lowered
-        or "what is the smartest next move" in lowered
-        or "if you were me" in lowered
-    ):
-        if blocked_exports or blocked_reasons:
-            return "I’d address the blockers first: " + "; ".join(
-                str(item) for item in (blocked_reasons[:3] or blocked_exports[:3])
-            ) + "."
-        if manual_failures:
-            messages = [str(item.get("message") or "").strip() for item in manual_failures[:2] if isinstance(item, dict)]
-            messages = [item for item in messages if item]
-            if messages:
-                return "I’d review these items next: " + "; ".join(messages) + "."
-        if issues:
-            messages = [str(item.get("message") or "").strip() for item in issues[:2] if isinstance(item, dict)]
-            messages = [item for item in messages if item]
-            if messages:
-                return "I’d review these warnings next: " + "; ".join(messages) + "."
-        if deliverables:
-            return "The current design looks stable enough to review the deliverables and decide whether you want another revision."
-        return "I’d give me the next design change you want, or ask me to explain the current assumptions and fixes."
     if (
         "what should i focus on" in lowered
         or "what should we focus on" in lowered
@@ -2330,6 +2485,59 @@ def _metadata_for_decision(
     }
 
 
+def _context_blockers(context: Dict[str, Any]) -> List[str]:
+    blockers: List[str] = []
+    for item in list(context.get("blockers") or []):
+        text = str(item).strip()
+        if text and text not in blockers:
+            blockers.append(text)
+    convergence = context.get("convergence_summary") or {}
+    for key in ("blocked_reasons", "blocked_exports", "unresolved_issue_categories"):
+        for item in list(convergence.get(key) or []):
+            text = str(item).strip()
+            if text and text not in blockers:
+                blockers.append(text)
+    export_audit = context.get("export_audit") or {}
+    if isinstance(export_audit, dict):
+        for item in list(export_audit.get("blocked_reasons") or []):
+            text = str(item).strip()
+            if text and text not in blockers:
+                blockers.append(text)
+        if export_audit.get("export_blocked") is True and "export_audit_blocked" not in blockers:
+            blockers.append("export_audit_blocked")
+    for item in list(context.get("manual_failures") or []):
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("message") or item.get("code") or "").strip()
+        if text and text not in blockers:
+            blockers.append(text)
+    return blockers
+
+
+def _context_missing_inputs(context: Dict[str, Any]) -> List[str]:
+    missing: List[str] = []
+    for item in list(context.get("missing_inputs") or []):
+        text = str(item).strip()
+        if text and text not in missing:
+            missing.append(text)
+    return missing
+
+
+def _context_next_best_action(context: Dict[str, Any], fallback: str) -> str:
+    recorded = str(context.get("next_best_action") or "").strip()
+    if recorded:
+        return recorded
+    missing = _context_missing_inputs(context)
+    if missing:
+        return "Provide " + _format_missing_requirements(missing[:3]) + "."
+    blockers = _context_blockers(context)
+    if blockers:
+        return "Clear " + "; ".join(blockers[:3]) + "."
+    if context.get("site_locked") is False:
+        return "Lock the site boundary after confirming the address or site size."
+    return fallback
+
+
 def _extract_object_command_payload(message: str, context: Dict[str, Any]) -> Dict[str, Any]:
     lowered = _normalized_chat_text(message)
     payload: Dict[str, Any] = {}
@@ -2790,6 +2998,7 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
     contextual_reply = _contextual_question_reply(message, context)
     if contextual_reply:
         intent = "conversation"
+        metadata_intent = "workspace_state"
         if ("why" in lowered or "explain" in lowered) and not any(
             phrase in lowered
             for phrase in [
@@ -2816,6 +3025,15 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             ]
         ):
             intent = "explain"
+            metadata_intent = "workspace_state"
+        if command_intent != "conversation":
+            metadata_intent = command_intent
+        context_blockers = _context_blockers(context)
+        context_missing = _context_missing_inputs(context)
+        next_best_action = _context_next_best_action(
+            context,
+            "Use a targeted command if you want Civora to change the design.",
+        )
         return _base_decision(
             intent=intent,
             assistant_message=contextual_reply,
@@ -2823,13 +3041,16 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             confidence=0.9,
             control_overrides=overrides,
             response_metadata=_metadata_for_decision(
-                command_intent=command_intent if command_intent != "conversation" else intent,
+                command_intent=metadata_intent,
                 action_taken="answered_from_project_context",
+                action_blocked_reason="; ".join(context_blockers[:3]),
+                missing=context_missing,
                 affected_systems=affected_systems,
-                next_best_action="Use a targeted command if you want Civora to change the design.",
+                next_best_action=next_best_action,
                 outcome="understood_and_executed",
                 confidence=0.9,
                 state_changed=False,
+                blocker="; ".join(context_blockers[:3]),
             ),
         )
 
@@ -3086,6 +3307,7 @@ def decide_chat_message(payload_data: Dict[str, Any]) -> Dict[str, Any]:
         "mode_command",
         "responsibility_guard",
         "unsupported_or_not_understood",
+        "workspace_state",
     }:
         return local
 
