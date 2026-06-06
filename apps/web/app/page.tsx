@@ -124,14 +124,29 @@ type CapabilityExposure = {
   exactFix: string;
 };
 type AddressSuggestion = {
-  lat: number;
-  lng: number;
-  display_name: string;
+  success?: boolean;
+  status?: string;
+  blocked?: boolean;
+  lat?: number;
+  lng?: number;
+  display_name?: string;
   provider?: string;
+  message?: string;
   confidence?: number | string | null;
   crs?: Record<string, unknown>;
   location_context?: Record<string, unknown>;
+  blockers?: Array<{ area?: string; code?: string; message?: string }>;
 };
+const hasAddressCoordinates = (
+  value: AddressSuggestion | null | undefined,
+): value is AddressSuggestion & { lat: number; lng: number; display_name: string } =>
+  Boolean(
+    value &&
+      !value.blocked &&
+      Number.isFinite(value.lat) &&
+      Number.isFinite(value.lng) &&
+      value.display_name,
+  );
 type BottomPanelTab = "model_review" | "systems" | "objects" | "properties" | "history";
 type SidebarNavItem = {
   label: string;
@@ -1132,6 +1147,12 @@ function PerformanceAIDashboardView({
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [, setChatCollapsed] = useState(false);
   const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>(null);
+  const [renderedSidePanel, setRenderedSidePanel] = useState<SidePanelKey | null>(null);
+  const [sidePanelVisible, setSidePanelVisible] = useState(false);
+  const [sidebarRendered, setSidebarRendered] = useState(true);
+  const [sidebarVisible, setSidebarVisible] = useState(true);
+  const [bottomPanelContentRendered, setBottomPanelContentRendered] = useState(true);
+  const [bottomPanelContentVisible, setBottomPanelContentVisible] = useState(true);
   const [activeWorkspaceMode, setActiveWorkspaceMode] = useState<WorkspaceMode>("setup");
   const [imageName, setImageName] = useState("");
   const [siteName, setSiteName] = useState("");
@@ -1399,6 +1420,61 @@ function PerformanceAIDashboardView({
   const lastAppliedSiteRef = useRef<{ w: number; h: number; lat?: number; lng?: number } | null>(null);
   const lastViewportSyncRef = useRef<{ w: number; h: number } | null>(null);
   const applyingSiteRef = useRef(false);
+  const sidePanelCloseTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    let timeout: number | undefined;
+    let frame: number | undefined;
+
+    if (activeSidePanel) {
+      setRenderedSidePanel(activeSidePanel);
+      frame = window.requestAnimationFrame(() => setSidePanelVisible(true));
+    } else {
+      setSidePanelVisible(false);
+      timeout = window.setTimeout(() => setRenderedSidePanel(null), 180);
+    }
+
+    return () => {
+      if (frame !== undefined) window.cancelAnimationFrame(frame);
+      if (timeout !== undefined) window.clearTimeout(timeout);
+    };
+  }, [activeSidePanel]);
+
+  useEffect(() => {
+    let timeout: number | undefined;
+    let frame: number | undefined;
+
+    if (leftSidebarOpen) {
+      setSidebarRendered(true);
+      frame = window.requestAnimationFrame(() => setSidebarVisible(true));
+    } else {
+      setSidebarVisible(false);
+      timeout = window.setTimeout(() => setSidebarRendered(false), 180);
+    }
+
+    return () => {
+      if (frame !== undefined) window.cancelAnimationFrame(frame);
+      if (timeout !== undefined) window.clearTimeout(timeout);
+    };
+  }, [leftSidebarOpen]);
+
+  useEffect(() => {
+    let timeout: number | undefined;
+    let frame: number | undefined;
+
+    if (!bottomPanelCollapsed) {
+      setBottomPanelContentRendered(true);
+      frame = window.requestAnimationFrame(() => setBottomPanelContentVisible(true));
+    } else {
+      setBottomPanelContentVisible(false);
+      timeout = window.setTimeout(() => setBottomPanelContentRendered(false), 180);
+    }
+
+    return () => {
+      if (frame !== undefined) window.cancelAnimationFrame(frame);
+      if (timeout !== undefined) window.clearTimeout(timeout);
+    };
+  }, [bottomPanelCollapsed]);
 
   const {
     projects,
@@ -7790,8 +7866,10 @@ function PerformanceAIDashboardView({
         { token },
       )
         .then((result) => {
-          if (result) {
+          if (hasAddressCoordinates(result)) {
             setAddressSuggestions([result]);
+          } else if (result?.blocked || result?.status) {
+            setAddressSuggestions([]);
           } else {
             fallbackToMapbox();
           }
@@ -7973,19 +8051,15 @@ function PerformanceAIDashboardView({
     }
     try {
       let geocode = selectedAddressSuggestion;
-      if (!geocode) {
-        geocode = await postJson<{
-          lat: number;
-          lng: number;
-          display_name: string;
-          provider?: string;
-          confidence?: number | string | null;
-          crs?: Record<string, unknown>;
-          location_context?: Record<string, unknown>;
-        }>("/api/geocode", { address: trimmed }, { token });
+      if (!hasAddressCoordinates(geocode)) {
+        geocode = await postJson<AddressSuggestion>("/api/geocode", { address: trimmed }, { token });
       }
-      if (!geocode?.lat || !geocode?.lng) {
-        setStatusMessage("Address lookup failed. Select a suggestion or try again.");
+      if (!hasAddressCoordinates(geocode)) {
+        const geocodeMessage =
+          geocode?.message ||
+          geocode?.blockers?.find((item) => item?.message)?.message ||
+          "Address lookup did not return usable map coordinates.";
+        setStatusMessage(`${geocodeMessage} The map was not moved. You can still set site size or draw the boundary manually.`);
         return;
       }
       clearGeneratedPreview();
@@ -8031,6 +8105,7 @@ function PerformanceAIDashboardView({
       setShowSiteBounds(true);
       setPreviewQuality("high");
       setSiteSelectionMode(true);
+      setViewportCenter({ lat: geocode.lat, lng: geocode.lng });
       setStatusMessage("Address applied as location evidence. Set site size, draw the boundary, then lock it.");
       setSelectedAddressSuggestion(geocode);
     } catch (error) {
@@ -10464,7 +10539,8 @@ function PerformanceAIDashboardView({
     { panel: "roadway", label: "Roadway" },
     { panel: "landscape", label: "Landscape" },
   ];
-  const isDisciplinePanel = disciplinePanelLinks.some((item) => item.panel === activeSidePanel);
+  const sidePanelForRender = activeSidePanel ?? renderedSidePanel;
+  const isDisciplinePanel = disciplinePanelLinks.some((item) => item.panel === sidePanelForRender);
   const workspaceModeByPanel: Record<SidePanelKey, WorkspaceMode> = {
     projects: "dashboard",
     dashboard: "dashboard",
@@ -10511,6 +10587,10 @@ function PerformanceAIDashboardView({
     settings: "settings",
   };
   const handleOpenSidePanel = useCallback((panel: SidePanelKey | null) => {
+    if (sidePanelCloseTimeoutRef.current !== null) {
+      window.clearTimeout(sidePanelCloseTimeoutRef.current);
+      sidePanelCloseTimeoutRef.current = null;
+    }
     setActiveSidePanel(panel);
     if (!panel) return;
     setActiveWorkspaceMode(workspaceModeByPanel[panel]);
@@ -10549,6 +10629,17 @@ function PerformanceAIDashboardView({
     };
     const nextStep = workflowByPanel[panel];
     if (nextStep) setActiveWorkflowStep(nextStep);
+  }, []);
+  const handleCloseSidePanel = useCallback(() => {
+    if (sidePanelCloseTimeoutRef.current !== null) {
+      window.clearTimeout(sidePanelCloseTimeoutRef.current);
+    }
+    setSidePanelVisible(false);
+    sidePanelCloseTimeoutRef.current = window.setTimeout(() => {
+      setActiveSidePanel(null);
+      setRenderedSidePanel(null);
+      sidePanelCloseTimeoutRef.current = null;
+    }, 180);
   }, []);
   const handleOpenWorkspaceMode = useCallback((mode: WorkspaceMode) => {
     handleOpenSidePanel(workspacePanelByMode[mode]);
@@ -10827,16 +10918,16 @@ function PerformanceAIDashboardView({
     { key: "history", label: "History", panel: "dashboard" },
   ];
   const activePanelTitle =
-    previewMode === "3d" && activeSidePanel === "model"
+    previewMode === "3d" && sidePanelForRender === "model"
       ? "3D"
-      : activeSidePanel
-        ? sidePanelCopy[activeSidePanel].title
+      : sidePanelForRender
+        ? sidePanelCopy[sidePanelForRender].title
         : "";
   const activePanelDescription =
-    previewMode === "3d" && activeSidePanel === "model"
+    previewMode === "3d" && sidePanelForRender === "model"
       ? "Cinematic engineering visualization and review with the same truthful readiness gates."
-      : activeSidePanel
-        ? sidePanelCopy[activeSidePanel].desc
+      : sidePanelForRender
+        ? sidePanelCopy[sidePanelForRender].desc
         : "";
 
   if (!effectiveUser) {
@@ -10876,10 +10967,12 @@ function PerformanceAIDashboardView({
         />
 
         <div className="flex h-[calc(100vh-4rem)] min-h-0 flex-col overflow-hidden lg:flex-row">
-          {leftSidebarOpen ? (
+          {sidebarRendered ? (
           <aside
             data-testid="left-sidebar"
-            className="fixed inset-x-3 top-20 z-40 flex max-h-[calc(100vh-6rem)] shrink-0 flex-col rounded-xl border border-slate-200 bg-white/98 px-4 py-5 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.65)] backdrop-blur-xl lg:static lg:inset-auto lg:z-auto lg:h-full lg:max-h-none lg:w-[276px] lg:rounded-none lg:border-y-0 lg:border-l-0 lg:shadow-[18px_0_40px_-36px_rgba(15,23,42,0.5)]"
+            data-motion-state={sidebarVisible ? "open" : "closed"}
+            aria-hidden={!sidebarVisible}
+            className="civora-motion-sidebar fixed inset-x-3 top-20 z-40 flex max-h-[calc(100vh-6rem)] shrink-0 flex-col rounded-xl border border-slate-200 bg-white/98 px-4 py-5 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.65)] backdrop-blur-xl lg:static lg:inset-auto lg:z-auto lg:h-full lg:max-h-none lg:w-[276px] lg:rounded-none lg:border-y-0 lg:border-l-0 lg:shadow-[18px_0_40px_-36px_rgba(15,23,42,0.5)]"
           >
             <button
               type="button"
@@ -11008,10 +11101,12 @@ function PerformanceAIDashboardView({
             </div>
           </aside>
           ) : null}
-          {activeSidePanel ? (
+          {sidePanelForRender ? (
             <aside
               data-testid="workspace-right-panel"
-              className="order-3 m-3 flex min-h-0 w-auto shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white/96 shadow-[var(--civora-shadow-panel)] backdrop-blur-xl lg:ml-0 lg:h-[calc(100%-1.5rem)] lg:w-[372px]"
+              data-motion-state={sidePanelVisible ? "open" : "closed"}
+              aria-hidden={!sidePanelVisible}
+              className="civora-motion-right-panel order-3 m-3 flex min-h-0 w-auto shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white/96 shadow-[var(--civora-shadow-panel)] backdrop-blur-xl lg:ml-0 lg:h-[calc(100%-1.5rem)] lg:w-[372px]"
             >
               <div className="flex items-center justify-between border-b border-[var(--civora-border)] px-4 py-4">
                 <div>
@@ -11022,7 +11117,17 @@ function PerformanceAIDashboardView({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setActiveSidePanel(null)}
+                  onClick={() => {
+                    if (sidePanelCloseTimeoutRef.current !== null) {
+                      window.clearTimeout(sidePanelCloseTimeoutRef.current);
+                    }
+                    setSidePanelVisible(false);
+                    sidePanelCloseTimeoutRef.current = window.setTimeout(() => {
+                      setActiveSidePanel(null);
+                      setRenderedSidePanel(null);
+                      sidePanelCloseTimeoutRef.current = null;
+                    }, 180);
+                  }}
                   className="civora-control px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--civora-text-muted)]"
                 >
                   Close
@@ -11040,9 +11145,9 @@ function PerformanceAIDashboardView({
                           key={item.panel}
                           type="button"
                           onClick={() => handleOpenSidePanel(item.panel)}
-                          aria-current={activeSidePanel === item.panel ? "page" : undefined}
+                          aria-current={sidePanelForRender === item.panel ? "page" : undefined}
                           className={`rounded-lg border px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
-                            activeSidePanel === item.panel
+                            sidePanelForRender === item.panel
                               ? "border-slate-950 bg-slate-950 text-white"
                               : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                           }`}
@@ -11053,7 +11158,7 @@ function PerformanceAIDashboardView({
                     </div>
                   </div>
                 ) : null}
-                {activeSidePanel === "projects" ? (
+                {sidePanelForRender === "projects" ? (
                   <div className="space-y-3">
                     <button
                       type="button"
@@ -11112,7 +11217,7 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {activeSidePanel === "dashboard" ? (
+                {sidePanelForRender === "dashboard" ? (
                   <div className="space-y-4">
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <div className="flex items-start justify-between gap-3">
@@ -11327,7 +11432,7 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {activeSidePanel === "site_existing" ? (
+                {sidePanelForRender === "site_existing" ? (
                   <div className="space-y-4">
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <div className="flex items-start justify-between gap-3">
@@ -11387,12 +11492,12 @@ function PerformanceAIDashboardView({
                           <div className="mt-2 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 text-xs text-slate-600">
                             {addressSuggestions.map((suggestion) => (
                               <button
-                                key={`${suggestion.lat}-${suggestion.lng}`}
+                                key={`${suggestion.lat ?? "lat"}-${suggestion.lng ?? "lng"}-${suggestion.display_name ?? "address"}`}
                                 type="button"
-                                aria-label={`Use address suggestion ${suggestion.display_name}`}
+                                aria-label={`Use address suggestion ${suggestion.display_name ?? "address"}`}
                                 onClick={() => {
                                   setSelectedAddressSuggestion(suggestion);
-                                  setSiteAddress(suggestion.display_name);
+                                  setSiteAddress(suggestion.display_name ?? siteAddress);
                                   setAddressSuggestions([]);
                                 }}
                                 className={`w-full rounded-lg px-3 py-2 text-left text-[12px] transition ${
@@ -11401,7 +11506,7 @@ function PerformanceAIDashboardView({
                                     : "hover:bg-slate-50"
                                 }`}
                               >
-                                <span className="block truncate">{suggestion.display_name}</span>
+                                <span className="block truncate">{suggestion.display_name ?? "Address suggestion"}</span>
                               </button>
                             ))}
                           </div>
@@ -11628,7 +11733,7 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {activeSidePanel === "import_survey" ? (
+                {sidePanelForRender === "import_survey" ? (
                   <div className="space-y-4">
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Import inputs</p>
@@ -11730,7 +11835,7 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {activeSidePanel === "data" ? (
+                {sidePanelForRender === "data" ? (
                   <div className="space-y-4">
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Source hub</p>
@@ -11810,12 +11915,12 @@ function PerformanceAIDashboardView({
                         <div className="mt-2 max-h-40 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 text-xs text-slate-600">
                           {addressSuggestions.map((suggestion) => (
                             <button
-                              key={`${suggestion.lat}-${suggestion.lng}`}
+                              key={`${suggestion.lat ?? "lat"}-${suggestion.lng ?? "lng"}-${suggestion.display_name ?? "address"}`}
                               type="button"
-                              aria-label={`Use address suggestion ${suggestion.display_name}`}
+                              aria-label={`Use address suggestion ${suggestion.display_name ?? "address"}`}
                               onClick={() => {
                                 setSelectedAddressSuggestion(suggestion);
-                                setSiteAddress(suggestion.display_name);
+                                setSiteAddress(suggestion.display_name ?? siteAddress);
                                 setAddressSuggestions([]);
                               }}
                               className={`w-full rounded-xl px-3 py-2 text-left text-[12px] transition ${
@@ -11824,7 +11929,7 @@ function PerformanceAIDashboardView({
                                   : "hover:bg-slate-50"
                               }`}
                             >
-                              <span className="block truncate">{suggestion.display_name}</span>
+                              <span className="block truncate">{suggestion.display_name ?? "Address suggestion"}</span>
                             </button>
                           ))}
                         </div>
@@ -12158,7 +12263,7 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {activeSidePanel === "model" ? (
+                {sidePanelForRender === "model" ? (
                   <div className="space-y-4">
                     {!siteScaleLocked ? (
                       <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
@@ -12433,7 +12538,7 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {activeSidePanel === "generate" ? (
+                {sidePanelForRender === "generate" ? (
                   <div className="space-y-4">
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
@@ -12567,7 +12672,7 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {activeSidePanel === "grading" ? (
+                {sidePanelForRender === "grading" ? (
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-2">
                       {[
@@ -12650,7 +12755,7 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {activeSidePanel === "drainage" ? (
+                {sidePanelForRender === "drainage" ? (
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-2">
                       {[
@@ -12728,7 +12833,7 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {activeSidePanel === "utilities" ? (
+                {sidePanelForRender === "utilities" ? (
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-2">
                       {[
@@ -12807,7 +12912,7 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {activeSidePanel === "sanitary" ? (
+                {sidePanelForRender === "sanitary" ? (
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-2">
                       {[
@@ -12849,7 +12954,7 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {activeSidePanel === "water" ? (
+                {sidePanelForRender === "water" ? (
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-2">
                       {[
@@ -12884,7 +12989,7 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {activeSidePanel.startsWith("system_") ? (() => {
+                {sidePanelForRender.startsWith("system_") ? (() => {
                   const healthConfig: Record<
                     Extract<SidePanelKey, "system_grading" | "system_storm" | "system_sanitary" | "system_water" | "system_roadway" | "system_utilities" | "system_landscape">,
                     { label: string; status: string; needs: string[]; openPanel: SidePanelKey }
@@ -12966,7 +13071,7 @@ function PerformanceAIDashboardView({
                       openPanel: "landscape",
                     },
                   };
-                  const config = healthConfig[activeSidePanel as keyof typeof healthConfig];
+                  const config = healthConfig[sidePanelForRender as keyof typeof healthConfig];
                   return (
                     <div className="space-y-4">
                       <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -12992,7 +13097,7 @@ function PerformanceAIDashboardView({
                   );
                 })() : null}
 
-                {activeSidePanel === "roadway" ? (
+                {sidePanelForRender === "roadway" ? (
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-2">
                       {[
@@ -13090,7 +13195,7 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {activeSidePanel === "landscape" ? (
+                {sidePanelForRender === "landscape" ? (
                   <div className="space-y-4">
                     <div className="grid grid-cols-3 gap-2">
                       {[
@@ -13139,7 +13244,7 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {activeSidePanel === "details" ? (
+                {sidePanelForRender === "details" ? (
                   <div className="space-y-4">
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Profiles and cross sections</p>
@@ -13284,7 +13389,7 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {activeSidePanel === "layers" ? (
+                {sidePanelForRender === "layers" ? (
                   <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-2">
                       <button
@@ -13325,7 +13430,7 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {activeSidePanel === "analysis" ? (
+                {sidePanelForRender === "analysis" ? (
                   <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-2">
                       {[
@@ -13354,7 +13459,7 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {activeSidePanel === "files" ? (
+                {sidePanelForRender === "files" ? (
                   <div className="space-y-4">
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Input files</p>
@@ -13398,7 +13503,7 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {activeSidePanel === "standards" ? (
+                {sidePanelForRender === "standards" ? (
                   <div className="space-y-4">
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Active criteria</p>
@@ -13453,7 +13558,7 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {activeSidePanel === "libraries" ? (
+                {sidePanelForRender === "libraries" ? (
                   <div className="space-y-4">
                     {ADD_MENU_SECTIONS.map((group) => (
                       <div key={group.key} className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -13470,7 +13575,7 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {activeSidePanel === "settings" ? (
+                {sidePanelForRender === "settings" ? (
                   <div className="space-y-4">
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Workspace settings</p>
@@ -13508,7 +13613,7 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {activeSidePanel === "objects" ? (
+                {sidePanelForRender === "objects" ? (
                   <div className="space-y-4">
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
@@ -13750,9 +13855,9 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {activeSidePanel === "reports" || activeSidePanel === "quantities" || activeSidePanel === "deliverables" ? (
+                {sidePanelForRender === "reports" || sidePanelForRender === "quantities" || sidePanelForRender === "deliverables" ? (
                   <div className="space-y-3">
-                    {activeSidePanel === "reports" ? (
+                    {sidePanelForRender === "reports" ? (
                       <>
                         <div className="grid grid-cols-2 gap-2">
                           {[
@@ -13853,7 +13958,7 @@ function PerformanceAIDashboardView({
                         </div>
                       </>
                     ) : null}
-                    {activeSidePanel === "quantities" ? (
+                    {sidePanelForRender === "quantities" ? (
                       <div className="rounded-2xl border border-slate-200 bg-white p-4">
                         <div className="flex items-start justify-between gap-3">
                           <div>
@@ -13877,7 +13982,7 @@ function PerformanceAIDashboardView({
                         </div>
                       </div>
                     ) : null}
-                    {activeSidePanel === "deliverables" ? (
+                    {sidePanelForRender === "deliverables" ? (
                       <>
                         <div className="rounded-2xl border border-slate-200 bg-white p-4">
                           <div className="flex items-start justify-between gap-3">
@@ -14047,7 +14152,7 @@ function PerformanceAIDashboardView({
                     approvalPhaseLabel={approvalStatus.label}
                     approvalError={approvalError}
                     collapsed={false}
-                    onToggleCollapsed={() => setActiveSidePanel(null)}
+                    onToggleCollapsed={handleCloseSidePanel}
                     summaryText={chatSummary}
                   />
                 ) : null}
@@ -14221,8 +14326,12 @@ function PerformanceAIDashboardView({
                     {bottomPanelCollapsed ? "Open" : "Collapse"}
                   </button>
                 </div>
-                {!bottomPanelCollapsed ? (
-                  <div className="grid gap-3 px-3 py-3 lg:grid-cols-[auto,1fr]">
+                {bottomPanelContentRendered ? (
+                  <div
+                    className="civora-motion-bottom-panel grid gap-3 px-3 py-3 lg:grid-cols-[auto,1fr]"
+                    data-motion-state={bottomPanelContentVisible ? "open" : "closed"}
+                    aria-hidden={bottomPanelCollapsed}
+                  >
                     <div className="grid min-w-0 grid-cols-2 gap-1 sm:flex sm:overflow-x-auto lg:flex-col lg:overflow-visible">
                       {bottomPanelTabs.map((tab) => (
                         <button
@@ -15432,7 +15541,7 @@ function PerformanceAIDashboardView({
           </main>
           <div
             data-testid="floating-command-bar"
-            className="fixed bottom-4 left-1/2 z-30 flex w-[calc(100vw-2rem)] max-w-xl -translate-x-1/2 items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white/95 px-3 py-2 shadow-[0_24px_70px_-32px_rgba(15,23,42,0.55)] backdrop-blur-xl lg:hidden"
+            className="civora-motion-command-bar fixed bottom-4 left-1/2 z-30 flex w-[calc(100vw-2rem)] max-w-xl items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white/95 px-3 py-2 shadow-[0_24px_70px_-32px_rgba(15,23,42,0.55)] backdrop-blur-xl lg:hidden"
           >
             <button
               type="button"
