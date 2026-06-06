@@ -126,6 +126,17 @@ def _engine_evidence(engine_id: str, meta: Dict[str, Any]) -> List[str]:
             evidence.append("sanitary_segments")
         if _safe_dict(sanitary.get("network_validation")).get("valid"):
             evidence.append("network_validation")
+        network = _safe_dict(sanitary.get("network_validation"))
+        if _safe_dict(network.get("service_coverage")).get("valid"):
+            evidence.append("service_coverage")
+        if _safe_dict(network.get("tie_in_validation")).get("valid"):
+            evidence.append("tie_in_validation")
+        if _safe_dict(network.get("capacity_validation")).get("valid"):
+            evidence.append("capacity_validation")
+        if _safe_dict(network.get("post_reroute_recalculation_evidence")).get("all_segments_recalculated"):
+            evidence.append("post_reroute_recalculation")
+        if _safe_dict(sanitary.get("structure_spacing_validation")).get("valid"):
+            evidence.append("manhole_spacing")
     elif engine_id == "water":
         utilities = _safe_dict(meta.get("utilities") or meta.get("utility_summary"))
         hooks = _safe_dict(utilities.get("conflict_hooks"))
@@ -456,6 +467,28 @@ def _explicit_blockers_for_engine(engine_id: str, meta: Dict[str, Any]) -> List[
                     "severity": "blocker",
                 }
             )
+    elif engine_id == "sanitary":
+        sanitary = _safe_dict(meta.get("sanitary") or meta.get("sanitary_summary"))
+        network = _safe_dict(sanitary.get("network_validation"))
+        blocker_fields = (
+            ("missing_service_buildings", "service_coverage", "Sanitary readiness is blocked because one or more required buildings have no service lateral."),
+            ("slope_violations", "slope_validation", "Sanitary readiness is blocked because one or more segments fail minimum slope validation."),
+            ("invalid_cover_segments", "cover_validation", "Sanitary readiness is blocked because one or more segments fail cover validation."),
+            ("tie_in_issues", "tie_in_validation", "Sanitary readiness is blocked because the downstream sanitary tie-in is missing or invalid."),
+            ("invalid_capacity_segments", "capacity_validation", "Sanitary readiness is blocked because one or more segments exceed deterministic capacity checks."),
+            ("missing_recalculation_evidence", "post_reroute_recalculation", "Sanitary readiness is blocked because post-reroute recalculation evidence is incomplete."),
+            ("disconnected_service_segments", "service_lateral_connectivity", "Sanitary readiness is blocked because one or more service laterals do not connect to the main graph."),
+        )
+        for list_key, field, message in blocker_fields:
+            if _safe_list(network.get(list_key)):
+                blockers.append(
+                    {
+                        "area": "sanitary",
+                        "field": field,
+                        "message": message,
+                        "severity": "blocker",
+                    }
+                )
     elif engine_id == "structure":
         structures = _safe_dict(meta.get("structures") or meta.get("structure_summary"))
         conflicts = _safe_list(meta.get("structure_conflicts")) or _safe_list(structures.get("structure_conflicts"))

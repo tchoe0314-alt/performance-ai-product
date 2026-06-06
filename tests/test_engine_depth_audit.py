@@ -155,6 +155,135 @@ def _complete_storm_hgl_fixture() -> tuple:
     return storm, drainage
 
 
+def _complete_sanitary_depth_fixture() -> dict:
+    return {
+        "success": True,
+        "source": "sanitary_depth_fixture",
+        "route_count": 4,
+        "service_count": 2,
+        "manhole_count": 3,
+        "expected_service_buildings": ["BLDG-1", "BLDG-2"],
+        "served_buildings": ["BLDG-1", "BLDG-2"],
+        "tie_in_node": "SAN_TIE_IN",
+        "segments": [
+            {
+                "name": "LAT-1",
+                "segment_role": "lateral",
+                "served_building": "BLDG-1",
+                "start_name": "BLDG-1",
+                "end_name": "NODE-A",
+                "route_points": [[0.0, 0.0], [40.0, 0.0]],
+                "diameter_in": 8.0,
+                "flow_cfs": 0.02,
+                "capacity_cfs": 1.8,
+                "capacity_ratio": 0.011,
+                "slope_ft_ft": 0.02,
+                "cover_start_ft": 4.0,
+                "cover_end_ft": 4.8,
+                "post_reroute_recalculated": True,
+                "upstream_service_flow_cfs": 0.02,
+            },
+            {
+                "name": "LAT-2",
+                "segment_role": "lateral",
+                "served_building": "BLDG-2",
+                "start_name": "BLDG-2",
+                "end_name": "NODE-B",
+                "route_points": [[0.0, 30.0], [80.0, 0.0]],
+                "diameter_in": 8.0,
+                "flow_cfs": 0.03,
+                "capacity_cfs": 1.8,
+                "capacity_ratio": 0.017,
+                "slope_ft_ft": 0.015,
+                "cover_start_ft": 4.0,
+                "cover_end_ft": 5.2,
+                "post_reroute_recalculated": True,
+                "upstream_service_flow_cfs": 0.03,
+            },
+            {
+                "name": "SAN-MAIN-1",
+                "segment_role": "main",
+                "start_name": "NODE-A",
+                "end_name": "NODE-B",
+                "route_points": [[40.0, 0.0], [80.0, 0.0]],
+                "diameter_in": 8.0,
+                "flow_cfs": 0.02,
+                "capacity_cfs": 1.2,
+                "capacity_ratio": 0.017,
+                "slope_ft_ft": 0.015,
+                "cover_start_ft": 5.4,
+                "cover_end_ft": 6.0,
+                "post_reroute_recalculated": True,
+                "upstream_service_flow_cfs": 0.02,
+                "flow_topology": {"from_node": "NODE-A", "to_node": "NODE-B", "incoming_service_flow_cfs": 0.02},
+            },
+            {
+                "name": "SAN-MAIN-2",
+                "segment_role": "main",
+                "start_name": "NODE-B",
+                "end_name": "SAN_TIE_IN",
+                "route_points": [[80.0, 0.0], [160.0, 0.0]],
+                "diameter_in": 8.0,
+                "flow_cfs": 0.05,
+                "capacity_cfs": 1.2,
+                "capacity_ratio": 0.042,
+                "slope_ft_ft": 0.015,
+                "cover_start_ft": 6.2,
+                "cover_end_ft": 7.4,
+                "post_reroute_recalculated": True,
+                "upstream_service_flow_cfs": 0.05,
+                "flow_topology": {"from_node": "NODE-B", "to_node": "SAN_TIE_IN", "incoming_service_flow_cfs": 0.05},
+                "tie_in_validated": True,
+            },
+        ],
+        "manholes": [
+            {"name": "SMH-A", "node_id": "SMH-A", "x": 40.0, "y": 0.0},
+            {"name": "SMH-B", "node_id": "SMH-B", "x": 80.0, "y": 0.0},
+            {"name": "SAN_TIE_IN", "node_id": "SAN_TIE_IN", "x": 160.0, "y": 0.0},
+        ],
+        "service_coverage": {
+            "expected_buildings": ["BLDG-1", "BLDG-2"],
+            "served_buildings": ["BLDG-1", "BLDG-2"],
+            "missing_buildings": [],
+            "valid": True,
+        },
+        "post_reroute_recalculation": {
+            "service_flow_total_cfs": 0.05,
+            "main_segments_recomputed": 2,
+            "service_segments_recomputed": 2,
+            "node_inflow_cfs": {"NODE-A": 0.02, "NODE-B": 0.05, "SAN_TIE_IN": 0.05},
+            "disconnected_service_count": 0,
+            "all_segments_recalculated": True,
+        },
+        "structure_spacing_validation": {"valid": True, "max_spacing_ft": 400.0, "generated_manhole_count": 0},
+        "network_validation": {
+            "valid": True,
+            "slope_violations": [],
+            "invalid_cover_segments": [],
+            "tie_in_issues": [],
+            "invalid_capacity_segments": [],
+            "missing_recalculation_evidence": [],
+            "missing_service_buildings": [],
+            "service_coverage": {"valid": True, "missing_buildings": []},
+            "tie_in_validation": {"valid": True, "tie_in_node": "SAN_TIE_IN", "outfall_nodes": ["SAN_TIE_IN"]},
+            "capacity_validation": {"valid": True, "invalid_capacity_segments": [], "max_capacity_ratio": 0.042},
+            "post_reroute_recalculation_evidence": {"all_segments_recalculated": True},
+        },
+        "graph_validation": {"valid": True},
+    }
+
+
+def _sanitary_depth_plan(payload: dict) -> dict:
+    plan = _review_depth_plan(payload)
+    meta = plan["meta"]
+    meta["sanitary"] = _complete_sanitary_depth_fixture()
+    meta["quantities"]["totals"]["pipe_length_ft"] = 260.0
+    meta["quantities"]["explain"]["quantity_audit"]["pipe_length_ft"] = {"source_object_ids": ["SAN-MAIN-1", "SAN-MAIN-2"]}
+    meta["civil_design_readiness"] = civil_design_readiness(plan)
+    meta["engine_readiness"] = evaluate_engine_readiness(plan)
+    return plan
+
+
 def _hgl_egl_depth_plan(payload: dict) -> dict:
     meta = _review_depth_meta()
     meta["lot"] = payload.get("lot") or meta["lot"]
@@ -350,6 +479,25 @@ class EngineDepthAuditTests(unittest.TestCase):
         self.assertEqual(hydrology["first_failing_layer"], "")
         self.assertFalse(report["construction_release_allowed"])
         self.assertEqual(report["summary"]["construction_gate_recommendation"], "block_construction_not_production_depth")
+
+    def test_complete_sanitary_fixture_proves_sanitary_depth_without_construction_release(self) -> None:
+        report = run_engine_depth_audit(scenario_ids=["small_commercial_pad"], build_plan_fn=_sanitary_depth_plan)
+
+        sanitary = report["engine_results"]["sanitary"]
+        self.assertEqual(sanitary["actual_depth_classification"], CLASS_PRODUCTION_DEPTH)
+        self.assertEqual(sanitary["score"], 100.0)
+        self.assertEqual(sanitary["first_failing_layer"], "")
+        for evidence in (
+            "service_coverage",
+            "tie_in_validation",
+            "capacity_validation",
+            "post_reroute_recalculation",
+            "manhole_spacing",
+        ):
+            self.assertIn(evidence, sanitary["evidence"])
+        self.assertFalse(report["construction_release_allowed"])
+        self.assertFalse(report["construction_ready"])
+        self.assertFalse(report["construction_depth_requirements_met"])
 
     def test_storm_hgl_egl_fixture_missing_inputs_remain_blocked(self) -> None:
         storm, drainage = _complete_storm_hgl_fixture()

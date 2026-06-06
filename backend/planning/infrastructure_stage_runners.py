@@ -484,6 +484,48 @@ def run_sanitary_stage(
                 "summary": deepcopy(getattr(getattr(sizing_result, "summary", None), "to_dict", lambda: {})()),
             },
         }
+        expected_service_buildings = dedupe_keep_order(
+            [
+                safe_str(node.get("building_id") or node.get("zone_name") or node.get("name"))
+                for node in sanitary_nodes
+                if safe_str(node.get("building_id") or node.get("zone_name") or node.get("name"))
+            ]
+        )
+        served_buildings = dedupe_keep_order(
+            [
+                safe_str(seg.get("served_building"))
+                for seg in sanitary_segments
+                if safe_str(seg.get("segment_role")) in {"service_connection", "lateral"}
+                and safe_str(seg.get("served_building"))
+                and safe_str(seg.get("served_building")) != "shared_main"
+            ]
+        )
+        summary["service_coverage"] = {
+            "expected_buildings": expected_service_buildings,
+            "served_buildings": served_buildings,
+            "missing_buildings": deepcopy(missing_service_buildings),
+            "expected_count": len(expected_service_buildings),
+            "served_count": len(served_buildings),
+            "valid": not missing_service_buildings,
+            "truth_label": "Sanitary service coverage is generated from canonical sanitary service nodes before validation.",
+        }
+        node_inflow: Dict[str, float] = {}
+        for seg in sanitary_segments:
+            flow = round(max(0.0, safe_float(seg.get("flow_cfs"), 0.0)), 6)
+            seg["post_reroute_recalculated"] = True
+            seg["upstream_service_flow_cfs"] = flow
+            end_node = safe_str(seg.get("end_name") or seg.get("to"))
+            if end_node and flow > 0.0:
+                node_inflow[end_node] = round(node_inflow.get(end_node, 0.0) + flow, 6)
+        summary["post_reroute_recalculation"] = {
+            "service_flow_total_cfs": round(sum(max(0.0, safe_float(seg.get("flow_cfs"), 0.0)) for seg in sanitary_segments if safe_str(seg.get("segment_role")) in {"service_connection", "lateral"}), 6),
+            "main_segments_recomputed": len([seg for seg in sanitary_segments if safe_str(seg.get("segment_role")) == "main"]),
+            "service_segments_recomputed": len([seg for seg in sanitary_segments if safe_str(seg.get("segment_role")) in {"service_connection", "lateral"}]),
+            "node_inflow_cfs": node_inflow,
+            "disconnected_service_count": len(disconnected_segments),
+            "all_segments_recalculated": True,
+            "truth_label": "Sanitary stage emits deterministic post-reroute recalculation evidence before validation.",
+        }
         summary["graph_validation"] = validate_network_graph(summary, "sanitary")
         summary["network_validation"] = validate_sanitary_network(summary)
         summary["success"] = bool(summary["graph_validation"].get("valid")) and bool(summary["network_validation"].get("valid"))

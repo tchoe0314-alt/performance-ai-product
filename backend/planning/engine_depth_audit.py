@@ -481,6 +481,14 @@ def _engine_depth_summary(
             actual = CLASS_CONCEPT
         checks = [check for row in scenario_rows for check in safe_list(row.get("checks"))]
         blockers = [blocker for row in scenario_rows for blocker in safe_list(row.get("blockers"))]
+        evidence = sorted(
+            {
+                safe_str(item)
+                for row in scenario_rows
+                for item in safe_list(row.get("evidence"))
+                if safe_str(item)
+            }
+        )
         checks_passed = all(bool(check.get("passed")) for check in checks) if checks else not required_scenarios
         score_rows = [row for row in scenario_rows if row.get("classification") != CLASS_NOT_APPLICABLE]
         score = (
@@ -495,7 +503,7 @@ def _engine_depth_summary(
         )
         engine_results[contract.engine_id] = _engine_report_row(
             contract=contract,
-            readiness_engine_row={"status": actual, "review_state": actual, "evidence": []},
+            readiness_engine_row={"status": actual, "review_state": actual, "evidence": evidence},
             scenario_ids=required_scenarios,
             checks=checks,
             blockers=blockers,
@@ -509,6 +517,7 @@ def _engine_depth_summary(
                 "check_count": len(checks),
                 "failed_check_count": len([check for check in checks if not bool(check.get("passed"))]),
                 "blockers": blockers,
+                "evidence": evidence,
                 "blocker_details": readiness_issue_explanations(blockers),
                 "first_failing_layer": _first_failing_layer(checks, blockers),
                 "confidence": round(confidence, 3),

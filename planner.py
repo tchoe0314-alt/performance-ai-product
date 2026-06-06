@@ -6522,9 +6522,24 @@ def _validate_sanitary_network(summary: Dict[str, Any]) -> Dict[str, Any]:
     disconnected_services: List[str] = []
     invalid_cover_segments: List[Dict[str, Any]] = []
     tie_in_issues: List[Dict[str, Any]] = []
+    invalid_capacity_segments: List[Dict[str, Any]] = []
+    missing_recalculation_evidence: List[Dict[str, Any]] = []
     service_coverage = safe_dict(summary.get("service_coverage"))
     missing_service_buildings = safe_list(service_coverage.get("missing_buildings") or summary.get("missing_service_buildings"))
     disconnected_service_segments = safe_list(summary.get("disconnected_service_segments"))
+    post_reroute_recalculation = safe_dict(summary.get("post_reroute_recalculation"))
+    explicit_tie_in_node = safe_str(
+        summary.get("tie_in_node")
+        or summary.get("outfall_node")
+        or summary.get("downstream_tie_in")
+        or summary.get("sanitary_tie_in")
+    )
+    tie_in_node = explicit_tie_in_node or "terminal_main_outfall"
+    main_start_nodes = {
+        safe_str(rec.get("start_name") or rec.get("from"))
+        for rec in segments
+        if safe_str(rec.get("segment_role")) == "main" and safe_str(rec.get("start_name") or rec.get("from"))
+    }
 
     for rec in segments:
         seg_id = _summary_segment_id(rec, "sanitary")
@@ -6545,8 +6560,55 @@ def _validate_sanitary_network(summary: Dict[str, Any]) -> Dict[str, Any]:
                     "cover_end_ft": round(cover_end, 3),
                 }
             )
-        if role == "main" and not safe_str(rec.get("end_name")):
-            tie_in_issues.append({"segment_id": seg_id, "reason": "missing_downstream_tie_in"})
+        if role == "main":
+            end_name = safe_str(rec.get("end_name") or rec.get("to"))
+            if not end_name:
+                tie_in_issues.append({"segment_id": seg_id, "reason": "missing_downstream_tie_in"})
+            elif explicit_tie_in_node and not safe_list(summary.get("main_outfall_nodes")) and end_name == explicit_tie_in_node:
+                rec["tie_in_validated"] = True
+        capacity = safe_float(rec.get("capacity_cfs"), 0.0)
+        flow = safe_float(rec.get("flow_cfs"), 0.0)
+        ratio = safe_float(rec.get("capacity_ratio"), 0.0)
+        if flow > 0.0 and capacity > 0.0 and ratio <= 0.0:
+            ratio = flow / max(capacity, 1e-9)
+        if flow > 0.0 and (capacity <= 0.0 or ratio > 0.95):
+            invalid_capacity_segments.append(
+                {
+                    "segment_id": seg_id,
+                    "flow_cfs": round(flow, 6),
+                    "capacity_cfs": round(capacity, 6),
+                    "capacity_ratio": round(ratio, 3),
+                }
+            )
+        if segments and not bool(rec.get("post_reroute_recalculated")):
+            missing_recalculation_evidence.append(
+                {
+                    "segment_id": seg_id,
+                    "reason": "segment_missing_post_reroute_recalculated_flag",
+                }
+            )
+    outfall_nodes = safe_list(summary.get("main_outfall_nodes"))
+    if not outfall_nodes and explicit_tie_in_node:
+        outfall_nodes = dedupe_keep_order(
+            [
+                safe_str(rec.get("end_name") or rec.get("to"))
+                for rec in segments
+                if safe_str(rec.get("segment_role")) == "main"
+                and safe_str(rec.get("end_name") or rec.get("to")) == explicit_tie_in_node
+            ]
+        )
+    if not outfall_nodes and not explicit_tie_in_node:
+        outfall_nodes = dedupe_keep_order(
+            [
+                safe_str(rec.get("end_name") or rec.get("to"))
+                for rec in segments
+                if safe_str(rec.get("segment_role")) == "main"
+                and safe_str(rec.get("end_name") or rec.get("to"))
+                and safe_str(rec.get("end_name") or rec.get("to")) not in main_start_nodes
+            ]
+        )
+    if segments and not outfall_nodes:
+        tie_in_issues.append({"segment_id": "sanitary_network", "reason": "missing_validated_system_tie_in"})
 
     return {
         "system": "sanitary",
@@ -6554,6 +6616,20 @@ def _validate_sanitary_network(summary: Dict[str, Any]) -> Dict[str, Any]:
         "disconnected_services": disconnected_services,
         "invalid_cover_segments": invalid_cover_segments,
         "tie_in_issues": tie_in_issues,
+        "invalid_capacity_segments": invalid_capacity_segments,
+        "post_reroute_recalculation_evidence": deepcopy(post_reroute_recalculation),
+        "missing_recalculation_evidence": missing_recalculation_evidence,
+        "tie_in_validation": {
+            "required": bool(segments),
+            "tie_in_node": tie_in_node,
+            "outfall_nodes": deepcopy(outfall_nodes),
+            "valid": bool(outfall_nodes) and not tie_in_issues,
+        },
+        "capacity_validation": {
+            "valid": not invalid_capacity_segments,
+            "invalid_capacity_segments": deepcopy(invalid_capacity_segments),
+            "max_capacity_ratio": round(safe_float(summary.get("max_capacity_ratio"), 0.0), 3),
+        },
         "service_coverage": deepcopy(service_coverage),
         "missing_service_buildings": deepcopy(missing_service_buildings),
         "disconnected_service_segments": deepcopy(disconnected_service_segments),
@@ -6567,6 +6643,8 @@ def _validate_sanitary_network(summary: Dict[str, Any]) -> Dict[str, Any]:
                 disconnected_service_segments,
                 invalid_cover_segments,
                 tie_in_issues,
+                invalid_capacity_segments,
+                missing_recalculation_evidence,
                 missing_service_buildings,
                 safe_list(summary.get("missing_manhole_points")),
             ]
@@ -6699,6 +6777,14 @@ def _recompute_sanitary_service_loads(project: ProjectModel, summary: Dict[str, 
         "service_segments_recomputed": len(service_segments),
         "node_inflow_cfs": {key: round(value, 6) for key, value in sorted(node_inflow.items())},
         "disconnected_service_count": len(disconnected_service_segments),
+        "all_segments_recalculated": all(bool(rec.get("post_reroute_recalculated")) for rec in segments) if segments else True,
+        "evidence_fields": [
+            "upstream_service_flow_cfs",
+            "flow_topology",
+            "capacity_cfs",
+            "capacity_ratio",
+            "slope_ft_ft",
+        ],
         "truth_label": "Post-reroute sanitary recalculation propagates service lateral flow through the directed main graph before validation.",
     }
     return summary
@@ -7121,6 +7207,45 @@ def _recompute_sanitary_summary(project: ProjectModel, manager: ProjectManager, 
     summary["success"] = bool(summary["graph_validation"].get("valid")) and bool(summary["network_validation"].get("valid"))
     manager.latest_outputs["sanitary"] = deepcopy(summary)
     project.meta["sanitary_summary"] = deepcopy(summary)
+    if summary["success"]:
+        for stage in safe_list(project.meta.get("stage_results")):
+            rec = safe_dict(stage)
+            if safe_str(rec.get("stage_name")) != "sanitary":
+                continue
+            rec["success"] = True
+            rec["message"] = "Sanitary stage completed after canonical recompute."
+            rec["completeness"] = "complete"
+            stage_meta = safe_dict(rec.get("meta"))
+            stage_meta["completeness"] = "complete"
+            stage_meta["network_valid"] = True
+            stage_meta["graph_valid"] = bool(summary["graph_validation"].get("valid"))
+            stage_meta["route_count"] = len(segments)
+            stage_meta["service_count"] = len([item for item in segments if safe_str(item.get("segment_role")) in {"service_connection", "lateral"}])
+            stage_meta["manhole_count"] = len(manholes)
+            rec["meta"] = stage_meta
+        stage_completeness = safe_dict(project.meta.get("stage_completeness"))
+        for stage in safe_list(stage_completeness.get("stages")):
+            rec = safe_dict(stage)
+            if safe_str(rec.get("stage_name")) != "sanitary":
+                continue
+            rec["success"] = True
+            rec["completeness"] = "complete"
+            rec["message"] = "Sanitary stage completed after canonical recompute."
+            stage_meta = safe_dict(rec.get("meta"))
+            stage_meta["completeness"] = "complete"
+            stage_meta["network_valid"] = True
+            stage_meta["graph_valid"] = bool(summary["graph_validation"].get("valid"))
+            rec["meta"] = stage_meta
+        required_status = safe_dict(stage_completeness.get("required_stage_status"))
+        if "sanitary" in required_status:
+            required_status["sanitary"] = "complete"
+            stage_completeness["required_stage_status"] = required_status
+            stage_completeness["all_required_complete"] = all(
+                safe_str(value) == "complete"
+                for value in required_status.values()
+            )
+        if stage_completeness:
+            project.meta["stage_completeness"] = stage_completeness
     manager.set_metric("sanitary_total_length_ft", total_length, units="ft", category="sanitary")
     manager.set_metric("sanitary_main_length_ft", main_length, units="ft", category="sanitary")
     manager.set_metric("sanitary_lateral_length_ft", lateral_length, units="ft", category="sanitary")

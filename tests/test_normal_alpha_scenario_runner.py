@@ -40,14 +40,17 @@ class NormalAlphaScenarioRunnerTests(unittest.TestCase):
         self.assertFalse(review_package["ready_for_construction"])
         self.assertTrue(review_package["engineer_approval_required"])
 
-    def test_ai_orchestration_and_sanitary_blockers_remain_visible(self) -> None:
+    def test_ai_orchestration_blockers_remain_visible_after_sanitary_depth_closes(self) -> None:
         result = run_normal_alpha_scenario()
         failed_ids = set(result["engine_depth_audit_report_v1"]["failed_check_ids"])
+        sanitary = result["engine_depth_audit_report_v1"]["engine_results"]["sanitary"]
 
         self.assertIn("mixed_use_14_acre_site:ai_orchestration:required_engine_depth", failed_ids)
-        self.assertIn("mixed_use_14_acre_site:sanitary:required_engine_depth", failed_ids)
+        self.assertNotIn("mixed_use_14_acre_site:sanitary:required_engine_depth", failed_ids)
         self.assertIn("mixed_use_14_acre_site:ai_orchestration:required_engine_depth", result["remaining_engine_depth_blockers"])
-        self.assertIn("mixed_use_14_acre_site:sanitary:required_engine_depth", result["remaining_engine_depth_blockers"])
+        self.assertNotIn("mixed_use_14_acre_site:sanitary:required_engine_depth", result["remaining_engine_depth_blockers"])
+        self.assertEqual(sanitary["actual_depth_classification"], "production-depth")
+        self.assertIn("post_reroute_recalculation", sanitary["evidence"])
         self.assertGreaterEqual(result["blocker_count"], 3)
 
     def test_real_project_scenario_suite_reports_required_matrix_without_construction_release(self) -> None:
