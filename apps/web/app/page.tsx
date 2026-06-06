@@ -11006,13 +11006,13 @@ function PerformanceAIDashboardView({
           onLogout={handleLogout}
         />
 
-        <div className="flex h-[calc(100vh-4rem)] min-h-0 flex-col overflow-hidden lg:flex-row">
+        <div className="flex h-[calc(100svh-4rem)] min-h-0 w-full max-w-full flex-col overflow-hidden lg:h-[calc(100vh-4rem)] lg:flex-row">
           {sidebarRendered ? (
           <aside
             data-testid="left-sidebar"
             data-motion-state={sidebarVisible ? "open" : "closed"}
             aria-hidden={!sidebarVisible}
-            className="civora-motion-sidebar fixed inset-x-3 top-20 z-40 flex max-h-[calc(100vh-6rem)] shrink-0 flex-col rounded-xl border border-slate-200 bg-white/98 px-4 py-5 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.65)] backdrop-blur-xl lg:static lg:inset-auto lg:z-auto lg:h-full lg:max-h-none lg:w-[276px] lg:rounded-none lg:border-y-0 lg:border-l-0 lg:shadow-[18px_0_40px_-36px_rgba(15,23,42,0.5)]"
+            className="civora-motion-sidebar fixed inset-x-3 top-20 z-40 flex max-h-[calc(100svh-6rem)] min-w-0 shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white/98 px-4 py-5 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.65)] backdrop-blur-xl lg:static lg:inset-auto lg:z-auto lg:h-full lg:max-h-none lg:w-[276px] lg:rounded-none lg:border-y-0 lg:border-l-0 lg:shadow-[18px_0_40px_-36px_rgba(15,23,42,0.5)]"
           >
             <button
               type="button"
@@ -11146,7 +11146,7 @@ function PerformanceAIDashboardView({
               data-testid="workspace-right-panel"
               data-motion-state={sidePanelVisible ? "open" : "closed"}
               aria-hidden={!sidePanelVisible}
-              className="civora-motion-right-panel order-3 m-3 flex min-h-0 w-auto shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white/96 shadow-[var(--civora-shadow-panel)] backdrop-blur-xl lg:ml-0 lg:h-[calc(100%-1.5rem)] lg:w-[372px]"
+              className="civora-motion-right-panel fixed inset-x-2 bottom-2 top-16 z-50 order-3 flex min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white/96 shadow-[var(--civora-shadow-panel)] backdrop-blur-xl sm:inset-x-4 lg:static lg:inset-auto lg:z-auto lg:m-3 lg:ml-0 lg:h-[calc(100%-1.5rem)] lg:w-[372px]"
             >
               <div className="flex items-center justify-between border-b border-[var(--civora-border)] px-4 py-4">
                 <div>
@@ -14206,11 +14206,11 @@ function PerformanceAIDashboardView({
             </aside>
           ) : null}
           <main className="order-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
-            <div className="flex w-full flex-1 flex-col gap-4 px-4 py-4 md:px-5">
+            <div className="flex w-full max-w-full flex-1 flex-col gap-4 px-2 pb-24 pt-3 sm:px-4 md:px-5 lg:pb-4 lg:pt-4">
               <div className="flex w-full flex-col">
                 <div
                   data-testid="workspace-canvas-shell"
-                  className="civora-canvas mx-auto w-full overflow-hidden p-1"
+                  className="civora-canvas mx-auto w-full max-w-full overflow-hidden p-1"
                   style={{
                     width: "100%",
                     height: `${previewHeightPx}px`,

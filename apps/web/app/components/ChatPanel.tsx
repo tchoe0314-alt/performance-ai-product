@@ -87,11 +87,11 @@ export default function ChatPanel({
   const showContinuePending = Boolean(pendingClarification && onContinuePendingClarification && !busy && !hasVisibleActiveJob);
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-[0_10px_40px_-28px_rgba(15,23,42,0.5)]">
+    <div className="min-w-0 rounded-xl border border-slate-200 bg-white shadow-[0_10px_40px_-28px_rgba(15,23,42,0.5)]">
       <button
         type="button"
         onClick={onToggleCollapsed}
-        className="flex w-full items-center justify-between gap-4 border-b border-slate-200 px-4 py-3 text-left"
+        className="flex w-full min-w-0 items-center justify-between gap-4 border-b border-slate-200 px-4 py-3 text-left"
       >
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -107,7 +107,7 @@ export default function ChatPanel({
       {!collapsed ? (
         <div
           ref={chatScrollRef}
-          className="max-h-[320px] space-y-4 overflow-y-auto p-4"
+          className="max-h-[min(320px,36svh)] space-y-4 overflow-y-auto p-3 sm:p-4"
         >
           {chatMessages.map((message) => (
             <div
@@ -115,7 +115,7 @@ export default function ChatPanel({
               className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[85%] rounded-xl px-4 py-3 ${
+                className={`max-w-[92%] overflow-hidden rounded-xl px-3 py-3 sm:max-w-[85%] sm:px-4 ${
                   message.role === "user"
                     ? "bg-slate-950 text-white"
                     : message.role === "system"
@@ -123,7 +123,7 @@ export default function ChatPanel({
                       : "border border-slate-200 bg-white text-slate-900"
                 }`}
               >
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <span className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-70">
                     {message.role === "user"
                       ? "You"
@@ -144,7 +144,7 @@ export default function ChatPanel({
                   {message.content}
                 </p>
                 {message.role === "assistant" ? (
-                  <div className="mt-3 flex items-center gap-2 text-xs">
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
                     <span className="text-slate-400">Was this helpful?</span>
                     <button
                       type="button"
@@ -176,9 +176,9 @@ export default function ChatPanel({
         </div>
       ) : null}
 
-      <div className="border-t border-slate-200 p-4">
+      <div className="border-t border-slate-200 p-3 sm:p-4">
         {(busy || hasVisibleActiveJob) && (
-          <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+          <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-4 sm:px-4">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-sm font-semibold text-slate-950">
@@ -241,7 +241,7 @@ export default function ChatPanel({
           </div>
         )}
 
-        <div className={`rounded-3xl border border-slate-200 bg-slate-50 p-3 ${collapsed ? "" : "mb-4"}`}>
+        <div className={`min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:rounded-3xl ${collapsed ? "" : "mb-4"}`}>
           <TextArea
             value={prompt}
             onChange={(e) => onPromptChange(e.target.value)}

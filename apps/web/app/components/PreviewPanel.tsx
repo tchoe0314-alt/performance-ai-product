@@ -2951,8 +2951,8 @@ export default function PreviewPanel({
   }, [analysisHighlight, analysisPaths, buildingPlacements, lotHeight, lotWidth, suggestedPlacements, updateFocusTransform]);
   const showParkingAnalysis = Boolean(analysisPaths && analysisPaths.length);
   return (
-    <div className="flex h-full flex-col rounded-xl border border-slate-200 bg-white/92 p-3 shadow-[0_20px_60px_-44px_rgba(15,23,42,0.45)] backdrop-blur">
-      <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+    <div className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white/92 p-2 shadow-[0_20px_60px_-44px_rgba(15,23,42,0.45)] backdrop-blur sm:p-3">
+      <div className="mb-3 flex min-w-0 flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center rounded-md bg-slate-950 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white">
@@ -3010,7 +3010,7 @@ export default function PreviewPanel({
             </div>
           ) : null}
         </div>
-        <div className="flex flex-wrap gap-2 xl:justify-end">
+        <div className="flex min-w-0 flex-wrap gap-2 xl:justify-end">
           {showMap ? (
             <button
               type="button"
@@ -3096,8 +3096,8 @@ export default function PreviewPanel({
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white/85 px-3 py-2">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] sm:p-3">
+          <div className="mb-3 flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white/85 px-3 py-2">
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               <span>Preview Mode</span>
               <button
@@ -3195,7 +3195,7 @@ export default function PreviewPanel({
                 High
               </button>
             </div>
-            <div className="flex flex-wrap items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            <div className="flex min-w-0 flex-wrap items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
               <span>Legend</span>
               <span className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 rounded-full" style={{ background: legendPalette.building }} />
@@ -3226,8 +3226,8 @@ export default function PreviewPanel({
             </div>
           </div>
           {previewMode === "2d" ? (
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white/85 px-3 py-2">
-              <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+            <div className="mb-3 hidden min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white/85 px-3 py-2 md:flex">
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
                 <span className="mr-1">Draw</span>
                 {drawModeButtons.map((item) => {
                   const Icon = item.icon;
@@ -3248,7 +3248,7 @@ export default function PreviewPanel({
                           onSetPreviewInteraction("edit");
                         }
                       }}
-                      className={`inline-flex min-h-8 items-center justify-center gap-1.5 rounded-md border px-2 py-1 transition ${
+                      className={`inline-flex min-h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border px-2 py-1 transition ${
                         active
                           ? "border-slate-900 bg-slate-950 text-white"
                           : disabled
@@ -3272,14 +3272,14 @@ export default function PreviewPanel({
                       setDrawMode("select");
                       onSetPreviewInteraction("edit");
                     }}
-                    className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-slate-600 transition hover:bg-slate-50"
+                    className="inline-flex min-h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-slate-600 transition hover:bg-slate-50"
                   >
                     <Unlock className="h-4 w-4" />
                     <span className="text-[10px] leading-none">Change Site Boundary</span>
                   </button>
                 ) : null}
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+              <div className="flex min-w-0 flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                 <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-600">
                   {drawMode === "site" && draftPoints.length
                     ? "Draft site boundary"
@@ -3296,7 +3296,7 @@ export default function PreviewPanel({
                 <button
                   type="button"
                   onClick={() => setCanvasView({ scale: 1, offsetX: 0, offsetY: 0 })}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 text-slate-600 hover:bg-slate-50"
+                  className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 text-slate-600 hover:bg-slate-50"
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                   Zoom
@@ -3336,7 +3336,7 @@ export default function PreviewPanel({
                     }
                     onRemoveBuilding(selectedDeletableObject.id);
                   }}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-300"
+                  className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-300"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                   Delete
@@ -3344,7 +3344,7 @@ export default function PreviewPanel({
                 <button
                   type="button"
                   onClick={onOpenFullscreen}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 text-slate-600 hover:bg-slate-50"
+                  className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 text-slate-600 hover:bg-slate-50"
                 >
                   <Maximize2 className="h-3.5 w-3.5" />
                   More
@@ -3431,7 +3431,7 @@ export default function PreviewPanel({
             <div
               ref={previewRef}
               data-testid="preview-drawing-surface"
-              className={`relative flex w-full flex-1 min-h-[320px] items-center justify-center rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] ${
+              className={`relative flex w-full min-w-0 flex-1 min-h-[320px] items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] ${
                 previewFullscreenOpen && showMap
                   ? "fixed inset-0 z-[120] rounded-none bg-slate-950 p-0"
                   : ""
@@ -3569,6 +3569,89 @@ export default function PreviewPanel({
                 });
               }}
             >
+              {previewMode === "2d" ? (
+                <div className="absolute inset-x-2 bottom-2 z-[70] rounded-xl border border-slate-200 bg-white/95 p-2 shadow-[0_20px_50px_-28px_rgba(15,23,42,0.55)] backdrop-blur md:hidden">
+                  <div className="flex gap-1.5 overflow-x-auto pb-1">
+                    {drawModeButtons.map((item) => {
+                      const Icon = item.icon;
+                      const active = drawMode === item.mode;
+                      const disabled = Boolean(item.disabled);
+                      return (
+                        <button
+                          key={`mobile-${item.mode}`}
+                          type="button"
+                          title={disabled ? item.disabledLabel ?? item.label : item.label}
+                          aria-label={item.label}
+                          disabled={disabled}
+                          onClick={() => {
+                            if (disabled) return;
+                            setDrawMode(item.mode);
+                            clearDraftGeometry();
+                            if (item.mode !== "select") {
+                              onSetPreviewInteraction("edit");
+                            }
+                          }}
+                          className={`inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-[11px] font-semibold transition ${
+                            active
+                              ? "border-slate-900 bg-slate-950 text-white"
+                              : disabled
+                                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-300"
+                                : "border-slate-200 bg-white text-slate-700"
+                          }`}
+                        >
+                          <Icon className="h-4 w-4" />
+                          <span>{item.label.replace("Draw Site Boundary", "Site")}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-1 flex items-center gap-2">
+                    {draftPoints.length && drawMode !== "rect" ? (
+                      <button
+                        type="button"
+                        onClick={finishDraftGeometry}
+                        disabled={draftPointCount < finishDraftMinPoints}
+                        title={finishDraftBlockedReason ?? "Finish drawn geometry"}
+                        className="min-h-10 flex-1 rounded-lg border border-slate-900 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                      >
+                        Finish
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => setCanvasView({ scale: 1, offsetX: 0, offsetY: 0 })}
+                      className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!selectedDeletableObject}
+                      onClick={() => {
+                        if (!selectedDeletableObject) return;
+                        const targetObject = buildingPlacements.find((item) => item.id === selectedDeletableObject.id);
+                        if (targetObject) {
+                          setLastRectEdit({
+                            id: targetObject.id,
+                            snapshot: { ...targetObject },
+                            action: "delete",
+                            ts: Date.now(),
+                          });
+                        }
+                        onRemoveBuilding(selectedDeletableObject.id);
+                      }}
+                      className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-300"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                  {finishDraftBlockedReason ? (
+                    <p className="mt-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700">
+                      {finishDraftBlockedReason}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
               <div
                 className="relative flex h-full w-full items-center justify-center overflow-hidden"
                 onMouseDown={(event) => {
