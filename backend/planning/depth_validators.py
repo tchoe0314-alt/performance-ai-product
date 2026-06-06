@@ -223,20 +223,37 @@ def _valid_flag(value: Any) -> bool:
 def _has_valid_overflow_routing(drainage: Dict[str, Any], storm: Dict[str, Any]) -> bool:
     paths = safe_list(drainage.get("overflow_paths") or storm.get("overflow_paths"))
     overflow_analysis = safe_dict(drainage.get("overflow_analysis"))
+    storm_overflow = safe_dict(storm.get("overflow_analysis"))
+    terrain_evidence = safe_dict(overflow_analysis.get("terrain_evidence") or storm_overflow.get("terrain_evidence") or drainage.get("terrain_evidence") or drainage.get("surface_controls"))
     if overflow_analysis:
         if overflow_analysis.get("production_valid") is True:
-            return True
+            return bool(paths and terrain_evidence)
         if overflow_analysis.get("valid") is False:
             return False
         if "production_valid" in overflow_analysis or safe_str(overflow_analysis.get("capacity_status")):
+            return False
+    if storm_overflow:
+        if storm_overflow.get("production_valid") is True:
+            return bool(paths and terrain_evidence)
+        if storm_overflow.get("valid") is False:
             return False
     return any(
         safe_dict(path).get("capacity_valid") is True
         and safe_float(safe_dict(path).get("capacity_cfs") or safe_dict(path).get("spillway_capacity_cfs"), 0.0)
         >= safe_float(safe_dict(path).get("required_capacity_cfs"), 0.0)
         and _row_is_production_evidence(safe_dict(path))
+        and bool(terrain_evidence)
         for path in paths
     )
+
+
+def _has_valid_drainage_target(storm: Dict[str, Any], drainage: Dict[str, Any]) -> bool:
+    validation = safe_dict(storm.get("drainage_target_validation") or drainage.get("drainage_target_validation"))
+    if validation:
+        return validation.get("valid") is True
+    target = safe_dict(storm.get("target_outfall") or storm.get("outfall_target_metadata") or safe_dict(drainage.get("coordination")).get("preferred_outfall"))
+    basins = safe_list(drainage.get("basins") or storm.get("basins"))
+    return bool(target or basins)
 
 
 def _all_rows_valid(rows: Iterable[Dict[str, Any]]) -> bool:
@@ -341,6 +358,7 @@ def validate_stormwater_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
             for row in safe_list(safe_dict(basin).get("detention_routing") or safe_dict(basin).get("stage_storage"))
         )
     checks = [
+        _check("basin_outfall_target", _has_valid_drainage_target(storm, drainage), evidence="drainage basin/outfall target", blocker="Storm depth needs drainage-selected basin/outfall target evidence."),
         _check("tributary_areas", any(safe_float(seg.get("tributary_area_sf") or seg.get("upstream_cumulative_area_sf"), 0.0) > 0.0 for seg in segments) or bool(catchments), evidence="tributary areas/catchments", blocker="Storm depth needs true tributary areas tied to pipes or catchments."),
         _check("runoff_coefficients", any(_present(safe_dict(item).get("runoff_c") or safe_dict(item).get("runoff_coefficient")) for item in catchments) or _present(drainage.get("runoff_coefficient")), evidence="runoff coefficients", blocker="Storm depth needs runoff coefficients by catchment/surface."),
         _check("hgl_egl_profiles", bool(hgl_rows and egl_rows and ((_has_production_rows(hgl_rows) and _has_production_rows(egl_rows)) or storm.get("hydraulic_source") == "engine")), evidence="HGL/EGL profile rows", blocker="Storm depth needs HGL and EGL profiles from production hydraulic evidence."),

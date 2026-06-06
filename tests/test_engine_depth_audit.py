@@ -182,6 +182,15 @@ class EngineDepthAuditTests(unittest.TestCase):
         self.assertEqual(written["status"], report["status"])
         self.assertIn("deterministic_checks", written)
 
+    def test_report_serialization_is_stable_for_ci(self) -> None:
+        first = run_engine_depth_audit(scenario_ids=["small_commercial_pad"], build_plan_fn=_review_depth_plan)
+        second = run_engine_depth_audit(scenario_ids=["small_commercial_pad"], build_plan_fn=_review_depth_plan)
+
+        self.assertEqual(json.dumps(first, sort_keys=True), json.dumps(second, sort_keys=True))
+        golden = first["scenario_results"][0]["golden_result"]
+        self.assertNotIn("load_threshold_results", golden)
+        self.assertIn("failed_load_thresholds", golden)
+
     def test_golden_scenario_references_engine_depth_audit_contract(self) -> None:
         result = run_golden_scenario("small_commercial_pad", build_plan_fn=_review_depth_plan)
 

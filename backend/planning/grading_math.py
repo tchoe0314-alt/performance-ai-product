@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import hypot
-from typing import List, Sequence, Tuple
+from typing import Any, Dict, List, Sequence, Tuple
 
 
 @dataclass
@@ -46,4 +46,36 @@ def repair_ada_profile(
     return repaired
 
 
-__all__ = ["AdaRepairPoint", "repair_ada_profile"]
+def summarize_drainage_aware_repair(
+    before_points: Sequence[Tuple[float, float, float]],
+    after_points: Sequence[Tuple[float, float, float]],
+    *,
+    reason: str,
+    drainage_target: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    rows: List[Dict[str, Any]] = []
+    for index, (before, after) in enumerate(zip(before_points, after_points), start=1):
+        rows.append(
+            {
+                "point_index": index,
+                "x": round(after[0], 3),
+                "y": round(after[1], 3),
+                "before_z": round(before[2], 4),
+                "after_z": round(after[2], 4),
+                "delta_z": round(after[2] - before[2], 4),
+                "reason": reason,
+            }
+        )
+    total_adjustment = round(sum(abs(row["delta_z"]) for row in rows), 4)
+    return {
+        "valid": bool(rows) and bool(reason),
+        "changed_point_count": sum(1 for row in rows if abs(row["delta_z"]) > 1e-9),
+        "total_abs_adjustment_ft": total_adjustment,
+        "changes": rows,
+        "drainage_target": dict(drainage_target or {}),
+        "reason": reason,
+        "truth_label": "Drainage-aware grading repair records each elevation change and the drainage reason for it.",
+    }
+
+
+__all__ = ["AdaRepairPoint", "repair_ada_profile", "summarize_drainage_aware_repair"]

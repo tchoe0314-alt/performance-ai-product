@@ -119,17 +119,58 @@ class ProductionDepthArtifactTests(unittest.TestCase):
             ],
             "target_outfall": {"name": "BASIN-1", "z": 96.0},
         }
-        drainage = {"structures": [{"name": "INLET-1", "estimated_flow_cfs": 1.4}]}
+        drainage = {
+            "coordination": {"preferred_outfall": {"name": "BASIN-1", "x": 80.0, "y": 0.0, "z": 96.0}},
+            "structures": [{"name": "INLET-1", "estimated_flow_cfs": 1.4}],
+            "overflow_paths": [{"name": "OF-1", "capacity_valid": True, "capacity_cfs": 4.0, "required_capacity_cfs": 3.0, "source": "approved_spillway_fixture"}],
+            "overflow_analysis": {"valid": True, "production_valid": True},
+            "surface_controls": {"primary_low_point": {"x": 80.0, "y": 0.0}},
+        }
 
         enriched = enrich_storm_production_depth(storm, drainage)
 
+        self.assertTrue(enriched["drainage_target_validation"]["valid"])
+        self.assertEqual(enriched["drainage_target_validation"]["target_name"], "BASIN-1")
+        self.assertEqual(enriched["target_outfall"]["truth_source"], "drainage_target_validation")
         self.assertTrue(enriched["hgl_profile"])
         self.assertTrue(enriched["egl_profile"])
         self.assertEqual(enriched["tailwater_elev_ft"], 96.0)
+        self.assertTrue(enriched["overflow_analysis"]["production_valid"])
+        self.assertEqual(enriched["overflow_analysis"]["missing_inputs"], [])
         self.assertEqual(enriched["inlet_capacity_checks"][0]["inlet"], "INLET-1")
         self.assertEqual(enriched["inlet_capacity_checks"][0]["capacity_source"], "storm_inlet_engine_default")
         self.assertIn("capture_efficiency", enriched["inlet_capacity_checks"][0])
         self.assertEqual(enriched["controlling_segment"], "P-1")
+
+    def test_storm_depth_blocks_target_and_overflow_without_drainage_terrain_evidence(self) -> None:
+        storm = {
+            "success": True,
+            "segments": [
+                {
+                    "pipe": "P-NO-TARGET",
+                    "path": [[0.0, 0.0], [80.0, 0.0]],
+                    "diameter_in": 18.0,
+                    "flow_cfs": 1.4,
+                    "capacity_cfs": 4.0,
+                    "capacity_ratio": 0.35,
+                    "velocity_fps": 3.0,
+                    "start_invert_ft": 97.0,
+                    "end_invert_ft": 96.2,
+                    "tributary_area_sf": 10000.0,
+                }
+            ],
+        }
+        drainage = {
+            "overflow_paths": [{"name": "OF-1", "capacity_valid": True, "capacity_cfs": 4.0, "required_capacity_cfs": 3.0, "source": "approved_spillway_fixture"}],
+            "overflow_analysis": {"valid": True, "production_valid": True},
+        }
+
+        enriched = enrich_storm_production_depth(storm, drainage)
+
+        self.assertFalse(enriched["drainage_target_validation"]["valid"])
+        self.assertEqual(enriched["drainage_target_validation"]["missing_inputs"], ["drainage.coordination.preferred_outfall", "drainage.basins"])
+        self.assertFalse(enriched["overflow_analysis"]["production_valid"])
+        self.assertEqual(enriched["overflow_analysis"]["missing_inputs"], ["drainage.terrain_evidence"])
 
     def test_storm_depth_uses_hydraulic_engine_for_capacity_velocity_and_hgl(self) -> None:
         storm = {

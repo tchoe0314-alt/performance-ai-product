@@ -893,6 +893,9 @@ def validate_utility_coordination(
     segments: Sequence[Dict[str, Any]],
     *,
     clearance_checks: Optional[Sequence[Dict[str, Any]]] = None,
+    crossing_checks: Optional[Sequence[Dict[str, Any]]] = None,
+    protected_zone_hits: Optional[Sequence[Dict[str, Any]]] = None,
+    reroute_candidates: Optional[Sequence[Dict[str, Any]]] = None,
     min_cover_ft: float = 3.0,
     min_horizontal_separation_ft: float = 3.0,
     min_vertical_separation_ft: float = 1.0,
@@ -900,16 +903,19 @@ def validate_utility_coordination(
     max_gravity_slope: float = 0.15,
 ) -> Dict[str, Any]:
     segment_rows: List[Dict[str, Any]] = []
+    system_modes: Dict[str, str] = {}
     for index, raw in enumerate(segments, start=1):
         rec = dict(raw)
         name = str(rec.get("name") or rec.get("id") or f"U-{index}")
+        system_type = str(rec.get("system_type") or rec.get("utility_type") or rec.get("system") or "utility").lower()
         cover_values = [
             float(value)
             for value in (rec.get("cover_start_ft"), rec.get("cover_end_ft"), rec.get("cover_ft"))
             if isinstance(value, (int, float)) and not isinstance(value, bool)
         ]
         min_cover = min(cover_values) if cover_values else 0.0
-        hydraulic_mode = str(rec.get("hydraulic_mode") or "").lower()
+        hydraulic_mode = str(rec.get("hydraulic_mode") or ("gravity" if system_type in UtilityEngine.GRAVITY_SYSTEMS else "pressure")).lower()
+        system_modes[system_type] = hydraulic_mode
         slope = rec.get("slope_ft_ft")
         slope_valid = True
         if hydraulic_mode == "gravity":
@@ -918,12 +924,53 @@ def validate_utility_coordination(
         segment_rows.append(
             {
                 "segment": name,
+                "system_type": system_type,
                 "min_cover_ft": round(min_cover, 3),
                 "cover_valid": min_cover >= min_cover_ft,
                 "hydraulic_mode": hydraulic_mode or "pressure",
                 "slope_ft_ft": slope,
                 "slope_valid": slope_valid,
                 "valid": min_cover >= min_cover_ft and slope_valid,
+            }
+        )
+
+    crossing_rows: List[Dict[str, Any]] = []
+    ownership_rank = {"storm": 10, "sanitary": 20, "water": 30, "fire_water": 35, "gas": 40, "electric": 50, "telecom": 60, "utility": 70}
+    for index, raw in enumerate(crossing_checks or [], start=1):
+        rec = dict(raw)
+        upper = str(rec.get("upper_system") or rec.get("system_a") or "").lower()
+        lower = str(rec.get("lower_system") or rec.get("system_b") or "").lower()
+        preferred_lower = str(rec.get("preferred_lower_system") or "").lower()
+        if not preferred_lower and upper and lower:
+            preferred_lower = upper if ownership_rank.get(upper, 99) < ownership_rank.get(lower, 99) else lower
+        vertical = rec.get("vertical_clearance_ft")
+        horizontal = rec.get("horizontal_clearance_ft")
+        angle = rec.get("crossing_angle_deg")
+        vertical_value = float(vertical) if isinstance(vertical, (int, float)) and not isinstance(vertical, bool) else None
+        horizontal_value = float(horizontal) if isinstance(horizontal, (int, float)) and not isinstance(horizontal, bool) else None
+        angle_value = float(angle) if isinstance(angle, (int, float)) and not isinstance(angle, bool) else None
+        vertical_valid = vertical_value is not None and vertical_value >= min_vertical_separation_ft
+        horizontal_valid = horizontal_value is None or horizontal_value >= min_horizontal_separation_ft
+        angle_valid = angle_value is None or angle_value >= 45.0
+        hierarchy_valid = bool(preferred_lower and lower == preferred_lower)
+        pressure_over_gravity_valid = not (
+            system_modes.get(upper) == "gravity" and system_modes.get(lower) == "pressure"
+        )
+        crossing_rows.append(
+            {
+                "check": str(rec.get("id") or rec.get("name") or f"XING-{index}"),
+                "upper_system": upper,
+                "lower_system": lower,
+                "preferred_lower_system": preferred_lower,
+                "vertical_clearance_ft": vertical_value,
+                "horizontal_clearance_ft": horizontal_value,
+                "crossing_angle_deg": angle_value,
+                "vertical_valid": vertical_valid,
+                "horizontal_valid": horizontal_valid,
+                "angle_valid": angle_valid,
+                "hierarchy_valid": hierarchy_valid,
+                "pressure_gravity_valid": pressure_over_gravity_valid,
+                "valid": vertical_valid and horizontal_valid and angle_valid and hierarchy_valid and pressure_over_gravity_valid,
             }
         )
 
@@ -947,10 +994,71 @@ def validate_utility_coordination(
             }
         )
 
+    protected_rows: List[Dict[str, Any]] = []
+    for index, raw in enumerate(protected_zone_hits or [], start=1):
+        rec = dict(raw)
+        avoid = bool(rec.get("avoid", True))
+        clearance = rec.get("clearance_ft")
+        clearance_value = float(clearance) if isinstance(clearance, (int, float)) and not isinstance(clearance, bool) else None
+        protected_rows.append(
+            {
+                "zone": str(rec.get("zone") or rec.get("name") or rec.get("id") or f"PZ-{index}"),
+                "kind": str(rec.get("kind") or rec.get("zone_type") or "protected_zone"),
+                "avoid": avoid,
+                "clearance_ft": clearance_value,
+                "valid": not avoid and (clearance_value is None or clearance_value >= 0.0),
+            }
+        )
+
+    scored_candidates: List[Dict[str, Any]] = []
+    for index, raw in enumerate(reroute_candidates or [], start=1):
+        rec = dict(raw)
+        added_length = float(rec.get("added_length_ft") or 0.0)
+        bend_count = int(rec.get("bend_count") or 0)
+        protected_hit_count = int(rec.get("protected_hit_count") or len(rec.get("protected_hits") or []))
+        clearance_deficit = float(rec.get("clearance_deficit_ft") or 0.0)
+        score = max(0.0, 100.0 - added_length * 0.5 - bend_count * 6.0 - protected_hit_count * 40.0 - clearance_deficit * 25.0)
+        scored_candidates.append(
+            {
+                "candidate": str(rec.get("name") or rec.get("id") or f"RC-{index}"),
+                "added_length_ft": round(added_length, 3),
+                "bend_count": bend_count,
+                "protected_hit_count": protected_hit_count,
+                "clearance_deficit_ft": round(clearance_deficit, 3),
+                "constructability_score": round(score, 3),
+                "valid": protected_hit_count == 0 and clearance_deficit <= 0.0,
+            }
+        )
+    best_candidate = max(scored_candidates, key=lambda row: row["constructability_score"]) if scored_candidates else {}
+    valid_sets = [
+        bool(segment_rows) and all(row["valid"] for row in segment_rows),
+        all(row["valid"] for row in clearance_rows),
+        all(row["valid"] for row in crossing_rows),
+        all(row["valid"] for row in protected_rows),
+        (not scored_candidates or bool(best_candidate.get("valid"))),
+    ]
+    constructability_score = 100.0
+    if scored_candidates:
+        constructability_score = min(constructability_score, float(best_candidate.get("constructability_score", 0.0)))
+    constructability_score -= sum(1 for row in clearance_rows if not row["valid"]) * 12.0
+    constructability_score -= sum(1 for row in crossing_rows if not row["valid"]) * 18.0
+    constructability_score -= sum(1 for row in protected_rows if not row["valid"]) * 35.0
+    constructability_score = round(max(0.0, constructability_score), 3)
     return {
-        "valid": bool(segment_rows) and all(row["valid"] for row in segment_rows) and all(row["valid"] for row in clearance_rows),
+        "valid": all(valid_sets),
         "segment_checks": segment_rows,
         "clearance_checks": clearance_rows,
+        "crossing_rule_checks": crossing_rows,
+        "protected_zone_checks": protected_rows,
+        "reroute_candidate_scores": scored_candidates,
+        "selected_reroute_candidate": best_candidate,
+        "constructability": {
+            "score": constructability_score,
+            "clearance_issue_count": sum(1 for row in clearance_rows if not row["valid"]),
+            "crossing_issue_count": sum(1 for row in crossing_rows if not row["valid"]),
+            "protected_zone_issue_count": sum(1 for row in protected_rows if not row["valid"]),
+            "candidate_count": len(scored_candidates),
+        },
         "minimums": {
             "cover_ft": min_cover_ft,
             "horizontal_separation_ft": min_horizontal_separation_ft,

@@ -528,6 +528,10 @@ def compute_earthwork(
     topsoil_shrink_factor: Optional[float] = 1.0,
     neutral_tolerance_ft: Optional[float] = 0.000001,
     average_haul_distance_ft: Optional[float] = None,
+    existing_surface_id: Optional[str] = None,
+    proposed_surface_id: Optional[str] = None,
+    accepted_surfaces: bool = False,
+    retaining_wall_trigger_depth_ft: Optional[float] = 4.0,
     include_cell_maps: bool = True,
     include_cell_details: bool = False,
     use_surface_model: Optional[bool] = None,
@@ -641,6 +645,14 @@ def compute_earthwork(
         default=0.0,
         minimum=0.0,
     )
+    retaining_wall_trigger_depth_value = _sanitize_optional_numeric(
+        retaining_wall_trigger_depth_ft,
+        field_name="retaining_wall_trigger_depth_ft",
+        mode=normalized_mode,
+        result=result,
+        default=4.0,
+        minimum=0.0,
+    )
 
     if result.errors:
         result.message = "Earthwork computation failed during validation."
@@ -652,6 +664,7 @@ def compute_earthwork(
     assert topsoil_shrink_factor_value is not None
     assert neutral_tolerance_value is not None
     assert average_haul_distance_value is not None
+    assert retaining_wall_trigger_depth_value is not None
 
     if shrink_factor_value == 0.0:
         result.issues.append(
@@ -707,6 +720,30 @@ def compute_earthwork(
         tolerance_cf=mass_balance_tolerance_cf,
     )
     haul_balance = _build_haul_balance(summary, average_haul_distance_ft=average_haul_distance_value)
+    surface_traceability = {
+        "accepted_surfaces": bool(accepted_surfaces),
+        "existing_surface_id": existing_surface_id,
+        "proposed_surface_id": proposed_surface_id,
+        "valid": bool(accepted_surfaces and existing_surface_id and proposed_surface_id),
+        "missing_inputs": [
+            field
+            for field, present in (
+                ("accepted_surfaces", bool(accepted_surfaces)),
+                ("existing_surface_id", bool(existing_surface_id)),
+                ("proposed_surface_id", bool(proposed_surface_id)),
+            )
+            if not present
+        ],
+        "truth_label": "Earthwork quantities trace to accepted existing/proposed grading surfaces only when surface IDs and acceptance are supplied.",
+    }
+    retaining_wall_trigger = {
+        "triggered": max(summary["max_cut_depth_ft"], summary["max_fill_depth_ft"]) >= retaining_wall_trigger_depth_value,
+        "trigger_depth_ft": retaining_wall_trigger_depth_value,
+        "max_cut_depth_ft": summary["max_cut_depth_ft"],
+        "max_fill_depth_ft": summary["max_fill_depth_ft"],
+        "blocker": "retaining_wall_review_required" if max(summary["max_cut_depth_ft"], summary["max_fill_depth_ft"]) >= retaining_wall_trigger_depth_value else "",
+        "truth_label": "Retaining wall trigger is based on maximum local cut/fill depth.",
+    }
 
     stats = _build_cell_statistics(cells)
 
@@ -736,6 +773,10 @@ def compute_earthwork(
         result.warnings.append(
             f"Earthwork haul balance is {haul_balance['balance_status']} with adjusted net {haul_balance['adjusted_net_cy']:.3f} cy."
         )
+    if not surface_traceability["valid"]:
+        result.warnings.append("Earthwork quantities are not backed by accepted existing/proposed surface IDs.")
+    if retaining_wall_trigger["triggered"]:
+        result.warnings.append("Retaining wall review is required by local cut/fill depth trigger.")
 
     cell_details: List[Dict[str, Any]] = []
     if include_cell_details:
@@ -777,6 +818,10 @@ def compute_earthwork(
             "topsoil_shrink_factor": topsoil_shrink_factor_value,
             "neutral_tolerance_ft": neutral_tolerance_value,
             "average_haul_distance_ft": average_haul_distance_value,
+            "existing_surface_id": existing_surface_id,
+            "proposed_surface_id": proposed_surface_id,
+            "accepted_surfaces": bool(accepted_surfaces),
+            "retaining_wall_trigger_depth_ft": retaining_wall_trigger_depth_value,
             "include_cell_maps": include_cell_maps,
             "include_cell_details": include_cell_details,
             "use_surface_model": normalized_use_surface_model,
@@ -809,6 +854,8 @@ def compute_earthwork(
         },
         "mass_balance_validation": mass_balance_validation,
         "haul_balance": haul_balance,
+        "surface_traceability": surface_traceability,
+        "retaining_wall_trigger": retaining_wall_trigger,
         "volume_maps": volume_maps,
         "cell_details": cell_details,
     }
@@ -872,6 +919,10 @@ def compute_cut_fill_detailed(
     topsoil_shrink_factor: Optional[float] = 1.0,
     neutral_tolerance_ft: Optional[float] = 0.000001,
     average_haul_distance_ft: Optional[float] = None,
+    existing_surface_id: Optional[str] = None,
+    proposed_surface_id: Optional[str] = None,
+    accepted_surfaces: bool = False,
+    retaining_wall_trigger_depth_ft: Optional[float] = 4.0,
     include_cell_maps: bool = True,
     include_cell_details: bool = False,
     use_surface_model: Optional[bool] = None,
@@ -890,6 +941,10 @@ def compute_cut_fill_detailed(
         topsoil_shrink_factor=topsoil_shrink_factor,
         neutral_tolerance_ft=neutral_tolerance_ft,
         average_haul_distance_ft=average_haul_distance_ft,
+        existing_surface_id=existing_surface_id,
+        proposed_surface_id=proposed_surface_id,
+        accepted_surfaces=accepted_surfaces,
+        retaining_wall_trigger_depth_ft=retaining_wall_trigger_depth_ft,
         include_cell_maps=include_cell_maps,
         include_cell_details=include_cell_details,
         use_surface_model=use_surface_model,

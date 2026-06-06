@@ -487,6 +487,27 @@ def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict
 
     enriched = deepcopy(safe_dict(storm))
     drainage_meta = safe_dict(drainage)
+    drainage_coordination = safe_dict(drainage_meta.get("coordination"))
+    drainage_target = (
+        safe_dict(enriched.get("target_outfall"))
+        or safe_dict(enriched.get("outfall_target_metadata"))
+        or safe_dict(drainage_coordination.get("preferred_outfall"))
+    )
+    drainage_basins = [safe_dict(item) for item in safe_list(drainage_meta.get("basins")) if safe_dict(item)]
+    target_name = safe_str(drainage_target.get("name") or drainage_target.get("target_name"))
+    target_xy = _point_xy(drainage_target)
+    target_valid = bool(target_name or target_xy or drainage_basins)
+    enriched["drainage_target_validation"] = {
+        "valid": target_valid,
+        "target_name": target_name,
+        "target_point": [round(target_xy[0], 3), round(target_xy[1], 3)] if target_xy else None,
+        "basin_count": len(drainage_basins),
+        "source": "drainage_coordination_preferred_outfall" if drainage_coordination.get("preferred_outfall") else "storm_target_outfall",
+        "missing_inputs": [] if target_valid else ["drainage.coordination.preferred_outfall", "drainage.basins"],
+        "truth_label": "Storm network target is traced to drainage-selected basin/outfall evidence.",
+    }
+    if target_valid and drainage_target:
+        enriched["target_outfall"] = {**drainage_target, "truth_source": "drainage_target_validation"}
     segments = [safe_dict(item) for item in safe_list(enriched.get("segments"))]
     hydraulic_request = _storm_hydraulic_request_from_summary(enriched, segments)
     if hydraulic_request is not None:
@@ -690,6 +711,20 @@ def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict
         )
     if inlet_checks:
         enriched["inlet_capacity_checks"] = inlet_checks
+    overflow_paths = [safe_dict(item) for item in safe_list(drainage_meta.get("overflow_paths")) if safe_dict(item)]
+    overflow_analysis = safe_dict(drainage_meta.get("overflow_analysis"))
+    terrain_evidence = safe_dict(drainage_meta.get("terrain_evidence") or drainage_meta.get("surface_controls"))
+    if overflow_paths or overflow_analysis:
+        enriched["overflow_paths"] = overflow_paths
+        enriched["overflow_analysis"] = {
+            **overflow_analysis,
+            "valid": overflow_analysis.get("valid") is not False and bool(overflow_paths),
+            "production_valid": overflow_analysis.get("production_valid") is True and bool(overflow_paths) and bool(terrain_evidence),
+            "path_count": len(overflow_paths),
+            "terrain_evidence": terrain_evidence,
+            "missing_inputs": ([] if terrain_evidence else ["drainage.terrain_evidence"]),
+            "truth_label": "Storm overflow readiness is tied to drainage overflow paths and terrain/surface evidence.",
+        }
     hydraulic_summary = safe_dict(enriched.get("hydraulic_summary"))
     hydraulic_summary.setdefault("system_tributary_area_sf", round(total_area_sf, 3))
     hydraulic_summary.setdefault("system_tributary_runoff_cfs", round(total_flow, 3))

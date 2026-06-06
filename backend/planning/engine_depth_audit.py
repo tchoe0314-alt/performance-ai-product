@@ -250,6 +250,29 @@ def _scenario_blockers(scenario_id: str, checks: Sequence[Dict[str, Any]], golde
     return blockers
 
 
+def _stable_golden_result_summary(golden_result: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep golden evidence useful without embedding nondeterministic load samples."""
+
+    return {
+        "success": bool(golden_result.get("success")),
+        "scenario_id": safe_str(golden_result.get("scenario_id")),
+        "name": safe_str(golden_result.get("name")),
+        "required_engine_ids": safe_list(golden_result.get("required_engine_ids")),
+        "required_canonical_signals": safe_list(golden_result.get("required_canonical_signals")),
+        "production_gates": safe_list(golden_result.get("production_gates")),
+        "gate_results": deepcopy(safe_list(golden_result.get("gate_results"))),
+        "canonical_signal_results": deepcopy(safe_list(golden_result.get("canonical_signal_results"))),
+        "missing_canonical_signals": safe_list(golden_result.get("missing_canonical_signals")),
+        "benchmark_expectation_results": deepcopy(safe_list(golden_result.get("benchmark_expectation_results"))),
+        "failed_benchmark_expectations": safe_list(golden_result.get("failed_benchmark_expectations")),
+        "failed_load_thresholds": safe_list(golden_result.get("failed_load_thresholds")),
+        "hard_failures": safe_list(golden_result.get("hard_failures")),
+        "benchmark_status": safe_str(golden_result.get("benchmark_status")),
+        "engine_depth_audit": deepcopy(safe_dict(golden_result.get("engine_depth_audit"))),
+        "truth_label": "Stable golden summary excludes runtime/load sample values so engine depth reports are CI-comparable.",
+    }
+
+
 def _checks_for_engine(engine_id: str, checks: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return [
         deepcopy(safe_dict(check))
@@ -389,7 +412,7 @@ def run_engine_depth_audit_scenario(
         "failed_check_ids": [safe_str(item.get("check_id")) for item in checks if not bool(item.get("passed"))],
         "blockers": blockers,
         "blocker_details": readiness_issue_explanations(blockers),
-        "golden_result": golden_result,
+        "golden_result": _stable_golden_result_summary(golden_result),
         "truth_label": "Scenario engine depth audit measures deterministic backend evidence only; it does not approve construction use.",
     }
 

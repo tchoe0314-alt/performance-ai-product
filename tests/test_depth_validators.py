@@ -30,6 +30,8 @@ class DepthValidatorTests(unittest.TestCase):
                         "inlet_capacity_checks": [{"inlet": "CB-1", "valid": True}],
                     },
                     "drainage": {
+                        "coordination": {"preferred_outfall": {"name": "OUTFALL-1", "x": 120.0, "y": 20.0}},
+                        "surface_controls": {"primary_low_point": {"x": 120.0, "y": 20.0}},
                         "catchments": [{"name": "A", "runoff_c": 0.8}],
                         "detention_routing": [
                             {
@@ -68,6 +70,7 @@ class DepthValidatorTests(unittest.TestCase):
         drainage = enrich_drainage_production_depth(
             {
                 "coordination": {"preferred_outfall": {"name": "OUTFALL-1", "x": 120.0, "y": 20.0}},
+                "surface_controls": {"primary_low_point": {"x": 120.0, "y": 20.0}},
                 "catchments": [{"name": "A", "runoff_c": 0.8}],
                 "basins": [
                     {
@@ -117,6 +120,46 @@ class DepthValidatorTests(unittest.TestCase):
         )
 
         self.assertTrue(result["production_ready"])
+
+    def test_stormwater_depth_blocks_missing_basin_outfall_target(self) -> None:
+        result = validate_stormwater_depth(
+            {
+                "meta": {
+                    "storm_pipes": {
+                        "segments": [{"name": "P-1", "tributary_area_sf": 10000.0}],
+                        "hgl_profile": [{"station_ft": 0.0, "hgl_ft": 99.0}],
+                        "egl_profile": [{"station_ft": 0.0, "egl_ft": 99.2}],
+                        "tailwater_elev_ft": 98.0,
+                        "inlet_capacity_checks": [{"inlet": "CB-1", "valid": True}],
+                    },
+                    "drainage": {
+                        "surface_controls": {"primary_low_point": {"x": 120.0, "y": 20.0}},
+                        "catchments": [{"name": "A", "runoff_c": 0.8}],
+                        "detention_routing": [
+                            {
+                                "basin": "B-1",
+                                "routing_source": "hydrograph_engine",
+                                "routing_method": "stage_storage_hydrograph",
+                                "provided_storage_cf": 4200.0,
+                                "release_cfs": 1.2,
+                                "outlet_release_cfs": 1.2,
+                                "outlet": {"type": "orifice", "release_cfs": 1.2, "source": "approved_outlet_fixture"},
+                                "drawdown_hours": 18.0,
+                                "stage_storage": [
+                                    {"elevation_ft": 96.0, "storage_cf": 0.0},
+                                    {"elevation_ft": 98.0, "storage_cf": 2100.0},
+                                    {"elevation_ft": 100.0, "storage_cf": 4200.0},
+                                ],
+                            }
+                        ],
+                        "overflow_paths": [{"name": "OF-1", "capacity_valid": True, "capacity_cfs": 5.0, "required_capacity_cfs": 4.0, "source": "approved_spillway_fixture"}],
+                    },
+                }
+            }
+        )
+
+        self.assertFalse(result["production_ready"])
+        self.assertIn("Storm depth needs drainage-selected basin/outfall target evidence.", result["blockers"])
 
     def test_stormwater_depth_blocks_invalid_inlet_or_overflow_evidence(self) -> None:
         result = validate_stormwater_depth(

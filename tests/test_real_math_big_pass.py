@@ -1,7 +1,7 @@
 import math
 import unittest
 
-from backend.planning.grading_math import repair_ada_profile
+from backend.planning.grading_math import repair_ada_profile, summarize_drainage_aware_repair
 from core.geometry_core import Point3D
 from engines.corridor_engine import CorridorEngine
 from engines.detention_engine import (
@@ -125,12 +125,16 @@ class RealMathBigPassTests(unittest.TestCase):
             proposed,
             shrink_factor=1.0,
             swell_factor=1.0,
+            existing_surface_id="EG-1",
+            proposed_surface_id="FG-1",
+            accepted_surfaces=True,
             include_cell_maps=False,
         )
 
         self.assertTrue(result["success"])
         self.assertEqual(result["results"]["mass_balance_validation"]["status"], "balanced")
         self.assertTrue(result["results"]["mass_balance_validation"]["valid"])
+        self.assertTrue(result["results"]["surface_traceability"]["valid"])
 
     def test_earthwork_reports_haul_balance_import_warning_and_expected_volumes(self) -> None:
         existing = GridSurface(0.0, 0.0, 20.0, 20.0, 10.0, 2, 2, [[100.0, 100.0], [100.0, 100.0]])
@@ -142,6 +146,9 @@ class RealMathBigPassTests(unittest.TestCase):
             shrink_factor=1.0,
             swell_factor=1.0,
             average_haul_distance_ft=500.0,
+            existing_surface_id="EG-1",
+            proposed_surface_id="FG-1",
+            accepted_surfaces=True,
             include_cell_maps=False,
         )
         haul = result["results"]["haul_balance"]
@@ -154,22 +161,85 @@ class RealMathBigPassTests(unittest.TestCase):
         self.assertTrue(haul["requires_offsite_haul"])
         self.assertTrue(any("borrow_required" in warning for warning in result["warnings"]))
 
+    def test_earthwork_blocks_unaccepted_surfaces_and_triggers_wall_review(self) -> None:
+        existing = GridSurface(0.0, 0.0, 10.0, 10.0, 10.0, 1, 1, [[100.0]])
+        proposed = GridSurface(0.0, 0.0, 10.0, 10.0, 10.0, 1, 1, [[106.0]])
+
+        result = compute_cut_fill_detailed(existing, proposed, include_cell_maps=False)
+
+        self.assertFalse(result["results"]["surface_traceability"]["valid"])
+        self.assertEqual(result["results"]["surface_traceability"]["missing_inputs"], ["accepted_surfaces", "existing_surface_id", "proposed_surface_id"])
+        self.assertTrue(result["results"]["retaining_wall_trigger"]["triggered"])
+        self.assertEqual(result["results"]["retaining_wall_trigger"]["blocker"], "retaining_wall_review_required")
+        self.assertTrue(any("Retaining wall review" in warning for warning in result["warnings"]))
+
+    def test_drainage_aware_grading_repair_reports_changes_and_reason(self) -> None:
+        summary = summarize_drainage_aware_repair(
+            [(0.0, 0.0, 101.0), (10.0, 0.0, 101.0)],
+            [(0.0, 0.0, 101.0), (10.0, 0.0, 100.5)],
+            reason="restore_positive_drainage_to_outfall",
+            drainage_target={"name": "OUTFALL-1"},
+        )
+
+        self.assertTrue(summary["valid"])
+        self.assertEqual(summary["changed_point_count"], 1)
+        self.assertEqual(summary["total_abs_adjustment_ft"], 0.5)
+        self.assertEqual(summary["changes"][1]["delta_z"], -0.5)
+        self.assertEqual(summary["changes"][1]["reason"], "restore_positive_drainage_to_outfall")
+
     def test_utility_coordination_validates_cover_slope_and_clearance(self) -> None:
         result = validate_utility_coordination(
             [
                 {
                     "name": "SAN-1",
+                    "system_type": "sanitary",
                     "cover_start_ft": 4.0,
                     "cover_end_ft": 4.5,
                     "hydraulic_mode": "gravity",
                     "slope_ft_ft": 0.01,
+                },
+                {
+                    "name": "WAT-1",
+                    "system_type": "water",
+                    "cover_start_ft": 4.0,
+                    "cover_end_ft": 4.0,
+                    "hydraulic_mode": "pressure",
                 }
             ],
             clearance_checks=[{"id": "C-1", "horizontal_clearance_ft": 4.0, "vertical_clearance_ft": 1.5}],
+            crossing_checks=[{"id": "X-1", "upper_system": "water", "lower_system": "sanitary", "vertical_clearance_ft": 1.5, "crossing_angle_deg": 90.0}],
+            protected_zone_hits=[{"id": "PZ-1", "kind": "wetland", "avoid": False, "clearance_ft": 6.0}],
+            reroute_candidates=[
+                {"id": "RC-1", "added_length_ft": 20.0, "bend_count": 1, "protected_hit_count": 0, "clearance_deficit_ft": 0.0},
+                {"id": "RC-2", "added_length_ft": 5.0, "bend_count": 3, "protected_hit_count": 1, "clearance_deficit_ft": 0.5},
+            ],
         )
 
         self.assertTrue(result["valid"])
         self.assertTrue(result["segment_checks"][0]["slope_valid"])
+        self.assertEqual(result["crossing_rule_checks"][0]["preferred_lower_system"], "sanitary")
+        self.assertTrue(result["crossing_rule_checks"][0]["hierarchy_valid"])
+        self.assertEqual(result["selected_reroute_candidate"]["candidate"], "RC-1")
+        self.assertEqual(result["selected_reroute_candidate"]["constructability_score"], 84.0)
+        self.assertEqual(result["constructability"]["score"], 84.0)
+
+    def test_utility_coordination_blocks_crossing_protected_zone_and_gravity_rule_failures(self) -> None:
+        result = validate_utility_coordination(
+            [
+                {"name": "SAN-1", "system_type": "sanitary", "cover_start_ft": 2.0, "hydraulic_mode": "gravity", "slope_ft_ft": 0.001},
+                {"name": "WAT-1", "system_type": "water", "cover_start_ft": 4.0, "hydraulic_mode": "pressure"},
+            ],
+            crossing_checks=[{"id": "X-1", "upper_system": "sanitary", "lower_system": "water", "vertical_clearance_ft": 0.4, "crossing_angle_deg": 30.0}],
+            protected_zone_hits=[{"id": "WET-1", "kind": "wetland", "avoid": True, "clearance_ft": -1.0}],
+            reroute_candidates=[{"id": "RC-BAD", "added_length_ft": 10.0, "bend_count": 2, "protected_hit_count": 1, "clearance_deficit_ft": 0.4}],
+        )
+
+        self.assertFalse(result["valid"])
+        self.assertFalse(result["segment_checks"][0]["cover_valid"])
+        self.assertFalse(result["segment_checks"][0]["slope_valid"])
+        self.assertFalse(result["crossing_rule_checks"][0]["vertical_valid"])
+        self.assertFalse(result["crossing_rule_checks"][0]["pressure_gravity_valid"])
+        self.assertFalse(result["protected_zone_checks"][0]["valid"])
 
 
 if __name__ == "__main__":
