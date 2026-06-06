@@ -139,6 +139,8 @@ type ParkingParams = {
 const SQFT_PER_ACRE = 43_560;
 const SITE_WARNING_ACRES = 250;
 const SITE_GRADING_HARD_BLOCK_ACRES = 500;
+const DEFAULT_BLANK_SITE_WIDTH_FT = 300;
+const DEFAULT_BLANK_SITE_DEPTH_FT = 300;
 const OVERSIZED_SITE_MESSAGE =
   "Selected site is very large. Zoom in or reduce site area before grading.";
 
@@ -7314,6 +7316,7 @@ function PerformanceAIDashboardView({
       siteIdOverride?: string | null,
       fitMap: boolean = true,
       lockSite: boolean = true,
+      preserveExistingObjects: boolean = true,
     ) => {
       const clampedW = Math.max(width, 1);
       const clampedH = Math.max(height, 1);
@@ -7321,7 +7324,7 @@ function PerformanceAIDashboardView({
       setLotHeight(clampedH.toFixed(0));
       setSiteScaleLocked(lockSite);
       setBuildingPlacements((prev) => {
-        const filtered = prev.filter((item) => item.type !== "site");
+        const filtered = preserveExistingObjects ? prev.filter((item) => item.type !== "site") : [];
         const existingSite = prev.find((item) => item.type === "site");
         const siteId =
           siteIdOverride ||
@@ -7468,8 +7471,8 @@ function PerformanceAIDashboardView({
   }, [currentProject, payloadPreview, saveProject, siteScaleLocked]);
 
   const handleStartBlankSite = useCallback(() => {
-    const width = parsePositiveNumber(lotWidth) ?? 300;
-    const height = parsePositiveNumber(lotHeight) ?? 300;
+    const width = DEFAULT_BLANK_SITE_WIDTH_FT;
+    const height = DEFAULT_BLANK_SITE_DEPTH_FT;
     clearGeneratedPreview();
     setSiteAddress("");
     setSelectedAddressSuggestion(null);
@@ -7478,10 +7481,20 @@ function PerformanceAIDashboardView({
     setUploadedImageApiUrl("");
     setMapSnapshotPath("");
     setMapAnalysis(null);
+    setDetectedPlacements([]);
+    setAnalysisIssues([]);
+    setAnalysisPaths([]);
+    setAnalysisSelectedIssueId(null);
+    setIssues([]);
+    setSelectedIssueId(null);
+    setAssumptions(defaultAssumptions);
+    setFocusDetectedId(null);
+    setFocusObjectId(null);
+    setSystemStatuses(DEFAULT_SYSTEM_STATUS);
     setSiteSelectionMode(true);
     setShowSiteBounds(true);
     setPreviewInteraction("edit");
-    autoFitSite(width, height, "Blank Site Boundary", undefined, true, false);
+    autoFitSite(width, height, "Blank Site Boundary", undefined, true, false, false);
     lastAppliedSiteRef.current = null;
     const currentInput = currentProject?.project_input ?? payloadPreview;
     const nextSiteInputs: Record<string, unknown> = {
@@ -7521,8 +7534,6 @@ function PerformanceAIDashboardView({
     autoFitSite,
     clearGeneratedPreview,
     currentProject,
-    lotHeight,
-    lotWidth,
     payloadPreview,
     saveProject,
   ]);
@@ -7546,18 +7557,6 @@ function PerformanceAIDashboardView({
     setStatusMessage("Draw the site boundary on the canvas. Double-click or use Finish to lock it.");
   }, [handleUnlockSite, lotHeight, lotWidth, siteScaleLocked]);
 
-  const computeViewportSiteSize = useCallback(() => {
-    if (typeof window === "undefined") return null;
-    if (!detectionScaleFtPerPx) return null;
-    const sidePanelWidth = activeSidePanel ? 360 : 0;
-    const widthPx = Math.max(window.innerWidth - 96 - sidePanelWidth, 320);
-    const heightPx = previewHeightPx;
-    return {
-      width: widthPx * detectionScaleFtPerPx,
-      height: heightPx * detectionScaleFtPerPx,
-    };
-  }, [activeSidePanel, detectionScaleFtPerPx, previewHeightPx]);
-
   useEffect(() => {
     if (siteScaleLocked) return;
     if (!viewportFootprint?.widthFt || !viewportFootprint?.heightFt) return;
@@ -7568,9 +7567,7 @@ function PerformanceAIDashboardView({
       return;
     }
     lastViewportSyncRef.current = { w: nextWidth, h: nextHeight };
-    autoFitSite(nextWidth, nextHeight, "Site Boundary", undefined, false, false);
-    setShowSiteBounds(true);
-  }, [autoFitSite, siteScaleLocked, viewportFootprint]);
+  }, [siteScaleLocked, viewportFootprint]);
 
   useEffect(() => {
     if (addressSuggestTimeoutRef.current) {
@@ -7827,11 +7824,6 @@ function PerformanceAIDashboardView({
       setAddressSuggestions([]);
       setActiveWorkspaceMode("setup");
       setActiveSidePanel("site_existing");
-      const viewportSize = viewportFootprint ?? computeViewportSiteSize();
-      const viewportWidth =
-        viewportSize && "width" in viewportSize ? viewportSize.width : viewportSize?.widthFt;
-      const viewportHeight =
-        viewportSize && "height" in viewportSize ? viewportSize.height : viewportSize?.heightFt;
       await saveProject({
         silent: true,
         projectInputOverride: {
@@ -7843,20 +7835,14 @@ function PerformanceAIDashboardView({
             ...(currentInput?.meta ?? {}),
             site_inputs: nextSiteInputs,
           },
-          manual_fields: {
-            ...(currentInput?.manual_fields ?? {}),
-            lot:
-              typeof viewportWidth === "number" && typeof viewportHeight === "number"
-                ? { x: 0, y: 0, w: viewportWidth, h: viewportHeight }
-                : currentInput?.manual_fields?.lot,
-          },
+          manual_fields: currentInput?.manual_fields,
         },
       });
       setSiteScaleLocked(false);
       setShowSiteBounds(true);
       setPreviewQuality("high");
       setSiteSelectionMode(true);
-      setStatusMessage("Address applied. Pan/zoom to select site, then lock.");
+      setStatusMessage("Address applied as location evidence. Set site size, draw the boundary, then lock it.");
       setSelectedAddressSuggestion(geocode);
     } catch (error) {
       setStatusMessage(
@@ -12491,6 +12477,18 @@ function PerformanceAIDashboardView({
 
                 {activeSidePanel === "landscape" ? (
                   <div className="space-y-4">
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        ["Status", buildingPlacements.some((item) => ["open_space", "amenity", "pool", "sidewalk"].includes(item.type ?? "")) ? "Draft" : "Not configured"],
+                        ["Source", backendResult ? "Generated/model" : "User setup"],
+                        ["Review", "Engineer required"],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-800">{value}</p>
+                        </div>
+                      ))}
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                       {[
                         ["Open space", buildingPlacements.filter((item) => item.type === "open_space").length],
